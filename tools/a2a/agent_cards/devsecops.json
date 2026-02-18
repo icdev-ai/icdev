@@ -1,0 +1,71 @@
+{
+  "name": "ICDEV DevSecOps & Zero Trust",
+  "description": "DevSecOps pipeline security, Zero Trust Architecture (NIST SP 800-207), policy-as-code, secrets lifecycle, ZTA maturity scoring, service mesh configuration.",
+  "url": "https://localhost:8457",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "devsecops-profile-create",
+      "name": "Create DevSecOps Profile",
+      "description": "Create or update a per-project DevSecOps profile with maturity level and active stages.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "devsecops-maturity-assess",
+      "name": "Assess DevSecOps Maturity",
+      "description": "Evaluate project maturity across 10 DevSecOps pipeline stages.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "zta-maturity-score",
+      "name": "ZTA Maturity Score",
+      "description": "Score all 7 ZTA pillars per DoD ZTA Strategy (Traditional → Advanced → Optimal).",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "pipeline-security-generate",
+      "name": "Generate Pipeline Security",
+      "description": "Profile-driven GitLab CI security stage generation.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "policy-generate",
+      "name": "Generate Policy-as-Code",
+      "description": "Kyverno/OPA policy generation for pod security, registry, RBAC enforcement.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "service-mesh-generate",
+      "name": "Generate Service Mesh",
+      "description": "Istio/Linkerd service mesh configuration with mTLS and AuthzPolicy.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "zta-posture-check",
+      "name": "ZTA Posture Check",
+      "description": "Zero Trust posture assessment feeding into cATO evidence.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "nist-800-207-assess",
+      "name": "NIST 800-207 Assessment",
+      "description": "NIST SP 800-207 ZTA compliance assessment with crosswalk integration.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

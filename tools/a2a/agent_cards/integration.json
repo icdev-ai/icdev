@@ -1,0 +1,57 @@
+{
+  "name": "ICDEV Integration",
+  "description": "Bidirectional Jira/ServiceNow/GitLab sync, DOORS NG ReqIF export, approval workflows, RTM traceability.",
+  "url": "https://localhost:8456",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "sync-jira",
+      "name": "Sync Jira",
+      "description": "Bidirectional Jira sync — SAFe items map to Jira issue types (Epic/Story/Sub-task).",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sync-servicenow",
+      "name": "Sync ServiceNow",
+      "description": "Bidirectional ServiceNow sync — requirements map to incidents/requests/changes.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "sync-gitlab",
+      "name": "Sync GitLab",
+      "description": "Bidirectional GitLab sync — SAFe items map to GitLab epics/issues/merge requests.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "export-reqif",
+      "name": "Export ReqIF",
+      "description": "Export requirements as ReqIF 1.2 for DOORS NG import.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "submit-approval",
+      "name": "Submit Approval",
+      "description": "Submit requirements packages, COA selections, and boundary acceptances for approval.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "build-traceability",
+      "name": "Build Traceability",
+      "description": "Full RTM: requirement > SysML > code > test > control > UAT with coverage analysis.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

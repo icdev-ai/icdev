@@ -1,0 +1,64 @@
+{
+  "name": "ICDEV Requirements Analyst",
+  "description": "AI-driven conversational requirements intake, gap detection, SAFe decomposition, readiness scoring, document extraction, COA generation, boundary analysis.",
+  "url": "https://localhost:8453",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "create-intake-session",
+      "name": "Create Intake Session",
+      "description": "Start a new AI-driven requirements intake session with customer and project context.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "process-intake-turn",
+      "name": "Process Intake Turn",
+      "description": "Process a customer message — extract requirements, detect ambiguities, flag gaps.",
+      "inputModes": ["application/json", "text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "detect-gaps",
+      "name": "Detect Gaps",
+      "description": "Analyze session for missing security, compliance, and architectural requirements.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "score-readiness",
+      "name": "Score Readiness",
+      "description": "5-dimension readiness scoring: completeness, clarity, feasibility, compliance, testability.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "decompose-requirements",
+      "name": "Decompose Requirements",
+      "description": "SAFe decomposition: Epic > Capability > Feature > Story with WSJF scoring and BDD criteria.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "extract-document",
+      "name": "Extract from Document",
+      "description": "Upload SOW/CDD/CONOPS and extract structured requirements (shall/must/should statements).",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "export-requirements",
+      "name": "Export Requirements",
+      "description": "Export decomposed requirements for handoff to Architect agent (ATLAS workflow).",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

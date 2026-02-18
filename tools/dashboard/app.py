@@ -97,6 +97,15 @@ def create_app() -> Flask:
             "ROLE_VIEWS": ROLE_VIEWS,
         }
 
+    # ---- Auto-register A2A agents from card files ----
+    try:
+        from tools.a2a.agent_registry import register_all_from_cards
+        registered = register_all_from_cards()
+        if registered:
+            app.logger.info("Auto-registered %d agents from card files", len(registered))
+    except Exception as exc:
+        app.logger.debug("Agent auto-registration skipped: %s", exc)
+
     # ---- Register API blueprints ----
     app.register_blueprint(projects_api)
     app.register_blueprint(agents_api)
