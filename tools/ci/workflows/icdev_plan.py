@@ -42,12 +42,31 @@ from tools.testing.utils import setup_logger
 
 
 def check_env_vars(logger: logging.Logger) -> None:
-    """Check required environment variables."""
-    required = ["ANTHROPIC_API_KEY"]
-    missing = [v for v in required if not os.getenv(v)]
-    if missing:
-        logger.error(f"Missing env vars: {', '.join(missing)}")
-        sys.exit(1)
+    """Check that Claude Code CLI or an API key is available.
+
+    The workflow uses Claude Code CLI (which has its own session auth when
+    running inside VSCode extension). ANTHROPIC_API_KEY is only required
+    when running headless outside a Claude Code session.
+    """
+    import shutil
+
+    # Claude Code CLI available = session auth works (VSCode extension, CLI login)
+    claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
+    if shutil.which(claude_path):
+        logger.info(f"Claude Code CLI found at: {shutil.which(claude_path)}")
+        return
+
+    # Fallback: check for direct API key
+    if os.getenv("ANTHROPIC_API_KEY"):
+        logger.info("Using ANTHROPIC_API_KEY for direct API access")
+        return
+
+    logger.error(
+        "No Claude access available. Either:\n"
+        "  1. Run inside Claude Code (VSCode extension or CLI session), or\n"
+        "  2. Set ANTHROPIC_API_KEY environment variable"
+    )
+    sys.exit(1)
 
 
 def main():
