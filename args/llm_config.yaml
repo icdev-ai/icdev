@@ -142,6 +142,16 @@ models:
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Vision Models (Local) --
+  gemma3-local:
+    provider: ollama
+    model_id: gemma3:latest
+    max_output_tokens: 4096
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   llava-local:
     provider: ollama
     model_id: llava:13b
@@ -215,27 +225,27 @@ routing:
     effort: medium
 
   screenshot_validation:
-    chain: [claude-opus, claude-sonnet, gpt-4o, llava-local]
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemma3-local, llava-local]
     effort: medium
 
   document_vision:
-    chain: [claude-sonnet, gpt-4o, llava-local]
+    chain: [claude-sonnet, gpt-4o, gemma3-local, llava-local]
     effort: medium
 
   ui_analysis:
-    chain: [claude-opus, claude-sonnet, gpt-4o, llava-local]
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemma3-local, llava-local]
     effort: high
 
   diagram_extraction:
-    chain: [claude-opus, claude-sonnet, gpt-4o, llava-local]
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemma3-local, llava-local]
     effort: high
 
   compliance_diagram:
-    chain: [claude-sonnet, gpt-4o, llava-local]
+    chain: [claude-sonnet, gpt-4o, gemma3-local, llava-local]
     effort: medium
 
   attachment_analysis:
-    chain: [claude-sonnet, gpt-4o-mini, llava-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemma3-local, llava-local]
     effort: low
 
   default:

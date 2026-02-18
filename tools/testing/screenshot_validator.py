@@ -32,6 +32,7 @@ import argparse
 import base64
 import json
 import logging
+import re
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -63,22 +64,19 @@ DEFAULT_ASSERTIONS = [
     "Page content has loaded successfully (not a blank or loading screen)",
 ]
 
-# System prompt for vision validation
-VISION_SYSTEM_PROMPT = """You are a visual QA validator for a Gov/DoD application testing pipeline.
-You will be shown a screenshot from an E2E test and asked to verify a specific assertion.
+# System prompt for vision validation — optimized for both cloud and local models
+VISION_SYSTEM_PROMPT = """You are a visual QA validator for a Gov/DoD application.
+You will see a screenshot and an assertion to verify.
 
-Respond with EXACTLY this JSON format (no markdown, no extra text):
-{
-    "passed": true or false,
-    "confidence": 0.0 to 1.0,
-    "explanation": "Brief explanation of what you see and why the assertion passes or fails"
-}
+Answer in this JSON format:
+{"passed": true, "confidence": 0.9, "explanation": "what you see"}
 
 Rules:
-- Be precise and factual about what you observe in the screenshot
-- If the assertion is about something not visible in the screenshot, set passed to false
-- Confidence should reflect how certain you are (0.9+ for clear cases, 0.5-0.8 for ambiguous)
-- Keep explanations under 100 words"""
+- Look carefully at the entire screenshot before answering
+- passed: true if the assertion is satisfied, false if not
+- confidence: 0.9 for clear, 0.7 for likely, 0.5 for uncertain
+- Keep explanation under 50 words
+- If unsure, set passed to false"""
 
 
 # ---------------------------------------------------------------------------
@@ -281,20 +279,36 @@ def validate_screenshot(
 def _parse_vision_response(content: str) -> dict:
     """Parse the vision model's JSON response.
 
-    Handles both clean JSON and markdown-wrapped JSON responses.
+    Handles clean JSON, markdown-wrapped JSON, and free-text responses.
+    Local models (LLaVA, Gemma3) often return free text instead of JSON,
+    so the fallback heuristic is important.
     """
     text = content.strip()
 
     # Strip markdown code fences if present
     if text.startswith("```"):
         lines = text.splitlines()
-        # Remove first and last fence lines
         if lines[0].startswith("```"):
             lines = lines[1:]
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         text = "\n".join(lines).strip()
 
+    # Try extracting JSON from anywhere in the response (local models
+    # sometimes wrap JSON in explanatory text)
+    json_match = re.search(r'\{[^{}]*"passed"\s*:\s*(true|false)[^{}]*\}', text, re.IGNORECASE)
+    if json_match:
+        try:
+            data = json.loads(json_match.group(0))
+            return {
+                "passed": bool(data.get("passed", False)),
+                "confidence": float(data.get("confidence", 0.7)),
+                "explanation": str(data.get("explanation", "")),
+            }
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Try full JSON parse
     try:
         data = json.loads(text)
         return {
@@ -303,23 +317,34 @@ def _parse_vision_response(content: str) -> dict:
             "explanation": str(data.get("explanation", "")),
         }
     except (json.JSONDecodeError, ValueError):
-        # Fallback: heuristic parsing from free-text response
-        lower = text.lower()
-        if any(w in lower for w in ("pass", "yes", "confirmed", "visible", "present")):
-            passed = True
-            confidence = 0.6
-        elif any(w in lower for w in ("fail", "no", "not visible", "absent", "missing")):
-            passed = False
-            confidence = 0.6
-        else:
-            passed = None
-            confidence = 0.3
+        pass
 
-        return {
-            "passed": passed,
-            "confidence": confidence,
-            "explanation": text[:200],
-        }
+    # Fallback: heuristic parsing from free-text response
+    # Priority: check for negative indicators first (more specific),
+    # then positive indicators
+    lower = text.lower()
+    neg_indicators = ("fail", "not visible", "not present", "absent",
+                      "missing", "cannot see", "don't see", "doesn't show",
+                      "no,", "\"passed\": false", "passed: false")
+    pos_indicators = ("pass", "yes", "confirmed", "visible", "present",
+                      "can see", "shows", "contains", "\"passed\": true",
+                      "passed: true")
+
+    if any(w in lower for w in neg_indicators):
+        passed = False
+        confidence = 0.6
+    elif any(w in lower for w in pos_indicators):
+        passed = True
+        confidence = 0.6
+    else:
+        passed = None
+        confidence = 0.3
+
+    return {
+        "passed": passed,
+        "confidence": confidence,
+        "explanation": text[:200],
+    }
 
 
 # ---------------------------------------------------------------------------

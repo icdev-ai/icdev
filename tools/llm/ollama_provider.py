@@ -13,7 +13,7 @@ native image format: {"role": "user", "content": "text", "images": ["base64"]}.
 import json
 import logging
 import time
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List
 
 from tools.llm.provider import (
     LLMProvider,
