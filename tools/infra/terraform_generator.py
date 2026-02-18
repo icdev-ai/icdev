@@ -954,6 +954,63 @@ def generate_agent_networking(project_path: str, config: dict = None) -> list:
 
 
 # ---------------------------------------------------------------------------
+# ZTA Security Modules (Phase 25b)
+# ---------------------------------------------------------------------------
+
+def generate_zta_security(project_path: str, project_config: dict = None) -> list:
+    """Generate ZTA-specific Terraform security modules.
+
+    Delegates to tools.devsecops.zta_terraform_generator for GuardDuty,
+    Security Hub, WAF, Config Rules, enhanced VPC Flow Logs, and Secrets
+    Manager rotation. Only generates modules when ZTA profile is active.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional dict with zta_modules list.
+
+    Returns:
+        List of generated file paths.
+    """
+    config = project_config or {}
+    modules = config.get("zta_modules", ["guardduty", "security_hub", "waf",
+                                          "config_rules", "vpc_flow_logs",
+                                          "secrets_rotation"])
+
+    try:
+        import importlib
+        zta_gen = importlib.import_module("tools.devsecops.zta_terraform_generator")
+    except (ImportError, ModuleNotFoundError):
+        print("[terraform] zta_terraform_generator not available; skipping")
+        return []
+
+    files = []
+    module_map = {
+        "guardduty": "generate_guardduty",
+        "security_hub": "generate_security_hub",
+        "waf": "generate_waf",
+        "config_rules": "generate_config_rules",
+        "vpc_flow_logs": "generate_vpc_flow_logs_enhanced",
+        "secrets_rotation": "generate_secrets_rotation",
+    }
+
+    for mod_name in modules:
+        func_name = module_map.get(mod_name)
+        if not func_name:
+            continue
+        gen_fn = getattr(zta_gen, func_name, None)
+        if not gen_fn:
+            continue
+        try:
+            result = gen_fn(project_path, config)
+            for fp in result.get("files_written", []):
+                files.append(fp)
+        except Exception as e:
+            print(f"[terraform] Warning: ZTA module {mod_name} failed: {e}")
+
+    return files
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():
@@ -962,7 +1019,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,rds,ecr,vpc",
-        help="Comma-separated components: base,rds,ecr,vpc,bedrock_iam,agent_networking",
+        help="Comma-separated components: base,rds,ecr,vpc,bedrock_iam,agent_networking,zta_security",
     )
     parser.add_argument("--project-name", default="icdev-project", help="Project name for resource naming")
     parser.add_argument("--environment", default="dev", choices=["dev", "staging", "prod"], help="Target environment")
@@ -985,6 +1042,7 @@ def main():
         "vpc": lambda: generate_vpc(args.project_path),
         "bedrock_iam": lambda: generate_bedrock_iam(args.project_path, config),
         "agent_networking": lambda: generate_agent_networking(args.project_path, config),
+        "zta_security": lambda: generate_zta_security(args.project_path, config),
     }
 
     for comp in components:

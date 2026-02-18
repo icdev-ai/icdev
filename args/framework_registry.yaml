@@ -1,0 +1,368 @@
+# Framework Registry — All compliance frameworks supported by ICDEV
+# Phase 23: Universal Compliance Platform
+# ADR D111: Dual-hub crosswalk model (NIST 800-53 US hub + ISO 27001 international hub)
+
+frameworks:
+  # ── US Hub: NIST 800-53 Rev 5 ──────────────────────────────────
+  nist_800_53:
+    name: "NIST SP 800-53 Rev 5"
+    hub: nist
+    type: baseline
+    catalog: "nist_800_53.json"
+    assessor: "control_mapper.py"
+    report: "ssp_generator.py"
+    status: active
+    phase: 17
+
+  fedramp_moderate:
+    name: "FedRAMP Moderate"
+    hub: nist
+    type: authorization
+    catalog: "fedramp_moderate_baseline.json"
+    assessor: "fedramp_assessor.py"
+    report: "fedramp_report_generator.py"
+    status: active
+    phase: 17
+
+  fedramp_high:
+    name: "FedRAMP High"
+    hub: nist
+    type: authorization
+    catalog: "fedramp_high_baseline.json"
+    assessor: "fedramp_assessor.py"
+    report: "fedramp_report_generator.py"
+    status: active
+    phase: 17
+
+  nist_800_171:
+    name: "NIST SP 800-171 Rev 2"
+    hub: nist
+    type: baseline
+    catalog: "nist_800_171_controls.json"
+    assessor: "via crosswalk"
+    report: "via crosswalk coverage"
+    status: active
+    phase: 17
+
+  cmmc_level_2:
+    name: "CMMC Level 2"
+    hub: nist
+    type: certification
+    catalog: "cmmc_practices.json"
+    assessor: "cmmc_assessor.py"
+    report: "cmmc_report_generator.py"
+    status: active
+    phase: 17
+
+  cmmc_level_3:
+    name: "CMMC Level 3"
+    hub: nist
+    type: certification
+    catalog: "cmmc_practices.json"
+    assessor: "cmmc_assessor.py"
+    report: "cmmc_report_generator.py"
+    status: active
+    phase: 17
+
+  dod_cssp:
+    name: "DoD CSSP (DI 8530.01)"
+    hub: nist
+    type: operational
+    catalog: "dod_cssp_8530.json"
+    assessor: "cssp_assessor.py"
+    report: "cssp_report_generator.py"
+    status: active
+    phase: 17
+
+  cisa_sbd:
+    name: "CISA Secure by Design"
+    hub: nist
+    type: design
+    catalog: "cisa_sbd_requirements.json"
+    assessor: "sbd_assessor.py"
+    report: "sbd_report_generator.py"
+    status: active
+    phase: 17
+
+  ieee_1012:
+    name: "IEEE 1012 IV&V"
+    hub: nist
+    type: verification
+    catalog: "ivv_requirements.json"
+    assessor: "ivv_assessor.py"
+    report: "ivv_report_generator.py"
+    status: active
+    phase: 17
+
+  fips_199:
+    name: "FIPS 199"
+    hub: nist
+    type: categorization
+    catalog: "nist_sp_800_60_types.json"
+    assessor: "fips199_categorizer.py"
+    report: "via categorization report"
+    status: active
+    phase: 20
+
+  fips_200:
+    name: "FIPS 200"
+    hub: nist
+    type: baseline
+    catalog: "fips_200_areas.json"
+    assessor: "fips200_validator.py"
+    report: "via gap report"
+    status: active
+    phase: 20
+
+  # ── Phase 25: NIST 800-207 Zero Trust Architecture ─────────────
+
+  nist_800_207:
+    name: "NIST SP 800-207 (Zero Trust Architecture)"
+    hub: nist
+    type: architecture
+    catalog: "nist_800_207_zta.json"
+    assessor: "nist_800_207_assessor.py"
+    report: "via base_assessor"
+    data_types: [ZTA]
+    status: active
+    phase: 25
+
+  # ── Phase 26: DoD MOSA (Modular Open Systems Approach) ─────────
+
+  mosa:
+    name: "DoD MOSA (10 U.S.C. §4401)"
+    hub: nist
+    type: architecture
+    catalog: "mosa_framework.json"
+    assessor: "mosa_assessor.py"
+    report: "via base_assessor"
+    sector: defense
+    data_types: [MOSA]
+    status: active
+    phase: 26
+
+  # ── Phase 23 Wave 1: New Frameworks ────────────────────────────
+
+  cjis:
+    name: "FBI CJIS Security Policy v5.9.4"
+    hub: nist
+    type: sector
+    catalog: "cjis_security_policy.json"
+    assessor: "cjis_assessor.py"
+    report: "via base_assessor"
+    sector: law_enforcement
+    data_types: [CJIS]
+    status: active
+    phase: 23
+
+  hipaa:
+    name: "HIPAA Security Rule (45 CFR 164)"
+    hub: nist
+    type: sector
+    catalog: "hipaa_security_rule.json"
+    assessor: "hipaa_assessor.py"
+    report: "via base_assessor"
+    sector: healthcare
+    data_types: [PHI]
+    status: active
+    phase: 23
+
+  hitrust:
+    name: "HITRUST CSF v11"
+    hub: nist
+    type: certification
+    catalog: "hitrust_csf_v11.json"
+    assessor: "hitrust_assessor.py"
+    report: "via base_assessor"
+    sector: healthcare
+    data_types: [PHI, PII]
+    status: active
+    phase: 23
+
+  soc2:
+    name: "SOC 2 Type II (Trust Service Criteria)"
+    hub: nist
+    type: audit
+    catalog: "soc2_trust_criteria.json"
+    assessor: "soc2_assessor.py"
+    report: "via base_assessor"
+    sector: commercial
+    data_types: [PII]
+    status: active
+    phase: 23
+
+  pci_dss:
+    name: "PCI DSS v4.0"
+    hub: nist
+    type: certification
+    catalog: "pci_dss_v4.json"
+    assessor: "pci_dss_assessor.py"
+    report: "via base_assessor"
+    sector: financial
+    data_types: [PCI]
+    status: active
+    phase: 23
+
+  # ── International Hub: ISO 27001 ───────────────────────────────
+
+  iso_27001:
+    name: "ISO/IEC 27001:2022"
+    hub: iso
+    type: certification
+    catalog: "iso27001_2022_controls.json"
+    assessor: "iso27001_assessor.py"
+    report: "via base_assessor"
+    bridge: "iso27001_nist_bridge.json"
+    international: true
+    status: active
+    phase: 23
+
+  # ── Wave 2 (Planned) ──────────────────────────────────────────
+
+  iso_27017:
+    name: "ISO/IEC 27017:2015 (Cloud Security)"
+    hub: iso
+    type: extension
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 24
+
+  iso_27018:
+    name: "ISO/IEC 27018:2019 (Cloud PII)"
+    hub: iso
+    type: extension
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 24
+
+  iso_27701:
+    name: "ISO/IEC 27701:2019 (Privacy)"
+    hub: iso
+    type: extension
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 24
+
+  irap:
+    name: "Australian IRAP"
+    hub: iso
+    type: authorization
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 24
+
+  bsi_c5:
+    name: "BSI C5 (Germany)"
+    hub: iso
+    type: certification
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 24
+
+  uk_ce_plus:
+    name: "UK Cyber Essentials Plus"
+    hub: iso
+    type: certification
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 24
+
+  # ── Wave 3 (Planned) ──────────────────────────────────────────
+
+  irs_1075:
+    name: "IRS Publication 1075"
+    hub: nist
+    type: sector
+    catalog: null
+    assessor: null
+    sector: tax
+    data_types: [FTI]
+    status: planned
+    phase: 25
+
+  tisax:
+    name: "TISAX (Automotive)"
+    hub: iso
+    type: certification
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 25
+
+  k_isms:
+    name: "K-ISMS (Korea)"
+    hub: iso
+    type: certification
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 25
+
+  ens:
+    name: "ENS (Spain)"
+    hub: iso
+    type: certification
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 25
+
+  iso_42001:
+    name: "ISO/IEC 42001 (AI Management)"
+    hub: iso
+    type: certification
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 25
+
+  soc1:
+    name: "SOC 1 Type II"
+    hub: nist
+    type: audit
+    catalog: null
+    assessor: null
+    status: planned
+    phase: 25
+
+# Crosswalk bridges between hubs
+bridges:
+  iso27001_nist:
+    file: "iso27001_nist_bridge.json"
+    source_hub: iso
+    target_hub: nist
+    mappings: 42
+    coverage: "45.2%"
+    bidirectional: true
+
+# Data categories that trigger framework applicability
+data_category_triggers:
+  PHI: [hipaa, hitrust]
+  PCI: [pci_dss]
+  CJIS: [cjis]
+  FTI: [irs_1075]
+  CUI: [fedramp_moderate, nist_800_171, cmmc_level_2]
+  SECRET: [fedramp_high, cmmc_level_3]
+  PII: [soc2, iso_27001]
+  ITAR: [nist_800_171, cmmc_level_2]
+  ZTA: [nist_800_207]
+  MOSA: [mosa]
+
+# Sensitivity order (highest first) — used for composite markings
+sensitivity_order:
+  - TOP_SECRET
+  - SECRET
+  - CUI
+  - ITAR
+  - FTI
+  - CJIS
+  - PHI
+  - PCI
+  - PII
+  - PUBLIC

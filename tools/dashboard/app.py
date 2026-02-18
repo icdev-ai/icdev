@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request as flask_request
 
 from tools.dashboard.config import (
     DB_PATH,
@@ -39,6 +39,10 @@ from tools.dashboard.api.audit import audit_api
 from tools.dashboard.api.metrics import metrics_api
 from tools.dashboard.api.events import events_bp
 from tools.dashboard.api.nlq import nlq_bp
+from tools.dashboard.api.batch import batch_api
+from tools.dashboard.api.diagrams import diagrams_api
+from tools.dashboard.api.cicd import cicd_api
+from tools.dashboard.ux_helpers import register_ux_filters
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -52,13 +56,45 @@ def create_app() -> Flask:
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
 
-    # Make CUI config available in all templates
+    # Register UX filters (glossary, timestamps, error recovery, quick paths)
+    register_ux_filters(app)
+
+    # Role-based view configuration
+    ROLE_VIEWS = {
+        "pm": {
+            "label": "Program Manager",
+            "show_tabs": ["overview", "compliance", "deployments", "audit"],
+            "hide_columns": ["stig_id", "finding_id"],
+        },
+        "developer": {
+            "label": "Developer / Architect",
+            "show_tabs": ["overview", "security", "deployments", "audit"],
+            "hide_columns": [],
+        },
+        "isso": {
+            "label": "ISSO / Security Officer",
+            "show_tabs": ["overview", "compliance", "security", "audit"],
+            "hide_columns": [],
+        },
+        "co": {
+            "label": "Contracting Officer",
+            "show_tabs": ["overview", "compliance", "deployments"],
+            "hide_columns": ["stig_id", "finding_id", "source"],
+        },
+    }
+
+    # Make CUI config and role available in all templates
     @app.context_processor
     def inject_cui():
+        role = flask_request.args.get("role", "")
+        role_config = ROLE_VIEWS.get(role, None)
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
             "cui_designation": CUI_DESIGNATION,
+            "current_role": role,
+            "role_config": role_config,
+            "ROLE_VIEWS": ROLE_VIEWS,
         }
 
     # ---- Register API blueprints ----
@@ -69,6 +105,9 @@ def create_app() -> Flask:
     app.register_blueprint(metrics_api)
     app.register_blueprint(events_bp)
     app.register_blueprint(nlq_bp)
+    app.register_blueprint(batch_api)
+    app.register_blueprint(diagrams_api)
+    app.register_blueprint(cicd_api)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -81,6 +120,152 @@ def create_app() -> Flask:
                 "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 50"
             ).fetchall()
             return jsonify({"alerts": [dict(r) for r in rows], "total": len(rows)})
+        finally:
+            conn.close()
+
+    @app.route("/api/notifications", methods=["GET"])
+    def api_notifications():
+        """Return current notification-worthy items (firing alerts, overdue POAMs)."""
+        conn = _get_db()
+        try:
+            notifications = []
+            firing = conn.execute(
+                "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'"
+            ).fetchone()["cnt"]
+            if firing > 0:
+                notifications.append({
+                    "type": "error",
+                    "message": f"{firing} alert{'s' if firing > 1 else ''} currently firing",
+                    "link": "/monitoring",
+                })
+            open_poam = conn.execute(
+                "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
+            ).fetchone()["cnt"]
+            if open_poam > 5:
+                notifications.append({
+                    "type": "warning",
+                    "message": f"{open_poam} open POA&M items need attention",
+                    "link": "/projects",
+                })
+            inactive = conn.execute(
+                "SELECT COUNT(*) as cnt FROM agents WHERE status != 'active'"
+            ).fetchone()["cnt"]
+            if inactive > 0:
+                notifications.append({
+                    "type": "info",
+                    "message": f"{inactive} agent{'s' if inactive > 1 else ''} inactive",
+                    "link": "/agents",
+                })
+            return jsonify({"notifications": notifications})
+        finally:
+            conn.close()
+
+    @app.route("/api/charts/overview", methods=["GET"])
+    def api_charts_overview():
+        """Aggregate chart data for the home dashboard."""
+        conn = _get_db()
+        try:
+            # Project status distribution (donut chart)
+            project_statuses = conn.execute(
+                "SELECT status, COUNT(*) as cnt FROM projects GROUP BY status"
+            ).fetchall()
+
+            # Alert trend: last 7 days (line chart)
+            alert_trend = conn.execute(
+                "SELECT DATE(created_at) as day, COUNT(*) as cnt "
+                "FROM alerts WHERE created_at >= DATE('now', '-7 days') "
+                "GROUP BY DATE(created_at) ORDER BY day"
+            ).fetchall()
+
+            # Compliance posture: open vs closed across POAM + STIG (bar chart)
+            poam_open = conn.execute(
+                "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
+            ).fetchone()["cnt"]
+            poam_closed = conn.execute(
+                "SELECT COUNT(*) as cnt FROM poam_items WHERE status != 'open'"
+            ).fetchone()["cnt"]
+            stig_open = conn.execute(
+                "SELECT COUNT(*) as cnt FROM stig_findings WHERE status = 'Open'"
+            ).fetchone()["cnt"]
+            stig_closed = conn.execute(
+                "SELECT COUNT(*) as cnt FROM stig_findings WHERE status != 'Open'"
+            ).fetchone()["cnt"]
+
+            # Deployment frequency: last 7 days (sparkline)
+            deploy_trend = conn.execute(
+                "SELECT DATE(created_at) as day, COUNT(*) as cnt "
+                "FROM deployments WHERE created_at >= DATE('now', '-7 days') "
+                "GROUP BY DATE(created_at) ORDER BY day"
+            ).fetchall()
+
+            # Agent health (gauge: % active)
+            total_agents = conn.execute(
+                "SELECT COUNT(*) as cnt FROM agents"
+            ).fetchone()["cnt"]
+            active_agents = conn.execute(
+                "SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'"
+            ).fetchone()["cnt"]
+
+            return jsonify({
+                "project_statuses": [dict(r) for r in project_statuses],
+                "alert_trend": [dict(r) for r in alert_trend],
+                "compliance": {
+                    "poam": {"open": poam_open, "closed": poam_closed},
+                    "stig": {"open": stig_open, "closed": stig_closed},
+                },
+                "deploy_trend": [dict(r) for r in deploy_trend],
+                "agent_health": {
+                    "total": total_agents,
+                    "active": active_agents,
+                    "ratio": active_agents / total_agents if total_agents > 0 else 1.0,
+                },
+            })
+        finally:
+            conn.close()
+
+    @app.route("/api/charts/project/<project_id>", methods=["GET"])
+    def api_charts_project(project_id):
+        """Chart data for a specific project detail page."""
+        conn = _get_db()
+        try:
+            # STIG by severity (donut)
+            stig_sev = conn.execute(
+                "SELECT severity, status, COUNT(*) as cnt "
+                "FROM stig_findings WHERE project_id = ? "
+                "GROUP BY severity, status",
+                (project_id,),
+            ).fetchall()
+
+            # POAM by severity (bar)
+            poam_sev = conn.execute(
+                "SELECT severity, status, COUNT(*) as cnt "
+                "FROM poam_items WHERE project_id = ? "
+                "GROUP BY severity, status",
+                (project_id,),
+            ).fetchall()
+
+            # Deployment history (line — status over time)
+            deploys = conn.execute(
+                "SELECT DATE(created_at) as day, status, COUNT(*) as cnt "
+                "FROM deployments WHERE project_id = ? "
+                "GROUP BY DATE(created_at), status ORDER BY day",
+                (project_id,),
+            ).fetchall()
+
+            # Alert trend for project
+            alerts = conn.execute(
+                "SELECT DATE(created_at) as day, severity, COUNT(*) as cnt "
+                "FROM alerts WHERE project_id = ? "
+                "GROUP BY DATE(created_at), severity ORDER BY day",
+                (project_id,),
+            ).fetchall()
+
+            return jsonify({
+                "stig_by_severity": [dict(r) for r in stig_sev],
+                "poam_by_severity": [dict(r) for r in poam_sev],
+                "deployment_history": [dict(r) for r in deploys],
+                "alert_trend": [dict(r) for r in alerts],
+            })
         finally:
             conn.close()
 
@@ -338,6 +523,31 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/wizard")
+    def wizard_page():
+        """Getting Started wizard — guides new users to the right workflow."""
+        return render_template("wizard.html")
+
+    @app.route("/quick-paths")
+    def quick_paths_page():
+        """Quick Path workflow templates — pre-built shortcuts for common tasks."""
+        return render_template("quick_paths.html")
+
+    @app.route("/batch")
+    def batch_page():
+        """Batch operations — run multi-tool workflows from the dashboard."""
+        return render_template("batch.html")
+
+    @app.route("/diagrams")
+    def diagrams_page():
+        """Interactive Mermaid diagrams — catalog, viewer, and editor."""
+        return render_template("diagrams.html")
+
+    @app.route("/cicd")
+    def cicd_page():
+        """CI/CD pipeline status, conversations, and connector health."""
+        return render_template("cicd.html")
+
     @app.route("/query")
     def query_page():
         """Natural language compliance query page."""
@@ -354,6 +564,92 @@ def create_app() -> Flask:
             return render_template("query/nlq.html", recent_queries=[])
         finally:
             conn.close()
+
+    # ---- Tour configuration ----
+
+    @app.route("/api/tour/steps", methods=["GET"])
+    def api_tour_steps():
+        """Return tour step definitions for the onboarding walkthrough.
+
+        Steps are served from config so admins can customize content
+        without modifying JavaScript source. tour.js fetches this
+        endpoint on init and falls back to built-in defaults if
+        the fetch fails (air-gap safe).
+        """
+        steps = [
+            {
+                "selector": ".navbar",
+                "title": "Navigation Bar",
+                "desc": (
+                    "Navigate between pages: Home, Projects, Agents, "
+                    "Monitoring, Quick Paths, Batch Operations, and "
+                    "the Getting Started wizard."
+                ),
+            },
+            {
+                "selector": ".card-grid",
+                "title": "Summary Cards",
+                "desc": (
+                    "At-a-glance metrics: project counts, active agents, "
+                    "firing alerts, and compliance status."
+                ),
+            },
+            {
+                "selector": ".chart-grid",
+                "title": "Visual Dashboards",
+                "desc": (
+                    "Visual dashboards: compliance posture, alert trends, "
+                    "project status, and agent health charts."
+                ),
+            },
+            {
+                "selector": ".table-container",
+                "title": "Data Tables",
+                "desc": (
+                    "Detailed data tables with search, sort, filter, "
+                    "and CSV export capabilities."
+                ),
+            },
+            {
+                "selector": "#role-select",
+                "title": "Role Selector",
+                "desc": (
+                    "Switch views: Program Manager, Developer, ISSO, or "
+                    "Contracting Officer to see role-relevant information."
+                ),
+            },
+            {
+                "selector": "a[href*='quick-paths'], a[href*='/quick-paths']",
+                "title": "Quick Paths",
+                "desc": (
+                    "Pre-built workflow shortcuts for common tasks like "
+                    "ATO generation, project creation, and security scanning."
+                ),
+            },
+            {
+                "selector": "a[href*='/batch']",
+                "title": "Batch Operations",
+                "desc": (
+                    "Run multi-step batch operations: Full ATO Package, "
+                    "Security Scan Suite, Multi-Framework Check, or "
+                    "Build & Validate from a single click."
+                ),
+            },
+            {
+                "selector": "a[href*='/events']",
+                "title": "Live Events",
+                "desc": (
+                    "Real-time event timeline showing hook events, "
+                    "agent activity, and system notifications with "
+                    "severity filtering."
+                ),
+            },
+        ]
+        return jsonify({
+            "steps": steps,
+            "version": 2,
+            "classification": "CUI",
+        })
 
     # ---- Error handlers ----
 

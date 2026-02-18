@@ -23,6 +23,42 @@ Generate all infrastructure-as-code artifacts (Terraform, Ansible, Kubernetes ma
 
 ---
 
+## Deployment Pipeline Overview
+
+```mermaid
+flowchart LR
+    TF["Terraform\nGenerate IaC"]:::blue --> AN["Ansible\nPlaybooks"]:::blue
+    AN --> K8["K8s\nManifests"]:::blue
+    K8 --> PL["Pipeline\nGenerate CI/CD"]:::blue
+    PL --> GATES{"10 Pre-Deploy\nGates"}:::yellow
+    GATES -->|ALL PASS| COMMIT["Commit &\nPush"]:::green
+    GATES -->|ANY FAIL| BLOCKED["BLOCKED\nRemediate"]:::red
+    COMMIT --> EXEC["Pipeline\nExecution"]:::blue
+    EXEC --> HC{"Health\nCheck"}:::yellow
+    HC -->|PASS| AUDIT["Audit\nLogged"]:::green
+    HC -->|FAIL| ROLLBACK["Rollback"]:::red
+
+    classDef green fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    classDef red fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+    classDef yellow fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    classDef blue fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+```
+
+```mermaid
+flowchart LR
+    S1["1. Build"]:::blue -.->|"tests pass\ncoverage >= 80%"| S2["2. Test"]:::blue
+    S2 -.->|"0 critical/high\nSAST findings"| S3["3. SAST"]:::blue
+    S3 -.->|"0 critical/high\ndep vulns"| S4["4. Deps"]:::blue
+    S4 -.->|"0 critical\ncontainer vulns"| S5["5. Container"]:::blue
+    S5 -.->|"0 CAT1 STIGs\nCUI markings"| S6["6. Compliance"]:::blue
+    S6 -.->|"manual approval\nfor production"| S7["7. Deploy"]:::green
+
+    classDef green fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    classDef blue fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+```
+
+---
+
 ## Process
 
 ### Step 1: Generate Terraform Configuration

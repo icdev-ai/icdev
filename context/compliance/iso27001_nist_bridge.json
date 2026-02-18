@@ -1,0 +1,382 @@
+{
+  "metadata": {
+    "title": "ISO/IEC 27001:2022 to NIST SP 800-53 Rev 5 Bidirectional Bridge",
+    "description": "Dual-hub crosswalk bridge enabling control mappings between ISO 27001 Annex A and NIST 800-53 Rev 5. ADR D111: International frameworks hub through ISO 27001, US frameworks hub through NIST 800-53, this bridge connects both.",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "sources": [
+      "NIST SP 800-53 Rev 5 to ISO 27001:2013 mapping (NIST published)",
+      "ISO 27002:2022 cross-reference annex",
+      "NIST Cybersecurity Framework to ISO 27001 crosswalk"
+    ],
+    "adr_reference": "D111"
+  },
+  "bridge_mappings": [
+    {
+      "iso_27001": "A.5.1",
+      "iso_title": "Policies for information security",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["AC-1", "AT-1", "AU-1", "CA-1", "CM-1", "CP-1", "IA-1", "IR-1", "MA-1", "MP-1", "PE-1", "PL-1", "PS-1", "RA-1", "SA-1", "SC-1", "SI-1"],
+      "mapping_type": "superset",
+      "notes": "ISO A.5.1 covers all NIST -1 (policy) controls across families"
+    },
+    {
+      "iso_27001": "A.5.2",
+      "iso_title": "Information security roles and responsibilities",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["PM-2", "PS-7"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.3",
+      "iso_title": "Segregation of duties",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["AC-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.4",
+      "iso_title": "Management responsibilities",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["PM-1", "PM-2"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.5",
+      "iso_title": "Contact with authorities",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["IR-6", "SI-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.6",
+      "iso_title": "Contact with special interest groups",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["PM-15", "SI-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.7",
+      "iso_title": "Threat intelligence",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["RA-3", "PM-16", "SI-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.8",
+      "iso_title": "Information security in project management",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["SA-3", "PL-7"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.9",
+      "iso_title": "Inventory of information and other associated assets",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["CM-8", "PM-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.10",
+      "iso_title": "Acceptable use of information and other associated assets",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["PL-4", "AC-20"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.23",
+      "iso_title": "Information security for use of cloud services",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["SA-9", "AC-20"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.24",
+      "iso_title": "Information security incident management planning and preparation",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["IR-1", "IR-8"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.25",
+      "iso_title": "Assessment and decision on information security events",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["IR-4", "IR-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.26",
+      "iso_title": "Response to information security incidents",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["IR-4", "IR-6"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.29",
+      "iso_title": "Information security during disruption",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["CP-2", "CP-4"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.30",
+      "iso_title": "ICT readiness for business continuity",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["CP-2", "CP-7", "CP-8"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.5.36",
+      "iso_title": "Compliance with policies, rules and standards for information security",
+      "iso_clause": "A.5",
+      "iso_clause_name": "Organizational controls",
+      "nist_800_53": ["CA-2", "CA-7"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.6.1",
+      "iso_title": "Screening",
+      "iso_clause": "A.6",
+      "iso_clause_name": "People controls",
+      "nist_800_53": ["PS-3"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.6.2",
+      "iso_title": "Terms and conditions of employment",
+      "iso_clause": "A.6",
+      "iso_clause_name": "People controls",
+      "nist_800_53": ["PS-6", "PL-4"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.6.3",
+      "iso_title": "Information security awareness, education and training",
+      "iso_clause": "A.6",
+      "iso_clause_name": "People controls",
+      "nist_800_53": ["AT-2", "AT-3"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.6.5",
+      "iso_title": "Responsibilities after termination or change of employment",
+      "iso_clause": "A.6",
+      "iso_clause_name": "People controls",
+      "nist_800_53": ["PS-4", "PS-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.7.1",
+      "iso_title": "Physical security perimeters",
+      "iso_clause": "A.7",
+      "iso_clause_name": "Physical controls",
+      "nist_800_53": ["PE-3"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.7.2",
+      "iso_title": "Physical entry",
+      "iso_clause": "A.7",
+      "iso_clause_name": "Physical controls",
+      "nist_800_53": ["PE-2", "PE-3"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.7.4",
+      "iso_title": "Physical security monitoring",
+      "iso_clause": "A.7",
+      "iso_clause_name": "Physical controls",
+      "nist_800_53": ["PE-6"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.7.7",
+      "iso_title": "Clear desk and clear screen",
+      "iso_clause": "A.7",
+      "iso_clause_name": "Physical controls",
+      "nist_800_53": ["AC-11", "MP-2"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.7.10",
+      "iso_title": "Storage media",
+      "iso_clause": "A.7",
+      "iso_clause_name": "Physical controls",
+      "nist_800_53": ["MP-2", "MP-4", "MP-6"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.1",
+      "iso_title": "User endpoint devices",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["AC-19", "CM-7"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.2",
+      "iso_title": "Privileged access rights",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["AC-6"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.3",
+      "iso_title": "Information access restriction",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["AC-3"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.5",
+      "iso_title": "Secure authentication",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["IA-2", "IA-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.7",
+      "iso_title": "Protection against malware",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SI-3"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.8",
+      "iso_title": "Management of technical vulnerabilities",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["RA-5", "SI-2"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.9",
+      "iso_title": "Configuration management",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["CM-2", "CM-6", "CM-7"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.15",
+      "iso_title": "Logging",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["AU-2", "AU-3", "AU-6"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.16",
+      "iso_title": "Monitoring activities",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["CA-7", "SI-4"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.20",
+      "iso_title": "Networks security",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SC-7"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.24",
+      "iso_title": "Use of cryptography",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SC-12", "SC-13"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.25",
+      "iso_title": "Secure development life cycle",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SA-3", "SA-15"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.26",
+      "iso_title": "Application security requirements",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SA-11", "SA-15"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.28",
+      "iso_title": "Secure coding",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SA-11", "SI-10"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.31",
+      "iso_title": "Separation of development, test and production environments",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["CM-4", "SA-11"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.32",
+      "iso_title": "Change management",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["CM-3", "CM-4", "CM-5"],
+      "mapping_type": "equivalent"
+    },
+    {
+      "iso_27001": "A.8.33",
+      "iso_title": "Test information",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["SA-11"],
+      "mapping_type": "partial"
+    },
+    {
+      "iso_27001": "A.8.34",
+      "iso_title": "Protection of information systems during audit testing",
+      "iso_clause": "A.8",
+      "iso_clause_name": "Technological controls",
+      "nist_800_53": ["CA-8", "AU-6"],
+      "mapping_type": "equivalent"
+    }
+  ],
+  "iso_clause_summary": {
+    "A.5": {"name": "Organizational controls", "control_count": 37, "nist_families": ["AC", "AT", "AU", "CA", "CM", "CP", "IA", "IR", "MA", "MP", "PE", "PL", "PM", "PS", "PT", "RA", "SA", "SC", "SI", "SR"]},
+    "A.6": {"name": "People controls", "control_count": 8, "nist_families": ["AT", "PS", "PL"]},
+    "A.7": {"name": "Physical controls", "control_count": 14, "nist_families": ["PE", "MP", "AC"]},
+    "A.8": {"name": "Technological controls", "control_count": 34, "nist_families": ["AC", "AU", "CA", "CM", "IA", "RA", "SA", "SC", "SI"]}
+  },
+  "coverage_statistics": {
+    "total_iso_controls": 93,
+    "mapped_iso_controls": 42,
+    "coverage_percentage": 45.2,
+    "total_nist_controls_referenced": 78,
+    "notes": "Partial mapping -- covers highest-priority controls. Full 93-control mapping planned for v2.0"
+  }
+}

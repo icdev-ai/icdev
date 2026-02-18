@@ -1,15 +1,19 @@
 # CUI // SP-CTI
 # ICDEV Agent Executor — Claude Code CLI subprocess invocation
-# Adapted from ADW agent.py
+# Wrapper around tools/agent/agent_executor.py for retry, audit, Bedrock fallback
 
 """
 Execute Claude Code CLI as a subprocess with slash commands.
 
-Adapted from ADW agent.py pattern:
-- Build prompt from slash command + args
-- Execute claude CLI with stream-json output
-- Parse JSONL output to extract result
-- Save prompts and raw output for debugging
+Thin wrapper around the robust agent executor (tools/agent/agent_executor.py)
+that provides retry logic (3 attempts), Bedrock fallback, token tracking in
+the agent_executions table, and configurable timeout from cicd_config.yaml.
+
+Preserves backward-compatible APIs used by all CI/CD workflow scripts:
+    - execute_template(request) — slash command execution
+    - prompt_claude_code(request) — direct prompt execution
+    - SLASH_COMMAND_MODEL_MAP — model per command
+    - BOT_IDENTIFIER — bot loop prevention
 
 Usage:
     from tools.ci.modules.agent import execute_template
@@ -24,16 +28,15 @@ Usage:
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.testing.data_types import AgentTemplateRequest, AgentPromptRequest, AgentPromptResponse
-from tools.testing.utils import get_safe_subprocess_env
 
 # Model mapping per slash command (adapted from ADW SLASH_COMMAND_MODEL_MAP)
 SLASH_COMMAND_MODEL_MAP = {
@@ -75,6 +78,24 @@ SLASH_COMMAND_MODEL_MAP = {
 BOT_IDENTIFIER = "[ICDEV-BOT]"
 
 
+def _get_timeout(slash_command: str = "") -> int:
+    """Read configurable timeout from cicd_config.yaml."""
+    config_path = PROJECT_ROOT / "args" / "cicd_config.yaml"
+    default_timeout = 300
+    try:
+        if config_path.exists():
+            with open(config_path) as f:
+                data = yaml.safe_load(f) or {}
+            executor_cfg = data.get("cicd", {}).get("executor", {})
+            overrides = executor_cfg.get("timeout_overrides", {})
+            if slash_command and slash_command in overrides:
+                return overrides[slash_command]
+            return executor_cfg.get("default_timeout_seconds", default_timeout)
+    except Exception:
+        pass
+    return default_timeout
+
+
 def _ensure_agent_dir(run_id: str, agent_name: str) -> Path:
     """Create and return the agent working directory."""
     agent_dir = PROJECT_ROOT / "agents" / run_id / agent_name
@@ -86,21 +107,52 @@ def _ensure_agent_dir(run_id: str, agent_name: str) -> Path:
 def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
     """Execute Claude Code CLI with a direct prompt.
 
-    Adapted from ADW prompt_claude_code pattern:
-    - Invokes claude CLI with -p flag
-    - Captures stream-json output to file
-    - Parses JSONL to extract result
+    Delegates to the robust executor (tools/agent/agent_executor.py) which
+    provides retry logic, token tracking, and audit trail. Falls back to
+    direct subprocess execution if robust executor is unavailable.
     """
+    timeout = _get_timeout()
+
+    try:
+        from tools.agent.agent_executor import execute_agent
+        from tools.agent.agent_models import (
+            AgentPromptRequest as RobustRequest,
+        )
+
+        # Map CI request -> robust executor request
+        robust_req = RobustRequest(
+            prompt=request.prompt,
+            model=request.model,
+            project_dir=request.project_dir or str(PROJECT_ROOT),
+            timeout_seconds=timeout,
+        )
+
+        robust_resp = execute_agent(robust_req, max_retries=3)
+
+        # Map robust response -> CI response
+        return AgentPromptResponse(
+            output=robust_resp.output_text or "",
+            success=robust_resp.status == "completed",
+            session_id=robust_resp.session_id,
+            duration_ms=robust_resp.duration_ms,
+        )
+
+    except ImportError:
+        # Robust executor not available — direct subprocess fallback
+        pass
+
+    # Fallback: direct Claude Code CLI invocation
+    import subprocess
+    from tools.testing.utils import get_safe_subprocess_env
+
     claude_path = os.getenv("CLAUDE_CODE_PATH", "claude")
     env = get_safe_subprocess_env()
 
-    # Build command
     cmd = [claude_path, "-p", request.prompt]
     cmd.extend(["--model", request.model])
     cmd.extend(["--output-format", "stream-json"])
     cmd.append("--verbose")
 
-    # Output file
     output_file = request.output_file
     if not output_file:
         output_file = str(PROJECT_ROOT / ".tmp" / "agent_output.jsonl")
@@ -110,12 +162,11 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
         with open(output_file, "w") as f:
             result = subprocess.run(
                 cmd, stdout=f, stderr=subprocess.PIPE, text=True,
-                env=env, timeout=600,
+                env=env, timeout=timeout,
                 cwd=request.project_dir or str(PROJECT_ROOT),
-                stdin=subprocess.DEVNULL,  # Prevent hanging (ADW sandbox lesson)
+                stdin=subprocess.DEVNULL,
             )
 
-        # Parse JSONL output
         output_text = ""
         session_id = None
         is_error = False
@@ -144,7 +195,7 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
 
     except subprocess.TimeoutExpired:
         return AgentPromptResponse(
-            output="Claude Code timed out after 600 seconds",
+            output=f"Claude Code timed out after {timeout} seconds",
             success=False,
         )
     except FileNotFoundError:
@@ -162,11 +213,10 @@ def prompt_claude_code(request: AgentPromptRequest) -> AgentPromptResponse:
 def execute_template(request: AgentTemplateRequest) -> AgentPromptResponse:
     """Execute a Claude Code slash command template.
 
-    Adapted from ADW execute_template pattern:
     1. Look up model from SLASH_COMMAND_MODEL_MAP
     2. Build prompt: "{slash_command} {args}"
     3. Save prompt to agents/{run_id}/{agent_name}/prompts/
-    4. Execute via prompt_claude_code()
+    4. Execute via prompt_claude_code() (delegates to robust executor)
     5. Return structured response
     """
     # Determine model

@@ -60,6 +60,80 @@ Transform vague customer requirements into structured, decomposed, MBSE-traced, 
 
 ---
 
+## Visual Workflow
+
+### Intake Pipeline Flowchart
+
+```mermaid
+flowchart TD
+    A["Stage 1: Session Setup"] --> B["Stage 2: Conversational Intake"]
+    B --> C["Stage 3: Document Upload"]
+    C --> D["Stage 4: Gap Detection & Readiness"]
+    D --> E{Readiness Score?}
+    E -->|"score < 0.7"| B
+    E -->|"score >= 0.7"| F["Stage 5: SAFe Decomposition"]
+    F --> G["Stage 6: Export & Handoff"]
+
+    style A fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style B fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style C fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style D fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style E fill:#3a2a1a,stroke:#e8590c,color:#e0e0e0
+    style F fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style G fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+```
+
+### SAFe Hierarchy
+
+```mermaid
+classDiagram
+    Epic "1" --> "*" Capability : decomposes into
+    Capability "1" --> "*" Feature : decomposes into
+    Feature "1" --> "*" Story : decomposes into
+    Feature "1" --> "*" Enabler : decomposes into
+
+    class Epic {
+        +String id
+        +String title
+        +String description
+        +String wsjf_score
+        +String t_shirt_size
+    }
+
+    class Capability {
+        +String id
+        +String title
+        +String epic_id
+        +String priority
+    }
+
+    class Feature {
+        +String id
+        +String title
+        +String capability_id
+        +String acceptance_criteria
+        +String t_shirt_size
+    }
+
+    class Story {
+        +String id
+        +String title
+        +String feature_id
+        +String bdd_scenarios
+        +String story_points
+    }
+
+    class Enabler {
+        +String id
+        +String title
+        +String feature_id
+        +String enabler_type
+        +String t_shirt_size
+    }
+```
+
+---
+
 ## Tools Used
 
 | Tool | Purpose |

@@ -26,6 +26,16 @@ authority:
       - data_handling
     description: "Compliance agent can hard-veto artifacts, deployments, and classification changes"
 
+  devsecops-agent:
+    veto_type: hard
+    topics:
+      - pipeline_configuration
+      - zero_trust_policy
+      - deployment_gate
+      - secret_rotation
+      - network_segmentation
+    description: "DevSecOps agent can hard-veto insecure pipeline configurations, ZTA policy violations, deployment without attestation, secret rotation failures, and network segmentation violations"
+
   architect-agent:
     veto_type: soft
     topics:

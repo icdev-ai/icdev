@@ -158,11 +158,59 @@ class EmbeddingProvider(ABC):
 # ---------------------------------------------------------------------------
 # Message format translators
 # ---------------------------------------------------------------------------
+def _convert_image_block_to_anthropic(block: dict) -> dict:
+    """Convert an OpenAI image_url block to Anthropic image block.
+
+    OpenAI: {"type": "image_url", "image_url": {"url": "data:image/png;base64,DATA"}}
+    Anthropic: {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "DATA"}}
+    """
+    url = block.get("image_url", {}).get("url", "")
+    if url.startswith("data:"):
+        # Parse data URI: data:image/png;base64,DATA
+        header, _, b64_data = url.partition(",")
+        media_type = header.split(":")[1].split(";")[0] if ":" in header else "image/png"
+        return {
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": b64_data},
+        }
+    # Non-data URI (URL reference) — pass through as-is for providers that support it
+    return block
+
+
+def _convert_image_block_to_openai(block: dict) -> dict:
+    """Convert an Anthropic image block to OpenAI image_url block.
+
+    Anthropic: {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "DATA"}}
+    OpenAI: {"type": "image_url", "image_url": {"url": "data:image/png;base64,DATA"}}
+    """
+    source = block.get("source", {})
+    media_type = source.get("media_type", "image/png")
+    b64_data = source.get("data", "")
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{media_type};base64,{b64_data}"},
+    }
+
+
+def _has_image_blocks(content: list) -> bool:
+    """Check if a content block list contains any image blocks."""
+    for block in content:
+        if isinstance(block, dict):
+            btype = block.get("type", "")
+            if btype in ("image", "image_url"):
+                return True
+    return False
+
+
 def messages_to_anthropic(messages: List[Dict]) -> List[Dict]:
     """Convert universal message format to Anthropic format.
 
     Anthropic expects: {"role": "user"/"assistant", "content": [{"type": "text", "text": "..."}]}
     Universal may use: {"role": "user", "content": "plain string"} (OpenAI style)
+
+    Handles image blocks:
+    - OpenAI image_url blocks are converted to Anthropic image blocks
+    - Anthropic image blocks are passed through unchanged
     """
     result = []
     for msg in messages:
@@ -173,8 +221,16 @@ def messages_to_anthropic(messages: List[Dict]) -> List[Dict]:
                 "role": role,
                 "content": [{"type": "text", "text": content}],
             })
+        elif isinstance(content, list):
+            # Convert any OpenAI image_url blocks to Anthropic format
+            converted_blocks = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "image_url":
+                    converted_blocks.append(_convert_image_block_to_anthropic(block))
+                else:
+                    converted_blocks.append(block)
+            result.append({"role": role, "content": converted_blocks})
         else:
-            # Already in Anthropic block format
             result.append(msg)
     return result
 
@@ -184,25 +240,48 @@ def messages_to_openai(messages: List[Dict]) -> List[Dict]:
 
     OpenAI expects: {"role": "user"/"assistant"/"system", "content": "string"}
     Anthropic sends: {"role": "user", "content": [{"type": "text", "text": "..."}]}
+
+    For multimodal messages (containing images), preserves list-of-blocks format
+    using OpenAI vision content parts instead of flattening to string.
     """
     result = []
     for msg in messages:
         content = msg.get("content", "")
         role = msg.get("role", "user")
         if isinstance(content, list):
-            # Flatten Anthropic content blocks to string
-            text_parts = []
-            for block in content:
-                if isinstance(block, dict):
-                    if block.get("type") == "text":
-                        text_parts.append(block.get("text", ""))
-                    elif block.get("type") == "tool_result":
-                        # Convert tool_result blocks
-                        inner = block.get("content", [])
-                        for ib in inner:
-                            if isinstance(ib, dict) and ib.get("type") == "text":
-                                text_parts.append(ib.get("text", ""))
-            result.append({"role": role, "content": "\n".join(text_parts)})
+            if _has_image_blocks(content):
+                # Multimodal: preserve as list of content parts (OpenAI vision format)
+                parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        btype = block.get("type", "")
+                        if btype == "text":
+                            parts.append({"type": "text", "text": block.get("text", "")})
+                        elif btype == "image_url":
+                            # Already in OpenAI format
+                            parts.append(block)
+                        elif btype == "image":
+                            # Convert Anthropic image to OpenAI image_url
+                            parts.append(_convert_image_block_to_openai(block))
+                        elif btype == "tool_result":
+                            inner = block.get("content", [])
+                            for ib in inner:
+                                if isinstance(ib, dict) and ib.get("type") == "text":
+                                    parts.append({"type": "text", "text": ib.get("text", "")})
+                result.append({"role": role, "content": parts})
+            else:
+                # Text-only: flatten to string (original behavior)
+                text_parts = []
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "tool_result":
+                            inner = block.get("content", [])
+                            for ib in inner:
+                                if isinstance(ib, dict) and ib.get("type") == "text":
+                                    text_parts.append(ib.get("text", ""))
+                result.append({"role": role, "content": "\n".join(text_parts)})
         else:
             result.append({"role": role, "content": content})
     return result

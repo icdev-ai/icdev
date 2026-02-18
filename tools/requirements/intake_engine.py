@@ -355,6 +355,13 @@ def process_turn(
     # --- Boundary flags ---
     boundary_flags = _detect_boundary_signals(customer_message, session_data)
 
+    # --- DevSecOps / ZTA signals (Phase 24) ---
+    devsecops_signals = _detect_devsecops_signals(customer_message)
+    zta_signals = _detect_zta_signals(customer_message)
+
+    # --- MOSA signals (Phase 26, D125) ---
+    mosa_signals = _detect_mosa_signals(customer_message, session_data)
+
     # --- Update session counters ---
     req_count = conn.execute(
         "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
@@ -400,6 +407,63 @@ def process_turn(
         for gap in gap_signals:
             response_parts.append(f"  - {gap}")
 
+    if devsecops_signals.get("detected_stages"):
+        stages = devsecops_signals["detected_stages"]
+        maturity = devsecops_signals.get("maturity_estimate", "unknown")
+        response_parts.append(
+            f"\nDevSecOps signals detected: {', '.join(stages)} "
+            f"(estimated maturity: {maturity})"
+        )
+    elif devsecops_signals.get("greenfield"):
+        response_parts.append(
+            "\nNo existing DevSecOps tooling detected — "
+            "ICDEV will configure pipeline security stages based on impact level."
+        )
+
+    if zta_signals.get("zta_detected"):
+        pillars = zta_signals.get("detected_pillars", [])
+        response_parts.append(
+            f"\nZero Trust Architecture requirement detected"
+            + (f" (pillars: {', '.join(pillars)})" if pillars else "")
+            + ". NIST SP 800-207 framework will be included in compliance assessment."
+        )
+
+    if mosa_signals.get("mosa_detected"):
+        mosa_pillars = mosa_signals.get("detected_pillars", [])
+        if mosa_signals.get("dod_ic_detected"):
+            response_parts.append(
+                "\nDoD/IC customer detected — MOSA (Modular Open Systems Approach) "
+                "is required per 10 U.S.C. §4401. ICDEV will enforce modular architecture, "
+                "open standards, and interface control documentation."
+            )
+        else:
+            response_parts.append(
+                "\nMOSA (Modular Open Systems Approach) signals detected. "
+                "MOSA framework will be included in compliance assessment."
+            )
+        if mosa_pillars:
+            response_parts.append(
+                f"  MOSA pillars identified: {', '.join(p.replace('_', ' ') for p in mosa_pillars)}"
+            )
+        # Probe for missing MOSA pillars
+        all_pillars = {"modular_architecture", "open_standards", "open_interfaces",
+                       "data_rights", "competitive_sourcing", "continuous_assessment"}
+        missing = all_pillars - set(mosa_pillars)
+        if missing and len(mosa_pillars) < 4:
+            probes = {
+                "open_interfaces": "Do you have existing Interface Control Documents (ICDs) or API specifications?",
+                "data_rights": "What are the government data rights requirements? (GPR, unlimited rights, etc.)",
+                "competitive_sourcing": "Is multi-vendor replaceability a requirement?",
+                "open_standards": "Which standard protocols/data formats will be used? (REST/OpenAPI, gRPC, JSON, Protobuf)",
+                "modular_architecture": "Is the system designed with modular, loosely-coupled components?",
+                "continuous_assessment": "Will there be ongoing architecture reviews and modularity metrics?",
+            }
+            probe_q = [probes[p] for p in sorted(missing) if p in probes][:2]
+            if probe_q:
+                response_parts.append("\nTo complete MOSA assessment, please clarify:")
+                for q in probe_q:
+                    response_parts.append(f"  - {q}")
+
     # Add contextual follow-up question
     config = _load_config()
     auto_score_interval = config.get("ricoas", {}).get(
@@ -435,6 +499,13 @@ def process_turn(
                 "ambiguities_found": len(ambiguities),
                 "requirements_extracted": len(extracted_reqs),
                 "boundary_flags": len(boundary_flags),
+                "devsecops_stages_detected": devsecops_signals.get("detected_stages", []),
+                "devsecops_maturity_estimate": devsecops_signals.get("maturity_estimate"),
+                "zta_detected": zta_signals.get("zta_detected", False),
+                "zta_pillars_detected": zta_signals.get("detected_pillars", []),
+                "mosa_detected": mosa_signals.get("mosa_detected", False),
+                "mosa_dod_ic_detected": mosa_signals.get("dod_ic_detected", False),
+                "mosa_pillars_detected": mosa_signals.get("detected_pillars", []),
             }),
             session_data.get("classification", "CUI"),
         ),
@@ -680,6 +751,161 @@ def _detect_boundary_signals(text, session_data):
         })
 
     return flags
+
+
+def _detect_devsecops_signals(text):
+    """Detect DevSecOps maturity signals from customer text (Phase 24).
+
+    Uses keyword matching from args/devsecops_config.yaml to identify existing
+    security tooling and estimate maturity level.
+    """
+    try:
+        from tools.devsecops.profile_manager import detect_maturity_from_text
+        return detect_maturity_from_text(text)
+    except (ImportError, Exception):
+        # Fallback: inline minimal detection
+        lower = text.lower()
+        detected = []
+        keyword_map = {
+            "sast": ["static analysis", "code scanning", "bandit", "sonarqube", "fortify"],
+            "sca": ["dependency scan", "pip-audit", "snyk", "npm audit"],
+            "secret_detection": ["secret scanning", "gitleaks", "detect-secrets"],
+            "container_scan": ["container scanning", "trivy", "grype", "image scanning"],
+            "policy_as_code": ["policy as code", "opa", "gatekeeper", "kyverno"],
+            "image_signing": ["image signing", "cosign", "sigstore"],
+        }
+        for stage, keywords in keyword_map.items():
+            if any(kw in lower for kw in keywords):
+                detected.append(stage)
+        greenfield = any(s in lower for s in [
+            "no security scanning", "greenfield", "starting from scratch",
+        ])
+        return {
+            "detected_stages": sorted(set(detected)),
+            "maturity_estimate": "level_1_initial" if greenfield else (
+                "level_3_defined" if len(detected) >= 4 else
+                "level_2_managed" if len(detected) >= 2 else
+                "level_1_initial"
+            ),
+            "zta_detected": False,
+            "greenfield": greenfield,
+            "stage_count": len(detected),
+        }
+
+
+def _detect_zta_signals(text):
+    """Detect Zero Trust Architecture signals from customer text (Phase 24-25).
+
+    Identifies ZTA-relevant keywords and maps them to ZTA pillars.
+    """
+    lower = text.lower()
+    zta_detected = False
+    detected_pillars = []
+
+    # General ZTA indicators
+    general_keywords = [
+        "zero trust", "nist 800-207", "never trust always verify",
+        "zero trust architecture",
+    ]
+    if any(kw in lower for kw in general_keywords):
+        zta_detected = True
+
+    # Pillar-specific keywords
+    pillar_keywords = {
+        "user_identity": ["mfa", "multi-factor", "cac", "piv", "identity provider",
+                          "sso", "single sign-on", "continuous auth", "icam"],
+        "device": ["device posture", "mdm", "endpoint detection", "device trust",
+                   "device compliance", "edr"],
+        "network": ["micro-segmentation", "microsegmentation", "mtls", "mutual tls",
+                    "service mesh", "istio", "linkerd", "network policy",
+                    "software-defined perimeter", "ztna"],
+        "application_workload": ["workload identity", "container hardening",
+                                 "admission control", "signed images"],
+        "data": ["data classification", "encryption at rest", "dlp",
+                 "data loss prevention", "tokenization"],
+        "visibility_analytics": ["siem", "continuous monitoring", "anomaly detection",
+                                 "threat intelligence", "security analytics"],
+        "automation_orchestration": ["soar", "auto-remediation", "security orchestration",
+                                     "automated response", "self-healing"],
+    }
+
+    for pillar, keywords in pillar_keywords.items():
+        if any(kw in lower for kw in keywords):
+            detected_pillars.append(pillar)
+            zta_detected = True
+
+    return {
+        "zta_detected": zta_detected,
+        "detected_pillars": sorted(detected_pillars),
+        "pillar_count": len(detected_pillars),
+    }
+
+
+def _detect_mosa_signals(text, session_data=None):
+    """Detect MOSA (Modular Open Systems Approach) signals (Phase 26, D125).
+
+    Auto-triggers for DoD/IC customers per 10 U.S.C. §4401. Also detects
+    MOSA pillar keywords for targeted follow-up questions.
+    """
+    lower = text.lower()
+    mosa_detected = False
+    detected_pillars = []
+    dod_ic_detected = False
+
+    # DoD/IC customer keywords — auto-trigger MOSA (D125)
+    dod_ic_keywords = [
+        "department of defense", "dod", "air force", "army", "navy",
+        "marine corps", "space force", "intelligence community",
+        "combatant command", "acquisition program", "mdap", "acat",
+        "program of record", "warfighter", "nsa", "dia", "nro", "nga",
+        "military", "defense information systems",
+    ]
+    if any(kw in lower for kw in dod_ic_keywords):
+        dod_ic_detected = True
+        mosa_detected = True
+
+    # Also check session customer_org for DoD/IC indicators
+    if session_data:
+        org = (session_data.get("customer_org") or "").lower()
+        il = (session_data.get("impact_level") or "").upper()
+        if any(kw in org for kw in ["dod", "defense", "military", "ic", "intelligence"]):
+            dod_ic_detected = True
+            mosa_detected = True
+        if il in ("IL4", "IL5", "IL6"):
+            mosa_detected = True
+
+    # MOSA pillar keywords (from mosa_config.yaml intake_detection)
+    pillar_keywords = {
+        "modular_architecture": ["modular", "loosely coupled", "microservice",
+                                 "component-based", "plugin", "module boundary",
+                                 "encapsulation"],
+        "open_standards": ["openapi", "rest api", "grpc", "protobuf",
+                          "standard protocol", "open standard", "json schema"],
+        "open_interfaces": ["interface control", "icd", "api versioning",
+                           "backward compatible", "interface specification",
+                           "integration spec"],
+        "data_rights": ["data rights", "government purpose", "license tracking",
+                       "source escrow", "intellectual property", "gpr",
+                       "unlimited rights"],
+        "competitive_sourcing": ["vendor lock-in", "vendor neutral", "competitive",
+                                "replaceability", "build vs buy", "multi-vendor",
+                                "plug-and-play"],
+        "continuous_assessment": ["architecture review", "modularity metrics",
+                                 "design review", "architecture evolution",
+                                 "technology refresh"],
+    }
+
+    for pillar, keywords in pillar_keywords.items():
+        if any(kw in lower for kw in keywords):
+            detected_pillars.append(pillar)
+            mosa_detected = True
+
+    return {
+        "mosa_detected": mosa_detected,
+        "dod_ic_detected": dod_ic_detected,
+        "detected_pillars": sorted(detected_pillars),
+        "pillar_count": len(detected_pillars),
+    }
 
 
 def _quick_readiness_estimate(session_id, conn):

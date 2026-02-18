@@ -1,0 +1,321 @@
+{
+  "metadata": {
+    "title": "Data Type to Compliance Framework Mapping",
+    "description": "Declarative rules mapping data categories to required and recommended compliance frameworks. Used by compliance_detector.py for auto-detection (ADR D110, D115).",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "adr_reference": "D110, D115"
+  },
+  "detection_rules": [
+    {
+      "rule_id": "R001",
+      "condition": "data_category == 'CUI'",
+      "description": "Controlled Unclassified Information requires NIST 800-171 and CMMC",
+      "required_frameworks": ["nist_800_171", "cmmc_level_2"],
+      "recommended_frameworks": ["fedramp_moderate", "cisa_sbd"],
+      "impact_level_minimum": "IL4"
+    },
+    {
+      "rule_id": "R002",
+      "condition": "data_category == 'SECRET'",
+      "description": "Classified data requires CNSSI 1253 overlay and IL6",
+      "required_frameworks": ["cnssi_1253", "nist_800_53"],
+      "recommended_frameworks": [],
+      "impact_level_minimum": "IL6"
+    },
+    {
+      "rule_id": "R003",
+      "condition": "data_category == 'PHI'",
+      "description": "Protected Health Information requires HIPAA Security Rule compliance",
+      "required_frameworks": ["hipaa"],
+      "recommended_frameworks": ["hitrust", "soc2", "iso_27001"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R004",
+      "condition": "data_category == 'PCI'",
+      "description": "Payment card data requires PCI DSS v4.0 compliance",
+      "required_frameworks": ["pci_dss"],
+      "recommended_frameworks": ["soc2", "iso_27001"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R005",
+      "condition": "data_category == 'CJIS'",
+      "description": "Criminal Justice Information requires FBI CJIS Security Policy compliance",
+      "required_frameworks": ["cjis"],
+      "recommended_frameworks": ["nist_800_53"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R006",
+      "condition": "data_category == 'FTI'",
+      "description": "Federal Tax Information requires IRS Publication 1075 compliance",
+      "required_frameworks": ["irs_1075"],
+      "recommended_frameworks": ["nist_800_53", "fedramp_moderate"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R007",
+      "condition": "data_category == 'PII'",
+      "description": "PII triggers privacy framework recommendations",
+      "required_frameworks": [],
+      "recommended_frameworks": ["nist_800_53", "iso_27001", "soc2", "iso_27701"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R008",
+      "condition": "data_category == 'ITAR'",
+      "description": "Export-controlled data requires NIST 800-171 and CMMC",
+      "required_frameworks": ["nist_800_171", "cmmc_level_2"],
+      "recommended_frameworks": ["fedramp_high"],
+      "impact_level_minimum": "IL5"
+    },
+    {
+      "rule_id": "R009",
+      "condition": "impact_level in ('IL4', 'IL5')",
+      "description": "DoD IL4/IL5 requires FedRAMP and NIST 800-171",
+      "required_frameworks": ["fedramp_moderate", "nist_800_171", "cmmc_level_2"],
+      "recommended_frameworks": ["cisa_sbd"],
+      "impact_level_minimum": "IL4"
+    },
+    {
+      "rule_id": "R010",
+      "condition": "impact_level == 'IL6'",
+      "description": "DoD IL6 requires FedRAMP High and CNSSI 1253",
+      "required_frameworks": ["fedramp_high", "cnssi_1253", "nist_800_171", "cmmc_level_3"],
+      "recommended_frameworks": [],
+      "impact_level_minimum": "IL6"
+    },
+    {
+      "rule_id": "R011",
+      "condition": "sector == 'healthcare'",
+      "description": "Healthcare sector should evaluate HIPAA and HITRUST",
+      "required_frameworks": ["hipaa"],
+      "recommended_frameworks": ["hitrust", "soc2"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R012",
+      "condition": "sector == 'financial'",
+      "description": "Financial sector should evaluate SOC 2 and PCI DSS",
+      "required_frameworks": ["soc2"],
+      "recommended_frameworks": ["pci_dss", "iso_27001"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R013",
+      "condition": "sector == 'law_enforcement'",
+      "description": "Law enforcement must comply with CJIS Security Policy",
+      "required_frameworks": ["cjis"],
+      "recommended_frameworks": ["nist_800_53", "fedramp_moderate"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R014",
+      "condition": "market == 'international'",
+      "description": "International market should adopt ISO 27001 as baseline",
+      "required_frameworks": ["iso_27001"],
+      "recommended_frameworks": ["iso_27017", "iso_27018"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R015",
+      "condition": "data_category == 'PHI' AND data_category == 'CUI'",
+      "description": "Government healthcare systems need both HIPAA and FedRAMP",
+      "required_frameworks": ["hipaa", "fedramp_moderate", "nist_800_171"],
+      "recommended_frameworks": ["hitrust"],
+      "impact_level_minimum": "IL4"
+    },
+    {
+      "rule_id": "R016",
+      "condition": "data_category == 'PCI' AND data_category == 'CUI'",
+      "description": "Government payment systems need both PCI DSS and FedRAMP",
+      "required_frameworks": ["pci_dss", "fedramp_moderate", "nist_800_171"],
+      "recommended_frameworks": ["soc2"],
+      "impact_level_minimum": "IL4"
+    },
+    {
+      "rule_id": "R030",
+      "condition": "project_type IN ('microservice', 'api') OR impact_level IN ('IL4', 'IL5', 'IL6')",
+      "description": "Microservice/API projects and IL4+ systems should adopt Zero Trust Architecture",
+      "required_frameworks": [],
+      "recommended_frameworks": ["nist_800_207"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R031",
+      "condition": "data_category == 'ZTA'",
+      "description": "Projects with explicit ZTA requirement must comply with NIST SP 800-207",
+      "required_frameworks": ["nist_800_207"],
+      "recommended_frameworks": ["nist_800_53", "fedramp_moderate"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R040",
+      "condition": "sector == 'defense' OR customer_org CONTAINS 'DoD' OR customer_org CONTAINS 'IC'",
+      "description": "Defense/IC sector requires MOSA per 10 U.S.C. §4401 for modular open systems",
+      "required_frameworks": ["mosa"],
+      "recommended_frameworks": ["nist_800_53", "cmmc_level_2", "nist_800_207"],
+      "impact_level_minimum": null
+    },
+    {
+      "rule_id": "R041",
+      "condition": "impact_level IN ('IL4', 'IL5', 'IL6')",
+      "description": "IL4+ systems should adopt MOSA for modular architecture and open standards",
+      "required_frameworks": [],
+      "recommended_frameworks": ["mosa"],
+      "impact_level_minimum": "IL4"
+    },
+    {
+      "rule_id": "R042",
+      "condition": "data_category == 'MOSA'",
+      "description": "Projects with explicit MOSA data category must comply with DoD MOSA framework",
+      "required_frameworks": ["mosa"],
+      "recommended_frameworks": ["nist_800_53"],
+      "impact_level_minimum": null
+    }
+  ],
+  "framework_registry": {
+    "nist_800_53": {
+      "name": "NIST SP 800-53 Rev 5",
+      "hub": "nist",
+      "type": "control_catalog",
+      "assessor": "control_mapper.py",
+      "market": "universal"
+    },
+    "fedramp_moderate": {
+      "name": "FedRAMP Moderate",
+      "hub": "nist",
+      "type": "certification",
+      "assessor": "fedramp_assessor.py",
+      "market": "us_government"
+    },
+    "fedramp_high": {
+      "name": "FedRAMP High",
+      "hub": "nist",
+      "type": "certification",
+      "assessor": "fedramp_assessor.py",
+      "market": "us_government"
+    },
+    "nist_800_171": {
+      "name": "NIST SP 800-171 Rev 2",
+      "hub": "nist",
+      "type": "control_catalog",
+      "assessor": "crosswalk_engine.py",
+      "market": "defense_industrial_base"
+    },
+    "cmmc_level_2": {
+      "name": "CMMC Level 2",
+      "hub": "nist",
+      "type": "certification",
+      "assessor": "cmmc_assessor.py",
+      "market": "defense_industrial_base"
+    },
+    "cmmc_level_3": {
+      "name": "CMMC Level 3",
+      "hub": "nist",
+      "type": "certification",
+      "assessor": "cmmc_assessor.py",
+      "market": "defense_industrial_base"
+    },
+    "cjis": {
+      "name": "FBI CJIS Security Policy v5.9.4",
+      "hub": "nist",
+      "type": "policy",
+      "assessor": "cjis_assessor.py",
+      "market": "law_enforcement"
+    },
+    "hipaa": {
+      "name": "HIPAA Security Rule",
+      "hub": "nist",
+      "type": "regulation",
+      "assessor": "hipaa_assessor.py",
+      "market": "healthcare"
+    },
+    "hitrust": {
+      "name": "HITRUST CSF v11",
+      "hub": "nist",
+      "type": "framework",
+      "assessor": "hitrust_assessor.py",
+      "market": "healthcare"
+    },
+    "soc2": {
+      "name": "SOC 2 Type II (Trust Service Criteria)",
+      "hub": "nist",
+      "type": "attestation",
+      "assessor": "soc2_assessor.py",
+      "market": "commercial_saas"
+    },
+    "pci_dss": {
+      "name": "PCI DSS v4.0",
+      "hub": "nist",
+      "type": "standard",
+      "assessor": "pci_dss_assessor.py",
+      "market": "payment_processing"
+    },
+    "iso_27001": {
+      "name": "ISO/IEC 27001:2022",
+      "hub": "iso",
+      "type": "standard",
+      "assessor": "iso27001_assessor.py",
+      "market": "international"
+    },
+    "iso_27017": {
+      "name": "ISO/IEC 27017:2015",
+      "hub": "iso",
+      "type": "standard",
+      "assessor": null,
+      "market": "international_cloud"
+    },
+    "iso_27018": {
+      "name": "ISO/IEC 27018:2019",
+      "hub": "iso",
+      "type": "standard",
+      "assessor": null,
+      "market": "international_cloud"
+    },
+    "iso_27701": {
+      "name": "ISO/IEC 27701:2019",
+      "hub": "iso",
+      "type": "standard",
+      "assessor": null,
+      "market": "international_privacy"
+    },
+    "irs_1075": {
+      "name": "IRS Publication 1075",
+      "hub": "nist",
+      "type": "policy",
+      "assessor": null,
+      "market": "tax_processing"
+    },
+    "cnssi_1253": {
+      "name": "CNSSI 1253",
+      "hub": "nist",
+      "type": "overlay",
+      "assessor": "fips199_categorizer.py",
+      "market": "classified"
+    },
+    "cisa_sbd": {
+      "name": "CISA Secure by Design",
+      "hub": "nist",
+      "type": "pledge",
+      "assessor": "sbd_assessor.py",
+      "market": "software_development"
+    },
+    "nist_800_207": {
+      "name": "NIST SP 800-207 (Zero Trust Architecture)",
+      "hub": "nist",
+      "type": "architecture",
+      "assessor": "nist_800_207_assessor.py",
+      "market": "zero_trust"
+    },
+    "mosa": {
+      "name": "DoD MOSA (10 U.S.C. §4401)",
+      "hub": "nist",
+      "type": "architecture",
+      "assessor": "mosa_assessor.py",
+      "market": "defense"
+    }
+  }
+}

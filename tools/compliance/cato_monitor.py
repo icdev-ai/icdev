@@ -813,6 +813,12 @@ def get_cato_dashboard_data(project_id, db_path=None):
 
         evidence_by_type = {row["evidence_type"]: row["cnt"] for row in type_rows}
 
+        # --- ZTA posture (ADR D123) ---
+        zta_posture = check_zta_posture(project_id, db_path=db_path)
+
+        # --- MOSA evidence (D130, optional) ---
+        mosa_evidence = collect_mosa_evidence(project_id, db_path=db_path)
+
         result = {
             "project_id": project_id,
             "generated_at": datetime.utcnow().isoformat(),
@@ -822,6 +828,8 @@ def get_cato_dashboard_data(project_id, db_path=None):
             "controls_needing_attention": controls_needing_attention,
             "trend_data": trend_data,
             "evidence_by_type": evidence_by_type,
+            "zta_posture": zta_posture,
+            "mosa_evidence": mosa_evidence,
         }
 
         print(f"cATO dashboard data generated for project {project_id}")
@@ -891,6 +899,166 @@ def expire_old_evidence(project_id, db_path=None):
             "expired_ids": expired_ids,
         }
 
+    finally:
+        conn.close()
+
+
+def check_zta_posture(project_id, db_path=None):
+    """Check ZTA posture and include as cATO evidence dimension.
+
+    Queries the zta_maturity_scores and zta_posture_evidence tables to
+    compute a ZTA posture summary. The ZTA maturity score feeds into
+    cATO readiness as an additional evidence dimension (ADR D123).
+
+    Args:
+        project_id: Project identifier.
+        db_path: Optional database path override.
+
+    Returns:
+        Dict with zta_maturity, pillar_scores, posture_evidence_freshness,
+        and cato_contribution.
+    """
+    conn = _get_connection(db_path)
+    try:
+        _verify_project(conn, project_id)
+
+        result = {
+            "project_id": project_id,
+            "zta_available": False,
+            "overall_maturity": "traditional",
+            "overall_score": 0.0,
+            "pillar_scores": {},
+            "posture_evidence": {"total": 0, "current": 0, "stale": 0, "expired": 0},
+            "cato_contribution": 0.0,
+        }
+
+        # Query ZTA maturity scores
+        try:
+            maturity_rows = conn.execute(
+                """SELECT pillar, score, maturity_level
+                   FROM zta_maturity_scores
+                   WHERE project_id = ?
+                   ORDER BY created_at DESC""",
+                (project_id,),
+            ).fetchall()
+
+            if maturity_rows:
+                result["zta_available"] = True
+                for row in maturity_rows:
+                    pillar = row["pillar"]
+                    if pillar == "overall":
+                        result["overall_score"] = row["score"] or 0.0
+                        result["overall_maturity"] = row["maturity_level"] or "traditional"
+                    else:
+                        result["pillar_scores"][pillar] = {
+                            "score": row["score"] or 0.0,
+                            "maturity_level": row["maturity_level"] or "traditional",
+                        }
+        except sqlite3.OperationalError:
+            pass  # Table may not exist yet
+
+        # Query ZTA posture evidence freshness
+        try:
+            posture_rows = conn.execute(
+                """SELECT status, COUNT(*) as cnt
+                   FROM zta_posture_evidence
+                   WHERE project_id = ?
+                   GROUP BY status""",
+                (project_id,),
+            ).fetchall()
+
+            for row in posture_rows:
+                status = row["status"]
+                if status in result["posture_evidence"]:
+                    result["posture_evidence"][status] = row["cnt"]
+                result["posture_evidence"]["total"] += row["cnt"]
+        except sqlite3.OperationalError:
+            pass  # Table may not exist yet
+
+        # Compute cATO contribution: ZTA maturity score scaled to 0-100
+        if result["zta_available"]:
+            result["cato_contribution"] = round(result["overall_score"] * 100, 1)
+
+        print(f"ZTA posture check: maturity={result['overall_maturity']} "
+              f"score={result['overall_score']:.2f} "
+              f"evidence={result['posture_evidence']['total']} items")
+
+        return result
+
+    finally:
+        conn.close()
+
+
+def collect_mosa_evidence(project_id, db_path=None):
+    """Collect MOSA architecture review evidence for cATO (D130).
+
+    Queries mosa_modularity_metrics and mosa_assessments tables to build
+    an evidence summary for controls SA-3, SA-8, SA-17. Only runs when
+    mosa_config.yaml has cato_integration.enabled = true.
+
+    Args:
+        project_id: Project identifier.
+        db_path: Optional database path override.
+
+    Returns:
+        Dict with mosa_available, modularity_score, icd_coverage,
+        tsp_current, mapped_controls, and cato_contribution.
+    """
+    # Check config flag
+    config_path = Path(__file__).resolve().parent.parent.parent / "args" / "mosa_config.yaml"
+    mosa_enabled = False
+    if config_path.exists():
+        try:
+            import yaml
+            with open(config_path) as f:
+                cfg = yaml.safe_load(f) or {}
+            mosa_enabled = cfg.get("mosa", {}).get("cato_integration", {}).get("enabled", False)
+        except Exception:
+            pass
+
+    if not mosa_enabled:
+        return {"project_id": project_id, "mosa_available": False,
+                "reason": "cato_integration.enabled is false in mosa_config.yaml"}
+
+    conn = _get_connection(db_path)
+    try:
+        _verify_project(conn, project_id)
+        result = {
+            "project_id": project_id,
+            "mosa_available": False,
+            "modularity_score": 0.0,
+            "icd_coverage": {"approved": 0, "total_required": 0, "pct": 0.0},
+            "tsp_current": False,
+            "mapped_controls": ["SA-3", "SA-8", "SA-17"],
+            "cato_contribution": 0.0,
+        }
+
+        try:
+            metrics = conn.execute(
+                """SELECT overall_modularity_score, approved_icd_count,
+                          total_icd_required, tsp_current
+                   FROM mosa_modularity_metrics
+                   WHERE project_id = ?
+                   ORDER BY assessment_date DESC LIMIT 1""",
+                (project_id,),
+            ).fetchone()
+            if metrics:
+                result["mosa_available"] = True
+                result["modularity_score"] = metrics["overall_modularity_score"] or 0.0
+                result["icd_coverage"]["approved"] = metrics["approved_icd_count"] or 0
+                result["icd_coverage"]["total_required"] = metrics["total_icd_required"] or 0
+                if metrics["total_icd_required"]:
+                    result["icd_coverage"]["pct"] = round(
+                        (metrics["approved_icd_count"] or 0) / metrics["total_icd_required"] * 100, 1)
+                result["tsp_current"] = bool(metrics["tsp_current"])
+                result["cato_contribution"] = round(result["modularity_score"] * 100, 1)
+        except Exception:
+            pass
+
+        print(f"MOSA evidence check: available={result['mosa_available']} "
+              f"modularity={result['modularity_score']:.2f} "
+              f"ICD={result['icd_coverage']['approved']}/{result['icd_coverage']['total_required']}")
+        return result
     finally:
         conn.close()
 
@@ -1083,6 +1251,14 @@ def main():
         "--control", type=str, default=None,
         help="Get evidence for a specific control ID"
     )
+    group.add_argument(
+        "--zta-posture", action="store_true",
+        help="Check ZTA posture for cATO readiness (ADR D123)"
+    )
+    group.add_argument(
+        "--mosa-evidence", action="store_true",
+        help="Collect MOSA architecture evidence for cATO (D130)"
+    )
 
     # Output format
     parser.add_argument(
@@ -1158,6 +1334,46 @@ def main():
                               f"from {item['evidence_source']} "
                               f"(collected {item['collected_at']}, "
                               f"expires {item['expires_at']})")
+
+        elif args.zta_posture:
+            result = check_zta_posture(
+                project_id=args.project_id,
+                db_path=args.db_path,
+            )
+            if args.json:
+                print(json.dumps(result, indent=2, default=str))
+            else:
+                print(f"ZTA Posture for {args.project_id}:")
+                print(f"  Available:  {result['zta_available']}")
+                print(f"  Maturity:   {result['overall_maturity']}")
+                print(f"  Score:      {result['overall_score']:.2f}")
+                print(f"  Evidence:   {result['posture_evidence']['total']} items "
+                      f"({result['posture_evidence']['current']} current)")
+                if result['pillar_scores']:
+                    print("  Pillar Scores:")
+                    for pillar, data in result['pillar_scores'].items():
+                        print(f"    {pillar:<30} {data['score']:.2f} ({data['maturity_level']})")
+
+        elif args.mosa_evidence:
+            result = collect_mosa_evidence(
+                project_id=args.project_id,
+                db_path=args.db_path,
+            )
+            if args.json:
+                print(json.dumps(result, indent=2, default=str))
+            else:
+                print(f"MOSA Evidence for {args.project_id}:")
+                print(f"  Available:       {result['mosa_available']}")
+                if result['mosa_available']:
+                    print(f"  Modularity:      {result['modularity_score']:.2f}")
+                    print(f"  ICD Coverage:    {result['icd_coverage']['approved']}"
+                          f"/{result['icd_coverage']['total_required']}"
+                          f" ({result['icd_coverage']['pct']}%)")
+                    print(f"  TSP Current:     {result['tsp_current']}")
+                    print(f"  Mapped Controls: {', '.join(result['mapped_controls'])}")
+                    print(f"  cATO Score:      {result['cato_contribution']}")
+                else:
+                    print(f"  Reason: {result.get('reason', 'No metrics found')}")
 
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

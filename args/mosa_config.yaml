@@ -1,0 +1,190 @@
+# CUI // SP-CTI
+# MOSA Configuration — Modular Open Systems Approach
+# Authority: 10 U.S.C. Section 4401, DoDI 5000.87
+# Phase 26 — ADR D125-D131
+
+mosa:
+  # ---------------------------------------------------------------------------
+  # Auto-trigger conditions (D125)
+  # ---------------------------------------------------------------------------
+  auto_trigger:
+    dod_ic_customers: true          # All DoD/IC customers
+    impact_level_minimum: "IL4"     # IL4+ also triggers MOSA consideration
+    trigger_keywords:
+      - "department of defense"
+      - "dod"
+      - "intelligence community"
+      - "ic"
+      - "military"
+      - "combatant command"
+      - "acquisition program"
+      - "mdap"
+      - "acat"
+      - "program of record"
+      - "warfighter"
+
+  # ---------------------------------------------------------------------------
+  # MOSA families (D126 — software development principles only)
+  # ---------------------------------------------------------------------------
+  families:
+    modular_architecture:
+      description: "Loosely coupled components with well-defined module boundaries"
+      weight: 0.25
+    open_standards:
+      description: "Widely adopted standards (REST/OpenAPI, gRPC, JSON, Protobuf)"
+      weight: 0.20
+    open_interfaces:
+      description: "Published ICDs, versioned interfaces, backward compatibility"
+      weight: 0.20
+    data_rights:
+      description: "Government rights to interfaces, licensing tracked, source delivery"
+      weight: 0.15
+    competitive_sourcing:
+      description: "Component replaceability, vendor lock-in analysis, build vs buy"
+      weight: 0.10
+    continuous_assessment:
+      description: "Design metrics tracking, interface monitoring, evolution planning"
+      weight: 0.10
+
+  # ---------------------------------------------------------------------------
+  # Modularity scoring weights (must sum to 1.0)
+  # ---------------------------------------------------------------------------
+  modularity_weights:
+    coupling_score: 0.25            # Lower is better (0=no coupling, 1=max)
+    cohesion_score: 0.20            # Higher is better
+    interface_coverage: 0.20        # % of cross-module calls using interfaces
+    circular_dep_penalty: 0.15      # Penalty for circular dependencies
+    icd_completeness: 0.10          # % of external interfaces with ICDs
+    tsp_currency: 0.10              # TSP is current and approved
+
+  # ---------------------------------------------------------------------------
+  # Thresholds
+  # ---------------------------------------------------------------------------
+  thresholds:
+    min_interface_coverage_pct: 80
+    max_coupling_score: 0.4
+    min_cohesion_score: 0.6
+    max_circular_dependencies: 0
+    min_modularity_score: 0.6
+
+  # ---------------------------------------------------------------------------
+  # ICD (Interface Control Document) settings
+  # ---------------------------------------------------------------------------
+  icd:
+    require_per_external_interface: true
+    require_semver: true
+    approval_required_statuses: ["review", "approved"]
+    allowed_protocols:
+      - REST
+      - gRPC
+      - AMQP
+      - Kafka
+      - SFTP
+      - JDBC
+      - GraphQL
+      - WebSocket
+    allowed_data_formats:
+      - JSON
+      - XML
+      - Protobuf
+      - CSV
+      - Avro
+      - Parquet
+
+  # ---------------------------------------------------------------------------
+  # TSP (Technical Standard Profile) settings
+  # ---------------------------------------------------------------------------
+  tsp:
+    require_per_project: true
+    max_age_days: 180
+    require_deviation_rationale: true
+    auto_detect_standards: true
+    standard_categories:
+      - api_specification          # OpenAPI, gRPC, GraphQL
+      - data_format                # JSON Schema, XML Schema, Protobuf
+      - communication_protocol     # HTTP/2, TLS 1.3, AMQP
+      - authentication             # OAuth 2.0, OIDC, SAML, CAC/PIV
+      - containerization           # OCI, Docker, Kubernetes API
+      - programming_language       # PEP 8, JSR, Go conventions
+      - security                   # FIPS 140-2, NIST crypto standards
+
+  # ---------------------------------------------------------------------------
+  # cATO integration (optional, D130)
+  # ---------------------------------------------------------------------------
+  cato_integration:
+    enabled: false                  # Default off — enable per project
+    evidence_type: "artifact"
+    evidence_source: "mosa_architecture_review"
+    refresh_cadence: "monthly"
+    mapped_controls:
+      - SA-3                        # System Development Life Cycle
+      - SA-8                        # Security Engineering Principles
+      - SA-17                       # Developer Security Architecture
+
+  # ---------------------------------------------------------------------------
+  # Code enforcement settings (D129)
+  # ---------------------------------------------------------------------------
+  code_enforcement:
+    enforce_interface_based_design: true
+    generate_openapi_specs: true
+    enforce_module_boundaries: true
+    max_direct_coupling_violations: 0
+    check_circular_dependencies: true
+    supported_languages:
+      - python
+      - java
+      - go
+      - rust
+      - csharp
+      - typescript
+
+  # ---------------------------------------------------------------------------
+  # Intake detection keywords (D125)
+  # ---------------------------------------------------------------------------
+  intake_detection:
+    keywords_by_pillar:
+      modular_architecture:
+        - "modular"
+        - "loosely coupled"
+        - "microservice"
+        - "component-based"
+        - "plugin"
+        - "module boundary"
+        - "encapsulation"
+      open_standards:
+        - "openapi"
+        - "rest api"
+        - "grpc"
+        - "protobuf"
+        - "standard protocol"
+        - "open standard"
+        - "json schema"
+      open_interfaces:
+        - "interface control"
+        - "icd"
+        - "api versioning"
+        - "backward compatible"
+        - "interface specification"
+        - "integration spec"
+      data_rights:
+        - "data rights"
+        - "government purpose"
+        - "license tracking"
+        - "source escrow"
+        - "intellectual property"
+        - "gpr"
+        - "unlimited rights"
+      competitive_sourcing:
+        - "vendor lock-in"
+        - "vendor neutral"
+        - "competitive"
+        - "replaceability"
+        - "build vs buy"
+        - "multi-vendor"
+        - "plug-and-play"
+      continuous_assessment:
+        - "architecture review"
+        - "modularity metrics"
+        - "design review"
+        - "architecture evolution"
+        - "technology refresh"

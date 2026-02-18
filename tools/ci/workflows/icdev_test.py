@@ -185,12 +185,50 @@ def main():
             format_issue_message(run_id, "ops", "Test phase completed — all passed"),
         )
     else:
-        logger.warning("Test phase completed — some failures")
-        vcs.comment_on_issue(
-            int(issue_number),
-            format_issue_message(run_id, "ops", "Test phase completed — some failures"),
-        )
-        sys.exit(1)
+        logger.warning("Test phase completed — some failures, attempting recovery...")
+
+        # Attempt self-recovery (D134)
+        recovered = False
+        try:
+            from tools.ci.core.recovery_engine import RecoveryEngine
+
+            engine = RecoveryEngine()
+            failure_text = json.dumps(results, default=str)
+            recovery_result = engine.attempt_recovery(
+                "test", failure_text, run_id, issue_number, state,
+            )
+
+            if recovery_result.recovered:
+                recovered = True
+                logger.info(
+                    f"Test recovery succeeded after {recovery_result.attempts} attempt(s)"
+                )
+                vcs.comment_on_issue(
+                    int(issue_number),
+                    format_issue_message(
+                        run_id, "recovery",
+                        f"Test failures recovered after {recovery_result.attempts} attempt(s). "
+                        f"Fixed files: {', '.join(recovery_result.fixed_files)}",
+                    ),
+                )
+            else:
+                logger.warning(f"Test recovery failed: {recovery_result.error}")
+                escalation = engine.format_escalation_message(recovery_result)
+                vcs.comment_on_issue(
+                    int(issue_number),
+                    format_issue_message(run_id, "recovery", escalation),
+                )
+        except ImportError:
+            logger.info("Recovery engine not available — skipping recovery")
+        except Exception as e:
+            logger.warning(f"Recovery attempt failed: {e}")
+
+        if not recovered:
+            vcs.comment_on_issue(
+                int(issue_number),
+                format_issue_message(run_id, "ops", "Test phase completed — some failures"),
+            )
+            sys.exit(1)
 
     state.save("icdev_test")
 

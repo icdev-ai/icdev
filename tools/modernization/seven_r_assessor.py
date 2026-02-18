@@ -1066,6 +1066,89 @@ def _compute_risk_score(profile, strategy, catalog):
 # Main orchestrator
 # ============================================================================
 
+def _get_ui_complexity(app_id, project_id, db_path=None):
+    """Query stored UI analysis for a legacy application.
+
+    If tools/modernization/ui_analyzer.py has been run against screenshots
+    of this application, the complexity score is stored as JSON in the
+    legacy_applications metadata column.
+
+    Args:
+        app_id: Legacy application ID.
+        project_id: Project ID.
+        db_path: Optional database path override.
+
+    Returns:
+        Float complexity score (0.0-1.0) or None if no UI analysis exists.
+    """
+    try:
+        conn = _get_db(db_path)
+        row = conn.execute(
+            "SELECT metadata FROM legacy_applications WHERE id = ?", (app_id,)
+        ).fetchone()
+        conn.close()
+
+        if row and row["metadata"]:
+            metadata = json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]
+            ui_analysis = metadata.get("ui_analysis", {})
+            if "complexity_score" in ui_analysis:
+                return float(ui_analysis["complexity_score"])
+    except Exception:
+        pass
+    return None
+
+
+def _apply_ui_complexity_adjustment(strategy_scores, ui_complexity):
+    """Apply UI complexity adjustment to 7R strategy scores.
+
+    High UI complexity favors Rearchitect, penalizes Rehost.
+    Low UI complexity favors Replatform.
+    This is an optional dimension (D85 — backward compatible).
+
+    Args:
+        strategy_scores: Dict of strategy_id -> score.
+        ui_complexity: Float 0.0-1.0.
+
+    Returns:
+        Adjusted strategy_scores dict.
+    """
+    if ui_complexity is None:
+        return strategy_scores
+
+    # Weight for UI complexity dimension (10% of total)
+    weight = 0.10
+
+    adjustments = {}
+    if ui_complexity > 0.7:
+        # High UI complexity → favors Rearchitect, penalizes Rehost
+        adjustments = {
+            "rehost": -weight * 0.5,
+            "replatform": -weight * 0.2,
+            "rearchitect": weight * 0.5,
+            "refactor": weight * 0.3,
+        }
+    elif ui_complexity < 0.3:
+        # Low UI complexity → favors Replatform
+        adjustments = {
+            "rehost": weight * 0.2,
+            "replatform": weight * 0.4,
+            "rearchitect": -weight * 0.1,
+        }
+    else:
+        # Moderate UI complexity → slight Refactor bias
+        adjustments = {
+            "refactor": weight * 0.2,
+            "rearchitect": weight * 0.1,
+        }
+
+    adjusted = dict(strategy_scores)
+    for strategy_id, adj in adjustments.items():
+        if strategy_id in adjusted:
+            adjusted[strategy_id] = max(0.0, min(1.0, adjusted[strategy_id] + adj))
+
+    return adjusted
+
+
 def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None):
     """Orchestrate a full 7R assessment for one legacy application.
 
@@ -1074,6 +1157,7 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         2. Build the application profile from legacy_* tables
         3. Run all 7 fitness check functions
         4. Score each strategy against its catalog criteria
+        4b. (Optional) Apply UI complexity adjustment if analysis available
         5. Rank strategies by score
         6. Assess ATO impact for recommended (top-ranked) strategy
         7. Estimate cost and timeline
@@ -1116,6 +1200,11 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
         strategy_scores[strategy_id] = _score_strategy(
             strategy_id, check_results, cat_criteria, weights=custom_weights
         )
+
+    # Optional: Apply UI complexity adjustment (D85 — backward compatible)
+    ui_complexity = _get_ui_complexity(app_id, project_id, db_path=db_path)
+    if ui_complexity is not None:
+        strategy_scores = _apply_ui_complexity_adjustment(strategy_scores, ui_complexity)
 
     # Rank strategies
     ranking = _rank_strategies(strategy_scores)
@@ -1170,6 +1259,7 @@ def run_seven_r_assessment(project_id, app_id, custom_weights=None, db_path=None
             "tech_debt_hours": profile.get("tech_debt_hours"),
             "avg_complexity": round(profile.get("avg_complexity", 0), 2),
             "avg_coupling": round(profile.get("avg_coupling", 0), 2),
+            "ui_complexity": round(ui_complexity, 2) if ui_complexity is not None else None,
         },
     }
 

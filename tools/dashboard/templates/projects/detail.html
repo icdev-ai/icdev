@@ -3,26 +3,44 @@
 
 {% block content %}
 <div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <a href="/projects">Projects</a>
+        <span class="separator">/</span>
+        <span class="current">{{ project.name }}</span>
+    </div>
     <h1>{{ project.name }}</h1>
     <p class="subtitle">
-        <span class="badge badge-{{ project.status }}">{{ project.status }}</span>
-        <span class="badge badge-warning">{{ project.classification }}</span>
+        <span class="badge badge-{{ project.status }}" role="status">{{ project.status }}</span>
+        <span class="badge badge-warning" data-glossary="{{ project.classification }}">{{ project.classification }}</span>
         {{ project.type }} project
     </p>
 </div>
 
 <!-- Tab Navigation -->
 <div class="tabs">
+    {% if not role_config or 'overview' in role_config.show_tabs %}
     <button class="tab-btn active" data-tab="tab-overview">Overview</button>
+    {% endif %}
+    {% if not role_config or 'compliance' in role_config.show_tabs %}
     <button class="tab-btn" data-tab="tab-compliance">Compliance</button>
+    {% endif %}
+    {% if not role_config or 'security' in role_config.show_tabs %}
     <button class="tab-btn" data-tab="tab-security">Security</button>
+    {% endif %}
+    {% if not role_config or 'deployments' in role_config.show_tabs %}
     <button class="tab-btn" data-tab="tab-deployments">Deployments</button>
+    {% endif %}
+    {% if not role_config or 'audit' in role_config.show_tabs %}
     <button class="tab-btn" data-tab="tab-audit">Audit</button>
+    {% endif %}
 </div>
 
 <!-- ============================================================
      OVERVIEW TAB
      ============================================================ -->
+{% if not role_config or 'overview' in role_config.show_tabs %}
 <div id="tab-overview" class="tab-content active">
     <h3 class="section-header">Project Information</h3>
     <div class="info-grid">
@@ -73,6 +91,23 @@
     </div>
     {% endif %}
 
+    <!-- Quick Charts -->
+    <h3 class="section-header mt-2">Project Health</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-bottom: 20px;">
+        <div class="card" style="padding: 16px;">
+            <div class="card-label">STIG Findings</div>
+            <div id="chart-proj-stig" style="min-height: 160px;"></div>
+        </div>
+        <div class="card" style="padding: 16px;">
+            <div class="card-label">POA&amp;M Status</div>
+            <div id="chart-proj-poam" style="min-height: 160px;"></div>
+        </div>
+        <div class="card" style="padding: 16px;">
+            <div class="card-label">Alert Trend</div>
+            <div id="chart-proj-alerts" style="min-height: 160px;"></div>
+        </div>
+    </div>
+
     <h3 class="section-header mt-2">Technology Stack</h3>
     <div class="info-grid">
         <div class="info-item">
@@ -88,14 +123,34 @@
             <div class="value">{{ project.tech_stack_database or '—' }}</div>
         </div>
     </div>
+
+    <!-- Compliance Pipeline Diagram -->
+    <h3 class="section-header mt-2">Compliance Pipeline</h3>
+    <div class="mermaid-container" role="img" aria-label="Compliance artifact generation pipeline">
+<pre class="mermaid">
+flowchart LR
+    FIPS["FIPS 199<br/>Categorize"] --> SSP["Generate<br/>SSP"]
+    SSP --> POAM["Generate<br/>POAM"]
+    POAM --> STIG["STIG<br/>Check"]
+    STIG --> SBOM["Generate<br/>SBOM"]
+    SBOM --> CUI["Apply CUI<br/>Markings"]
+    CUI --> MAP["Map NIST<br/>Controls"]
+    MAP --> RPT["Status<br/>Report"]
+    style FIPS fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style RPT fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+</pre>
+    </div>
 </div>
+
+{% endif %}
 
 <!-- ============================================================
      COMPLIANCE TAB
      ============================================================ -->
+{% if not role_config or 'compliance' in role_config.show_tabs %}
 <div id="tab-compliance" class="tab-content">
     <!-- SSP Documents -->
-    <h3 class="section-header">System Security Plans (SSP)</h3>
+    <h3 class="section-header">System Security Plans (<span data-glossary="SSP">SSP</span>)</h3>
     <div class="table-container">
         <table>
             <thead>
@@ -124,7 +179,9 @@
     </div>
 
     <!-- POAM Summary -->
-    <h3 class="section-header mt-2">Plan of Action &amp; Milestones (POA&amp;M)</h3>
+    <h3 class="section-header mt-2">Plan of Action &amp; Milestones (<span data-glossary="POA&amp;M">POA&amp;M</span>)
+        <span class="help-icon" title="Your fix-it list — each item is a security gap that needs to be resolved by a specific deadline">?</span>
+    </h3>
     <div class="stat-grid mb-2">
         <div class="stat-card">
             <div class="stat-value {% if poam_open > 0 %}text-yellow{% else %}text-green{% endif %}">{{ poam_open }}</div>
@@ -143,10 +200,14 @@
         <table>
             <thead>
                 <tr>
-                    <th>Weakness ID</th>
-                    <th>Description</th>
+                    {% if not role_config or 'finding_id' not in role_config.hide_columns %}
+                    <th>Finding ID</th>
+                    {% endif %}
+                    <th>Security Gap</th>
                     <th>Severity</th>
+                    {% if not role_config or 'source' not in role_config.hide_columns %}
                     <th>Source</th>
+                    {% endif %}
                     <th>Status</th>
                     <th>Milestone</th>
                 </tr>
@@ -154,10 +215,14 @@
             <tbody>
                 {% for poam in poams %}
                 <tr>
+                    {% if not role_config or 'finding_id' not in role_config.hide_columns %}
                     <td>{{ poam.weakness_id }}</td>
+                    {% endif %}
                     <td class="truncate">{{ poam.weakness_description }}</td>
                     <td><span class="badge badge-{{ poam.severity }}">{{ poam.severity }}</span></td>
+                    {% if not role_config or 'source' not in role_config.hide_columns %}
                     <td>{{ poam.source }}</td>
+                    {% endif %}
                     <td><span class="badge badge-{{ poam.status }}">{{ poam.status }}</span></td>
                     <td class="text-muted">{{ poam.milestone_date or '—' }}</td>
                 </tr>
@@ -169,7 +234,9 @@
     </div>
 
     <!-- STIG Findings Summary -->
-    <h3 class="section-header mt-2">STIG Findings</h3>
+    <h3 class="section-header mt-2"><span data-glossary="STIG">STIG</span> Findings
+        <span class="help-icon" title="Security Technical Implementation Guide — DoD security checklist. CAT-I = Critical (fix now), CAT-II = High (fix in 30 days), CAT-III = Medium (fix in 90 days)">?</span>
+    </h3>
     <div class="stat-grid mb-2">
         <div class="stat-card">
             <div class="stat-value {% if stig_open > 0 %}text-yellow{% else %}text-green{% endif %}">{{ stig_open }}</div>
@@ -190,8 +257,12 @@
         <table>
             <thead>
                 <tr>
+                    {% if not role_config or 'stig_id' not in role_config.hide_columns %}
                     <th>STIG ID</th>
+                    {% endif %}
+                    {% if not role_config or 'finding_id' not in role_config.hide_columns %}
                     <th>Finding ID</th>
+                    {% endif %}
                     <th>Severity</th>
                     <th>Title</th>
                     <th>Status</th>
@@ -200,8 +271,12 @@
             <tbody>
                 {% for stig in stigs %}
                 <tr>
+                    {% if not role_config or 'stig_id' not in role_config.hide_columns %}
                     <td>{{ stig.stig_id }}</td>
+                    {% endif %}
+                    {% if not role_config or 'finding_id' not in role_config.hide_columns %}
                     <td>{{ stig.finding_id }}</td>
+                    {% endif %}
                     <td><span class="badge badge-{{ stig.severity }}">{{ stig.severity }}</span></td>
                     <td class="truncate">{{ stig.title }}</td>
                     <td><span class="badge badge-{% if stig.status == 'Open' %}open{% else %}closed{% endif %}">{{ stig.status }}</span></td>
@@ -214,7 +289,9 @@
     </div>
 
     <!-- SBOM Records -->
-    <h3 class="section-header mt-2">Software Bill of Materials (SBOM)</h3>
+    <h3 class="section-header mt-2">Software Bill of Materials (<span data-glossary="SBOM">SBOM</span>)
+        <span class="help-icon" title="An inventory of all software components and their versions — like an ingredient list for your application">?</span>
+    </h3>
     <div class="table-container">
         <table>
             <thead>
@@ -249,9 +326,12 @@
     </div>
 </div>
 
+{% endif %}
+
 <!-- ============================================================
      SECURITY TAB
      ============================================================ -->
+{% if not role_config or 'security' in role_config.show_tabs %}
 <div id="tab-security" class="tab-content">
     <h3 class="section-header">Security Overview</h3>
 
@@ -303,10 +383,31 @@
     </div>
 </div>
 
+{% endif %}
+
 <!-- ============================================================
      DEPLOYMENTS TAB
      ============================================================ -->
+{% if not role_config or 'deployments' in role_config.show_tabs %}
 <div id="tab-deployments" class="tab-content">
+    <!-- Deployment Pipeline Diagram -->
+    <h3 class="section-header">Deployment Pipeline</h3>
+    <div class="mermaid-container" role="img" aria-label="CI/CD deployment pipeline">
+<pre class="mermaid">
+flowchart LR
+    B["Build"] --> T["Test"]
+    T --> SA["SAST"]
+    SA --> DA["Dep Audit"]
+    DA --> CS["Container<br/>Scan"]
+    CS --> CO["Compliance<br/>Check"]
+    CO --> D["Deploy"]
+    T -.->|"coverage >= 80%"| SA
+    SA -.->|"0 critical/high"| DA
+    CO -.->|"0 CAT1"| D
+    style D fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+</pre>
+    </div>
+
     <h3 class="section-header">Deployment History</h3>
     <div class="table-container">
         <table>
@@ -348,9 +449,12 @@
     </div>
 </div>
 
+{% endif %}
+
 <!-- ============================================================
      AUDIT TAB
      ============================================================ -->
+{% if not role_config or 'audit' in role_config.show_tabs %}
 <div id="tab-audit" class="tab-content">
     <h3 class="section-header">Audit Trail</h3>
     <div class="table-container">
@@ -380,4 +484,100 @@
         </table>
     </div>
 </div>
+{% endif %}
+
+<!-- Role-based tab initialization: activate first visible tab -->
+{% if role_config %}
+<script>
+(function() {
+    var tabs = document.querySelectorAll('.tab-btn');
+    var contents = document.querySelectorAll('.tab-content');
+    if (tabs.length > 0 && contents.length > 0) {
+        // Remove all active states first
+        tabs.forEach(function(t) { t.classList.remove('active'); });
+        contents.forEach(function(c) { c.classList.remove('active'); });
+        // Activate the first visible tab
+        tabs[0].classList.add('active');
+        var firstTabId = tabs[0].getAttribute('data-tab');
+        var firstContent = document.getElementById(firstTabId);
+        if (firstContent) firstContent.classList.add('active');
+    }
+})();
+</script>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    if (!window.ICDEV || !ICDEV.donutChart) return;
+    var projectId = '{{ project.id }}';
+    fetch('/api/charts/project/' + projectId)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            // STIG donut
+            if (d.stig_by_severity && d.stig_by_severity.length > 0) {
+                var sevColors = { 'CAT-I': '#dc3545', 'CAT-II': '#ffc107', 'CAT-III': '#28a745', high: '#dc3545', medium: '#ffc107', low: '#28a745' };
+                var openCount = 0, closedCount = 0;
+                d.stig_by_severity.forEach(function(r) {
+                    if (r.status === 'Open') openCount += r.cnt;
+                    else closedCount += r.cnt;
+                });
+                ICDEV.donutChart('chart-proj-stig', {
+                    segments: [
+                        { label: 'Open', value: openCount, color: '#dc3545' },
+                        { label: 'Closed', value: closedCount, color: '#28a745' },
+                    ],
+                    size: 130, thickness: 22,
+                    centerLabel: String(openCount),
+                    centerSubLabel: 'Open',
+                    showLegend: true,
+                });
+            } else {
+                document.getElementById('chart-proj-stig').innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">No STIG data</p>';
+            }
+            // POAM bar
+            if (d.poam_by_severity && d.poam_by_severity.length > 0) {
+                var sevs = {};
+                d.poam_by_severity.forEach(function(r) {
+                    if (!sevs[r.severity]) sevs[r.severity] = { open: 0, closed: 0 };
+                    if (r.status === 'open') sevs[r.severity].open += r.cnt;
+                    else sevs[r.severity].closed += r.cnt;
+                });
+                var labels = Object.keys(sevs);
+                ICDEV.barChart('chart-proj-poam', {
+                    labels: labels,
+                    series: [
+                        { name: 'Open', data: labels.map(function(s) { return sevs[s].open; }), color: '#dc3545' },
+                        { name: 'Closed', data: labels.map(function(s) { return sevs[s].closed; }), color: '#28a745' },
+                    ],
+                    height: 140, showLegend: true, showValues: true,
+                });
+            } else {
+                document.getElementById('chart-proj-poam').innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">No POA&M data</p>';
+            }
+            // Alert trend line
+            if (d.alert_trend && d.alert_trend.length > 0) {
+                var days = [], counts = [];
+                d.alert_trend.forEach(function(r) {
+                    if (days.indexOf(r.day) === -1) { days.push(r.day); counts.push(0); }
+                    counts[days.indexOf(r.day)] += r.cnt;
+                });
+                ICDEV.lineChart('chart-proj-alerts', {
+                    labels: days.map(function(d) { return d.slice(5); }),
+                    series: [{ name: 'Alerts', data: counts, color: '#ffc107' }],
+                    height: 140, showLegend: false,
+                });
+            } else {
+                document.getElementById('chart-proj-alerts').innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">No alert data</p>';
+            }
+        })
+        .catch(function() {
+            ['chart-proj-stig', 'chart-proj-poam', 'chart-proj-alerts'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && !el.innerHTML.trim()) el.innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">Chart unavailable</p>';
+            });
+        });
+})();
+</script>
 {% endblock %}

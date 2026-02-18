@@ -6,18 +6,31 @@
 # POC: ICDEV System Administrator
 """Document upload and requirements extraction tool.
 
-Uploads DoD documents (SOW, CDD, CONOPS, SRD, SRS, etc.), extracts text content,
-and identifies requirement statements using shall/must/should/will patterns.
-Supports PDF, DOCX, TXT, and MD with graceful fallback for optional dependencies.
+Uploads DoD documents (SOW, CDD, CONOPS, SRD, SRS, etc.) and images
+(whiteboard photos, wireframe screenshots, architecture diagrams), extracts
+text content using regex or vision LLM fallback, and identifies requirement
+statements using shall/must/should/will patterns.
+
+Supports PDF (with page-by-page vision fallback for scanned docs), DOCX,
+TXT, MD, and image formats (PNG, JPG, GIF, WebP) with graceful fallback
+for optional dependencies.
 
 Usage:
     # Upload a document
     python tools/requirements/document_extractor.py --session-id sess-abc \\
         --upload --file-path /path/to/sow.pdf --document-type sow --json
 
+    # Upload an image (whiteboard photo, wireframe, etc.)
+    python tools/requirements/document_extractor.py --session-id sess-abc \\
+        --upload --file-path /path/to/whiteboard.png --document-type other --json
+
     # Extract requirements from an uploaded document
     python tools/requirements/document_extractor.py --document-id doc-abc \\
         --extract --json
+
+    # Classify an uploaded image document
+    python tools/requirements/document_extractor.py --document-id doc-abc \\
+        --classify --json
 
     # List all documents for a session
     python tools/requirements/document_extractor.py --session-id sess-abc \\
@@ -25,17 +38,29 @@ Usage:
 """
 
 import argparse
+import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
+import sys
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
+
+logger = logging.getLogger("icdev.requirements.document_extractor")
+
+# Image extensions supported for direct upload
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".bmp"}
 
 try:
     from tools.audit.audit_logger import log_event
@@ -75,11 +100,383 @@ def _compute_file_hash(file_path):
     return h.hexdigest()
 
 
+# ---------------------------------------------------------------------------
+# Vision-based extraction helpers
+# ---------------------------------------------------------------------------
+
+def _check_vision_available():
+    """Check if a vision-capable LLM is available for document extraction."""
+    try:
+        from tools.llm import get_router
+        router = get_router()
+        provider, model_id, model_cfg = router.get_provider_for_function("document_vision")
+        if provider is None:
+            return False, ""
+        return model_cfg.get("supports_vision", False), model_id
+    except Exception:
+        return False, ""
+
+
+def _extract_text_from_image_via_vision(file_path):
+    """Extract text content from an image using a vision LLM.
+
+    Sends the image to a vision-capable model with a prompt to extract
+    all visible text, preserving structure and formatting.
+
+    Args:
+        file_path: Path to the image file.
+
+    Returns:
+        Extracted text string, or placeholder if vision unavailable.
+    """
+    p = Path(file_path)
+    available, model_id = _check_vision_available()
+    if not available:
+        return f"[Image file: {p.name} -- vision model not available for text extraction]"
+
+    try:
+        from tools.testing.screenshot_validator import encode_image
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+
+        b64_data, media_type = encode_image(str(p))
+
+        user_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64_data,
+                },
+            },
+            {
+                "type": "text",
+                "text": (
+                    "Extract ALL text content from this document image. "
+                    "Preserve structure, headings, bullet points, and numbered lists. "
+                    "If this contains requirement statements (shall/must/should/will), "
+                    "preserve them exactly. Output only the extracted text."
+                ),
+            },
+        ]
+
+        router = get_router()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=(
+                "You are a document text extraction assistant for a DoD requirements "
+                "intake system. Extract all visible text from the provided image accurately. "
+                "Preserve document structure, headings, and formatting."
+            ),
+            max_tokens=4096,
+            temperature=0.1,
+        )
+
+        response = router.invoke("document_vision", request)
+        text = response.content.strip()
+        if text:
+            logger.info("Vision extracted %d chars from image %s", len(text), p.name)
+            return text
+        return f"[Image file: {p.name} -- vision model returned no text]"
+
+    except Exception as exc:
+        logger.warning("Vision text extraction failed for %s: %s", p.name, exc)
+        return f"[Image file: {p.name} -- vision extraction error: {exc}]"
+
+
+def _extract_pdf_pages_via_vision(file_path):
+    """Extract text from PDF pages using vision LLM for pages with no text.
+
+    Iterates pages via pypdf. For each page, attempts text extraction first.
+    If a page yields no text (scanned/image-heavy), renders it and sends to
+    the vision model for OCR-like extraction.
+
+    Args:
+        file_path: Path to the PDF file.
+
+    Returns:
+        Concatenated text from all pages with page markers.
+    """
+    p = Path(file_path)
+    available, model_id = _check_vision_available()
+    if not available:
+        return f"[PDF file: {p.name} -- vision model not available for page extraction]"
+
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return f"[PDF file: {p.name} -- requires pypdf for page-by-page extraction]"
+
+    try:
+        from tools.testing.screenshot_validator import encode_image
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+    except ImportError as exc:
+        return f"[PDF file: {p.name} -- vision dependencies not available: {exc}]"
+
+    reader = PdfReader(str(p))
+    all_pages = []
+    vision_pages_used = 0
+
+    for i, page in enumerate(reader.pages):
+        page_num = i + 1
+        text = page.extract_text() or ""
+
+        if len(text.strip()) >= 50:
+            # Sufficient text extracted directly
+            all_pages.append(f"--- Page {page_num} ---\n{text.strip()}")
+            continue
+
+        # Page has no/little text — try vision extraction via page rendering
+        # Attempt to render page to image using pdf2image or fitz
+        page_image_b64 = None
+        media_type = "image/png"
+
+        try:
+            # Try pdf2image (poppler-based)
+            from pdf2image import convert_from_path
+            images = convert_from_path(
+                str(p), first_page=page_num, last_page=page_num, dpi=200,
+            )
+            if images:
+                import io
+                buf = io.BytesIO()
+                images[0].save(buf, format="PNG")
+                page_image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        except ImportError:
+            pass
+        except Exception as exc:
+            logger.debug("pdf2image failed for page %d: %s", page_num, exc)
+
+        if page_image_b64 is None:
+            try:
+                # Try PyMuPDF (fitz)
+                import fitz
+                pdf_doc = fitz.open(str(p))
+                pix = pdf_doc[i].get_pixmap(dpi=200)
+                page_image_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                pdf_doc.close()
+            except ImportError:
+                pass
+            except Exception as exc:
+                logger.debug("PyMuPDF failed for page %d: %s", page_num, exc)
+
+        if page_image_b64 is None:
+            # No rendering library available — use whatever text we got
+            if text.strip():
+                all_pages.append(f"--- Page {page_num} ---\n{text.strip()}")
+            else:
+                all_pages.append(
+                    f"--- Page {page_num} ---\n"
+                    f"[No text extractable; pdf2image or PyMuPDF required for vision fallback]"
+                )
+            continue
+
+        # Send rendered page image to vision model
+        try:
+            user_content = [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": page_image_b64,
+                    },
+                },
+                {
+                    "type": "text",
+                    "text": (
+                        f"Extract ALL text from this PDF page (page {page_num}). "
+                        "Preserve structure, headings, tables, and bullet points. "
+                        "Output only the extracted text."
+                    ),
+                },
+            ]
+
+            router = get_router()
+            request = LLMRequest(
+                messages=[{"role": "user", "content": user_content}],
+                system_prompt=(
+                    "You are a document OCR assistant. Extract all text from "
+                    "the provided page image accurately."
+                ),
+                max_tokens=4096,
+                temperature=0.1,
+            )
+
+            response = router.invoke("document_vision", request)
+            page_text = response.content.strip()
+            if page_text:
+                all_pages.append(f"--- Page {page_num} (vision) ---\n{page_text}")
+                vision_pages_used += 1
+            else:
+                all_pages.append(f"--- Page {page_num} ---\n[Vision returned no text]")
+        except Exception as exc:
+            logger.warning("Vision extraction failed for page %d: %s", page_num, exc)
+            all_pages.append(
+                f"--- Page {page_num} ---\n[Vision extraction error: {exc}]"
+            )
+
+    if vision_pages_used > 0:
+        logger.info(
+            "PDF %s: %d pages, %d required vision extraction",
+            p.name, len(reader.pages), vision_pages_used,
+        )
+
+    if all_pages:
+        return "\n\n".join(all_pages)
+    return f"[PDF file: {p.name} -- no content extracted from any page]"
+
+
+def _classify_image(file_path):
+    """Classify an uploaded image using a vision LLM.
+
+    Determines if the image is a whiteboard, diagram, wireframe, screenshot,
+    form, table, flowchart, network diagram, architecture diagram, or other.
+
+    Args:
+        file_path: Path to the image file.
+
+    Returns:
+        dict with {category, confidence, description} or None if unavailable.
+    """
+    available, model_id = _check_vision_available()
+    if not available:
+        return None
+
+    try:
+        from tools.testing.screenshot_validator import encode_image
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+
+        b64_data, media_type = encode_image(str(file_path))
+
+        user_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64_data,
+                },
+            },
+            {
+                "type": "text",
+                "text": (
+                    "Classify this image into exactly ONE category from the list: "
+                    "whiteboard, diagram, wireframe, screenshot, form, table, "
+                    "flowchart, network_diagram, architecture_diagram, "
+                    "handwritten_notes, other. "
+                    "Respond with EXACTLY this JSON (no markdown, no extra text): "
+                    '{"category": "string", "confidence": 0.0-1.0, '
+                    '"description": "brief description of what the image shows"}'
+                ),
+            },
+        ]
+
+        router = get_router()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=(
+                "You are an image classifier for a DoD document intake system. "
+                "Classify images accurately into the requested categories."
+            ),
+            max_tokens=256,
+            temperature=0.1,
+        )
+
+        response = router.invoke("document_vision", request)
+        text = response.content.strip()
+
+        # Strip markdown fences
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        result = json.loads(text)
+        return {
+            "category": str(result.get("category", "other")),
+            "confidence": float(result.get("confidence", 0.0)),
+            "description": str(result.get("description", "")),
+        }
+
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.debug("Image classification JSON parse failed: %s", exc)
+        return {"category": "other", "confidence": 0.3, "description": "Classification uncertain"}
+    except Exception as exc:
+        logger.warning("Image classification failed: %s", exc)
+        return None
+
+
+def classify_document(document_id, db_path=None):
+    """Classify an uploaded image document using vision LLM.
+
+    Args:
+        document_id: ID of the uploaded document.
+        db_path: Optional DB path override.
+
+    Returns:
+        dict with classification result.
+    """
+    conn = _get_connection(db_path)
+    doc = conn.execute(
+        "SELECT * FROM intake_documents WHERE id = ?", (document_id,)
+    ).fetchone()
+    if not doc:
+        conn.close()
+        raise ValueError(f"Document '{document_id}' not found.")
+
+    doc_data = dict(doc)
+    file_path = doc_data["file_path"]
+    p = Path(file_path)
+
+    if p.suffix.lower() not in IMAGE_EXTENSIONS:
+        conn.close()
+        return {
+            "status": "skipped",
+            "document_id": document_id,
+            "reason": f"Not an image file: {p.suffix}",
+        }
+
+    classification = _classify_image(file_path)
+    if classification is None:
+        conn.close()
+        return {
+            "status": "skipped",
+            "document_id": document_id,
+            "reason": "Vision model not available for classification",
+        }
+
+    # Store classification in extracted_sections column
+    conn.execute(
+        "UPDATE intake_documents SET extracted_sections = ? WHERE id = ?",
+        (json.dumps(classification), document_id),
+    )
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "ok",
+        "document_id": document_id,
+        "classification": classification,
+    }
+
+
+# ---------------------------------------------------------------------------
+# File reading helpers
+# ---------------------------------------------------------------------------
+
 def _read_file_content(file_path):
     """Read text content from a file.
 
-    Supports .txt, .md (direct read), .pdf (pypdf with fallback),
-    .docx (python-docx with fallback), and other text files.
+    Supports .txt, .md (direct read), .pdf (pypdf with vision fallback),
+    .docx (python-docx with fallback), image files (vision extraction),
+    and other text files.
     """
     p = Path(file_path)
     suffix = p.suffix.lower()
@@ -99,6 +496,11 @@ def _read_file_content(file_path):
                     pages.append(text)
             if pages:
                 return "\n\n".join(pages)
+            # No text found — try vision-based page extraction
+            logger.info("PDF %s has no extractable text, trying vision fallback", p.name)
+            vision_result = _extract_pdf_pages_via_vision(str(p))
+            if not vision_result.startswith("[PDF file:"):
+                return vision_result
             return f"[PDF file: {p.name} -- no extractable text found]"
         except ImportError:
             return (
@@ -124,6 +526,10 @@ def _read_file_content(file_path):
             )
         except Exception as exc:
             return f"[DOCX file: {p.name} -- extraction error: {exc}]"
+
+    elif suffix in IMAGE_EXTENSIONS:
+        # Image file — use vision LLM for text extraction
+        return _extract_text_from_image_via_vision(str(p))
 
     else:
         # Attempt generic text read
@@ -278,11 +684,23 @@ def upload_document(session_id, file_path, document_type, db_path=None):
         ".doc": "application/msword",
         ".txt": "text/plain",
         ".md": "text/markdown",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".tiff": "image/tiff",
+        ".bmp": "image/bmp",
     }
     mime_type = mime_map.get(p.suffix.lower(), "application/octet-stream")
 
     # Read raw text for storage
     raw_text = _read_file_content(file_path)
+
+    # Auto-classify images at upload time
+    image_classification = None
+    if p.suffix.lower() in IMAGE_EXTENSIONS:
+        image_classification = _classify_image(file_path)
 
     # Map document_type for DB constraint compatibility
     # DB allows: sow, cdd, conops, srd, icd, ssp, use_case, brd, urd, rfp, rfi, other
@@ -290,15 +708,20 @@ def upload_document(session_id, file_path, document_type, db_path=None):
     # Map srs -> other if not in DB constraint
     db_doc_type = document_type if document_type != "srs" else "other"
 
+    extracted_sections = None
+    if image_classification:
+        extracted_sections = json.dumps(image_classification)
+
     conn.execute(
         """INSERT INTO intake_documents
            (id, session_id, document_type, file_name, file_path, file_hash,
             file_size_bytes, mime_type, extraction_status, extracted_sections,
             extracted_requirements_count, classification, uploaded_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, 0, 'CUI', ?)""",
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, 'CUI', ?)""",
         (
             doc_id, session_id, db_doc_type, file_name, str(p.resolve()),
-            file_hash, file_size, mime_type, datetime.now().isoformat(),
+            file_hash, file_size, mime_type, extracted_sections,
+            datetime.now().isoformat(),
         ),
     )
     conn.commit()
@@ -318,7 +741,7 @@ def upload_document(session_id, file_path, document_type, db_path=None):
             },
         )
 
-    return {
+    result = {
         "document_id": doc_id,
         "session_id": session_id,
         "file_path": str(p.resolve()),
@@ -326,6 +749,9 @@ def upload_document(session_id, file_path, document_type, db_path=None):
         "file_size": file_size,
         "status": "uploaded",
     }
+    if image_classification:
+        result["image_classification"] = image_classification
+    return result
 
 
 def extract_requirements(document_id, db_path=None):
@@ -514,6 +940,10 @@ def main():
         "--list", action="store_true",
         help="List all documents for a session",
     )
+    parser.add_argument(
+        "--classify", action="store_true",
+        help="Classify an uploaded image document using vision LLM",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -529,6 +959,10 @@ def main():
         elif args.extract and args.document_id:
             # Extract requirements from document
             result = extract_requirements(args.document_id)
+
+        elif args.classify and args.document_id:
+            # Classify image document
+            result = classify_document(args.document_id)
 
         elif args.list and args.session_id:
             # List documents
@@ -562,6 +996,15 @@ def main():
                     print("  By priority: " + ", ".join(
                         f"{k}={v}" for k, v in sorted(by_priority.items())
                     ))
+            elif args.classify:
+                cls = result.get("classification", {})
+                if cls:
+                    print(f"Image classification for {result.get('document_id')}:")
+                    print(f"  Category: {cls.get('category', '?')}")
+                    print(f"  Confidence: {cls.get('confidence', 0):.2f}")
+                    print(f"  Description: {cls.get('description', '')}")
+                else:
+                    print(f"Classification: {result.get('reason', result.get('status', '?'))}")
             elif args.list:
                 docs = result.get("documents", [])
                 print(f"Documents for session {args.session_id}: {len(docs)}")

@@ -60,6 +60,8 @@ class E2ETestResult(BaseModel):
     # ICDEV additions
     cui_banners_verified: bool = False  # Whether CUI banners were checked in UI
     video_path: Optional[str] = None
+    # Vision-based screenshot validation (Phase 23)
+    vision_analysis: Optional[List[Dict[str, Any]]] = None
 
     @property
     def passed(self) -> bool:

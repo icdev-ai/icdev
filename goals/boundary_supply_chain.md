@@ -32,6 +32,74 @@ Assess requirement impact on existing ATO boundaries (4-tier GREEN/YELLOW/ORANGE
 | ORANGE | 51-75 | SSP revision, ISSO review | Security assessment, ISA review |
 | RED | 76-100 | ATO-invalidating | **FULL STOP.** Generate alternative COAs |
 
+### Boundary Impact Decision Flowchart
+
+```mermaid
+flowchart TD
+    A["New Requirement"] --> B["Assess Boundary Impact"]
+    B --> C{Impact Score?}
+    C -->|"0-25"| D["GREEN: No ATO Impact"]
+    C -->|"26-50"| E["YELLOW: SSP Addendum"]
+    C -->|"51-75"| F["ORANGE: SSP Revision + ISSO Review"]
+    C -->|"76-100"| G["RED: ATO-Invalidating"]
+    D --> H["Proceed to Build"]
+    E --> I["ISSO Notification"] --> H
+    F --> J["Security Assessment"] --> H
+    G --> K["FULL STOP: Generate Alternative COAs"]
+    K --> L["Customer Selects Alternative"]
+    L --> M{Alternative Viable?}
+    M -->|"Yes"| D
+    M -->|"No"| N["Re-authorization Required"]
+
+    style A fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style B fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style C fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style D fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style E fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style F fill:#3a2a1a,stroke:#e8590c,color:#e0e0e0
+    style G fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+    style H fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style I fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style J fill:#3a2a1a,stroke:#e8590c,color:#e0e0e0
+    style K fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+    style L fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style M fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style N fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+```
+
+### ISA Lifecycle State Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Active : Signed by both parties
+    Active --> ReviewDue : Review period reached
+    ReviewDue --> Active : Review completed, no changes
+    ReviewDue --> Expiring : Approaching expiration
+    Active --> Expiring : Within 90 days of expiration
+    Expiring --> Renewed : Renewal approved
+    Expiring --> Expired : Expiration date passed
+    Renewed --> Active : New term begins
+    Expired --> [*]
+    Active --> Terminated : Early termination
+    ReviewDue --> Terminated : Review failed
+    Terminated --> [*]
+
+    classDef green fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    classDef yellow fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    classDef orange fill:#3a2a1a,stroke:#e8590c,color:#e0e0e0
+    classDef red fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+    classDef blue fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+
+    class Draft blue
+    class Active green
+    class ReviewDue yellow
+    class Expiring orange
+    class Renewed green
+    class Expired red
+    class Terminated red
+```
+
 ### Supply Chain Dependency Tracking
 
 1. Register vendors: `add_vendor` (MCP) — include country, SCRM tier, Section 889 status

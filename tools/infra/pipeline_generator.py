@@ -197,7 +197,7 @@ def generate_pipeline(project_path: str, project_config: dict = None) -> list:
 
     all_stages = [
         "lint", "test", "agent-test", "security-scan", "build",
-        "compliance-check", "deploy-staging", "deploy-prod",
+        "devsecops-check", "compliance-check", "deploy-staging", "deploy-prod",
     ]
     if stages_filter:
         stages = [s for s in all_stages if s in stages_filter]
@@ -530,6 +530,40 @@ build:docker:
   rules:
     - if: '$CI_COMMIT_BRANCH == "main"'
     - if: '$CI_COMMIT_BRANCH == "develop"'
+"""
+
+    # =============================================================================
+    # Stage 4.5: DEVSECOPS CHECK (Phase 24 — profile-driven security stages)
+    # =============================================================================
+    if "devsecops-check" in stages:
+        # Import and call the DevSecOps pipeline security generator
+        devsecops_profile = config.get("devsecops_profile", None)
+        project_id = config.get("project_id", None)
+        if project_id or devsecops_profile:
+            try:
+                from tools.devsecops.pipeline_security_generator import generate_security_stages
+                ds_result = generate_security_stages(
+                    project_id or project_name,
+                    profile=devsecops_profile,
+                )
+                if ds_result.get("yaml_content"):
+                    pipeline += ds_result["yaml_content"]
+            except Exception:
+                # Fallback: add a placeholder stage when generator is unavailable
+                pipeline += """
+# =============================================================================
+# Stage 4.5: DEVSECOPS CHECK (profile-driven — requires DevSecOps profile)
+# =============================================================================
+
+devsecops:profile-check:
+  stage: devsecops-check
+  image: python:3.11-slim
+  script:
+    - echo "DevSecOps profile check — no profile configured"
+    - echo "Run: python tools/devsecops/profile_manager.py --project-id $PROJECT_ID --create"
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
 """
 
     # =============================================================================

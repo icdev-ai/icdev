@@ -153,7 +153,13 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'marketplace_asset_deprecated', 'marketplace_asset_revoked',
         'marketplace_review_submitted', 'marketplace_review_completed',
         'marketplace_scan_completed', 'marketplace_federation_sync',
-        'marketplace_rating_submitted'
+        'marketplace_rating_submitted',
+        'compliance_detected', 'compliance_confirmed',
+        'multi_regime_assessed', 'multi_regime_gate_evaluated',
+        'data_category_assigned', 'data_category_detected',
+        'framework_applicability_set', 'iso_bridge_mapped',
+        'cjis_assessed', 'hipaa_assessed', 'hitrust_assessed',
+        'soc2_assessed', 'pci_dss_assessed', 'iso27001_assessed'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -2385,6 +2391,415 @@ CREATE TABLE IF NOT EXISTS marketplace_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_mkt_dep_asset ON marketplace_dependencies(asset_id);
 CREATE INDEX IF NOT EXISTS idx_mkt_dep_target ON marketplace_dependencies(depends_on_slug);
+
+-- ============================================================
+-- UNIVERSAL COMPLIANCE PLATFORM (Phase 23)
+-- ============================================================
+
+-- Data classification categories assigned to projects
+CREATE TABLE IF NOT EXISTS data_classifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    data_category TEXT NOT NULL,
+    source TEXT DEFAULT 'manual' CHECK(source IN ('manual', 'auto_detected', 'inherited', 'policy')),
+    confirmed INTEGER DEFAULT 0,
+    confirmed_by TEXT,
+    confirmed_at TIMESTAMP,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, data_category)
+);
+CREATE INDEX IF NOT EXISTS idx_dataclass_project ON data_classifications(project_id);
+CREATE INDEX IF NOT EXISTS idx_dataclass_category ON data_classifications(data_category);
+
+-- Framework applicability per project (which frameworks apply)
+CREATE TABLE IF NOT EXISTS framework_applicability (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    framework_id TEXT NOT NULL,
+    source TEXT DEFAULT 'manual' CHECK(source IN ('manual', 'auto_detected', 'policy', 'data_category')),
+    detection_rule TEXT,
+    confidence REAL DEFAULT 1.0,
+    confirmed INTEGER DEFAULT 0,
+    confirmed_by TEXT,
+    confirmed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, framework_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fwapply_project ON framework_applicability(project_id);
+CREATE INDEX IF NOT EXISTS idx_fwapply_framework ON framework_applicability(framework_id);
+
+-- Compliance detection log (advisory auto-detection history)
+CREATE TABLE IF NOT EXISTS compliance_detection_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    detection_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    rules_evaluated INTEGER DEFAULT 0,
+    frameworks_detected TEXT,
+    data_categories_found TEXT,
+    applied INTEGER DEFAULT 0,
+    confirmed INTEGER DEFAULT 0,
+    details TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_detect_project ON compliance_detection_log(project_id);
+
+-- Crosswalk bridges between framework hubs (ADR D111)
+CREATE TABLE IF NOT EXISTS crosswalk_bridges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_framework TEXT NOT NULL,
+    source_control_id TEXT NOT NULL,
+    target_framework TEXT NOT NULL,
+    target_control_ids TEXT NOT NULL,
+    mapping_type TEXT DEFAULT 'equivalent' CHECK(mapping_type IN ('equivalent', 'partial', 'superset', 'subset')),
+    bridge_file TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(source_framework, source_control_id, target_framework)
+);
+CREATE INDEX IF NOT EXISTS idx_bridge_source ON crosswalk_bridges(source_framework, source_control_id);
+CREATE INDEX IF NOT EXISTS idx_bridge_target ON crosswalk_bridges(target_framework);
+
+-- Framework catalog versions (track catalog updates independently — ADR D112)
+CREATE TABLE IF NOT EXISTS framework_catalog_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    framework_id TEXT NOT NULL,
+    catalog_file TEXT NOT NULL,
+    version TEXT NOT NULL,
+    control_count INTEGER DEFAULT 0,
+    content_hash TEXT,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(framework_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_catver_framework ON framework_catalog_versions(framework_id);
+
+-- CJIS Security Policy assessments
+CREATE TABLE IF NOT EXISTS cjis_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    nist_crosswalk TEXT,
+    assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cjis_project ON cjis_assessments(project_id);
+
+-- HIPAA Security Rule assessments
+CREATE TABLE IF NOT EXISTS hipaa_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    nist_crosswalk TEXT,
+    assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_hipaa_project ON hipaa_assessments(project_id);
+
+-- HITRUST CSF v11 assessments
+CREATE TABLE IF NOT EXISTS hitrust_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    nist_crosswalk TEXT,
+    assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_hitrust_project ON hitrust_assessments(project_id);
+
+-- SOC 2 Type II assessments
+CREATE TABLE IF NOT EXISTS soc2_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    nist_crosswalk TEXT,
+    assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_soc2_project ON soc2_assessments(project_id);
+
+-- PCI DSS v4.0 assessments
+CREATE TABLE IF NOT EXISTS pci_dss_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    nist_crosswalk TEXT,
+    assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_pcidss_project ON pci_dss_assessments(project_id);
+
+-- ISO/IEC 27001:2022 assessments
+CREATE TABLE IF NOT EXISTS iso27001_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    nist_crosswalk TEXT,
+    assessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_iso27001_project ON iso27001_assessments(project_id);
+
+-- ============================================================
+-- DEVSECOPS PROFILES (Phase 24)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS devsecops_profiles (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    maturity_level TEXT CHECK(maturity_level IN (
+        'level_1_initial', 'level_2_managed', 'level_3_defined',
+        'level_4_measured', 'level_5_optimized'
+    )),
+    active_stages TEXT,
+    stage_configs TEXT,
+    detected_at TEXT,
+    confirmed_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id)
+);
+
+-- ============================================================
+-- ZTA MATURITY SCORES (Phase 24-25)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS zta_maturity_scores (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pillar TEXT NOT NULL CHECK(pillar IN (
+        'user_identity', 'device', 'network', 'application_workload',
+        'data', 'visibility_analytics', 'automation_orchestration', 'overall'
+    )),
+    score REAL CHECK(score >= 0.0 AND score <= 1.0),
+    maturity_level TEXT CHECK(maturity_level IN ('traditional', 'advanced', 'optimal')),
+    evidence TEXT,
+    assessed_by TEXT DEFAULT 'icdev-devsecops-agent',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zta_maturity_project ON zta_maturity_scores(project_id);
+
+-- ============================================================
+-- ZTA POSTURE EVIDENCE (Phase 25 — feeds into cATO)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS zta_posture_evidence (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    evidence_type TEXT NOT NULL,
+    evidence_data TEXT,
+    status TEXT CHECK(status IN ('current', 'stale', 'expired', 'not_collected')),
+    collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zta_evidence_project ON zta_posture_evidence(project_id);
+
+-- ============================================================
+-- NIST 800-207 ASSESSMENTS (Phase 25 — BaseAssessor pattern)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS nist_800_207_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT,
+    assessor TEXT DEFAULT 'icdev-devsecops-agent',
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    family TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN (
+        'not_assessed', 'satisfied', 'partially_satisfied',
+        'not_satisfied', 'not_applicable', 'risk_accepted'
+    )),
+    evidence_description TEXT,
+    nist_800_53_crosswalk TEXT,
+    automation_result TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nist_800_207_project ON nist_800_207_assessments(project_id);
+
+-- ============================================================
+-- DEVSECOPS PIPELINE AUDIT (Phase 24 — append-only)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS devsecops_pipeline_audit (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    pipeline_run_id TEXT,
+    stage TEXT NOT NULL,
+    tool TEXT NOT NULL,
+    status TEXT CHECK(status IN ('passed', 'failed', 'skipped', 'warning')),
+    findings_count INTEGER DEFAULT 0,
+    findings_data TEXT,
+    duration_seconds REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_devsecops_audit_project ON devsecops_pipeline_audit(project_id);
+
+-- =====================================================================
+-- Phase 26: MOSA (Modular Open Systems Approach)
+-- =====================================================================
+
+-- MOSA compliance assessments (BaseAssessor pattern)
+CREATE TABLE IF NOT EXISTS mosa_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT,
+    assessor TEXT DEFAULT 'icdev-compliance-agent',
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    family TEXT,
+    status TEXT CHECK(status IN ('not_assessed','satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted')),
+    evidence_description TEXT,
+    nist_800_53_crosswalk TEXT,
+    automation_result TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mosa_assessments_project ON mosa_assessments(project_id);
+
+-- Interface Control Documents
+CREATE TABLE IF NOT EXISTS icd_documents (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    interface_id TEXT NOT NULL,
+    interface_name TEXT NOT NULL,
+    version TEXT DEFAULT '1.0.0',
+    source_system TEXT,
+    target_system TEXT,
+    protocol TEXT,
+    data_format TEXT,
+    content TEXT,
+    file_path TEXT,
+    classification TEXT DEFAULT 'CUI',
+    status TEXT CHECK(status IN ('draft','review','approved','deprecated')) DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    approved_by TEXT,
+    UNIQUE(project_id, interface_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_icd_documents_project ON icd_documents(project_id);
+
+-- Technical Standard Profiles
+CREATE TABLE IF NOT EXISTS tsp_documents (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    version TEXT DEFAULT '1.0',
+    standards TEXT,
+    deviations TEXT,
+    content TEXT,
+    file_path TEXT,
+    classification TEXT DEFAULT 'CUI',
+    status TEXT CHECK(status IN ('draft','review','approved','deprecated')) DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    approved_at TIMESTAMP,
+    approved_by TEXT,
+    UNIQUE(project_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_tsp_documents_project ON tsp_documents(project_id);
+
+-- MOSA modularity metrics (time-series, D131)
+CREATE TABLE IF NOT EXISTS mosa_modularity_metrics (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT,
+    module_count INTEGER,
+    interface_count INTEGER,
+    coupling_score REAL,
+    cohesion_score REAL,
+    interface_coverage_pct REAL,
+    circular_deps INTEGER DEFAULT 0,
+    approved_icd_count INTEGER DEFAULT 0,
+    total_icd_required INTEGER DEFAULT 0,
+    tsp_current INTEGER DEFAULT 0,
+    overall_modularity_score REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mosa_metrics_project ON mosa_modularity_metrics(project_id);
+
+-- ── CI/CD Pipeline Runs (Phase 1 — D132, D133) ────────────────────────────
+CREATE TABLE IF NOT EXISTS ci_pipeline_runs (
+    id TEXT PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    workflow TEXT NOT NULL,
+    status TEXT CHECK(status IN ('queued', 'running', 'completed', 'failed', 'recovering')),
+    trigger_source TEXT,
+    event_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_session ON ci_pipeline_runs(session_key, status);
+CREATE INDEX IF NOT EXISTS idx_pipeline_run ON ci_pipeline_runs(run_id);
+
+-- ── CI/CD Event Queue — lane-aware processing (Phase 1 — D133) ────────────
+CREATE TABLE IF NOT EXISTS ci_event_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    envelope_json TEXT NOT NULL,
+    status TEXT CHECK(status IN ('queued', 'processing', 'processed', 'dropped')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_queue_session ON ci_event_queue(session_key, status);
+
+-- ── CI/CD Conversations — conversational feedback loop (Phase 3 — D135) ───
+CREATE TABLE IF NOT EXISTS ci_conversations (
+    id TEXT PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    issue_number INTEGER,
+    channel_id TEXT,
+    thread_ts TEXT,
+    status TEXT CHECK(status IN ('active', 'paused', 'completed', 'abandoned')),
+    total_turns INTEGER DEFAULT 0,
+    last_agent_action TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_conv_session ON ci_conversations(session_key, status);
+
+-- ── CI/CD Conversation Turns — turn-by-turn history (Phase 3 — D135) ──────
+CREATE TABLE IF NOT EXISTS ci_conversation_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES ci_conversations(id),
+    turn_number INTEGER NOT NULL,
+    role TEXT CHECK(role IN ('developer', 'agent', 'system')),
+    content TEXT NOT NULL,
+    content_type TEXT CHECK(content_type IN (
+        'text', 'command', 'code_change', 'test_result',
+        'approval', 'rejection', 'status_update', 'error'
+    )),
+    action_taken TEXT,
+    comment_id TEXT,
+    metadata TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_turns_session ON ci_conversation_turns(session_id, turn_number);
 """
 
 
@@ -2425,6 +2840,18 @@ FIPS_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN fips199_overall TEXT",
     "ALTER TABLE projects ADD COLUMN fips199_categorization_id INTEGER",
     "ALTER TABLE projects ADD COLUMN nss_system INTEGER DEFAULT 0",
+]
+
+COMPLIANCE_PLATFORM_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN data_categories TEXT",
+    "ALTER TABLE projects ADD COLUMN applicable_frameworks TEXT",
+    "ALTER TABLE projects ADD COLUMN multi_regime_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN compliance_detection_date TIMESTAMP",
+]
+
+MOSA_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN mosa_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN mosa_modularity_score REAL",
 ]
 
 
@@ -2470,6 +2897,18 @@ def init_db(db_path=None):
             conn.execute(alter_sql)
         except sqlite3.OperationalError:
             pass  # Column already exists
+    # Idempotent ALTER TABLE for Universal Compliance Platform columns (Phase 23)
+    for alter_sql in COMPLIANCE_PLATFORM_ALTER_SQL:
+        try:
+            conn.execute(alter_sql)
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+    # Phase 26: MOSA columns
+    for sql in MOSA_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print(f"ICDEV database initialized at {path}")

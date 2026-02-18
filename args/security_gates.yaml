@@ -224,6 +224,92 @@ fips200:
     assessment_max_age_days: 90
 
 # Marketplace Asset Registry Gates (Phase 22)
+# DevSecOps Pipeline Gates (Phase 24)
+devsecops:
+  blocking:
+    - policy_as_code_violation_critical
+    - image_attestation_missing
+    - sbom_attestation_missing
+    - critical_sast_finding_unresolved
+    - secrets_detected_in_pipeline
+  warning:
+    - policy_as_code_deviation
+    - image_attestation_stale
+    - rasp_rule_bypass_detected
+    - license_compliance_violation
+  thresholds:
+    policy_violations:
+      max_critical: 0
+      max_high: 0
+      max_medium: 5
+    attestation_age_days: 7
+    minimum_maturity_for_ato: "level_3_defined"
+
+# DoD MOSA Gates (Phase 26)
+mosa:
+  blocking:
+    - external_interface_without_icd
+    - circular_dependencies_detected
+    - modularity_score_below_minimum
+    - direct_coupling_violation
+  warning:
+    - interface_coverage_below_80_pct
+    - tsp_expired_or_missing
+    - cohesion_score_below_threshold
+    - coupling_score_above_threshold
+  thresholds:
+    min_modularity_score: 0.6
+    max_coupling_score: 0.4
+    min_cohesion_score: 0.6
+    min_interface_coverage_pct: 80
+    max_circular_dependencies: 0
+    max_direct_coupling_violations: 0
+    tsp_max_age_days: 180
+    require_icd_per_external_interface: true
+
+# Zero Trust Architecture Gates (Phase 25)
+zero_trust:
+  blocking:
+    - zta_maturity_below_minimum
+    - mtls_not_enforced
+    - network_policy_missing
+    - identity_verification_absent
+  warning:
+    - zta_pillar_below_threshold
+    - posture_evidence_stale
+    - pdp_connectivity_degraded
+    - service_mesh_sidecar_missing
+  thresholds:
+    minimum_maturity_score: 0.34
+    pillar_minimum_score: 0.2
+    evidence_max_age_days: 30
+    require_mtls_for_il4_plus: true
+    require_network_policy: true
+
+# CI/CD Self-Recovery Guard Rails (Phase 4 — D134)
+recovery:
+  max_attempts: 3
+  non_recoverable_failures:
+    - secrets_detected
+    - cat1_stig_finding
+    - critical_vulnerability
+    - missing_cui_markings
+    - classification_violation
+    - high_vulnerability_sast
+  auto_recoverable_failures:
+    - test_assertion_failure
+    - syntax_error
+    - lint_violation
+    - import_error
+    - type_error
+    - bdd_scenario_failure
+    - compile_error
+  require_human_review_for:
+    - security_gate_failure
+    - compliance_gate_failure
+    - high_vulnerability
+    - bandit_high_severity
+
 marketplace_publish:
   blocking:
     - sast_critical_or_high_findings

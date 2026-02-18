@@ -271,3 +271,33 @@ agents:
       - cost_modeling
       - scenario_management
       - inline_visualization
+
+  # ── Phase 25: DevSecOps & Zero Trust Architecture Agent ──
+
+  devsecops:
+    id: "devsecops-agent"
+    name: "ICDEV DevSecOps & Zero Trust"
+    description: "DevSecOps pipeline security, Zero Trust Architecture (NIST SP 800-207), policy-as-code, secrets lifecycle, ZTA maturity scoring, service mesh configuration."
+    host: "0.0.0.0"
+    port: 8457
+    tls:
+      cert: "/etc/icdev/certs/devsecops.crt"
+      key: "/etc/icdev/certs/devsecops.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "high"
+      max_tokens: 16384
+    max_concurrent: 8
+    capabilities:
+      - devsecops_profile_management
+      - zta_maturity_assessment
+      - pipeline_security_generation
+      - policy_as_code_generation
+      - service_mesh_configuration
+      - attestation_management
+      - network_segmentation
+      - zta_posture_monitoring
+      - nist_800_207_assessment

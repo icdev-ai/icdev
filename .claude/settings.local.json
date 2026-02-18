@@ -12,7 +12,18 @@
       "WebFetch(domain:onlycrabs.ai)",
       "WebFetch(domain:docs.openclaw.ai)",
       "mcp__playwright__browser_close",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(node -c:*)",
+      "Bash(node --check:*)",
+      "Bash(for f in tools/dashboard/static/js/tour.js tools/dashboard/static/js/live.js tools/dashboard/static/js/batch.js tools/dashboard/static/js/shortcuts.js)",
+      "Bash(do node -c \"$f\")",
+      "Bash(for:*)",
+      "Bash(node -e:*)",
+      "WebFetch(domain:aws.amazon.com)",
+      "WebFetch(domain:theagentstack.substack.com)",
+      "WebFetch(domain:milvus.io)"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",

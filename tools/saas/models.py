@@ -202,6 +202,13 @@ TIER_LIMITS = {
         "bedrock_pool_enabled": False,
         "rate_limit_per_minute": 60,
         "rate_limit_per_hour": 500,
+        # CLI capabilities ceiling (D132) — Starter: scripted intake only
+        "cli_ceiling": {
+            "cicd_automation": False,
+            "parallel_agents": False,
+            "container_execution": False,
+            "scripted_intake": True,
+        },
     },
     SubscriptionTier.PROFESSIONAL: {
         "max_projects": 25,
@@ -215,6 +222,13 @@ TIER_LIMITS = {
         "bedrock_pool_enabled": True,
         "rate_limit_per_minute": 300,
         "rate_limit_per_hour": 5000,
+        # CLI capabilities ceiling (D132) — Professional: all except container execution
+        "cli_ceiling": {
+            "cicd_automation": True,
+            "parallel_agents": True,
+            "container_execution": False,
+            "scripted_intake": True,
+        },
     },
     SubscriptionTier.ENTERPRISE: {
         "max_projects": -1,  # unlimited
@@ -229,5 +243,12 @@ TIER_LIMITS = {
         "bedrock_pool_enabled": True,
         "rate_limit_per_minute": -1,  # unlimited
         "rate_limit_per_hour": -1,
+        # CLI capabilities ceiling (D132) — Enterprise: all capabilities
+        "cli_ceiling": {
+            "cicd_automation": True,
+            "parallel_agents": True,
+            "container_execution": True,
+            "scripted_intake": True,
+        },
     },
 }

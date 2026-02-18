@@ -6,6 +6,165 @@ Generate all artifacts required for an Authority to Operate (ATO) package. This 
 
 **Why this matters:** No ATO = no deployment. Government systems cannot operate without demonstrated compliance. These artifacts must be accurate, current, and traceable — not boilerplate. Assessors will read them.
 
+### 19-Step Compliance Pipeline
+
+```mermaid
+flowchart TB
+    subgraph Foundation["Foundation: Security Categorization"]
+        F199["Step 0a\nFIPS 199\nCategorize"]
+        F200["Step 0b\nFIPS 200\nValidate"]
+        F199 --> F200
+    end
+
+    subgraph Core["Core ATO Artifacts"]
+        SSP["Step 1\nSSP"]
+        POAM["Step 2\nPOAM"]
+        STIG["Step 3\nSTIG"]
+        SBOM["Step 4\nSBOM"]
+        CUI["Step 5\nCUI Mark"]
+        CTRL["Step 6\nControls"]
+        RPT["Step 7\nStatus Report"]
+        LOG["Step 8\nAudit Log"]
+        SSP --> POAM
+        STIG --> POAM
+        SBOM --> POAM
+        SSP --> CUI
+        POAM --> CUI
+        STIG --> CUI
+        CUI --> CTRL
+        CTRL --> RPT --> LOG
+    end
+
+    subgraph CSSP["CSSP (DI 8530.01)"]
+        CA["Step 9\nCSSP Assess"]
+        SIEM["Step 10\nSIEM Config"]
+        IR["Step 11\nIR Plan"]
+        EV["Step 12\nEvidence"]
+        CR["Step 13\nCSSP Report"]
+        XA["Step 14\nXacta Sync"]
+        CA --> SIEM --> IR --> EV --> CR --> XA
+    end
+
+    subgraph SbDIVV["SbD + IV&V"]
+        SBD["Step 15\nSbD Assess"]
+        SBDR["Step 16\nSbD Report"]
+        RTM["Step 17\nRTM"]
+        IVV["Step 18\nIV&V Assess"]
+        IVVR["Step 19\nIV&V Report"]
+        SBD --> SBDR
+        RTM --> IVV --> IVVR
+    end
+
+    F200 --> SSP
+    LOG --> CA
+    LOG --> SBD
+    LOG --> RTM
+
+    style F199 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style F200 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style SSP fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style POAM fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style STIG fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style SBOM fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style CUI fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style CTRL fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style RPT fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style LOG fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style CA fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style SIEM fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style IR fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style EV fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style CR fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style XA fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style SBD fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style SBDR fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style RTM fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style IVV fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style IVVR fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+```
+
+### Artifact Dependencies
+
+```mermaid
+classDiagram
+    class FIPS199 {
+        +categorize()
+        Impact Level
+        Baseline Selection
+    }
+    class FIPS200 {
+        +validate()
+        17 Security Areas
+    }
+    class SSP {
+        +generate()
+        17 Sections
+        System Boundary
+    }
+    class POAM {
+        +generate()
+        Findings
+        Remediation Plans
+        Milestones
+    }
+    class STIG {
+        +check()
+        CAT1/CAT2/CAT3
+        DISA Checklists
+    }
+    class SBOM {
+        +generate()
+        CycloneDX 1.5
+        Dependencies
+        Licenses
+    }
+    class CUI_Markings {
+        +apply()
+        Banners
+        Portion Marks
+    }
+    class Controls {
+        +map()
+        NIST 800-53
+        18 Families
+    }
+    class CSSP_Report {
+        +generate()
+        5 Functional Areas
+        DI 8530.01
+    }
+    class SbD_Report {
+        +generate()
+        14 Domains
+        CISA 7 Commitments
+    }
+    class IVV_Report {
+        +generate()
+        9 Process Areas
+        IEEE 1012
+    }
+    class RTM {
+        +generate()
+        Forward Trace
+        Backward Trace
+    }
+
+    FIPS199 --> FIPS200 : determines baseline
+    FIPS199 --> SSP : categorization input
+    FIPS200 --> SSP : security areas
+    SSP --> POAM : open items
+    STIG --> POAM : CAT findings
+    SBOM --> POAM : vuln findings
+    SSP --> CUI_Markings : mark document
+    POAM --> CUI_Markings : mark document
+    STIG --> CUI_Markings : mark document
+    Controls --> SSP : implementation evidence
+    Controls --> CSSP_Report : control mapping
+    RTM --> IVV_Report : traceability input
+    STIG --> SbD_Report : security evidence
+    SBOM --> SbD_Report : supply chain evidence
+```
+
 ---
 
 ## Prerequisites

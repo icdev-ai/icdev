@@ -30,9 +30,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from tools.ci.modules.workflow_ops import ensure_run_id
 
 
+# Phases eligible for self-recovery (D134)
+RECOVERABLE_PHASES = {"Test", "Build"}
+
+
 def run_phase(phase_name: str, script_name: str, issue_number: str,
               run_id: str, extra_args: list = None) -> bool:
-    """Run a workflow phase as a subprocess."""
+    """Run a workflow phase as a subprocess.
+
+    For recoverable phases (Test, Build), failure triggers the recovery engine
+    which attempts to auto-fix and retest before aborting.
+    """
     script_path = Path(__file__).parent / f"{script_name}.py"
 
     cmd = [sys.executable, str(script_path), issue_number, run_id]
@@ -44,14 +52,82 @@ def run_phase(phase_name: str, script_name: str, issue_number: str,
     print(f"{'='*60}")
     print(f"Command: {' '.join(cmd)}")
 
-    result = subprocess.run(cmd, cwd=str(PROJECT_ROOT))
+    result = subprocess.run(
+        cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True,
+    )
+
+    # Print output to stdout for visibility
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
 
     if result.returncode != 0:
         print(f"\n{phase_name} phase FAILED (exit code: {result.returncode})")
+
+        # Attempt self-recovery for eligible phases (D134)
+        if phase_name in RECOVERABLE_PHASES:
+            recovered = _attempt_phase_recovery(
+                phase_name, result.stdout + result.stderr,
+                run_id, issue_number,
+            )
+            if recovered:
+                print(f"\n{phase_name} phase RECOVERED — continuing pipeline")
+                return True
+
         return False
 
     print(f"\n{phase_name} phase completed")
     return True
+
+
+def _attempt_phase_recovery(
+    phase_name: str, failure_output: str,
+    run_id: str, issue_number: str,
+) -> bool:
+    """Invoke recovery engine for a failed phase."""
+    try:
+        from tools.ci.core.recovery_engine import RecoveryEngine
+        from tools.ci.modules.state import ICDevState
+
+        engine = RecoveryEngine()
+        state = ICDevState.load(run_id)
+
+        # Map phase names to parser phase names
+        phase_map = {"Test": "test", "Build": "compile"}
+        parser_phase = phase_map.get(phase_name, phase_name.lower())
+
+        print(f"\n[Recovery] Attempting self-recovery for {phase_name}...")
+        result = engine.attempt_recovery(
+            parser_phase, failure_output, run_id, issue_number, state,
+        )
+
+        if result.recovered:
+            print(f"[Recovery] {phase_name} recovered after {result.attempts} attempt(s)")
+            print(f"[Recovery] Fixed files: {result.fixed_files}")
+            return True
+        else:
+            print(f"[Recovery] {phase_name} recovery failed: {result.error}")
+            # Post escalation message to issue
+            try:
+                from tools.ci.modules.vcs import VCS
+                from tools.ci.modules.workflow_ops import format_issue_message
+                vcs = VCS()
+                escalation = engine.format_escalation_message(result)
+                vcs.comment_on_issue(
+                    int(issue_number),
+                    format_issue_message(run_id, "recovery", escalation),
+                )
+            except Exception:
+                pass
+            return False
+
+    except ImportError:
+        print("[Recovery] Recovery engine not available")
+        return False
+    except Exception as e:
+        print(f"[Recovery] Recovery attempt failed: {e}")
+        return False
 
 
 def run_orchestrated(issue_number: str, run_id: str) -> bool:
@@ -159,6 +235,11 @@ def main():
     # Phase 4: Review
     if not run_phase("Review", "icdev_review", issue_number, run_id):
         print("Pipeline aborted at Review phase")
+        sys.exit(1)
+
+    # Phase 5: Comply — Generate ATO compliance artifacts (SSP, POAM, STIG, SBOM)
+    if not run_phase("Comply", "icdev_comply", issue_number, run_id):
+        print("Pipeline aborted at Comply phase")
         sys.exit(1)
 
     print(f"\n{'='*60}")

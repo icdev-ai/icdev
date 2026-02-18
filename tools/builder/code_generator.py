@@ -70,6 +70,10 @@ def _detect_spec_type(spec: str) -> str:
         return "agent_collaboration"
     elif any(kw in spec_lower for kw in ["model config", "agent card", "agent config"]):
         return "model_config"
+    # Phase 26: MOSA interface spec types
+    elif any(kw in spec_lower for kw in ["mosa interface", "interface contract", "icd interface",
+                                          "open interface", "modular interface"]):
+        return "mosa_interface"
     # Original spec types
     elif any(kw in spec_lower for kw in ["api", "endpoint", "rest", "route", "http"]):
         return "api"
@@ -3187,7 +3191,137 @@ def generate_from_blueprint(
     return generated_files
 
 
-# Template dispatch table (Python — original + Phase 19 agentic)
+def _generate_mosa_interface_code(entity: str, spec: str) -> str:
+    """Generate MOSA interface module: abstract interface + concrete implementation.
+
+    Creates:
+    - Abstract interface class (ABC) with method stubs
+    - Concrete implementation skeleton
+    - Interface test stub
+    - OpenAPI stub reference comment
+    """
+    entity_title = entity.replace("_", " ").title().replace(" ", "")
+    return f'''#!/usr/bin/env python3
+# CUI // SP-CTI
+"""MOSA Interface: {entity_title}
+
+Auto-generated MOSA interface contract.
+Specification: {spec}
+
+MOSA Compliance:
+    - MOSA-ARCH-1: Module boundary definition (ABC interface)
+    - MOSA-INT-1: Interface control document required
+    - MOSA-INT-2: Semantic versioning enforced
+    - MOSA-STD-2: OpenAPI spec recommended for REST interfaces
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
+
+
+# --- Interface Contract ---
+
+class I{entity_title}(ABC):
+    """Abstract interface for {entity_title}.
+
+    All consumers MUST use this interface, not the concrete implementation.
+    This ensures MOSA loose coupling (MOSA-ARCH-2) and replaceability (MOSA-CS-1).
+    """
+
+    @abstractmethod
+    def get(self, resource_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve a resource by ID."""
+        ...
+
+    @abstractmethod
+    def list_all(self, filters: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        """List resources with optional filters."""
+        ...
+
+    @abstractmethod
+    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new resource."""
+        ...
+
+    @abstractmethod
+    def update(self, resource_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing resource."""
+        ...
+
+    @abstractmethod
+    def delete(self, resource_id: str) -> bool:
+        """Delete a resource by ID."""
+        ...
+
+
+# --- Data Transfer Objects ---
+
+@dataclass
+class {entity_title}Request:
+    """Request DTO for {entity_title} operations."""
+    data: Dict[str, Any]
+    request_id: Optional[str] = None
+
+
+@dataclass
+class {entity_title}Response:
+    """Response DTO for {entity_title} operations."""
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+
+
+# --- Concrete Implementation ---
+
+class {entity_title}Impl(I{entity_title}):
+    """Concrete implementation of I{entity_title}.
+
+    This implementation can be swapped out for an alternative (MOSA-CS-1)
+    as long as the replacement implements I{entity_title}.
+    """
+
+    def __init__(self):
+        self._store: Dict[str, Dict] = {{}}
+
+    def get(self, resource_id: str) -> Optional[Dict[str, Any]]:
+        return self._store.get(resource_id)
+
+    def list_all(self, filters: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        items = list(self._store.values())
+        if filters:
+            for key, val in filters.items():
+                items = [i for i in items if i.get(key) == val]
+        return items
+
+    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        import uuid
+        rid = str(uuid.uuid4())
+        record = {{"id": rid, **data}}
+        self._store[rid] = record
+        return record
+
+    def update(self, resource_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        if resource_id not in self._store:
+            raise KeyError(f"Resource {{resource_id}} not found")
+        self._store[resource_id].update(data)
+        return self._store[resource_id]
+
+    def delete(self, resource_id: str) -> bool:
+        if resource_id in self._store:
+            del self._store[resource_id]
+            return True
+        return False
+
+
+# --- Interface Version ---
+INTERFACE_VERSION = "1.0.0"
+# See docs/icd/{entity}_icd.md for full Interface Control Document
+# See openapi/{entity}_openapi.yaml for OpenAPI specification
+'''
+
+
+# Template dispatch table (Python — original + Phase 19 agentic + Phase 26 MOSA)
 _GENERATORS = {
     "api": _generate_api_code,
     "model": _generate_model_code,
@@ -3203,6 +3337,8 @@ _GENERATORS = {
     "prompt_template": _generate_prompt_template_code,
     "agent_collaboration": _generate_agent_collaboration_code,
     "model_config": _generate_model_config_code,
+    # Phase 26: MOSA interface
+    "mosa_interface": _generate_mosa_interface_code,
 }
 
 # Language-specific generator dispatch tables

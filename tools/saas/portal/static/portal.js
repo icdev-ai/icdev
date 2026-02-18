@@ -483,6 +483,158 @@
     }
 
     // -----------------------------------------------------------------------
+    // Glossary Tooltip System
+    // -----------------------------------------------------------------------
+
+    /**
+     * Dictionary of government/DoD/compliance acronyms with plain-English
+     * definitions. Same 42 terms as the main ICDEV dashboard.
+     */
+    var GLOSSARY = {
+        "POA&M":   "Plan of Action & Milestones \u2014 your fix-it list for security gaps with deadlines",
+        "POAM":    "Plan of Action & Milestones \u2014 your fix-it list for security gaps with deadlines",
+        "STIG":    "Security Technical Implementation Guide \u2014 DoD security checklist for systems",
+        "SBOM":    "Software Bill of Materials \u2014 inventory of all software components and dependencies",
+        "SSP":     "System Security Plan \u2014 the master document describing your system\u2019s security",
+        "CAT-I":   "Category I \u2014 Critical severity finding that must be fixed before deployment",
+        "CAT-II":  "Category II \u2014 High severity finding with a 30-day fix deadline",
+        "CAT-III": "Category III \u2014 Medium severity finding with a 90-day fix deadline",
+        "CUI":     "Controlled Unclassified Information \u2014 sensitive but not classified data",
+        "IL2":     "Impact Level 2 \u2014 Public/non-sensitive data, commercial cloud OK",
+        "IL4":     "Impact Level 4 \u2014 CUI data, requires AWS GovCloud",
+        "IL5":     "Impact Level 5 \u2014 CUI data, requires dedicated GovCloud infrastructure",
+        "IL6":     "Impact Level 6 \u2014 SECRET data, requires SIPR network and air-gapped systems",
+        "ATO":     "Authorization to Operate \u2014 formal approval to run your system in production",
+        "cATO":    "Continuous Authorization to Operate \u2014 automated ongoing security monitoring",
+        "FedRAMP": "Federal Risk and Authorization Management Program \u2014 cloud security standard",
+        "CMMC":    "Cybersecurity Maturity Model Certification \u2014 DoD contractor security standard",
+        "NIST":    "National Institute of Standards and Technology \u2014 sets security frameworks",
+        "NIST 800-53": "NIST Special Publication 800-53 \u2014 catalog of security and privacy controls for federal systems",
+        "OSCAL":   "Open Security Controls Assessment Language \u2014 machine-readable compliance format",
+        "ISSO":    "Information System Security Officer \u2014 person responsible for system security",
+        "RMF":     "Risk Management Framework \u2014 the 6-step process for getting your ATO",
+        "eMASS":   "Enterprise Mission Assurance Support Service \u2014 DoD\u2019s system for tracking ATOs",
+        "A2A":     "Agent-to-Agent \u2014 how ICDEV\u2019s AI agents communicate with each other",
+        "SAFe":    "Scaled Agile Framework \u2014 method for organizing large development teams",
+        "WSJF":    "Weighted Shortest Job First \u2014 prioritization formula: value divided by effort",
+        "BDD":     "Behavior-Driven Development \u2014 writing tests in plain English before coding",
+        "TDD":     "Test-Driven Development \u2014 write failing tests first, then write code to pass them",
+        "PI":      "Program Increment \u2014 a 10-week development cycle in SAFe",
+        "COA":     "Course of Action \u2014 a proposed approach with cost, timeline, and risk tradeoffs",
+        "SCRM":    "Supply Chain Risk Management \u2014 assessing vendor and dependency risks",
+        "ISA":     "Interconnection Security Agreement \u2014 contract governing data sharing between systems",
+        "CVE":     "Common Vulnerabilities and Exposures \u2014 a known security vulnerability with an ID number",
+        "RTM":     "Requirements Traceability Matrix \u2014 maps requirements to tests and code",
+        "FIPS":    "Federal Information Processing Standards \u2014 government encryption and security standards",
+        "SAST":    "Static Application Security Testing \u2014 scanning code for vulnerabilities without running it",
+        "IaC":     "Infrastructure as Code \u2014 defining servers and networks in code files (Terraform, Ansible)",
+        "ReqIF":   "Requirements Interchange Format \u2014 standard format for sharing requirements between tools",
+        "SysML":   "Systems Modeling Language \u2014 visual language for describing complex system architectures",
+        "MBSE":    "Model-Based Systems Engineering \u2014 designing systems using models instead of documents",
+        "DES":     "Digital Engineering Strategy \u2014 DoD mandate to use digital tools for engineering",
+        "CAC/PIV": "Common Access Card / Personal Identity Verification \u2014 DoD smart card for authentication"
+    };
+
+    var _glossaryTooltip = null;
+    var _glossaryHideTimer = null;
+
+    /**
+     * Escape HTML to prevent XSS in tooltip content.
+     */
+    function escapeHTML(str) {
+        var div = document.createElement("div");
+        div.appendChild(document.createTextNode(str));
+        return div.innerHTML;
+    }
+
+    /**
+     * Show glossary tooltip above the target element.
+     */
+    function showGlossaryTooltip(targetEl, text) {
+        if (!_glossaryTooltip) {
+            _glossaryTooltip = document.createElement("div");
+            _glossaryTooltip.className = "glossary-tooltip";
+            _glossaryTooltip.setAttribute("role", "tooltip");
+            _glossaryTooltip.setAttribute("id", "portal-glossary-tooltip");
+            _glossaryTooltip.style.position = "absolute";
+            document.body.appendChild(_glossaryTooltip);
+        }
+
+        _glossaryTooltip.innerHTML = '<span class="tooltip-icon">i</span> ' + escapeHTML(text);
+
+        // Position above target
+        var rect = targetEl.getBoundingClientRect();
+        var scrollX = window.pageXOffset || document.documentElement.scrollLeft;
+        var scrollY = window.pageYOffset || document.documentElement.scrollTop;
+
+        _glossaryTooltip.style.display = "block";
+        var tipRect = _glossaryTooltip.getBoundingClientRect();
+
+        var left = rect.left + scrollX + (rect.width / 2) - (tipRect.width / 2);
+        var top = rect.top + scrollY - tipRect.height - 10;
+
+        // Clamp to viewport
+        if (left < 8) left = 8;
+        if (left + tipRect.width > document.documentElement.clientWidth - 8) {
+            left = document.documentElement.clientWidth - tipRect.width - 8;
+        }
+        if (top < scrollY + 4) {
+            top = rect.bottom + scrollY + 10;
+        }
+
+        _glossaryTooltip.style.left = left + "px";
+        _glossaryTooltip.style.top = top + "px";
+
+        if (_glossaryHideTimer) {
+            clearTimeout(_glossaryHideTimer);
+            _glossaryHideTimer = null;
+        }
+    }
+
+    /**
+     * Hide the glossary tooltip with a small delay.
+     */
+    function hideGlossaryTooltip() {
+        if (_glossaryHideTimer) clearTimeout(_glossaryHideTimer);
+        _glossaryHideTimer = setTimeout(function () {
+            if (_glossaryTooltip) {
+                _glossaryTooltip.style.display = "none";
+            }
+            _glossaryHideTimer = null;
+        }, 100);
+    }
+
+    /**
+     * Initialize glossary tooltips on all [data-glossary] elements.
+     */
+    function initGlossary() {
+        var glossaryEls = document.querySelectorAll("[data-glossary]");
+        glossaryEls.forEach(function (el) {
+            var term = el.getAttribute("data-glossary");
+            var definition = GLOSSARY[term];
+            if (!definition) return;
+
+            if (!el.getAttribute("tabindex")) {
+                el.setAttribute("tabindex", "0");
+            }
+            el.setAttribute("aria-describedby", "portal-glossary-tooltip");
+
+            el.addEventListener("mouseenter", function () {
+                showGlossaryTooltip(el, definition);
+            });
+            el.addEventListener("mouseleave", function () {
+                hideGlossaryTooltip();
+            });
+            el.addEventListener("focus", function () {
+                showGlossaryTooltip(el, definition);
+            });
+            el.addEventListener("blur", function () {
+                hideGlossaryTooltip();
+            });
+        });
+    }
+
+    // -----------------------------------------------------------------------
     // Page Initialization
     // -----------------------------------------------------------------------
 
@@ -490,6 +642,9 @@
      * Initialize portal JavaScript on page load.
      */
     function init() {
+        // Initialize glossary tooltips
+        initGlossary();
+
         // Start dashboard auto-refresh if on dashboard
         startDashboardRefresh();
 

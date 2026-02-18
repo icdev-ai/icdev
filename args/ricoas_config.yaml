@@ -7,11 +7,12 @@ ricoas:
 
   # Dimension weights for readiness scoring (must sum to 1.0)
   readiness_weights:
-    completeness: 0.25
-    clarity: 0.25
-    feasibility: 0.20
-    compliance: 0.15
-    testability: 0.15
+    completeness: 0.22
+    clarity: 0.22
+    feasibility: 0.18
+    compliance: 0.13
+    testability: 0.13
+    devsecops_readiness: 0.12  # Phase 24: DevSecOps maturity dimension
 
   # Gap detection settings
   gap_detection:
@@ -41,14 +42,20 @@ ricoas:
     auto_assign_nist_controls: true
     default_pi_cadence_weeks: 10
 
-  # Document extraction
+  # Document extraction (text + image with vision LLM fallback)
   document_extraction:
     supported_types:
       - "pdf"
       - "docx"
       - "txt"
       - "md"
+      - "png"
+      - "jpg"
+      - "jpeg"
+      - "gif"
+      - "webp"
     max_file_size_mb: 50
+    vision_fallback: true  # Use vision LLM for scanned PDFs and images
 
   # T-shirt cost estimation (configurable per organization)
   cost_estimation:
@@ -110,6 +117,39 @@ ricoas:
       - 50
       - 80
       - 90
+
+# MOSA detection (Phase 26 — D125)
+mosa_detection:
+  auto_trigger_dod_ic: true          # All DoD/IC customers auto-trigger MOSA
+  auto_trigger_il4_plus: true        # IL4+ also triggers MOSA consideration
+  dod_ic_keywords:
+    - "department of defense"
+    - "dod"
+    - "air force"
+    - "army"
+    - "navy"
+    - "marine corps"
+    - "space force"
+    - "intelligence community"
+    - "combatant command"
+    - "acquisition program"
+    - "mdap"
+    - "acat"
+    - "program of record"
+    - "warfighter"
+    - "nsa"
+    - "dia"
+    - "nro"
+    - "nga"
+    - "military"
+    - "defense information systems"
+  pillar_probe_questions:
+    modular_architecture: "Is the system designed with modular, loosely-coupled components?"
+    open_standards: "Which standard protocols/data formats will be used? (REST/OpenAPI, gRPC, JSON, Protobuf)"
+    open_interfaces: "Do you have existing Interface Control Documents (ICDs) or API specifications?"
+    data_rights: "What are the government data rights requirements? (GPR, unlimited rights, etc.)"
+    competitive_sourcing: "Is multi-vendor replaceability a requirement?"
+    continuous_assessment: "Will there be ongoing architecture reviews and modularity metrics?"
 
 # Supply chain configuration
 supply_chain:

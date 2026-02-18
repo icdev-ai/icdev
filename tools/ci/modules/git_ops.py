@@ -52,13 +52,23 @@ def create_branch(branch_name: str) -> Tuple[bool, Optional[str]]:
     return False, f"Failed to create branch '{branch_name}': {stderr}"
 
 
-def commit_changes(message: str) -> Tuple[bool, Optional[str]]:
-    """Stage all changes and commit.
+def commit_changes(message: str, paths: list = None) -> Tuple[bool, Optional[str]]:
+    """Stage changes and commit.
 
-    Adapted from ADW commit_changes pattern.
+    Args:
+        message: Commit message.
+        paths: Optional list of specific file paths to stage. If provided,
+               only these paths are staged (targeted add). If None, stages
+               all tracked modified files with ``git add -u`` (safer than
+               ``git add -A`` which also stages untracked files that may
+               include sensitive files like .env or credentials).
     """
-    # Stage all changes
-    _, stderr, rc = _git(["add", "-A"])
+    if paths:
+        # Targeted staging — only specific files
+        _, stderr, rc = _git(["add", "--"] + paths)
+    else:
+        # Stage tracked modified files only (not untracked)
+        _, stderr, rc = _git(["add", "-u"])
     if rc != 0:
         return False, f"git add failed: {stderr}"
 

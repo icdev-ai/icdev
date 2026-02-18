@@ -8,12 +8,14 @@
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- CUI Banner Top -->
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <div class="portal-layout">
         <!-- Sidebar Navigation -->
-        <nav class="sidebar">
+        <nav class="sidebar" role="navigation" aria-label="Main navigation">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
@@ -80,7 +82,12 @@
         </nav>
 
         <!-- Main Content -->
-        <main class="main-content">
+        <main class="main-content" id="main-content" role="main">
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">API Keys</span>
+            </nav>
             <div class="page-header">
                 <h1>API Key Management</h1>
                 <p>Manage API keys for {{ tenant_name }}</p>
@@ -122,7 +129,7 @@
                 <h2 class="card-title">Active Keys ({{ keys|length }})</h2>
                 {% if keys %}
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="API keys list">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -144,9 +151,9 @@
                                 <td class="td-nowrap">{{ key.last_used_at or 'Never' }}</td>
                                 <td>
                                     {% if key.status == 'active' %}
-                                    <span class="badge badge-success">Active</span>
+                                    <span class="badge badge-success" role="status">Active</span>
                                     {% else %}
-                                    <span class="badge badge-danger">{{ key.status | capitalize }}</span>
+                                    <span class="badge badge-danger" role="status">{{ key.status | capitalize }}</span>
                                     {% endif %}
                                 </td>
                                 <td>
@@ -175,7 +182,7 @@
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <!-- Toast Container -->
-    <div id="toast-container"></div>
+    <div id="toast-container" aria-live="polite"></div>
 
     <!-- Key Display Modal -->
     <div id="key-modal" class="modal" style="display: none;">

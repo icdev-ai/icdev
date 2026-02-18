@@ -131,7 +131,7 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 - **Monitoring:** ELK + Splunk + Prometheus/Grafana
 - **Secrets:** AWS Secrets Manager
 
-### Multi-Agent Architecture (13 Agents, 3 Tiers)
+### Multi-Agent Architecture (14 Agents, 3 Tiers)
 
 | Tier | Agent | Port | Role |
 |------|-------|------|------|
@@ -147,11 +147,12 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 | Domain | Supply Chain | 8454 | Dependency graph, SBOM aggregation, ISA lifecycle, CVE triage, SCRM assessment |
 | Domain | Simulation | 8455 | Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA generation |
 | Support | Knowledge | 8449 | Self-healing patterns, ML, recommendations |
+| Domain | DevSecOps & ZTA | 8457 | DevSecOps pipeline security, Zero Trust (NIST 800-207), policy-as-code, service mesh, ZTA maturity |
 | Support | Monitor | 8450 | Log analysis, metrics, alerts, health checks |
 
 Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s). Each publishes an Agent Card at `/.well-known/agent.json`.
 
-### MCP Servers (12 stdio servers for Claude Code)
+### MCP Servers (13 stdio servers for Claude Code)
 
 | Server | Config Key | Tools |
 |--------|-----------|-------|
@@ -168,6 +169,7 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | icdev-simulation | `.mcp.json` | create_scenario, run_simulation, run_monte_carlo, generate_coas, generate_alternative_coa, compare_coas, select_coa, manage_scenarios |
 | icdev-integration | `.mcp.json` | configure_jira, sync_jira, configure_servicenow, sync_servicenow, configure_gitlab, sync_gitlab, export_reqif, submit_approval, review_approval, build_traceability |
 | icdev-marketplace | `.mcp.json` | publish_asset, install_asset, uninstall_asset, search_assets, list_assets, get_asset, review_asset, list_pending, check_compat, sync_status, asset_scan |
+| icdev-devsecops | `.mcp.json` | devsecops_profile_create, devsecops_profile_get, devsecops_maturity_assess, zta_maturity_score, zta_assess, pipeline_security_generate, policy_generate, service_mesh_generate, network_segmentation_generate, attestation_verify, zta_posture_check, pdp_config_generate |
 
 ### Compliance Frameworks Supported
 | Framework | Catalog | Assessor | Report |
@@ -184,9 +186,22 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | FIPS 199 | `nist_sp_800_60_types.json` | `fips199_categorizer.py` | Categorization report |
 | FIPS 200 | `fips_200_areas.json` | `fips200_validator.py` | Gap report |
 | CNSSI 1253 | `cnssi_1253_overlay.json` | via fips199_categorizer | Overlay application |
+| CJIS Security Policy | `cjis_security_policy.json` | `cjis_assessor.py` | via base_assessor |
+| HIPAA Security Rule | `hipaa_security_rule.json` | `hipaa_assessor.py` | via base_assessor |
+| HITRUST CSF v11 | `hitrust_csf_v11.json` | `hitrust_assessor.py` | via base_assessor |
+| SOC 2 Type II | `soc2_trust_criteria.json` | `soc2_assessor.py` | via base_assessor |
+| PCI DSS v4.0 | `pci_dss_v4.json` | `pci_dss_assessor.py` | via base_assessor |
+| ISO/IEC 27001:2022 | `iso27001_2022_controls.json` | `iso27001_assessor.py` | via base_assessor |
+| NIST SP 800-207 (ZTA) | `nist_800_207_zta.json` | `nist_800_207_assessor.py` | via base_assessor |
+| DoD MOSA (10 U.S.C. §4401) | `mosa_framework.json` | `mosa_assessor.py` | via base_assessor |
 
 ### Control Crosswalk
-The crosswalk engine (`tools/compliance/crosswalk_engine.py`) maps one NIST 800-53 control implementation across all frameworks simultaneously. Implementing AC-2 satisfies FedRAMP AC-2, 800-171 3.1.1, and CMMC AC.L2-3.1.1.
+The crosswalk engine (`tools/compliance/crosswalk_engine.py`) uses a dual-hub model (ADR D111):
+- **US Hub**: NIST 800-53 Rev 5 — domestic frameworks map directly (FedRAMP, CMMC, CJIS, HIPAA, etc.)
+- **International Hub**: ISO/IEC 27001:2022 — international frameworks map via bridge
+- **Bridge**: `iso27001_nist_bridge.json` connects the two hubs bidirectionally
+
+Implementing AC-2 satisfies FedRAMP AC-2, 800-171 3.1.1, CMMC AC.L2-3.1.1, and cascades to CJIS/HIPAA/SOC 2/PCI DSS/ISO 27001/NIST 800-207 via the crosswalk engine.
 
 ### Supported Languages (6 First-Class)
 | Language | Scaffold | Lint | Format | SAST | Dep Audit | BDD Steps | Code Gen |
@@ -231,6 +246,9 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/plan_typescript` | TypeScript build plan — Express, cucumber-js, eslint-security, npm audit (TAC-8) |
 | `/icdev-agentic` | Generate agentic child application (mini-ICDEV clone with GOTCHA/ATLAS) |
 | `/icdev-market` | Federated GOTCHA marketplace — publish, install, search, review, sync assets across tenant orgs |
+| `/icdev-devsecops` | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), attestation |
+| `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
+| `/icdev-mosa` | DoD MOSA (10 U.S.C. §4401) — MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC |
 
 ### Testing Framework (Adapted from ADW)
 ```bash
@@ -246,16 +264,24 @@ python tools/testing/test_orchestrator.py --project-dir /path --skip-e2e --proje
 python tools/testing/e2e_runner.py --discover         # List available E2E test specs
 python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
 python tools/testing/e2e_runner.py --test-file .claude/commands/e2e/dashboard_health.md
+python tools/testing/e2e_runner.py --run-all --validate-screenshots    # E2E + vision validation
+python tools/testing/e2e_runner.py --run-all --validate-screenshots --vision-strict  # Vision failures = test failures
+
+# Screenshot validation (vision LLM — Ollama LLaVA / Claude / GPT-4o)
+python tools/testing/screenshot_validator.py --check --json                           # Check vision model availability
+python tools/testing/screenshot_validator.py --image screenshot.png --assert "CUI banner is visible" --json
+python tools/testing/screenshot_validator.py --batch-dir .tmp/test_runs/screenshots/ --json
 ```
 
-**Testing Architecture (7-step pipeline, adapted from ADW test.md):**
+**Testing Architecture (8-step pipeline, adapted from ADW test.md):**
 1. **py_compile** — Python syntax validation (catches missing colons, bad indentation before tests run)
 2. **Ruff** (`ruff>=0.12`) — Ultra-fast Python linter (replaces flake8+isort+black, written in Rust)
 3. **pytest** (tests/) — Unit/integration tests with coverage
 4. **behave/Gherkin** (features/) — BDD scenario tests for business requirements
 5. **Bandit** — SAST security scan (SQL injection, XSS, hardcoded secrets)
 6. **Playwright MCP** (.claude/commands/e2e/*.md) — Browser automation E2E tests
-7. **Security + Compliance gates** — CUI markings, STIG (0 CAT1), secret detection
+7. **Vision validation** (optional) — LLM-based screenshot analysis (CUI banners, error detection, content verification)
+8. **Security + Compliance gates** — CUI markings, STIG (0 CAT1), secret detection
 
 **Claude Code test commands** (in .claude/commands/):
 - `/test` — Full application validation suite (syntax + quality + unit + BDD + security)
@@ -297,7 +323,9 @@ python tools/requirements/gap_detector.py --session-id "<id>" --check-security -
 python tools/requirements/readiness_scorer.py --session-id "<id>" --json                                                                             # Score readiness
 python tools/requirements/decomposition_engine.py --session-id "<id>" --level story --generate-bdd --json                                            # SAFe decomposition
 python tools/requirements/document_extractor.py --session-id "<id>" --upload --file-path /path/to/sow.pdf --document-type sow --json                 # Upload document
+python tools/requirements/document_extractor.py --session-id "<id>" --upload --file-path /path/to/whiteboard.png --document-type attachment --json    # Upload image (auto-classified)
 python tools/requirements/document_extractor.py --document-id "<id>" --extract --json                                                                 # Extract requirements
+python tools/requirements/document_extractor.py --document-id "<id>" --classify --json                                                                # Classify image document
 
 # ATO Boundary Impact (RICOAS Phase 2)
 python tools/requirements/boundary_analyzer.py --project-id "proj-123" --register-system --system-name "My System" --ato-status active --classification CUI --impact-level IL5 --json
@@ -332,8 +360,10 @@ python tools/simulation/scenario_manager.py --compare --scenario-ids "<id1>,<id2
 python tools/integration/jira_connector.py --project-id "proj-123" --configure --instance-url "https://org.atlassian.net" --json       # Configure Jira
 python tools/integration/jira_connector.py --project-id "proj-123" --push --json                                                       # Push to Jira
 python tools/integration/jira_connector.py --project-id "proj-123" --pull --json                                                       # Pull from Jira
+python tools/integration/jira_connector.py --project-id "proj-123" --analyze-attachments --attachment-paths "img1.png,img2.jpg" --json    # Analyze Jira image attachments
 python tools/integration/servicenow_connector.py --project-id "proj-123" --configure --instance-url "https://org.service-now.com" --json  # Configure ServiceNow
 python tools/integration/servicenow_connector.py --project-id "proj-123" --push --json                                                    # Push to ServiceNow
+python tools/integration/servicenow_connector.py --project-id "proj-123" --analyze-attachments --attachment-paths "img1.png" --json       # Analyze ServiceNow attachments
 python tools/integration/gitlab_connector.py --project-id "proj-123" --configure --instance-url "https://gitlab.org.mil" --json           # Configure GitLab
 python tools/integration/gitlab_connector.py --project-id "proj-123" --push --json                                                         # Push to GitLab
 python tools/integration/gitlab_connector.py --project-id "proj-123" --pull --json                                                         # Pull from GitLab
@@ -424,6 +454,28 @@ python tools/compliance/fips199_categorizer.py --project-id "proj-123" --gate   
 python tools/compliance/fips200_validator.py --project-id "proj-123" --json                            # Validate 17 areas
 python tools/compliance/fips200_validator.py --project-id "proj-123" --gate --json                     # Gate evaluation
 
+# Universal Compliance Platform (Phase 23)
+python tools/compliance/universal_classification_manager.py --list-categories                                   # List all data categories
+python tools/compliance/universal_classification_manager.py --banner CUI PHI --json                            # Composite banner (CUI + PHI)
+python tools/compliance/universal_classification_manager.py --code-header CUI PCI --language python            # Composite code header
+python tools/compliance/universal_classification_manager.py --detect --project-id "proj-123" --json            # Auto-detect data categories
+python tools/compliance/universal_classification_manager.py --add-category --project-id "proj-123" --category PHI  # Add data category
+python tools/compliance/universal_classification_manager.py --validate --project-id "proj-123" --json          # Validate markings
+python tools/compliance/compliance_detector.py --project-id "proj-123" --json                                  # Detect applicable frameworks
+python tools/compliance/compliance_detector.py --project-id "proj-123" --apply --json                          # Detect + store in DB
+python tools/compliance/compliance_detector.py --project-id "proj-123" --confirm --json                        # Confirm all detected
+python tools/compliance/multi_regime_assessor.py --project-id "proj-123" --json                                # Assess all frameworks
+python tools/compliance/multi_regime_assessor.py --project-id "proj-123" --gate                                # Multi-regime gate check
+python tools/compliance/multi_regime_assessor.py --project-id "proj-123" --minimal-controls --json             # Prioritized control list
+python tools/compliance/cjis_assessor.py --project-id "proj-123" --json                                        # CJIS assessment
+python tools/compliance/hipaa_assessor.py --project-id "proj-123" --json                                       # HIPAA assessment
+python tools/compliance/hitrust_assessor.py --project-id "proj-123" --json                                     # HITRUST assessment
+python tools/compliance/soc2_assessor.py --project-id "proj-123" --json                                        # SOC 2 assessment
+python tools/compliance/pci_dss_assessor.py --project-id "proj-123" --json                                     # PCI DSS assessment
+python tools/compliance/iso27001_assessor.py --project-id "proj-123" --json                                    # ISO 27001 assessment
+python tools/compliance/cjis_assessor.py --project-id "proj-123" --gate                                        # CJIS gate check
+python tools/compliance/hipaa_assessor.py --project-id "proj-123" --gate                                       # HIPAA gate check
+
 # MBSE Integration (Phase 18)
 python tools/mbse/xmi_parser.py --project-id "proj-123" --file /path/model.xmi --json     # Import SysML XMI
 python tools/mbse/reqif_parser.py --project-id "proj-123" --file /path/reqs.reqif --json   # Import DOORS ReqIF
@@ -437,6 +489,9 @@ python tools/mbse/sync_engine.py --project-id "proj-123" sync-model-to-code --js
 python tools/mbse/des_assessor.py --project-id "proj-123" --project-dir /path --json       # DES assessment
 python tools/mbse/des_report_generator.py --project-id "proj-123" --output-dir /path       # DES report
 python tools/mbse/pi_model_tracker.py --project-id "proj-123" --pi PI-25.1 --snapshot      # PI snapshot
+python tools/mbse/diagram_extractor.py --image diagram.png --diagram-type block_definition --project-id "proj-123" --json   # Extract SysML from screenshot
+python tools/mbse/diagram_extractor.py --image diagram.png --validate --project-id "proj-123" --json                        # Validate against existing model
+python tools/mbse/diagram_extractor.py --image diagram.png --diagram-type block_definition --store --project-id "proj-123" --json  # Extract + store in DB
 
 # Builder (TDD workflow — 6 languages)
 python tools/builder/test_writer.py --feature "user auth" --project-dir "/path" --language python
@@ -468,6 +523,15 @@ python tools/modernization/compliance_bridge.py --plan-id "plan-1" --validate --
 python tools/modernization/migration_code_generator.py --plan-id "plan-1" --generate-all --output /path                # Generate migration code
 python tools/modernization/migration_report_generator.py --app-id "app-1" --type assessment                            # Migration report
 python tools/modernization/migration_tracker.py --plan-id "plan-1" --pi PI-25.3 --snapshot --json                      # PI migration tracker
+python tools/modernization/ui_analyzer.py --image screenshot.png --json                                                  # Analyze legacy UI screenshot
+python tools/modernization/ui_analyzer.py --image-dir /path/to/screenshots/ --app-id "app-1" --project-id "proj-123" --store --json  # Batch analyze + store
+python tools/modernization/ui_analyzer.py --image screenshot.png --score-only                                            # Quick complexity score only
+
+# Compliance Diagram Validation (vision-based)
+python tools/compliance/diagram_validator.py --image network.png --type network_zone --project-id "proj-123" --json      # Validate network zone diagram
+python tools/compliance/diagram_validator.py --image ato_boundary.png --type ato_boundary --expected-components "Web,App,DB" --json  # Validate ATO boundary
+python tools/compliance/diagram_validator.py --image dataflow.png --type data_flow --classification CUI --json           # Validate data flow markings
+python tools/compliance/diagram_validator.py --image arch.png --type architecture --json                                 # Validate architecture diagram
 
 # Security
 python tools/security/sast_runner.py --project-dir "/path"
@@ -491,8 +555,70 @@ python tools/knowledge/recommendation_engine.py --project-id "proj-123"
 python tools/monitor/log_analyzer.py --source elk --query "error"
 python tools/monitor/health_checker.py --target "http://service:8080/health"
 
-# Dashboard (Flask web UI)
+# Dashboard (Flask web UI — "GI proof" UX)
 python tools/dashboard/app.py                        # Start web dashboard on port 5000
+# Dashboard pages:
+#   /                  — Home dashboard with auto-notifications
+#   /projects          — Project listing with friendly timestamps
+#   /projects/<id>     — Project detail with role-based tab visibility
+#   /agents            — Agent registry with heartbeat age
+#   /monitoring        — Monitoring with status icons + accessibility
+#   /wizard            — Getting Started wizard (3 questions → workflow recommendation)
+#   /quick-paths       — Quick Path workflow templates + error recovery reference
+#   /events            — Real-time event timeline (SSE)
+#   /query             — Natural language compliance queries
+#   /batch             — Batch operations panel (multi-tool workflow execution)
+# Role-based views:  ?role=pm | developer | isso | co
+# UX features: glossary tooltips, friendly timestamps, breadcrumbs, ARIA accessibility,
+#   skip-to-content, notification toasts, progress pipeline, help icons, error recovery
+# Charts: SVG sparkline, line, bar, donut, gauge (charts.js — zero dependencies)
+# Tables: search, sort, filter, CSV export (tables.js — auto-enhances all tables)
+# Onboarding: first-visit tour with spotlight overlay (tour.js — localStorage detection)
+# Live updates: SSE auto-refresh with connection status indicator (live.js)
+# Batch ops: 4 built-in workflows (ATO, Security, Compliance, Build) run from UI (batch.js)
+# Keyboard: g+key navigation, ? for help modal, / for search (shortcuts.js)
+
+# DevSecOps Profile & Pipeline Security (Phase 24)
+python tools/devsecops/profile_manager.py --project-id "proj-123" --create --maturity level_3_defined --json   # Create DevSecOps profile
+python tools/devsecops/profile_manager.py --project-id "proj-123" --detect --json                              # Auto-detect maturity
+python tools/devsecops/profile_manager.py --project-id "proj-123" --assess --json                              # Assess maturity level
+python tools/devsecops/profile_manager.py --project-id "proj-123" --json                                       # Get profile
+python tools/devsecops/pipeline_security_generator.py --project-id "proj-123" --json                           # Generate pipeline security stages
+python tools/devsecops/policy_generator.py --project-id "proj-123" --engine kyverno --json                     # Generate Kyverno policies
+python tools/devsecops/policy_generator.py --project-id "proj-123" --engine opa --json                         # Generate OPA policies
+python tools/devsecops/attestation_manager.py --project-id "proj-123" --generate --json                        # Generate signing config
+
+# Zero Trust Architecture (Phase 25)
+python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --all --json                             # Score all 7 ZTA pillars
+python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --pillar user_identity --json            # Score individual pillar
+python tools/devsecops/zta_maturity_scorer.py --project-id "proj-123" --trend --json                           # Maturity trend
+python tools/compliance/nist_800_207_assessor.py --project-id "proj-123" --json                                # NIST 800-207 assessment
+python tools/compliance/nist_800_207_assessor.py --project-id "proj-123" --gate                                # NIST 800-207 gate
+python tools/devsecops/service_mesh_generator.py --project-id "proj-123" --mesh istio --json                   # Generate Istio service mesh
+python tools/devsecops/service_mesh_generator.py --project-id "proj-123" --mesh linkerd --json                 # Generate Linkerd service mesh
+python tools/devsecops/network_segmentation_generator.py --project-path /path --namespaces "app,data" --json   # Namespace isolation
+python tools/devsecops/network_segmentation_generator.py --project-path /path --services "api,db" --json       # Microsegmentation
+python tools/devsecops/zta_terraform_generator.py --project-path /path --modules all --json                    # ZTA Terraform modules
+python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type disa_icam --json             # PDP config
+python tools/devsecops/pdp_config_generator.py --project-id "proj-123" --pdp-type zscaler --mesh istio --json  # PEP config
+
+# DoD MOSA (Phase 26 — Modular Open Systems Approach)
+python tools/compliance/mosa_assessor.py --project-id "proj-123" --json                                        # MOSA assessment
+python tools/compliance/mosa_assessor.py --project-id "proj-123" --gate                                        # MOSA gate check
+python tools/mosa/modular_design_analyzer.py --project-dir /path --project-id "proj-123" --store --json        # Modularity analysis
+python tools/mosa/mosa_code_enforcer.py --project-dir /path --fix-suggestions --json                           # Code enforcement
+python tools/mosa/icd_generator.py --project-id "proj-123" --all --json                                        # Generate ICDs
+python tools/mosa/icd_generator.py --project-id "proj-123" --interface-id "iface-1" --json                     # Generate single ICD
+python tools/mosa/tsp_generator.py --project-id "proj-123" --json                                              # Generate TSP
+python tools/compliance/cato_monitor.py --project-id "proj-123" --mosa-evidence                                # MOSA cATO evidence
+
+# CLI Output Formatting
+# Any tool that supports --json also supports --human for colored terminal output:
+#   python tools/compliance/stig_checker.py --project-id "proj-123" --human
+#   python tools/maintenance/maintenance_auditor.py --project-id "proj-123" --human
+# Programmatic usage:
+#   from tools.cli.output_formatter import format_table, format_banner, format_score
+#   print(format_table(["Name", "Status"], [["App1", "healthy"], ["App2", "degraded"]]))
 
 # SaaS Multi-Tenancy (Phase 21)
 python tools/saas/platform_db.py --init                                          # Initialize platform database
@@ -540,7 +666,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 100 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies) |
+| `data/icdev.db` | 121 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -564,6 +690,12 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/bedrock_models.yaml` | Bedrock model registry: model IDs, capabilities, pricing, fallback chain, probe interval, per-agent effort defaults |
 | `args/agent_authority.yaml` | Domain authority matrix: Security (hard veto on code/deps/infra), Compliance (hard veto on artifacts/deploy), Architect (soft veto on design) |
 | `args/marketplace_config.yaml` | Marketplace settings: scan gates, approval policies, federation sync, search weights, IL compatibility, community ratings |
+| `args/classification_config.yaml` | Universal data classification: 10 data categories (CUI, PHI, PCI, CJIS, etc.), composite rules, banner templates, sensitivity order |
+| `args/framework_registry.yaml` | All compliance frameworks: 20 active + planned, dual-hub model, data category triggers, bridge references |
+| `args/mosa_config.yaml` | DoD MOSA settings: auto-trigger rules (DoD/IC + IL4+), modularity scoring weights, thresholds, ICD/TSP config, cATO integration flag, code enforcement, intake detection |
+| `args/devsecops_config.yaml` | DevSecOps profile schema: 10 stages, 5 maturity levels, tool selections, intake detection keywords |
+| `args/zta_config.yaml` | ZTA 7-pillar maturity model (DoD ZTA Strategy), service mesh options, policy engines, PDP references, posture scoring |
+| `args/cli_config.yaml` | Optional CLI capabilities: 4 independent toggles (CI/CD automation, parallel agents, container execution, scripted intake), tenant ceiling, cost controls, environment detection |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -647,6 +779,51 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **D79:** Full GOTCHA asset sharing: skills, goals, hardprompts, context, args, compliance extensions
 - **D80:** Append-only marketplace audit trail (publish, install, review, rate) per D6 pattern
 - **D81:** Asset SBOM generation required for executable assets (supply chain traceability)
+- **D82:** Ollama LLaVA for air-gapped vision; vision is a message format concern (multimodal content blocks), not a provider architecture concern — all 3 providers (Bedrock, Anthropic, OpenAI-compat) support it via existing infrastructure
+- **D83:** Page-by-page PDF vision fallback — pypdf text extraction first, vision LLM only for pages with no extractable text (scanned PDFs)
+- **D84:** Image auto-classification via vision LLM at upload time — stored in `extracted_sections` column as JSON `{category, confidence, description}`
+- **D85:** UI complexity as optional 7R scoring dimension — D44 backward-compatible flag pattern; skipped when no UI analysis exists
+- **D86:** Vision diagram extraction is advisory-only — requires `--store` flag to write elements to DB (human review gate before model contamination)
+- **D87:** Attachment analysis reuses `screenshot_validator.encode_image()` for single image encoding path across all vision tools
+- **D88:** UX Translation Layer wraps existing tools without rewriting them — Jinja2 filters + JS modules convert technical output to business-friendly display
+- **D89:** Glossary tooltip system uses `data-glossary` HTML attributes + client-side JS — no backend changes needed to add new terms
+- **D90:** Role-based views via `?role=` query parameter + Flask context processor — no authentication required, progressive disclosure by persona
+- **D91:** Getting Started wizard uses declarative path mapping (goal × role × classification → recommended workflow) — add new paths without code changes
+- **D92:** Error recovery dictionary maps gate failure codes to plain-English fix instructions with who/what/why/fix/estimated-time — non-technical users can self-serve
+- **D93:** Quick Path templates are declarative data (list of dicts in ux_helpers.py) — add new workflow shortcuts without touching templates
+- **D94:** SVG chart library (charts.js) is zero-dependency, renders server data into lightweight SVG — no Chart.js/D3 needed, air-gap safe, WCAG accessible (role="img", aria-label)
+- **D95:** Table interactivity (tables.js) auto-enhances all `.table-container` tables on page load — search, sort, filter, CSV export with no per-table configuration
+- **D96:** CLI output formatter uses only Python stdlib (ANSI codes, os.get_terminal_size) — `--human` flag on any tool for colored tables/banners/scores instead of JSON
+- **D97:** SaaS portal UX mirrors main dashboard patterns (glossary, breadcrumbs, skip-link, ARIA) via portal-specific CSS/JS — no shared dependency to avoid coupling
+- **D98:** Onboarding tour uses localStorage (`icdev_tour_completed`) for first-visit detection — no server-side user tracking, air-gap safe
+- **D99:** SSE live updates debounce to 3-second batches — prevents API hammering while keeping dashboard near-real-time
+- **D100:** Batch operations run as sequential subprocesses in background threads — Flask request returns immediately, frontend polls status
+- **D101:** Keyboard shortcuts use chord pattern (`g` + key) to avoid conflicts with browser shortcuts — 1.5s chord window, cancelled on invalid key
+- **D102:** All Medium Impact UX modules inject styles via JS (no additional CSS files) — consistent with ux.js pattern, self-contained modules
+- **D109:** Composable data markings — single artifact can carry CUI + PHI + PCI markings simultaneously; highest-sensitivity category determines handling
+- **D110:** Compliance auto-detection is advisory only — system recommends frameworks based on data types; customer ISSO must confirm before gates enforce
+- **D111:** Dual-hub crosswalk model — NIST 800-53 as US hub, ISO 27001 as international hub, bidirectional bridge connects both; implement once at either hub, cascade everywhere
+- **D112:** Framework catalogs are versioned independently — each JSON catalog has its own version; update one framework without touching others
+- **D113:** Multi-regime deduplication via crosswalk — assessing N frameworks produces 1 unified NIST control set, not N separate assessments
+- **D114:** Compliance framework as marketplace asset type — community-contributed framework catalogs can be published, scanned, and installed via Phase 22 marketplace
+- **D115:** Data type → framework mapping is declarative JSON — add new detection rules without code changes; `data_type_framework_map.json` drives all auto-detection
+- **D116:** BaseAssessor ABC pattern (mirrors D66 provider pattern) — all assessors inherit from base class with crosswalk integration, gate evaluation, and CLI; ~60 LOC per new framework vs ~400+ LOC
+- **D117:** New DevSecOps/ZTA Agent (port 8457) with hard veto on pipeline_configuration, zero_trust_policy, deployment_gate — hybrid approach distributes scanning to Security Agent, IaC to Infra Agent, compliance to Compliance Agent
+- **D118:** NIST 800-207 maps into existing NIST 800-53 US hub (not a third hub) — ZTA is an architecture guide; requirements crosswalk to AC-2, AC-3, SA-3, SC-7, SI-4, AU-2, etc.
+- **D119:** DevSecOps profile is a per-project YAML config (`devsecops_profiles` table) declaring active pipeline security stages — detected during intake, overridable post-intake
+- **D120:** ZTA maturity model uses DoD 7-pillar scoring (Traditional → Advanced → Optimal) tracked per project per pillar
+- **D121:** Service mesh and policy engine are profile-selectable (Istio/Linkerd, Kyverno/OPA) — both generated, customer picks in profile
+- **D122:** DevSecOps/ZTA profile inherited by child apps generated via `/icdev-agentic` (extends D44 flag pattern)
+- **D123:** ZTA posture score feeds into cATO monitor as additional evidence dimension (extends `cato_evidence` table)
+- **D124:** PDP modeled as external reference in ZTA profile (Zscaler, Palo Alto, DISA ICAM) — ICDEV generates PEP configs but does not implement PDP itself
+- **D125:** MOSA auto-triggers for all DoD/IC customers during intake (not just MDAPs) — IL4+ also triggers MOSA consideration
+- **D126:** MOSA focuses on software development principles only (no FACE/VICTORY/SOSA/HOST domain-specific profiles)
+- **D127:** MOSA implemented as full compliance framework via BaseAssessor pattern (D116) with gate, crosswalk, multi-regime
+- **D128:** ICD/TSP are generated compliance artifacts (mirrors SSP/POAM pattern), stored in DB with CUI markings
+- **D129:** MOSA code enforcement uses static analysis (coupling/cohesion/interface coverage) — deterministic, air-gap safe
+- **D130:** MOSA cATO evidence is optional (config flag `cato_integration.enabled: true` in mosa_config.yaml)
+- **D131:** Modularity metrics stored as time-series in `mosa_modularity_metrics` table for trend tracking
+- **D132:** CLI capabilities are optional per-project toggles with tenant-level ceiling. Tenant sets maximum allowed capabilities; project enables within ceiling. Default is all-disabled — VSCode extension provides full functionality. CLI adds headless/scripted/parallel/containerized execution modes for environments that support them. Cost controls enforce token budgets. Detection auto-checks CLI availability and falls back gracefully.
 
 ### Self-Healing System
 - **Confidence ≥ 0.7** + auto_healable → auto-remediate
@@ -669,6 +846,13 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **FIPS 200 Gate:** 0 not_satisfied requirement areas, all 17 areas assessed, coverage ≥80%
 - **Marketplace Publish Gate:** 0 critical/high SAST findings, 0 secrets, 0 critical/high dep vulns, CUI markings present, SBOM generated, digitally signed
 - **Marketplace Cross-Tenant Gate:** All publish gate requirements + human ISSO/security officer review completed + code review confirmed
+- **Multi-Regime Gate:** All applicable frameworks must pass individual gates; overall pass requires 0 framework failures across all detected regimes
+- **HIPAA Gate:** 0 not_satisfied on Administrative/Technical Safeguards, encryption FIPS 140-2 required for PHI
+- **PCI DSS Gate:** 0 not_satisfied on Requirements 3-4 (data protection), 6 (secure development), 10 (logging)
+- **CJIS Gate:** 0 not_satisfied on Policy Areas 4 (audit), 5 (access control), 6 (identification), 10 (encryption)
+- **DevSecOps Gate:** 0 critical policy-as-code violations, 0 missing image attestations (when active), 0 unresolved critical SAST findings, 0 detected secrets
+- **ZTA Gate:** ZTA maturity ≥ Advanced (0.34) for IL4+, mTLS enforced when service mesh active, default-deny NetworkPolicy required, no pillar at 0.0
+- **MOSA Gate:** 0 external interfaces without ICD, 0 circular dependencies, modularity score ≥ 0.6, 0 direct coupling violations; warn on interface coverage < 80%, TSP expired/missing
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -679,6 +863,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - `docker/Dockerfile.supply-chain-agent` — STIG-hardened Supply Chain agent (port 8454)
 - `docker/Dockerfile.simulation-agent` — STIG-hardened Simulation agent (port 8455)
 - `docker/Dockerfile.integration-agent` — STIG-hardened Integration agent (port 8456)
+- `docker/Dockerfile.devsecops-agent` — STIG-hardened DevSecOps/ZTA agent (port 8457)
 - `docker/Dockerfile.api-gateway` — STIG-hardened SaaS API gateway (port 8443, gunicorn)
 - `k8s/` — Full K8s manifests: namespace, configmap, secrets, network policies (default deny), ingress, 16+ deployment+service pairs
 - `k8s/saas/` — SaaS-specific K8s manifests: tenant-namespace-template, api-gateway-deployment, platform-db-deployment
@@ -723,6 +908,11 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | Security Categorization | `goals/security_categorization.md` | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
 | SaaS Multi-Tenancy | `goals/saas_multi_tenancy.md` | Multi-tenant SaaS platform: API gateway (REST+MCP Streamable HTTP), per-tenant DB isolation, 3 auth methods, subscription tiers, artifact delivery, tenant portal, Helm on-prem |
 | Marketplace | `goals/marketplace.md` | Federated GOTCHA asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline |
+| Universal Compliance | `goals/universal_compliance.md` | Universal Compliance Platform: 10 data categories, dual-hub crosswalk (NIST+ISO), 6 Wave 1 frameworks (CJIS, HIPAA, HITRUST, SOC 2, PCI DSS, ISO 27001), auto-detection, multi-regime assessment, composable markings |
+| DevSecOps Workflow | `goals/devsecops_workflow.md` | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), image signing & attestation (Phase 24) |
+| Zero Trust Architecture | `goals/zero_trust_architecture.md` | ZTA 7-pillar maturity scoring (DoD ZTA Strategy), NIST SP 800-207 compliance, service mesh (Istio/Linkerd), network segmentation, PDP/PEP config, cATO posture (Phase 25) |
+| MOSA Workflow | `goals/mosa_workflow.md` | DoD MOSA (10 U.S.C. §4401): MOSA assessment, modularity analysis (coupling/cohesion/circular deps), ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC, optional cATO evidence (Phase 26) |
+| CLI Capabilities | `goals/cli_capabilities.md` | Optional Claude CLI features: CI/CD pipeline automation, parallel agent execution, container-based execution, scripted batch intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |
 
 ---
 
@@ -893,6 +1083,7 @@ ICDEV is exposed as a multi-tenant SaaS platform. The SaaS layer **wraps** exist
 | Auth | API key | API key + OAuth | API key + OAuth + CAC/PIV |
 | Compute | Shared K8s NS | Dedicated K8s NS | Dedicated AWS account |
 | Rate Limit | 60/min | 300/min | Unlimited |
+| CLI Ceiling | scripted_intake only | All except container_execution | All 4 capabilities |
 
 ### Authentication (3 Methods)
 1. **API Key** — `Authorization: Bearer icdev_...` → SHA-256 hash lookup in api_keys table

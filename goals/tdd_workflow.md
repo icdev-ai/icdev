@@ -283,16 +283,77 @@ pytest projects/<name>/tests/ -v --tb=short
 
 ## The TDD Cycle Visualized
 
+```mermaid
+stateDiagram-v2
+    [*] --> RED : Write failing test
+    RED --> GREEN : Write minimum code
+    GREEN --> REFACTOR : Clean up
+    REFACTOR --> RED : Next requirement
+    REFACTOR --> [*] : Feature complete
+
+    state RED {
+        [*] --> WriteGherkin : Feature file
+        WriteGherkin --> WritePytest : Step definitions
+        WritePytest --> RunFailing : Must FAIL
+    }
+    state GREEN {
+        [*] --> GenerateCode : Minimum implementation
+        GenerateCode --> RunPassing : Must PASS
+        RunPassing --> CheckCoverage : Coverage >= 80%
+    }
+    state REFACTOR {
+        [*] --> Lint : flake8 / ruff
+        Lint --> Format : black
+        Format --> ReRun : Tests still pass?
+    }
+
+    classDef red fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+    classDef green fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    classDef blue fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+
+    class RED red
+    class GREEN green
+    class REFACTOR blue
 ```
-     ┌─────────────────────────────────────────────┐
-     │                                               │
-     │   ┌───────┐    ┌───────┐    ┌──────────┐    │
-     │   │  RED  │───>│ GREEN │───>│ REFACTOR │────┘
-     │   └───────┘    └───────┘    └──────────┘
-     │   Write test   Write code   Clean up
-     │   (it fails)   (it passes)  (still passes)
-     │
-     └── Repeat for each behavior/requirement
+
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant TW as test_writer.py
+    participant PT as pytest
+    participant CG as code_generator.py
+    participant LN as linter.py
+    participant FM as formatter.py
+    participant AL as audit_logger.py
+
+    rect rgb(58, 26, 26)
+        Note over O,PT: RED Phase
+        O->>TW: Write Gherkin + pytest tests
+        TW-->>O: Feature file + test cases
+        O->>PT: Run tests (must FAIL)
+        PT-->>O: All tests FAILED
+    end
+
+    rect rgb(26, 58, 45)
+        Note over O,PT: GREEN Phase
+        O->>CG: Generate minimum code
+        CG-->>O: Implementation module
+        O->>PT: Run tests (must PASS)
+        PT-->>O: All tests PASSED (coverage >= 80%)
+    end
+
+    rect rgb(26, 58, 92)
+        Note over O,FM: REFACTOR Phase
+        O->>LN: Lint code (flake8 / ruff)
+        LN-->>O: Clean (0 issues)
+        O->>FM: Format code (black)
+        FM-->>O: Formatted
+        O->>PT: Re-run tests (still pass?)
+        PT-->>O: All tests PASSED
+    end
+
+    O->>AL: Log TDD cycle to audit trail
+    AL-->>O: Audit entry recorded
 ```
 
 ---

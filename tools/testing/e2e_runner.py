@@ -506,6 +506,85 @@ def _validate_spec(spec: dict, test_name: str, test_file: str, logger) -> E2ETes
 
 
 # ---------------------------------------------------------------------------
+# Vision-based screenshot validation (Phase 23)
+# ---------------------------------------------------------------------------
+
+def _run_vision_validation(results: list, logger, assertions=None, strict=False):
+    """Run vision-based validation on screenshots from E2E test results.
+
+    Args:
+        results: List of E2ETestResult objects.
+        logger: Logger instance.
+        assertions: List of assertion strings. Uses defaults if None.
+        strict: If True, vision failures cause test failures.
+
+    Returns:
+        Updated list of E2ETestResult objects with vision_analysis populated.
+    """
+    try:
+        from tools.testing.screenshot_validator import (
+            check_vision_available,
+            validate_screenshot,
+            DEFAULT_ASSERTIONS,
+        )
+    except ImportError as e:
+        logger.warning("Screenshot validator not available: %s", e)
+        return results
+
+    avail = check_vision_available()
+    if not avail["available"]:
+        logger.warning("Vision model not available — skipping screenshot validation: %s",
+                        avail.get("error", "unknown"))
+        return results
+
+    if assertions is None:
+        assertions = DEFAULT_ASSERTIONS
+
+    logger.info(f"Running vision validation with {len(assertions)} assertions...")
+    logger.info(f"  Model: {avail.get('model', 'unknown')} via {avail.get('provider', 'unknown')}")
+
+    total_validated = 0
+    total_passed = 0
+    total_failed = 0
+
+    for result in results:
+        screenshots = result.screenshots or []
+        if not screenshots:
+            continue
+
+        vision_results = []
+        for screenshot_path in screenshots:
+            if not Path(screenshot_path).exists():
+                logger.warning("  Screenshot not found: %s", screenshot_path)
+                continue
+
+            for assertion in assertions:
+                vr = validate_screenshot(screenshot_path, assertion)
+                vision_results.append(vr.to_dict())
+                total_validated += 1
+
+                if vr.passed is True:
+                    total_passed += 1
+                elif vr.passed is False:
+                    total_failed += 1
+                    logger.warning("  Vision FAIL: %s — %s", assertion, vr.explanation)
+
+                    if strict:
+                        result.status = "failed"
+                        if result.error:
+                            result.error += f"; Vision: {assertion} failed"
+                        else:
+                            result.error = f"Vision: {assertion} failed — {vr.explanation}"
+
+        result.vision_analysis = vision_results if vision_results else None
+
+    logger.info(f"Vision validation complete: {total_passed} passed, {total_failed} failed, "
+                f"{total_validated - total_passed - total_failed} skipped")
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -524,6 +603,19 @@ def main():
     parser.add_argument(
         "--project", default="chromium",
         help="Playwright browser project (chromium, firefox, webkit)"
+    )
+    # Vision validation (Phase 23)
+    parser.add_argument(
+        "--validate-screenshots", action="store_true",
+        help="Run vision-based validation on captured screenshots",
+    )
+    parser.add_argument(
+        "--vision-assertions", action="append",
+        help="Custom assertion for vision validation (can be repeated)",
+    )
+    parser.add_argument(
+        "--vision-strict", action="store_true",
+        help="Treat vision validation failures as test failures",
     )
     args = parser.parse_args()
 
@@ -568,6 +660,14 @@ def main():
                     logger.info(f"E2E test failed: {result.test_name}, stopping (fail-fast)")
                     break
 
+        # Vision validation (Phase 23)
+        if args.validate_screenshots:
+            results = _run_vision_validation(
+                results, logger,
+                assertions=args.vision_assertions,
+                strict=args.vision_strict,
+            )
+
         passed = sum(1 for r in results if r.passed)
         failed = len(results) - passed
         logger.info(f"\nE2E Results ({mode}): {passed} passed, {failed} failed")
@@ -586,6 +686,14 @@ def main():
             )
         else:
             result = execute_e2e_test(args.test_file, run_id, logger)
+
+        # Vision validation (Phase 23)
+        if args.validate_screenshots:
+            [result] = _run_vision_validation(
+                [result], logger,
+                assertions=args.vision_assertions,
+                strict=args.vision_strict,
+            )
 
         if args.json:
             print(json.dumps(result.model_dump(), indent=2, default=str))

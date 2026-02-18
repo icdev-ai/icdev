@@ -1,0 +1,247 @@
+# Zero Trust Architecture Configuration — 7-Pillar Maturity Model, Service Mesh, Policy Engine
+# Used by: tools/devsecops/zta_maturity_scorer.py, service_mesh_generator.py, pdp_config_generator.py
+# ADR D120: ZTA maturity model uses DoD 7-pillar scoring (Traditional > Advanced > Optimal)
+# ADR D121: Service mesh and policy engine are profile-selectable (Istio/Linkerd, Kyverno/OPA)
+# ADR D124: PDP modeled as external reference; ICDEV generates PEP configs, not PDP itself
+
+# =============================================================================
+# ZTA 7-Pillar Maturity Model (DoD Zero Trust Strategy + NIST SP 800-207)
+# =============================================================================
+pillars:
+  user_identity:
+    weight: 0.20
+    description: "Identity verification, MFA, ICAM, continuous authentication"
+    nist_800_53_controls: [AC-2, IA-2, IA-5, IA-8, IA-12]
+    evidence_types:
+      - mfa_enabled
+      - sso_configured
+      - cac_piv_required
+      - continuous_auth_active
+      - identity_provider_integrated
+    scoring_criteria:
+      traditional: "Password-based auth, no MFA"
+      advanced: "MFA enabled, SSO integrated, role-based access"
+      optimal: "Continuous authentication, risk-based access, CAC/PIV, phishing-resistant MFA"
+
+  device:
+    weight: 0.15
+    description: "Device posture, health attestation, MDM integration"
+    nist_800_53_controls: [CM-8, IA-3, SC-17, SI-7]
+    evidence_types:
+      - mdm_enrolled
+      - device_health_check
+      - endpoint_detection
+      - patch_compliance
+      - disk_encryption
+    scoring_criteria:
+      traditional: "No device posture checking"
+      advanced: "MDM enrollment required, basic health checks"
+      optimal: "Continuous device attestation, EDR integrated, compliance-gated access"
+
+  network:
+    weight: 0.15
+    description: "Micro-segmentation, encrypted channels, software-defined perimeter"
+    nist_800_53_controls: [AC-3, AC-4, SC-7, SC-8, SC-13]
+    evidence_types:
+      - network_policies_present
+      - default_deny_egress
+      - mtls_enforced
+      - encrypted_transit
+      - microsegmentation_active
+    scoring_criteria:
+      traditional: "Flat network, perimeter firewall only"
+      advanced: "Network policies per namespace, mTLS between services"
+      optimal: "Per-pod micro-segmentation, encrypted all channels, SDP/ZTNA"
+
+  application_workload:
+    weight: 0.15
+    description: "Application security, container hardening, workload identity"
+    nist_800_53_controls: [SA-8, SA-11, SA-15, SI-7, CM-7]
+    evidence_types:
+      - non_root_containers
+      - read_only_rootfs
+      - capabilities_dropped
+      - service_accounts_restricted
+      - workload_identity_verified
+    scoring_criteria:
+      traditional: "No container hardening, default security context"
+      advanced: "Non-root, read-only rootfs, capabilities dropped, resource limits"
+      optimal: "Workload identity per service, admission control, signed images, minimal base images"
+
+  data:
+    weight: 0.15
+    description: "Data classification, encryption at rest and transit, DLP"
+    nist_800_53_controls: [AC-16, MP-4, SC-12, SC-28, SI-12]
+    evidence_types:
+      - data_classified
+      - encryption_at_rest
+      - encryption_in_transit
+      - key_management
+      - dlp_active
+    scoring_criteria:
+      traditional: "No data classification, partial encryption"
+      advanced: "Data classified, FIPS 140-2 encryption, key rotation"
+      optimal: "Automated DLP, customer-managed keys, classification-driven access, tokenization"
+
+  visibility_analytics:
+    weight: 0.10
+    description: "SIEM integration, continuous monitoring, anomaly detection"
+    nist_800_53_controls: [AU-2, AU-6, AU-12, SI-4, IR-4]
+    evidence_types:
+      - centralized_logging
+      - siem_integrated
+      - anomaly_detection
+      - audit_trail_complete
+      - real_time_alerts
+    scoring_criteria:
+      traditional: "Basic logging, no SIEM"
+      advanced: "Centralized logging, SIEM with alerts, audit trail"
+      optimal: "ML-based anomaly detection, SOAR integration, real-time threat intelligence"
+
+  automation_orchestration:
+    weight: 0.10
+    description: "SOAR, automated response, self-healing, policy automation"
+    nist_800_53_controls: [IR-4, SI-4, CP-2, CA-7]
+    evidence_types:
+      - auto_remediation
+      - incident_playbooks
+      - self_healing_active
+      - policy_automation
+      - compliance_automation
+    scoring_criteria:
+      traditional: "Manual incident response"
+      advanced: "Automated playbooks, basic auto-remediation"
+      optimal: "Full SOAR, self-healing infrastructure, policy-driven automation"
+
+# =============================================================================
+# Maturity Levels
+# =============================================================================
+maturity_levels:
+  traditional:
+    score_range: [0.0, 0.33]
+    description: "Perimeter-based security, limited Zero Trust adoption"
+    allowed_for_il: [IL2]
+    blocked_for_il: [IL5, IL6]
+
+  advanced:
+    score_range: [0.34, 0.66]
+    description: "Partial Zero Trust adoption, key pillars implemented"
+    allowed_for_il: [IL2, IL4, IL5]
+    minimum_for_il: [IL4, IL5]
+
+  optimal:
+    score_range: [0.67, 1.0]
+    description: "Full Zero Trust across all pillars"
+    allowed_for_il: [IL2, IL4, IL5, IL6]
+    minimum_for_il: [IL6]
+
+# =============================================================================
+# Service Mesh Options (D121: both supported, customer selects)
+# =============================================================================
+service_mesh_options:
+  istio:
+    description: "Istio service mesh — most mature, widest DoD/Gov adoption"
+    features:
+      mtls: true
+      authz_policy: true         # AuthorizationPolicy CRD
+      peer_auth: true             # PeerAuthentication CRD
+      virtual_service: true       # VirtualService for traffic routing
+      destination_rule: true      # DestinationRule for circuit breaking
+      sidecar: true               # Sidecar CRD for egress control
+      telemetry: true             # Built-in Prometheus/Jaeger
+    api_versions:
+      security: "security.istio.io/v1beta1"
+      networking: "networking.istio.io/v1beta1"
+    mtls_mode: "STRICT"
+    injection_label: "istio-injection: enabled"
+
+  linkerd:
+    description: "Linkerd service mesh — lightweight, simpler operations"
+    features:
+      mtls: true
+      authz_policy: true          # ServerAuthorization CRD
+      server_auth: true           # Server CRD
+      service_profile: true       # ServiceProfile for retries/timeouts
+      http_route: true            # HTTPRoute for traffic routing
+      telemetry: true             # Built-in Prometheus/Grafana
+    api_versions:
+      policy: "policy.linkerd.io/v1beta2"
+      server: "policy.linkerd.io/v1beta1"
+    mtls_mode: "enforced"
+    injection_annotation: "linkerd.io/inject: enabled"
+
+# =============================================================================
+# Policy Engine Options (D121: both supported, customer selects)
+# =============================================================================
+policy_engine_options:
+  kyverno:
+    description: "K8s-native policy engine — YAML policies, no Rego learning curve"
+    features:
+      validation: true
+      mutation: true
+      generation: true
+      image_verification: true
+      audit_mode: true
+    api_version: "kyverno.io/v1"
+    policy_types: [ClusterPolicy, Policy]
+
+  opa_gatekeeper:
+    description: "OPA/Gatekeeper — powerful Rego language, broader ecosystem"
+    features:
+      constraint_templates: true
+      constraints: true
+      audit: true
+      external_data: true
+    api_version: "constraints.gatekeeper.sh/v1beta1"
+    policy_types: [ConstraintTemplate, Constraint]
+
+# =============================================================================
+# Policy Decision Point (PDP) References (D124: external, not implemented by ICDEV)
+# =============================================================================
+pdp_references:
+  - id: disa_icam
+    name: "DISA ICAM/IDAM"
+    type: identity
+    description: "DoD Identity, Credential, and Access Management"
+    integration: "SAML/OIDC federation to Istio/Linkerd"
+
+  - id: zscaler
+    name: "Zscaler Private Access"
+    type: network
+    description: "Zero Trust Network Access (ZTNA)"
+    integration: "Connector deployment in K8s, policy push via API"
+
+  - id: palo_alto_prisma
+    name: "Palo Alto Prisma Access"
+    type: network
+    description: "Cloud-delivered security platform"
+    integration: "GlobalProtect agent, Prisma Cloud Defender"
+
+  - id: crowdstrike
+    name: "CrowdStrike Falcon"
+    type: device
+    description: "Endpoint detection and response (EDR)"
+    integration: "Falcon sensor DaemonSet, device posture API"
+
+  - id: microsoft_entra
+    name: "Microsoft Entra ID (Azure AD)"
+    type: identity
+    description: "Cloud identity and access management"
+    integration: "OIDC/SAML federation, conditional access policies"
+
+  - id: custom
+    name: "Customer-provided PDP"
+    type: custom
+    description: "Customer's existing policy decision point"
+    integration: "Customer provides integration spec"
+
+# =============================================================================
+# Posture Scoring — Integration with cATO (D123)
+# =============================================================================
+posture_scoring:
+  cato_integration: true
+  evidence_refresh_days: 30
+  minimum_score_for_deploy: 0.5
+  minimum_pillar_score: 0.2      # No pillar can be zero for IL4+
+  scoring_method: weighted_average  # Uses pillar weights above
+  trend_window_days: 90           # Track maturity trend over 90 days

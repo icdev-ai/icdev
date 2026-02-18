@@ -1421,6 +1421,11 @@ def main():
         help="Project type to scaffold",
     )
 
+    # Phase 26: MOSA scaffolding flag
+    parser.add_argument(
+        "--mosa", action="store_true",
+        help="Add MOSA directories: interfaces/, docs/icd/, docs/tsp/, openapi/")
+
     # Phase 19: Agentic generation flags
     agentic_group = parser.add_argument_group("agentic generation (Phase 19)")
     agentic_group.add_argument(
@@ -1462,6 +1467,20 @@ def main():
     _log_audit(args.project_path, args.name, args.type, files)
 
     print(f"\nScaffolded {len(files)} files for '{args.name}' ({args.type})")
+
+    # Phase 26: If --mosa, create MOSA directory structure
+    if getattr(args, 'mosa', False):
+        mosa_dirs = ["interfaces", "docs/icd", "docs/tsp", "openapi"]
+        proj_root = os.path.join(args.project_path, args.name)
+        for d in mosa_dirs:
+            dp = os.path.join(proj_root, d)
+            os.makedirs(dp, exist_ok=True)
+            gitkeep = os.path.join(dp, ".gitkeep")
+            if not os.path.exists(gitkeep):
+                with open(gitkeep, "w") as f:
+                    f.write("")
+                files.append(gitkeep)
+        print(f"  MOSA directories created: {', '.join(mosa_dirs)}")
 
     # Phase 19: If --agentic, run the full agentic generation pipeline
     if args.agentic:

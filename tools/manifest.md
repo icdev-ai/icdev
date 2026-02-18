@@ -36,6 +36,7 @@
 | MCP Maintenance Server | tools/mcp/maintenance_server.py | Maintenance audit MCP server (scan, check, audit, remediate) | stdio | JSON-RPC responses |
 | MCP MBSE Server | tools/mcp/mbse_server.py | MBSE MCP server (import, trace, generate, sync, assess, snapshot) | stdio | JSON-RPC responses |
 | MCP Modernization Server | tools/mcp/modernization_server.py | Modernization MCP server (10 tools: register, analyze, assess, plan, generate, track, migrate) | stdio | JSON-RPC responses |
+| MCP DevSecOps Server | tools/mcp/devsecops_server.py | DevSecOps/ZTA MCP server (12 tools: profile, maturity, pipeline, policy, mesh, segmentation, attestation, posture) | stdio | JSON-RPC responses |
 
 ## A2A Protocol
 | Tool | File | Description | Input | Output |
@@ -65,7 +66,7 @@
 | NIST Lookup | tools/compliance/nist_lookup.py | NIST control reference lookup | --control-id | Control details |
 | Compliance Status | tools/compliance/compliance_status.py | Compliance dashboard data (8 components incl. CSSP, SbD, IV&V) | --project | Status report |
 | Classification Manager | tools/compliance/classification_manager.py | CUI/SECRET/TS markings, IL-to-baseline mapping, cross-domain controls | --impact-level, --classification, --banner, --code-header, --validate | Marking banners, baselines, validation |
-| Crosswalk Engine | tools/compliance/crosswalk_engine.py | Multi-framework crosswalk query engine (FedRAMP, CMMC, 800-171, IL4/5/6) | --control, --framework, --project-id, --coverage, --gap-analysis | Crosswalk mappings + coverage |
+| Crosswalk Engine | tools/compliance/crosswalk_engine.py | Dual-hub crosswalk engine (NIST+ISO 27001): FedRAMP, CMMC, 800-171, IL4/5/6, CJIS, HIPAA, HITRUST, SOC 2, PCI DSS, ISO 27001 | --control, --framework, --project-id, --coverage, --gap-analysis | Crosswalk mappings + coverage |
 | PI Compliance Tracker | tools/compliance/pi_compliance_tracker.py | SAFe PI compliance tracking: start/close PIs, velocity, burndown, reports | --project-id, --start-pi, --velocity, --burndown, --report | PI metrics + reports |
 
 ## FIPS 199/200 Security Categorization
@@ -73,6 +74,20 @@
 |------|------|-------------|-------|--------|
 | FIPS 199 Categorizer | tools/compliance/fips199_categorizer.py | FIPS 199 security categorization with SP 800-60 information types, high watermark, CNSSI 1253 | --project-id, --add-type, --categorize, --list-catalog, --gate, --json | Categorization + baseline |
 | FIPS 200 Validator | tools/compliance/fips200_validator.py | FIPS 200 minimum security requirements validation (17 areas) | --project-id, --gate, --json | Gap report + validation |
+
+## Universal Compliance Platform (Phase 23)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Universal Classification Mgr | tools/compliance/universal_classification_manager.py | Composable data markings for 10 categories (CUI, PHI, PCI, CJIS, etc.) | --banner, --code-header, --detect, --validate, --add-category | Composite banners, headers, validation |
+| Base Assessor | tools/compliance/base_assessor.py | ABC base class for all Wave 1+ assessors (crosswalk, gate, CLI) | (imported by subclasses) | Assessment + gate results |
+| CJIS Assessor | tools/compliance/cjis_assessor.py | FBI CJIS Security Policy v5.9.4 assessment | --project-id, --gate, --json | CJIS compliance + gate |
+| HIPAA Assessor | tools/compliance/hipaa_assessor.py | HIPAA Security Rule (45 CFR 164) assessment | --project-id, --gate, --json | HIPAA compliance + gate |
+| HITRUST Assessor | tools/compliance/hitrust_assessor.py | HITRUST CSF v11 assessment | --project-id, --gate, --json | HITRUST compliance + gate |
+| SOC 2 Assessor | tools/compliance/soc2_assessor.py | SOC 2 Type II Trust Service Criteria assessment | --project-id, --gate, --json | SOC 2 compliance + gate |
+| PCI DSS Assessor | tools/compliance/pci_dss_assessor.py | PCI DSS v4.0 assessment | --project-id, --gate, --json | PCI DSS compliance + gate |
+| ISO 27001 Assessor | tools/compliance/iso27001_assessor.py | ISO/IEC 27001:2022 assessment (international hub) | --project-id, --gate, --json | ISO 27001 compliance + gate |
+| Compliance Detector | tools/compliance/compliance_detector.py | Auto-detect applicable frameworks from data categories | --project-id, --apply, --confirm, --json | Detected frameworks |
+| Multi-Regime Assessor | tools/compliance/multi_regime_assessor.py | Unified multi-framework assessment + gate + minimal controls | --project-id, --gate, --minimal-controls, --json | Unified report + prioritized controls |
 
 ## CSSP Compliance (DI 8530.01)
 | Tool | File | Description | Input | Output |
@@ -178,7 +193,25 @@
 ## Dashboard
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Web Dashboard | tools/dashboard/app.py | Flask web dashboard for business users | -- | Web UI on port 5000 |
+| Web Dashboard | tools/dashboard/app.py | Flask web dashboard with role-based views, wizard, quick paths | --port, --debug | Web UI on port 5000 |
+| UX Helpers | tools/dashboard/ux_helpers.py | Jinja2 filters (friendly_time, glossary), error recovery dict, quick paths, wizard steps | register_ux_filters(app) | Template filters + globals |
+| UX JavaScript | tools/dashboard/static/js/ux.js | Client-side glossary tooltips, timestamp formatting, accessibility, notifications, progress pipeline | Auto-init on DOMContentLoaded | ICDEV namespace |
+| UX Stylesheet | tools/dashboard/static/css/ux.css | Tooltip, pipeline, wizard, quick path, breadcrumb, notification, accessibility styles | — | CSS |
+| Charts Library | tools/dashboard/static/js/charts.js | Zero-dependency SVG chart library: sparkline, line, bar, donut, gauge with tooltips and animation | ICDEV.lineChart(), ICDEV.barChart(), ICDEV.donutChart(), ICDEV.gaugeChart() | SVG charts |
+| Table Interactivity | tools/dashboard/static/js/tables.js | Table search, column sort, column filter, CSV export, row counter | Auto-init on DOMContentLoaded | Enhanced tables |
+| Onboarding Tour | tools/dashboard/static/js/tour.js | Interactive overlay walkthrough for first-visit users, 6-step spotlight tour | ICDEV.startTour(), ICDEV.resetTour() | Tour overlay |
+| Live Dashboard | tools/dashboard/static/js/live.js | Real-time SSE auto-refresh: connection status, smart debounced updates, event toasts | ICDEV.connectSSE(), ICDEV.disconnectSSE() | Live updates |
+| Batch Operations JS | tools/dashboard/static/js/batch.js | Batch workflow UI: catalog display, execution progress, step status polling | ICDEV.batchStartBatch(id, projectId) | Batch progress UI |
+| Batch Operations API | tools/dashboard/api/batch.py | Flask blueprint: batch execute/status/catalog endpoints, background subprocess runner | POST /api/batch/execute, GET /api/batch/status | JSON batch status |
+| Keyboard Shortcuts | tools/dashboard/static/js/shortcuts.js | Chord-based navigation (g+key), direct shortcuts, help modal overlay | ICDEV.showShortcutsHelp() | Navigation + help modal |
+| Mermaid Integration | tools/dashboard/static/js/mermaid-icdev.js | ICDEV Mermaid module: dark theme, click handlers, editor, SVG export, auto-init | ICDEV.renderMermaid(), ICDEV.initMermaidEditor(), ICDEV.exportMermaidSVG() | Rendered diagrams |
+| Diagram Definitions | tools/dashboard/diagram_definitions.py | Centralized Mermaid diagram catalog: 18 diagrams across 4 categories with role filtering | get_catalog_for_role(), get_diagram() | Diagram data |
+| Diagrams API | tools/dashboard/api/diagrams.py | Blueprint: list/get diagram definitions, role-filtered catalog | GET /api/diagrams/, GET /api/diagrams/<id> | JSON diagram data |
+
+## CLI Output Formatting
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Output Formatter | tools/cli/output_formatter.py | Human-friendly CLI output: colored tables, banners, scores, pipelines, key-value pairs | --human flag on any tool | Formatted terminal output |
 
 ## Testing Framework (Adapted from ADW)
 | Tool | File | Description | Input | Output |
@@ -187,7 +220,11 @@
 | Test Utilities | tools/testing/utils.py | JSON parsing, dual logging, safe subprocess env, run ID gen | — | — |
 | Health Check | tools/testing/health_check.py | System validation (env, DB, deps, tools, MCP, git, Claude, Playwright) | --json, --project-id | Health report |
 | Test Orchestrator | tools/testing/test_orchestrator.py | Full test pipeline: unit + BDD + E2E + gates with retry | --project-dir, --skip-e2e | Summary + state |
-| E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback | --test-file, --discover, --run-all, --mode | E2E results |
+| E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback | --test-file, --discover, --run-all, --mode, --validate-screenshots | E2E results |
+| Screenshot Validator | tools/testing/screenshot_validator.py | Vision-based screenshot validation using LLM (Ollama LLaVA / Claude / GPT-4o) | --image, --assert, --batch-dir, --check | Pass/fail + explanation |
+| UI Analyzer | tools/modernization/ui_analyzer.py | Legacy UI screenshot analysis for 7R migration scoring | --image, --image-dir, --app-id, --store, --score-only | UI complexity score + analysis |
+| Diagram Extractor | tools/mbse/diagram_extractor.py | Vision-based SysML diagram extraction from screenshots | --image, --diagram-type, --project-id, --store, --validate | Elements + relationships |
+| Diagram Validator | tools/compliance/diagram_validator.py | Compliance diagram validation (SSP, network zone, ATO boundary) | --image, --type, --expected-components, --expected-zones | Pass/fail per check |
 | Playwright Config | playwright.config.ts | Playwright test runner config (Chromium/Firefox/WebKit, video, screenshots) | — | — |
 | E2E Test: Dashboard | tests/e2e/dashboard_health.spec.ts | Native Playwright test: dashboard CUI banners + navigation | npx playwright test | Pass/fail + screenshots |
 | E2E Test: Compliance | tests/e2e/compliance_artifacts.spec.ts | Native Playwright test: compliance artifact display | npx playwright test | Pass/fail + screenshots |
@@ -409,6 +446,30 @@
 | Compatibility Checker | tools/marketplace/compatibility_checker.py | IL + version + dependency compatibility checks | --asset-id, --consumer-il | Compatibility result |
 | Federation Sync | tools/marketplace/federation_sync.py | Sync tenant-local ↔ central vetted registry | --promote/--pull/--status | Sync result JSON |
 | Marketplace MCP | tools/mcp/marketplace_server.py | MCP server (11 tools, 2 resources) for marketplace | stdio | JSON-RPC 2.0 |
+
+## DevSecOps & Zero Trust Architecture (Phase 24-25)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| DevSecOps Profile Manager | tools/devsecops/profile_manager.py | DevSecOps profile CRUD, maturity detection, assessment | --project-id, --create, --detect, --assess, --update, --json | Profile + maturity level |
+| ZTA Maturity Scorer | tools/devsecops/zta_maturity_scorer.py | 7-pillar ZTA maturity scoring (DoD ZTA Strategy) | --project-id, --pillar, --all, --trend, --json | Pillar scores + aggregate |
+| Pipeline Security Generator | tools/devsecops/pipeline_security_generator.py | Profile-driven GitLab CI security stage generation | --project-id, --json | YAML security stages |
+| Policy Generator | tools/devsecops/policy_generator.py | Kyverno/OPA policy-as-code generation (pod security, registry, RBAC) | --project-id, --engine kyverno\|opa, --json | Policy YAML/Rego |
+| Attestation Manager | tools/devsecops/attestation_manager.py | Image signing (Cosign/Notation) + SBOM attestation (SLSA Level 3) | --project-id, --generate, --verify, --json | Signing config + attestation |
+| Service Mesh Generator | tools/devsecops/service_mesh_generator.py | Istio/Linkerd service mesh config generation (mTLS, AuthzPolicy) | --project-id, --mesh istio\|linkerd, --json | Service mesh YAML |
+| ZTA Terraform Generator | tools/devsecops/zta_terraform_generator.py | ZTA security modules (GuardDuty, SecurityHub, WAF, Config Rules) | --project-path, --modules, --json | .tf files |
+| Network Segmentation Generator | tools/devsecops/network_segmentation_generator.py | Namespace isolation + per-pod microsegmentation NetworkPolicies | --project-path, --namespaces, --services, --json | NetworkPolicy YAML |
+| PDP Config Generator | tools/devsecops/pdp_config_generator.py | PDP/PEP configuration (Zscaler, Palo Alto, DISA ICAM) | --project-id, --pdp-type, --mesh, --json | PDP/PEP config |
+| NIST 800-207 Assessor | tools/compliance/nist_800_207_assessor.py | NIST SP 800-207 ZTA compliance assessment (BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
+| MCP DevSecOps Server | tools/mcp/devsecops_server.py | MCP server for DevSecOps/ZTA tools (12 tools) | stdio | JSON-RPC responses |
+
+## DoD MOSA — Modular Open Systems Approach (Phase 26)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| MOSA Assessor | tools/compliance/mosa_assessor.py | MOSA compliance assessment (25 requirements, 6 families, BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
+| ICD Generator | tools/mosa/icd_generator.py | Interface Control Document generation per external interface | --project-id, --interface-id, --all, --json | ICD markdown + DB |
+| TSP Generator | tools/mosa/tsp_generator.py | Technical Standard Profile generation (auto-detect standards) | --project-id, --json | TSP markdown + DB |
+| Modular Design Analyzer | tools/mosa/modular_design_analyzer.py | Static analysis: coupling, cohesion, interface coverage, circular deps | --project-dir, --project-id, --store, --json | Metrics + score |
+| MOSA Code Enforcer | tools/mosa/mosa_code_enforcer.py | MOSA violation scanner (coupling, boundary, missing specs) | --project-dir, --fix-suggestions, --json | Violations list |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

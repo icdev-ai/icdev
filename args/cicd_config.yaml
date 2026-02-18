@@ -1,0 +1,82 @@
+# CUI // SP-CTI
+# ICDEV CI/CD Configuration — channels, routing, recovery, conversation
+# Architecture Decisions: D132 (envelope), D133 (lane-aware), D136 (connectors), D137 (threads)
+
+cicd:
+  # ── Air-Gap Detection ─────────────────────────────────────────────────
+  connectivity:
+    force_polling: false          # Set true for known air-gapped environments (D44)
+    probe_timeout_seconds: 3
+    probe_targets:
+      github: "github.com:443"
+      gitlab_default: "gitlab.com:443"
+
+  # ── Event Routing ─────────────────────────────────────────────────────
+  routing:
+    default_workflow: "icdev_plan"   # When no command detected in new issue
+    session_timeout_minutes: 120     # Lane timeout before session is released
+    max_queued_events_per_session: 20
+
+  # ── Channel Configuration (enable/disable toggles) ───────────────────
+  channels:
+    github:
+      enabled: true
+      webhook_path: "/gh-webhook"
+
+    gitlab:
+      enabled: true
+      webhook_path: "/gl-webhook"
+
+    slack:
+      enabled: false                # Toggle on when Slack bot is configured
+      webhook_path: "/slack/events"
+      bot_token_ref: "aws:secretsmanager:icdev/slack-bot-token"
+      signing_secret_ref: "aws:secretsmanager:icdev/slack-signing-secret"
+      default_channel: ""           # Channel ID for notifications
+      thread_mode: "always"         # D137: always use threads
+
+    mattermost:
+      enabled: false                # Toggle on when Mattermost bot is configured
+      webhook_path: "/mattermost/events"
+      bot_token_ref: "aws:secretsmanager:icdev/mattermost-bot-token"
+      webhook_secret_ref: "aws:secretsmanager:icdev/mattermost-webhook-secret"
+      server_url: ""                # https://mattermost.example.mil
+      default_channel: ""
+      thread_mode: "always"         # D137: always use threads
+
+  # ── Agent Executor ────────────────────────────────────────────────────
+  executor:
+    default_timeout_seconds: 300
+    max_timeout_seconds: 1200
+    timeout_overrides:
+      /icdev-build: 600
+      /implement: 900
+      /icdev-review: 600
+      /feature: 600
+      /bug: 600
+
+  # ── Self-Recovery (Phase 4) ───────────────────────────────────────────
+  recovery:
+    enabled: true
+    max_attempts: 3
+    audit_every_attempt: true
+    retest_scope: "failed_only"     # "failed_only" or "full_suite"
+    fix_model: "opus"               # Use strongest model for fix generation
+
+  # ── Conversation (Phase 3) ────────────────────────────────────────────
+  conversation:
+    enabled: true
+    max_turns_per_session: 50
+    idle_timeout_minutes: 60
+    auto_approve_after_tests_pass: false
+    signal_keywords:
+      fix_this: "fix_code"
+      fix this: "fix_code"
+      change_approach: "revise_plan"
+      change approach: "revise_plan"
+      retry: "retry_last"
+      approve: "approve"
+      reject: "reject"
+      lgtm: "approve"
+      explain: "explain"
+      skip: "skip_phase"

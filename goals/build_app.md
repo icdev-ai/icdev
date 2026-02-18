@@ -14,6 +14,22 @@ Build full-stack applications using AI assistance within the GOTCHA framework. T
 | **A** | Assemble | Build with layered architecture |
 | **S** | Stress-test | Test functionality, error handling |
 
+```mermaid
+flowchart LR
+    A["A: Architect\nDefine problem, users,\nsuccess metrics"]
+    T["T: Trace\nData schema,\nintegrations, stack"]
+    L["L: Link\nValidate connections,\ntest APIs"]
+    As["A: Assemble\nBuild layers\nDB → Backend → UI"]
+    S["S: Stress-test\nFunctional, integration,\nedge case tests"]
+    A --> T --> L --> As --> S
+    S -.->|Issues found| As
+    style A fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style T fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style L fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style As fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+```
+
 ## For prod builds when asked specifically add:
 + V - Validate (security/input sanitization, edge cases, unit tests)
 + M - Monitor (logging, observability, alerts)
@@ -280,6 +296,28 @@ If the project has `mbse_enabled=1`, use the **M-ATLAS** workflow which adds a *
 | **L** | Link | Validate connections including model-code mappings |
 | **A** | Assemble | Build with model-generated scaffolding as starting point |
 | **S** | Stress-test | Test including model-generated test stubs |
+
+```mermaid
+flowchart LR
+    Check{"MBSE\nenabled?"}
+    M["M: Model\nImport XMI/ReqIF,\ndigital thread,\ncode scaffolding"]
+    A["A: Architect\nSystem design informed\nby model elements"]
+    T["T: Trace\nData schema +\nmodel traceability"]
+    L["L: Link\nValidate connections +\nmodel-code mappings"]
+    As["A: Assemble\nBuild with model-generated\nscaffolding"]
+    S["S: Stress-test\nTest including\nmodel-generated stubs"]
+    Check -->|Yes| M --> A
+    Check -->|No| A
+    A --> T --> L --> As --> S
+    S -.->|Issues found| As
+    style Check fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style M fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style A fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style T fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style L fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style As fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+```
 
 ### M — Model Phase
 

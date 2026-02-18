@@ -1,0 +1,661 @@
+{
+  "metadata": {
+    "title": "SOC 2 Type II — Trust Service Criteria (TSC)",
+    "source": "AICPA 2017 Trust Services Criteria (TSP Section 100), SOC 2 Reporting Framework, AICPA TSC-NIST Crosswalk (2022)",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "description": "Trust Service Criteria catalog for SOC 2 Type II examinations across 5 categories: Security (Common Criteria), Availability, Processing Integrity, Confidentiality, and Privacy"
+  },
+  "trust_categories": [
+    {
+      "code": "CC",
+      "name": "Security",
+      "description": "Common Criteria — the foundational security criteria applicable to all SOC 2 engagements. Organized into 9 series covering control environment, communication, risk assessment, monitoring, control activities, logical and physical access, system operations, change management, and risk mitigation.",
+      "series_count": 9,
+      "always_included": true
+    },
+    {
+      "code": "A",
+      "name": "Availability",
+      "description": "The system is available for operation and use as committed or agreed upon.",
+      "always_included": false
+    },
+    {
+      "code": "PI",
+      "name": "Processing Integrity",
+      "description": "System processing is complete, valid, accurate, timely, and authorized to meet the entity's objectives.",
+      "always_included": false
+    },
+    {
+      "code": "C",
+      "name": "Confidentiality",
+      "description": "Information designated as confidential is protected as committed or agreed upon.",
+      "always_included": false
+    },
+    {
+      "code": "P",
+      "name": "Privacy",
+      "description": "Personal information is collected, used, retained, disclosed, and disposed of in conformity with the commitments in the entity's privacy notice and criteria set forth in Generally Accepted Privacy Principles (GAPP).",
+      "always_included": false
+    }
+  ],
+  "requirements": [
+    {
+      "id": "CC1.1",
+      "title": "COSO Principle 1: Demonstrates Commitment to Integrity and Ethical Values",
+      "description": "The entity demonstrates a commitment to integrity and ethical values. The board of directors and management, at all levels, demonstrate through their directives, actions, and behavior the importance of integrity and ethical values to support the functioning of the system of internal control.",
+      "family": "CC1 — Control Environment",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-4", "AT-1", "PM-1"],
+      "evidence_required": "Code of conduct policy, ethics training records, employee acknowledgment documentation, tone-at-the-top communications",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC1.2",
+      "title": "COSO Principle 2: Board Exercises Oversight Responsibility",
+      "description": "The board of directors demonstrates independence from management and exercises oversight of the development and performance of internal control. The board retains oversight responsibility for management's design, implementation, and operation of internal controls.",
+      "family": "CC1 — Control Environment",
+      "trust_category": "Security",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-1", "PM-2", "PM-10"],
+      "evidence_required": "Board meeting minutes, audit committee charter, independence declarations, oversight activity documentation",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC1.3",
+      "title": "COSO Principle 3: Establishes Structure, Authority, and Responsibility",
+      "description": "Management establishes, with board oversight, structures, reporting lines, and appropriate authorities and responsibilities in the pursuit of objectives. This includes defining roles, assigning responsibilities, and delegating authority for key processes supporting the system.",
+      "family": "CC1 — Control Environment",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-1", "PM-2", "PS-1", "PS-7"],
+      "evidence_required": "Organizational chart, RACI matrix, role definitions, delegation of authority documentation, reporting structure documentation",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC1.4",
+      "title": "COSO Principle 4: Demonstrates Commitment to Competence",
+      "description": "The entity demonstrates a commitment to attract, develop, and retain competent individuals in alignment with objectives. Competence requirements are established for key security roles, and training programs ensure personnel maintain necessary skills.",
+      "family": "CC1 — Control Environment",
+      "trust_category": "Security",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AT-1", "AT-2", "AT-3", "PS-2"],
+      "evidence_required": "Job descriptions with competency requirements, training records, certification tracking, performance evaluations related to security competence",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC1.5",
+      "title": "COSO Principle 5: Enforces Accountability",
+      "description": "The entity holds individuals accountable for their internal control responsibilities in the pursuit of objectives. This includes establishing performance measures and incentives and holding individuals accountable for the performance of internal controls.",
+      "family": "CC1 — Control Environment",
+      "trust_category": "Security",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PS-1", "PS-8", "AU-1"],
+      "evidence_required": "Accountability policies, performance metrics tied to security, disciplinary procedures, internal control ownership assignments",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC2.1",
+      "title": "Obtains or Generates Relevant Quality Information (Internal Communication)",
+      "description": "The entity obtains or generates and uses relevant, quality information to support the functioning of internal control. Management identifies information requirements for relevant internal and external communications at each level of the organization related to system security.",
+      "family": "CC2 — Communication and Information",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-15", "SI-5", "PL-1", "RA-1"],
+      "evidence_required": "Information requirements documentation, data quality standards, security communication policies, information flow diagrams",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC2.2",
+      "title": "Communicates Internal Control Information Internally",
+      "description": "The entity internally communicates information, including objectives and responsibilities for internal control, necessary to support the functioning of internal control. Security policies, procedures, and changes are communicated to all relevant personnel through appropriate channels.",
+      "family": "CC2 — Communication and Information",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AT-1", "PL-4", "PM-1", "IR-1"],
+      "evidence_required": "Internal communication records, policy distribution acknowledgments, security awareness training materials, intranet/portal security content",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC2.3",
+      "title": "Communicates with External Parties",
+      "description": "The entity communicates with external parties regarding matters affecting the functioning of internal control. This includes communicating system descriptions, security commitments, and relevant control information to customers, vendors, regulators, and other external stakeholders.",
+      "family": "CC2 — Communication and Information",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-3", "SA-9", "PS-7", "PM-15"],
+      "evidence_required": "System description documents, customer SLA communications, vendor security assessments, external stakeholder notifications, security incident communication records",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC3.1",
+      "title": "Specifies Suitable Objectives",
+      "description": "The entity specifies objectives with sufficient clarity to enable the identification and assessment of risks relating to objectives. Security objectives are defined in terms of confidentiality, integrity, and availability with measurable thresholds.",
+      "family": "CC3 — Risk Assessment",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-1", "RA-3", "PM-9", "PL-2"],
+      "evidence_required": "Security objectives documentation, risk appetite statements, measurable security thresholds and targets, objective-to-control mapping",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC3.2",
+      "title": "Identifies and Analyzes Risks",
+      "description": "The entity identifies risks to the achievement of its objectives across the entity and analyzes risks as a basis for determining how the risks should be managed. Risk identification considers internal and external factors, threat landscape, and vulnerability assessments.",
+      "family": "CC3 — Risk Assessment",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "RA-5", "PM-9", "PM-16"],
+      "evidence_required": "Risk register, risk assessment reports, threat analysis documentation, vulnerability scan results, risk identification methodology documentation",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC3.3",
+      "title": "Considers the Potential for Fraud",
+      "description": "The entity considers the potential for fraud in assessing risks to the achievement of objectives. This includes consideration of various types of fraud including fraudulent reporting, loss of assets, corruption, and unauthorized activity by both internal and external actors.",
+      "family": "CC3 — Risk Assessment",
+      "trust_category": "Security",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["RA-3", "SI-4", "AU-6", "PM-12"],
+      "evidence_required": "Fraud risk assessment, insider threat analysis, segregation of duties review, fraud indicator monitoring reports",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC3.4",
+      "title": "Identifies and Assesses Significant Change",
+      "description": "The entity identifies and assesses changes that could significantly impact the system of internal control. Changes in the external environment, business model, leadership, technology, and regulatory requirements are monitored and assessed for their potential impact on security controls.",
+      "family": "CC3 — Risk Assessment",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CM-3", "CM-4", "RA-3", "PM-9"],
+      "evidence_required": "Change impact assessments, environmental scanning reports, technology change reviews, regulatory change tracking documentation",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC4.1",
+      "title": "Selects, Develops, and Performs Ongoing and/or Separate Evaluations",
+      "description": "The entity selects, develops, and performs ongoing and/or separate evaluations to ascertain whether the components of internal control are present and functioning. This includes continuous monitoring activities, periodic assessments, penetration testing, and independent audits.",
+      "family": "CC4 — Monitoring Activities",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-2", "CA-7", "SI-4", "PM-14"],
+      "evidence_required": "Continuous monitoring plans, security assessment schedules, penetration test reports, independent audit reports, monitoring tool configuration",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC4.2",
+      "title": "Evaluates and Communicates Deficiencies",
+      "description": "The entity evaluates and communicates internal control deficiencies in a timely manner to those parties responsible for taking corrective action, including senior management and the board of directors, as appropriate. Deficiency tracking includes severity classification, root cause analysis, and remediation timelines.",
+      "family": "CC4 — Monitoring Activities",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-5", "PM-4", "PM-6", "IR-6"],
+      "evidence_required": "Deficiency tracking register, remediation plans with timelines, management notification records, board reporting on control deficiencies",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC5.1",
+      "title": "Selects and Develops Control Activities",
+      "description": "The entity selects and develops control activities that contribute to the mitigation of risks to the achievement of objectives to acceptable levels. Control activities include preventive and detective controls across physical and logical layers.",
+      "family": "CC5 — Control Activities",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-2", "PM-1", "SA-8", "CM-1"],
+      "evidence_required": "Control catalog mapping, risk-to-control mapping matrix, control activity design documentation, preventive vs detective control classification",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC5.2",
+      "title": "Selects and Develops General Controls over Technology",
+      "description": "The entity also selects and develops general control activities over technology to support the achievement of objectives. Technology general controls include access controls, change management, IT operations, and IT security management across infrastructure, applications, and data layers.",
+      "family": "CC5 — Control Activities",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CM-1", "CM-2", "SA-3", "SA-10"],
+      "evidence_required": "IT general controls documentation, technology control framework, infrastructure security configuration baselines, application security standards",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC5.3",
+      "title": "Deploys Control Activities Through Policies and Procedures",
+      "description": "The entity deploys control activities through policies that establish what is expected and in procedures that put policies into action. Policies and procedures are documented, approved by management, communicated to personnel, and periodically reviewed and updated.",
+      "family": "CC5 — Control Activities",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-1", "PL-2", "PM-1"],
+      "evidence_required": "Security policies with approval signatures, standard operating procedures, policy communication records, policy review schedules and evidence of review",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC6.1",
+      "title": "Logical and Physical Access — Security Software, Infrastructure, and Architectures",
+      "description": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives. This includes implementation of identification, authentication, authorization, and accountability mechanisms across all system layers.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-1", "AC-2", "AC-3", "IA-1", "IA-2", "IA-5"],
+      "evidence_required": "Access control architecture diagrams, identity and access management system configuration, authentication mechanism documentation, RBAC/ABAC implementation evidence",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC6.2",
+      "title": "Logical and Physical Access — User Registration and Authorization",
+      "description": "Prior to issuing system credentials and granting system access, the entity registers and authorizes new internal and external users whose access is administered by the entity. Registration and authorization includes approval processes, identity verification, and provisioning workflows.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-2", "IA-4", "IA-5", "PS-4", "PS-5"],
+      "evidence_required": "User registration procedures, access request and approval workflows, identity verification records, account provisioning logs",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC6.3",
+      "title": "Logical and Physical Access — Role-Based Access and Least Privilege",
+      "description": "The entity authorizes, modifies, or removes access to data, software, functions, and other protected information assets based on roles, responsibilities, or the system design and changes, giving consideration to the concepts of least privilege and segregation of duties.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-3", "AC-5", "AC-6", "AC-6(1)", "AC-6(5)"],
+      "evidence_required": "Role definitions with access permissions, least privilege policy, segregation of duties matrix, access review records, access modification logs",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC6.4",
+      "title": "Logical and Physical Access — Physical Access Restrictions",
+      "description": "The entity restricts physical access to facilities and protected information assets (for example, data center facilities, backup media storage, and other sensitive locations) to authorized personnel to meet the entity's objectives.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PE-2", "PE-3", "PE-6", "PE-8"],
+      "evidence_required": "Physical access control system logs, facility access lists, visitor logs, physical security assessments, data center access procedures",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC6.5",
+      "title": "Logical and Physical Access — Disposal of Assets",
+      "description": "The entity discontinues logical and physical protections over physical assets only after the ability to read or recover data and software from those assets has been diminished and is no longer required to meet the entity's objectives. This includes secure media sanitization and destruction procedures.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["MP-6", "PE-16", "MP-7"],
+      "evidence_required": "Media sanitization procedures, certificate of destruction records, asset disposal logs, data remanence testing results",
+      "automation_level": "manual"
+    },
+    {
+      "id": "CC6.6",
+      "title": "Logical and Physical Access — Securing External Access Points",
+      "description": "The entity implements logical access security measures to protect against threats from sources outside its system boundaries. This includes firewalls, intrusion detection/prevention systems, network segmentation, and securing all external access points including APIs, VPNs, and web interfaces.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-7", "SC-7(5)", "AC-17", "AC-20", "SI-3", "SI-4"],
+      "evidence_required": "Network architecture diagrams, firewall rule sets, IDS/IPS configuration, external access point inventory, penetration test results for external interfaces",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC6.7",
+      "title": "Logical and Physical Access — Restricting Information in Transit/At Rest",
+      "description": "The entity restricts the transmission, movement, and removal of information to authorized internal and external users and processes, and protects it during transmission, movement, or removal to meet the entity's objectives. Encryption in transit (TLS 1.2+) and at rest (AES-256) is enforced.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-8", "SC-8(1)", "SC-13", "SC-28", "MP-5"],
+      "evidence_required": "Encryption policy, TLS configuration evidence, encryption-at-rest implementation, data classification and handling procedures, key management documentation",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC6.8",
+      "title": "Logical and Physical Access — Preventing and Detecting Unauthorized Software",
+      "description": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized or malicious software to meet the entity's objectives. This includes endpoint protection, application whitelisting, software restriction policies, and malware detection systems.",
+      "family": "CC6 — Logical and Physical Access Controls",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-3", "SI-8", "CM-7", "CM-11"],
+      "evidence_required": "Endpoint protection deployment evidence, malware detection logs, application whitelisting configuration, software installation policies, unauthorized software incident reports",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC7.1",
+      "title": "System Operations — Detecting and Monitoring Security Events",
+      "description": "To meet its objectives, the entity uses detection and monitoring procedures to identify (1) changes to configurations that result in the introduction of new vulnerabilities, and (2) susceptibilities to newly discovered vulnerabilities. This includes SIEM deployment, log aggregation, alerting thresholds, and security event correlation.",
+      "family": "CC7 — System Operations",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "AU-6", "RA-5", "CM-3", "IR-4"],
+      "evidence_required": "SIEM configuration, monitoring dashboards, alerting rules, vulnerability scanning schedule and results, configuration change detection evidence",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC7.2",
+      "title": "System Operations — Monitoring System Components for Anomalies",
+      "description": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
+      "family": "CC7 — System Operations",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "AU-6", "AU-12", "IR-4", "IR-5"],
+      "evidence_required": "Anomaly detection rules, baseline behavior documentation, monitoring tool configurations, anomaly investigation records, false positive tuning documentation",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC7.3",
+      "title": "System Operations — Evaluating Security Events",
+      "description": "The entity evaluates security events to determine whether they could or have resulted in a failure of the entity to meet its objectives (security incidents) and, if so, takes actions to prevent or address such failures. Evaluation includes triage, severity classification, and escalation procedures.",
+      "family": "CC7 — System Operations",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IR-4", "IR-5", "IR-6", "AU-6"],
+      "evidence_required": "Security event triage procedures, severity classification criteria, escalation matrix, incident investigation reports, event-to-incident correlation records",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC7.4",
+      "title": "System Operations — Incident Response",
+      "description": "The entity responds to identified security incidents by executing a defined incident response program to understand, contain, remediate, and communicate security incidents, as appropriate. Incident response includes containment, eradication, recovery, post-incident analysis, and lessons learned.",
+      "family": "CC7 — System Operations",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IR-1", "IR-2", "IR-4", "IR-5", "IR-6", "IR-8"],
+      "evidence_required": "Incident response plan, incident response team roster, incident response testing/exercise results, post-incident reports, lessons learned documentation",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC7.5",
+      "title": "System Operations — Recovery from Identified Security Incidents",
+      "description": "The entity identifies, develops, and implements activities to recover from identified security incidents. Recovery activities restore system components and data to a known good state, and business operations are resumed within acceptable timeframes.",
+      "family": "CC7 — System Operations",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CP-2", "CP-4", "CP-10", "IR-4"],
+      "evidence_required": "Recovery procedures, backup restoration test results, business continuity activation records, recovery time documentation, system restoration verification",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC8.1",
+      "title": "Change Management — Manages Changes to Infrastructure and Software",
+      "description": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves, and implements changes to infrastructure, data, software, and procedures to meet its objectives. Changes follow a defined change management process with appropriate approvals, testing, and documentation at each stage.",
+      "family": "CC8 — Change Management",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CM-3", "CM-4", "CM-5", "SA-10", "SA-11"],
+      "evidence_required": "Change management policy, change request records, change approval documentation, test results for changes, implementation records, post-implementation reviews",
+      "automation_level": "auto"
+    },
+    {
+      "id": "CC9.1",
+      "title": "Risk Mitigation — Identifies and Assesses Risk Mitigation",
+      "description": "The entity identifies, selects, and develops risk mitigation activities for risks arising from potential business disruptions. Risk mitigation includes assessing the cost-benefit of controls, implementing compensating controls, and accepting residual risk through formal risk acceptance processes.",
+      "family": "CC9 — Risk Mitigation",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "PM-9", "PM-11", "CA-5"],
+      "evidence_required": "Risk mitigation strategies, cost-benefit analyses, compensating control documentation, risk acceptance records, residual risk documentation",
+      "automation_level": "partial"
+    },
+    {
+      "id": "CC9.2",
+      "title": "Risk Mitigation — Vendor and Business Partner Risk",
+      "description": "The entity assesses and manages risks associated with vendors and business partners. This includes due diligence during vendor selection, contractual security requirements, ongoing monitoring, and right-to-audit clauses in third-party agreements.",
+      "family": "CC9 — Risk Mitigation",
+      "trust_category": "Security",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-9", "SA-12", "PS-7", "SR-1", "SR-2", "SR-3"],
+      "evidence_required": "Vendor risk assessment procedures, vendor due diligence records, contractual security requirements, SOC 2 reports from vendors, ongoing vendor monitoring evidence",
+      "automation_level": "partial"
+    },
+    {
+      "id": "A1.1",
+      "title": "Availability — Capacity Management",
+      "description": "The entity maintains, monitors, and evaluates current processing capacity and use of system components (infrastructure, data, and software) to manage capacity demand and to enable the implementation of additional capacity to help meet its objectives. Capacity planning includes forecasting, threshold alerting, and auto-scaling configurations.",
+      "family": "Availability",
+      "trust_category": "Availability",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CP-2", "PE-10", "SC-5", "AU-4"],
+      "evidence_required": "Capacity monitoring dashboards, capacity planning documentation, threshold alerting configurations, auto-scaling policies, capacity utilization reports",
+      "automation_level": "auto"
+    },
+    {
+      "id": "A1.2",
+      "title": "Availability — Environmental Protections, Backup, and Recovery",
+      "description": "The entity authorizes, designs, develops or acquires, implements, operates, approves, maintains, and monitors environmental protections, software, data backup processes, and recovery infrastructure to meet its objectives. This includes disaster recovery planning, backup validation, and geographic redundancy.",
+      "family": "Availability",
+      "trust_category": "Availability",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CP-6", "CP-9", "CP-10", "PE-13", "PE-14", "PE-15"],
+      "evidence_required": "Backup procedures, backup validation/restoration test results, disaster recovery plan, geographic redundancy documentation, environmental protection systems documentation",
+      "automation_level": "auto"
+    },
+    {
+      "id": "A1.3",
+      "title": "Availability — Recovery Plan Testing",
+      "description": "The entity tests recovery plan procedures supporting system recovery to meet its objectives. Recovery testing includes tabletop exercises, functional recovery tests, and full failover drills with documented results, identified gaps, and remediation actions.",
+      "family": "Availability",
+      "trust_category": "Availability",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CP-4", "CP-10", "IR-3"],
+      "evidence_required": "Recovery test plans, test execution records, test results documentation, gap identification and remediation plans, tabletop and functional exercise reports",
+      "automation_level": "partial"
+    },
+    {
+      "id": "PI1.1",
+      "title": "Processing Integrity — Defines Processing Specifications",
+      "description": "The entity obtains or generates, uses, and communicates relevant, quality information regarding the objectives related to processing, including definitions of data processed and product or service specifications, to support the use of products and services. Processing specifications include input validation rules, business logic definitions, and output formats.",
+      "family": "Processing Integrity",
+      "trust_category": "Processing_Integrity",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-9", "SI-10", "SA-4", "SA-5"],
+      "evidence_required": "Processing specification documents, input/output format definitions, business logic documentation, data dictionary, system interface specifications",
+      "automation_level": "partial"
+    },
+    {
+      "id": "PI1.2",
+      "title": "Processing Integrity — Input Validation and Error Handling",
+      "description": "The entity implements policies and procedures over system inputs, including controls over completeness and accuracy that are consistent with the entity's system processing integrity commitments and system requirements. Input validation includes type checking, range validation, referential integrity, and format verification.",
+      "family": "Processing Integrity",
+      "trust_category": "Processing_Integrity",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-10", "SI-9", "SI-15"],
+      "evidence_required": "Input validation rules documentation, error handling procedures, input rejection logs, data quality validation reports, exception handling configuration",
+      "automation_level": "auto"
+    },
+    {
+      "id": "PI1.3",
+      "title": "Processing Integrity — System Processing Completeness and Timeliness",
+      "description": "The entity implements policies and procedures over system processing to result in products, services, and reporting to meet the entity's objectives. Processing integrity checks ensure transactions are complete, accurate, timely, and authorized throughout the processing lifecycle.",
+      "family": "Processing Integrity",
+      "trust_category": "Processing_Integrity",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-7", "AU-10", "AU-12"],
+      "evidence_required": "Transaction processing logs, batch reconciliation reports, processing SLA compliance records, data integrity check results, end-to-end processing verification",
+      "automation_level": "auto"
+    },
+    {
+      "id": "PI1.4",
+      "title": "Processing Integrity — Output Completeness and Accuracy",
+      "description": "The entity implements policies and procedures to make available or deliver output completely, accurately, and timely in accordance with specifications to meet the entity's objectives. Output controls include completeness checks, accuracy verification, and delivery confirmation mechanisms.",
+      "family": "Processing Integrity",
+      "trust_category": "Processing_Integrity",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-12", "AU-10"],
+      "evidence_required": "Output verification procedures, delivery confirmation logs, output accuracy validation reports, output completeness checks, discrepancy investigation records",
+      "automation_level": "auto"
+    },
+    {
+      "id": "PI1.5",
+      "title": "Processing Integrity — Error Correction and Retransmission",
+      "description": "The entity implements policies and procedures to store inputs, items in processing, and outputs completely, accurately, and timely in accordance with system specifications to meet the entity's objectives. Processing errors are detected, logged, corrected, and retransmitted with full audit trail.",
+      "family": "Processing Integrity",
+      "trust_category": "Processing_Integrity",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-10", "SI-11", "AU-10"],
+      "evidence_required": "Error detection and correction procedures, error logs, retransmission records, data correction audit trail, root cause analysis for processing errors",
+      "automation_level": "partial"
+    },
+    {
+      "id": "C1.1",
+      "title": "Confidentiality — Identifies Confidential Information",
+      "description": "The entity identifies and maintains confidential information to meet the entity's objectives related to confidentiality. This includes establishing data classification schemes, identifying sensitive data types, and maintaining an inventory of confidential information assets.",
+      "family": "Confidentiality",
+      "trust_category": "Confidentiality",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-2", "SC-16", "MP-3", "AC-16"],
+      "evidence_required": "Data classification policy, data inventory, confidential information identification procedures, data labeling standards, information asset register",
+      "automation_level": "partial"
+    },
+    {
+      "id": "C1.2",
+      "title": "Confidentiality — Protects Confidential Information from Disposal",
+      "description": "The entity disposes of confidential information to meet the entity's objectives related to confidentiality. Disposal of confidential information follows documented procedures including secure deletion, media sanitization, and certificate of destruction.",
+      "family": "Confidentiality",
+      "trust_category": "Confidentiality",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["MP-6", "MP-7", "SI-12"],
+      "evidence_required": "Confidential data disposal procedures, media sanitization records, certificates of destruction, disposal verification logs, retention schedule compliance",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P1.1",
+      "title": "Privacy — Notice of Privacy Practices",
+      "description": "The entity provides notice to data subjects about its privacy practices to meet the entity's objectives related to privacy. The entity includes, but is not limited to, the following in its description of privacy practices: purpose for collecting personal information, types of personal information collected, methods of collection, use of personal information, retention, and disposal.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["TR-1", "TR-2", "TR-3", "UL-1"],
+      "evidence_required": "Privacy notice/policy, notification delivery records, privacy notice change history, acknowledgment records",
+      "automation_level": "manual"
+    },
+    {
+      "id": "P2.1",
+      "title": "Privacy — Consent for Collection and Use",
+      "description": "The entity communicates choices available regarding the collection, use, retention, disclosure, and disposal of personal information to the data subjects and the consequences, if any, of each choice. Consent mechanisms include opt-in, opt-out, and affirmative consent for sensitive data.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IP-1", "IP-2", "IP-3", "UL-2"],
+      "evidence_required": "Consent mechanisms documentation, choice options presented to data subjects, consent records, opt-in/opt-out tracking, consent withdrawal procedures",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P3.1",
+      "title": "Privacy — Collection Limited to Identified Purpose",
+      "description": "Personal information is collected consistent with the entity's objectives related to privacy. The entity collects personal information only for the purposes identified in the notice and with the implicit or explicit consent of the data subject. Collection is limited to what is necessary for the stated purpose (data minimization).",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AP-1", "AP-2", "DM-1", "AR-2"],
+      "evidence_required": "Data collection purpose documentation, data minimization policy, collection limitation controls, purpose-to-data mapping, data flow diagrams showing collection points",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P3.2",
+      "title": "Privacy — Collects Information by Fair and Lawful Means",
+      "description": "For information requiring explicit consent, the entity communicates the need for such consent, as well as the consequences of a failure to provide consent for the request for personal information, and obtains the consent prior to the collection of the information to meet the entity's objectives related to privacy.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IP-1", "IP-2", "AR-2"],
+      "evidence_required": "Explicit consent forms, consent prior to collection verification, consequence notification documentation, consent timestamps and records",
+      "automation_level": "manual"
+    },
+    {
+      "id": "P4.1",
+      "title": "Privacy — Uses Personal Information for Identified Purposes",
+      "description": "The entity limits the use of personal information to the purposes identified in the entity's privacy notice and for objectives compatible with those purposes. Personal information must not be repurposed without additional notice and consent.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["UL-1", "UL-2", "AR-2"],
+      "evidence_required": "Purpose limitation controls, data use monitoring logs, secondary use authorization procedures, compatible purpose assessment documentation",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P4.2",
+      "title": "Privacy — Retains Personal Information for Identified Purposes",
+      "description": "The entity retains personal information consistent with the entity's objectives related to privacy. Personal information is retained only as long as necessary to fulfill the purposes identified in the privacy notice, after which it is securely disposed.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["DM-2", "SI-12", "MP-6"],
+      "evidence_required": "Retention schedule, retention period justification, automated purge mechanism evidence, retention compliance reports",
+      "automation_level": "auto"
+    },
+    {
+      "id": "P4.3",
+      "title": "Privacy — Disposal of Personal Information",
+      "description": "The entity securely disposes of personal information to meet the entity's objectives related to privacy. Disposal includes all copies across production, backup, and archived systems, using NIST 800-88 compliant sanitization methods.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["DM-2", "MP-6", "SI-12"],
+      "evidence_required": "Disposal procedures, sanitization method documentation (NIST 800-88), disposal verification records, certificate of destruction for personal information",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P5.1",
+      "title": "Privacy — Data Subject Access Requests",
+      "description": "The entity grants identified and authenticated data subjects the ability to access their stored personal information for review and, upon request, provides physical or electronic copies of that information to data subjects to meet the entity's objectives related to privacy.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IP-2", "IP-3"],
+      "evidence_required": "Access request procedures, identity verification for access requests, request tracking and fulfillment records, response time compliance",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P5.2",
+      "title": "Privacy — Correction of Personal Information",
+      "description": "The entity corrects, amends, or appends personal information based on information provided by data subjects and communicates such information to third parties, as committed or required, to meet the entity's objectives related to privacy.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IP-3", "DI-1", "DI-2"],
+      "evidence_required": "Correction request procedures, correction implementation records, third-party notification records, correction verification logs",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P6.1",
+      "title": "Privacy — Disclosure to Third Parties",
+      "description": "The entity discloses personal information to third parties with the explicit consent of data subjects, and such disclosure is consistent with the objectives related to privacy. Third-party disclosures are documented and limited to what is necessary and authorized.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["UL-1", "UL-2", "AR-3", "AR-4"],
+      "evidence_required": "Third-party disclosure agreements, consent records for disclosures, disclosure tracking logs, data processing agreements, sub-processor management records",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P6.2",
+      "title": "Privacy — Third-Party Data Protection",
+      "description": "The entity creates and retains a complete, accurate, and timely record of authorized disclosures of personal information to third parties. Third parties are contractually required to protect disclosed personal information at the same or higher level as the disclosing entity.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AR-3", "AR-4", "SA-9"],
+      "evidence_required": "Third-party disclosure logs, contractual data protection clauses, third-party security assessment results, data processing agreements",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P7.1",
+      "title": "Privacy — Data Quality and Accuracy",
+      "description": "The entity collects and maintains accurate, up-to-date, complete, and relevant personal information for the purposes identified in the notice. Data quality processes include validation at collection, periodic accuracy reviews, and data correction mechanisms.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["DI-1", "DI-2", "DM-1"],
+      "evidence_required": "Data quality policy, accuracy validation controls, data quality audit reports, correction process documentation, quality metrics",
+      "automation_level": "partial"
+    },
+    {
+      "id": "P8.1",
+      "title": "Privacy — Complaint Management",
+      "description": "The entity implements a process for receiving, addressing, resolving, and communicating the resolution of inquiries, complaints, and disputes from data subjects and others and periodically monitors compliance to meet the entity's objectives related to privacy.",
+      "family": "Privacy",
+      "trust_category": "Privacy",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IP-4", "AR-6"],
+      "evidence_required": "Complaint handling procedures, complaint tracking system, resolution records, response time metrics, privacy compliance monitoring reports",
+      "automation_level": "partial"
+    }
+  ]
+}

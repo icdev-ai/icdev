@@ -1,5 +1,33 @@
 {
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
-  }
+    "@playwright/test": "^1.58.2",
+    "mermaid": "^11.12.3"
+  },
+  "name": "icdev",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2",
+    "playwright-core": "^1.58.2"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goagiq/ICDEV.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/goagiq/ICDEV/issues"
+  },
+  "homepage": "https://github.com/goagiq/ICDEV#readme"
 }

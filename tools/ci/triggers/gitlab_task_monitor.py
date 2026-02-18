@@ -147,57 +147,59 @@ def add_label(issue_iid: int, label: str):
         print(f"Warning: Failed to add label to issue {issue_iid}: {e}", file=sys.stderr)
 
 
-def spawn_workflow(tag: str, issue_iid: int, issue_title: str,
+def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
                    worktree_path: str = None, dry_run: bool = False) -> Optional[str]:
-    """Spawn the appropriate ICDEV workflow for the tag."""
-    workflow_name = ICDEV_TAG_MAP.get(tag)
-    if not workflow_name:
-        return None
+    """Route issue through EventEnvelope + EventRouter (D132).
 
-    # Map to workflow script
-    workflow_map = {
-        "icdev_intake": "tools/ci/workflows/icdev_plan.py",
-        "icdev_build": "tools/ci/workflows/icdev_build.py",
-        "icdev_sdlc": "tools/ci/workflows/icdev_sdlc.py",
-        "icdev_comply": "tools/ci/workflows/icdev_plan.py",
-        "icdev_secure": "tools/ci/workflows/icdev_plan.py",
-        "icdev_modernize": "tools/ci/workflows/icdev_plan.py",
-        "icdev_deploy": "tools/ci/workflows/icdev_plan.py",
-        "icdev_maintain": "tools/ci/workflows/icdev_plan.py",
-        "icdev_test": "tools/ci/workflows/icdev_test.py",
-        "icdev_review": "tools/ci/workflows/icdev_review.py",
-        "icdev_plan": "tools/ci/workflows/icdev_plan.py",
-        "icdev_plan_build": "tools/ci/workflows/icdev_plan_build.py",
-    }
-
-    script = workflow_map.get(workflow_name, "tools/ci/workflows/icdev_plan.py")
-    script_path = BASE_DIR / script
-
-    if not script_path.exists():
-        print(f"Warning: Workflow script not found: {script_path}", file=sys.stderr)
-        return None
-
-    cmd = [sys.executable, str(script_path), str(issue_iid)]
-
+    Replaces the old hardcoded workflow_map routing. EventRouter determines
+    the correct workflow script from the envelope's workflow_command.
+    """
     if dry_run:
-        print(f"[DRY RUN] Would spawn: {' '.join(cmd)}")
+        workflow_name = ICDEV_TAG_MAP.get(tag, "unknown")
+        print(f"[DRY RUN] Would route: issue #{issue_iid} -> {workflow_name} via EventRouter")
         return "dry-run"
 
-    # Spawn as detached subprocess
     try:
+        from tools.ci.core.event_envelope import EventEnvelope
+        from tools.ci.core.event_router import EventRouter
+
+        # Normalize into EventEnvelope using GitLab tag factory
+        envelope = EventEnvelope.from_gitlab_tag(issue_data, tag)
+
+        # Route through central router
+        router = EventRouter()
+        result = router.route(envelope)
+
+        action = result.get("action", "")
+        if action == "launched":
+            run_id = result.get("run_id", "")
+            workflow = result.get("workflow", "")
+            print(f"  EventRouter launched {workflow} (run_id: {run_id})")
+            return run_id
+        elif action == "queued":
+            print(f"  EventRouter queued event ({result.get('reason', '')})")
+            return "queued"
+        else:
+            print(f"  EventRouter ignored ({result.get('reason', '')})")
+            return None
+
+    except Exception as e:
+        print(f"Error routing via EventRouter: {e}", file=sys.stderr)
+        # Fallback to direct subprocess spawn
+        workflow_name = ICDEV_TAG_MAP.get(tag)
+        if not workflow_name:
+            return None
+        script_path = BASE_DIR / "tools" / "ci" / "workflows" / f"{workflow_name}.py"
+        if not script_path.exists():
+            print(f"Warning: Workflow script not found: {script_path}", file=sys.stderr)
+            return None
         cwd = worktree_path or str(BASE_DIR)
         process = subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            [sys.executable, str(script_path), str(issue_iid)],
+            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
         )
         return str(process.pid)
-    except Exception as e:
-        print(f"Error spawning workflow: {e}", file=sys.stderr)
-        return None
 
 
 def list_open_issues(label: str = "icdev") -> list:
@@ -277,8 +279,8 @@ def poll_gitlab_tasks(interval: int = 20, dry_run: bool = False):
                 except Exception as e:
                     print(f"  Worktree creation skipped: {e}", file=sys.stderr)
 
-                # Spawn workflow
-                pid = spawn_workflow(tag, iid, title, worktree_path, dry_run)
+                # Spawn workflow via EventRouter (D132)
+                pid = spawn_workflow(tag, iid, issue, worktree_path, dry_run)
                 if pid:
                     update_claim(iid, "processing", run_id=pid)
                     print(f"  Workflow spawned (PID: {pid})")

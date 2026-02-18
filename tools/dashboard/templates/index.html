@@ -4,7 +4,18 @@
 {% block content %}
 <div class="page-header">
     <h1>ICDEV Dashboard</h1>
-    <p class="subtitle">Integrated Continuous Development Environment - Operations Overview</p>
+    <p class="subtitle">Integrated Continuous Development Environment &mdash; Operations Overview
+        <span class="help-icon" data-glossary="ICDEV" title="Intelligent Coding Development Environment — AI-powered platform for building secure government applications">?</span>
+    </p>
+</div>
+
+<!-- Quick Start Banner -->
+<div style="background: rgba(74, 144, 217, 0.08); border: 1px solid rgba(74, 144, 217, 0.25); border-radius: 10px; padding: 16px 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+    <div>
+        <strong style="color: var(--accent-blue-light);">New here?</strong>
+        <span class="text-secondary"> Answer 3 questions and get a personalized workflow recommendation.</span>
+    </div>
+    <a href="/wizard" class="btn btn-primary" style="background: var(--accent-blue); border-color: var(--accent-blue);">Get Started &rarr;</a>
 </div>
 
 <!-- Project Summary Cards -->
@@ -32,12 +43,34 @@
     <div class="card">
         <div class="card-label">Firing Alerts</div>
         <div class="card-value {% if firing_alerts > 0 %}red{% else %}green{% endif %}">{{ firing_alerts }}</div>
-        <div class="card-footer">Unresolved alerts</div>
+        <div class="card-footer">Unresolved alerts requiring attention</div>
     </div>
     <div class="card">
-        <div class="card-label">Open POA&amp;M Items</div>
+        <div class="card-label">Open <span data-glossary="POA&amp;M">POA&amp;M</span> Items</div>
         <div class="card-value {% if open_poam > 0 %}yellow{% else %}green{% endif %}">{{ open_poam }}</div>
-        <div class="card-footer">Plan of Action &amp; Milestones</div>
+        <div class="card-footer">Security gaps with fix deadlines</div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="chart-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Compliance Posture
+            <span class="help-icon" title="Open vs closed findings across STIG and POA&M">?</span>
+        </div>
+        <div id="chart-compliance" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Alert Trend (7 days)</div>
+        <div id="chart-alerts" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Project Status</div>
+        <div id="chart-projects" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Agent Health</div>
+        <div id="chart-agent-health" style="min-height: 140px;"></div>
     </div>
 </div>
 
@@ -60,14 +93,14 @@
         <tbody>
             {% for alert in recent_alerts %}
             <tr>
-                <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                <td><span class="badge badge-{{ alert.severity }}" role="status">{{ alert.severity }}</span></td>
                 <td>{{ alert.title }}</td>
                 <td>{{ alert.source }}</td>
-                <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
-                <td class="text-muted">{{ alert.created_at }}</td>
+                <td><span class="badge badge-{{ alert.status }}" role="status">{{ alert.status }}</span></td>
+                <td class="text-muted" data-timestamp="{{ alert.created_at }}">{{ alert.created_at | friendly_time }}</td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5">No recent alerts</td></tr>
+            <tr class="empty-row"><td colspan="5">No recent alerts &mdash; all clear</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -76,7 +109,7 @@
 <!-- Recent Audit Trail -->
 <div class="table-container">
     <div class="table-header">
-        <h2>Recent Audit Trail</h2>
+        <h2>Recent Activity</h2>
     </div>
     <table>
         <thead>
@@ -85,7 +118,7 @@
                 <th>Actor</th>
                 <th>Action</th>
                 <th>Project</th>
-                <th>Timestamp</th>
+                <th>When</th>
             </tr>
         </thead>
         <tbody>
@@ -98,15 +131,101 @@
                     {% if entry.project_id %}
                     <a href="/projects/{{ entry.project_id }}">{{ entry.project_id[:12] }}</a>
                     {% else %}
-                    <span class="text-muted">--</span>
+                    <span class="text-muted">&mdash;</span>
                     {% endif %}
                 </td>
-                <td class="text-muted">{{ entry.created_at }}</td>
+                <td class="text-muted" data-timestamp="{{ entry.created_at }}" data-timestamp-format="ago">{{ entry.created_at | friendly_time }}</td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5">No audit entries recorded</td></tr>
+            <tr class="empty-row"><td colspan="5">No activity recorded yet</td></tr>
             {% endfor %}
         </tbody>
     </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-show notification toasts for critical alerts on page load
+(function() {
+    var firingCount = {{ firing_alerts }};
+    var openPoam = {{ open_poam }};
+    if (firingCount > 0) {
+        window.ICDEV && ICDEV.showNotification(
+            firingCount + ' alert' + (firingCount > 1 ? 's' : '') + ' currently firing \u2014 <a href="/monitoring" style="color:inherit;text-decoration:underline;">view monitoring</a>',
+            'error'
+        );
+    }
+    if (openPoam > 5) {
+        window.ICDEV && ICDEV.showNotification(
+            openPoam + ' open POA&M items need attention \u2014 <a href="/projects" style="color:inherit;text-decoration:underline;">review projects</a>',
+            'warning'
+        );
+    }
+})();
+
+// Load charts from API
+(function() {
+    if (!window.ICDEV || !ICDEV.barChart) return;
+    fetch('/api/charts/overview')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            // Compliance posture bar chart
+            if (d.compliance) {
+                ICDEV.barChart('chart-compliance', {
+                    labels: ['POA&M', 'STIG'],
+                    series: [
+                        { name: 'Open', data: [d.compliance.poam.open, d.compliance.stig.open], color: '#dc3545' },
+                        { name: 'Closed', data: [d.compliance.poam.closed, d.compliance.stig.closed], color: '#28a745' },
+                    ],
+                    height: 180, showLegend: true, showValues: true,
+                });
+            }
+            // Alert trend line chart
+            if (d.alert_trend && d.alert_trend.length > 0) {
+                ICDEV.lineChart('chart-alerts', {
+                    labels: d.alert_trend.map(function(r) { return r.day.slice(5); }),
+                    series: [{ name: 'Alerts', data: d.alert_trend.map(function(r) { return r.cnt; }), color: '#dc3545' }],
+                    height: 180, showLegend: false,
+                });
+            } else {
+                document.getElementById('chart-alerts').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No alerts in last 7 days</p>';
+            }
+            // Project status donut
+            if (d.project_statuses && d.project_statuses.length > 0) {
+                var colors = { active: '#28a745', completed: '#4a90d9', inactive: '#6c6c80', planning: '#ffc107' };
+                var total = d.project_statuses.reduce(function(s, r) { return s + r.cnt; }, 0);
+                ICDEV.donutChart('chart-projects', {
+                    segments: d.project_statuses.map(function(r) {
+                        return { label: r.status, value: r.cnt, color: colors[r.status] || '#6c6c80' };
+                    }),
+                    size: 160, thickness: 28,
+                    centerLabel: String(total),
+                    centerSubLabel: 'Projects',
+                    showLegend: true,
+                });
+            } else {
+                document.getElementById('chart-projects').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No projects yet</p>';
+            }
+            // Agent health gauge
+            if (d.agent_health) {
+                ICDEV.gaugeChart('chart-agent-health', {
+                    value: d.agent_health.ratio,
+                    thresholds: { good: 0.8, warning: 0.5 },
+                    label: d.agent_health.active + ' of ' + d.agent_health.total + ' agents active',
+                    size: 140,
+                });
+            }
+        })
+        .catch(function() {
+            // Graceful fallback if charts API fails
+            ['chart-compliance', 'chart-alerts', 'chart-projects', 'chart-agent-health'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && !el.innerHTML.trim()) {
+                    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">Chart data unavailable</p>';
+                }
+            });
+        });
+})();
+</script>
 {% endblock %}

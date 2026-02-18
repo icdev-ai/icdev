@@ -1,0 +1,53 @@
+# CUI // SP-CTI
+# ICDEV DevSecOps & Zero Trust Architecture Agent — STIG-Hardened
+# Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+# ADR D117: DevSecOps/ZTA Agent on port 8457
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.11-slim
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="ICDEV DevSecOps & ZTA Agent" \
+      port="8457" \
+      agent="devsecops-agent"
+
+# STIG: Create non-root user
+RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /usr/sbin/nologin icdev
+
+# STIG: Remove unnecessary packages and shells
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/apt-get
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application
+WORKDIR /app
+COPY --chown=icdev:icdev . .
+
+# STIG: Set restrictive permissions
+RUN chmod -R 750 /app && \
+    find /app -type f -name "*.py" -exec chmod 640 {} +
+
+# STIG: Run as non-root
+USER icdev
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:8457/health || exit 1
+
+# Expose DevSecOps agent port
+EXPOSE 8457
+
+# Read-only root filesystem enforced at runtime via:
+#   docker run --read-only --tmpfs /tmp:rw,noexec,nosuid
+ENTRYPOINT ["python", "-m", "tools.mcp.devsecops_server"]

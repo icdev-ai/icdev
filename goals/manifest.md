@@ -35,3 +35,8 @@
 | Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV clone apps with GOTCHA/ATLAS |
 | SaaS Multi-Tenancy | goals/saas_multi_tenancy.md | Multi-tenant SaaS: API gateway (REST+MCP SSE), per-tenant DB, 3 auth methods, subscription tiers, artifact delivery, tenant portal, Helm on-prem |
 | Marketplace | goals/marketplace.md | Federated GOTCHA asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline (Phase 22) |
+| Universal Compliance | goals/universal_compliance.md | Universal Compliance Platform: 10 data categories, dual-hub crosswalk (NIST+ISO), 6 Wave 1 frameworks, auto-detection, multi-regime assessment (Phase 23) |
+| DevSecOps Workflow | goals/devsecops_workflow.md | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), image signing & attestation (Phase 24) |
+| Zero Trust Architecture | goals/zero_trust_architecture.md | ZTA 7-pillar maturity scoring, NIST SP 800-207 compliance, service mesh generation (Istio/Linkerd), network segmentation, PDP/PEP config, cATO posture monitoring (Phase 25) |
+| MOSA Workflow | goals/mosa_workflow.md | DoD MOSA (10 U.S.C. §4401): MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection, cATO evidence (Phase 26) |
+| CLI Capabilities | goals/cli_capabilities.md | Optional Claude CLI features: CI/CD automation, parallel agents, container execution, scripted intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |

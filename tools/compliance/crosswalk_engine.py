@@ -7,7 +7,14 @@
 """Control Framework Crosswalk Engine for ICDEV.
 
 Maps NIST SP 800-53 Rev 5 control implementations across multiple compliance
-frameworks (FedRAMP Moderate/High, NIST 800-171, CMMC Level 2/3, DoD IL4/5/6).
+frameworks (FedRAMP Moderate/High, NIST 800-171, CMMC Level 2/3, DoD IL4/5/6,
+CJIS, HIPAA, HITRUST, SOC 2, PCI DSS, ISO 27001).
+
+Dual-hub crosswalk model (ADR D111):
+  - US Hub: NIST 800-53 Rev 5 (domestic frameworks map directly)
+  - International Hub: ISO 27001:2022 (international frameworks map via bridge)
+  - Bridge: iso27001_nist_bridge.json connects the two hubs bidirectionally
+
 Enables "implement once, satisfy many" by computing per-framework coverage,
 performing gap analysis, and auto-updating framework status when controls are
 marked as implemented.
@@ -51,12 +58,16 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CROSSWALK_PATH = BASE_DIR / "context" / "compliance" / "control_crosswalk.json"
+ISO_BRIDGE_PATH = BASE_DIR / "context" / "compliance" / "iso27001_nist_bridge.json"
 
-# Module-level cache for crosswalk data
+# Module-level caches for crosswalk data
 _CROSSWALK_CACHE = None
+_ISO_BRIDGE_CACHE = None
 
 # Framework key mappings for human-friendly names
+# Phase 23: Extended with dual-hub frameworks (ADR D111)
 FRAMEWORK_KEYS = {
+    # ── US Hub: NIST 800-53 direct mappings ──
     "fedramp_moderate": "FedRAMP Moderate",
     "fedramp_high": "FedRAMP High",
     "nist_800_171": "NIST 800-171",
@@ -68,6 +79,18 @@ FRAMEWORK_KEYS = {
     "fips_199": "FIPS 199",
     "fips_200": "FIPS 200",
     "cnssi_1253": "CNSSI 1253",
+    # ── Phase 23 Wave 1: Sector-specific frameworks ──
+    "cjis": "CJIS Security Policy",
+    "hipaa": "HIPAA Security Rule",
+    "hitrust": "HITRUST CSF v11",
+    "soc2": "SOC 2 Type II",
+    "pci_dss": "PCI DSS v4.0",
+    # ── Phase 25: Zero Trust Architecture ──
+    "nist_800_207": "NIST SP 800-207 (ZTA)",
+    # ── Phase 26: DoD MOSA ──
+    "mosa": "DoD MOSA (10 U.S.C. §4401)",
+    # ── International Hub: ISO 27001 ──
+    "iso_27001": "ISO/IEC 27001:2022",
 }
 
 # Mapping from CLI framework names to crosswalk keys
@@ -81,6 +104,28 @@ FRAMEWORK_ALIASES = {
     "800-171": {None: "nist_800_171"},
     "nist_800_171": {None: "nist_800_171"},
     "nist-800-171": {None: "nist_800_171"},
+    # Phase 23 Wave 1 aliases
+    "cjis": {None: "cjis"},
+    "hipaa": {None: "hipaa"},
+    "hitrust": {None: "hitrust"},
+    "hitrust_csf": {None: "hitrust"},
+    "soc2": {None: "soc2"},
+    "soc_2": {None: "soc2"},
+    "pci": {None: "pci_dss"},
+    "pci_dss": {None: "pci_dss"},
+    "pci-dss": {None: "pci_dss"},
+    "iso_27001": {None: "iso_27001"},
+    # Phase 26 MOSA aliases
+    "mosa": {None: "mosa"},
+    "dod_mosa": {None: "mosa"},
+    "modular_open_systems": {None: "mosa"},
+    "iso27001": {None: "iso_27001"},
+    "iso-27001": {None: "iso_27001"},
+    # Phase 25: ZTA aliases
+    "nist_800_207": {None: "nist_800_207"},
+    "800-207": {None: "nist_800_207"},
+    "zta": {None: "nist_800_207"},
+    "zero_trust": {None: "nist_800_207"},
 }
 
 # Impact level to crosswalk key mapping
@@ -285,6 +330,72 @@ def load_crosswalk():
     return _CROSSWALK_CACHE
 
 
+def load_iso_bridge():
+    """Load and cache the ISO 27001 ↔ NIST 800-53 bridge data (ADR D111).
+
+    Returns:
+        list: Array of bridge mapping dicts from iso27001_nist_bridge.json.
+    """
+    global _ISO_BRIDGE_CACHE
+    if _ISO_BRIDGE_CACHE is not None:
+        return _ISO_BRIDGE_CACHE
+
+    if not ISO_BRIDGE_PATH.exists():
+        _ISO_BRIDGE_CACHE = []
+        return _ISO_BRIDGE_CACHE
+
+    with open(ISO_BRIDGE_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    _ISO_BRIDGE_CACHE = data.get("mappings", [])
+    return _ISO_BRIDGE_CACHE
+
+
+def get_nist_for_iso_control(iso_id):
+    """Given an ISO 27001 control ID, return mapped NIST 800-53 controls.
+
+    Args:
+        iso_id: ISO 27001 Annex A control ID (e.g., "A.5.1").
+
+    Returns:
+        list: List of NIST 800-53 control IDs that map to this ISO control.
+    """
+    bridge = load_iso_bridge()
+    iso_upper = iso_id.upper()
+
+    for entry in bridge:
+        if entry.get("iso_27001", "").upper() == iso_upper:
+            return entry.get("nist_800_53", [])
+
+    return []
+
+
+def get_iso_for_nist_control(nist_id):
+    """Given a NIST 800-53 control ID, return mapped ISO 27001 controls.
+
+    Args:
+        nist_id: NIST 800-53 control ID (e.g., "AC-1").
+
+    Returns:
+        list: List of dicts with iso_27001, iso_title, mapping_type for each
+              ISO control that maps to this NIST control.
+    """
+    bridge = load_iso_bridge()
+    nist_upper = nist_id.upper()
+
+    results = []
+    for entry in bridge:
+        nist_refs = entry.get("nist_800_53", [])
+        if nist_upper in [r.upper() for r in nist_refs]:
+            results.append({
+                "iso_27001": entry.get("iso_27001"),
+                "iso_title": entry.get("iso_title"),
+                "mapping_type": entry.get("mapping_type", "equivalent"),
+            })
+
+    return results
+
+
 def get_frameworks_for_control(nist_id):
     """Given a NIST 800-53 control ID, return all frameworks it satisfies.
 
@@ -311,12 +422,18 @@ def get_frameworks_for_control(nist_id):
     nist_upper = nist_id.upper()
 
     for entry in crosswalk:
-        if entry.get("nist_id", "").upper() == nist_upper:
+        entry_nist = entry.get("nist_id", entry.get("nist_800_53", ""))
+        if entry_nist.upper() == nist_upper:
             result = {}
             for fw_key in FRAMEWORK_KEYS:
                 val = entry.get(fw_key)
                 if val is not None and val is not False:
                     result[fw_key] = val
+            # Also check ISO 27001 bridge (ADR D111)
+            if "iso_27001" not in result:
+                iso_mappings = get_iso_for_nist_control(nist_upper)
+                if iso_mappings:
+                    result["iso_27001"] = [m["iso_27001"] for m in iso_mappings]
             return result
 
     return {}
@@ -455,7 +572,8 @@ def compute_crosswalk_coverage(project_id, db_path=None):
                 val = entry.get(fw_key)
                 if val is not None and val is not False:
                     total += 1
-                    if entry["nist_id"].upper() in implemented_ids:
+                    nist = entry.get("nist_id", entry.get("nist_800_53", ""))
+                    if nist.upper() in implemented_ids:
                         implemented += 1
 
             pct = round((implemented / total * 100), 1) if total > 0 else 0.0
@@ -562,12 +680,12 @@ def get_gap_analysis(project_id, target_framework, baseline=None, db_path=None):
         # Find gaps: controls that are not 'implemented'
         gaps = []
         for entry in required:
-            nist_id = entry["nist_id"].upper()
+            nist_id = entry.get("nist_id", entry.get("nist_800_53", "")).upper()
             status = project_controls.get(nist_id, "not_mapped")
 
             if status != "implemented":
                 gap = {
-                    "nist_id": entry["nist_id"],
+                    "nist_id": entry.get("nist_id", entry.get("nist_800_53", "")),
                     "title": entry.get("title", ""),
                     "priority": entry.get("priority", "P3"),
                     "family": entry.get("family", ""),

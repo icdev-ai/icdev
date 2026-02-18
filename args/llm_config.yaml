@@ -44,6 +44,7 @@ models:
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
+    supports_vision: true
     pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
 
   claude-sonnet:
@@ -53,6 +54,7 @@ models:
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
+    supports_vision: true
     pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
 
   claude-haiku:
@@ -91,6 +93,7 @@ models:
     supports_thinking: false
     supports_tools: true
     supports_structured_output: true
+    supports_vision: true
     pricing: { input_per_1k: 0.0025, output_per_1k: 0.010 }
 
   gpt-4o-mini:
@@ -137,6 +140,17 @@ models:
     supports_thinking: true
     supports_tools: false
     supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # -- Vision Models (Local) --
+  llava-local:
+    provider: ollama
+    model_id: llava:13b
+    max_output_tokens: 4096
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    supports_vision: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
 # -----------------------------------------------------------------------
@@ -200,6 +214,30 @@ routing:
   child_app:
     chain: [claude-sonnet, gpt-4o]
     effort: medium
+
+  screenshot_validation:
+    chain: [claude-opus, claude-sonnet, gpt-4o, llava-local]
+    effort: medium
+
+  document_vision:
+    chain: [claude-sonnet, gpt-4o, llava-local]
+    effort: medium
+
+  ui_analysis:
+    chain: [claude-opus, claude-sonnet, gpt-4o, llava-local]
+    effort: high
+
+  diagram_extraction:
+    chain: [claude-opus, claude-sonnet, gpt-4o, llava-local]
+    effort: high
+
+  compliance_diagram:
+    chain: [claude-sonnet, gpt-4o, llava-local]
+    effort: medium
+
+  attachment_analysis:
+    chain: [claude-sonnet, gpt-4o-mini, llava-local]
+    effort: low
 
   default:
     chain: [claude-sonnet, gpt-4o, llama-local]

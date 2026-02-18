@@ -470,6 +470,146 @@ def get_sync_status(project_id, db_path=None):
 
 
 # ---------------------------------------------------------------------------
+# Attachment vision analysis
+# ---------------------------------------------------------------------------
+
+def _analyze_image_attachment(image_path, source_context=""):
+    """Analyze an image attachment using a vision LLM.
+
+    Args:
+        image_path: Path to the image file.
+        source_context: Context about where the image came from.
+
+    Returns:
+        dict with category, description, extracted_requirements, ui_elements,
+        or None if vision unavailable.
+    """
+    try:
+        from tools.testing.screenshot_validator import encode_image
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+
+        router = get_router()
+        provider, model_id, model_cfg = router.get_provider_for_function("attachment_analysis")
+        if provider is None or not model_cfg.get("supports_vision", False):
+            return None
+
+        b64_data, media_type = encode_image(str(image_path))
+
+        context_note = f" This image is from: {source_context}." if source_context else ""
+
+        user_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": b64_data,
+                },
+            },
+            {
+                "type": "text",
+                "text": (
+                    f"Analyze this ticket attachment.{context_note} "
+                    "Classify it and extract useful information. "
+                    "Respond with EXACTLY this JSON (no markdown, no extra text): "
+                    '{"category": "mockup|wireframe|diagram|screenshot|'
+                    'error_screenshot|architecture_diagram|test_result|other", '
+                    '"description": "brief description", '
+                    '"extracted_requirements": ["any requirement statements visible"], '
+                    '"ui_elements": ["notable UI elements or components visible"]}'
+                ),
+            },
+        ]
+
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=(
+                "You are analyzing image attachments from a project management tool "
+                "for a DoD software project. Extract useful information for requirements "
+                "analysis and development planning."
+            ),
+            max_tokens=512,
+            temperature=0.1,
+        )
+
+        response = router.invoke("attachment_analysis", request)
+        text = response.content.strip()
+
+        # Strip markdown fences
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        import json as _json
+        return _json.loads(text)
+
+    except Exception:
+        return None
+
+
+def analyze_attachments(project_id, attachment_paths=None, db_path=None):
+    """Analyze image attachments from ServiceNow records using vision LLM.
+
+    Args:
+        project_id: ICDEV project identifier.
+        attachment_paths: List of image file paths to analyze.
+        db_path: Override database path.
+
+    Returns:
+        dict with analysis results for each attachment.
+    """
+    if not attachment_paths:
+        return {
+            "project_id": project_id,
+            "analyzed": 0,
+            "results": [],
+            "note": "No attachment paths provided",
+        }
+
+    image_exts = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff"}
+    results = []
+
+    for img_path in attachment_paths:
+        p = Path(img_path)
+        if not p.exists():
+            results.append({"path": str(p), "error": "File not found"})
+            continue
+        if p.suffix.lower() not in image_exts:
+            continue
+
+        analysis = _analyze_image_attachment(
+            str(p), source_context=f"ServiceNow attachment for project {project_id}"
+        )
+        if analysis:
+            results.append({"path": str(p), "analysis": analysis})
+        else:
+            results.append({
+                "path": str(p),
+                "analysis": None,
+                "note": "Vision model not available",
+            })
+
+    log_event(
+        event_type="attachment_analyzed",
+        actor="icdev-integration-servicenow",
+        action=f"Analyzed {len(results)} ServiceNow attachments",
+        project_id=project_id,
+        details={"count": len(results)},
+    )
+
+    return {
+        "project_id": project_id,
+        "analyzed": len(results),
+        "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -496,6 +636,16 @@ def main():
     parser.add_argument("--session-id", help="Intake session ID")
     parser.add_argument("--dry-run", action="store_true", help="Preview without creating")
 
+    # Attachment analysis
+    parser.add_argument(
+        "--analyze-attachments", action="store_true",
+        help="Analyze image attachments using vision LLM",
+    )
+    parser.add_argument(
+        "--attachment-paths", nargs="*",
+        help="Paths to image attachments to analyze",
+    )
+
     args = parser.parse_args()
 
     result = None
@@ -521,6 +671,11 @@ def main():
         result = pull_from_servicenow(project_id=args.project_id)
     elif args.status:
         result = get_sync_status(project_id=args.project_id)
+    elif args.analyze_attachments:
+        result = analyze_attachments(
+            project_id=args.project_id,
+            attachment_paths=args.attachment_paths,
+        )
     else:
         parser.print_help()
         return

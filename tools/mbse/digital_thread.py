@@ -33,12 +33,14 @@ except ImportError:
 VALID_TYPES = (
     "doors_requirement", "sysml_element", "code_module",
     "test_file", "nist_control", "stig_rule", "compliance_artifact",
+    "interface_spec",  # Phase 26: MOSA interface specifications
 )
 
 # Valid link relationship types
 VALID_LINK_TYPES = (
     "satisfies", "derives_from", "implements", "verifies",
     "traces_to", "allocates", "refines", "maps_to",
+    "defines_interface",  # Phase 26: MOSA interface definition link
 )
 
 # Expected chain order for completeness analysis

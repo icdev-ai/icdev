@@ -531,6 +531,7 @@ DEFAULT_AGENTS = [
     {"name": "monitor", "port": 8450, "cpu_request": "100m", "cpu_limit": "500m", "mem_request": "128Mi", "mem_limit": "512Mi"},
     {"name": "mbse", "port": 8451, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
     {"name": "modernization", "port": 8452, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
+    {"name": "devsecops", "port": 8457, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
 ]
 
 
@@ -845,6 +846,97 @@ def generate_predictive_hpa(project_path: str, blueprint: dict = None) -> list:
 
 
 # ---------------------------------------------------------------------------
+# ZTA Service Mesh & Network Segmentation (Phase 25b)
+# ---------------------------------------------------------------------------
+
+def generate_service_mesh(project_path: str, mesh_type: str = "istio",
+                          app_config: dict = None) -> list:
+    """Generate service mesh configuration (Istio or Linkerd).
+
+    Delegates to tools.devsecops.service_mesh_generator for full
+    mesh config including mTLS, authorization policies, traffic routing,
+    and circuit breaking.
+
+    Args:
+        project_path: Target project directory.
+        mesh_type: "istio" or "linkerd".
+        app_config: Optional app configuration with project_id, namespace.
+
+    Returns:
+        List of generated file paths.
+    """
+    config = app_config or {}
+    project_id = config.get("project_id", "")
+
+    try:
+        if mesh_type == "linkerd":
+            from tools.devsecops.service_mesh_generator import generate_linkerd_config
+            result = generate_linkerd_config(project_id)
+        else:
+            from tools.devsecops.service_mesh_generator import generate_istio_config
+            result = generate_istio_config(project_id)
+
+        # Write generated configs to k8s/service-mesh/
+        mesh_dir = Path(project_path) / "k8s" / "service-mesh"
+        files = []
+        configs = result.get("configs", [])
+        for i, cfg in enumerate(configs):
+            kind = cfg.get("kind", f"mesh-config-{i}").lower()
+            name = cfg.get("metadata", {}).get("name", f"config-{i}")
+            filename = f"{kind}-{name}.yaml"
+            content = _cui_header() + _yaml_dump(cfg)
+            p = _write(mesh_dir / filename, content)
+            files.append(str(p))
+        return files
+    except ImportError:
+        print("[k8s] service_mesh_generator not available; skipping")
+        return []
+
+
+def generate_zta_network_policies(project_path: str,
+                                  app_config: dict = None) -> list:
+    """Generate ZTA micro-segmentation network policies.
+
+    Delegates to tools.devsecops.network_segmentation_generator for
+    default-deny namespace isolation and per-service micro-segmentation.
+
+    Args:
+        project_path: Target project directory.
+        app_config: Optional config with namespaces, services lists.
+
+    Returns:
+        List of generated file paths.
+    """
+    config = app_config or {}
+    namespaces = config.get("namespaces", ["default"])
+    services = config.get("services", [])
+
+    try:
+        from tools.devsecops.network_segmentation_generator import (
+            generate_namespace_isolation,
+            generate_microsegmentation,
+        )
+
+        files = []
+
+        # Namespace isolation (default-deny + DNS)
+        iso_result = generate_namespace_isolation(project_path, namespaces)
+        for fp in iso_result.get("files_written", []):
+            files.append(fp)
+
+        # Per-service micro-segmentation if services specified
+        if services:
+            micro_result = generate_microsegmentation(project_path, services)
+            for fp in micro_result.get("files_written", []):
+                files.append(fp)
+
+        return files
+    except ImportError:
+        print("[k8s] network_segmentation_generator not available; skipping")
+        return []
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():
@@ -859,8 +951,10 @@ def main():
     parser.add_argument(
         "--manifests",
         default="deployment,service,ingress,configmap,networkpolicy,hpa",
-        help="Comma-separated manifests to generate (also: agent-deployments, agent-hpa)",
+        help="Comma-separated manifests to generate (also: agent-deployments, agent-hpa, service-mesh, zta-network-policies)",
     )
+    parser.add_argument("--mesh-type", default="istio", choices=["istio", "linkerd"],
+                        help="Service mesh type for service-mesh manifest")
     args = parser.parse_args()
 
     app_config = {
@@ -884,6 +978,8 @@ def main():
         "hpa": lambda: generate_hpa(args.project_path, app_config),
         "agent-deployments": lambda: generate_agent_deployments(args.project_path, app_config),
         "agent-hpa": lambda: generate_predictive_hpa(args.project_path, app_config),
+        "service-mesh": lambda: generate_service_mesh(args.project_path, args.mesh_type, app_config),
+        "zta-network-policies": lambda: generate_zta_network_policies(args.project_path, app_config),
     }
 
     for m in manifests:

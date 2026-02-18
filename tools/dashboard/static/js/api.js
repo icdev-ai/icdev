@@ -134,6 +134,18 @@
         }
     });
 
+    // ---- Shared utilities ----
+
+    /**
+     * Escape a string for safe HTML insertion.
+     * Used across all dashboard JS modules — single implementation here.
+     */
+    function escapeHTML(str) {
+        var d = document.createElement("div");
+        d.appendChild(document.createTextNode(String(str == null ? "" : str)));
+        return d.innerHTML;
+    }
+
     // Expose API to global scope for inline usage
     window.ICDEV = {
         fetchJSON: fetchJSON,
@@ -144,5 +156,6 @@
         stopAutoRefresh: stopAutoRefresh,
         refreshAlertBadge: refreshAlertBadge,
         refreshHealthStatus: refreshHealthStatus,
+        escapeHTML: escapeHTML,
     };
 })();

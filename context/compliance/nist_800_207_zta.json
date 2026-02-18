@@ -1,0 +1,258 @@
+{
+  "metadata": {
+    "title": "NIST SP 800-207 Zero Trust Architecture Control Catalog",
+    "source": "NIST Special Publication 800-207, Zero Trust Architecture (August 2020)",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "description": "NIST SP 800-207 Zero Trust Architecture requirements catalog covering 8 ZTA pillars plus foundational architecture principles. Zero Trust assumes no implicit trust is granted to assets or user accounts based solely on their physical or network location. Each requirement maps to NIST 800-53 Rev 5 controls via crosswalk, enabling integration with the ICDEV dual-hub compliance model (ADR D111)."
+  },
+  "families": [
+    {
+      "code": "ZTA-ARCH",
+      "name": "Architecture & Design Principles",
+      "requirement_count": 4,
+      "description": "Foundational ZTA architecture principles governing policy engine design, risk-based access decision making, least privilege enforcement, and overall zero trust system design documentation"
+    },
+    {
+      "code": "ZTA-ID",
+      "name": "User/Identity Pillar",
+      "requirement_count": 4,
+      "description": "Identity-centric controls ensuring strong verification, multi-factor authentication, identity governance, and privileged access management as the primary perimeter in a zero trust architecture"
+    },
+    {
+      "code": "ZTA-DEV",
+      "name": "Device Pillar",
+      "requirement_count": 3,
+      "description": "Device trust controls covering asset inventory, device health attestation, and endpoint protection to ensure only known and healthy devices can access enterprise resources"
+    },
+    {
+      "code": "ZTA-NET",
+      "name": "Network/Environment Pillar",
+      "requirement_count": 4,
+      "description": "Network segmentation and traffic inspection controls implementing micro-segmentation, encrypted channels, default deny posture, and east-west traffic inspection to eliminate implicit network trust"
+    },
+    {
+      "code": "ZTA-APP",
+      "name": "Application/Workload Pillar",
+      "requirement_count": 4,
+      "description": "Application and workload security controls governing secure software development, container hardening, service-to-service authentication, and software supply chain integrity"
+    },
+    {
+      "code": "ZTA-DATA",
+      "name": "Data Pillar",
+      "requirement_count": 3,
+      "description": "Data-centric security controls ensuring classification, encryption, and loss prevention protect data regardless of where it resides or transits within or outside the enterprise environment"
+    },
+    {
+      "code": "ZTA-VIS",
+      "name": "Visibility & Analytics Pillar",
+      "requirement_count": 3,
+      "description": "Continuous monitoring, SIEM integration, and anomaly detection controls providing the telemetry and analytics required for dynamic trust evaluation and informed access decisions in a ZTA environment"
+    },
+    {
+      "code": "ZTA-AUTO",
+      "name": "Automation & Orchestration Pillar",
+      "requirement_count": 3,
+      "description": "Automated response, security orchestration, and policy automation controls that enable the real-time, machine-speed enforcement of zero trust access decisions across dynamic enterprise environments"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "ZTA-ARCH-1",
+      "family": "ZTA-ARCH",
+      "title": "ZTA Architecture Definition",
+      "description": "The organization must formally define and document its Zero Trust Architecture, including identification of all resources, subjects, and trust zones. The ZTA documentation must specify the logical components of the zero trust system — the Policy Engine (PE), Policy Administrator (PA), and Policy Enforcement Points (PEPs) — and their interactions. The architecture must establish that all enterprise resources are accessed as if the network is always hostile, no implicit trust is granted based on network location, and access is granted on a per-session basis after dynamic trust evaluation. ZTA documentation must be reviewed at least annually and updated to reflect system changes.",
+      "nist_800_53_crosswalk": ["SA-3", "SA-8", "PL-7"]
+    },
+    {
+      "id": "ZTA-ARCH-2",
+      "family": "ZTA-ARCH",
+      "title": "Policy Engine Architecture",
+      "description": "The organization must deploy a Policy Engine (PE) that serves as the trust evaluation component responsible for granting, denying, or revoking access to enterprise resources. The PE must evaluate access requests against enterprise policy, threat intelligence feeds, identity attributes, device posture, and behavioral signals. The Policy Administrator (PA) must act as the management plane communicating PE decisions to Policy Enforcement Points (PEPs). The PE and PA must be logically separated from the data plane to prevent compromise of enforcement points from affecting trust decisions. PE decision logs must be retained for audit purposes.",
+      "nist_800_53_crosswalk": ["AC-3", "PE-3"]
+    },
+    {
+      "id": "ZTA-ARCH-3",
+      "family": "ZTA-ARCH",
+      "title": "Risk-Based Access Decisions",
+      "description": "Access decisions within the ZTA must be dynamic and risk-informed, evaluating current risk context at the time of each access request rather than relying on prior session state. Risk signals must include identity posture (MFA status, credential age, anomalous behavior), device health (patch level, compliance status, integrity attestation), network context (source IP reputation, geolocation), and resource sensitivity classification. The Policy Engine must assign a confidence level to each access request and compare it against per-resource trust thresholds. Continuous assessment must revoke or restrict access when risk posture degrades mid-session.",
+      "nist_800_53_crosswalk": ["RA-3", "CA-7"]
+    },
+    {
+      "id": "ZTA-ARCH-4",
+      "family": "ZTA-ARCH",
+      "title": "Least Privilege Access",
+      "description": "All access grants within the ZTA must adhere to the principle of least privilege — subjects receive only the minimum access rights necessary to perform their assigned function at the time of the request. Access must be scoped to the specific resource, action, and data required, not granted at the network or system level. Broad permissions such as network-level access must be replaced with fine-grained resource-level access controls. Just-in-time (JIT) and just-enough-access (JEA) patterns must be implemented for privileged operations. Least privilege must be enforced at every Policy Enforcement Point.",
+      "nist_800_53_crosswalk": ["AC-6", "AC-3"]
+    },
+    {
+      "id": "ZTA-ID-1",
+      "family": "ZTA-ID",
+      "title": "Identity Verification",
+      "description": "All subjects — human users, service accounts, and non-person entities (NPEs) — must be individually identified and their identity verified before access to any enterprise resource is granted. Identity verification must use authoritative identity sources (enterprise IdP, PKI, or federated identity provider). User identifiers must be unique, non-reusable within defined periods, and linked to individual accountability. Service accounts and automated processes must have documented ownership and purpose. Identity proofing at IAL2 or higher (per NIST SP 800-63A) is required for accounts with access to sensitive resources.",
+      "nist_800_53_crosswalk": ["AC-2", "IA-2", "IA-5"]
+    },
+    {
+      "id": "ZTA-ID-2",
+      "family": "ZTA-ID",
+      "title": "Multi-Factor Authentication",
+      "description": "Multi-factor authentication (MFA) must be enforced for all user access to enterprise resources within the ZTA, regardless of network location or perceived trust level. MFA must combine at least two distinct authentication factors: something you know (password, PIN), something you have (hardware token, smart card, FIDO2 authenticator), or something you are (biometric). Phishing-resistant MFA methods — such as FIDO2/WebAuthn passkeys or PIV/CAC certificates — are required for access to high-value assets and privileged functions. MFA must be validated at every policy enforcement point and must not be bypassable by network position.",
+      "nist_800_53_crosswalk": ["IA-2(1)", "IA-2(2)"]
+    },
+    {
+      "id": "ZTA-ID-3",
+      "family": "ZTA-ID",
+      "title": "Identity Governance",
+      "description": "The organization must implement identity governance processes to ensure that access rights remain appropriate throughout the user lifecycle. Access entitlements must be reviewed at least quarterly for privileged accounts and at least annually for standard accounts. An identity governance platform or process must detect and remediate orphaned accounts, excessive entitlements, and separation-of-duties violations. All access provisioning, modification, and deprovisioning events must be logged in an immutable audit trail. Role assignments must be reviewed when organizational roles or responsibilities change.",
+      "nist_800_53_crosswalk": ["AC-2(4)", "AC-2(7)"]
+    },
+    {
+      "id": "ZTA-ID-4",
+      "family": "ZTA-ID",
+      "title": "Privileged Access Management",
+      "description": "Privileged accounts and super-user access must be managed through a dedicated Privileged Access Management (PAM) solution within the ZTA. Privileged sessions must require step-up authentication, be subject to continuous monitoring, and be recorded for forensic purposes. Shared privileged accounts must be eliminated in favor of individual privileged accounts with JIT elevation. Standing privileged access must be minimized; time-limited access must be issued on demand. Privileged account credentials must be vaulted and automatically rotated. Privileged access use must be reviewed weekly and anomalous activity must generate real-time alerts.",
+      "nist_800_53_crosswalk": ["AC-6(5)", "AC-6(9)"]
+    },
+    {
+      "id": "ZTA-DEV-1",
+      "family": "ZTA-DEV",
+      "title": "Device Inventory",
+      "description": "The organization must maintain a comprehensive, continuously updated inventory of all enterprise-owned and authorized non-enterprise devices permitted to access enterprise resources. The device inventory must include hardware identifiers (serial number, MAC address, asset tag), operating system and version, installed software, compliance status, assigned owner, and last-seen timestamp. The inventory must be authoritative — unregistered devices must be denied access by default. Device enrollment must trigger inventory updates. The inventory must be queried in real time by the Policy Engine during access decisions to validate device authorization.",
+      "nist_800_53_crosswalk": ["CM-8", "CM-8(1)"]
+    },
+    {
+      "id": "ZTA-DEV-2",
+      "family": "ZTA-DEV",
+      "title": "Device Health Attestation",
+      "description": "Device trustworthiness must be continuously validated through hardware-backed health attestation mechanisms. Devices must provide cryptographically verifiable attestations of their security posture at access time, including TPM-based boot integrity measurements, OS patch compliance status, security agent health, disk encryption status, and absence of known-bad configurations. Attestation must be verified by the Policy Engine before granting access. Devices failing attestation checks must be quarantined or granted only limited remediation access. Attestation must be re-evaluated at minimum on each new access session and triggered by significant posture changes.",
+      "nist_800_53_crosswalk": ["IA-3", "SA-4(9)"]
+    },
+    {
+      "id": "ZTA-DEV-3",
+      "family": "ZTA-DEV",
+      "title": "Endpoint Protection",
+      "description": "All enterprise-managed endpoints accessing enterprise resources must run an approved endpoint detection and response (EDR) solution. The EDR must provide real-time threat detection, behavioral analysis, and automated response capabilities. Anti-malware signatures and behavioral detection models must be kept current via automated updates. Endpoints must enforce application allowlisting or behavioral controls to prevent execution of unauthorized code. Host-based firewalls must restrict inbound connectivity and permit only traffic required for authorized functions. Endpoint security posture signals must be integrated with the Policy Engine as a continuous trust signal.",
+      "nist_800_53_crosswalk": ["SC-7(12)", "SI-3"]
+    },
+    {
+      "id": "ZTA-NET-1",
+      "family": "ZTA-NET",
+      "title": "Micro-segmentation",
+      "description": "The enterprise network must be divided into granular microsegments to limit the blast radius of a breach and prevent unrestricted lateral movement. Microsegmentation must be implemented at the workload or application level, not solely at the VLAN or subnet level. Each microsegment must have an explicit policy defining which workloads can communicate with which other workloads, on which ports and protocols, and under what conditions. Policy Enforcement Points must be deployed at segment boundaries to evaluate and enforce these policies. Microsegmentation policies must be reviewed quarterly and updated to reflect changes in workload topology.",
+      "nist_800_53_crosswalk": ["AC-3", "SC-7", "SC-7(5)"]
+    },
+    {
+      "id": "ZTA-NET-2",
+      "family": "ZTA-NET",
+      "title": "Encrypted Channels",
+      "description": "All communications between subjects and enterprise resources, and between enterprise resources internally, must be encrypted end-to-end using FIPS 140-2 (or FIPS 140-3) validated cryptographic modules. TLS 1.2 or higher (preferably TLS 1.3) must be enforced for all session-based communications. Weak cipher suites, deprecated protocols (SSL, TLS 1.0/1.1), and export-grade cryptography must be disabled. Mutual TLS (mTLS) must be implemented for service-to-service communications within the ZTA. Data at rest must be encrypted using AES-256 or equivalent FIPS-approved algorithms. Encryption key lifecycle management — generation, distribution, rotation, and revocation — must be implemented.",
+      "nist_800_53_crosswalk": ["SC-8", "SC-13", "SC-28"]
+    },
+    {
+      "id": "ZTA-NET-3",
+      "family": "ZTA-NET",
+      "title": "Default Deny",
+      "description": "All network access policies within the ZTA must be configured with a default deny posture — all traffic is denied unless explicitly permitted by an approved policy rule. There must be no implicit trust granted based on network location, IP subnet membership, or VLAN assignment. Firewall and Policy Enforcement Point rule sets must be reviewed to ensure no permit-all or allow-from-internal rules exist that circumvent per-resource access policies. All deny events must be logged for anomaly detection and forensic analysis. The default deny posture must apply equally to north-south (external) and east-west (internal) traffic flows.",
+      "nist_800_53_crosswalk": ["AC-3(3)", "SC-7(5)"]
+    },
+    {
+      "id": "ZTA-NET-4",
+      "family": "ZTA-NET",
+      "title": "East-West Traffic Inspection",
+      "description": "Internal (east-west) network traffic between enterprise workloads must be subject to the same inspection and policy enforcement as external (north-south) traffic. The organization must deploy inline inspection capabilities — such as service mesh with sidecar proxies, software-defined networking controls, or network-based deep packet inspection — to detect and block malicious lateral movement within the enterprise network. All east-west traffic flows must be logged and correlated against expected communication patterns. Deviations from established baselines must trigger automated alerts. Inspected traffic that violates policy must be blocked and the event must be recorded for incident response.",
+      "nist_800_53_crosswalk": ["SI-4", "AC-4"]
+    },
+    {
+      "id": "ZTA-APP-1",
+      "family": "ZTA-APP",
+      "title": "Workload Security",
+      "description": "All application workloads — including web applications, APIs, microservices, and batch processes — must adhere to a secure software development lifecycle (SSDLC). Static application security testing (SAST), dynamic application security testing (DAST), and software composition analysis (SCA) must be integrated into the CI/CD pipeline and must gate deployments on critical and high severity findings. Security requirements must be defined at the design phase and verified through structured security testing prior to production deployment. Workload runtime behavior must be monitored and anomalous activity must trigger automated alerts.",
+      "nist_800_53_crosswalk": ["SA-11", "SA-15", "SI-7"]
+    },
+    {
+      "id": "ZTA-APP-2",
+      "family": "ZTA-APP",
+      "title": "Container Hardening",
+      "description": "Containerized workloads must be hardened to reduce attack surface and enforce runtime isolation. Container images must be built from minimal, approved base images and must not include unnecessary packages or tools. Container images must be scanned for known vulnerabilities prior to deployment and must meet defined severity thresholds. Containers must run as non-root users with read-only root filesystems, dropped Linux capabilities, and resource limits enforced. Container orchestration platforms (Kubernetes/OpenShift) must enforce Pod Security Standards at the restricted or baseline level. Image signing and admission control must prevent deployment of unsigned or non-compliant images.",
+      "nist_800_53_crosswalk": ["CM-7", "SC-39"]
+    },
+    {
+      "id": "ZTA-APP-3",
+      "family": "ZTA-APP",
+      "title": "Service-to-Service Authentication",
+      "description": "All service-to-service communications within the ZTA must be authenticated using strong, cryptographically verifiable credentials — no service may trust another service based solely on network proximity or IP address. Mutual TLS (mTLS) with short-lived certificates issued by an enterprise PKI or service mesh control plane must be used as the primary service authentication mechanism. Service identities must be bound to cryptographic credentials managed by the workload identity system (e.g., SPIFFE/SPIRE). Service credentials must be automatically rotated and must not be long-lived shared secrets. Service authentication events must be logged for audit and anomaly detection.",
+      "nist_800_53_crosswalk": ["IA-9", "SC-23"]
+    },
+    {
+      "id": "ZTA-APP-4",
+      "family": "ZTA-APP",
+      "title": "Secure Software Supply Chain",
+      "description": "The organization must implement controls to ensure the integrity and provenance of all software components used in enterprise workloads. A Software Bill of Materials (SBOM) must be generated for every build and must enumerate all first-party code, open-source dependencies, and third-party libraries with their versions and known vulnerabilities. Dependency provenance must be verified against trusted registries. Build pipelines must be protected from unauthorized modification via access controls, build attestations, and reproducible build practices. Third-party components must be reviewed for license compliance and security risk. SBOM must be regenerated on each build and stored in an immutable artifact repository.",
+      "nist_800_53_crosswalk": ["SA-12", "SR-3"]
+    },
+    {
+      "id": "ZTA-DATA-1",
+      "family": "ZTA-DATA",
+      "title": "Data Classification",
+      "description": "All enterprise data must be classified according to a defined data classification framework that assigns sensitivity labels (e.g., Public, CUI, Confidential, Secret) based on content, regulatory requirements, and potential impact of unauthorized disclosure. Data classification must be performed at creation or ingestion and must be maintained throughout the data lifecycle. Classification labels must be embedded in or persistently associated with data objects. Access policy decisions in the Policy Engine must use data classification as a primary input — access to higher-classification data requires higher trust levels. Data classification labels must be reviewed periodically to ensure they remain accurate.",
+      "nist_800_53_crosswalk": ["AC-16", "MP-4", "SC-28"]
+    },
+    {
+      "id": "ZTA-DATA-2",
+      "family": "ZTA-DATA",
+      "title": "Data Encryption",
+      "description": "Sensitive data must be encrypted at rest and in transit using FIPS 140-2 validated cryptographic modules. Encryption at rest must use AES-256 or equivalent FIPS-approved algorithms for all data stores containing data classified above Public. Transparent data encryption (TDE) for databases, full-disk encryption for endpoints, and object-level encryption for cloud storage are all acceptable mechanisms when properly configured. Encryption keys must be managed by a dedicated key management system (KMS) with documented key lifecycle procedures including generation, distribution, rotation (at minimum annually), and destruction. Application-layer encryption must be applied to CUI and higher classifications, providing defense-in-depth beyond storage-level encryption.",
+      "nist_800_53_crosswalk": ["SC-8", "SC-13", "SC-28(1)"]
+    },
+    {
+      "id": "ZTA-DATA-3",
+      "family": "ZTA-DATA",
+      "title": "Data Loss Prevention",
+      "description": "The organization must implement Data Loss Prevention (DLP) controls to detect and prevent unauthorized exfiltration of sensitive data from the enterprise environment. DLP policies must inspect outbound data flows — including email, web uploads, API calls, and endpoint file transfers — for content matching sensitive data patterns (PII, CUI, financial data, credentials). Policy actions must include block, quarantine, alert, and audit based on data sensitivity and channel risk. DLP controls must be deployed at network egress points and on managed endpoints. DLP policy violations must be logged, investigated, and reported. DLP controls must be tuned to minimize false positives while maintaining detection efficacy.",
+      "nist_800_53_crosswalk": ["AC-4(4)", "SC-7(10)"]
+    },
+    {
+      "id": "ZTA-VIS-1",
+      "family": "ZTA-VIS",
+      "title": "Continuous Monitoring",
+      "description": "The organization must implement a continuous monitoring program that collects and analyzes security telemetry from all ZTA components — identity providers, Policy Enforcement Points, endpoints, network controls, workloads, and data stores — in near real time. Monitoring must cover authentication events, access decisions (grants and denials), configuration changes, vulnerability state, and network flow data. Security metrics must be reviewed on a defined cadence and reported to leadership. The continuous monitoring capability must provide the Policy Engine with current risk signals to support dynamic access decision making. Monitoring coverage gaps must be identified, tracked, and remediated.",
+      "nist_800_53_crosswalk": ["SI-4", "AU-2", "AU-12"]
+    },
+    {
+      "id": "ZTA-VIS-2",
+      "family": "ZTA-VIS",
+      "title": "Security Information & Event Management",
+      "description": "A Security Information and Event Management (SIEM) platform must be deployed to aggregate, normalize, correlate, and analyze security events from all ZTA components. The SIEM must ingest logs from identity providers, Policy Engines, Policy Enforcement Points, network devices, endpoints, and cloud services. Correlation rules must detect multi-stage attack patterns — such as credential stuffing followed by lateral movement — that span individual log sources. SIEM alerts must be triaged by a Security Operations Center (SOC) function with defined response SLAs. Log retention within the SIEM must meet regulatory requirements with a minimum of one year online and three years archived.",
+      "nist_800_53_crosswalk": ["AU-6", "SI-4(2)"]
+    },
+    {
+      "id": "ZTA-VIS-3",
+      "family": "ZTA-VIS",
+      "title": "Anomaly Detection",
+      "description": "The organization must implement behavioral analytics and anomaly detection capabilities to identify deviations from established baseline behavior patterns across users, devices, and workloads. User and Entity Behavior Analytics (UEBA) must establish behavioral baselines and generate risk scores for anomalous activities such as impossible travel, off-hours access, access to previously unaccessed resources, and bulk data downloads. Anomaly detection signals must feed into the Policy Engine's dynamic trust scoring to automatically adjust access grants when behavioral risk scores exceed defined thresholds. High-confidence anomaly detections must trigger automated session termination and security alerts without requiring human-in-the-loop.",
+      "nist_800_53_crosswalk": ["SI-4(4)", "SI-4(5)"]
+    },
+    {
+      "id": "ZTA-AUTO-1",
+      "family": "ZTA-AUTO",
+      "title": "Automated Response",
+      "description": "The ZTA must support automated response capabilities that can react to detected threats and policy violations without requiring manual intervention for high-confidence, low-risk response actions. Automated responses must include: session revocation upon anomaly detection, account lockout upon credential compromise indicators, network quarantine of compromised endpoints, and blocking of known-malicious IP addresses or domains. Automated response actions must be logged in an immutable audit trail with the triggering event, action taken, affected resources, and timestamp. Response automation thresholds must be tunable to balance security response speed against operational false-positive risk. Automated responses must feed into the incident response workflow for tracking and post-incident analysis.",
+      "nist_800_53_crosswalk": ["IR-4", "SI-4(7)", "CP-2"]
+    },
+    {
+      "id": "ZTA-AUTO-2",
+      "family": "ZTA-AUTO",
+      "title": "Security Orchestration",
+      "description": "The organization must implement Security Orchestration, Automation, and Response (SOAR) capabilities to coordinate response actions across ZTA components in response to detected security events. SOAR playbooks must define automated workflows for common incident scenarios — including phishing, credential compromise, malware detection, and insider threat indicators — that orchestrate actions across the identity provider, endpoint management, network controls, and SIEM without manual hand-offs. Playbooks must be reviewed and tested at least quarterly and updated based on lessons learned from incidents and threat intelligence updates. Orchestrated actions must be logged and must support rollback where technically feasible.",
+      "nist_800_53_crosswalk": ["IR-4(1)", "SA-3(1)"]
+    },
+    {
+      "id": "ZTA-AUTO-3",
+      "family": "ZTA-AUTO",
+      "title": "Policy Automation",
+      "description": "ZTA access policies must be defined, tested, and deployed through an automated policy management pipeline that enforces peer review, testing in staging environments, and controlled rollout before policies affect production access decisions. Policy-as-code practices must be implemented so that access policies are version-controlled, auditable, and reproducible. Automated policy compliance checks must run continuously to detect configuration drift between intended policy state and enforced policy state. Policy changes must be reviewed and approved through a formal change management workflow before deployment. Automated rollback must be available if a policy change causes unintended access disruptions detected within a defined detection window.",
+      "nist_800_53_crosswalk": ["AC-3", "CM-3(2)"]
+    }
+  ]
+}

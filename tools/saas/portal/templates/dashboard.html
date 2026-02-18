@@ -8,12 +8,14 @@
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- CUI Banner Top -->
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <div class="portal-layout">
         <!-- Sidebar Navigation -->
-        <nav class="sidebar">
+        <nav class="sidebar" role="navigation" aria-label="Main navigation">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
@@ -80,9 +82,12 @@
         </nav>
 
         <!-- Main Content -->
-        <main class="main-content">
+        <main class="main-content" id="main-content" role="main">
             {% if not page or page == 'dashboard' %}
             <!-- Dashboard View -->
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <span class="current">Home</span>
+            </nav>
             <div class="page-header">
                 <h1>Dashboard</h1>
                 <p>Overview for {{ tenant_name }}</p>
@@ -98,7 +103,7 @@
                     <div class="card-value">{{ active_projects }}</div>
                 </div>
                 <div class="card summary-card">
-                    <div class="card-label">Compliance Score</div>
+                    <div class="card-label">Compliance Score <span class="help-icon" title="Average compliance score across all frameworks (NIST, FedRAMP, CMMC). 100% means all controls are satisfied.">?</span></div>
                     <div class="card-value {% if compliance_score >= 80 %}text-green{% elif compliance_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
                         {{ compliance_score }}%
                     </div>
@@ -132,7 +137,7 @@
                 <h2 class="card-title">Recent Activity</h2>
                 {% if recent_activity %}
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="Recent activity log">
                         <thead>
                             <tr>
                                 <th>Event</th>
@@ -144,7 +149,7 @@
                         <tbody>
                             {% for entry in recent_activity %}
                             <tr>
-                                <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+                                <td><span class="badge badge-info" role="status">{{ entry.event_type }}</span></td>
                                 <td>{{ entry.action }}</td>
                                 <td class="td-truncate">{{ entry.details }}</td>
                                 <td class="td-nowrap">{{ entry.recorded_at }}</td>
@@ -160,6 +165,11 @@
 
             {% elif page == 'projects' %}
             <!-- Projects View -->
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">Projects</span>
+            </nav>
             <div class="page-header">
                 <h1>Projects</h1>
                 <p>All projects for {{ tenant_name }}</p>
@@ -168,7 +178,7 @@
             {% if projects %}
             <div class="card">
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="Projects list">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -183,7 +193,7 @@
                             <tr>
                                 <td><strong>{{ proj.name }}</strong></td>
                                 <td>
-                                    <span class="badge {% if proj.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}">
+                                    <span class="badge {% if proj.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
                                         {{ proj.status }}
                                     </span>
                                 </td>
@@ -204,15 +214,20 @@
 
             {% elif page == 'compliance' %}
             <!-- Compliance View -->
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">Compliance</span>
+            </nav>
             <div class="page-header">
                 <h1>Compliance Overview</h1>
-                <p>NIST 800-53, FedRAMP, CMMC status across all projects</p>
+                <p><span data-glossary="NIST 800-53">NIST 800-53</span>, <span data-glossary="FedRAMP">FedRAMP</span>, <span data-glossary="CMMC">CMMC</span> status across all projects</p>
             </div>
 
             {% if compliance_data %}
             <div class="card">
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="Compliance status by project">
                         <thead>
                             <tr>
                                 <th>Project</th>
@@ -225,7 +240,7 @@
                             <tr>
                                 <td><strong>{{ item.project_name }}</strong></td>
                                 <td>
-                                    <span class="badge {% if item.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}">
+                                    <span class="badge {% if item.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
                                         {{ item.status }}
                                     </span>
                                 </td>
@@ -250,6 +265,11 @@
 
             {% elif page == 'usage' %}
             <!-- Usage View -->
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">Usage</span>
+            </nav>
             <div class="page-header">
                 <h1>Usage Metrics</h1>
                 <p>API usage and resource consumption</p>
@@ -270,7 +290,7 @@
             <div class="card">
                 <h2 class="card-title">Top Endpoints</h2>
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="Top API endpoints by usage">
                         <thead>
                             <tr>
                                 <th>Endpoint</th>
@@ -296,6 +316,11 @@
 
             {% elif page == 'audit' %}
             <!-- Audit Trail View -->
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">Audit Trail</span>
+            </nav>
             <div class="page-header">
                 <h1>Audit Trail</h1>
                 <p>{{ total_entries }} total entries (immutable, append-only)</p>
@@ -304,7 +329,7 @@
             {% if audit_entries %}
             <div class="card">
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="Audit trail entries">
                         <thead>
                             <tr>
                                 <th>ID</th>
@@ -318,7 +343,7 @@
                             {% for entry in audit_entries %}
                             <tr>
                                 <td class="td-mono">{{ entry.id }}</td>
-                                <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+                                <td><span class="badge badge-info" role="status">{{ entry.event_type }}</span></td>
                                 <td>{{ entry.action }}</td>
                                 <td class="td-mono">{{ entry.ip_address or '-' }}</td>
                                 <td class="td-nowrap">{{ entry.recorded_at }}</td>
@@ -353,7 +378,7 @@
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <!-- Toast Container -->
-    <div id="toast-container"></div>
+    <div id="toast-container" aria-live="polite"></div>
 
     <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
 </body>

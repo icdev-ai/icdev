@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 # ICDEV Poll Trigger — Cron-based issue polling for GitHub + GitLab
-# Adapted from ADW trigger_cron.py with dual platform support
+# Refactored to use EventEnvelope + EventRouter (D132, D133)
 
 """
 Cron-based ICDEV trigger that polls GitHub/GitLab issues.
@@ -10,7 +10,10 @@ Polls every 20 seconds to detect:
 2. Issues where the latest comment contains 'icdev'
 3. Issues with icdev_ workflow commands
 
-When a qualifying issue is found, triggers the appropriate ICDEV workflow.
+When a qualifying issue is found, normalizes into an EventEnvelope and
+routes through EventRouter (D132) to the correct workflow. This fixes the
+previous bug where all poll triggers routed to icdev_plan.py regardless of
+the command in the comment.
 
 Usage:
     python tools/ci/triggers/poll_trigger.py
@@ -21,7 +24,6 @@ Environment:
 
 import os
 import signal
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -30,13 +32,9 @@ from typing import Dict, Set, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
+from tools.ci.core.event_router import EventRouter
 from tools.ci.modules.vcs import VCS
-from tools.ci.modules.workflow_ops import (
-    extract_icdev_info,
-    BOT_IDENTIFIER,
-)
-from tools.ci.modules.state import ICDevState
-from tools.testing.utils import make_run_id, get_safe_subprocess_env
 
 # Configuration
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "20"))
@@ -48,6 +46,9 @@ issue_last_comment: Dict[int, Optional[str]] = {}
 # Graceful shutdown flag
 shutdown_requested = False
 
+# Central router instance
+router = EventRouter()
+
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
@@ -56,14 +57,18 @@ def signal_handler(signum, frame):
     shutdown_requested = True
 
 
-def should_process_issue(vcs: VCS, issue_number: int) -> bool:
-    """Determine if an issue should be processed based on comments."""
+def should_process_issue(vcs: VCS, issue_number: int) -> tuple:
+    """Determine if an issue should be processed based on comments.
+
+    Returns:
+        (should_process: bool, latest_comment_body: str)
+    """
     comments = vcs.fetch_issue_comments(issue_number)
 
     # No comments — new issue, process it
     if not comments:
         print(f"INFO: Issue #{issue_number} has no comments — marking for processing")
-        return True
+        return True, ""
 
     # Get the latest comment
     latest_comment = comments[-1]
@@ -73,7 +78,7 @@ def should_process_issue(vcs: VCS, issue_number: int) -> bool:
     # Check if we've already processed this comment
     last_processed = issue_last_comment.get(issue_number)
     if last_processed == comment_id:
-        return False
+        return False, ""
 
     comment_lower = comment_body.lower().strip()
 
@@ -81,49 +86,55 @@ def should_process_issue(vcs: VCS, issue_number: int) -> bool:
     if comment_lower == "icdev":
         print(f"INFO: Issue #{issue_number} — latest comment is 'icdev'")
         issue_last_comment[issue_number] = comment_id
-        return True
+        return True, comment_body
 
     # Check if latest comment contains an icdev_ workflow command
     if "icdev_" in comment_lower:
         print(f"INFO: Issue #{issue_number} — contains icdev_ command")
         issue_last_comment[issue_number] = comment_id
-        return True
+        return True, comment_body
 
-    return False
+    return False, ""
 
 
-def trigger_workflow(issue_number: int, platform: str) -> bool:
-    """Trigger the ICDEV plan workflow for a specific issue."""
+def trigger_workflow(issue_data: dict, platform: str, latest_comment: str = "") -> bool:
+    """Route issue through EventEnvelope + EventRouter.
+
+    This replaces the old hardcoded icdev_plan.py routing. The EventRouter
+    determines the correct workflow from the command in the envelope.
+    """
     try:
-        script_path = PROJECT_ROOT / "tools" / "ci" / "workflows" / "icdev_plan.py"
-
-        run_id = make_run_id()
-        print(f"INFO: Triggering ICDEV workflow for issue #{issue_number} (run_id: {run_id})")
-
-        # Create initial state
-        state = ICDevState(run_id)
-        state.update(
-            run_id=run_id,
-            issue_number=str(issue_number),
-            platform=platform,
-        )
-        state.save("poll_trigger")
-
-        cmd = [sys.executable, str(script_path), str(issue_number), run_id]
-
-        # Launch in background
-        process = subprocess.Popen(
-            cmd,
-            cwd=str(PROJECT_ROOT),
-            env=get_safe_subprocess_env(),
-            stdin=subprocess.DEVNULL,
+        # Normalize into EventEnvelope
+        envelope = EventEnvelope.from_poll_issue(
+            issue_data, platform, latest_comment=latest_comment
         )
 
-        print(f"INFO: Background process started (PID: {process.pid})")
-        return True
+        issue_number = issue_data.get("number") or issue_data.get("iid")
+        print(
+            f"INFO: Routing issue #{issue_number} via EventRouter "
+            f"(workflow={envelope.workflow_command or 'auto-detect'})"
+        )
+
+        # Route through central router
+        result = router.route(envelope)
+
+        action = result.get("action", "")
+        if action == "launched":
+            print(
+                f"INFO: Launched {result.get('workflow')} for issue "
+                f"#{issue_number} (run_id: {result.get('run_id')})"
+            )
+            return True
+        elif action == "queued":
+            print(f"INFO: Queued event for issue #{issue_number} ({result.get('reason')})")
+            return True
+        else:
+            print(f"INFO: Issue #{issue_number} ignored ({result.get('reason')})")
+            return False
 
     except Exception as e:
-        print(f"ERROR: Failed to trigger workflow for issue #{issue_number}: {e}")
+        issue_number = issue_data.get("number") or issue_data.get("iid")
+        print(f"ERROR: Failed to route issue #{issue_number}: {e}")
         return False
 
 
@@ -154,18 +165,20 @@ def check_and_process_issues(vcs: VCS):
             if issue_number in processed_issues:
                 continue
 
-            if should_process_issue(vcs, issue_number):
-                new_qualifying.append(issue_number)
+            should_process, latest_comment = should_process_issue(vcs, issue_number)
+            if should_process:
+                new_qualifying.append((issue, latest_comment))
 
         if new_qualifying:
-            print(f"INFO: Found {len(new_qualifying)} qualifying issues: {new_qualifying}")
+            print(f"INFO: Found {len(new_qualifying)} qualifying issues")
 
-            for issue_number in new_qualifying:
+            for issue, latest_comment in new_qualifying:
                 if shutdown_requested:
                     print(f"INFO: Shutdown requested, stopping")
                     break
 
-                if trigger_workflow(issue_number, platform):
+                issue_number = issue.get("number") or issue.get("iid")
+                if trigger_workflow(issue, platform, latest_comment):
                     processed_issues.add(issue_number)
                 else:
                     print(f"WARNING: Failed to process issue #{issue_number}, will retry")
@@ -184,7 +197,7 @@ def check_and_process_issues(vcs: VCS):
 def main():
     """Main entry point for the poll trigger."""
     print(f"CUI // SP-CTI")
-    print(f"INFO: Starting ICDEV Poll Trigger")
+    print(f"INFO: Starting ICDEV Poll Trigger (EventRouter-based)")
     print(f"INFO: Poll interval: {POLL_INTERVAL} seconds")
 
     # Auto-detect platform

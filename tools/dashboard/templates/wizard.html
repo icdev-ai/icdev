@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Getting Started - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <span class="current">Getting Started</span>
+    </div>
+    <h1>Getting Started</h1>
+    <p class="subtitle">Answer 3 quick questions and we'll recommend the best path for you</p>
+</div>
+
+<div class="wizard-container">
+    <!-- Progress dots -->
+    <div class="wizard-progress" id="wizard-progress">
+        <div class="wizard-progress-dot active" data-step="0"></div>
+        <div class="wizard-progress-dot" data-step="1"></div>
+        <div class="wizard-progress-dot" data-step="2"></div>
+        <div class="wizard-progress-dot" data-step="3"></div>
+    </div>
+
+    <!-- Step 1: Goal -->
+    <div class="wizard-step active" id="wizard-step-0">
+        <div class="wizard-question">What are you trying to do?</div>
+        <div class="wizard-options">
+            <div class="wizard-option" data-value="build" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F528;</span>
+                <div class="wizard-option-title">Build a New Application</div>
+                <div class="wizard-option-desc">Start a new project from scratch with compliance built in</div>
+            </div>
+            <div class="wizard-option" data-value="modernize" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F504;</span>
+                <div class="wizard-option-title">Modernize a Legacy App</div>
+                <div class="wizard-option-desc">Migrate an existing system to modern architecture</div>
+            </div>
+            <div class="wizard-option" data-value="comply" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F6E1;</span>
+                <div class="wizard-option-title">Get ATO / Compliance</div>
+                <div class="wizard-option-desc">Generate security artifacts and pass compliance gates</div>
+            </div>
+            <div class="wizard-option" data-value="requirements" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4CB;</span>
+                <div class="wizard-option-title">Capture Requirements</div>
+                <div class="wizard-option-desc">Gather and structure requirements from stakeholders</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Role -->
+    <div class="wizard-step" id="wizard-step-1">
+        <div class="wizard-question">What is your role?</div>
+        <div class="wizard-options">
+            <div class="wizard-option" data-value="pm" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4CA;</span>
+                <div class="wizard-option-title">Program Manager</div>
+                <div class="wizard-option-desc">I manage timelines, budgets, and stakeholders</div>
+            </div>
+            <div class="wizard-option" data-value="developer" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4BB;</span>
+                <div class="wizard-option-title">Developer / Architect</div>
+                <div class="wizard-option-desc">I write code and design systems</div>
+            </div>
+            <div class="wizard-option" data-value="isso" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F510;</span>
+                <div class="wizard-option-title">ISSO / Security Officer</div>
+                <div class="wizard-option-desc">I manage security and compliance</div>
+            </div>
+            <div class="wizard-option" data-value="co" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4DD;</span>
+                <div class="wizard-option-title">Contracting Officer</div>
+                <div class="wizard-option-desc">I manage contracts and vendor requirements</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Classification -->
+    <div class="wizard-step" id="wizard-step-2">
+        <div class="wizard-question">What classification level?</div>
+        <div class="wizard-options">
+            <div class="wizard-option" data-value="il2" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F310;</span>
+                <div class="wizard-option-title">IL2 &mdash; Public</div>
+                <div class="wizard-option-desc">Non-sensitive data, commercial cloud OK</div>
+            </div>
+            <div class="wizard-option" data-value="il4" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F512;</span>
+                <div class="wizard-option-title">IL4 &mdash; CUI (GovCloud)</div>
+                <div class="wizard-option-desc">Controlled Unclassified Information in AWS GovCloud</div>
+            </div>
+            <div class="wizard-option" data-value="il5" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F510;</span>
+                <div class="wizard-option-title">IL5 &mdash; CUI (Dedicated)</div>
+                <div class="wizard-option-desc">CUI requiring dedicated GovCloud infrastructure</div>
+            </div>
+            <div class="wizard-option" data-value="il6" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F6D1;</span>
+                <div class="wizard-option-title">IL6 &mdash; SECRET</div>
+                <div class="wizard-option-desc">Classified data requiring SIPR network and air-gapped systems</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 4: Results -->
+    <div class="wizard-step" id="wizard-step-3">
+        <div class="wizard-result" id="wizard-result">
+            <!-- Populated by JS -->
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="wizard-nav" id="wizard-nav">
+        <button class="btn btn-secondary" id="wizard-back" onclick="ICDEV.wizardBack()" style="visibility: hidden;">
+            &larr; Back
+        </button>
+        <span id="wizard-step-label" class="text-muted">Step 1 of 3</span>
+        <button class="btn btn-primary" id="wizard-next" onclick="ICDEV.wizardNext()" disabled>
+            Next &rarr;
+        </button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var state = { step: 0, answers: [null, null, null] };
+
+    var PATHS = {
+        build_developer: {
+            name: "Build & Ship",
+            desc: "Full development pipeline with compliance baked in from the start.",
+            steps: [
+                { title: "Create Project", desc: "Initialize with compliance scaffolding", cmd: "/icdev-init" },
+                { title: "Write Tests First", desc: "Generate test cases from requirements", cmd: "/icdev-build (RED phase)" },
+                { title: "Build Code", desc: "TDD: write code to pass tests", cmd: "/icdev-build (GREEN phase)" },
+                { title: "Security Scan", desc: "SAST, dependency audit, secrets", cmd: "/icdev-secure" },
+                { title: "Generate ATO Artifacts", desc: "SSP, POA&M, STIG, SBOM", cmd: "/icdev-comply" },
+                { title: "Deploy", desc: "Generate IaC and CI/CD pipeline", cmd: "/icdev-deploy" }
+            ]
+        },
+        build_pm: {
+            name: "Requirements to Build",
+            desc: "Start by capturing requirements, then hand off to development team.",
+            steps: [
+                { title: "Capture Requirements", desc: "AI-guided intake conversation", cmd: "/icdev-intake" },
+                { title: "Review & Approve", desc: "Score readiness, detect gaps", cmd: "readiness_scorer.py" },
+                { title: "Generate COAs", desc: "3 options: speed, balanced, comprehensive", cmd: "/icdev-simulate" },
+                { title: "Approve & Decompose", desc: "SAFe epics, features, stories", cmd: "decomposition_engine.py" },
+                { title: "Hand Off to Dev Team", desc: "Push to Jira/GitLab", cmd: "/icdev-integrate" }
+            ]
+        },
+        comply_isso: {
+            name: "Quick ATO Package",
+            desc: "Generate the minimum required ATO artifacts for your project.",
+            steps: [
+                { title: "Categorize System", desc: "FIPS 199 security categorization", cmd: "fips199_categorizer.py" },
+                { title: "Validate Requirements", desc: "Check all 17 FIPS 200 security areas", cmd: "fips200_validator.py" },
+                { title: "Generate SSP", desc: "System Security Plan", cmd: "/icdev-comply" },
+                { title: "Create POA&M", desc: "Document gaps with fix deadlines", cmd: "poam_generator.py" },
+                { title: "STIG Check", desc: "Security technical compliance", cmd: "stig_checker.py" },
+                { title: "Generate SBOM", desc: "Software inventory", cmd: "sbom_generator.py" }
+            ]
+        },
+        comply_developer: {
+            name: "Build with Compliance",
+            desc: "Build your application with security compliance integrated from day one.",
+            steps: [
+                { title: "Create Project", desc: "Scaffolding includes compliance templates", cmd: "/icdev-init" },
+                { title: "Build with TDD", desc: "Tests include security scenarios", cmd: "/icdev-build" },
+                { title: "Run Security Scans", desc: "SAST + dependency audit", cmd: "/icdev-secure" },
+                { title: "Generate Artifacts", desc: "SSP, POA&M, STIG, SBOM", cmd: "/icdev-comply" },
+                { title: "ATO Assessment", desc: "FedRAMP + CMMC readiness", cmd: "fedramp_assessor.py" }
+            ]
+        },
+        modernize: {
+            name: "Modernize Legacy App",
+            desc: "Analyze, assess, and migrate your legacy application to modern architecture.",
+            steps: [
+                { title: "Analyze Legacy Code", desc: "Scan codebase for complexity", cmd: "/icdev-modernize" },
+                { title: "UI Analysis", desc: "Analyze screenshots for complexity", cmd: "ui_analyzer.py" },
+                { title: "7R Assessment", desc: "Score migration strategies", cmd: "seven_r_assessor.py" },
+                { title: "Create Migration Plan", desc: "Strangler fig or big bang", cmd: "migration_code_generator.py" },
+                { title: "Generate Code", desc: "Modernized code output", cmd: "/icdev-modernize --generate" },
+                { title: "Validate Compliance", desc: "Ensure ATO maintained", cmd: "compliance_bridge.py" }
+            ]
+        },
+        requirements: {
+            name: "Requirements to Approval",
+            desc: "AI-guided conversation to capture, analyze, and approve requirements.",
+            steps: [
+                { title: "Start Intake Session", desc: "AI-guided Q&A conversation", cmd: "/icdev-intake" },
+                { title: "Upload Documents", desc: "SOW, CDD, CONOPS extraction", cmd: "document_extractor.py" },
+                { title: "Detect Gaps", desc: "Find missing requirements", cmd: "gap_detector.py" },
+                { title: "Score Readiness", desc: "5-dimension readiness check", cmd: "readiness_scorer.py" },
+                { title: "Decompose Work", desc: "Epics, features, stories", cmd: "decomposition_engine.py" },
+                { title: "Generate COAs", desc: "3 cost/schedule options", cmd: "/icdev-simulate" },
+                { title: "Submit for Approval", desc: "Route to reviewers", cmd: "/icdev-integrate" }
+            ]
+        }
+    };
+
+    function getPath(goal, role) {
+        if (goal === "modernize") return PATHS.modernize;
+        if (goal === "requirements") return PATHS.requirements;
+        if (goal === "comply" && role === "isso") return PATHS.comply_isso;
+        if (goal === "comply") return PATHS.comply_developer;
+        if (goal === "build" && role === "pm") return PATHS.build_pm;
+        if (goal === "build" && role === "co") return PATHS.build_pm;
+        return PATHS.build_developer;
+    }
+
+    window.ICDEV = window.ICDEV || {};
+
+    ICDEV.wizardSelect = function(el) {
+        var siblings = el.parentNode.querySelectorAll(".wizard-option");
+        for (var i = 0; i < siblings.length; i++) siblings[i].classList.remove("selected");
+        el.classList.add("selected");
+        state.answers[state.step] = el.getAttribute("data-value");
+        document.getElementById("wizard-next").disabled = false;
+    };
+
+    ICDEV.wizardNext = function() {
+        if (state.step >= 2) {
+            showResult();
+            state.step = 3;
+            updateUI();
+            return;
+        }
+        state.step++;
+        updateUI();
+    };
+
+    ICDEV.wizardBack = function() {
+        if (state.step <= 0) return;
+        state.step--;
+        updateUI();
+    };
+
+    function updateUI() {
+        var steps = document.querySelectorAll(".wizard-step");
+        for (var i = 0; i < steps.length; i++) {
+            steps[i].classList.toggle("active", i === state.step);
+        }
+        var dots = document.querySelectorAll(".wizard-progress-dot");
+        for (var j = 0; j < dots.length; j++) {
+            dots[j].classList.remove("active", "completed");
+            if (j < state.step) dots[j].classList.add("completed");
+            if (j === state.step) dots[j].classList.add("active");
+        }
+        var backBtn = document.getElementById("wizard-back");
+        var nextBtn = document.getElementById("wizard-next");
+        var label = document.getElementById("wizard-step-label");
+        var nav = document.getElementById("wizard-nav");
+
+        backBtn.style.visibility = state.step > 0 ? "visible" : "hidden";
+
+        if (state.step >= 3) {
+            nav.style.display = "none";
+        } else {
+            nav.style.display = "flex";
+            nextBtn.disabled = !state.answers[state.step];
+            nextBtn.textContent = state.step === 2 ? "See Recommendation \u2192" : "Next \u2192";
+            label.textContent = "Step " + (state.step + 1) + " of 3";
+        }
+    }
+
+    function showResult() {
+        var path = getPath(state.answers[0], state.answers[1]);
+        var html = '<h2>Recommended Path</h2>';
+        html += '<div class="recommended-path">' + path.name + '</div>';
+        html += '<p style="color: var(--text-secondary); margin-bottom: 20px;">' + path.desc + '</p>';
+        html += '<div class="path-steps">';
+        for (var i = 0; i < path.steps.length; i++) {
+            var s = path.steps[i];
+            html += '<div class="path-step">';
+            html += '<div class="step-number">' + (i + 1) + '</div>';
+            html += '<div class="step-text"><strong>' + s.title + '</strong>';
+            html += '<span>' + s.desc + '</span>';
+            html += '<br><code style="font-size:0.75rem; margin-top:4px; display:inline-block;">' + s.cmd + '</code>';
+            html += '</div></div>';
+        }
+        html += '</div>';
+        html += '<div style="margin-top:24px;">';
+        html += '<a href="/quick-paths" class="btn btn-primary">View All Quick Paths</a>';
+        html += ' <button class="btn btn-secondary" onclick="location.reload()">Start Over</button>';
+        html += '</div>';
+        document.getElementById("wizard-result").innerHTML = html;
+    }
+})();
+</script>
+{% endblock %}

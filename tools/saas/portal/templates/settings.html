@@ -8,12 +8,14 @@
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- CUI Banner Top -->
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <div class="portal-layout">
         <!-- Sidebar Navigation -->
-        <nav class="sidebar">
+        <nav class="sidebar" role="navigation" aria-label="Main navigation">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
@@ -80,7 +82,12 @@
         </nav>
 
         <!-- Main Content -->
-        <main class="main-content">
+        <main class="main-content" id="main-content" role="main">
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">Settings</span>
+            </nav>
             <div class="page-header">
                 <h1>Tenant Settings</h1>
                 <p>Configuration for {{ tenant_name }}</p>
@@ -105,7 +112,7 @@
                     <div class="settings-row">
                         <span class="settings-label">Status</span>
                         <span class="settings-value">
-                            <span class="badge {% if tenant.status == 'active' %}badge-success{% elif tenant.status == 'suspended' %}badge-danger{% else %}badge-secondary{% endif %}">
+                            <span class="badge {% if tenant.status == 'active' %}badge-success{% elif tenant.status == 'suspended' %}badge-danger{% else %}badge-secondary{% endif %}" role="status">
                                 {{ tenant.status }}
                             </span>
                         </span>
@@ -113,7 +120,7 @@
                     <div class="settings-row">
                         <span class="settings-label">Impact Level</span>
                         <span class="settings-value">
-                            <span class="badge badge-warning">{{ tenant.impact_level }}</span>
+                            <span class="badge badge-warning" role="status" data-glossary="{{ tenant.impact_level }}">{{ tenant.impact_level }}</span>
                         </span>
                     </div>
                     <div class="settings-row">
@@ -134,7 +141,8 @@
                     <div class="settings-row">
                         <span class="settings-label">Tier</span>
                         <span class="settings-value">
-                            <span class="badge badge-info">{{ subscription.tier or tenant.tier or 'starter' }}</span>
+                            <span class="badge badge-info" role="status">{{ subscription.tier or tenant.tier or 'starter' }}</span>
+                            <span class="help-icon" title="Your subscription tier determines project limits, user counts, and available impact levels.">?</span>
                         </span>
                     </div>
                     <div class="settings-row">
@@ -148,7 +156,7 @@
                     <div class="settings-row">
                         <span class="settings-label">Status</span>
                         <span class="settings-value">
-                            <span class="badge {% if subscription.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}">
+                            <span class="badge {% if subscription.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
                                 {{ subscription.status or 'unknown' }}
                             </span>
                         </span>
@@ -275,7 +283,7 @@
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <!-- Toast Container -->
-    <div id="toast-container"></div>
+    <div id="toast-container" aria-live="polite"></div>
 
     <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
 </body>

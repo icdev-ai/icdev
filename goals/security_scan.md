@@ -34,6 +34,52 @@ These gates MUST pass for the project to proceed to deployment:
 
 **No exceptions without Authorizing Official written approval.**
 
+### Security Scanning Pipeline
+
+```mermaid
+flowchart TB
+    START(["Start\nSecurity Scan"])
+    SAST["Step 1: SAST\nbandit / eslint-security\nStatic code analysis"]
+    G1{"Gate 1\n0 Critical\n0 High?"}
+    DEP["Step 2: Dependency Audit\npip-audit / npm audit\nCVE vulnerability check"]
+    G2{"Gate 2\n0 Critical\n0 High?"}
+    SEC["Step 3: Secret Detection\ndetect-secrets\nAPI keys, passwords, tokens"]
+    G3{"Gate 3\n0 Secrets?"}
+    CON["Step 4: Container Scan\ntrivy\nOS + app vulns, misconfig"]
+    G4{"Gate 4\n0 Critical\n0 High?"}
+    REPORT["Step 6: Consolidated\nSecurity Report"]
+    AUDIT["Step 7: Audit Trail\nLog results to DB"]
+    BLOCKED(["BLOCKED\nRemediate findings\nbefore deployment"])
+
+    START --> SAST --> G1
+    G1 -->|PASS| DEP
+    G1 -->|FAIL| BLOCKED
+    DEP --> G2
+    G2 -->|PASS| SEC
+    G2 -->|FAIL| BLOCKED
+    SEC --> G3
+    G3 -->|PASS| CON
+    G3 -->|FAIL| BLOCKED
+    CON --> G4
+    G4 -->|PASS| REPORT
+    G4 -->|FAIL| BLOCKED
+    REPORT --> AUDIT
+    BLOCKED -.->|After fix| START
+
+    style START fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style SAST fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style DEP fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style SEC fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style CON fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style G1 fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style G2 fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style G3 fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style G4 fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style REPORT fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style AUDIT fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style BLOCKED fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+```
+
 ---
 
 ## Process

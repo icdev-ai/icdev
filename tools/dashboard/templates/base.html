@@ -5,32 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}ICDEV Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
     {% block head %}{% endblock %}
 </head>
 <body data-auto-refresh="true">
+    <!-- Skip to main content (accessibility) -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- CUI Banner Top -->
-    <div class="cui-banner">{{ cui_banner_top }}</div>
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
 
     <!-- Navigation -->
-    <nav class="navbar">
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
         <a class="navbar-brand" href="/">ICDEV</a>
         <ul class="navbar-nav">
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
             <li><a href="/projects" class="{% if '/projects' in request.path %}active{% endif %}">Projects</a></li>
             <li><a href="/agents" class="{% if '/agents' in request.path %}active{% endif %}">Agents</a></li>
             <li><a href="/monitoring" class="{% if '/monitoring' in request.path %}active{% endif %}">Monitoring</a></li>
+            <li><a href="/quick-paths" class="{% if '/quick-paths' in request.path %}active{% endif %}">Quick Paths</a></li>
+            <li><a href="/batch" class="{% if '/batch' in request.path %}active{% endif %}">Batch</a></li>
+            <li><a href="/diagrams" class="{% if '/diagrams' in request.path %}active{% endif %}">Diagrams</a></li>
+            <li><a href="/cicd" class="{% if '/cicd' in request.path %}active{% endif %}">CI/CD</a></li>
+            <li><a href="/wizard" class="{% if '/wizard' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Get Started</a></li>
         </ul>
+        <div class="role-selector" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
+            <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
+            <select id="role-select" aria-label="Select dashboard view role"
+                    onchange="window.location.search = this.value ? '?role=' + this.value : ''"
+                    style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">
+                <option value="" {% if not current_role %}selected{% endif %}>All (Full View)</option>
+                {% for rid, rcfg in ROLE_VIEWS.items() %}
+                <option value="{{ rid }}" {% if current_role == rid %}selected{% endif %}>{{ rcfg.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
     </nav>
 
     <!-- Main Content -->
-    <div class="main-content">
+    <div class="main-content" id="main-content" role="main">
         {% block content %}{% endblock %}
     </div>
 
     <!-- CUI Banner Bottom -->
-    <div class="cui-banner bottom">{{ cui_banner_bottom }}</div>
+    <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
 
-    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <!-- Notification container for toasts -->
+    <div class="notification-container" id="notification-container" aria-live="polite"></div>
+
+    <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/mermaid/mermaid.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/mermaid-icdev.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/charts.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/tour.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/live.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/batch.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/shortcuts.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

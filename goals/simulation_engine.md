@@ -31,6 +31,60 @@ Run 6-dimension what-if simulations to predict impact of requirements on archite
 5. Present to customer: formatted comparison with recommendation (Balanced by default)
 6. Customer selects: `select_coa` — records selection with rationale
 
+### Simulation Pipeline Flowchart
+
+```mermaid
+flowchart TD
+    A["Create Scenario"] --> B["Run Simulation"]
+
+    subgraph SIM["6 Simulation Dimensions"]
+        direction TB
+        S1["Architecture Impact"]
+        S2["Compliance Delta"]
+        S3["Supply Chain Changes"]
+        S4["Schedule Estimate"]
+        S5["Cost Projection"]
+        S6["Risk Score"]
+    end
+
+    B --> SIM
+    SIM --> C["Monte Carlo Estimation"]
+    C --> D["P50 / P80 / P90 Estimates"]
+    D --> E["Generate 3 COAs"]
+
+    subgraph COA["COA Options"]
+        direction LR
+        C1["Speed COA\nMVP, 1-2 PIs\nHigher Risk"]
+        C2["Balanced COA\n P1+P2, 2-3 PIs\nModerate Risk"]
+        C3["Comprehensive COA\nFull Scope, 3-5 PIs\nLowest Risk"]
+    end
+
+    E --> COA
+    COA --> F["Compare COAs"]
+    F --> G["Customer Selects COA"]
+    G --> H["Record Selection + Rationale"]
+
+    style A fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style B fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style SIM fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S1 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S2 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S3 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S4 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S5 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style S6 fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style C fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style D fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style E fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style COA fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style C1 fill:#3a1a1a,stroke:#dc3545,color:#e0e0e0
+    style C2 fill:#3a2a1a,stroke:#e8590c,color:#e0e0e0
+    style C3 fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style F fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
+    style G fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style H fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+```
+
 ### 6 Simulation Dimensions
 | Dimension | Metrics | Data Sources |
 |-----------|---------|-------------|

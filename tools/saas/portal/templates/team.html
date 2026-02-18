@@ -8,12 +8,14 @@
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
 </head>
 <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
     <!-- CUI Banner Top -->
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <div class="portal-layout">
         <!-- Sidebar Navigation -->
-        <nav class="sidebar">
+        <nav class="sidebar" role="navigation" aria-label="Main navigation">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
@@ -80,7 +82,12 @@
         </nav>
 
         <!-- Main Content -->
-        <main class="main-content">
+        <main class="main-content" id="main-content" role="main">
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+                <a href="{{ url_for('portal.dashboard') }}">Home</a>
+                <span class="separator">/</span>
+                <span class="current">Team</span>
+            </nav>
             <div class="page-header">
                 <h1>Team Management</h1>
                 <p>Manage users and roles for {{ tenant_name }}</p>
@@ -118,7 +125,7 @@
                 <h2 class="card-title">Team Members ({{ users|length }})</h2>
                 {% if users %}
                 <div class="table-wrapper">
-                    <table class="data-table">
+                    <table class="data-table" aria-label="Team members list">
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -136,15 +143,15 @@
                                 <td><strong>{{ user.display_name or '-' }}</strong></td>
                                 <td>{{ user.email }}</td>
                                 <td>
-                                    <span class="badge {% if user.role == 'tenant_admin' %}badge-warning{% elif user.role == 'compliance_officer' %}badge-info{% else %}badge-secondary{% endif %}">
+                                    <span class="badge {% if user.role == 'tenant_admin' %}badge-warning{% elif user.role == 'compliance_officer' %}badge-info{% else %}badge-secondary{% endif %}" role="status">
                                         {{ user.role }}
                                     </span>
                                 </td>
                                 <td>
                                     {% if user.status == 'active' %}
-                                    <span class="badge badge-success">Active</span>
+                                    <span class="badge badge-success" role="status">Active</span>
                                     {% else %}
-                                    <span class="badge badge-danger">{{ user.status | capitalize }}</span>
+                                    <span class="badge badge-danger" role="status">{{ user.status | capitalize }}</span>
                                     {% endif %}
                                 </td>
                                 <td>{{ user.auth_method or 'api_key' }}</td>
@@ -175,7 +182,7 @@
     <div class="cui-banner">CUI // SP-CTI</div>
 
     <!-- Toast Container -->
-    <div id="toast-container"></div>
+    <div id="toast-container" aria-live="polite"></div>
 
     <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
 </body>

@@ -894,6 +894,91 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
             c, _ = _copy_directory(mbse_src, ctx_dest / "mbse", [], blueprint)
             copied += c
 
+    # --- DevSecOps/ZTA inheritance (D122) ---
+    # When parent project has a DevSecOps profile or ZTA is active,
+    # copy devsecops configs and tools to child app
+    devsecops_profile = blueprint.get("devsecops_profile") or {}
+    zta_active = blueprint.get("zta_active", False) or devsecops_profile.get("zta_enabled", False)
+
+    if devsecops_profile or zta_active:
+        # Copy DevSecOps config files
+        for cfg in ("args/devsecops_config.yaml", "args/zta_config.yaml"):
+            cfg_src = icdev_root / cfg
+            cfg_dest = child_root / cfg
+            if cfg_src.exists():
+                if _copy_and_adapt_file(cfg_src, cfg_dest, [], blueprint):
+                    copied += 1
+
+        # Copy DevSecOps tools directory
+        devsecops_src = icdev_root / "tools" / "devsecops"
+        if devsecops_src.exists():
+            c, _ = _copy_directory(
+                devsecops_src, child_root / "tools" / "devsecops",
+                ["app_name_replace"], blueprint)
+            copied += c
+
+        # Copy NIST 800-207 compliance catalog + crosswalk
+        for zta_file in ("context/compliance/nist_800_207_zta.json",
+                         "context/compliance/nist_800_207_crosswalk.json"):
+            zta_src = icdev_root / zta_file
+            zta_dest = child_root / zta_file
+            if zta_src.exists():
+                if _copy_and_adapt_file(zta_src, zta_dest, [], blueprint):
+                    copied += 1
+
+        # Copy NIST 800-207 assessor
+        assessor_src = icdev_root / "tools" / "compliance" / "nist_800_207_assessor.py"
+        assessor_dest = child_root / "tools" / "compliance" / "nist_800_207_assessor.py"
+        if assessor_src.exists():
+            if _copy_and_adapt_file(assessor_src, assessor_dest, ["app_name_replace"], blueprint):
+                copied += 1
+
+        logger.info("Step 7: DevSecOps/ZTA inheritance applied (%s profile, ZTA=%s)",
+                     devsecops_profile.get("maturity_level", "detected"), zta_active)
+
+    # --- MOSA inheritance (D127) ---
+    # When parent project is DoD/IC with MOSA enabled, copy MOSA config,
+    # tools, and compliance artifacts to child app
+    mosa_enabled = blueprint.get("mosa_enabled", False)
+    if not mosa_enabled:
+        # Auto-detect from impact level or customer org
+        il = blueprint.get("impact_level", "").upper()
+        org = (blueprint.get("customer_org") or "").lower()
+        if il in ("IL4", "IL5", "IL6") or any(k in org for k in ["dod", "defense", "military"]):
+            mosa_enabled = True
+
+    if mosa_enabled:
+        # Copy MOSA config
+        mosa_cfg_src = icdev_root / "args" / "mosa_config.yaml"
+        mosa_cfg_dest = child_root / "args" / "mosa_config.yaml"
+        if mosa_cfg_src.exists():
+            if _copy_and_adapt_file(mosa_cfg_src, mosa_cfg_dest, [], blueprint):
+                copied += 1
+
+        # Copy tools/mosa/ package
+        mosa_tools_src = icdev_root / "tools" / "mosa"
+        if mosa_tools_src.exists():
+            c, _ = _copy_directory(mosa_tools_src, child_root / "tools" / "mosa",
+                                   ["app_name_replace"], blueprint)
+            copied += c
+
+        # Copy MOSA catalog and crosswalk
+        for mosa_file in ("mosa_framework.json", "mosa_crosswalk.json"):
+            src = icdev_root / "context" / "compliance" / mosa_file
+            dest = child_root / "context" / "compliance" / mosa_file
+            if src.exists():
+                if _copy_and_adapt_file(src, dest, [], blueprint):
+                    copied += 1
+
+        # Copy MOSA assessor
+        assessor_src = icdev_root / "tools" / "compliance" / "mosa_assessor.py"
+        assessor_dest = child_root / "tools" / "compliance" / "mosa_assessor.py"
+        if assessor_src.exists():
+            if _copy_and_adapt_file(assessor_src, assessor_dest, ["app_name_replace"], blueprint):
+                copied += 1
+
+        logger.info("Step 7: MOSA inheritance applied (DoD MOSA enabled)")
+
     logger.info("Step 7: Copied %d args/context files", copied)
     return {"files_copied": copied}
 

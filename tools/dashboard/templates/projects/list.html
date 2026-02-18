@@ -3,6 +3,11 @@
 
 {% block content %}
 <div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <span class="current">Projects</span>
+    </div>
     <h1>Projects</h1>
     <p class="subtitle">All registered ICDEV projects</p>
 </div>
@@ -29,7 +34,7 @@
                 <td>{{ project.type }}</td>
                 <td><span class="badge badge-{{ project.status }}">{{ project.status }}</span></td>
                 <td><span class="badge badge-warning">{{ project.classification }}</span></td>
-                <td class="text-muted">{{ project.created_at }}</td>
+                <td class="text-muted" data-timestamp="{{ project.created_at }}">{{ project.created_at | friendly_time }}</td>
             </tr>
             {% else %}
             <tr class="empty-row"><td colspan="5">No projects found</td></tr>
