@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Projects - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Projects</h1>
+    <p class="subtitle">All registered ICDEV projects</p>
+</div>
+
+<div class="table-container">
+    <div class="table-header">
+        <h2>Project Registry</h2>
+        <span class="text-muted">{{ projects|length }} project{{ 's' if projects|length != 1 }}</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Classification</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for project in projects %}
+            <tr>
+                <td><a href="/projects/{{ project.id }}">{{ project.name }}</a></td>
+                <td>{{ project.type }}</td>
+                <td><span class="badge badge-{{ project.status }}">{{ project.status }}</span></td>
+                <td><span class="badge badge-warning">{{ project.classification }}</span></td>
+                <td class="text-muted">{{ project.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="5">No projects found</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

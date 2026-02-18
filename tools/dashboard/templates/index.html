@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Home - ICDEV{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>ICDEV Dashboard</h1>
+    <p class="subtitle">Integrated Continuous Development Environment - Operations Overview</p>
+</div>
+
+<!-- Project Summary Cards -->
+<div class="card-grid">
+    <div class="card">
+        <div class="card-label">Total Projects</div>
+        <div class="card-value blue">{{ total_projects }}</div>
+        <div class="card-footer">All registered projects</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Active Projects</div>
+        <div class="card-value green">{{ active_projects }}</div>
+        <div class="card-footer">Currently in development</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Completed Projects</div>
+        <div class="card-value">{{ completed_projects }}</div>
+        <div class="card-footer">Successfully delivered</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Active Agents</div>
+        <div class="card-value green">{{ active_agents }}</div>
+        <div class="card-footer">{{ inactive_agents }} inactive of {{ total_agents }} total</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Firing Alerts</div>
+        <div class="card-value {% if firing_alerts > 0 %}red{% else %}green{% endif %}">{{ firing_alerts }}</div>
+        <div class="card-footer">Unresolved alerts</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Open POA&amp;M Items</div>
+        <div class="card-value {% if open_poam > 0 %}yellow{% else %}green{% endif %}">{{ open_poam }}</div>
+        <div class="card-footer">Plan of Action &amp; Milestones</div>
+    </div>
+</div>
+
+<!-- Recent Alerts -->
+<div class="table-container">
+    <div class="table-header">
+        <h2>Recent Alerts</h2>
+        <a href="/monitoring">View All</a>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Title</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alert in recent_alerts %}
+            <tr>
+                <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                <td>{{ alert.title }}</td>
+                <td>{{ alert.source }}</td>
+                <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
+                <td class="text-muted">{{ alert.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="5">No recent alerts</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Recent Audit Trail -->
+<div class="table-container">
+    <div class="table-header">
+        <h2>Recent Audit Trail</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Event Type</th>
+                <th>Actor</th>
+                <th>Action</th>
+                <th>Project</th>
+                <th>Timestamp</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in recent_audit %}
+            <tr>
+                <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+                <td>{{ entry.actor }}</td>
+                <td>{{ entry.action }}</td>
+                <td>
+                    {% if entry.project_id %}
+                    <a href="/projects/{{ entry.project_id }}">{{ entry.project_id[:12] }}</a>
+                    {% else %}
+                    <span class="text-muted">--</span>
+                    {% endif %}
+                </td>
+                <td class="text-muted">{{ entry.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="5">No audit entries recorded</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

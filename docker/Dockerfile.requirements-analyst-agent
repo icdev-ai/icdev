@@ -1,0 +1,47 @@
+# CUI // SP-CTI
+# ICDEV Requirements Analyst Agent — STIG-Hardened
+# Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.11-slim
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="ICDEV Requirements Analyst Agent — Conversational Intake, Gap Detection, SAFe Decomposition"
+
+# STIG: Create non-root user
+RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /usr/sbin/nologin icdev
+
+# STIG: Remove unnecessary packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/apt-get
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application
+WORKDIR /app
+COPY --chown=icdev:icdev . .
+
+# STIG: Set restrictive permissions
+RUN chmod -R 750 /app && \
+    find /app -type f -name "*.py" -exec chmod 640 {} +
+
+# STIG: Run as non-root
+USER icdev
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8453/health || exit 1
+
+EXPOSE 8453
+
+ENTRYPOINT ["python", "tools/a2a/agent_server.py", "--agent-id", "requirements-analyst-agent", "--port", "8453"]

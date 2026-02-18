@@ -1,0 +1,148 @@
+{
+  "metadata": {
+    "classification": "CUI // SP-CTI",
+    "title": "Database Type Conversion Mappings",
+    "description": "Comprehensive data type, function, and syntax mappings for legacy database modernization to PostgreSQL",
+    "version": "1.0.0",
+    "created": "2026-02-16",
+    "system": "ICDEV Modernization Module",
+    "applies_to": ["Oracle", "MSSQL", "DB2", "Sybase", "MySQL"],
+    "target_platform": "PostgreSQL 15+",
+    "banner": "CUI // SP-CTI"
+  },
+  "migration_paths": {
+    "oracle_to_postgresql": {
+      "source": "Oracle",
+      "target": "PostgreSQL",
+      "data_type_mappings": [
+        { "source_type": "NUMBER", "target_type": "NUMERIC", "notes": "Use NUMERIC for exact precision; INTEGER or BIGINT if scale is 0" },
+        { "source_type": "VARCHAR2", "target_type": "VARCHAR", "notes": "PostgreSQL VARCHAR has no practical length limit difference" },
+        { "source_type": "CLOB", "target_type": "TEXT", "notes": "TEXT has no length limit in PostgreSQL" },
+        { "source_type": "BLOB", "target_type": "BYTEA", "notes": "Consider large object storage for files exceeding 1GB" },
+        { "source_type": "DATE", "target_type": "TIMESTAMP", "notes": "Oracle DATE includes time component; TIMESTAMP preserves this" },
+        { "source_type": "RAW", "target_type": "BYTEA", "notes": "Binary data stored as hex-encoded byte array" },
+        { "source_type": "LONG", "target_type": "TEXT", "notes": "Deprecated in Oracle; map directly to TEXT" },
+        { "source_type": "NVARCHAR2", "target_type": "VARCHAR", "notes": "PostgreSQL uses UTF-8 natively; no separate national character type needed" },
+        { "source_type": "BINARY_FLOAT", "target_type": "REAL", "notes": "4-byte IEEE 754 floating point" },
+        { "source_type": "BINARY_DOUBLE", "target_type": "DOUBLE PRECISION", "notes": "8-byte IEEE 754 floating point" }
+      ],
+      "function_mappings": [
+        { "source_function": "NVL(a, b)", "target_function": "COALESCE(a, b)", "notes": "COALESCE is SQL standard and supports multiple arguments" },
+        { "source_function": "SYSDATE", "target_function": "CURRENT_TIMESTAMP", "notes": "Use CURRENT_DATE if time component is not needed" },
+        { "source_function": "DECODE(expr, val, result, ...)", "target_function": "CASE WHEN expr = val THEN result ... END", "notes": "CASE expression is SQL standard; rewrite each DECODE branch" },
+        { "source_function": "ROWNUM", "target_function": "LIMIT / OFFSET", "notes": "Apply LIMIT at query end; use ROW_NUMBER() for complex ordering" },
+        { "source_function": "TO_DATE(str, fmt)", "target_function": "TO_TIMESTAMP(str, fmt)", "notes": "Format codes differ slightly; review NLS vs ICU patterns" },
+        { "source_function": "NVL2(expr, not_null_val, null_val)", "target_function": "CASE WHEN expr IS NOT NULL THEN not_null_val ELSE null_val END", "notes": "No direct equivalent; use CASE expression" },
+        { "source_function": "SUBSTR(str, pos, len)", "target_function": "SUBSTRING(str FROM pos FOR len)", "notes": "Oracle SUBSTR is 1-based; PostgreSQL SUBSTRING is also 1-based" },
+        { "source_function": "INSTR(str, substr)", "target_function": "POSITION(substr IN str)", "notes": "POSITION returns 0 if not found; Oracle INSTR returns 0 as well" },
+        { "source_function": "CONNECT BY / START WITH", "target_function": "WITH RECURSIVE cte AS (...)", "notes": "Recursive CTEs replace hierarchical queries; requires rewrite of tree traversal logic" }
+      ],
+      "syntax_mappings": [
+        { "source_pattern": "CREATE OR REPLACE PACKAGE", "target_pattern": "CREATE SCHEMA + individual functions", "description": "PostgreSQL has no package concept; use schemas to group related functions" },
+        { "source_pattern": "BEGIN ... EXCEPTION WHEN ... END;", "target_pattern": "BEGIN ... EXCEPTION WHEN ... END;", "description": "PL/pgSQL uses similar block structure; exception names may differ" },
+        { "source_pattern": "CURSOR cur IS SELECT ...", "target_pattern": "DECLARE cur CURSOR FOR SELECT ...", "description": "Cursor declaration syntax differs; refcursors also available in PL/pgSQL" },
+        { "source_pattern": "variable%TYPE", "target_pattern": "variable%TYPE", "description": "PL/pgSQL supports %TYPE anchored declarations natively" },
+        { "source_pattern": "record%ROWTYPE", "target_pattern": "record%ROWTYPE", "description": "PL/pgSQL supports %ROWTYPE for composite row types" },
+        { "source_pattern": "sequence.NEXTVAL", "target_pattern": "nextval('sequence')", "description": "PostgreSQL uses function-style sequence access" }
+      ]
+    },
+    "mssql_to_postgresql": {
+      "source": "Microsoft SQL Server",
+      "target": "PostgreSQL",
+      "data_type_mappings": [
+        { "source_type": "NVARCHAR", "target_type": "VARCHAR", "notes": "PostgreSQL is UTF-8 native; no need for N-prefixed types" },
+        { "source_type": "DATETIME", "target_type": "TIMESTAMP", "notes": "MSSQL DATETIME has ~3.33ms precision; TIMESTAMP has microsecond precision" },
+        { "source_type": "BIT", "target_type": "BOOLEAN", "notes": "Direct mapping; 0=FALSE, 1=TRUE" },
+        { "source_type": "UNIQUEIDENTIFIER", "target_type": "UUID", "notes": "Use gen_random_uuid() for generation; requires pgcrypto or PG 13+" },
+        { "source_type": "MONEY", "target_type": "NUMERIC(19,4)", "notes": "NUMERIC provides exact decimal arithmetic without currency formatting" },
+        { "source_type": "IMAGE", "target_type": "BYTEA", "notes": "Deprecated in MSSQL; BYTEA handles binary data in PostgreSQL" },
+        { "source_type": "NTEXT", "target_type": "TEXT", "notes": "Deprecated in MSSQL; TEXT is the standard replacement" },
+        { "source_type": "TINYINT", "target_type": "SMALLINT", "notes": "PostgreSQL has no unsigned 1-byte integer; SMALLINT is 2-byte signed" },
+        { "source_type": "XML", "target_type": "XML", "notes": "PostgreSQL has native XML type with XPath support" }
+      ],
+      "function_mappings": [
+        { "source_function": "GETDATE()", "target_function": "CURRENT_TIMESTAMP", "notes": "SQL standard function; returns timestamp with time zone" },
+        { "source_function": "ISNULL(a, b)", "target_function": "COALESCE(a, b)", "notes": "COALESCE is SQL standard and accepts multiple fallback values" },
+        { "source_function": "SELECT TOP N ...", "target_function": "SELECT ... LIMIT N", "notes": "LIMIT clause goes at end of query; use OFFSET for paging" },
+        { "source_function": "DATEADD(unit, n, date)", "target_function": "date + INTERVAL 'n unit'", "notes": "PostgreSQL uses interval arithmetic; e.g., date + INTERVAL '30 days'" },
+        { "source_function": "DATEDIFF(unit, start, end)", "target_function": "EXTRACT(EPOCH FROM end - start) / factor", "notes": "Compute interval then extract; factor depends on desired unit" },
+        { "source_function": "CHARINDEX(substr, str)", "target_function": "POSITION(substr IN str)", "notes": "Both return 0 when substring is not found" },
+        { "source_function": "LEN(str)", "target_function": "LENGTH(str)", "notes": "LEN trims trailing spaces in MSSQL; LENGTH does not in PostgreSQL" },
+        { "source_function": "CONVERT(type, expr)", "target_function": "CAST(expr AS type)", "notes": "CAST is SQL standard; style codes from CONVERT need manual rewrite" }
+      ],
+      "syntax_mappings": [
+        { "source_pattern": "GO", "target_pattern": ";", "description": "GO is a batch separator in SSMS; use semicolons in PostgreSQL" },
+        { "source_pattern": "DECLARE @var TYPE = value", "target_pattern": "DECLARE var TYPE := value;", "description": "PL/pgSQL variables have no @ prefix; use := for assignment" },
+        { "source_pattern": "IF @condition BEGIN ... END", "target_pattern": "IF condition THEN ... END IF;", "description": "PL/pgSQL uses THEN/END IF instead of BEGIN/END blocks for IF" },
+        { "source_pattern": "WHILE @condition BEGIN ... END", "target_pattern": "WHILE condition LOOP ... END LOOP;", "description": "PL/pgSQL uses LOOP/END LOOP keywords" },
+        { "source_pattern": "PRINT 'message'", "target_pattern": "RAISE NOTICE 'message'", "description": "RAISE NOTICE sends output to client message stream" },
+        { "source_pattern": "SELECT INTO @var", "target_pattern": "SELECT INTO var", "description": "Similar syntax but PL/pgSQL variables have no @ prefix" }
+      ]
+    },
+    "db2_to_postgresql": {
+      "source": "IBM DB2",
+      "target": "PostgreSQL",
+      "data_type_mappings": [
+        { "source_type": "DECFLOAT", "target_type": "NUMERIC", "notes": "NUMERIC provides arbitrary precision decimal; no IEEE 754 decimal in PG" },
+        { "source_type": "GRAPHIC", "target_type": "VARCHAR", "notes": "Double-byte character type; PostgreSQL handles via UTF-8 encoding" },
+        { "source_type": "DBCLOB", "target_type": "TEXT", "notes": "Double-byte CLOB; TEXT in PostgreSQL supports full Unicode natively" },
+        { "source_type": "LONG VARCHAR", "target_type": "TEXT", "notes": "Deprecated in DB2; TEXT is the direct replacement" }
+      ],
+      "function_mappings": [
+        { "source_function": "FETCH FIRST N ROWS ONLY", "target_function": "LIMIT N", "notes": "PostgreSQL also supports FETCH FIRST syntax in SQL:2008 mode" },
+        { "source_function": "VALUE(a, b)", "target_function": "COALESCE(a, b)", "notes": "VALUE is DB2-specific synonym for COALESCE" },
+        { "source_function": "DAYS(date)", "target_function": "EXTRACT(DAY FROM date)", "notes": "DB2 DAYS returns integer day count; may need date arithmetic adjustment" },
+        { "source_function": "STRIP(str)", "target_function": "TRIM(str)", "notes": "STRIP with BOTH/LEADING/TRAILING maps to TRIM equivalents" }
+      ],
+      "syntax_mappings": [
+        { "source_pattern": "WITH UR", "target_pattern": "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED", "description": "Uncommitted Read isolation; set at transaction level in PostgreSQL" },
+        { "source_pattern": "CURRENT TIMESTAMP", "target_pattern": "CURRENT_TIMESTAMP", "description": "DB2 omits underscore; PostgreSQL requires it per SQL standard" },
+        { "source_pattern": "FOR UPDATE WITH RS", "target_pattern": "FOR UPDATE", "description": "Read Stability isolation hint; PostgreSQL uses standard FOR UPDATE" }
+      ]
+    },
+    "sybase_to_postgresql": {
+      "source": "SAP Sybase ASE",
+      "target": "PostgreSQL",
+      "data_type_mappings": [
+        { "source_type": "UNITEXT", "target_type": "TEXT", "notes": "Unicode text type; PostgreSQL TEXT handles UTF-8 natively" },
+        { "source_type": "UNSIGNED INT", "target_type": "BIGINT", "notes": "No unsigned types in PostgreSQL; BIGINT accommodates full unsigned INT range" },
+        { "source_type": "IMAGE", "target_type": "BYTEA", "notes": "Binary large object; use BYTEA or large object API for very large files" }
+      ],
+      "function_mappings": [
+        { "source_function": "GETDATE()", "target_function": "CURRENT_TIMESTAMP", "notes": "Sybase inherits T-SQL function; same mapping as MSSQL" },
+        { "source_function": "ISNULL(a, b)", "target_function": "COALESCE(a, b)", "notes": "Standard SQL replacement; supports multiple arguments" },
+        { "source_function": "CONVERT(type, expr)", "target_function": "CAST(expr AS type)", "notes": "Sybase CONVERT style codes need manual rewrite" }
+      ],
+      "syntax_mappings": [
+        { "source_pattern": "SET ROWCOUNT N", "target_pattern": "LIMIT N", "description": "Sybase row limiting; use LIMIT clause in PostgreSQL queries" },
+        { "source_pattern": "EXEC procedure", "target_pattern": "CALL procedure()", "description": "PostgreSQL uses CALL for procedures, SELECT for functions" }
+      ]
+    },
+    "mysql_to_postgresql": {
+      "source": "MySQL",
+      "target": "PostgreSQL",
+      "data_type_mappings": [
+        { "source_type": "TINYINT(1)", "target_type": "BOOLEAN", "notes": "MySQL uses TINYINT(1) as pseudo-boolean; map to native BOOLEAN" },
+        { "source_type": "DOUBLE", "target_type": "DOUBLE PRECISION", "notes": "Standard SQL name for 8-byte floating point" },
+        { "source_type": "ENUM", "target_type": "VARCHAR with CHECK or CREATE TYPE", "notes": "PostgreSQL supports CREATE TYPE name AS ENUM; alternatively use CHECK constraint" },
+        { "source_type": "SET", "target_type": "TEXT[] or VARCHAR with CHECK", "notes": "No direct equivalent; use array type or normalized join table" },
+        { "source_type": "AUTO_INCREMENT", "target_type": "GENERATED ALWAYS AS IDENTITY", "notes": "Use identity columns (SQL standard) or SERIAL (legacy PostgreSQL)" },
+        { "source_type": "MEDIUMTEXT", "target_type": "TEXT", "notes": "PostgreSQL TEXT has no size variants; handles all lengths" },
+        { "source_type": "LONGBLOB", "target_type": "BYTEA", "notes": "BYTEA max size is 1GB; use large objects for bigger payloads" }
+      ],
+      "function_mappings": [
+        { "source_function": "NOW()", "target_function": "CURRENT_TIMESTAMP", "notes": "Both return current date and time; NOW() also works in PostgreSQL" },
+        { "source_function": "IFNULL(a, b)", "target_function": "COALESCE(a, b)", "notes": "SQL standard replacement; COALESCE supports multiple fallback values" },
+        { "source_function": "GROUP_CONCAT(col SEPARATOR ',')", "target_function": "STRING_AGG(col, ',')", "notes": "STRING_AGG is the PostgreSQL aggregate for concatenation" },
+        { "source_function": "LIMIT offset, count", "target_function": "LIMIT count OFFSET offset", "notes": "Argument order is reversed between MySQL and PostgreSQL" },
+        { "source_function": "DATE_FORMAT(date, fmt)", "target_function": "TO_CHAR(date, fmt)", "notes": "Format specifiers differ; %Y→YYYY, %m→MM, %d→DD, etc." }
+      ],
+      "syntax_mappings": [
+        { "source_pattern": "backtick `identifier`", "target_pattern": "double-quote \"identifier\"", "description": "PostgreSQL uses double quotes for identifier quoting per SQL standard" },
+        { "source_pattern": "INSERT IGNORE INTO", "target_pattern": "INSERT INTO ... ON CONFLICT DO NOTHING", "description": "Upsert syntax using ON CONFLICT clause" },
+        { "source_pattern": "REPLACE INTO", "target_pattern": "INSERT INTO ... ON CONFLICT DO UPDATE", "description": "Full upsert with update action on conflict" },
+        { "source_pattern": "SHOW TABLES", "target_pattern": "SELECT tablename FROM pg_tables WHERE schemaname = 'public'", "description": "Query pg_catalog or information_schema for metadata" }
+      ]
+    }
+  }
+}

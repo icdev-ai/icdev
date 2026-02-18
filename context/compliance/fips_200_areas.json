@@ -1,0 +1,362 @@
+{
+  "metadata": {
+    "title": "FIPS 200 Minimum Security Requirements",
+    "source": "FIPS Publication 200, March 2006",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-17",
+    "description": "17 minimum security requirement areas for federal information and information systems"
+  },
+  "requirement_areas": [
+    {
+      "id": "FIPS200-AC",
+      "family": "AC",
+      "name": "Access Control",
+      "description": "Limit information system access to authorized users, processes acting on behalf of authorized users, or devices and to the types of transactions and functions that authorized users are permitted to exercise.",
+      "nist_800_53_families": ["AC"],
+      "minimum_controls": {
+        "low": [
+          "AC-1", "AC-2", "AC-3", "AC-7", "AC-8", "AC-14", "AC-17", "AC-18", "AC-19", "AC-20", "AC-22"
+        ],
+        "moderate": [
+          "AC-1", "AC-2", "AC-2(1)", "AC-3", "AC-4", "AC-5", "AC-6", "AC-6(1)", "AC-6(2)", "AC-6(5)",
+          "AC-6(9)", "AC-6(10)", "AC-7", "AC-8", "AC-11", "AC-11(1)", "AC-12", "AC-14",
+          "AC-17", "AC-17(1)", "AC-17(2)", "AC-17(3)", "AC-17(4)",
+          "AC-18", "AC-18(1)", "AC-19", "AC-20", "AC-20(1)", "AC-20(2)", "AC-21", "AC-22"
+        ],
+        "high": [
+          "AC-1", "AC-2", "AC-2(1)", "AC-2(2)", "AC-2(3)", "AC-2(4)", "AC-2(5)", "AC-2(13)",
+          "AC-3", "AC-4", "AC-5", "AC-6", "AC-6(1)", "AC-6(2)", "AC-6(3)", "AC-6(5)",
+          "AC-6(9)", "AC-6(10)", "AC-7", "AC-8", "AC-10", "AC-11", "AC-11(1)", "AC-12", "AC-14",
+          "AC-17", "AC-17(1)", "AC-17(2)", "AC-17(3)", "AC-17(4)",
+          "AC-18", "AC-18(1)", "AC-18(4)", "AC-18(5)", "AC-19",
+          "AC-20", "AC-20(1)", "AC-20(2)", "AC-21", "AC-22"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-AT",
+      "family": "AT",
+      "name": "Awareness and Training",
+      "description": "Ensure that managers and users of organizational information systems are made aware of the security risks associated with their activities and of the applicable laws, Executive Orders, directives, policies, standards, instructions, regulations, or procedures related to the security of organizational information systems; and ensure that organizational personnel are adequately trained to carry out their assigned information security-related duties and responsibilities.",
+      "nist_800_53_families": ["AT"],
+      "minimum_controls": {
+        "low": [
+          "AT-1", "AT-2", "AT-3", "AT-4"
+        ],
+        "moderate": [
+          "AT-1", "AT-2", "AT-2(2)", "AT-3", "AT-4"
+        ],
+        "high": [
+          "AT-1", "AT-2", "AT-2(2)", "AT-3", "AT-4"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-AU",
+      "family": "AU",
+      "name": "Audit and Accountability",
+      "description": "Create, protect, and retain information system audit records to the extent needed to enable the monitoring, analysis, investigation, and reporting of unlawful, unauthorized, or inappropriate information system activity; and ensure that the actions of individual information system users can be uniquely traced to those users so they can be held accountable for their actions.",
+      "nist_800_53_families": ["AU"],
+      "minimum_controls": {
+        "low": [
+          "AU-1", "AU-2", "AU-3", "AU-5", "AU-6", "AU-8", "AU-9", "AU-11", "AU-12"
+        ],
+        "moderate": [
+          "AU-1", "AU-2", "AU-2(3)", "AU-3", "AU-3(1)", "AU-5", "AU-6", "AU-6(1)", "AU-6(3)",
+          "AU-8", "AU-8(1)", "AU-9", "AU-9(4)", "AU-11", "AU-12", "AU-12(1)", "AU-12(3)"
+        ],
+        "high": [
+          "AU-1", "AU-2", "AU-2(3)", "AU-3", "AU-3(1)", "AU-3(2)", "AU-5", "AU-6", "AU-6(1)",
+          "AU-6(3)", "AU-6(5)", "AU-6(6)", "AU-8", "AU-8(1)", "AU-9", "AU-9(2)", "AU-9(3)",
+          "AU-9(4)", "AU-10", "AU-11", "AU-12", "AU-12(1)", "AU-12(3)"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-CA",
+      "family": "CA",
+      "name": "Assessment, Authorization, and Monitoring",
+      "description": "Periodically assess the security controls in organizational information systems to determine if the controls are effective in their application; develop and implement plans of action designed to correct deficiencies and reduce or eliminate vulnerabilities in organizational information systems; authorize the operation of organizational information systems and any associated information system connections; and monitor information system security controls on an ongoing basis to ensure the continued effectiveness of the controls.",
+      "nist_800_53_families": ["CA"],
+      "minimum_controls": {
+        "low": [
+          "CA-1", "CA-2", "CA-3", "CA-5", "CA-6", "CA-7", "CA-9"
+        ],
+        "moderate": [
+          "CA-1", "CA-2", "CA-2(1)", "CA-3", "CA-3(6)", "CA-5", "CA-6", "CA-7", "CA-7(4)", "CA-9"
+        ],
+        "high": [
+          "CA-1", "CA-2", "CA-2(1)", "CA-2(2)", "CA-3", "CA-3(6)", "CA-5", "CA-6",
+          "CA-7", "CA-7(4)", "CA-8", "CA-8(1)", "CA-9"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-CM",
+      "family": "CM",
+      "name": "Configuration Management",
+      "description": "Establish and maintain baseline configurations and inventories of organizational information systems (including hardware, software, firmware, and documentation) throughout the respective system development life cycles; and establish and enforce security configuration settings for information technology products employed in organizational information systems.",
+      "nist_800_53_families": ["CM"],
+      "minimum_controls": {
+        "low": [
+          "CM-1", "CM-2", "CM-4", "CM-5", "CM-6", "CM-7", "CM-8", "CM-10", "CM-11"
+        ],
+        "moderate": [
+          "CM-1", "CM-2", "CM-2(2)", "CM-3", "CM-3(2)", "CM-4", "CM-5", "CM-5(1)",
+          "CM-6", "CM-7", "CM-7(1)", "CM-7(2)", "CM-8", "CM-8(1)", "CM-8(3)", "CM-10", "CM-11"
+        ],
+        "high": [
+          "CM-1", "CM-2", "CM-2(2)", "CM-2(7)", "CM-3", "CM-3(1)", "CM-3(2)", "CM-3(4)", "CM-3(6)",
+          "CM-4", "CM-5", "CM-5(1)", "CM-5(3)", "CM-6", "CM-7", "CM-7(1)", "CM-7(2)", "CM-7(5)",
+          "CM-8", "CM-8(1)", "CM-8(3)", "CM-8(4)", "CM-10", "CM-11"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-CP",
+      "family": "CP",
+      "name": "Contingency Planning",
+      "description": "Establish, maintain, and effectively implement plans for emergency response, backup operations, and post-disaster recovery for organizational information systems to ensure the availability of critical information resources and continuity of operations in emergency situations.",
+      "nist_800_53_families": ["CP"],
+      "minimum_controls": {
+        "low": [
+          "CP-1", "CP-2", "CP-3", "CP-4", "CP-9", "CP-10"
+        ],
+        "moderate": [
+          "CP-1", "CP-2", "CP-2(1)", "CP-2(3)", "CP-2(8)", "CP-3", "CP-4", "CP-4(1)",
+          "CP-6", "CP-6(1)", "CP-6(3)", "CP-7", "CP-7(1)", "CP-7(2)", "CP-7(4)",
+          "CP-8", "CP-9", "CP-9(1)", "CP-9(8)", "CP-10", "CP-10(2)"
+        ],
+        "high": [
+          "CP-1", "CP-2", "CP-2(1)", "CP-2(3)", "CP-2(5)", "CP-2(8)", "CP-3", "CP-4", "CP-4(1)", "CP-4(2)",
+          "CP-6", "CP-6(1)", "CP-6(2)", "CP-6(3)", "CP-7", "CP-7(1)", "CP-7(2)", "CP-7(3)", "CP-7(4)",
+          "CP-8", "CP-8(1)", "CP-8(2)", "CP-8(3)", "CP-8(4)",
+          "CP-9", "CP-9(1)", "CP-9(8)", "CP-10", "CP-10(2)"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-IA",
+      "family": "IA",
+      "name": "Identification and Authentication",
+      "description": "Identify information system users, processes acting on behalf of users, or devices and authenticate (or verify) the identities of those users, processes, or devices, as a prerequisite to allowing access to organizational information systems.",
+      "nist_800_53_families": ["IA"],
+      "minimum_controls": {
+        "low": [
+          "IA-1", "IA-2", "IA-2(1)", "IA-2(2)", "IA-2(8)", "IA-2(12)", "IA-4", "IA-5", "IA-5(1)",
+          "IA-6", "IA-7", "IA-8", "IA-8(1)", "IA-8(2)", "IA-8(4)", "IA-11"
+        ],
+        "moderate": [
+          "IA-1", "IA-2", "IA-2(1)", "IA-2(2)", "IA-2(6)", "IA-2(8)", "IA-2(12)", "IA-4",
+          "IA-5", "IA-5(1)", "IA-5(2)", "IA-5(6)", "IA-6", "IA-7",
+          "IA-8", "IA-8(1)", "IA-8(2)", "IA-8(4)", "IA-11", "IA-12"
+        ],
+        "high": [
+          "IA-1", "IA-2", "IA-2(1)", "IA-2(2)", "IA-2(6)", "IA-2(8)", "IA-2(12)", "IA-2(13)", "IA-4",
+          "IA-5", "IA-5(1)", "IA-5(2)", "IA-5(6)", "IA-5(7)", "IA-6", "IA-7",
+          "IA-8", "IA-8(1)", "IA-8(2)", "IA-8(4)", "IA-11", "IA-12"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-IR",
+      "family": "IR",
+      "name": "Incident Response",
+      "description": "Establish an operational incident handling capability for organizational information systems that includes adequate preparation, detection, analysis, containment, recovery, and user response activities; and track, document, and report incidents to appropriate organizational officials and/or authorities.",
+      "nist_800_53_families": ["IR"],
+      "minimum_controls": {
+        "low": [
+          "IR-1", "IR-2", "IR-4", "IR-5", "IR-6", "IR-7", "IR-8"
+        ],
+        "moderate": [
+          "IR-1", "IR-2", "IR-2(1)", "IR-2(2)", "IR-4", "IR-4(1)", "IR-5", "IR-6", "IR-6(1)", "IR-7", "IR-8"
+        ],
+        "high": [
+          "IR-1", "IR-2", "IR-2(1)", "IR-2(2)", "IR-3", "IR-3(2)", "IR-4", "IR-4(1)", "IR-4(4)", "IR-4(11)",
+          "IR-5", "IR-6", "IR-6(1)", "IR-7", "IR-8"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-MA",
+      "family": "MA",
+      "name": "Maintenance",
+      "description": "Perform periodic and timely maintenance on organizational information systems; and provide effective controls on the tools, techniques, mechanisms, and personnel used to conduct information system maintenance.",
+      "nist_800_53_families": ["MA"],
+      "minimum_controls": {
+        "low": [
+          "MA-1", "MA-2", "MA-3", "MA-3(1)", "MA-3(2)", "MA-5"
+        ],
+        "moderate": [
+          "MA-1", "MA-2", "MA-2(2)", "MA-3", "MA-3(1)", "MA-3(2)", "MA-3(3)", "MA-5", "MA-5(1)"
+        ],
+        "high": [
+          "MA-1", "MA-2", "MA-2(2)", "MA-3", "MA-3(1)", "MA-3(2)", "MA-3(3)",
+          "MA-4", "MA-4(3)", "MA-4(6)", "MA-5", "MA-5(1)"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-MP",
+      "family": "MP",
+      "name": "Media Protection",
+      "description": "Protect information system media, both paper and digital; limit access to information on information system media to authorized users; and sanitize or destroy information system media before disposal or release for reuse.",
+      "nist_800_53_families": ["MP"],
+      "minimum_controls": {
+        "low": [
+          "MP-1", "MP-2", "MP-6", "MP-7"
+        ],
+        "moderate": [
+          "MP-1", "MP-2", "MP-3", "MP-4", "MP-5", "MP-6", "MP-6(2)", "MP-7"
+        ],
+        "high": [
+          "MP-1", "MP-2", "MP-3", "MP-4", "MP-5", "MP-5(3)", "MP-6", "MP-6(1)", "MP-6(2)", "MP-6(3)", "MP-7"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-PE",
+      "family": "PE",
+      "name": "Physical and Environmental Protection",
+      "description": "Limit physical access to information system facilities, equipment, and the respective operating environments to authorized individuals; protect the physical plant and support infrastructure for information systems; provide supporting utilities for information systems; protect information systems against environmental hazards; and provide appropriate environmental controls in facilities containing information systems.",
+      "nist_800_53_families": ["PE"],
+      "minimum_controls": {
+        "low": [
+          "PE-1", "PE-2", "PE-3", "PE-6", "PE-8", "PE-12", "PE-13", "PE-14", "PE-15", "PE-16"
+        ],
+        "moderate": [
+          "PE-1", "PE-2", "PE-2(3)", "PE-3", "PE-3(1)", "PE-4", "PE-5", "PE-6", "PE-6(1)",
+          "PE-8", "PE-8(1)", "PE-9", "PE-10", "PE-11", "PE-12", "PE-13", "PE-13(1)",
+          "PE-14", "PE-14(2)", "PE-15", "PE-15(1)", "PE-16", "PE-17"
+        ],
+        "high": [
+          "PE-1", "PE-2", "PE-2(3)", "PE-3", "PE-3(1)", "PE-3(2)", "PE-4", "PE-5",
+          "PE-6", "PE-6(1)", "PE-6(4)", "PE-8", "PE-8(1)", "PE-9", "PE-10",
+          "PE-11", "PE-11(1)", "PE-12", "PE-13", "PE-13(1)", "PE-13(2)",
+          "PE-14", "PE-14(2)", "PE-15", "PE-15(1)", "PE-16", "PE-17", "PE-18"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-PL",
+      "family": "PL",
+      "name": "Planning",
+      "description": "Develop, document, periodically update, and implement security plans for organizational information systems that describe the security controls in place or planned for the information systems and the rules of behavior for individuals accessing the information systems.",
+      "nist_800_53_families": ["PL"],
+      "minimum_controls": {
+        "low": [
+          "PL-1", "PL-2", "PL-4", "PL-4(1)", "PL-10", "PL-11"
+        ],
+        "moderate": [
+          "PL-1", "PL-2", "PL-4", "PL-4(1)", "PL-10", "PL-11"
+        ],
+        "high": [
+          "PL-1", "PL-2", "PL-4", "PL-4(1)", "PL-10", "PL-11"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-PS",
+      "family": "PS",
+      "name": "Personnel Security",
+      "description": "Ensure that individuals occupying positions of responsibility within organizations are trustworthy and meet established security criteria for those positions; ensure that organizational information and information systems are protected during and after personnel actions such as terminations and transfers; and employ formal sanctions for personnel failing to comply with organizational security policies and procedures.",
+      "nist_800_53_families": ["PS"],
+      "minimum_controls": {
+        "low": [
+          "PS-1", "PS-2", "PS-3", "PS-4", "PS-5", "PS-6", "PS-7", "PS-8", "PS-9"
+        ],
+        "moderate": [
+          "PS-1", "PS-2", "PS-3", "PS-3(3)", "PS-4", "PS-5", "PS-6", "PS-7", "PS-8", "PS-9"
+        ],
+        "high": [
+          "PS-1", "PS-2", "PS-3", "PS-3(3)", "PS-4", "PS-5", "PS-6", "PS-7", "PS-8", "PS-9"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-RA",
+      "family": "RA",
+      "name": "Risk Assessment",
+      "description": "Periodically assess the risk to organizational operations (including mission, functions, image, or reputation), organizational assets, and individuals, resulting from the operation of organizational information systems and the associated processing, storage, or transmission of organizational information.",
+      "nist_800_53_families": ["RA"],
+      "minimum_controls": {
+        "low": [
+          "RA-1", "RA-2", "RA-3", "RA-5", "RA-7"
+        ],
+        "moderate": [
+          "RA-1", "RA-2", "RA-3", "RA-3(1)", "RA-5", "RA-5(2)", "RA-5(5)", "RA-5(11)", "RA-7"
+        ],
+        "high": [
+          "RA-1", "RA-2", "RA-3", "RA-3(1)", "RA-5", "RA-5(2)", "RA-5(4)", "RA-5(5)", "RA-5(11)", "RA-7"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-SA",
+      "family": "SA",
+      "name": "System and Services Acquisition",
+      "description": "Allocate sufficient resources to adequately protect organizational information systems; employ system development life cycle processes that incorporate information security considerations; employ software usage and installation restrictions; and ensure that third-party providers employ adequate security measures to protect information, applications, and/or services outsourced from the organization.",
+      "nist_800_53_families": ["SA"],
+      "minimum_controls": {
+        "low": [
+          "SA-1", "SA-2", "SA-3", "SA-4", "SA-4(10)", "SA-5", "SA-8", "SA-9", "SA-22"
+        ],
+        "moderate": [
+          "SA-1", "SA-2", "SA-3", "SA-4", "SA-4(1)", "SA-4(2)", "SA-4(5)", "SA-4(9)", "SA-4(10)",
+          "SA-5", "SA-8", "SA-9", "SA-9(2)", "SA-10", "SA-11", "SA-22"
+        ],
+        "high": [
+          "SA-1", "SA-2", "SA-3", "SA-4", "SA-4(1)", "SA-4(2)", "SA-4(5)", "SA-4(7)", "SA-4(8)",
+          "SA-4(9)", "SA-4(10)", "SA-5", "SA-8", "SA-8(1)", "SA-8(2)", "SA-9", "SA-9(2)",
+          "SA-10", "SA-10(1)", "SA-11", "SA-11(1)", "SA-11(2)", "SA-11(4)", "SA-17", "SA-22"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-SC",
+      "family": "SC",
+      "name": "System and Communications Protection",
+      "description": "Monitor, control, and protect organizational communications at the external boundaries and key internal boundaries of information systems; and employ architectural designs, software development techniques, and systems engineering principles that promote effective information security within organizational information systems.",
+      "nist_800_53_families": ["SC"],
+      "minimum_controls": {
+        "low": [
+          "SC-1", "SC-5", "SC-7", "SC-12", "SC-13", "SC-15", "SC-20", "SC-21", "SC-22", "SC-39"
+        ],
+        "moderate": [
+          "SC-1", "SC-2", "SC-4", "SC-5", "SC-7", "SC-7(3)", "SC-7(4)", "SC-7(5)", "SC-7(7)",
+          "SC-7(8)", "SC-7(18)", "SC-7(21)", "SC-8", "SC-8(1)", "SC-10", "SC-12", "SC-12(1)",
+          "SC-13", "SC-15", "SC-20", "SC-21", "SC-22", "SC-23", "SC-28", "SC-28(1)", "SC-39"
+        ],
+        "high": [
+          "SC-1", "SC-2", "SC-3", "SC-4", "SC-5", "SC-7", "SC-7(3)", "SC-7(4)", "SC-7(5)",
+          "SC-7(7)", "SC-7(8)", "SC-7(18)", "SC-7(21)", "SC-8", "SC-8(1)", "SC-8(2)",
+          "SC-10", "SC-12", "SC-12(1)", "SC-12(2)", "SC-12(3)", "SC-13", "SC-15", "SC-17",
+          "SC-20", "SC-21", "SC-22", "SC-23", "SC-24", "SC-28", "SC-28(1)", "SC-39"
+        ]
+      }
+    },
+    {
+      "id": "FIPS200-SI",
+      "family": "SI",
+      "name": "System and Information Integrity",
+      "description": "Identify, report, and correct information and information system flaws in a timely manner; provide protection from malicious code at appropriate locations within organizational information systems; and monitor information system security alerts and advisories and take appropriate actions in response.",
+      "nist_800_53_families": ["SI"],
+      "minimum_controls": {
+        "low": [
+          "SI-1", "SI-2", "SI-3", "SI-4", "SI-5", "SI-12"
+        ],
+        "moderate": [
+          "SI-1", "SI-2", "SI-2(2)", "SI-3", "SI-3(8)", "SI-4", "SI-4(2)", "SI-4(4)", "SI-4(5)",
+          "SI-5", "SI-5(1)", "SI-7", "SI-7(1)", "SI-7(7)", "SI-8", "SI-8(2)", "SI-10", "SI-12", "SI-16"
+        ],
+        "high": [
+          "SI-1", "SI-2", "SI-2(2)", "SI-2(6)", "SI-3", "SI-3(8)", "SI-4", "SI-4(2)", "SI-4(4)",
+          "SI-4(5)", "SI-4(12)", "SI-4(20)", "SI-4(22)", "SI-5", "SI-5(1)", "SI-6",
+          "SI-7", "SI-7(1)", "SI-7(2)", "SI-7(5)", "SI-7(7)", "SI-7(15)",
+          "SI-8", "SI-8(2)", "SI-10", "SI-12", "SI-16"
+        ]
+      }
+    }
+  ]
+}

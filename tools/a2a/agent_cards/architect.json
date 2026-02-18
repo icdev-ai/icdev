@@ -1,0 +1,43 @@
+{
+  "name": "ICDEV Architect",
+  "description": "System design, schema design, and technology selection. Runs ATLAS Architect and Trace phases for production-grade system architectures.",
+  "url": "https://localhost:8444",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "design-architecture",
+      "name": "Design Architecture",
+      "description": "Create a full system architecture document including components, data flow, API contracts, and deployment topology.",
+      "inputModes": ["application/json", "text/plain"],
+      "outputModes": ["application/json", "text/markdown"]
+    },
+    {
+      "id": "design-schema",
+      "name": "Design Schema",
+      "description": "Design database schemas, API schemas, and data models with proper normalization and indexing strategies.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/sql"]
+    },
+    {
+      "id": "select-tech-stack",
+      "name": "Select Technology Stack",
+      "description": "Evaluate and recommend technology stack based on requirements, compliance needs, and GovCloud compatibility.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "trace-dependencies",
+      "name": "Trace Dependencies",
+      "description": "Map component dependencies, API call chains, and data flows for impact analysis.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

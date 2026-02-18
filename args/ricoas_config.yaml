@@ -1,0 +1,150 @@
+# CUI // SP-CTI
+# RICOAS Configuration — Requirements Intake, COA & Approval System
+
+ricoas:
+  # Readiness threshold — session cannot proceed to decomposition below this
+  readiness_threshold: 0.7
+
+  # Dimension weights for readiness scoring (must sum to 1.0)
+  readiness_weights:
+    completeness: 0.25
+    clarity: 0.25
+    feasibility: 0.20
+    compliance: 0.15
+    testability: 0.15
+
+  # Gap detection settings
+  gap_detection:
+    min_security_reqs_per_control_family: 1
+    auto_detect_interval_turns: 5
+    ambiguity_keywords:
+      - "appropriate"
+      - "as needed"
+      - "timely"
+      - "user-friendly"
+      - "reasonable"
+      - "adequate"
+      - "sufficient"
+      - "properly"
+      - "suitable"
+      - "fast"
+      - "secure"
+      - "efficient"
+      - "flexible"
+      - "scalable"
+      - "robust"
+
+  # SAFe decomposition settings
+  decomposition:
+    max_story_points: 13
+    require_bdd_criteria: true
+    auto_assign_nist_controls: true
+    default_pi_cadence_weeks: 10
+
+  # Document extraction
+  document_extraction:
+    supported_types:
+      - "pdf"
+      - "docx"
+      - "txt"
+      - "md"
+    max_file_size_mb: 50
+
+  # T-shirt cost estimation (configurable per organization)
+  cost_estimation:
+    default_org_rates:
+      XS:
+        hours: 8
+        cost_range: "$1K-$5K"
+        description: "Trivial change, single file, no boundary impact"
+      S:
+        hours: 40
+        cost_range: "$5K-$25K"
+        description: "Small feature, 1-2 sprints, no new controls"
+      M:
+        hours: 160
+        cost_range: "$25K-$100K"
+        description: "Medium feature, 1 PI, possible POAM entries"
+      L:
+        hours: 480
+        cost_range: "$100K-$300K"
+        description: "Large feature, 1-2 PIs, SSP update likely"
+      XL:
+        hours: 960
+        cost_range: "$300K-$750K"
+        description: "Major capability, 2-3 PIs, multiple control implementations"
+      XXL:
+        hours: 1920
+        cost_range: "$750K-$2M+"
+        description: "Program-level effort, 3+ PIs, possible re-authorization"
+
+  # Intake agent configuration
+  intake_agent:
+    bedrock_model: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    bedrock_region: "us-gov-west-1"
+    max_conversation_turns: 200
+    auto_readiness_score_interval: 3
+    session_timeout_hours: 720  # 30 days
+
+  # Boundary impact analysis
+  boundary_analysis:
+    auto_assess_on_decomposition: true
+    red_requires_alternative_coa: true
+    max_orange_pct_without_warning: 30
+
+  # COA generation
+  coa_generation:
+    default_coa_types:
+      - "speed"
+      - "balanced"
+      - "comprehensive"
+    mission_fit_minimum_pct: 50
+    auto_simulate_on_generation: true
+
+  # Simulation
+  simulation:
+    monte_carlo_default_iterations: 10000
+    monte_carlo_default_distribution: "pert"
+    confidence_levels:
+      - 10
+      - 50
+      - 80
+      - 90
+
+# Supply chain configuration
+supply_chain:
+  scrm:
+    assessment_cadence_days: 90
+    critical_sla_hours: 48
+    high_sla_hours: 168
+    medium_sla_hours: 720
+    low_sla_hours: 2160
+  isa:
+    default_review_cadence_days: 365
+    expiry_warning_days: 90
+    auto_create_renewal_task: true
+  section_889:
+    prohibited_entities:
+      - "Huawei Technologies"
+      - "ZTE Corporation"
+      - "Hytera Communications"
+      - "Hangzhou Hikvision"
+      - "Dahua Technology"
+    auto_check_on_vendor_add: true
+
+# Integration settings
+integration:
+  jira:
+    default_field_mapping:
+      epic: "Epic"
+      capability: "Epic"
+      feature: "Story"
+      story: "Sub-task"
+      enabler: "Task"
+    sync_cadence_minutes: 60
+  servicenow:
+    default_item_type: "sc_req_item"
+    sync_cadence_minutes: 60
+  doors_ng:
+    reqif_version: "1.2"
+    include_traceability: true

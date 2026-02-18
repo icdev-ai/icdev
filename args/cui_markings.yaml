@@ -1,0 +1,33 @@
+# CUI Classification Marking Configuration
+# Applied to all ICDEV-generated artifacts per DoD CUI Program
+
+banner_top: "CUI // SP-CTI"
+banner_bottom: "CUI // SP-CTI"
+
+designation_indicator:
+  controlled_by: "Department of Defense"
+  categories: "CTI"
+  distribution: "Distribution D"
+  poc: "ICDEV System Administrator"
+
+portion_marking: "(CUI)"
+decontrol_instructions: "Decontrol on: 10 years from creation date"
+
+# File-type specific templates
+code_header: |
+  CUI // SP-CTI
+  Controlled by: Department of Defense
+  CUI Category: CTI
+  Distribution: D
+  POC: ICDEV System Administrator
+
+document_header: |
+  //////////////////////////////////////////////////////////////////
+  CONTROLLED UNCLASSIFIED INFORMATION (CUI) // SP-CTI
+  Distribution: Distribution D — Authorized DoD Personnel Only
+  //////////////////////////////////////////////////////////////////
+
+document_footer: |
+  //////////////////////////////////////////////////////////////////
+  CUI // SP-CTI | Department of Defense
+  //////////////////////////////////////////////////////////////////

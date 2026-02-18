@@ -1,0 +1,25 @@
+# CUI // SP-CTI
+apiVersion: v2
+name: icdev
+description: ICDEV - Intelligent Coding Development Platform (On-Premises)
+type: application
+version: 1.0.0
+appVersion: "21.0.0"
+keywords:
+  - compliance
+  - automation
+  - ato
+  - fedramp
+  - cmmc
+  - dod
+  - govcloud
+  - cui
+  - nist
+  - on-premises
+maintainers:
+  - name: ICDEV Team
+home: https://icdev.example.com
+icon: https://icdev.example.com/logo.png
+sources:
+  - https://icdev.example.com/docs
+kubeVersion: ">=1.25.0-0"

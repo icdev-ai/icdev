@@ -1,0 +1,213 @@
+# CUI // SP-CTI
+# ICDEV SIEM Configuration — Filebeat (ELK Stack)
+# Per DoD Instruction 8530.01 — CSSP Log Forwarding Requirements
+#
+# Template variables:
+#   {{system_name}}          - System name
+#   {{elasticsearch_hosts}}  - Elasticsearch endpoint(s)
+#   {{logstash_hosts}}       - Logstash endpoint(s)
+#   {{kibana_host}}          - Kibana endpoint
+#   {{ssl_cert_path}}        - Path to client certificate
+#   {{ssl_key_path}}         - Path to client private key
+#   {{ssl_ca_path}}          - Path to CA certificate bundle
+#   {{app_log_path}}         - Application log directory
+#   {{auth_log_path}}        - Authentication log directory
+#   {{elk_index_prefix}}     - Index name prefix
+
+# =============================================================================
+# General Settings
+# =============================================================================
+
+name: "{{system_name}}-filebeat"
+
+tags:
+  - "icdev"
+  - "cui"
+  - "govcloud"
+  - "{{system_name}}"
+
+fields:
+  classification: "CUI"
+  environment: "govcloud"
+  system: "{{system_name}}"
+
+fields_under_root: true
+
+# =============================================================================
+# Input Sources — Per DI 8530.01 Requirements
+# =============================================================================
+
+filebeat.inputs:
+
+  # Application Logs (DE-2, DE-3)
+  - type: log
+    id: application-logs
+    enabled: true
+    paths:
+      - "{{app_log_path}}/*.log"
+      - "{{app_log_path}}/**/*.log"
+    exclude_files:
+      - '\.gz$'
+      - '\.zip$'
+    fields:
+      log_category: "application"
+      cssp_requirement: "DE-2"
+    multiline:
+      pattern: '^\d{4}-\d{2}-\d{2}'
+      negate: true
+      match: after
+
+  # Authentication Events (DE-3, PR-1)
+  - type: log
+    id: auth-logs
+    enabled: true
+    paths:
+      - "{{auth_log_path}}/auth*.log"
+      - "{{auth_log_path}}/access*.log"
+      - "/var/log/auth.log"
+      - "/var/log/secure"
+    fields:
+      log_category: "authentication"
+      cssp_requirement: "DE-3"
+
+  # Security Events (DE-3, DE-4)
+  - type: log
+    id: security-logs
+    enabled: true
+    paths:
+      - "{{app_log_path}}/security*.log"
+      - "{{app_log_path}}/alert*.log"
+    fields:
+      log_category: "security"
+      cssp_requirement: "DE-3"
+
+  # Audit Trail (AU-2, AU-3, AU-12)
+  - type: log
+    id: audit-logs
+    enabled: true
+    paths:
+      - "{{app_log_path}}/audit*.log"
+      - "/var/log/audit/audit.log"
+    fields:
+      log_category: "audit"
+      cssp_requirement: "AU-12"
+
+  # System Logs (DE-1)
+  - type: log
+    id: system-logs
+    enabled: true
+    paths:
+      - "/var/log/syslog"
+      - "/var/log/messages"
+      - "/var/log/kern.log"
+    fields:
+      log_category: "system"
+      cssp_requirement: "DE-1"
+
+  # Container/K8s Logs (DE-2)
+  - type: container
+    id: container-logs
+    enabled: true
+    paths:
+      - "/var/log/containers/*.log"
+    processors:
+      - add_kubernetes_metadata:
+          host: "${NODE_NAME}"
+          matchers:
+            - logs_path:
+                logs_path: "/var/log/containers/"
+    fields:
+      log_category: "container"
+      cssp_requirement: "DE-2"
+
+  # Network Events (DE-5, SC-7)
+  - type: log
+    id: network-logs
+    enabled: true
+    paths:
+      - "{{app_log_path}}/network*.log"
+      - "{{app_log_path}}/firewall*.log"
+    fields:
+      log_category: "network"
+      cssp_requirement: "DE-5"
+
+# =============================================================================
+# Processors — Enrich and filter events
+# =============================================================================
+
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_fields:
+      target: ''
+      fields:
+        classification: "CUI // SP-CTI"
+        system_name: "{{system_name}}"
+  - drop_event:
+      when:
+        regexp:
+          message: "^$"
+
+# =============================================================================
+# Output — CSSP ELK Stack
+# =============================================================================
+
+# Option 1: Direct to Elasticsearch
+output.elasticsearch:
+  enabled: true
+  hosts: {{elasticsearch_hosts}}
+  protocol: "https"
+  ssl.certificate_authorities:
+    - "{{ssl_ca_path}}"
+  ssl.certificate: "{{ssl_cert_path}}"
+  ssl.key: "{{ssl_key_path}}"
+  ssl.verification_mode: "full"
+  index: "{{elk_index_prefix}}-%{[fields.log_category]}-%{+yyyy.MM.dd}"
+  bulk_max_size: 50
+
+# Option 2: Via Logstash (uncomment to use)
+# output.logstash:
+#   enabled: true
+#   hosts: {{logstash_hosts}}
+#   ssl.certificate_authorities:
+#     - "{{ssl_ca_path}}"
+#   ssl.certificate: "{{ssl_cert_path}}"
+#   ssl.key: "{{ssl_key_path}}"
+#   bulk_max_size: 2048
+
+# =============================================================================
+# Kibana — Dashboard setup
+# =============================================================================
+
+setup.kibana:
+  host: "{{kibana_host}}"
+  protocol: "https"
+  ssl.certificate_authorities:
+    - "{{ssl_ca_path}}"
+  ssl.certificate: "{{ssl_cert_path}}"
+  ssl.key: "{{ssl_key_path}}"
+
+# =============================================================================
+# Index Lifecycle Management
+# =============================================================================
+
+setup.ilm:
+  enabled: true
+  rollover_alias: "{{elk_index_prefix}}"
+  pattern: "{now/d}-000001"
+  policy_name: "icdev-retention"
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 7
+  permissions: 0644
+
+# CUI // SP-CTI

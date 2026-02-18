@@ -1,0 +1,771 @@
+#!/usr/bin/env python3
+# CUI // SP-CTI
+# Controlled by: Department of Defense
+# CUI Category: CTI
+# Distribution: D
+# POC: ICDEV System Administrator
+"""ICDEV SaaS -- REST API v1 Blueprint.
+
+Flask Blueprint providing multi-tenant REST API endpoints for the ICDEV
+SaaS platform.  All endpoints require authentication (handled by the auth
+middleware which sets g.tenant_id, g.user_id, g.user_role).
+
+Endpoint groups:
+    /api/v1/tenants/me        - Current tenant info & settings
+    /api/v1/users             - User & team management
+    /api/v1/keys              - API key management
+    /api/v1/projects          - Project CRUD (delegates to existing tools)
+    /api/v1/projects/<id>/... - Compliance & security (delegates to tools)
+    /api/v1/usage             - Usage & billing data
+
+Usage:
+    from tools.saas.rest_api import api_bp
+    app.register_blueprint(api_bp)
+"""
+
+import hashlib
+import json
+import logging
+import os
+import secrets
+import sqlite3
+import sys
+import traceback
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Path setup
+# ---------------------------------------------------------------------------
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from flask import Blueprint, g, jsonify, request
+
+logger = logging.getLogger("saas.rest_api")
+
+# ---------------------------------------------------------------------------
+# Blueprint
+# ---------------------------------------------------------------------------
+api_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
+
+# ---------------------------------------------------------------------------
+# Platform DB helper
+# ---------------------------------------------------------------------------
+PLATFORM_DB_PATH = Path(
+    os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db"))
+)
+
+
+def _platform_conn():
+    """Open a connection to the platform database."""
+    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _utcnow():
+    """Return current UTC timestamp as ISO-8601 string."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ---------------------------------------------------------------------------
+# Lazy imports for ICDEV tools (avoids import-time side effects)
+# ---------------------------------------------------------------------------
+def _import_tenant_db():
+    from tools.saas.tenant_db_adapter import (
+        call_tool_with_tenant_db,
+        get_tenant_db_path,
+        verify_project_belongs_to_tenant,
+    )
+    return call_tool_with_tenant_db, get_tenant_db_path, verify_project_belongs_to_tenant
+
+
+def _import_tenant_manager():
+    from tools.saas.tenant_manager import (
+        add_user,
+        get_tenant,
+        list_users,
+        remove_user,
+        update_tenant,
+    )
+    return get_tenant, update_tenant, list_users, add_user, remove_user
+
+
+def _error(message, code="ERROR", status=400):
+    """Return a standard JSON error response."""
+    return jsonify({"error": message, "code": code}), status
+
+
+def _require_role(*allowed_roles):
+    """Check if the current user's role is in the allowed list."""
+    role = getattr(g, "user_role", None)
+    if role not in allowed_roles:
+        return _error(
+            "Insufficient permissions. Required role: {}".format(
+                " or ".join(allowed_roles)),
+            code="FORBIDDEN", status=403,
+        )
+    return None
+
+
+# ============================================================================
+# TENANT MANAGEMENT
+# ============================================================================
+
+@api_bp.route("/tenants/me", methods=["GET"])
+def get_current_tenant():
+    """GET /api/v1/tenants/me -- Return current tenant info."""
+    try:
+        get_tenant, _, _, _, _ = _import_tenant_manager()
+        tenant = get_tenant(g.tenant_id)
+        if not tenant:
+            return _error("Tenant not found", code="NOT_FOUND", status=404)
+        return jsonify({"tenant": tenant})
+    except Exception as exc:
+        logger.error("get_current_tenant error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/tenants/me", methods=["PATCH"])
+def update_current_tenant():
+    """PATCH /api/v1/tenants/me -- Update tenant settings."""
+    role_err = _require_role("tenant_admin")
+    if role_err:
+        return role_err
+
+    try:
+        _, update_tenant, _, _, _ = _import_tenant_manager()
+        data = request.get_json(force=True, silent=True) or {}
+        if not data:
+            return _error("Request body required")
+
+        allowed_keys = {"settings", "artifact_config", "bedrock_config",
+                        "idp_config", "name"}
+        filtered = {k: v for k, v in data.items() if k in allowed_keys}
+        if not filtered:
+            return _error("No valid fields to update. Allowed: {}".format(
+                ", ".join(sorted(allowed_keys))))
+
+        result = update_tenant(g.tenant_id, **filtered)
+        return jsonify({"tenant": result})
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("update_current_tenant error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# USER & TEAM MANAGEMENT
+# ============================================================================
+
+@api_bp.route("/users", methods=["GET"])
+def list_tenant_users():
+    """GET /api/v1/users -- List users in the current tenant."""
+    try:
+        _, _, list_users, _, _ = _import_tenant_manager()
+        users = list_users(g.tenant_id)
+        return jsonify({"users": users, "total": len(users)})
+    except Exception as exc:
+        logger.error("list_tenant_users error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/users", methods=["POST"])
+def create_user():
+    """POST /api/v1/users -- Add a user to the current tenant."""
+    role_err = _require_role("tenant_admin")
+    if role_err:
+        return role_err
+
+    try:
+        _, _, _, add_user, _ = _import_tenant_manager()
+        data = request.get_json(force=True, silent=True) or {}
+        email = data.get("email", "").strip()
+        if not email:
+            return _error("email is required")
+
+        role = data.get("role", "developer")
+        display_name = data.get("display_name", email.split("@")[0])
+        auth_method = data.get("auth_method", "api_key")
+
+        user = add_user(
+            tenant_id=g.tenant_id,
+            email=email,
+            display_name=display_name,
+            role=role,
+            auth_method=auth_method,
+        )
+        return jsonify({"user": user}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("create_user error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/users/<user_id>", methods=["PATCH"])
+def update_user(user_id):
+    """PATCH /api/v1/users/<user_id> -- Update a user's role or status."""
+    role_err = _require_role("tenant_admin")
+    if role_err:
+        return role_err
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        conn = _platform_conn()
+        now = _utcnow()
+
+        # Build SET clause from allowed fields
+        allowed = {"role", "display_name", "auth_method"}
+        updates = {k: v for k, v in data.items() if k in allowed}
+        if not updates:
+            conn.close()
+            return _error("No valid fields to update")
+
+        set_parts = ["{} = ?".format(k) for k in updates]
+        set_parts.append("updated_at = ?")
+        values = list(updates.values()) + [now, user_id, g.tenant_id]
+
+        conn.execute(
+            "UPDATE users SET {} WHERE id = ? AND tenant_id = ?".format(
+                ", ".join(set_parts)),
+            values,
+        )
+        conn.commit()
+
+        row = conn.execute(
+            """SELECT id, email, display_name, role, auth_method,
+                      status, created_at
+               FROM users WHERE id = ? AND tenant_id = ?""",
+            (user_id, g.tenant_id),
+        ).fetchone()
+        conn.close()
+
+        if not row:
+            return _error("User not found", code="NOT_FOUND", status=404)
+
+        return jsonify({"user": dict(row)})
+    except Exception as exc:
+        logger.error("update_user error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/users/<user_id>", methods=["DELETE"])
+def delete_user(user_id):
+    """DELETE /api/v1/users/<user_id> -- Deactivate a user."""
+    role_err = _require_role("tenant_admin")
+    if role_err:
+        return role_err
+
+    try:
+        _, _, _, _, remove_user = _import_tenant_manager()
+        result = remove_user(g.tenant_id, user_id)
+        return jsonify({"result": result})
+    except ValueError as exc:
+        return _error(str(exc), status=404)
+    except Exception as exc:
+        logger.error("delete_user error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# API KEY MANAGEMENT
+# ============================================================================
+
+@api_bp.route("/keys", methods=["GET"])
+def list_api_keys():
+    """GET /api/v1/keys -- List API keys for the current user/tenant."""
+    try:
+        conn = _platform_conn()
+        # tenant_admin sees all keys; others see only their own
+        if g.user_role == "tenant_admin":
+            rows = conn.execute(
+                """SELECT id, tenant_id, user_id, key_prefix, name,
+                          status, created_at, expires_at
+                   FROM api_keys WHERE tenant_id = ?
+                   ORDER BY created_at DESC""",
+                (g.tenant_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT id, tenant_id, user_id, key_prefix, name,
+                          status, created_at, expires_at
+                   FROM api_keys WHERE tenant_id = ? AND user_id = ?
+                   ORDER BY created_at DESC""",
+                (g.tenant_id, g.user_id),
+            ).fetchall()
+        conn.close()
+        keys = [dict(r) for r in rows]
+        return jsonify({"keys": keys, "total": len(keys)})
+    except Exception as exc:
+        logger.error("list_api_keys error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/keys", methods=["POST"])
+def create_api_key():
+    """POST /api/v1/keys -- Generate a new API key."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        name = data.get("name", "api-key")
+        scopes = data.get("scopes", [])
+
+        random_hex = secrets.token_hex(16)
+        full_key = "icdev_" + random_hex
+        prefix = random_hex[:8]
+        key_hash = hashlib.sha256(full_key.encode("utf-8")).hexdigest()
+        key_id = "key-" + uuid.uuid4().hex[:12]
+        now = _utcnow()
+
+        conn = _platform_conn()
+        conn.execute(
+            """INSERT INTO api_keys
+               (id, tenant_id, user_id, key_hash, key_prefix, name,
+                status, created_at, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)""",
+            (key_id, g.tenant_id, g.user_id, key_hash, prefix, name,
+             now, None),
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "key": {
+                "id": key_id,
+                "key": full_key,
+                "prefix": prefix,
+                "name": name,
+                "created_at": now,
+                "note": "Save this key now. It cannot be retrieved later.",
+            }
+        }), 201
+    except Exception as exc:
+        logger.error("create_api_key error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/keys/<key_id>", methods=["DELETE"])
+def revoke_api_key(key_id):
+    """DELETE /api/v1/keys/<key_id> -- Revoke an API key."""
+    try:
+        conn = _platform_conn()
+        now = _utcnow()
+
+        # Verify ownership (admin can revoke any, others only their own)
+        row = conn.execute(
+            "SELECT id, user_id FROM api_keys WHERE id = ? AND tenant_id = ?",
+            (key_id, g.tenant_id),
+        ).fetchone()
+
+        if not row:
+            conn.close()
+            return _error("API key not found", code="NOT_FOUND", status=404)
+
+        if g.user_role != "tenant_admin" and row["user_id"] != g.user_id:
+            conn.close()
+            return _error("Cannot revoke another user's key",
+                          code="FORBIDDEN", status=403)
+
+        conn.execute(
+            "UPDATE api_keys SET status = 'revoked' WHERE id = ?",
+            (key_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        return jsonify({"result": {"id": key_id, "status": "revoked"}})
+    except Exception as exc:
+        logger.error("revoke_api_key error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# PROJECTS (delegates to existing tools)
+# ============================================================================
+
+@api_bp.route("/projects", methods=["POST"])
+def create_project():
+    """POST /api/v1/projects -- Create a new project on the tenant DB."""
+    try:
+        call_tool, get_db_path, _ = _import_tenant_db()
+        from tools.project.project_create import create_project as tool_create
+
+        data = request.get_json(force=True, silent=True) or {}
+        name = data.get("name", "").strip()
+        if not name:
+            return _error("name is required")
+
+        result = call_tool(
+            tool_create,
+            g.tenant_id,
+            name=name,
+            project_type=data.get("type", "webapp"),
+            classification=data.get("classification", "CUI"),
+            description=data.get("description", ""),
+            tech_backend=data.get("tech_backend", ""),
+            tech_frontend=data.get("tech_frontend", ""),
+            tech_database=data.get("tech_database", ""),
+            impact_level=data.get("impact_level", "IL4"),
+        )
+        return jsonify({"project": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("create_project error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects", methods=["GET"])
+def list_projects():
+    """GET /api/v1/projects -- List projects on the tenant DB."""
+    try:
+        call_tool, _, _ = _import_tenant_db()
+        from tools.project.project_list import list_projects as tool_list
+
+        status_filter = request.args.get("status")
+        result = call_tool(
+            tool_list,
+            g.tenant_id,
+            status_filter=status_filter,
+            output_format="detailed",
+        )
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("list_projects error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>", methods=["GET"])
+def get_project_status(project_id):
+    """GET /api/v1/projects/<id> -- Get project status from tenant DB."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.project.project_status import get_project_status as tool_status
+        result = call_tool(tool_status, g.tenant_id, project_id=project_id)
+        return jsonify({"project": result})
+    except ValueError as exc:
+        return _error(str(exc), code="NOT_FOUND", status=404)
+    except Exception as exc:
+        logger.error("get_project_status error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# COMPLIANCE (delegates to existing tools)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/ssp", methods=["POST"])
+def generate_ssp(project_id):
+    """POST /api/v1/projects/<id>/ssp -- Generate System Security Plan."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.ssp_generator import generate_ssp as tool_ssp
+        result = call_tool(tool_ssp, g.tenant_id, project_id=project_id)
+        return jsonify({"ssp": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("generate_ssp error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/poam", methods=["POST"])
+def generate_poam(project_id):
+    """POST /api/v1/projects/<id>/poam -- Generate Plan of Action & Milestones."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.poam_generator import generate_poam as tool_poam
+        result = call_tool(tool_poam, g.tenant_id, project_id=project_id)
+        return jsonify({"poam": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("generate_poam error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/stig", methods=["POST"])
+def run_stig_check(project_id):
+    """POST /api/v1/projects/<id>/stig -- Run STIG compliance check."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.stig_checker import run_stig_check as tool_stig
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir", "")
+
+        result = call_tool(
+            tool_stig, g.tenant_id,
+            project_id=project_id,
+            project_dir=project_dir if project_dir else None,
+        )
+        return jsonify({"stig": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("run_stig_check error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/sbom", methods=["POST"])
+def generate_sbom(project_id):
+    """POST /api/v1/projects/<id>/sbom -- Generate Software Bill of Materials."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.sbom_generator import generate_sbom as tool_sbom
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir", "")
+
+        result = call_tool(
+            tool_sbom, g.tenant_id,
+            project_id=project_id,
+            project_dir=project_dir if project_dir else None,
+        )
+        return jsonify({"sbom": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("generate_sbom error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/fips199", methods=["POST"])
+def run_fips199(project_id):
+    """POST /api/v1/projects/<id>/fips199 -- Run FIPS 199 categorization."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.fips199_categorizer import categorize_project
+        result = call_tool(
+            categorize_project, g.tenant_id,
+            project_id=project_id,
+        )
+        return jsonify({"fips199": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("run_fips199 error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/fips200", methods=["POST"])
+def run_fips200(project_id):
+    """POST /api/v1/projects/<id>/fips200 -- Run FIPS 200 validation."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.fips200_validator import validate_fips200
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir")
+
+        result = call_tool(
+            validate_fips200, g.tenant_id,
+            project_id=project_id,
+            project_dir=project_dir,
+        )
+        return jsonify({"fips200": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("run_fips200 error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# SECURITY SCANNING
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/scan/sast", methods=["POST"])
+def run_sast_scan(project_id):
+    """POST /api/v1/projects/<id>/scan/sast -- Run SAST security scan."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.security.sast_runner import run_sast
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir", "")
+        if not project_dir:
+            return _error("project_dir is required in request body")
+
+        result = run_sast(project_dir=project_dir)
+        return jsonify({"sast": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("run_sast_scan error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/scan/deps", methods=["POST"])
+def run_dep_scan(project_id):
+    """POST /api/v1/projects/<id>/scan/deps -- Run dependency audit."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.security.dependency_auditor import audit_python
+        data = request.get_json(force=True, silent=True) or {}
+        project_dir = data.get("project_dir", "")
+        if not project_dir:
+            return _error("project_dir is required in request body")
+
+        result = audit_python(project_dir=project_dir)
+        return jsonify({"dependency_audit": result}), 201
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("run_dep_scan error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# AUDIT TRAIL
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/audit", methods=["GET"])
+def get_project_audit(project_id):
+    """GET /api/v1/projects/<id>/audit -- Get audit trail for a project."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.saas.tenant_db_adapter import get_tenant_db_connection
+        conn = get_tenant_db_connection(g.tenant_id)
+
+        limit = request.args.get("limit", 100, type=int)
+        offset = request.args.get("offset", 0, type=int)
+
+        rows = conn.execute(
+            """SELECT id, project_id, event_type, actor, action,
+                      details, classification, created_at
+               FROM audit_trail
+               WHERE project_id = ?
+               ORDER BY created_at DESC
+               LIMIT ? OFFSET ?""",
+            (project_id, min(limit, 500), offset),
+        ).fetchall()
+
+        total_row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()
+        conn.close()
+
+        events = [dict(r) for r in rows]
+        total = total_row["cnt"] if total_row else 0
+
+        return jsonify({
+            "audit": events,
+            "total": total,
+            "limit": min(limit, 500),
+            "offset": offset,
+        })
+    except Exception as exc:
+        logger.error("get_project_audit error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# USAGE & BILLING
+# ============================================================================
+
+@api_bp.route("/usage", methods=["GET"])
+def get_usage():
+    """GET /api/v1/usage -- Get usage records for the current tenant."""
+    try:
+        conn = _platform_conn()
+        period = request.args.get("period", "day")
+        limit = request.args.get("limit", 100, type=int)
+
+        # Summary statistics
+        summary_row = conn.execute(
+            """SELECT COUNT(*) as total_calls,
+                      COALESCE(SUM(tokens_used), 0) as total_tokens,
+                      COALESCE(AVG(duration_ms), 0) as avg_duration_ms
+               FROM usage_records
+               WHERE tenant_id = ?""",
+            (g.tenant_id,),
+        ).fetchone()
+
+        # Top endpoints
+        top_endpoints = conn.execute(
+            """SELECT endpoint, COUNT(*) as call_count,
+                      COALESCE(AVG(duration_ms), 0) as avg_ms
+               FROM usage_records
+               WHERE tenant_id = ?
+               GROUP BY endpoint
+               ORDER BY call_count DESC
+               LIMIT 10""",
+            (g.tenant_id,),
+        ).fetchall()
+
+        # Recent records
+        recent = conn.execute(
+            """SELECT endpoint, method, status_code, duration_ms,
+                      tokens_used, recorded_at
+               FROM usage_records
+               WHERE tenant_id = ?
+               ORDER BY recorded_at DESC
+               LIMIT ?""",
+            (g.tenant_id, min(limit, 500)),
+        ).fetchall()
+
+        conn.close()
+
+        return jsonify({
+            "usage": {
+                "tenant_id": g.tenant_id,
+                "summary": {
+                    "total_api_calls": summary_row["total_calls"] if summary_row else 0,
+                    "total_tokens": summary_row["total_tokens"] if summary_row else 0,
+                    "avg_duration_ms": round(
+                        summary_row["avg_duration_ms"], 1) if summary_row else 0,
+                },
+                "top_endpoints": [dict(r) for r in top_endpoints],
+                "recent": [dict(r) for r in recent],
+            }
+        })
+    except Exception as exc:
+        logger.error("get_usage error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# HEALTH (sub-path, in addition to gateway-level /health)
+# ============================================================================
+
+@api_bp.route("/health", methods=["GET"])
+def api_health():
+    """GET /api/v1/health -- API-level health check."""
+    return jsonify({
+        "status": "ok",
+        "service": "icdev-saas-api",
+        "version": "1.0.0",
+        "classification": "CUI // SP-CTI",
+    })

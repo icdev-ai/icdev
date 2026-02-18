@@ -1,0 +1,51 @@
+# CUI // SP-CTI
+# Agent Authority Matrix — defines veto rights per agent per topic
+# Decision D42: Configurable without code changes, auditable
+#
+# This file is loaded by tools/agent/authority.py at runtime.
+# Changes take effect immediately on next load (no restart needed).
+
+authority:
+  security-agent:
+    veto_type: hard
+    topics:
+      - code_generation
+      - dependency_addition
+      - infrastructure_change
+      - secret_management
+      - container_configuration
+    description: "Security agent can hard-veto any code, dependency, or infra change that introduces vulnerabilities"
+
+  compliance-agent:
+    veto_type: hard
+    topics:
+      - artifact_generation
+      - deployment
+      - classification_marking
+      - ato_submission
+      - data_handling
+    description: "Compliance agent can hard-veto artifacts, deployments, and classification changes"
+
+  architect-agent:
+    veto_type: soft
+    topics:
+      - system_design
+      - schema_change
+      - api_design
+      - technology_selection
+      - architecture_pattern
+    description: "Architect agent can soft-veto design decisions (orchestrator can override)"
+
+# Veto behavior:
+# hard = blocks output immediately, requires human override via approval_workflow
+# soft = warns orchestrator, orchestrator can override with justification logged
+#
+# Adding new authority:
+# 1. Add a new agent entry with veto_type and topics
+# 2. The authority.py module will pick it up automatically
+# 3. No code changes required
+#
+# Topic naming convention:
+# - Use snake_case
+# - Be specific enough to avoid false positives
+# - Group related concerns under a single topic when they share review criteria

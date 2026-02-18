@@ -1,0 +1,61 @@
+# CUI // SP-CTI
+# ICDEV SaaS API Gateway — STIG-Hardened
+# Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+#
+# Multi-stage build for minimal attack surface.
+# Routes tenant requests, enforces auth, rate limiting, and tenant isolation.
+
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.12-slim
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="ICDEV SaaS API Gateway" \
+      version="0.7.0"
+
+# STIG: Create non-root user and group
+RUN groupadd -g 1000 icdev && \
+    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin -m icdev
+
+# STIG: Install only required runtime packages, remove apt afterwards
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/apt-get
+
+# Copy installed Python packages from builder
+COPY --from=builder /install/lib /usr/local/lib
+COPY --from=builder /install/bin /usr/local/bin
+
+# Copy application code
+WORKDIR /app
+COPY --chown=icdev:icdev tools/ /app/tools/
+COPY --chown=icdev:icdev args/ /app/args/
+COPY --chown=icdev:icdev context/ /app/context/
+
+# STIG: Set restrictive file permissions
+RUN chmod -R 750 /app && \
+    find /app -type f -name "*.py" -exec chmod 640 {} +
+
+# STIG: Run as non-root user
+USER 1000
+
+EXPOSE 8443
+
+# Health check for K8s liveness/readiness probes
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health')" || exit 1
+
+ENTRYPOINT ["gunicorn", \
+    "--bind", "0.0.0.0:8443", \
+    "--workers", "4", \
+    "--timeout", "120", \
+    "--access-logfile", "-", \
+    "--error-logfile", "-", \
+    "tools.saas.api_gateway:create_app()"]

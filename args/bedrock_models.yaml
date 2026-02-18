@@ -1,0 +1,63 @@
+# CUI // SP-CTI
+# Bedrock Model Configuration for ICDEV Agent Orchestration
+# Defines model IDs, capabilities, pricing, and fallback chain
+
+models:
+  opus:
+    model_id: "anthropic.claude-opus-4-6-20260205-v1:0"
+    display_name: "Claude Opus 4.6"
+    max_tokens: 128000
+    context_window: 200000
+    supports_thinking: true
+    supports_effort: true
+    supports_tool_use: true
+    supports_structured_output: true
+    supports_streaming: true
+    cost_per_1k_input: 0.005
+    cost_per_1k_output: 0.025
+
+  sonnet-4-5:
+    model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+    display_name: "Claude Sonnet 4.5"
+    max_tokens: 64000
+    context_window: 200000
+    supports_thinking: true
+    supports_effort: true
+    supports_tool_use: true
+    supports_structured_output: true
+    supports_streaming: true
+    cost_per_1k_input: 0.003
+    cost_per_1k_output: 0.015
+
+  sonnet-3-5:
+    model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    display_name: "Claude Sonnet 3.5"
+    max_tokens: 8192
+    context_window: 200000
+    supports_thinking: false
+    supports_effort: false
+    supports_tool_use: true
+    supports_structured_output: false
+    supports_streaming: true
+    cost_per_1k_input: 0.003
+    cost_per_1k_output: 0.015
+
+fallback_chain: ["opus", "sonnet-4-5", "sonnet-3-5"]
+probe_interval_seconds: 1800
+region: "us-gov-west-1"
+
+# Effort mapping per agent role (used when no explicit effort specified)
+agent_effort_defaults:
+  orchestrator-agent: "high"
+  architect-agent: "max"
+  builder-agent: "max"
+  compliance-agent: "high"
+  security-agent: "high"
+  infra-agent: "medium"
+  knowledge-agent: "medium"
+  monitor-agent: "low"
+  mbse-agent: "medium"
+  modernization-agent: "high"
+  requirements-analyst-agent: "high"
+  supply-chain-agent: "medium"
+  simulation-agent: "medium"

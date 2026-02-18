@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+# STIG-hardened base for ICDEV Modernization Agent
+FROM python:3.11-slim AS base
+
+# STIG V-230264: Set ownership and permissions
+RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /sbin/nologin icdev
+
+WORKDIR /app
+
+# STIG V-230505: Minimize installed packages
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends tini && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy application code
+COPY tools/ /app/tools/
+COPY context/modernization/ /app/context/modernization/
+COPY args/ /app/args/
+COPY requirements.txt /app/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir pyyaml boto3
+
+# STIG V-230313: Set file permissions
+RUN chown -R icdev:icdev /app && \
+    chmod -R 550 /app && \
+    mkdir -p /app/data /app/.tmp && \
+    chown icdev:icdev /app/data /app/.tmp && \
+    chmod 770 /app/data /app/.tmp
+
+# STIG V-230269: Run as non-root
+USER icdev
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8452/health')" || exit 1
+
+# STIG V-230268: Read-only root filesystem compatible
+EXPOSE 8452
+
+ENTRYPOINT ["tini", "--"]
+CMD ["python", "-m", "tools.agents.modernization_agent", "--host", "0.0.0.0", "--port", "8452"]
+# CUI // SP-CTI

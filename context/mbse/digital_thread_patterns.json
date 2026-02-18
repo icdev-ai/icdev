@@ -1,0 +1,403 @@
+{
+  "metadata": {
+    "title": "Digital Thread Traceability Link Patterns",
+    "source": "ICDEV MBSE Integration Architecture + DoD Digital Engineering Strategy + NIST 800-53 Rev 5",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "Defines standard traceability link patterns for the digital thread connecting DOORS requirements, SysML model elements, code modules, test files, and NIST 800-53 controls. Used by the traceability engine to establish, validate, and report on digital thread completeness."
+  },
+  "link_patterns": [
+    {
+      "name": "requirement_to_model",
+      "source_type": "doors_requirement",
+      "target_type": "sysml_element",
+      "link_type": "satisfies",
+      "reverse_link_type": "satisfied_by",
+      "description": "A SysML block, activity, or use case satisfies a DOORS requirement by implementing its specified capability",
+      "expected_target_elements": ["block", "activity", "use_case"],
+      "auto_linkable": true,
+      "auto_link_strategy": "name_matching",
+      "auto_link_confidence_threshold": 0.75,
+      "db_source_table": "doors_requirements",
+      "db_target_table": "sysml_elements",
+      "db_link_table": "sysml_relationships",
+      "validation_rules": [
+        "Every approved requirement must have at least one satisfy link",
+        "Target element must be a block, activity, or use case",
+        "Link must reference valid IDs in both source and target tables"
+      ]
+    },
+    {
+      "name": "model_to_code",
+      "source_type": "sysml_element",
+      "target_type": "code_module",
+      "link_type": "implements",
+      "reverse_link_type": "implemented_by",
+      "description": "A code module implements the behavior or structure specified by a SysML model element",
+      "expected_source_elements": ["block", "activity", "state_machine", "interface_block"],
+      "auto_linkable": true,
+      "auto_link_strategy": "name_matching",
+      "auto_link_confidence_threshold": 0.70,
+      "db_source_table": "sysml_elements",
+      "db_target_table": "code_modules",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Every block and activity with stereotype 'implementable' must link to code",
+        "Code module must exist in the project source tree",
+        "One model element may link to multiple code modules"
+      ]
+    },
+    {
+      "name": "code_to_test",
+      "source_type": "code_module",
+      "target_type": "test_file",
+      "link_type": "tested_by",
+      "reverse_link_type": "tests",
+      "description": "A test file verifies the correctness of a code module through unit, integration, or BDD tests",
+      "auto_linkable": true,
+      "auto_link_strategy": "naming_convention",
+      "auto_link_confidence_threshold": 0.90,
+      "naming_convention": "test_{module_name}.py or {module_name}_test.py",
+      "db_source_table": "code_modules",
+      "db_target_table": "test_files",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Every code module must have at least one associated test file",
+        "Test file must contain executable test functions or scenarios",
+        "Test results must be current within the last CI/CD run"
+      ]
+    },
+    {
+      "name": "test_to_requirement",
+      "source_type": "test_file",
+      "target_type": "doors_requirement",
+      "link_type": "verifies",
+      "reverse_link_type": "verified_by",
+      "description": "A test file provides verification evidence that a requirement has been correctly implemented",
+      "auto_linkable": true,
+      "auto_link_strategy": "tag_extraction",
+      "auto_link_confidence_threshold": 0.85,
+      "tag_pattern": "@requirement(DOORS-REQ-XXX)",
+      "db_source_table": "test_files",
+      "db_target_table": "doors_requirements",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Verification link requires passing test results as evidence",
+        "Test must exercise the specific capability described in the requirement",
+        "BDD scenarios should map one-to-one with requirement acceptance criteria"
+      ]
+    },
+    {
+      "name": "requirement_to_control",
+      "source_type": "doors_requirement",
+      "target_type": "nist_control",
+      "link_type": "addresses",
+      "reverse_link_type": "addressed_by",
+      "description": "A DOORS requirement addresses or implements a specific NIST 800-53 security control",
+      "auto_linkable": true,
+      "auto_link_strategy": "control_id_matching",
+      "auto_link_confidence_threshold": 0.80,
+      "db_source_table": "doors_requirements",
+      "db_target_table": "nist_controls",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Control ID must be valid NIST 800-53 Rev 5 identifier",
+        "Requirement text must substantively address the control objective",
+        "Link must specify which control enhancement is addressed if applicable"
+      ]
+    },
+    {
+      "name": "model_to_control",
+      "source_type": "sysml_element",
+      "target_type": "nist_control",
+      "link_type": "enforces",
+      "reverse_link_type": "enforced_by",
+      "description": "A SysML model element enforces a security control through its design structure or behavioral specification",
+      "expected_source_elements": ["block", "activity", "constraint_block", "state_machine"],
+      "auto_linkable": false,
+      "auto_link_strategy": null,
+      "db_source_table": "sysml_elements",
+      "db_target_table": "nist_controls",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Model element must demonstrably enforce the control through design",
+        "Link must include rationale explaining how the element addresses the control",
+        "Human review required for all model-to-control links"
+      ]
+    },
+    {
+      "name": "code_to_control",
+      "source_type": "code_module",
+      "target_type": "nist_control",
+      "link_type": "implements_control",
+      "reverse_link_type": "implemented_in",
+      "description": "A code module directly implements a security control through its programmatic logic",
+      "auto_linkable": true,
+      "auto_link_strategy": "annotation_extraction",
+      "auto_link_confidence_threshold": 0.80,
+      "annotation_pattern": "@nist_control(XX-Y)",
+      "db_source_table": "code_modules",
+      "db_target_table": "nist_controls",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Code must contain logic that implements the control",
+        "Implementation must be validated by associated test evidence",
+        "Control implementation must be documented in code comments or docstrings"
+      ]
+    },
+    {
+      "name": "requirement_derivation",
+      "source_type": "doors_requirement",
+      "target_type": "doors_requirement",
+      "link_type": "derives",
+      "reverse_link_type": "derived_from",
+      "description": "A lower-level requirement is derived from a higher-level requirement through decomposition or refinement",
+      "auto_linkable": false,
+      "auto_link_strategy": null,
+      "db_source_table": "doors_requirements",
+      "db_target_table": "doors_requirements",
+      "db_link_table": "sysml_relationships",
+      "validation_rules": [
+        "Derived requirement must be traceable to exactly one parent requirement",
+        "Derivation must not introduce scope beyond the parent requirement",
+        "Derivation chain depth should not exceed 4 levels"
+      ]
+    },
+    {
+      "name": "model_allocation",
+      "source_type": "sysml_element",
+      "target_type": "sysml_element",
+      "link_type": "allocates",
+      "reverse_link_type": "allocated_to",
+      "description": "A functional element is allocated to a structural element or vice versa within the SysML model",
+      "expected_source_elements": ["activity", "action"],
+      "expected_target_elements": ["block", "interface_block"],
+      "auto_linkable": false,
+      "auto_link_strategy": null,
+      "db_source_table": "sysml_elements",
+      "db_target_table": "sysml_elements",
+      "db_link_table": "sysml_relationships",
+      "validation_rules": [
+        "Source must be a functional element (activity, action)",
+        "Target must be a structural element (block, interface_block)",
+        "Every activity must be allocated to at least one block"
+      ]
+    },
+    {
+      "name": "test_to_control",
+      "source_type": "test_file",
+      "target_type": "nist_control",
+      "link_type": "provides_evidence",
+      "reverse_link_type": "evidenced_by",
+      "description": "A test file provides compliance evidence that a NIST control is implemented and functioning correctly",
+      "auto_linkable": true,
+      "auto_link_strategy": "transitive_inference",
+      "auto_link_confidence_threshold": 0.65,
+      "db_source_table": "test_files",
+      "db_target_table": "nist_controls",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Test must pass to constitute valid evidence",
+        "Evidence link may be inferred transitively through code_to_control links",
+        "Direct test-to-control links take precedence over inferred links"
+      ]
+    },
+    {
+      "name": "control_to_artifact",
+      "source_type": "nist_control",
+      "target_type": "compliance_artifact",
+      "link_type": "documented_in",
+      "reverse_link_type": "documents",
+      "description": "A NIST control implementation is documented in a compliance artifact such as SSP, POAM, or STIG checklist",
+      "auto_linkable": true,
+      "auto_link_strategy": "control_id_matching",
+      "auto_link_confidence_threshold": 0.90,
+      "db_source_table": "nist_controls",
+      "db_target_table": "compliance_artifacts",
+      "db_link_table": "digital_thread_links",
+      "validation_rules": [
+        "Every applicable control must have at least one compliance artifact",
+        "Artifact must be current (generated within last 30 days)",
+        "Artifact must contain substantive implementation description"
+      ]
+    }
+  ],
+  "trace_chains": [
+    {
+      "name": "full_forward_trace",
+      "description": "Complete requirements-to-compliance chain demonstrating end-to-end digital thread from stakeholder need to ATO evidence",
+      "chain": ["doors_requirement", "sysml_element", "code_module", "test_file", "nist_control"],
+      "link_sequence": ["satisfies", "implements", "tested_by", "provides_evidence"],
+      "completeness_required": true,
+      "priority": "critical"
+    },
+    {
+      "name": "requirement_verification",
+      "description": "Requirement-to-verification chain ensuring every requirement has traceable test evidence",
+      "chain": ["doors_requirement", "sysml_element", "code_module", "test_file"],
+      "link_sequence": ["satisfies", "implements", "tested_by"],
+      "completeness_required": true,
+      "priority": "critical"
+    },
+    {
+      "name": "compliance_evidence",
+      "description": "Control-to-evidence chain ensuring every NIST control has traceable implementation and test evidence",
+      "chain": ["nist_control", "code_module", "test_file", "compliance_artifact"],
+      "link_sequence": ["implemented_in", "tested_by", "documents"],
+      "completeness_required": true,
+      "priority": "critical"
+    },
+    {
+      "name": "requirement_derivation_chain",
+      "description": "Hierarchical requirement decomposition chain from stakeholder needs to detailed design requirements",
+      "chain": ["doors_requirement", "doors_requirement", "doors_requirement"],
+      "link_sequence": ["derives", "derives"],
+      "completeness_required": false,
+      "priority": "high",
+      "max_depth": 4
+    },
+    {
+      "name": "model_allocation_chain",
+      "description": "Functional-to-structural allocation chain ensuring all behaviors are assigned to system components",
+      "chain": ["sysml_element", "sysml_element", "code_module"],
+      "link_sequence": ["allocates", "implements"],
+      "completeness_required": true,
+      "priority": "high"
+    },
+    {
+      "name": "backward_impact_trace",
+      "description": "Reverse trace from a code change back to all affected requirements and controls for impact analysis",
+      "chain": ["code_module", "sysml_element", "doors_requirement", "nist_control"],
+      "link_sequence": ["implemented_by", "satisfied_by", "addresses"],
+      "completeness_required": false,
+      "priority": "high"
+    }
+  ],
+  "coverage_metrics": {
+    "requirement_coverage": {
+      "description": "Percentage of approved DOORS requirements linked to at least one SysML model element via satisfy relationship",
+      "target": 100,
+      "unit": "percent",
+      "query": "SELECT COUNT(DISTINCT r.id) * 100.0 / (SELECT COUNT(*) FROM doors_requirements WHERE status = 'Approved') FROM doors_requirements r JOIN sysml_relationships sr ON r.id = sr.source_id WHERE sr.relationship_type = 'satisfy' AND r.status = 'Approved'",
+      "severity_thresholds": {
+        "critical": 90,
+        "warning": 95,
+        "passing": 100
+      }
+    },
+    "model_coverage": {
+      "description": "Percentage of implementable SysML blocks and activities linked to at least one code module",
+      "target": 100,
+      "unit": "percent",
+      "query": "SELECT COUNT(DISTINCT e.id) * 100.0 / (SELECT COUNT(*) FROM sysml_elements WHERE element_type IN ('block', 'activity') AND is_implementable = 1) FROM sysml_elements e JOIN digital_thread_links dtl ON e.id = dtl.source_id WHERE dtl.link_type = 'implements' AND e.element_type IN ('block', 'activity') AND e.is_implementable = 1",
+      "severity_thresholds": {
+        "critical": 85,
+        "warning": 95,
+        "passing": 100
+      }
+    },
+    "test_coverage": {
+      "description": "Percentage of code modules linked to at least one test file providing verification evidence",
+      "target": 80,
+      "unit": "percent",
+      "query": "SELECT COUNT(DISTINCT cm.id) * 100.0 / (SELECT COUNT(*) FROM code_modules) FROM code_modules cm JOIN digital_thread_links dtl ON cm.id = dtl.source_id WHERE dtl.link_type = 'tested_by'",
+      "severity_thresholds": {
+        "critical": 60,
+        "warning": 70,
+        "passing": 80
+      }
+    },
+    "control_coverage": {
+      "description": "Percentage of applicable NIST 800-53 controls linked to at least one evidence artifact (test result, code module, or compliance document)",
+      "target": 100,
+      "unit": "percent",
+      "query": "SELECT COUNT(DISTINCT nc.id) * 100.0 / (SELECT COUNT(*) FROM nist_controls WHERE is_applicable = 1) FROM nist_controls nc JOIN digital_thread_links dtl ON nc.id = dtl.target_id WHERE nc.is_applicable = 1",
+      "severity_thresholds": {
+        "critical": 90,
+        "warning": 95,
+        "passing": 100
+      }
+    },
+    "orphan_requirements": {
+      "description": "Count of approved requirements with no traceability links in any direction",
+      "target": 0,
+      "unit": "count",
+      "query": "SELECT COUNT(*) FROM doors_requirements r WHERE r.status = 'Approved' AND r.id NOT IN (SELECT source_id FROM sysml_relationships UNION SELECT target_id FROM sysml_relationships UNION SELECT source_id FROM digital_thread_links UNION SELECT target_id FROM digital_thread_links)",
+      "severity_thresholds": {
+        "critical": 5,
+        "warning": 1,
+        "passing": 0
+      }
+    },
+    "orphan_model_elements": {
+      "description": "Count of implementable model elements with no traceability links to requirements or code",
+      "target": 0,
+      "unit": "count",
+      "query": "SELECT COUNT(*) FROM sysml_elements e WHERE e.is_implementable = 1 AND e.id NOT IN (SELECT source_id FROM sysml_relationships UNION SELECT target_id FROM sysml_relationships UNION SELECT source_id FROM digital_thread_links UNION SELECT target_id FROM digital_thread_links)",
+      "severity_thresholds": {
+        "critical": 5,
+        "warning": 1,
+        "passing": 0
+      }
+    },
+    "full_thread_completeness": {
+      "description": "Percentage of requirements with a complete forward trace chain from requirement through model, code, test, to control",
+      "target": 100,
+      "unit": "percent",
+      "severity_thresholds": {
+        "critical": 75,
+        "warning": 90,
+        "passing": 100
+      }
+    }
+  },
+  "auto_link_strategies": {
+    "name_matching": {
+      "description": "Match elements by comparing normalized names using fuzzy string similarity (Levenshtein distance or token overlap)",
+      "normalization": ["lowercase", "remove_underscores", "remove_hyphens", "strip_prefixes", "stem_words"],
+      "minimum_similarity": 0.75,
+      "disambiguation": "When multiple matches exceed threshold, select highest similarity. If tied, flag for human review."
+    },
+    "naming_convention": {
+      "description": "Match elements by applying known naming convention patterns (e.g., module.py -> test_module.py)",
+      "patterns": [
+        {"source": "{name}.py", "target": "test_{name}.py"},
+        {"source": "{name}.py", "target": "{name}_test.py"},
+        {"source": "{name}.py", "target": "tests/test_{name}.py"},
+        {"source": "{name}.py", "target": "tests/{name}_test.py"}
+      ],
+      "minimum_similarity": 0.90
+    },
+    "tag_extraction": {
+      "description": "Extract explicit traceability tags from source code or test file comments and docstrings",
+      "tag_patterns": [
+        "@requirement(DOORS-REQ-{id})",
+        "@satisfies(DOORS-REQ-{id})",
+        "@verifies(DOORS-REQ-{id})",
+        "# Requirement: DOORS-REQ-{id}"
+      ],
+      "minimum_similarity": 1.0
+    },
+    "control_id_matching": {
+      "description": "Match elements by extracting NIST 800-53 control identifiers from text fields and annotations",
+      "id_pattern": "[A-Z]{2}-[0-9]{1,2}(\\([0-9]+\\))?",
+      "minimum_similarity": 1.0
+    },
+    "annotation_extraction": {
+      "description": "Extract traceability annotations from code decorators, comments, or metadata attributes",
+      "annotation_patterns": [
+        "@nist_control(\"{control_id}\")",
+        "# NIST: {control_id}",
+        "nist_controls = [\"{control_id}\"]"
+      ],
+      "minimum_similarity": 1.0
+    },
+    "transitive_inference": {
+      "description": "Infer indirect links by traversing existing link chains. A->B->C implies A->C with reduced confidence.",
+      "max_chain_length": 3,
+      "confidence_decay": 0.15,
+      "minimum_confidence": 0.50
+    }
+  }
+}

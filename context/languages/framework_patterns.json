@@ -1,0 +1,205 @@
+{
+    "python": {
+        "frameworks": {
+            "flask": {
+                "entry_point": "app.py",
+                "app_factory": "create_app()",
+                "routing": "Blueprint",
+                "orm": "SQLAlchemy",
+                "validation": "marshmallow",
+                "auth": "Flask-Login + JWT",
+                "server": "gunicorn"
+            },
+            "fastapi": {
+                "entry_point": "main.py",
+                "app_factory": "FastAPI()",
+                "routing": "APIRouter",
+                "orm": "SQLAlchemy + async",
+                "validation": "pydantic",
+                "auth": "OAuth2PasswordBearer",
+                "server": "uvicorn"
+            }
+        },
+        "testing": {
+            "unit": "pytest",
+            "bdd": "behave",
+            "coverage": "pytest-cov",
+            "fixtures": "conftest.py"
+        },
+        "quality": {
+            "linter": "ruff",
+            "formatter": "ruff format",
+            "sast": "bandit",
+            "dep_audit": "pip-audit",
+            "secrets": "detect-secrets"
+        },
+        "stig_hardening": {
+            "base_image": "python:3.11-slim",
+            "user": "appuser",
+            "no_cache": true,
+            "read_only_fs": true,
+            "drop_capabilities": ["ALL"]
+        }
+    },
+    "java": {
+        "frameworks": {
+            "spring_boot": {
+                "entry_point": "Application.java",
+                "annotation": "@SpringBootApplication",
+                "routing": "@RestController",
+                "orm": "Spring Data JPA",
+                "validation": "Jakarta Bean Validation",
+                "auth": "Spring Security",
+                "server": "embedded Tomcat"
+            }
+        },
+        "testing": {
+            "unit": "JUnit 5",
+            "bdd": "Cucumber-JVM",
+            "coverage": "JaCoCo",
+            "mocking": "Mockito"
+        },
+        "quality": {
+            "linter": "checkstyle + PMD",
+            "formatter": "google-java-format",
+            "sast": "SpotBugs + Find Security Bugs",
+            "dep_audit": "OWASP Dependency-Check",
+            "secrets": "detect-secrets"
+        },
+        "stig_hardening": {
+            "base_image": "gcr.io/distroless/java17-debian12",
+            "user": "nonroot",
+            "multi_stage": true,
+            "read_only_fs": true,
+            "drop_capabilities": ["ALL"]
+        }
+    },
+    "go": {
+        "frameworks": {
+            "stdlib": {
+                "entry_point": "main.go",
+                "routing": "http.ServeMux",
+                "orm": "database/sql",
+                "validation": "custom",
+                "auth": "middleware",
+                "server": "net/http"
+            },
+            "gin": {
+                "entry_point": "main.go",
+                "routing": "gin.Engine",
+                "orm": "GORM",
+                "validation": "go-playground/validator",
+                "auth": "gin middleware",
+                "server": "gin"
+            }
+        },
+        "testing": {
+            "unit": "testing + testify",
+            "bdd": "godog",
+            "coverage": "go test -cover",
+            "benchmarks": "go test -bench"
+        },
+        "quality": {
+            "linter": "golangci-lint",
+            "formatter": "gofmt + goimports",
+            "sast": "gosec",
+            "dep_audit": "govulncheck",
+            "secrets": "detect-secrets"
+        },
+        "stig_hardening": {
+            "base_image": "scratch",
+            "user": "65534:65534",
+            "static_binary": true,
+            "cgo_disabled": true,
+            "read_only_fs": true
+        }
+    },
+    "rust": {
+        "frameworks": {
+            "actix_web": {
+                "entry_point": "main.rs",
+                "routing": "web::resource",
+                "orm": "diesel/sqlx",
+                "validation": "validator",
+                "auth": "actix-web middleware",
+                "server": "actix-web"
+            }
+        },
+        "testing": {
+            "unit": "cargo test",
+            "bdd": "cucumber-rs",
+            "coverage": "cargo tarpaulin"
+        },
+        "quality": {
+            "linter": "clippy",
+            "formatter": "rustfmt",
+            "sast": "cargo-audit",
+            "dep_audit": "cargo-audit"
+        },
+        "stig_hardening": {
+            "base_image": "gcr.io/distroless/cc-debian12",
+            "user": "nonroot",
+            "static_binary": false,
+            "read_only_fs": true
+        }
+    },
+    "csharp": {
+        "frameworks": {
+            "aspnet_core": {
+                "entry_point": "Program.cs",
+                "routing": "MapControllers()",
+                "orm": "Entity Framework Core",
+                "validation": "Data Annotations + FluentValidation",
+                "auth": "ASP.NET Core Identity",
+                "server": "Kestrel"
+            }
+        },
+        "testing": {
+            "unit": "xUnit + Moq",
+            "bdd": "SpecFlow",
+            "coverage": "coverlet"
+        },
+        "quality": {
+            "linter": "dotnet analyzers + StyleCop",
+            "formatter": "dotnet format",
+            "sast": "SecurityCodeScan",
+            "dep_audit": "dotnet list package --vulnerable"
+        },
+        "stig_hardening": {
+            "base_image": "mcr.microsoft.com/dotnet/aspnet:8.0-alpine",
+            "user": "appuser",
+            "multi_stage": true,
+            "read_only_fs": true
+        }
+    },
+    "typescript": {
+        "frameworks": {
+            "express": {
+                "entry_point": "index.ts",
+                "routing": "Router()",
+                "orm": "TypeORM/Prisma",
+                "validation": "zod/joi",
+                "auth": "passport.js",
+                "server": "express"
+            }
+        },
+        "testing": {
+            "unit": "Jest",
+            "bdd": "cucumber-js",
+            "coverage": "jest --coverage",
+            "e2e": "supertest"
+        },
+        "quality": {
+            "linter": "eslint + @typescript-eslint",
+            "formatter": "prettier",
+            "sast": "eslint-plugin-security + njsscan",
+            "dep_audit": "npm audit"
+        },
+        "stig_hardening": {
+            "base_image": "gcr.io/distroless/nodejs20-debian12",
+            "user": "nonroot",
+            "multi_stage": true,
+            "read_only_fs": true
+        }
+    }
+}

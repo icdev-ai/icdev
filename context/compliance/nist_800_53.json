@@ -1,0 +1,324 @@
+{
+  "metadata": {
+    "title": "NIST SP 800-53 Rev 5 - Selected Controls for Software Development",
+    "revision": "5",
+    "source": "National Institute of Standards and Technology",
+    "classification": "CUI // SP-CTI",
+    "last_updated": "2026-02-14",
+    "description": "Key NIST 800-53 Rev 5 controls relevant to DoD software development and compliance"
+  },
+  "controls": [
+    {
+      "id": "AC-1",
+      "family": "AC",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate an access control policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the access control policy and the associated access controls.",
+      "supplemental_guidance": "Access control policy and procedures address the controls in the AC family that are implemented within systems and organizations. The risk management strategy is an important factor in establishing such policies and procedures.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AC-2",
+      "family": "AC",
+      "title": "Account Management",
+      "description": "Define and document the types of accounts allowed and specifically prohibited for use within the system. Assign account managers. Require prerequisites and criteria for group and role membership. Specify authorized users of the system, group and role membership, and access authorizations and other attributes for each account.",
+      "supplemental_guidance": "Types of system accounts include individual, shared, group, system, guest, anonymous, emergency, developer, temporary, and service. Conditions for creating, enabling, modifying, disabling, and removing accounts include when a user is terminated or transferred.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AC-3",
+      "family": "AC",
+      "title": "Access Enforcement",
+      "description": "Enforce approved authorizations for logical access to information and system resources in accordance with applicable access control policies.",
+      "supplemental_guidance": "Access control policies control access between active entities or subjects and passive entities or objects in organizational systems. Access enforcement mechanisms can employ identity/credential-based, role-based, attribute-based, or rule-based access control approaches.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AC-6",
+      "family": "AC",
+      "title": "Least Privilege",
+      "description": "Employ the principle of least privilege, allowing only authorized accesses for users and processes acting on behalf of users that are necessary to accomplish assigned organizational tasks.",
+      "supplemental_guidance": "Organizations employ least privilege for specific duties and systems. The principle of least privilege is also applied to system processes, ensuring that the processes have access to systems and operate at privilege levels no higher than necessary to accomplish organizational missions or business functions.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "AC-17",
+      "family": "AC",
+      "title": "Remote Access",
+      "description": "Establish and document usage restrictions, configuration/connection requirements, and implementation guidance for each type of remote access allowed. Authorize each type of remote access to the system prior to allowing such connections.",
+      "supplemental_guidance": "Remote access is access to organizational systems by users communicating through external networks such as the Internet. Types of remote access include dial-up, broadband, and wireless. Virtual private networks (VPNs) with encrypted tunnels can be treated as internal networks if the organization has confidence in the security of the VPN.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "AU-1",
+      "family": "AU",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate an audit and accountability policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the audit and accountability policy and the associated audit and accountability controls.",
+      "supplemental_guidance": "Audit and accountability policy and procedures address the controls in the AU family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AU-2",
+      "family": "AU",
+      "title": "Event Logging",
+      "description": "Identify the types of events that the system is capable of logging in support of the audit function. Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged.",
+      "supplemental_guidance": "An event is any observable occurrence in a system. The types of events that require logging are those events that are significant and relevant to the security of systems and the privacy of individuals.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AU-3",
+      "family": "AU",
+      "title": "Content of Audit Records",
+      "description": "Ensure that audit records contain information that establishes the following: what type of event occurred, when the event occurred, where the event occurred, the source of the event, the outcome of the event, and the identity of any individuals, subjects, or objects/entities associated with the event.",
+      "supplemental_guidance": "Audit record content that may be necessary to support the auditing function includes event descriptions, time stamps, source and destination addresses, user or process identifiers, success or fail indications, filenames involved, and access control or flow control rules invoked.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AU-6",
+      "family": "AU",
+      "title": "Audit Record Review, Analysis, and Reporting",
+      "description": "Review and analyze system audit records for indications of inappropriate or unusual activity and report findings to designated organizational officials. Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
+      "supplemental_guidance": "Audit record review, analysis, and reporting covers information security and privacy-related logging performed by organizations. Finding can be reported to organizational incident response capabilities for security incident handling purposes.",
+      "impact_level": "low"
+    },
+    {
+      "id": "AU-12",
+      "family": "AU",
+      "title": "Audit Record Generation",
+      "description": "Provide audit record generation capability for the event types the system is capable of auditing as defined in AU-2a on all information system and network components. Allow designated organizational personnel to select the event types that are to be logged by specific components of the system. Generate audit records for the event types defined in AU-2c that include the audit record content defined in AU-3.",
+      "supplemental_guidance": "Audit records can be generated from many different system components. The event types specified in AU-2d are the event types for which audit logs are to be generated and are a subset of all event types for which the system can generate audit records.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CM-1",
+      "family": "CM",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate a configuration management policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the configuration management policy and the associated configuration management controls.",
+      "supplemental_guidance": "Configuration management policy and procedures address the controls in the CM family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CM-2",
+      "family": "CM",
+      "title": "Baseline Configuration",
+      "description": "Develop, document, and maintain under configuration control, a current baseline configuration of the system.",
+      "supplemental_guidance": "Baseline configurations for systems include hardware, software, firmware, and documentation items that constitute the system. Baseline configurations serve as a basis for future builds, releases, or changes to systems and include security and privacy configurations for components.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CM-3",
+      "family": "CM",
+      "title": "Configuration Change Control",
+      "description": "Determine and document the types of changes to the system that are configuration-controlled. Review proposed configuration-controlled changes to the system and approve or disapprove such changes with explicit consideration for security and privacy impact analyses.",
+      "supplemental_guidance": "Configuration change control for organizational systems involves the systematic proposal, justification, implementation, testing, review, and disposition of changes to systems, including upgrades and modifications.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "CM-6",
+      "family": "CM",
+      "title": "Configuration Settings",
+      "description": "Establish and document configuration settings for components employed within the system that reflect the most restrictive mode consistent with operational requirements using applicable STIGs, SRGs, or other hardening guidance.",
+      "supplemental_guidance": "Configuration settings are the parameters that can be changed in the hardware, software, or firmware components of the system that affect the security and privacy posture or functionality of the system. STIGs and SRGs provide established guidelines for hardening.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CM-7",
+      "family": "CM",
+      "title": "Least Functionality",
+      "description": "Configure the system to provide only mission-essential capabilities. Prohibit or restrict the use of functions, ports, protocols, software, and/or services as defined in organizational policy.",
+      "supplemental_guidance": "Systems provide a wide variety of functions and services. Some of the functions and services routinely provided by default may not be necessary to support essential organizational missions, functions, or operations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "IA-1",
+      "family": "IA",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate an identification and authentication policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the identification and authentication policy and the associated identification and authentication controls.",
+      "supplemental_guidance": "Identification and authentication policy and procedures address the controls in the IA family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "IA-2",
+      "family": "IA",
+      "title": "Identification and Authentication (Organizational Users)",
+      "description": "Uniquely identify and authenticate organizational users and associate that unique identification with processes acting on behalf of those users.",
+      "supplemental_guidance": "Organizations can satisfy the identification and authentication requirements by complying with the requirements in HSPD-12. Organizational users include employees or individuals whom organizations consider to have an equivalent status to employees.",
+      "impact_level": "low"
+    },
+    {
+      "id": "IA-5",
+      "family": "IA",
+      "title": "Authenticator Management",
+      "description": "Manage system authenticators by verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator. Establish initial authenticator content for any authenticators issued by the organization.",
+      "supplemental_guidance": "Authenticators include passwords, cryptographic devices, biometrics, certificates, one-time password devices, and ID badges. Device authenticators include certificates and passwords.",
+      "impact_level": "low"
+    },
+    {
+      "id": "IA-6",
+      "family": "IA",
+      "title": "Authentication Feedback",
+      "description": "Obscure feedback of authentication information during the authentication process to protect the information from possible exploitation/use by unauthorized individuals.",
+      "supplemental_guidance": "Authentication feedback from systems does not provide information that would allow unauthorized individuals to compromise authentication mechanisms. For some types of systems, such as desktops or notebooks with relatively large monitors, the threat of feedback providing information is less significant.",
+      "impact_level": "low"
+    },
+    {
+      "id": "IA-8",
+      "family": "IA",
+      "title": "Identification and Authentication (Non-Organizational Users)",
+      "description": "Uniquely identify and authenticate non-organizational users or processes acting on behalf of non-organizational users.",
+      "supplemental_guidance": "Non-organizational users include system users other than organizational users explicitly covered by IA-2. Non-organizational users are uniquely identified and authenticated for accesses other than those explicitly identified and documented in AC-14.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SA-1",
+      "family": "SA",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate a system and services acquisition policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the system and services acquisition policy and the associated system and services acquisition controls.",
+      "supplemental_guidance": "System and services acquisition policy and procedures address the controls in the SA family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SA-3",
+      "family": "SA",
+      "title": "System Development Life Cycle",
+      "description": "Acquire, develop, and manage the system using a system development life cycle methodology that incorporates information security and privacy considerations. Define and document information security and privacy roles and responsibilities throughout the system development life cycle.",
+      "supplemental_guidance": "A system development life cycle process provides the foundation for the successful development, implementation, and operation of organizational systems. The integration of security and privacy considerations early in the system development life cycle is a foundational principle of systems security engineering and privacy engineering.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SA-4",
+      "family": "SA",
+      "title": "Acquisition Process",
+      "description": "Include security and privacy functional requirements, strength requirements, assurance requirements, documentation requirements, and acceptance criteria in the acquisition contract for the system, system component, or system service.",
+      "supplemental_guidance": "Security and privacy functional requirements are typically derived from the security and privacy requirements levied on organizations. Assurance requirements address the activities performed to generate confidence that the information technology satisfies the security and privacy requirements.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SA-8",
+      "family": "SA",
+      "title": "Security and Privacy Engineering Principles",
+      "description": "Apply systems security and privacy engineering principles in the specification, design, development, implementation, and modification of the system and system components.",
+      "supplemental_guidance": "Systems security and privacy engineering principles are closely related to and can be used to support security and privacy policies. Security engineering principles include developing layered protections, establishing sound security policy, and managing the complexity of systems.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "SA-11",
+      "family": "SA",
+      "title": "Developer Testing and Evaluation",
+      "description": "Require the developer of the system, system component, or system service to create and implement a security and privacy assessment plan. Perform unit, integration, system, and regression testing/evaluation at the depth and coverage defined by the assessment plan. Produce evidence of the execution of the assessment plan and the results of the testing and evaluation.",
+      "supplemental_guidance": "Developmental testing/evaluation confirms that required security and privacy controls are implemented correctly, operating as intended, enforcing the desired security and privacy policy, and meeting established security and privacy requirements.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "SC-1",
+      "family": "SC",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate a system and communications protection policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the system and communications protection policy and the associated system and communications protection controls.",
+      "supplemental_guidance": "System and communications protection policy and procedures address the controls in the SC family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SC-7",
+      "family": "SC",
+      "title": "Boundary Protection",
+      "description": "Monitor and control communications at the external managed interfaces to the system and at key internal managed interfaces within the system. Implement subnetworks for publicly accessible system components that are physically or logically separated from internal organizational networks.",
+      "supplemental_guidance": "Managed interfaces include gateways, routers, firewalls, guards, network-based malicious code analysis, virtualization systems, or encrypted tunnels implemented within a security architecture. Subnetworks within the system are referred to as demilitarized zones or DMZs.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SC-8",
+      "family": "SC",
+      "title": "Transmission Confidentiality and Integrity",
+      "description": "Protect the confidentiality and integrity of transmitted information.",
+      "supplemental_guidance": "Protecting the confidentiality and integrity of transmitted information applies to internal and external communications. Organizations rely on transport protocols such as TLS or IPsec to achieve confidentiality and integrity of transmitted information.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "SC-12",
+      "family": "SC",
+      "title": "Cryptographic Key Establishment and Management",
+      "description": "Establish and manage cryptographic keys when cryptography is employed within the system in accordance with applicable federal laws, Executive Orders, directives, regulations, policies, standards, and guidelines.",
+      "supplemental_guidance": "Cryptographic key management and establishment can be performed using manual procedures or automated mechanisms with supporting manual procedures. Organizations define key management requirements in accordance with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines and include them in organizational key management policy.",
+      "impact_level": "low"
+    },
+    {
+      "id": "SC-13",
+      "family": "SC",
+      "title": "Cryptographic Protection",
+      "description": "Determine the cryptographic uses needed; and implement the following types of cryptography required for each specified cryptographic use in accordance with applicable laws, executive orders, directives, regulations, policies, standards, and guidelines: FIPS-validated or NSA-approved cryptography.",
+      "supplemental_guidance": "Cryptography can be employed to support a variety of security solutions, including the protection of classified information and controlled unclassified information, the provision and implementation of digital signatures, and the enforcement of information separation when authorized individuals have the necessary clearances but lack the necessary formal access approvals.",
+      "impact_level": "low"
+    },
+    {
+      "id": "RA-1",
+      "family": "RA",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate a risk assessment policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the risk assessment policy and the associated risk assessment controls.",
+      "supplemental_guidance": "Risk assessment policy and procedures address the controls in the RA family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "RA-3",
+      "family": "RA",
+      "title": "Risk Assessment",
+      "description": "Conduct a risk assessment, including identifying threats to and vulnerabilities in the system. Determine the likelihood and magnitude of harm from unauthorized access, use, disclosure, disruption, modification, or destruction of the system, the information it processes, stores, or transmits, and any related information.",
+      "supplemental_guidance": "Risk assessments consider threats, vulnerabilities, likelihood, and impact to organizational operations and assets, individuals, other organizations, and the Nation. Risk assessments also consider risk from external parties.",
+      "impact_level": "low"
+    },
+    {
+      "id": "RA-5",
+      "family": "RA",
+      "title": "Vulnerability Monitoring and Scanning",
+      "description": "Monitor and scan for vulnerabilities in the system and hosted applications. Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools. Analyze vulnerability scan reports and results from vulnerability monitoring. Remediate legitimate vulnerabilities in accordance with an organizational assessment of risk.",
+      "supplemental_guidance": "Security categorization of information and systems guides the frequency and comprehensiveness of vulnerability monitoring including scans. Organizations determine the required vulnerability monitoring for system components, ensuring that the potential sources of vulnerabilities are not overlooked.",
+      "impact_level": "low"
+    },
+    {
+      "id": "RA-7",
+      "family": "RA",
+      "title": "Risk Response",
+      "description": "Respond to findings from security and privacy assessments, monitoring, and audits in accordance with organizational risk tolerance.",
+      "supplemental_guidance": "Organizations have many options for responding to risk including mitigating risk by implementing new controls or strengthening existing controls, accepting risk with appropriate justification or rationale, sharing or transferring risk, or avoiding risk.",
+      "impact_level": "moderate"
+    },
+    {
+      "id": "CA-1",
+      "family": "CA",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate an assessment, authorization, and monitoring policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance; and procedures to facilitate the implementation of the assessment, authorization, and monitoring policy and the associated assessment, authorization, and monitoring controls.",
+      "supplemental_guidance": "Assessment, authorization, and monitoring policy and procedures address the controls in the CA family that are implemented within systems and organizations.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CA-2",
+      "family": "CA",
+      "title": "Control Assessments",
+      "description": "Select the appropriate assessor or assessment team for the type of assessment being conducted. Develop a control assessment plan that describes the scope of the assessment. Assess the controls in the system and its environment of operation to determine the extent to which the controls are implemented correctly, operating as intended, and producing the desired outcome.",
+      "supplemental_guidance": "Organizations assess controls in systems and the environments in which those systems operate as part of the system development life cycle, at the frequency established in organizational policies, as part of the authorization process, and on an ongoing basis after authorization.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CA-5",
+      "family": "CA",
+      "title": "Plan of Action and Milestones",
+      "description": "Develop a plan of action and milestones for the system to document the planned remediation actions of the organization to correct weaknesses or deficiencies noted during the assessment of the controls and to reduce or eliminate known vulnerabilities in the system. Update existing plan of action and milestones based on the findings from control assessments, independent audits or reviews, and continuous monitoring activities.",
+      "supplemental_guidance": "Plans of action and milestones are useful for any type of organization to plan, implement, and document remedial actions to address security and privacy weaknesses, deficiencies, and findings identified during assessments, audits, and reviews.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CA-6",
+      "family": "CA",
+      "title": "Authorization",
+      "description": "Assign a senior official as the authorizing official for the system. Ensure that the authorizing official authorizes the system for processing before commencing operations. Update the authorization on an ongoing basis.",
+      "supplemental_guidance": "Authorizations are official management decisions by senior officials or executives to authorize operation of systems and accept the risk to organizational operations, organizational assets, individuals, other organizations, and the Nation based on the implementation of agreed-upon controls.",
+      "impact_level": "low"
+    },
+    {
+      "id": "CA-7",
+      "family": "CA",
+      "title": "Continuous Monitoring",
+      "description": "Develop a system-level continuous monitoring strategy and implement continuous monitoring in accordance with the organization-level continuous monitoring strategy. Establish metrics to be monitored, frequencies for monitoring, and frequencies for assessment of control effectiveness.",
+      "supplemental_guidance": "Continuous monitoring at the system level facilitates ongoing awareness of the system security and privacy posture to support organizational risk management decisions. Continuous monitoring programs include ongoing assessment of control effectiveness in response to risk changes.",
+      "impact_level": "low"
+    }
+  ]
+}

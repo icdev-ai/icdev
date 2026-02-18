@@ -1,0 +1,210 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Patterns for generating alternative Courses of Action (COAs) when a requirement receives RED-tier boundary impact classification",
+  "alternative_patterns": [
+    {
+      "id": "ALT-CDS",
+      "name": "Cross-Domain Solution",
+      "description": "Use an approved Cross-Domain Solution instead of direct cross-classification connection",
+      "applicable_when": ["classification_change", "cross_network"],
+      "resulting_tier": "YELLOW",
+      "feasibility": 0.7,
+      "tradeoffs": [
+        "Added latency",
+        "CDS procurement/certification required",
+        "Data format constraints"
+      ],
+      "implementation_steps": [
+        "Identify approved CDS from NSA EPL",
+        "Submit CDS connection request to DAA",
+        "Define data filter rules",
+        "Implement data format adapters",
+        "Test cross-domain data flow"
+      ],
+      "estimated_timeline_days": 120,
+      "cost_impact": "high"
+    },
+    {
+      "id": "ALT-DOWNGRADE",
+      "name": "Data Downgrade",
+      "description": "Process data at lower classification level, aggregate results at higher level",
+      "applicable_when": ["classification_change", "data_sensitivity"],
+      "resulting_tier": "GREEN",
+      "feasibility": 0.6,
+      "tradeoffs": [
+        "Reduced data fidelity",
+        "Manual aggregation step",
+        "Dual-system maintenance"
+      ],
+      "implementation_steps": [
+        "Identify data elements requiring higher classification",
+        "Design data decomposition strategy",
+        "Implement lower-classification processing pipeline",
+        "Create secure aggregation workflow at higher level",
+        "Validate results maintain required accuracy"
+      ],
+      "estimated_timeline_days": 45,
+      "cost_impact": "medium"
+    },
+    {
+      "id": "ALT-PHASE",
+      "name": "Phased Implementation",
+      "description": "Split requirement into phases that stay within boundary",
+      "applicable_when": ["boundary_expansion", "scope_increase"],
+      "resulting_tier": "YELLOW",
+      "feasibility": 0.8,
+      "tradeoffs": [
+        "Longer timeline",
+        "Partial capability initially",
+        "Multiple ATO actions"
+      ],
+      "implementation_steps": [
+        "Decompose requirement into boundary-safe phases",
+        "Identify minimum viable phase within current boundary",
+        "Plan subsequent phases with incremental boundary changes",
+        "Submit separate ATO actions per phase",
+        "Establish phase gates with compliance checkpoints"
+      ],
+      "estimated_timeline_days": 30,
+      "cost_impact": "low"
+    },
+    {
+      "id": "ALT-PROXY",
+      "name": "Authorized Proxy",
+      "description": "Use existing authorized system as intermediary/gateway",
+      "applicable_when": ["new_interconnection", "prohibited_technology"],
+      "resulting_tier": "ORANGE",
+      "feasibility": 0.5,
+      "tradeoffs": [
+        "Single point of failure",
+        "Performance bottleneck",
+        "Proxy system ATO scope increase"
+      ],
+      "implementation_steps": [
+        "Identify existing authorized gateway/proxy systems",
+        "Assess proxy system capacity for additional load",
+        "Negotiate ISA amendment with proxy system owner",
+        "Implement API adapter layer on proxy",
+        "Test end-to-end data flow through proxy"
+      ],
+      "estimated_timeline_days": 60,
+      "cost_impact": "medium"
+    },
+    {
+      "id": "ALT-ENCLAVE",
+      "name": "Isolated Enclave",
+      "description": "Create an isolated enclave within existing boundary for sensitive processing",
+      "applicable_when": ["data_sensitivity", "boundary_expansion"],
+      "resulting_tier": "YELLOW",
+      "feasibility": 0.65,
+      "tradeoffs": [
+        "Additional infrastructure",
+        "Network segmentation complexity",
+        "Separate monitoring"
+      ],
+      "implementation_steps": [
+        "Define enclave boundary within existing ATO boundary",
+        "Implement network segmentation (VLAN, firewall rules)",
+        "Apply enhanced controls within enclave",
+        "Create SSP addendum for enclave",
+        "Validate enclave isolation with penetration testing"
+      ],
+      "estimated_timeline_days": 75,
+      "cost_impact": "high"
+    },
+    {
+      "id": "ALT-DECLASS",
+      "name": "Declassification Pipeline",
+      "description": "Implement automated declassification review to process data at lower classification",
+      "applicable_when": ["classification_change"],
+      "resulting_tier": "YELLOW",
+      "feasibility": 0.4,
+      "tradeoffs": [
+        "Declassification authority required",
+        "Review latency for each record",
+        "Not applicable to all data types",
+        "Regulatory approval needed"
+      ],
+      "implementation_steps": [
+        "Identify data elements eligible for declassification",
+        "Obtain declassification authority approval",
+        "Implement automated review pipeline with human-in-the-loop",
+        "Create audit trail for all declassification decisions",
+        "Test pipeline with representative data samples"
+      ],
+      "estimated_timeline_days": 90,
+      "cost_impact": "high"
+    },
+    {
+      "id": "ALT-VENDOR-SWAP",
+      "name": "Vendor Replacement",
+      "description": "Replace prohibited or high-risk vendor with compliant alternative",
+      "applicable_when": ["prohibited_technology", "section_889_violation"],
+      "resulting_tier": "GREEN",
+      "feasibility": 0.75,
+      "tradeoffs": [
+        "Migration effort for existing integrations",
+        "Possible feature gap with alternative vendor",
+        "Retraining required",
+        "Contract renegotiation"
+      ],
+      "implementation_steps": [
+        "Identify Section 889 compliant alternative vendors",
+        "Conduct SCRM assessment on alternatives",
+        "Perform feature gap analysis",
+        "Plan migration from prohibited to compliant vendor",
+        "Execute migration with parallel-run validation"
+      ],
+      "estimated_timeline_days": 90,
+      "cost_impact": "medium"
+    },
+    {
+      "id": "ALT-SCOPE-REDUCE",
+      "name": "Scope Reduction",
+      "description": "Reduce requirement scope to eliminate boundary-breaking elements",
+      "applicable_when": ["boundary_expansion", "scope_increase", "new_interconnection"],
+      "resulting_tier": "GREEN",
+      "feasibility": 0.85,
+      "tradeoffs": [
+        "Reduced functionality",
+        "May not fully satisfy stakeholder needs",
+        "Requires stakeholder negotiation"
+      ],
+      "implementation_steps": [
+        "Identify specific elements causing RED classification",
+        "Propose reduced scope that eliminates boundary impact",
+        "Present trade-off analysis to stakeholders",
+        "Document accepted scope reduction in requirements",
+        "Update decomposition to reflect reduced scope"
+      ],
+      "estimated_timeline_days": 14,
+      "cost_impact": "low"
+    }
+  ],
+  "selection_criteria": {
+    "primary_factors": [
+      "feasibility",
+      "resulting_tier",
+      "estimated_timeline_days",
+      "cost_impact"
+    ],
+    "scoring_weights": {
+      "feasibility": 0.35,
+      "resulting_tier_score": 0.25,
+      "timeline_score": 0.20,
+      "cost_score": 0.20
+    },
+    "tier_scores": {
+      "GREEN": 1.0,
+      "YELLOW": 0.75,
+      "ORANGE": 0.5,
+      "RED": 0.0
+    },
+    "cost_scores": {
+      "low": 1.0,
+      "medium": 0.6,
+      "high": 0.3
+    }
+  }
+}

@@ -1,0 +1,130 @@
+# CUI // SP-CTI
+# Capability Registry - maps fitness scorecard dimensions to child app capabilities
+# Used by: tools/builder/app_blueprint.py
+capabilities:
+  core:
+    always_on: true
+    description: "Agent infrastructure, A2A protocol, audit trail"
+    source_dirs: ["tools/agent", "tools/a2a", "tools/audit"]
+    includes: ["tools/agent/*.py", "tools/a2a/*.py", "tools/audit/*.py", "args/agent_config.yaml", "args/cui_markings.yaml"]
+  compliance:
+    always_on: false
+    trigger: { dimension: "compliance_sensitivity", threshold: 6, or_flag: "ato_required" }
+    description: "Full 9-framework ATO compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, eMASS, cATO)"
+    source_dirs: ["tools/compliance"]
+    includes:
+      - "tools/compliance/*.py"
+      - "tools/compliance/xacta/*.py"
+      - "tools/compliance/emass/*.py"
+      - "context/compliance/*.json"
+      - "context/compliance/*.md"
+      - "hardprompts/compliance/*.md"
+      - "args/security_gates.yaml"
+    db_tables:
+      - "compliance_controls"
+      - "project_controls"
+      - "ssp_documents"
+      - "poam_items"
+      - "stig_findings"
+      - "sbom_records"
+      - "fedramp_assessments"
+      - "cmmc_assessments"
+      - "oscal_artifacts"
+      - "cato_evidence"
+      - "cssp_assessments"
+      - "ivv_assessments"
+      - "sbd_assessments"
+  security:
+    always_on: false
+    trigger: { overall_score_minimum: 5, or_flag: "security_required" }
+    description: "SAST, dependency audit, secret detection, container scanning"
+    source_dirs: ["tools/security"]
+    includes: ["tools/security/*.py"]
+  mbse:
+    always_on: false
+    trigger: { flag: "mbse_enabled" }
+    description: "SysML parsing, DOORS NG, digital thread, model-code sync, DES compliance"
+    source_dirs: ["tools/mbse"]
+    includes: ["tools/mbse/*.py", "context/mbse/*.md"]
+    db_tables:
+      - "sysml_elements"
+      - "sysml_relationships"
+      - "doors_requirements"
+      - "digital_thread_links"
+      - "model_imports"
+      - "model_snapshots"
+      - "model_code_mappings"
+      - "des_compliance"
+  cicd:
+    always_on: true
+    description: "GitHub + GitLab CI/CD integration with webhooks and polling"
+    source_dirs: ["tools/ci"]
+    includes: ["tools/ci/**/*.py", ".claude/commands/*.md"]
+  testing:
+    always_on: true
+    description: "7-step test pipeline (py_compile, ruff, pytest, behave, bandit, playwright, gates)"
+    source_dirs: ["tools/testing"]
+    includes: ["tools/testing/*.py"]
+  dashboard:
+    always_on: false
+    trigger: { dimension: "user_interaction", threshold: 4 }
+    description: "Flask web dashboard for project status and monitoring"
+    source_dirs: ["tools/dashboard"]
+    includes: ["tools/dashboard/*.py", "tools/dashboard/templates/*.html", "tools/dashboard/static/**"]
+  knowledge:
+    always_on: true
+    description: "Pattern detection, self-healing, recommendations, monitoring"
+    source_dirs: ["tools/knowledge", "tools/monitor"]
+    includes: ["tools/knowledge/*.py", "tools/monitor/*.py"]
+  memory:
+    always_on: true
+    description: "Full memory system (MEMORY.md, logs, SQLite, semantic search, embeddings)"
+    source_dirs: ["tools/memory"]
+    includes: ["tools/memory/*.py", "memory/MEMORY.md"]
+    db_tables: ["memory_entries", "daily_logs", "memory_access_log"]
+  infrastructure:
+    always_on: true
+    description: "Terraform, Ansible, K8s, pipeline generation"
+    source_dirs: ["tools/infra"]
+    includes: ["tools/infra/*.py", "k8s/*.yaml", "docker/Dockerfile.*"]
+  maintenance:
+    always_on: true
+    description: "Dependency scanning, vulnerability checking, auto-remediation"
+    source_dirs: ["tools/maintenance"]
+    includes: ["tools/maintenance/*.py"]
+  modernization:
+    always_on: false
+    trigger: { never: true }
+    description: "Excluded from child apps — legacy modernization stays in parent ICDEV"
+    source_dirs: []
+    note: "Child apps do not include modernization. Use A2A callback to parent ICDEV."
+
+# Agent definitions — core agents always included, conditional depend on capabilities
+agents:
+  core:
+    - { name: orchestrator, base_port: 8443, role: "Task routing, workflow management" }
+    - { name: architect, base_port: 8444, role: "ATLAS A/T phases, system design" }
+    - { name: builder, base_port: 8445, role: "TDD code gen (RED->GREEN->REFACTOR)" }
+    - { name: knowledge, base_port: 8449, role: "Self-healing patterns, recommendations" }
+    - { name: monitor, base_port: 8450, role: "Log analysis, metrics, alerts, health checks" }
+  conditional:
+    - { name: compliance, base_port: 8446, role: "ATO artifacts, 9-framework compliance", requires_capability: "compliance" }
+    - { name: security, base_port: 8447, role: "SAST, dep audit, secret detection", requires_capability: "security" }
+
+# Essential goals — always copied to child apps regardless of scorecard
+essential_goals:
+  - build_app
+  - tdd_workflow
+  - compliance_workflow
+  - security_scan
+  - deploy_workflow
+  - monitoring
+  - self_healing
+  - agent_management
+
+# Grandchild prevention (D28) — 3-layer mechanism to block recursive self-replication
+grandchild_prevention:
+  config_flag: true
+  scaffolder_strip: true
+  claude_md_doc: true
+  note: "3-layer prevention: config flag + scaffolder stripping + CLAUDE.md documentation"

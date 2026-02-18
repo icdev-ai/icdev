@@ -1,0 +1,251 @@
+{
+  "metadata": {
+    "title": "DoD Impact Level Profiles",
+    "source": "DoD Cloud Computing SRG v1r4, FedRAMP Authorization Boundary Guidance, CNSSI 1253",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "Master profiles for DoD Impact Levels IL4, IL5, and IL6 defining classification, compliance baselines, infrastructure requirements, and marking standards"
+  },
+  "profiles": {
+    "IL2": {
+      "classification": "PUBLIC",
+      "description": "Non-CUI, publicly releasable DoD information on commercial cloud",
+      "fedramp_baseline": "moderate",
+      "cmmc_level": null,
+      "nist_800_171_required": false,
+      "cloud_environments": ["aws-commercial", "azure-commercial", "gcp-commercial"],
+      "marking_banner": null,
+      "marking_category": null,
+      "required_controls_overlay": [],
+      "encryption_requirements": {
+        "at_rest": "FIPS 140-2 validated or equivalent",
+        "in_transit": "TLS 1.2+",
+        "key_management": "Cloud provider managed acceptable"
+      },
+      "network_requirements": {
+        "dedicated_infrastructure": false,
+        "cross_domain": false,
+        "vpn_required": false,
+        "sipr_only": false
+      },
+      "personnel_requirements": {
+        "citizenship": "No requirement",
+        "clearance": "None",
+        "background_check": "Standard"
+      },
+      "data_sovereignty": "US-based data centers preferred",
+      "audit_requirements": {
+        "log_retention_days": 90,
+        "real_time_monitoring": false,
+        "siem_required": false
+      }
+    },
+    "IL4": {
+      "classification": "CUI",
+      "description": "Controlled Unclassified Information on commercial cloud infrastructure with FedRAMP Moderate authorization",
+      "fedramp_baseline": "moderate",
+      "cmmc_level": 2,
+      "nist_800_171_required": true,
+      "cloud_environments": ["aws-govcloud", "azure-gov", "oracle-gov"],
+      "marking_banner": "CUI // SP-CTI",
+      "marking_category": "CTI",
+      "required_controls_overlay": [],
+      "encryption_requirements": {
+        "at_rest": "FIPS 140-2 validated modules",
+        "in_transit": "TLS 1.2+ with FIPS 140-2 validated modules",
+        "key_management": "Customer managed keys in FIPS 140-2 validated HSM"
+      },
+      "network_requirements": {
+        "dedicated_infrastructure": false,
+        "cross_domain": false,
+        "vpn_required": true,
+        "sipr_only": false,
+        "boundary_protection": "FedRAMP authorized boundary required",
+        "network_monitoring": "IDS/IPS required at boundary"
+      },
+      "personnel_requirements": {
+        "citizenship": "US Person (per ITAR/EAR)",
+        "clearance": "None required (favorable background check)",
+        "background_check": "NACI or equivalent"
+      },
+      "data_sovereignty": "US-only data centers, FedRAMP authorized regions",
+      "audit_requirements": {
+        "log_retention_days": 365,
+        "real_time_monitoring": true,
+        "siem_required": true,
+        "siem_targets": ["splunk", "elk"],
+        "incident_reporting_hours": {"critical": 1, "high": 24, "moderate": 72}
+      },
+      "container_requirements": {
+        "base_image": "DoD Iron Bank or FedRAMP approved",
+        "scanning": "Required before deployment",
+        "runtime_protection": "Recommended",
+        "registry": "Private ECR/ACR within authorization boundary"
+      },
+      "ci_cd_requirements": {
+        "pipeline_location": "Within authorization boundary",
+        "artifact_signing": "Recommended",
+        "sbom_required": true,
+        "sast_required": true,
+        "dast_required": true
+      }
+    },
+    "IL5": {
+      "classification": "CUI",
+      "description": "Higher-sensitivity CUI and mission-critical National Security Systems on dedicated DoD cloud infrastructure with FedRAMP High equivalent authorization",
+      "fedramp_baseline": "high",
+      "cmmc_level": 2,
+      "nist_800_171_required": true,
+      "cloud_environments": ["aws-govcloud", "azure-gov-dod", "on-prem"],
+      "marking_banner": "CUI // SP-CTI",
+      "marking_category": "CTI",
+      "required_controls_overlay": [
+        "AC-2(5)", "AC-2(13)", "AC-3(3)", "AC-4(4)", "AC-6(3)",
+        "AU-4(1)", "AU-5(1)", "AU-5(2)",
+        "IA-2(12)", "IA-5(2)",
+        "SC-7(5)", "SC-7(7)", "SC-7(8)", "SC-7(18)", "SC-7(21)",
+        "SC-8(1)", "SC-12(1)", "SC-28(1)",
+        "SI-4(5)", "SI-4(12)", "SI-7(1)"
+      ],
+      "encryption_requirements": {
+        "at_rest": "FIPS 140-2 Level 2 validated modules",
+        "in_transit": "TLS 1.2+ with NSA-approved cryptographic algorithms",
+        "key_management": "Customer managed keys in FIPS 140-2 Level 3 HSM",
+        "data_at_rest_double_encryption": "Required for highest sensitivity CUI"
+      },
+      "network_requirements": {
+        "dedicated_infrastructure": true,
+        "cross_domain": true,
+        "vpn_required": true,
+        "sipr_only": false,
+        "boundary_protection": "Dedicated physical or logical boundary",
+        "network_monitoring": "IDS/IPS with 24/7 SOC monitoring",
+        "network_segmentation": "Micro-segmentation required",
+        "zero_trust": "Zero Trust Architecture implementation required"
+      },
+      "personnel_requirements": {
+        "citizenship": "US Citizen",
+        "clearance": "Favorable adjudication (IT-II or higher)",
+        "background_check": "SSBI or T3/T5"
+      },
+      "data_sovereignty": "US-only dedicated DoD cloud regions, no multi-tenant infrastructure",
+      "audit_requirements": {
+        "log_retention_days": 365,
+        "real_time_monitoring": true,
+        "siem_required": true,
+        "siem_targets": ["splunk", "elk"],
+        "incident_reporting_hours": {"critical": 1, "high": 24, "moderate": 72},
+        "continuous_monitoring": true,
+        "conmon_frequency": "monthly"
+      },
+      "container_requirements": {
+        "base_image": "DoD Iron Bank hardened images only",
+        "scanning": "Required before and after deployment",
+        "runtime_protection": "Required",
+        "registry": "Private registry within DoD authorization boundary",
+        "image_signing": "Required with DoD-approved certificates"
+      },
+      "ci_cd_requirements": {
+        "pipeline_location": "Within DoD authorization boundary",
+        "artifact_signing": "Required",
+        "sbom_required": true,
+        "sast_required": true,
+        "dast_required": true,
+        "iast_required": true,
+        "supply_chain_verification": "Required"
+      }
+    },
+    "IL6": {
+      "classification": "SECRET",
+      "description": "Classified SECRET information on dedicated classified cloud infrastructure or SIPR-connected on-premises systems",
+      "fedramp_baseline": "high",
+      "cmmc_level": 3,
+      "nist_800_171_required": true,
+      "cloud_environments": ["aws-secret-region", "azure-gov-secret", "sipr", "on-prem-classified"],
+      "marking_banner": "SECRET // NOFORN",
+      "marking_category": "CLASSIFIED",
+      "required_controls_overlay": [
+        "AC-2(5)", "AC-2(13)", "AC-3(3)", "AC-4(4)", "AC-6(3)",
+        "AU-4(1)", "AU-5(1)", "AU-5(2)",
+        "IA-2(12)", "IA-5(2)",
+        "PE-2(3)", "PE-3(1)", "PE-3(2)", "PE-6(1)",
+        "SC-7(5)", "SC-7(7)", "SC-7(8)", "SC-7(13)", "SC-7(18)", "SC-7(21)",
+        "SC-8(1)", "SC-12(1)", "SC-13", "SC-28(1)",
+        "SI-4(5)", "SI-4(12)", "SI-7(1)", "SI-7(6)"
+      ],
+      "encryption_requirements": {
+        "at_rest": "NSA Type 1 encryption or CSfC solution",
+        "in_transit": "NSA-approved Suite B cryptographic algorithms",
+        "key_management": "NSA-approved key management infrastructure",
+        "cross_domain_encryption": "NSA-approved cross-domain solution required"
+      },
+      "network_requirements": {
+        "dedicated_infrastructure": true,
+        "cross_domain": true,
+        "vpn_required": true,
+        "sipr_only": true,
+        "boundary_protection": "Classified network boundary with approved guard",
+        "network_monitoring": "24/7 SOC with classified network monitoring",
+        "network_segmentation": "Physical network separation or NSA-approved logical",
+        "zero_trust": "Zero Trust Architecture with classified identity provider",
+        "cross_domain_solution": "NSA-approved CDS for any lower-classification data exchange"
+      },
+      "personnel_requirements": {
+        "citizenship": "US Citizen",
+        "clearance": "SECRET clearance (minimum)",
+        "background_check": "SSBI/T5",
+        "need_to_know": "Documented need-to-know for all access"
+      },
+      "data_sovereignty": "CONUS-only, classified cloud regions or SIPR-connected facilities, SCIF for physical access",
+      "audit_requirements": {
+        "log_retention_days": 730,
+        "real_time_monitoring": true,
+        "siem_required": true,
+        "siem_targets": ["splunk"],
+        "incident_reporting_hours": {"critical": 1, "high": 4, "moderate": 24},
+        "continuous_monitoring": true,
+        "conmon_frequency": "weekly",
+        "insider_threat_monitoring": true
+      },
+      "container_requirements": {
+        "base_image": "DoD Iron Bank hardened images with classified approval",
+        "scanning": "Required with classified scanner integration",
+        "runtime_protection": "Required with classified runtime monitoring",
+        "registry": "Classified private registry only",
+        "image_signing": "Required with classified PKI certificates",
+        "air_gapped_build": true
+      },
+      "ci_cd_requirements": {
+        "pipeline_location": "Classified network only",
+        "artifact_signing": "Required with classified certificates",
+        "sbom_required": true,
+        "sast_required": true,
+        "dast_required": true,
+        "iast_required": true,
+        "supply_chain_verification": "Required with classified verification chain",
+        "air_gapped_pipeline": true
+      }
+    }
+  },
+  "cross_domain_requirements": {
+    "IL4_to_IL5": {
+      "description": "CUI transfer between FedRAMP Moderate and DoD High environments",
+      "additional_controls": ["AC-4", "SC-7(5)", "SC-7(7)"],
+      "solution_type": "Approved data transfer mechanism",
+      "approval_required": "AO approval"
+    },
+    "IL5_to_IL6": {
+      "description": "CUI to SECRET cross-domain transfer",
+      "additional_controls": ["AC-4(4)", "SC-7(13)", "SC-7(18)", "SC-8(1)"],
+      "solution_type": "NSA-approved Cross Domain Solution (CDS)",
+      "approval_required": "AO approval + Cross Domain Solution Office (CDSO) approval"
+    },
+    "SECRET_to_TS": {
+      "description": "SECRET to TOP SECRET cross-domain transfer",
+      "additional_controls": ["AC-4(4)", "SC-7(13)", "SC-7(18)", "SC-7(21)", "SC-8(1)", "PE-3(1)"],
+      "solution_type": "NSA-approved Cross Domain Solution (CDS) with TS certification",
+      "approval_required": "AO approval + CDSO approval + NSA approval"
+    }
+  }
+}

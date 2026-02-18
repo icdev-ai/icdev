@@ -1,0 +1,39 @@
+# CUI // SP-CTI
+# ICDEV Observability Configuration — Hook events, agent execution, SIEM forwarding
+
+hooks:
+  enabled: true
+  event_signing: true
+  hmac_secret_ref: "aws:secretsmanager:icdev/hook-hmac-key"
+  siem_forwarding:
+    enabled: false
+    endpoint: ""  # Splunk/ELK HEC URL
+    backlog_enabled: true
+    backlog_max_events: 10000
+  retention_days: 90
+  truncate_output_chars: 2000
+
+agent_executor:
+  default_model: "sonnet"
+  max_retries: 3
+  retry_delays: [1, 3, 5]
+  timeout_seconds: 300
+  max_turns: 10
+  output_dir: "agents/"
+  safe_env_allowlist:
+    - PATH
+    - HOME
+    - USER
+    - LANG
+    - TERM
+    - ANTHROPIC_API_KEY
+    - AWS_DEFAULT_REGION
+    - AWS_REGION
+    - ICDEV_DB_PATH
+    - ICDEV_PROJECT_ROOT
+    - CLAUDE_SESSION_ID
+
+dashboard:
+  sse_enabled: true
+  sse_heartbeat_seconds: 15
+  event_ingest_endpoint: "http://127.0.0.1:5000/api/events/ingest"

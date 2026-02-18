@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+# Agentic Fitness Assessment Configuration
+# Decision D22: Weighted rule-based scoring with configurable thresholds
+
+scoring:
+  weights:
+    data_complexity: 0.10
+    decision_complexity: 0.25
+    user_interaction: 0.20
+    integration_density: 0.15
+    compliance_sensitivity: 0.15
+    scale_variability: 0.15
+
+thresholds:
+  agent_minimum: 6.0          # Overall score >= 6.0 -> recommend full agent architecture
+  nlq_minimum: 5.0            # user_interaction >= 5.0 -> recommend NLQ interface
+  traditional_maximum: 4.0    # Overall score < 4.0 -> recommend traditional REST/CRUD
+
+always_on:
+  self_healing: true
+  a2a_interop: true
+  aiops: true
+  gotcha_framework: true
+  ai_governance: true
+  user_feedback: true
+
+# LLM override settings (used when --llm-override flag is set)
+llm_override:
+  model_preference: sonnet-4-5
+  effort: medium
+  max_tokens: 4096

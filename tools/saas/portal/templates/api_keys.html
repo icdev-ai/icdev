@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<!-- CUI // SP-CTI -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICDEV Portal - API Keys</title>
+    <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
+</head>
+<body>
+    <!-- CUI Banner Top -->
+    <div class="cui-banner">CUI // SP-CTI</div>
+
+    <div class="portal-layout">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
+                        <rect width="48" height="48" rx="8" fill="#58a6ff"/>
+                        <path d="M14 16h20v2H14zm0 6h16v2H14zm0 6h20v2H14zm0 6h12v2H14z" fill="#0d1117"/>
+                    </svg>
+                </div>
+                <div class="sidebar-title">
+                    <span class="sidebar-brand">ICDEV</span>
+                    <span class="sidebar-tenant">{{ tenant_name }}</span>
+                </div>
+            </div>
+
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="{{ url_for('portal.dashboard') }}">
+                        <span class="nav-icon">&#9632;</span> Dashboard
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.projects') }}">
+                        <span class="nav-icon">&#9776;</span> Projects
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.compliance') }}">
+                        <span class="nav-icon">&#10003;</span> Compliance
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.team') }}">
+                        <span class="nav-icon">&#9734;</span> Team
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.settings') }}">
+                        <span class="nav-icon">&#9881;</span> Settings
+                    </a>
+                </li>
+                <li class="active">
+                    <a href="{{ url_for('portal.api_keys') }}">
+                        <span class="nav-icon">&#9919;</span> API Keys
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.usage') }}">
+                        <span class="nav-icon">&#9650;</span> Usage
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.audit') }}">
+                        <span class="nav-icon">&#9998;</span> Audit Trail
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user">
+                    <span class="user-name">{{ user_name }}</span>
+                    <span class="user-role">{{ user_role }}</span>
+                </div>
+                <a href="{{ url_for('portal.logout') }}" class="btn btn-secondary btn-sm">Sign Out</a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header">
+                <h1>API Key Management</h1>
+                <p>Manage API keys for {{ tenant_name }}</p>
+            </div>
+
+            <!-- New Key Alert -->
+            {% if new_key %}
+            <div class="alert alert-warning">
+                <strong>New API Key Created</strong>
+                <p>Copy this key now. It will not be shown again.</p>
+                <div class="key-display">
+                    <code id="new-key-value">{{ new_key }}</code>
+                    <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('new-key-value')">Copy</button>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Create Key Form -->
+            <div class="card">
+                <h2 class="card-title">Create New API Key</h2>
+                <div class="alert alert-info alert-sm">
+                    API keys grant full access to your tenant's ICDEV resources. The key value is only displayed once upon creation. Store it securely.
+                </div>
+                <form id="create-key-form" class="inline-form" onsubmit="createApiKey(event)">
+                    <div class="form-group">
+                        <label for="key-name">Key Name</label>
+                        <input type="text" id="key-name" name="name"
+                               placeholder="e.g., ci-pipeline-key, developer-local"
+                               maxlength="64" required>
+                    </div>
+                    <div class="form-group form-actions">
+                        <button type="submit" class="btn btn-primary">Create Key</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Key List -->
+            <div class="card">
+                <h2 class="card-title">Active Keys ({{ keys|length }})</h2>
+                {% if keys %}
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Prefix</th>
+                                <th>Owner</th>
+                                <th>Created</th>
+                                <th>Last Used</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for key in keys %}
+                            <tr class="{% if key.status != 'active' %}row-inactive{% endif %}">
+                                <td><strong>{{ key.name }}</strong></td>
+                                <td><code>icdev_{{ key.key_prefix }}...</code></td>
+                                <td>{{ key.owner_email }}</td>
+                                <td class="td-nowrap">{{ key.created_at }}</td>
+                                <td class="td-nowrap">{{ key.last_used_at or 'Never' }}</td>
+                                <td>
+                                    {% if key.status == 'active' %}
+                                    <span class="badge badge-success">Active</span>
+                                    {% else %}
+                                    <span class="badge badge-danger">{{ key.status | capitalize }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if key.status == 'active' %}
+                                    <button class="btn btn-danger btn-sm"
+                                            onclick="confirmAction('Revoke this API key? This action cannot be undone. Any system using this key will lose access immediately.').then(ok => ok && revokeKey('{{ key.id }}'))">
+                                        Revoke
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="empty-state">No API keys found. Create one above to get started.</p>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- CUI Banner Bottom -->
+    <div class="cui-banner">CUI // SP-CTI</div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Key Display Modal -->
+    <div id="key-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>API Key Created</h2>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <strong>Copy this key now.</strong> It will not be shown again.
+                </div>
+                <div class="key-display">
+                    <code id="modal-key-value"></code>
+                    <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('modal-key-value')">Copy</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeKeyModal()">I have copied the key</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
+</body>
+</html>

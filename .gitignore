@@ -1,0 +1,59 @@
+# Environment variables
+.env
+.env.local
+
+# Databases (regeneratable)
+data/*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+.tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Agent output directories
+agents/
+
+# Claude Code output
+claude-max-output.json
+claude-max-output.jsonl
+
+# Temp debug files
+_pdb_b64_*.txt
+
+# Playwright video recordings
+videos/
+screenshots/
+
+# Generated projects (created by project_create.py)
+# projects/  # Uncomment to ignore generated projects

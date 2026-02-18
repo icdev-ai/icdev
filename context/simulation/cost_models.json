@@ -1,0 +1,23 @@
+{
+  "t_shirt_sizes": {
+    "XS": {"hours": 8, "cost_per_hour": 150, "total": 1200},
+    "S": {"hours": 40, "cost_per_hour": 150, "total": 6000},
+    "M": {"hours": 80, "cost_per_hour": 150, "total": 12000},
+    "L": {"hours": 200, "cost_per_hour": 150, "total": 30000},
+    "XL": {"hours": 400, "cost_per_hour": 150, "total": 60000},
+    "XXL": {"hours": 800, "cost_per_hour": 150, "total": 120000}
+  },
+  "infrastructure_cost_per_component": 5000,
+  "contingency_factors": {
+    "low_risk": 0.10,
+    "moderate_risk": 0.20,
+    "high_risk": 0.35
+  },
+  "hourly_rates": {
+    "default": 150,
+    "senior_engineer": 200,
+    "architect": 250,
+    "compliance_specialist": 175,
+    "project_manager": 160
+  }
+}

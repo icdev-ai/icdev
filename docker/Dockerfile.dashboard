@@ -1,0 +1,38 @@
+# CUI // SP-CTI
+# ICDEV Web Dashboard — STIG-Hardened
+# Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.11-slim
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="ICDEV Web Dashboard"
+
+RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /usr/sbin/nologin icdev
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /install /usr/local
+
+WORKDIR /app
+COPY --chown=icdev:icdev . .
+
+RUN chmod -R 750 /app
+
+USER icdev
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
+
+EXPOSE 5000
+
+CMD ["python", "tools/dashboard/app.py", "--port", "5000"]

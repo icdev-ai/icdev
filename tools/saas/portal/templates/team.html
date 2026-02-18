@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<!-- CUI // SP-CTI -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICDEV Portal - Team Management</title>
+    <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
+</head>
+<body>
+    <!-- CUI Banner Top -->
+    <div class="cui-banner">CUI // SP-CTI</div>
+
+    <div class="portal-layout">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
+                        <rect width="48" height="48" rx="8" fill="#58a6ff"/>
+                        <path d="M14 16h20v2H14zm0 6h16v2H14zm0 6h20v2H14zm0 6h12v2H14z" fill="#0d1117"/>
+                    </svg>
+                </div>
+                <div class="sidebar-title">
+                    <span class="sidebar-brand">ICDEV</span>
+                    <span class="sidebar-tenant">{{ tenant_name }}</span>
+                </div>
+            </div>
+
+            <ul class="sidebar-nav">
+                <li>
+                    <a href="{{ url_for('portal.dashboard') }}">
+                        <span class="nav-icon">&#9632;</span> Dashboard
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.projects') }}">
+                        <span class="nav-icon">&#9776;</span> Projects
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.compliance') }}">
+                        <span class="nav-icon">&#10003;</span> Compliance
+                    </a>
+                </li>
+                <li class="active">
+                    <a href="{{ url_for('portal.team') }}">
+                        <span class="nav-icon">&#9734;</span> Team
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.settings') }}">
+                        <span class="nav-icon">&#9881;</span> Settings
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.api_keys') }}">
+                        <span class="nav-icon">&#9919;</span> API Keys
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.usage') }}">
+                        <span class="nav-icon">&#9650;</span> Usage
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ url_for('portal.audit') }}">
+                        <span class="nav-icon">&#9998;</span> Audit Trail
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user">
+                    <span class="user-name">{{ user_name }}</span>
+                    <span class="user-role">{{ user_role }}</span>
+                </div>
+                <a href="{{ url_for('portal.logout') }}" class="btn btn-secondary btn-sm">Sign Out</a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="page-header">
+                <h1>Team Management</h1>
+                <p>Manage users and roles for {{ tenant_name }}</p>
+            </div>
+
+            <!-- Invite User Form -->
+            {% if user_role in ('tenant_admin',) %}
+            <div class="card">
+                <h2 class="card-title">Invite User</h2>
+                <form id="invite-form" class="inline-form" onsubmit="inviteUser(event)">
+                    <div class="form-group">
+                        <label for="invite-email">Email Address</label>
+                        <input type="email" id="invite-email" name="email"
+                               placeholder="user@agency.gov" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="invite-role">Role</label>
+                        <select id="invite-role" name="role">
+                            <option value="viewer">Viewer</option>
+                            <option value="developer">Developer</option>
+                            <option value="compliance_officer">Compliance Officer</option>
+                            <option value="auditor">Auditor</option>
+                            <option value="tenant_admin">Tenant Admin</option>
+                        </select>
+                    </div>
+                    <div class="form-group form-actions">
+                        <button type="submit" class="btn btn-primary">Invite User</button>
+                    </div>
+                </form>
+            </div>
+            {% endif %}
+
+            <!-- User List -->
+            <div class="card">
+                <h2 class="card-title">Team Members ({{ users|length }})</h2>
+                {% if users %}
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Auth Method</th>
+                                <th>Last Login</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td><strong>{{ user.display_name or '-' }}</strong></td>
+                                <td>{{ user.email }}</td>
+                                <td>
+                                    <span class="badge {% if user.role == 'tenant_admin' %}badge-warning{% elif user.role == 'compliance_officer' %}badge-info{% else %}badge-secondary{% endif %}">
+                                        {{ user.role }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if user.status == 'active' %}
+                                    <span class="badge badge-success">Active</span>
+                                    {% else %}
+                                    <span class="badge badge-danger">{{ user.status | capitalize }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ user.auth_method or 'api_key' }}</td>
+                                <td class="td-nowrap">{{ user.last_login or 'Never' }}</td>
+                                <td>
+                                    {% if user_role == 'tenant_admin' and user.status == 'active' %}
+                                    <button class="btn btn-danger btn-sm"
+                                            onclick="confirmAction('Remove this user? Their API keys will be revoked.').then(ok => ok && removeUser('{{ user.id }}'))">
+                                        Remove
+                                    </button>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="empty-state">No team members found.</p>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <!-- CUI Banner Bottom -->
+    <div class="cui-banner">CUI // SP-CTI</div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
+</body>
+</html>

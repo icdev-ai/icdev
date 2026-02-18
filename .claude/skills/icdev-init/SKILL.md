@@ -1,0 +1,74 @@
+---
+name: icdev-init
+description: Initialize a new ICDEV project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline
+context: fork
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep
+---
+
+# /icdev-init — Initialize New Project
+
+## Usage
+```
+/icdev-init <project-name> [--type webapp|microservice|api|cli|data_pipeline|iac] [--tech-stack backend=flask,frontend=react,database=postgresql]
+```
+
+## What This Does
+1. Creates a new project with UUID in the ICDEV database
+2. Scaffolds directory structure with CUI markings on all files
+3. Sets up compliance directory (SSP, POAM, STIG templates)
+4. Initializes test scaffolding (pytest + behave/Gherkin BDD)
+5. Creates Dockerfile and .gitignore
+6. Maps initial NIST 800-53 controls (SA-11, CM-3, SA-15)
+7. Records project creation in audit trail
+
+## Steps
+
+### 1. Load Configuration
+```bash
+!cat args/project_defaults.yaml
+!cat args/cui_markings.yaml
+```
+
+### 2. Create Project
+Use the `project_create` MCP tool from icdev-core:
+- Name: `$ARGUMENTS` (first positional arg)
+- Type: from `--type` flag or default `webapp`
+- Tech stack: from `--tech-stack` flag or defaults from project_defaults.yaml
+
+### 3. Scaffold Directory Structure
+Use the `scaffold` MCP tool from icdev-builder:
+- Creates: src/, tests/, features/, compliance/, docs/, .gitlab-ci.yml
+- All files get CUI header banners per cui_markings.yaml
+
+### 4. Initialize Compliance Baseline
+Use the `control_map` MCP tool from icdev-compliance:
+- Map `project.create` activity to NIST 800-53 controls
+- Initialize project_controls with baseline controls for the project type
+
+### 5. Generate Initial Test Stubs
+Use the `write_tests` MCP tool from icdev-builder:
+- Create initial health check test (unit + BDD)
+- Ensure RED phase — tests should fail until code is written
+
+### 6. Record in Audit Trail
+The project creation is automatically logged. Verify with:
+```bash
+python tools/audit/audit_query.py --project-id <UUID> --recent 5
+```
+
+### 7. Output Summary
+Display:
+- Project UUID
+- Directory location
+- Compliance status (controls mapped)
+- Next steps: "Run /icdev-build to start TDD development"
+
+## Example
+```
+/icdev-init my-webapp --type webapp --tech-stack backend=flask,frontend=react,database=postgresql
+```
+
+## Error Handling
+- If project name already exists: append timestamp suffix
+- If database is locked: retry up to 3 times with 1s delay
+- If scaffolder module unavailable: create minimal structure manually

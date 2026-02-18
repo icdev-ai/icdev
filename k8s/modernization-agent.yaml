@@ -1,0 +1,105 @@
+# CUI // SP-CTI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icdev-modernization-agent
+  namespace: icdev
+  labels:
+    app: icdev-modernization-agent
+    tier: domain
+    app.kubernetes.io/name: modernization-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: icdev-modernization-agent
+  template:
+    metadata:
+      labels:
+        app: icdev-modernization-agent
+        tier: domain
+        app.kubernetes.io/name: modernization-agent
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: icdev
+        classification: CUI
+    spec:
+      serviceAccountName: icdev-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: modernization-agent
+          image: ${ECR_REGISTRY}/icdev-modernization-agent:latest
+          ports:
+            - containerPort: 8452
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: icdev-config
+            - secretRef:
+                name: icdev-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            runAsNonRoot: true
+            runAsUser: 1000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8452
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8452
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: tmp
+              mountPath: /app/.tmp
+            - name: certs
+              mountPath: /etc/icdev/certs
+              readOnly: true
+      volumes:
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+        - name: certs
+          secret:
+            secretName: modernization-agent-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icdev-modernization-agent
+  namespace: icdev
+  labels:
+    app: icdev-modernization-agent
+    tier: domain
+    classification: CUI
+spec:
+  selector:
+    app: icdev-modernization-agent
+  ports:
+    - port: 8452
+      targetPort: 8452
+      protocol: TCP
+  type: ClusterIP
+# CUI // SP-CTI

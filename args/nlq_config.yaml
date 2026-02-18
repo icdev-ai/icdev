@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+# ICDEV NLQ (Natural Language Query) Configuration
+
+nlq:
+  enabled: true
+  max_rows: 500
+  query_timeout_seconds: 10
+
+  # Bedrock settings (Decision D30: air-gap safe)
+  bedrock:
+    model_id: "anthropic.claude-3-sonnet-20240229-v1:0"
+    region: "us-gov-west-1"
+    max_tokens: 500
+    fallback_to_patterns: true
+
+  # Security (Decision D34: read-only enforcement)
+  security:
+    allow_only_select: true
+    block_multi_statement: true
+    block_pragma: true
+    allowed_pragma:
+      - "table_info"
+      - "table_list"
+
+  # Audit
+  audit:
+    log_all_queries: true
+    log_blocked_queries: true
+    retention_days: 90
+
+sse:
+  enabled: true
+  heartbeat_interval_seconds: 15
+  max_clients: 100
+  event_buffer_size: 1000

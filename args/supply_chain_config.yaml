@@ -1,0 +1,76 @@
+# ICDEV Supply Chain Configuration
+# NIST 800-161 SCRM settings and SLA thresholds
+
+scrm:
+  assessment_cadence_days: 90
+  risk_tier_thresholds:
+    low: 8.0
+    medium: 6.0
+    high: 4.0
+    critical: 0.0  # anything below high threshold
+  dimension_weights:
+    provenance: 0.25
+    integrity: 0.20
+    dependency: 0.15
+    substitutability: 0.15
+    access_control: 0.15
+    incident_history: 0.10
+  country_risk:
+    tier_1:  # Five Eyes
+      countries: ["US", "GB", "CA", "AU", "NZ"]
+      score: 10
+    tier_2:  # NATO allies
+      countries: ["DE", "FR", "IT", "NL", "NO", "DK", "PL", "ES", "PT", "BE", "LU", "IS", "CZ", "HU", "SK", "SI", "HR", "BG", "RO", "AL", "ME", "MK", "TR", "GR", "EE", "LV", "LT", "FI", "SE"]
+      score: 7
+    tier_3:  # Other allies
+      countries: ["JP", "KR", "IL", "IN", "BR", "MX", "CO"]
+      score: 5
+    tier_4:  # Elevated risk
+      countries: ["CN", "RU", "IR", "KP", "BY", "VE", "CU", "SY", "MM"]
+      score: 1
+
+section_889:
+  prohibited_entities:
+    - "Huawei Technologies"
+    - "ZTE Corporation"
+    - "Hytera Communications"
+    - "Hangzhou Hikvision"
+    - "Dahua Technology"
+  check_frequency_days: 30
+
+cve_sla:
+  critical:
+    hours: 24
+    escalation_hours: 12
+  high:
+    hours: 72
+    escalation_hours: 36
+  medium:
+    hours: 168
+    escalation_hours: 84
+  low:
+    hours: 720
+    escalation_hours: 360
+
+isa:
+  default_review_cadence_days: 365
+  expiry_warning_days: 90
+  required_fields:
+    - source_system
+    - target_system
+    - data_types_shared
+    - authorization_date
+    - expiry_date
+  data_classification_levels:
+    - "Public"
+    - "FOUO"
+    - "CUI"
+    - "CUI//SP-CTI"
+    - "SECRET"
+    - "TS/SCI"
+
+dependency:
+  max_critical_single_vendor: 3
+  max_critical_single_country: 5
+  severity_decay_per_hop: 0.8
+  max_propagation_depth: 10

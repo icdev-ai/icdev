@@ -1,0 +1,108 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Common requirement gap patterns for DoD/Government systems",
+  "gap_patterns": [
+    {
+      "id": "GAP-SEC-001",
+      "category": "security",
+      "name": "Missing authentication requirements",
+      "description": "No requirements specify how users authenticate (CAC, MFA, SSO)",
+      "severity": "critical",
+      "nist_controls": ["IA-2", "IA-5", "IA-8"],
+      "detection_keywords_absent": ["authentication", "login", "CAC", "PIV", "MFA", "SSO", "credential"],
+      "recommendation": "Specify authentication method (CAC/PIV required for DoD), MFA requirements, and session management"
+    },
+    {
+      "id": "GAP-SEC-002",
+      "category": "security",
+      "name": "Missing authorization/access control requirements",
+      "description": "No requirements define role-based access or privilege management",
+      "severity": "critical",
+      "nist_controls": ["AC-2", "AC-3", "AC-6"],
+      "detection_keywords_absent": ["role", "permission", "access control", "authorization", "privilege", "RBAC"],
+      "recommendation": "Define user roles, permissions matrix, least privilege principle, and account management"
+    },
+    {
+      "id": "GAP-SEC-003",
+      "category": "security",
+      "name": "Missing encryption requirements",
+      "description": "No requirements specify data-at-rest or data-in-transit encryption",
+      "severity": "critical",
+      "nist_controls": ["SC-8", "SC-13", "SC-28"],
+      "detection_keywords_absent": ["encrypt", "TLS", "FIPS 140", "AES", "data at rest", "data in transit"],
+      "recommendation": "Specify FIPS 140-2/3 validated encryption for data at rest and in transit"
+    },
+    {
+      "id": "GAP-SEC-004",
+      "category": "security",
+      "name": "Missing audit/logging requirements",
+      "description": "No requirements define what events are logged or audit trail requirements",
+      "severity": "high",
+      "nist_controls": ["AU-2", "AU-3", "AU-6", "AU-12"],
+      "detection_keywords_absent": ["audit", "log", "event", "trail", "monitor"],
+      "recommendation": "Define auditable events, log retention, log protection, and audit review frequency"
+    },
+    {
+      "id": "GAP-DATA-001",
+      "category": "data",
+      "name": "Missing data retention requirements",
+      "description": "No requirements specify how long data is retained or when it is purged",
+      "severity": "high",
+      "nist_controls": ["SI-12", "MP-6"],
+      "detection_keywords_absent": ["retention", "purge", "archive", "backup", "lifecycle"],
+      "recommendation": "Define data retention periods, archival strategy, and secure deletion requirements"
+    },
+    {
+      "id": "GAP-DATA-002",
+      "category": "data",
+      "name": "Missing data classification requirements",
+      "description": "No requirements specify CUI categories or data handling procedures",
+      "severity": "critical",
+      "nist_controls": ["RA-2", "SC-16"],
+      "detection_keywords_absent": ["CUI", "classification", "marking", "handling", "sensitivity"],
+      "recommendation": "Define CUI categories, portion marking requirements, and data handling procedures per NIST 800-171"
+    },
+    {
+      "id": "GAP-PERF-001",
+      "category": "performance",
+      "name": "Missing performance/SLA requirements",
+      "description": "No quantifiable performance targets defined",
+      "severity": "medium",
+      "nist_controls": [],
+      "detection_keywords_absent": ["response time", "latency", "throughput", "SLA", "availability", "uptime"],
+      "recommendation": "Define response time targets, availability SLA (e.g., 99.9%), throughput requirements, and degradation thresholds"
+    },
+    {
+      "id": "GAP-INT-001",
+      "category": "interface",
+      "name": "Missing interface specification",
+      "description": "External system integrations mentioned but protocols/formats not specified",
+      "severity": "high",
+      "nist_controls": ["SA-9", "CA-3"],
+      "detection_keywords_present": ["integrate", "connect", "interface", "external", "third-party"],
+      "detection_keywords_absent": ["REST", "API", "protocol", "format", "schema", "ISA", "MOU"],
+      "recommendation": "Define interface protocol (REST/SOAP/MQ), data format (JSON/XML), authentication, and ISA/MOU requirements"
+    },
+    {
+      "id": "GAP-OPS-001",
+      "category": "operational",
+      "name": "Missing disaster recovery requirements",
+      "description": "No requirements for backup, failover, or disaster recovery",
+      "severity": "high",
+      "nist_controls": ["CP-2", "CP-6", "CP-7", "CP-9", "CP-10"],
+      "detection_keywords_absent": ["backup", "recovery", "failover", "disaster", "continuity", "RTO", "RPO"],
+      "recommendation": "Define RTO/RPO targets, backup frequency, failover strategy, and DR testing cadence"
+    },
+    {
+      "id": "GAP-OPS-002",
+      "category": "operational",
+      "name": "Missing incident response requirements",
+      "description": "No requirements for how security incidents are detected and handled",
+      "severity": "high",
+      "nist_controls": ["IR-1", "IR-4", "IR-5", "IR-6"],
+      "detection_keywords_absent": ["incident", "response", "alert", "notify", "escalat"],
+      "recommendation": "Define incident detection methods, response procedures, notification requirements, and escalation paths"
+    }
+  ]
+}

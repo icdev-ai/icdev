@@ -1,0 +1,194 @@
+# CUI // SP-CTI
+# ICDEV On-Premises Configuration
+# Override these values for your environment:
+#   helm install icdev ./helm -f my-values.yaml
+
+# -----------------------------------------------------------------------
+# Global
+# -----------------------------------------------------------------------
+global:
+  classification: CUI
+  impactLevel: IL4            # IL2 | IL4 | IL5 | IL6
+  namespace: icdev
+  imagePullSecrets: []
+
+# -----------------------------------------------------------------------
+# Container images
+# -----------------------------------------------------------------------
+image:
+  repository: icdev
+  tag: "21.0.0"
+  pullPolicy: IfNotPresent
+
+# -----------------------------------------------------------------------
+# API Gateway (main entry-point — routes to internal agents)
+# -----------------------------------------------------------------------
+apiGateway:
+  replicas: 2
+  port: 8443
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -----------------------------------------------------------------------
+# Orchestrator Agent
+# -----------------------------------------------------------------------
+orchestrator:
+  replicas: 1
+  port: 8443
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Builder Agent
+# -----------------------------------------------------------------------
+builder:
+  replicas: 2
+  port: 8445
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+# -----------------------------------------------------------------------
+# Compliance Agent
+# -----------------------------------------------------------------------
+compliance:
+  replicas: 1
+  port: 8446
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Security Agent
+# -----------------------------------------------------------------------
+security:
+  replicas: 1
+  port: 8447
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Platform Database
+# -----------------------------------------------------------------------
+platformDb:
+  type: internal              # "internal" (StatefulSet) or "external" (customer RDS)
+  host: ""                    # Required if type=external
+  port: 5432
+  name: icdev_platform
+  user: icdev
+  existingSecret: ""          # K8s secret with key "password"; auto-created if empty
+  storage:
+    size: 20Gi
+    storageClass: ""          # Empty = default StorageClass
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# License
+# -----------------------------------------------------------------------
+license:
+  existingSecret: icdev-license   # K8s secret with key "license.json"
+
+# -----------------------------------------------------------------------
+# TLS
+# -----------------------------------------------------------------------
+tls:
+  enabled: true
+  certSecretName: icdev-tls       # K8s TLS secret (tls.crt + tls.key)
+
+# -----------------------------------------------------------------------
+# Amazon Bedrock (LLM inference)
+# -----------------------------------------------------------------------
+bedrock:
+  enabled: true
+  region: us-gov-west-1
+  modelId: anthropic.claude-3-sonnet-20240229-v1:0
+  existingSecret: ""              # AWS credentials secret; empty = use IAM role
+
+# -----------------------------------------------------------------------
+# Monitoring
+# -----------------------------------------------------------------------
+monitoring:
+  enabled: true
+  prometheusPort: 9090
+  grafana:
+    enabled: false
+    adminPassword: ""             # Set or use existingSecret
+  elk:
+    enabled: false
+    host: ""
+  splunk:
+    enabled: false
+    host: ""
+    hecToken: ""
+
+# -----------------------------------------------------------------------
+# CUI Marking Settings
+# -----------------------------------------------------------------------
+cui:
+  bannerTop: "CUI // SP-CTI"
+  bannerBottom: "CUI // SP-CTI"
+  portionMarkings: true
+
+# -----------------------------------------------------------------------
+# Ingress
+# -----------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: ""                   # nginx, alb, istio, etc.
+  annotations: {}
+  hosts:
+    - host: icdev.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: icdev-tls
+      hosts:
+        - icdev.local
+
+# -----------------------------------------------------------------------
+# Network Policies
+# -----------------------------------------------------------------------
+networkPolicy:
+  enabled: true                   # Default-deny + allow only intra-namespace
+
+# -----------------------------------------------------------------------
+# Pod Security
+# -----------------------------------------------------------------------
+podSecurity:
+  runAsNonRoot: true
+  runAsUser: 1000
+  readOnlyRootFilesystem: true
+  dropAllCapabilities: true

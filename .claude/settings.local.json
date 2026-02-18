@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(sqlite3:*)",
+      "Read(//c/Users/schuo/.claude/plans/**)",
+      "WebFetch(domain:awslabs.github.io)",
+      "mcp__playwright__browser_snapshot",
+      "WebFetch(domain:openclaw.ai)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:onlycrabs.ai)",
+      "WebFetch(domain:docs.openclaw.ai)",
+      "mcp__playwright__browser_close",
+      "Bash(git add:*)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\schuo\\Downloads\\ICDev\\tools",
+      "c:\\Users\\schuo\\Downloads\\ICDev\\.claude"
+    ]
+  }
+}

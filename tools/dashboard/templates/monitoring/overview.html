@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Monitoring - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Monitoring Overview</h1>
+    <p class="subtitle">System health, alerts, and self-healing activity</p>
+</div>
+
+<!-- Health Banner -->
+<div id="health-status" class="health-banner {{ health_status }}">
+    <span class="status-dot {% if health_status == 'healthy' %}green{% elif health_status == 'degraded' %}yellow{% else %}red{% endif %}"></span>
+    System Status: {{ health_status | upper }}
+</div>
+
+<!-- Summary Stats -->
+<div class="stat-grid mb-3">
+    <div class="stat-card">
+        <div class="stat-value {% if firing_count > 0 %}text-red{% else %}text-green{% endif %}">{{ firing_count }}</div>
+        <div class="stat-label">Firing Alerts</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-green">{{ resolved_count }}</div>
+        <div class="stat-label">Resolved Alerts</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value {% if unresolved_failures > 0 %}text-yellow{% else %}text-green{% endif %}">{{ unresolved_failures }}</div>
+        <div class="stat-label">Unresolved Failures</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-blue">{{ healing_events|length }}</div>
+        <div class="stat-label">Self-Healing Events</div>
+    </div>
+</div>
+
+<!-- Recent Alerts Table -->
+<div class="table-container">
+    <div class="table-header">
+        <h2>Recent Alerts</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Title</th>
+                <th>Source</th>
+                <th>Project</th>
+                <th>Status</th>
+                <th>Auto-Healed</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alert in alerts %}
+            <tr>
+                <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                <td>{{ alert.title }}</td>
+                <td>{{ alert.source }}</td>
+                <td>
+                    {% if alert.project_id %}
+                    <a href="/projects/{{ alert.project_id }}">{{ alert.project_id[:12] }}</a>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
+                <td>
+                    {% if alert.auto_healed %}
+                    <span class="text-green">Yes</span>
+                    {% else %}
+                    <span class="text-muted">No</span>
+                    {% endif %}
+                </td>
+                <td class="text-muted">{{ alert.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="7">No recent alerts</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Self-Healing Events Table -->
+<div class="table-container mt-2">
+    <div class="table-header">
+        <h2>Self-Healing Events</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Trigger Source</th>
+                <th>Pattern</th>
+                <th>Action Taken</th>
+                <th>Outcome</th>
+                <th>Duration (s)</th>
+                <th>Escalated To</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in healing_events %}
+            <tr>
+                <td>{{ event.trigger_source }}</td>
+                <td>{{ event.pattern_description or '—' }}</td>
+                <td>{{ event.action_taken or '—' }}</td>
+                <td>
+                    {% if event.outcome %}
+                    <span class="badge badge-{% if event.outcome == 'success' %}success{% elif event.outcome == 'failed' %}error{% else %}info{% endif %}">{{ event.outcome }}</span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>{{ event.duration_seconds or '—' }}</td>
+                <td>{{ event.escalated_to or '—' }}</td>
+                <td class="text-muted">{{ event.created_at }}</td>
+            </tr>
+            {% else %}
+            <tr class="empty-row"><td colspan="7">No self-healing events recorded</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

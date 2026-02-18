@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: icdev-config
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+data:
+  ICDEV_DB_PATH: "/data/icdev.db"
+  ICDEV_PROJECT_ROOT: "/app"
+  BEDROCK_REGION: "us-gov-west-1"
+  BEDROCK_MODEL_ID: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  ELK_URL: "https://elk.internal:9200"
+  SPLUNK_URL: "https://splunk.internal:8089"
+  PROMETHEUS_URL: "http://prometheus.internal:9090"
+  GRAFANA_URL: "http://grafana.internal:3000"
+  CLASSIFICATION: "CUI"
+  DISTRIBUTION: "Distribution D"

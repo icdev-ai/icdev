@@ -1,0 +1,432 @@
+{
+  "metadata": {
+    "title": "SysML v1.6 Element Type Catalog",
+    "source": "OMG SysML v1.6 Specification + Cameo XMI Export Schema",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "Maps SysML v1.6 element types to their XMI representations as exported by Cameo Systems Modeler (MagicDraw). Used by the MBSE parser to extract model elements from XMI files and map them to ICDEV database entities."
+  },
+  "namespaces": {
+    "xmi": "http://www.omg.org/spec/XMI/20131001",
+    "uml": "http://www.omg.org/spec/UML/20131001",
+    "sysml": "http://www.omg.org/spec/SysML/20181001",
+    "magicdraw": "http://www.nomagic.com/magicdraw/UML/2.5.1"
+  },
+  "element_types": {
+    "block": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Class",
+      "stereotype": "SysML::Blocks::Block",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Block",
+      "description": "SysML Block — fundamental structural element representing a modular unit of system structure",
+      "generates": "class",
+      "properties": ["value_properties", "part_properties", "reference_properties", "constraint_properties", "flow_properties"],
+      "diagram_type": "bdd",
+      "db_table": "sysml_elements",
+      "db_element_type": "block"
+    },
+    "interface_block": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Class",
+      "stereotype": "SysML::Ports&Flows::InterfaceBlock",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::InterfaceBlock",
+      "description": "SysML InterfaceBlock — defines a set of flow properties that characterize an interface",
+      "generates": "interface",
+      "properties": ["flow_properties", "proxy_ports"],
+      "diagram_type": "bdd",
+      "db_table": "sysml_elements",
+      "db_element_type": "interface_block"
+    },
+    "value_type": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:DataType",
+      "stereotype": "SysML::Blocks::ValueType",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::ValueType",
+      "description": "SysML ValueType — represents a value with units and dimensions for quantitative analysis",
+      "generates": "type_alias",
+      "properties": ["unit", "dimension", "quantity_kind"],
+      "diagram_type": "bdd",
+      "db_table": "sysml_elements",
+      "db_element_type": "value_type"
+    },
+    "constraint_block": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Class",
+      "stereotype": "SysML::ConstraintBlocks::ConstraintBlock",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::ConstraintBlock",
+      "description": "SysML ConstraintBlock — defines a constraint expression binding parameters for parametric analysis",
+      "generates": "constraint_function",
+      "properties": ["constraint_parameters", "constraint_expression"],
+      "diagram_type": "par",
+      "db_table": "sysml_elements",
+      "db_element_type": "constraint_block"
+    },
+    "activity": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Activity",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Activity — specifies a behavior as a sequence of actions with control and data flows",
+      "generates": "function",
+      "properties": ["parameters", "preconditions", "postconditions"],
+      "diagram_type": "act",
+      "db_table": "sysml_elements",
+      "db_element_type": "activity"
+    },
+    "action": {
+      "xmi_tag": "node",
+      "xmi_type": "uml:CallBehaviorAction",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Action — a single step within an activity representing an invocation of a behavior",
+      "generates": "method_call",
+      "properties": ["input_pins", "output_pins", "called_behavior"],
+      "diagram_type": "act",
+      "db_table": "sysml_elements",
+      "db_element_type": "action"
+    },
+    "object_node": {
+      "xmi_tag": "node",
+      "xmi_type": "uml:ObjectNode",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML ObjectNode — represents an object token flowing through an activity diagram",
+      "generates": "variable",
+      "properties": ["type", "upper_bound", "ordering"],
+      "diagram_type": "act",
+      "db_table": "sysml_elements",
+      "db_element_type": "object_node"
+    },
+    "control_flow": {
+      "xmi_tag": "edge",
+      "xmi_type": "uml:ControlFlow",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML ControlFlow — connects actions in sequence defining execution order within an activity",
+      "generates": "control_statement",
+      "properties": ["guard", "weight"],
+      "diagram_type": "act",
+      "db_table": "sysml_elements",
+      "db_element_type": "control_flow"
+    },
+    "object_flow": {
+      "xmi_tag": "edge",
+      "xmi_type": "uml:ObjectFlow",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML ObjectFlow — connects object nodes and pins to route data tokens between actions",
+      "generates": "data_pipe",
+      "properties": ["guard", "weight", "transformation"],
+      "diagram_type": "act",
+      "db_table": "sysml_elements",
+      "db_element_type": "object_flow"
+    },
+    "requirement": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Class",
+      "stereotype": "SysML::Requirements::Requirement",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Requirement",
+      "description": "SysML Requirement — a text-based specification of a capability or condition the system must satisfy",
+      "generates": "test_specification",
+      "properties": ["text", "id", "priority", "risk", "verify_method"],
+      "diagram_type": "req",
+      "db_table": "sysml_elements",
+      "db_element_type": "requirement"
+    },
+    "use_case": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:UseCase",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML UseCase — specifies a set of actions performed by the system yielding an observable result to an actor",
+      "generates": "feature_spec",
+      "properties": ["subject", "extension_points", "included_use_cases"],
+      "diagram_type": "uc",
+      "db_table": "sysml_elements",
+      "db_element_type": "use_case"
+    },
+    "actor": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Actor",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Actor — an external entity that interacts with the system through use cases",
+      "generates": "user_role",
+      "properties": ["use_cases"],
+      "diagram_type": "uc",
+      "db_table": "sysml_elements",
+      "db_element_type": "actor"
+    },
+    "state_machine": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:StateMachine",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML StateMachine — specifies the behavior of a block as a finite set of states and transitions",
+      "generates": "state_machine_class",
+      "properties": ["regions", "connection_points"],
+      "diagram_type": "stm",
+      "db_table": "sysml_elements",
+      "db_element_type": "state_machine"
+    },
+    "state": {
+      "xmi_tag": "subvertex",
+      "xmi_type": "uml:State",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML State — a condition or situation during which an object satisfies some condition or performs some activity",
+      "generates": "state_enum",
+      "properties": ["entry_action", "exit_action", "do_activity", "deferrable_triggers"],
+      "diagram_type": "stm",
+      "db_table": "sysml_elements",
+      "db_element_type": "state"
+    },
+    "package": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Package",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Package — a grouping mechanism for organizing model elements into namespaces",
+      "generates": "module",
+      "properties": ["packaged_elements", "element_imports", "package_imports"],
+      "diagram_type": "pkg",
+      "db_table": "sysml_elements",
+      "db_element_type": "package"
+    },
+    "profile": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Profile",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Profile — a package of stereotypes and constraints extending UML/SysML metamodel for domain-specific modeling",
+      "generates": "extension_module",
+      "properties": ["owned_stereotypes", "metaclass_references"],
+      "diagram_type": "pkg",
+      "db_table": "sysml_elements",
+      "db_element_type": "profile"
+    },
+    "stereotype": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Stereotype",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Stereotype — extends a metaclass with additional properties and constraints for domain-specific semantics",
+      "generates": "decorator",
+      "properties": ["extended_metaclass", "tag_definitions", "constraints"],
+      "diagram_type": "pkg",
+      "db_table": "sysml_elements",
+      "db_element_type": "stereotype"
+    },
+    "port": {
+      "xmi_tag": "ownedAttribute",
+      "xmi_type": "uml:Port",
+      "stereotype": "SysML::Ports&Flows::FlowPort",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::FlowPort",
+      "description": "SysML Port — an interaction point on a block through which flows of items, services, or data pass",
+      "generates": "interface_endpoint",
+      "properties": ["direction", "type", "is_conjugated", "is_service"],
+      "diagram_type": "ibd",
+      "db_table": "sysml_elements",
+      "db_element_type": "port"
+    },
+    "connector": {
+      "xmi_tag": "ownedConnector",
+      "xmi_type": "uml:Connector",
+      "stereotype": null,
+      "cameo_stereotype": null,
+      "description": "SysML Connector — a link between two ports or parts within a block internal structure",
+      "generates": "connection",
+      "properties": ["ends", "type", "item_flow"],
+      "diagram_type": "ibd",
+      "db_table": "sysml_elements",
+      "db_element_type": "connector"
+    }
+  },
+  "relationship_types": {
+    "association": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Association",
+      "stereotype": null,
+      "description": "A structural relationship between two blocks indicating they are connected",
+      "generates": "field_reference",
+      "cardinality_supported": true,
+      "navigability": "bidirectional"
+    },
+    "composition": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Association",
+      "stereotype": null,
+      "description": "A whole-part relationship where the part cannot exist without the whole (filled diamond)",
+      "generates": "nested_class",
+      "cardinality_supported": true,
+      "navigability": "composite_to_part",
+      "aggregation_kind": "composite"
+    },
+    "aggregation": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Association",
+      "stereotype": null,
+      "description": "A whole-part relationship where the part can exist independently of the whole (hollow diamond)",
+      "generates": "field_reference",
+      "cardinality_supported": true,
+      "navigability": "aggregate_to_part",
+      "aggregation_kind": "shared"
+    },
+    "generalization": {
+      "xmi_tag": "generalization",
+      "xmi_type": "uml:Generalization",
+      "stereotype": null,
+      "description": "An inheritance relationship where a specific block inherits features from a general block",
+      "generates": "class_inheritance",
+      "cardinality_supported": false,
+      "navigability": "specific_to_general"
+    },
+    "dependency": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Dependency",
+      "stereotype": null,
+      "description": "A usage relationship indicating one element depends on another for its specification or implementation",
+      "generates": "import_statement",
+      "cardinality_supported": false,
+      "navigability": "client_to_supplier"
+    },
+    "realization": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Realization",
+      "stereotype": null,
+      "description": "A relationship indicating one element implements the specification defined by another element",
+      "generates": "interface_implementation",
+      "cardinality_supported": false,
+      "navigability": "realizing_to_abstraction"
+    },
+    "usage": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Usage",
+      "stereotype": null,
+      "description": "A dependency indicating one element requires another for its full implementation or operation",
+      "generates": "import_statement",
+      "cardinality_supported": false,
+      "navigability": "client_to_supplier"
+    },
+    "allocate": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Allocations::Allocate",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Allocate",
+      "description": "A cross-cutting relationship mapping functional elements to structural elements or vice versa",
+      "generates": "allocation_mapping",
+      "cardinality_supported": false,
+      "navigability": "from_to",
+      "trace_type": "allocation"
+    },
+    "satisfy": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Requirements::Satisfy",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Satisfy",
+      "description": "A relationship asserting that a design element satisfies a requirement",
+      "generates": "requirement_link",
+      "cardinality_supported": false,
+      "navigability": "design_to_requirement",
+      "trace_type": "satisfaction"
+    },
+    "derive": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Requirements::DeriveReqt",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::DeriveReqt",
+      "description": "A relationship indicating one requirement is derived from another requirement",
+      "generates": "requirement_link",
+      "cardinality_supported": false,
+      "navigability": "derived_to_source",
+      "trace_type": "derivation"
+    },
+    "verify": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Requirements::Verify",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Verify",
+      "description": "A relationship indicating a test case or analysis verifies a requirement is met",
+      "generates": "test_link",
+      "cardinality_supported": false,
+      "navigability": "test_to_requirement",
+      "trace_type": "verification"
+    },
+    "refine": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Requirements::Refine",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Refine",
+      "description": "A relationship indicating a model element refines or elaborates a requirement with more detail",
+      "generates": "refinement_link",
+      "cardinality_supported": false,
+      "navigability": "refining_to_refined",
+      "trace_type": "refinement"
+    },
+    "trace": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Requirements::Trace",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Trace",
+      "description": "A general-purpose relationship indicating a weak dependency or correspondence between elements",
+      "generates": "trace_link",
+      "cardinality_supported": false,
+      "navigability": "source_to_target",
+      "trace_type": "trace"
+    },
+    "copy": {
+      "xmi_tag": "packagedElement",
+      "xmi_type": "uml:Abstraction",
+      "stereotype": "SysML::Requirements::Copy",
+      "cameo_stereotype": "md_customization_for_sysml::additional_stereotypes::Copy",
+      "description": "A relationship indicating that a slave requirement text is a read-only copy of a master requirement",
+      "generates": "requirement_link",
+      "cardinality_supported": false,
+      "navigability": "slave_to_master",
+      "trace_type": "copy"
+    }
+  },
+  "diagram_types": {
+    "bdd": {
+      "name": "Block Definition Diagram",
+      "description": "Shows block definitions, their features, and relationships between blocks",
+      "primary_elements": ["block", "interface_block", "value_type", "constraint_block"]
+    },
+    "ibd": {
+      "name": "Internal Block Diagram",
+      "description": "Shows the internal structure of a block including parts, ports, and connectors",
+      "primary_elements": ["port", "connector"]
+    },
+    "act": {
+      "name": "Activity Diagram",
+      "description": "Shows the flow of actions, control flows, and object flows within a behavior",
+      "primary_elements": ["activity", "action", "object_node", "control_flow", "object_flow"]
+    },
+    "req": {
+      "name": "Requirements Diagram",
+      "description": "Shows requirements and their relationships including satisfy, verify, derive, and refine",
+      "primary_elements": ["requirement"]
+    },
+    "uc": {
+      "name": "Use Case Diagram",
+      "description": "Shows actors and their interactions with the system through use cases",
+      "primary_elements": ["use_case", "actor"]
+    },
+    "stm": {
+      "name": "State Machine Diagram",
+      "description": "Shows the discrete states of a block and the transitions between them",
+      "primary_elements": ["state_machine", "state"]
+    },
+    "par": {
+      "name": "Parametric Diagram",
+      "description": "Shows constraint blocks and their parameter bindings for engineering analysis",
+      "primary_elements": ["constraint_block"]
+    },
+    "pkg": {
+      "name": "Package Diagram",
+      "description": "Shows the organization of model elements into packages and their dependencies",
+      "primary_elements": ["package", "profile", "stereotype"]
+    }
+  }
+}

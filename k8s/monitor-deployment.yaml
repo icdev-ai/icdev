@@ -1,0 +1,92 @@
+# CUI // SP-CTI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icdev-monitor
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: monitor
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: monitor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: monitor
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: icdev
+        classification: CUI
+    spec:
+      serviceAccountName: icdev-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: monitor
+          image: ${ECR_REGISTRY}/icdev-agent:latest
+          args: ["tools/a2a/agent_server.py", "--agent-id", "monitor-agent", "--port", "8450"]
+          ports:
+            - containerPort: 8450
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: icdev-config
+            - secretRef:
+                name: icdev-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8450
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8450
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: icdev-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icdev-monitor
+  namespace: icdev
+  labels:
+    classification: CUI
+spec:
+  selector:
+    app.kubernetes.io/name: monitor
+  ports:
+    - port: 8450
+      targetPort: 8450
+      protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,92 @@
+# CUI // SP-CTI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icdev-architect
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: architect
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: architect
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: architect
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: icdev
+        classification: CUI
+    spec:
+      serviceAccountName: icdev-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: architect
+          image: ${ECR_REGISTRY}/icdev-agent:latest
+          args: ["tools/a2a/agent_server.py", "--agent-id", "architect-agent", "--port", "8444"]
+          ports:
+            - containerPort: 8444
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: icdev-config
+            - secretRef:
+                name: icdev-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8444
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8444
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: icdev-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icdev-architect
+  namespace: icdev
+  labels:
+    classification: CUI
+spec:
+  selector:
+    app.kubernetes.io/name: architect
+  ports:
+    - port: 8444
+      targetPort: 8444
+      protocol: TCP
+  type: ClusterIP

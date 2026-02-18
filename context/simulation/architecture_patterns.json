@@ -1,0 +1,36 @@
+{
+  "patterns": [
+    {
+      "name": "Microservices",
+      "component_overhead": 1.5,
+      "coupling_factor": 0.3,
+      "scalability_score": 9,
+      "complexity_score": 7,
+      "applicable_when": ["distributed", "scalable", "independent deployment"]
+    },
+    {
+      "name": "Modular Monolith",
+      "component_overhead": 1.0,
+      "coupling_factor": 0.6,
+      "scalability_score": 5,
+      "complexity_score": 4,
+      "applicable_when": ["simple", "single team", "rapid development"]
+    },
+    {
+      "name": "Event-Driven",
+      "component_overhead": 1.3,
+      "coupling_factor": 0.2,
+      "scalability_score": 8,
+      "complexity_score": 8,
+      "applicable_when": ["async", "decoupled", "event sourcing"]
+    },
+    {
+      "name": "Layered",
+      "component_overhead": 1.1,
+      "coupling_factor": 0.5,
+      "scalability_score": 4,
+      "complexity_score": 3,
+      "applicable_when": ["traditional", "CRUD", "simple data flow"]
+    }
+  ]
+}

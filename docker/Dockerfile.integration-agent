@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+FROM python:3.11-slim AS base
+RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /sbin/nologin icdev
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY tools/ tools/
+COPY args/ args/
+COPY context/ context/
+COPY hardprompts/ hardprompts/
+USER icdev
+EXPOSE 8456
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD python -c "import socket; s=socket.socket(); s.connect(('localhost',8456)); s.close()"
+CMD ["python", "tools/mcp/integration_server.py"]
+# CUI // SP-CTI

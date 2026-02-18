@@ -1,0 +1,89 @@
+# CUI // SP-CTI
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: icdev-default-deny
+  namespace: icdev
+  labels:
+    classification: CUI
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+---
+# Allow inter-agent communication within namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: icdev-allow-internal
+  namespace: icdev
+  labels:
+    classification: CUI
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: icdev
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: icdev
+      ports:
+        - protocol: TCP
+          port: 8443
+        - protocol: TCP
+          port: 8444
+        - protocol: TCP
+          port: 8445
+        - protocol: TCP
+          port: 8446
+        - protocol: TCP
+          port: 8447
+        - protocol: TCP
+          port: 8448
+        - protocol: TCP
+          port: 8449
+        - protocol: TCP
+          port: 8450
+        - protocol: TCP
+          port: 5000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: icdev
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 9200
+        - protocol: TCP
+          port: 8089
+        - protocol: TCP
+          port: 9090
+---
+# Allow dashboard ingress from outside
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: icdev-allow-dashboard-ingress
+  namespace: icdev
+  labels:
+    classification: CUI
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: dashboard
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 5000

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReviewDecision",
+  "description": "Schema for agent reviewer pattern output. Defines the structure of a review decision including approval/rejection, confidence, feedback, and specific issues found.",
+  "type": "object",
+  "required": ["decision", "confidence", "feedback"],
+  "additionalProperties": false,
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "reject"],
+      "description": "Whether the reviewed output is approved or rejected"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Reviewer's confidence in the decision (0.0 to 1.0)"
+    },
+    "feedback": {
+      "type": "string",
+      "description": "Specific, actionable feedback explaining the decision",
+      "minLength": 1
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of specific issues found in the output",
+      "default": []
+    },
+    "classification": {
+      "type": "string",
+      "default": "CUI",
+      "description": "Classification marking for this review decision"
+    }
+  }
+}

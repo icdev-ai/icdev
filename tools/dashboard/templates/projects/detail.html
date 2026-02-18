@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>{{ project.name }}</h1>
+    <p class="subtitle">
+        <span class="badge badge-{{ project.status }}">{{ project.status }}</span>
+        <span class="badge badge-warning">{{ project.classification }}</span>
+        {{ project.type }} project
+    </p>
+</div>
+
+<!-- Tab Navigation -->
+<div class="tabs">
+    <button class="tab-btn active" data-tab="tab-overview">Overview</button>
+    <button class="tab-btn" data-tab="tab-compliance">Compliance</button>
+    <button class="tab-btn" data-tab="tab-security">Security</button>
+    <button class="tab-btn" data-tab="tab-deployments">Deployments</button>
+    <button class="tab-btn" data-tab="tab-audit">Audit</button>
+</div>
+
+<!-- ============================================================
+     OVERVIEW TAB
+     ============================================================ -->
+<div id="tab-overview" class="tab-content active">
+    <h3 class="section-header">Project Information</h3>
+    <div class="info-grid">
+        <div class="info-item">
+            <div class="label">Project ID</div>
+            <div class="value">{{ project.id }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Name</div>
+            <div class="value">{{ project.name }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Type</div>
+            <div class="value">{{ project.type }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Status</div>
+            <div class="value"><span class="badge badge-{{ project.status }}">{{ project.status }}</span></div>
+        </div>
+        <div class="info-item">
+            <div class="label">Classification</div>
+            <div class="value"><span class="badge badge-warning">{{ project.classification }}</span></div>
+        </div>
+        <div class="info-item">
+            <div class="label">Created By</div>
+            <div class="value">{{ project.created_by or '—' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Created At</div>
+            <div class="value">{{ project.created_at }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Updated At</div>
+            <div class="value">{{ project.updated_at }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Directory</div>
+            <div class="value">{{ project.directory_path }}</div>
+        </div>
+    </div>
+
+    {% if project.description %}
+    <div class="info-grid">
+        <div class="info-item" style="grid-column: 1 / -1;">
+            <div class="label">Description</div>
+            <div class="value">{{ project.description }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <h3 class="section-header mt-2">Technology Stack</h3>
+    <div class="info-grid">
+        <div class="info-item">
+            <div class="label">Backend</div>
+            <div class="value">{{ project.tech_stack_backend or '—' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Frontend</div>
+            <div class="value">{{ project.tech_stack_frontend or '—' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Database</div>
+            <div class="value">{{ project.tech_stack_database or '—' }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     COMPLIANCE TAB
+     ============================================================ -->
+<div id="tab-compliance" class="tab-content">
+    <!-- SSP Documents -->
+    <h3 class="section-header">System Security Plans (SSP)</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>System Name</th>
+                    <th>Version</th>
+                    <th>Status</th>
+                    <th>Approved By</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ssp in ssps %}
+                <tr>
+                    <td>{{ ssp.system_name }}</td>
+                    <td>{{ ssp.version }}</td>
+                    <td><span class="badge badge-{{ ssp.status }}">{{ ssp.status }}</span></td>
+                    <td>{{ ssp.approved_by or '—' }}</td>
+                    <td class="text-muted">{{ ssp.created_at }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No SSP documents</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- POAM Summary -->
+    <h3 class="section-header mt-2">Plan of Action &amp; Milestones (POA&amp;M)</h3>
+    <div class="stat-grid mb-2">
+        <div class="stat-card">
+            <div class="stat-value {% if poam_open > 0 %}text-yellow{% else %}text-green{% endif %}">{{ poam_open }}</div>
+            <div class="stat-label">Open Items</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ poams|length - poam_open }}</div>
+            <div class="stat-label">Closed Items</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ poams|length }}</div>
+            <div class="stat-label">Total Items</div>
+        </div>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Weakness ID</th>
+                    <th>Description</th>
+                    <th>Severity</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Milestone</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for poam in poams %}
+                <tr>
+                    <td>{{ poam.weakness_id }}</td>
+                    <td class="truncate">{{ poam.weakness_description }}</td>
+                    <td><span class="badge badge-{{ poam.severity }}">{{ poam.severity }}</span></td>
+                    <td>{{ poam.source }}</td>
+                    <td><span class="badge badge-{{ poam.status }}">{{ poam.status }}</span></td>
+                    <td class="text-muted">{{ poam.milestone_date or '—' }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="6">No POA&amp;M items</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- STIG Findings Summary -->
+    <h3 class="section-header mt-2">STIG Findings</h3>
+    <div class="stat-grid mb-2">
+        <div class="stat-card">
+            <div class="stat-value {% if stig_open > 0 %}text-yellow{% else %}text-green{% endif %}">{{ stig_open }}</div>
+            <div class="stat-label">Open Findings</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stigs|length - stig_open }}</div>
+            <div class="stat-label">Closed Findings</div>
+        </div>
+        {% for sev, counts in stig_by_severity.items() %}
+        <div class="stat-card">
+            <div class="stat-value"><span class="badge badge-{{ sev }}">{{ sev }}</span></div>
+            <div class="stat-label">{{ counts.open }} open / {{ counts.closed }} closed</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>STIG ID</th>
+                    <th>Finding ID</th>
+                    <th>Severity</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stig in stigs %}
+                <tr>
+                    <td>{{ stig.stig_id }}</td>
+                    <td>{{ stig.finding_id }}</td>
+                    <td><span class="badge badge-{{ stig.severity }}">{{ stig.severity }}</span></td>
+                    <td class="truncate">{{ stig.title }}</td>
+                    <td><span class="badge badge-{% if stig.status == 'Open' %}open{% else %}closed{% endif %}">{{ stig.status }}</span></td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No STIG findings</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- SBOM Records -->
+    <h3 class="section-header mt-2">Software Bill of Materials (SBOM)</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Format</th>
+                    <th>Components</th>
+                    <th>Vulnerabilities</th>
+                    <th>Generated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sbom in sboms %}
+                <tr>
+                    <td>{{ sbom.version }}</td>
+                    <td>{{ sbom.format }}</td>
+                    <td>{{ sbom.component_count or '—' }}</td>
+                    <td>
+                        {% if sbom.vulnerability_count and sbom.vulnerability_count > 0 %}
+                        <span class="text-red">{{ sbom.vulnerability_count }}</span>
+                        {% else %}
+                        <span class="text-green">0</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted">{{ sbom.generated_at }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No SBOM records</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ============================================================
+     SECURITY TAB
+     ============================================================ -->
+<div id="tab-security" class="tab-content">
+    <h3 class="section-header">Security Overview</h3>
+
+    <!-- Vulnerability summary from STIG + POAM -->
+    <div class="stat-grid mb-2">
+        <div class="stat-card">
+            <div class="stat-value {% if stig_open > 0 %}text-red{% else %}text-green{% endif %}">{{ stig_open }}</div>
+            <div class="stat-label">Open STIG Findings</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value {% if poam_open > 0 %}text-yellow{% else %}text-green{% endif %}">{{ poam_open }}</div>
+            <div class="stat-label">Open POA&amp;M Items</div>
+        </div>
+        {% for sev, counts in stig_by_severity.items() %}
+        <div class="stat-card">
+            <div class="stat-value"><span class="badge badge-{{ sev }}">{{ sev }}</span></div>
+            <div class="stat-label">{{ counts.open }} open vulnerabilities</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Active Alerts for this project -->
+    <h3 class="section-header mt-2">Project Alerts</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>Title</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for alert in alerts %}
+                <tr>
+                    <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
+                    <td>{{ alert.title }}</td>
+                    <td>{{ alert.source }}</td>
+                    <td><span class="badge badge-{{ alert.status }}">{{ alert.status }}</span></td>
+                    <td class="text-muted">{{ alert.created_at }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No alerts for this project</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ============================================================
+     DEPLOYMENTS TAB
+     ============================================================ -->
+<div id="tab-deployments" class="tab-content">
+    <h3 class="section-header">Deployment History</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Environment</th>
+                    <th>Status</th>
+                    <th>Deployed By</th>
+                    <th>Health Check</th>
+                    <th>Created</th>
+                    <th>Completed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for dep in deployments %}
+                <tr>
+                    <td>{{ dep.version }}</td>
+                    <td>{{ dep.environment }}</td>
+                    <td><span class="badge badge-{{ dep.status }}">{{ dep.status }}</span></td>
+                    <td>{{ dep.deployed_by or '—' }}</td>
+                    <td>
+                        {% if dep.health_check_passed == 1 %}
+                        <span class="status-dot green"></span>Passed
+                        {% elif dep.health_check_passed == 0 %}
+                        <span class="status-dot red"></span>Failed
+                        {% else %}
+                        <span class="text-muted">—</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted">{{ dep.created_at }}</td>
+                    <td class="text-muted">{{ dep.completed_at or '—' }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="7">No deployments recorded</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ============================================================
+     AUDIT TAB
+     ============================================================ -->
+<div id="tab-audit" class="tab-content">
+    <h3 class="section-header">Audit Trail</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in audit_entries %}
+                <tr>
+                    <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+                    <td>{{ entry.actor }}</td>
+                    <td>{{ entry.action }}</td>
+                    <td class="truncate">{{ entry.details or '—' }}</td>
+                    <td class="text-muted">{{ entry.created_at }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No audit entries for this project</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

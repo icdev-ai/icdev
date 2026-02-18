@@ -1,0 +1,2330 @@
+#!/usr/bin/env python3
+"""ICDEV SaaS - PostgreSQL Schema (ported from SQLite).
+CUI // SP-CTI
+
+Complete port of all ICDEV tables from SQLite to PostgreSQL DDL.
+Used by tenant provisioning to create per-tenant databases.
+
+Translation rules applied:
+  - INTEGER PRIMARY KEY AUTOINCREMENT  ->  SERIAL PRIMARY KEY
+  - datetime(chr(39)+chr(110)+chr(111)+chr(119)+chr(39))  ->  now()
+  - BLOB                              ->  BYTEA
+  - BOOLEAN                           ->  BOOLEAN (native in PG)
+  - TEXT for JSON columns              ->  JSONB where appropriate
+  - CHECK constraints                  ->  kept as-is
+  - TIMESTAMP DEFAULT CURRENT_TIMESTAMP->  kept as-is (PG supports it)
+  - CREATE INDEX IF NOT EXISTS         ->  kept as-is (PG supports it)
+"""
+
+import logging
+import sys
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+logger = logging.getLogger("saas.db.pg_schema")
+
+PG_SCHEMA_SQL = """
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ============================================================
+-- PROJECTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    type TEXT NOT NULL CHECK(type IN ('webapp', 'microservice', 'api', 'cli', 'data_pipeline', 'iac')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed', 'archived')),
+    tech_stack_backend TEXT,
+    tech_stack_frontend TEXT,
+    tech_stack_database TEXT,
+    directory_path TEXT NOT NULL,
+    created_by TEXT,
+    impact_level TEXT DEFAULT 'IL5' CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+    cloud_environment TEXT DEFAULT 'aws-govcloud',
+    target_frameworks TEXT,
+    ato_status TEXT DEFAULT 'none' CHECK(ato_status IN ('none', 'in_progress', 'iato', 'ato', 'cato', 'dato', 'denied')),
+    accrediting_authority TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- AGENTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agents (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'inactive' CHECK(status IN ('active', 'inactive', 'error')),
+    capabilities JSONB,
+    last_heartbeat TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- A2A TASKS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS a2a_tasks (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    source_agent_id TEXT REFERENCES agents(id),
+    target_agent_id TEXT REFERENCES agents(id),
+    skill_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'submitted' CHECK(status IN ('submitted', 'working', 'input-required', 'completed', 'failed', 'canceled')),
+    input_data JSONB,
+    output_data JSONB,
+    error_message TEXT,
+    priority INTEGER DEFAULT 5,
+    parent_task_id TEXT REFERENCES a2a_tasks(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS a2a_task_history (
+    id SERIAL PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES a2a_tasks(id),
+    status TEXT NOT NULL,
+    message TEXT,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS a2a_task_artifacts (
+    id SERIAL PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES a2a_tasks(id),
+    name TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    data TEXT,
+    data_blob BYTEA,
+    file_path TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- AUDIT TRAIL (append-only, immutable — NIST AU controls)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    event_type TEXT NOT NULL CHECK(event_type IN (
+        'project_created', 'project_updated',
+        'code_generated', 'code_reviewed', 'code_approved', 'code_rejected',
+        'test_written', 'test_executed', 'test_passed', 'test_failed',
+        'security_scan', 'vulnerability_found', 'vulnerability_resolved',
+        'compliance_check', 'ssp_generated', 'poam_generated', 'stig_checked', 'sbom_generated',
+        'deployment_initiated', 'deployment_succeeded', 'deployment_failed', 'rollback_executed',
+        'decision_made', 'approval_granted', 'approval_denied',
+        'agent_task_submitted', 'agent_task_completed', 'agent_task_failed',
+        'self_heal_triggered', 'pattern_detected', 'knowledge_recorded',
+        'config_changed', 'secret_rotated',
+        'cssp_assessed', 'cssp_report_generated', 'cssp_evidence_collected',
+        'ir_plan_generated', 'siem_config_generated',
+        'xacta_sync', 'xacta_sync_completed', 'xacta_export',
+        'maintenance_audit', 'dependency_scanned', 'vulnerability_checked',
+        'remediation_applied', 'sla_violation',
+        'fedramp_assessed', 'cmmc_assessed', 'oscal_generated',
+        'emass_sync', 'emass_push', 'emass_pull',
+        'cato_evidence_collected', 'classification_changed',
+        'crosswalk_mapped', 'pi_compliance_updated',
+        'model_imported', 'model_synced', 'model_snapshot',
+        'digital_thread_linked', 'des_assessed',
+        'reqif_imported', 'xmi_imported',
+        'code_from_model', 'model_from_code',
+        'legacy_analyzed', 'migration_assessed', 'migration_planned',
+        'migration_task_completed', 'migration_code_generated',
+        'schema_migrated', 'service_extracted', 'strangler_fig_cutover',
+        'intake_session_created', 'intake_session_resumed', 'intake_session_completed',
+        'requirement_captured', 'requirement_refined', 'requirement_approved',
+        'gap_detected', 'ambiguity_detected',
+        'readiness_scored', 'decomposition_generated',
+        'document_uploaded', 'document_extracted',
+        'bdd_criteria_generated',
+        'boundary_assessed', 'boundary_impact_red', 'boundary_alternative_generated',
+        'ato_system_registered', 'isa_created', 'isa_expired', 'isa_renewed',
+        'scrm_assessed', 'cve_triaged', 'cve_impact_propagated',
+        'supply_chain_risk_escalated',
+        'simulation_created', 'simulation_completed', 'monte_carlo_completed',
+        'coa_generated', 'coa_alternative_generated', 'coa_compared',
+        'coa_selected', 'coa_rejected', 'coa_presented',
+        'integration_configured', 'integration_sync_push', 'integration_sync_pull',
+        'integration_sync_error', 'reqif_exported',
+        'approval_submitted', 'approval_reviewed', 'approval_approved',
+        'approval_rejected', 'approval_escalated',
+        'rtm_generated', 'rtm_gap_detected',
+        'hook_event_logged', 'agent_execution_started', 'agent_execution_completed',
+        'agent_execution_failed', 'agent_execution_retried',
+        'nlq_query_executed', 'nlq_query_blocked',
+        'worktree_created', 'worktree_cleaned',
+        'gitlab_task_claimed', 'gitlab_task_completed', 'gitlab_task_failed',
+        'agentic_fitness_assessed', 'child_app_generated',
+        'agentic_scaffolded', 'agentic_code_generated',
+        'governance_validated', 'agentic_test_generated',
+        'fips199_categorized', 'fips200_assessed',
+        'security_categorization_completed', 'baseline_selected'
+    )),
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    details JSONB,
+    affected_files TEXT,
+    classification TEXT DEFAULT 'CUI',
+    ip_address TEXT,
+    session_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+-- ============================================================
+-- COMPLIANCE TRACKING
+-- ============================================================
+CREATE TABLE IF NOT EXISTS compliance_controls (
+    id TEXT PRIMARY KEY,
+    family TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    supplemental_guidance TEXT,
+    impact_level TEXT,
+    enhancements TEXT
+);
+
+CREATE TABLE IF NOT EXISTS project_controls (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL REFERENCES compliance_controls(id),
+    implementation_status TEXT NOT NULL DEFAULT 'planned' CHECK(implementation_status IN ('planned', 'implemented', 'partially_implemented', 'not_applicable', 'compensating')),
+    implementation_description TEXT,
+    responsible_role TEXT,
+    evidence_path TEXT,
+    last_assessed TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, control_id)
+);
+
+CREATE TABLE IF NOT EXISTS ssp_documents (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    version TEXT NOT NULL,
+    system_name TEXT NOT NULL,
+    system_boundary TEXT,
+    authorization_type TEXT,
+    content TEXT NOT NULL,
+    file_path TEXT,
+    classification TEXT DEFAULT 'CUI',
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'review', 'approved', 'superseded')),
+    approved_by TEXT,
+    approved_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS poam_items (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    weakness_id TEXT NOT NULL,
+    weakness_description TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'moderate', 'low')),
+    source TEXT NOT NULL,
+    control_id TEXT REFERENCES compliance_controls(id),
+    status TEXT DEFAULT 'open' CHECK(status IN ('open', 'in_progress', 'completed', 'accepted_risk')),
+    corrective_action TEXT,
+    milestone_date DATE,
+    completion_date DATE,
+    responsible_party TEXT,
+    resources_required TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS stig_findings (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    stig_id TEXT NOT NULL,
+    finding_id TEXT NOT NULL,
+    rule_id TEXT NOT NULL,
+    severity TEXT NOT NULL CHECK(severity IN ('CAT1', 'CAT2', 'CAT3')),
+    title TEXT NOT NULL,
+    description TEXT,
+    check_content TEXT,
+    fix_text TEXT,
+    status TEXT DEFAULT 'Open' CHECK(status IN ('Open', 'NotAFinding', 'Not_Applicable', 'Not_Reviewed')),
+    comments TEXT,
+    target_type TEXT,
+    assessed_by TEXT,
+    assessed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sbom_records (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    version TEXT NOT NULL,
+    format TEXT NOT NULL DEFAULT 'cyclonedx',
+    file_path TEXT NOT NULL,
+    component_count INTEGER,
+    vulnerability_count INTEGER,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- CODE REVIEW GATES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS code_reviews (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    branch TEXT NOT NULL,
+    merge_request_id TEXT,
+    reviewer TEXT NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'changes_requested')),
+    security_gate_passed BOOLEAN DEFAULT FALSE,
+    compliance_gate_passed BOOLEAN DEFAULT FALSE,
+    test_gate_passed BOOLEAN DEFAULT FALSE,
+    comments TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- SELF-HEALING & KNOWLEDGE
+-- ============================================================
+CREATE TABLE IF NOT EXISTS knowledge_patterns (
+    id SERIAL PRIMARY KEY,
+    pattern_type TEXT NOT NULL CHECK(pattern_type IN ('failure', 'success', 'optimization', 'security', 'compliance', 'performance')),
+    pattern_signature TEXT NOT NULL,
+    description TEXT NOT NULL,
+    root_cause TEXT,
+    remediation TEXT,
+    confidence REAL DEFAULT 0.0,
+    occurrence_count INTEGER DEFAULT 1,
+    last_occurrence TIMESTAMP,
+    auto_healable BOOLEAN DEFAULT FALSE,
+    embedding BYTEA,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS self_healing_events (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    pattern_id INTEGER REFERENCES knowledge_patterns(id),
+    trigger_source TEXT NOT NULL,
+    trigger_data TEXT NOT NULL,
+    action_taken TEXT,
+    outcome TEXT CHECK(outcome IN ('success', 'failure', 'escalated', 'pending')),
+    escalated_to TEXT,
+    duration_seconds REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS failure_log (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    source TEXT NOT NULL,
+    error_type TEXT NOT NULL,
+    error_message TEXT NOT NULL,
+    stack_trace TEXT,
+    context TEXT,
+    resolved BOOLEAN DEFAULT FALSE,
+    resolution TEXT,
+    pattern_id INTEGER REFERENCES knowledge_patterns(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- DEPLOYMENT TRACKING
+-- ============================================================
+CREATE TABLE IF NOT EXISTS deployments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    environment TEXT NOT NULL CHECK(environment IN ('dev', 'staging', 'prod')),
+    version TEXT NOT NULL,
+    pipeline_id TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'succeeded', 'failed', 'rolled_back')),
+    terraform_plan TEXT,
+    deployed_by TEXT,
+    rollback_version TEXT,
+    health_check_passed BOOLEAN,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- ============================================================
+-- MONITORING & METRICS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS metric_snapshots (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    metric_name TEXT NOT NULL,
+    metric_value REAL NOT NULL,
+    labels TEXT,
+    source TEXT DEFAULT 'prometheus',
+    collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- CSSP CERTIFICATION (DoD Instruction 8530.01)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cssp_assessments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    assessment_date TEXT DEFAULT (now()::text),
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    functional_area TEXT NOT NULL CHECK(functional_area IN ('Identify', 'Protect', 'Detect', 'Respond', 'Sustain')),
+    requirement_id TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed'
+        CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied', 'not_satisfied', 'not_applicable', 'risk_accepted')),
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(project_id, requirement_id)
+);
+
+
+CREATE TABLE IF NOT EXISTS cssp_incidents (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    incident_id TEXT UNIQUE NOT NULL,
+    severity TEXT CHECK(severity IN ('critical', 'high', 'moderate', 'low')),
+    category TEXT,
+    description TEXT NOT NULL,
+    detection_method TEXT,
+    detected_at TEXT NOT NULL,
+    reported_to_soc_at TEXT,
+    contained_at TEXT,
+    resolved_at TEXT,
+    status TEXT DEFAULT 'detected'
+        CHECK(status IN ('detected', 'reported', 'contained', 'eradicated', 'recovered', 'closed', 'lessons_learned')),
+    soc_ticket_id TEXT,
+    root_cause TEXT,
+    corrective_actions TEXT,
+    lessons_learned TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE IF NOT EXISTS cssp_vuln_management (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    scan_date TEXT DEFAULT (now()::text),
+    scan_type TEXT CHECK(scan_type IN ('sast', 'dast', 'dependency', 'container', 'infrastructure', 'penetration')),
+    scanner TEXT,
+    total_findings INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    medium_count INTEGER DEFAULT 0,
+    low_count INTEGER DEFAULT 0,
+    remediated_count INTEGER DEFAULT 0,
+    accepted_risk_count INTEGER DEFAULT 0,
+    false_positive_count INTEGER DEFAULT 0,
+    report_path TEXT,
+    sla_compliant INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE IF NOT EXISTS cssp_certifications (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT UNIQUE NOT NULL REFERENCES projects(id),
+    certification_type TEXT DEFAULT 'CSSP+ATO',
+    status TEXT DEFAULT 'in_progress'
+        CHECK(status IN ('in_progress', 'submitted', 'under_review', 'certified', 'denied', 'expired', 'revoked')),
+    submitted_date TEXT,
+    certified_date TEXT,
+    expiration_date TEXT,
+    authorizing_official TEXT,
+    cssp_provider TEXT,
+    ato_boundary TEXT,
+    risk_level TEXT CHECK(risk_level IN ('low', 'moderate', 'high', 'very_high')),
+    conditions TEXT,
+    continuous_monitoring_plan TEXT,
+    next_assessment_date TEXT,
+    xacta_system_id TEXT,
+    last_xacta_sync TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- SECURE BY DESIGN (SbD) ASSESSMENT TRACKING
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sbd_assessments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT DEFAULT (now()::text),
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    domain TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed'
+        CHECK(status IN ('not_assessed','satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted')),
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    cisa_commitment INTEGER,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, requirement_id)
+);
+
+
+-- ============================================================
+-- IV&V ASSESSMENT TRACKING (IEEE 1012)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ivv_assessments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT DEFAULT (now()::text),
+    assessor TEXT DEFAULT 'icdev-ivv-engine',
+    process_area TEXT NOT NULL,
+    verification_type TEXT NOT NULL CHECK(verification_type IN ('verification','validation')),
+    requirement_id TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed'
+        CHECK(status IN ('not_assessed','pass','fail','partial','not_applicable','deferred')),
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, requirement_id)
+);
+
+
+-- ============================================================
+-- IV&V FINDINGS (independent findings from V&V process)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ivv_findings (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_id INTEGER,
+    finding_id TEXT UNIQUE NOT NULL,
+    severity TEXT NOT NULL CHECK(severity IN ('critical','high','moderate','low')),
+    process_area TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    recommendation TEXT,
+    status TEXT DEFAULT 'open'
+        CHECK(status IN ('open','in_progress','resolved','accepted_risk','deferred')),
+    resolution TEXT,
+    resolved_by TEXT,
+    resolved_at TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+
+-- ============================================================
+-- IV&V CERTIFICATION STATUS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ivv_certifications (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT UNIQUE NOT NULL,
+    certification_type TEXT DEFAULT 'IV&V',
+    status TEXT DEFAULT 'in_progress'
+        CHECK(status IN ('in_progress','submitted','under_review','certified','conditional','denied','expired')),
+    verification_score REAL,
+    validation_score REAL,
+    overall_score REAL,
+    ivv_authority TEXT,
+    independence_declaration TEXT,
+    submitted_date TEXT,
+    certified_date TEXT,
+    expiration_date TEXT,
+    conditions TEXT,
+    open_findings_count INTEGER DEFAULT 0,
+    critical_findings_count INTEGER DEFAULT 0,
+    next_review_date TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+-- ============================================================
+-- MAINTENANCE AUDIT SYSTEM (Phase 16F)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS dependency_inventory (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    language TEXT NOT NULL,
+    package_name TEXT NOT NULL,
+    current_version TEXT NOT NULL,
+    latest_version TEXT,
+    latest_check_date TEXT,
+    days_stale INTEGER DEFAULT 0,
+    purl TEXT,
+    scope TEXT DEFAULT 'required',
+    dependency_file TEXT,
+    direct INTEGER DEFAULT 1,
+    license TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, language, package_name)
+);
+
+
+CREATE TABLE IF NOT EXISTS dependency_vulnerabilities (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    dependency_id INTEGER REFERENCES dependency_inventory(id),
+    cve_id TEXT,
+    advisory_id TEXT,
+    severity TEXT NOT NULL CHECK(severity IN ('critical','high','medium','low','unknown')),
+    cvss_score REAL,
+    title TEXT NOT NULL,
+    description TEXT,
+    affected_versions TEXT,
+    fix_version TEXT,
+    fix_available INTEGER DEFAULT 0,
+    exploit_available INTEGER DEFAULT 0,
+    sla_category TEXT CHECK(sla_category IN ('critical','high','medium','low')),
+    sla_deadline TEXT,
+    status TEXT DEFAULT 'open' CHECK(status IN ('open','in_progress','remediated','accepted_risk','false_positive')),
+    remediated_at TEXT,
+    remediation_action TEXT,
+    source TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, cve_id, dependency_id)
+);
+
+
+CREATE TABLE IF NOT EXISTS maintenance_audits (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    audit_date TEXT DEFAULT (now()::text),
+    auditor TEXT DEFAULT 'icdev-maintenance-engine',
+    total_dependencies INTEGER DEFAULT 0,
+    outdated_count INTEGER DEFAULT 0,
+    vulnerable_count INTEGER DEFAULT 0,
+    critical_vulns INTEGER DEFAULT 0,
+    high_vulns INTEGER DEFAULT 0,
+    medium_vulns INTEGER DEFAULT 0,
+    low_vulns INTEGER DEFAULT 0,
+    avg_staleness_days REAL DEFAULT 0.0,
+    max_staleness_days INTEGER DEFAULT 0,
+    sla_compliant_pct REAL DEFAULT 100.0,
+    overdue_critical INTEGER DEFAULT 0,
+    overdue_high INTEGER DEFAULT 0,
+    maintenance_score REAL DEFAULT 100.0,
+    languages_audited TEXT,
+    report_path TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text)
+);
+
+
+CREATE TABLE IF NOT EXISTS remediation_actions (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    vulnerability_id INTEGER REFERENCES dependency_vulnerabilities(id),
+    dependency_id INTEGER REFERENCES dependency_inventory(id),
+    action_type TEXT NOT NULL CHECK(action_type IN ('version_bump','patch_apply','replacement','risk_accept','manual_fix')),
+    from_version TEXT,
+    to_version TEXT,
+    dependency_file TEXT,
+    git_branch TEXT,
+    git_commit TEXT,
+    pr_url TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','applied','tested','merged','failed','rolled_back')),
+    applied_at TEXT,
+    tested_at TEXT,
+    merged_at TEXT,
+    applied_by TEXT DEFAULT 'icdev-maintenance-engine',
+    test_results TEXT,
+    rollback_reason TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+
+-- ============================================================
+-- MULTI-FRAMEWORK COMPLIANCE (Phase 17C)
+-- ============================================================
+
+-- Framework registry (FedRAMP, CMMC, 800-171, etc.)
+CREATE TABLE IF NOT EXISTS framework_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    source TEXT,
+    control_count INTEGER,
+    baseline TEXT,
+    description TEXT,
+    catalog_path TEXT,
+    created_at TEXT DEFAULT (now()::text)
+);
+
+-- Cross-framework control mapping
+CREATE TABLE IF NOT EXISTS control_crosswalk (
+    id SERIAL PRIMARY KEY,
+    nist_800_53_id TEXT NOT NULL,
+    framework_id TEXT NOT NULL REFERENCES framework_profiles(id),
+    framework_control_id TEXT NOT NULL,
+    mapping_type TEXT DEFAULT 'equivalent' CHECK(mapping_type IN ('equivalent', 'partial', 'overlay', 'additional')),
+    notes TEXT,
+    UNIQUE(nist_800_53_id, framework_id)
+);
+
+
+-- Per-project framework compliance status
+CREATE TABLE IF NOT EXISTS project_framework_status (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    framework_id TEXT NOT NULL REFERENCES framework_profiles(id),
+    target_baseline TEXT,
+    total_controls INTEGER DEFAULT 0,
+    implemented_count INTEGER DEFAULT 0,
+    partially_implemented_count INTEGER DEFAULT 0,
+    planned_count INTEGER DEFAULT 0,
+    not_applicable_count INTEGER DEFAULT 0,
+    coverage_pct REAL DEFAULT 0.0,
+    gate_status TEXT DEFAULT 'incomplete' CHECK(gate_status IN ('pass', 'fail', 'incomplete', 'waived')),
+    last_assessed TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, framework_id)
+);
+
+-- FedRAMP assessment results
+CREATE TABLE IF NOT EXISTS fedramp_assessments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT DEFAULT (now()::text),
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    baseline TEXT NOT NULL CHECK(baseline IN ('moderate', 'high')),
+    control_id TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'satisfied', 'other_than_satisfied', 'not_applicable', 'risk_accepted')),
+    implementation_status TEXT,
+    customer_responsible TEXT,
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, baseline, control_id)
+);
+
+
+-- CMMC practice assessment results
+CREATE TABLE IF NOT EXISTS cmmc_assessments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT DEFAULT (now()::text),
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    level INTEGER NOT NULL CHECK(level IN (2, 3)),
+    practice_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'met', 'not_met', 'partially_met', 'not_applicable')),
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    nist_171_id TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, practice_id)
+);
+
+
+-- OSCAL artifact tracking
+CREATE TABLE IF NOT EXISTS oscal_artifacts (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN ('ssp', 'poam', 'assessment_results', 'component_definition', 'catalog', 'profile')),
+    oscal_version TEXT DEFAULT '1.1.2',
+    format TEXT DEFAULT 'json' CHECK(format IN ('json', 'xml', 'yaml')),
+    file_path TEXT NOT NULL,
+    file_hash TEXT,
+    schema_valid INTEGER DEFAULT 0,
+    validation_errors TEXT,
+    generated_at TEXT DEFAULT (now()::text),
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE(project_id, artifact_type, format)
+);
+
+
+-- eMASS system registration and sync
+CREATE TABLE IF NOT EXISTS emass_systems (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT UNIQUE NOT NULL REFERENCES projects(id),
+    emass_system_id TEXT,
+    system_name TEXT,
+    emass_org_id TEXT,
+    ditpr_id TEXT,
+    registration_type TEXT,
+    impact_level TEXT CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+    authorization_status TEXT CHECK(authorization_status IN ('not_yet_authorized', 'ato', 'iato', 'dato', 'cato', 'denied', 'decommissioned')),
+    authorization_date TEXT,
+    authorization_expiry TEXT,
+    authorizing_official TEXT,
+    last_sync TEXT,
+    sync_status TEXT DEFAULT 'never' CHECK(sync_status IN ('never', 'success', 'partial', 'failed')),
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+-- eMASS sync history log
+CREATE TABLE IF NOT EXISTS emass_sync_log (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    sync_direction TEXT NOT NULL CHECK(sync_direction IN ('push', 'pull', 'bidirectional')),
+    artifact_type TEXT,
+    status TEXT NOT NULL CHECK(status IN ('started', 'success', 'partial', 'failed')),
+    items_synced INTEGER DEFAULT 0,
+    items_failed INTEGER DEFAULT 0,
+    error_details TEXT,
+    sync_duration_ms INTEGER,
+    created_at TEXT DEFAULT (now()::text)
+);
+
+
+-- cATO continuous evidence tracking
+CREATE TABLE IF NOT EXISTS cato_evidence (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL,
+    evidence_type TEXT NOT NULL CHECK(evidence_type IN ('scan_result', 'test_result', 'config_check', 'manual_review', 'attestation', 'artifact')),
+    evidence_source TEXT NOT NULL,
+    evidence_path TEXT,
+    evidence_hash TEXT,
+    collected_at TEXT DEFAULT (now()::text),
+    expires_at TEXT,
+    is_fresh INTEGER DEFAULT 1,
+    freshness_check_at TEXT,
+    status TEXT DEFAULT 'current' CHECK(status IN ('current', 'stale', 'expired', 'superseded')),
+    automation_frequency TEXT CHECK(automation_frequency IN ('continuous', 'daily', 'weekly', 'monthly', 'per_change', 'manual')),
+    UNIQUE(project_id, control_id, evidence_type, evidence_source)
+);
+
+
+-- SAFe PI compliance tracking
+CREATE TABLE IF NOT EXISTS pi_compliance_tracking (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pi_number TEXT NOT NULL,
+    pi_start_date TEXT,
+    pi_end_date TEXT,
+    compliance_score_start REAL,
+    compliance_score_end REAL,
+    controls_implemented INTEGER DEFAULT 0,
+    controls_remaining INTEGER DEFAULT 0,
+    poam_items_closed INTEGER DEFAULT 0,
+    poam_items_opened INTEGER DEFAULT 0,
+    findings_remediated INTEGER DEFAULT 0,
+    artifacts_generated TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, pi_number)
+);
+
+-- ============================================================
+-- MBSE INTEGRATION (Phase 18A)
+-- ============================================================
+
+-- SysML model elements imported from Cameo XMI
+CREATE TABLE IF NOT EXISTS sysml_elements (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    xmi_id TEXT NOT NULL,
+    element_type TEXT NOT NULL CHECK(element_type IN (
+        'block', 'interface_block', 'value_type', 'constraint_block',
+        'activity', 'action', 'object_node', 'control_flow', 'object_flow',
+        'requirement', 'use_case', 'actor', 'state_machine', 'state',
+        'package', 'profile', 'stereotype', 'port', 'connector'
+    )),
+    name TEXT NOT NULL,
+    qualified_name TEXT,
+    parent_id TEXT REFERENCES sysml_elements(id),
+    stereotype TEXT,
+    description TEXT,
+    properties JSONB,
+    diagram_type TEXT CHECK(diagram_type IN ('bdd', 'ibd', 'act', 'stm', 'uc', 'req', 'pkg')),
+    source_file TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    imported_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, xmi_id)
+);
+
+
+-- SysML relationships between elements
+CREATE TABLE IF NOT EXISTS sysml_relationships (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    source_element_id TEXT NOT NULL REFERENCES sysml_elements(id),
+    target_element_id TEXT NOT NULL REFERENCES sysml_elements(id),
+    relationship_type TEXT NOT NULL CHECK(relationship_type IN (
+        'association', 'composition', 'aggregation', 'generalization',
+        'dependency', 'realization', 'usage', 'allocate',
+        'satisfy', 'derive', 'verify', 'refine', 'trace', 'copy'
+    )),
+    name TEXT,
+    properties JSONB,
+    source_file TEXT,
+    UNIQUE(project_id, source_element_id, target_element_id, relationship_type)
+);
+
+
+-- DOORS NG requirements imported via ReqIF
+CREATE TABLE IF NOT EXISTS doors_requirements (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    doors_id TEXT NOT NULL,
+    module_name TEXT,
+    requirement_type TEXT CHECK(requirement_type IN ('functional', 'non_functional', 'interface', 'design', 'security', 'performance', 'constraint')),
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT CHECK(priority IN ('critical', 'high', 'medium', 'low')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'approved', 'implemented', 'verified', 'deleted', 'deferred')),
+    parent_req_id TEXT,
+    source_file TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    imported_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, doors_id)
+);
+
+
+-- Digital thread traceability links (N:M)
+CREATE TABLE IF NOT EXISTS digital_thread_links (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    source_type TEXT NOT NULL CHECK(source_type IN ('doors_requirement', 'sysml_element', 'code_module', 'test_file', 'nist_control', 'stig_rule', 'compliance_artifact', 'legacy_component', 'migration_task', 'intake_requirement', 'safe_item', 'coa_definition', 'uat_test')),
+    source_id TEXT NOT NULL,
+    target_type TEXT NOT NULL CHECK(target_type IN ('doors_requirement', 'sysml_element', 'code_module', 'test_file', 'nist_control', 'stig_rule', 'compliance_artifact', 'legacy_component', 'migration_task', 'intake_requirement', 'safe_item', 'coa_definition', 'uat_test')),
+    target_id TEXT NOT NULL,
+    link_type TEXT NOT NULL CHECK(link_type IN ('satisfies', 'derives_from', 'implements', 'verifies', 'traces_to', 'allocates', 'refines', 'maps_to', 'replaces', 'migrates_to', 'decomposes_into', 'assessed_against', 'approved_for')),
+    confidence REAL DEFAULT 1.0 CHECK(confidence >= 0.0 AND confidence <= 1.0),
+    evidence TEXT,
+    created_by TEXT DEFAULT 'icdev-mbse-engine',
+    created_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, source_type, source_id, target_type, target_id, link_type)
+);
+
+
+-- Model import history log
+CREATE TABLE IF NOT EXISTS model_imports (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    import_type TEXT NOT NULL CHECK(import_type IN ('xmi', 'reqif', 'csv', 'json')),
+    source_file TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    elements_imported INTEGER DEFAULT 0,
+    relationships_imported INTEGER DEFAULT 0,
+    errors INTEGER DEFAULT 0,
+    error_details TEXT,
+    status TEXT DEFAULT 'completed' CHECK(status IN ('in_progress', 'completed', 'failed', 'partial')),
+    imported_by TEXT DEFAULT 'icdev-mbse-engine',
+    imported_at TEXT DEFAULT (now()::text)
+);
+
+
+-- PI-cadenced model snapshots
+CREATE TABLE IF NOT EXISTS model_snapshots (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pi_number TEXT,
+    snapshot_type TEXT NOT NULL CHECK(snapshot_type IN ('pi_start', 'pi_end', 'baseline', 'milestone', 'manual')),
+    element_count INTEGER DEFAULT 0,
+    relationship_count INTEGER DEFAULT 0,
+    requirement_count INTEGER DEFAULT 0,
+    thread_link_count INTEGER DEFAULT 0,
+    content_hash TEXT NOT NULL,
+    snapshot_data JSONB,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, pi_number, snapshot_type)
+);
+
+
+-- Model-to-code mapping with sync tracking
+CREATE TABLE IF NOT EXISTS model_code_mappings (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    sysml_element_id TEXT NOT NULL REFERENCES sysml_elements(id),
+    code_path TEXT NOT NULL,
+    code_type TEXT NOT NULL CHECK(code_type IN ('class', 'module', 'function', 'interface', 'api_endpoint', 'config', 'test', 'migration')),
+    mapping_direction TEXT DEFAULT 'model_to_code' CHECK(mapping_direction IN ('model_to_code', 'code_to_model', 'bidirectional')),
+    sync_status TEXT DEFAULT 'synced' CHECK(sync_status IN ('synced', 'model_ahead', 'code_ahead', 'conflict', 'unknown')),
+    last_synced TEXT DEFAULT (now()::text),
+    model_hash TEXT,
+    code_hash TEXT,
+    UNIQUE(project_id, sysml_element_id, code_path)
+);
+
+
+-- DES (DoDI 5000.87) compliance tracking
+CREATE TABLE IF NOT EXISTS des_compliance (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN ('model_authority', 'data_management', 'infrastructure', 'workforce', 'policy', 'lifecycle')),
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('not_assessed', 'compliant', 'partially_compliant', 'non_compliant', 'not_applicable')),
+    evidence TEXT,
+    automation_result TEXT,
+    assessed_at TEXT DEFAULT (now()::text),
+    notes TEXT,
+    UNIQUE(project_id, requirement_id)
+);
+
+
+-- ============================================================
+-- APPLICATION MODERNIZATION (Phase 19A — 7Rs Migration)
+-- ============================================================
+
+-- Legacy applications registered for analysis
+CREATE TABLE IF NOT EXISTS legacy_applications (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    source_path TEXT NOT NULL,
+    primary_language TEXT NOT NULL,
+    language_version TEXT,
+    framework TEXT,
+    framework_version TEXT,
+    app_type TEXT DEFAULT 'monolith' CHECK(app_type IN ('monolith','distributed','client_server','mainframe','embedded')),
+    analysis_status TEXT DEFAULT 'registered' CHECK(analysis_status IN ('registered','analyzing','analyzed','planning','migrating','completed','failed')),
+    loc_total INTEGER DEFAULT 0,
+    loc_code INTEGER DEFAULT 0,
+    loc_comment INTEGER DEFAULT 0,
+    loc_blank INTEGER DEFAULT 0,
+    file_count INTEGER DEFAULT 0,
+    complexity_score REAL DEFAULT 0.0,
+    tech_debt_hours REAL DEFAULT 0.0,
+    maintainability_index REAL DEFAULT 0.0,
+    source_hash TEXT,
+    registered_at TEXT DEFAULT (now()::text),
+    analyzed_at TEXT,
+    UNIQUE(project_id, name)
+);
+
+-- Legacy application components (classes, modules, services)
+CREATE TABLE IF NOT EXISTS legacy_components (
+    id TEXT PRIMARY KEY,
+    legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
+    name TEXT NOT NULL,
+    component_type TEXT NOT NULL CHECK(component_type IN (
+        'class','module','package','service','controller','model',
+        'view','repository','util','config','test','migration',
+        'interface','abstract_class','enum','servlet','ejb','entity',
+        'stored_procedure','trigger','function','api_endpoint'
+    )),
+    file_path TEXT NOT NULL,
+    qualified_name TEXT,
+    parent_component_id TEXT REFERENCES legacy_components(id),
+    loc INTEGER DEFAULT 0,
+    cyclomatic_complexity REAL DEFAULT 0.0,
+    coupling_score REAL DEFAULT 0.0,
+    cohesion_score REAL DEFAULT 0.0,
+    dependencies_in INTEGER DEFAULT 0,
+    dependencies_out INTEGER DEFAULT 0,
+    properties JSONB,
+    discovered_at TEXT DEFAULT (now()::text),
+    UNIQUE(legacy_app_id, qualified_name)
+);
+
+-- Dependencies between legacy components
+CREATE TABLE IF NOT EXISTS legacy_dependencies (
+    id SERIAL PRIMARY KEY,
+    legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
+    source_component_id TEXT NOT NULL REFERENCES legacy_components(id),
+    target_component_id TEXT REFERENCES legacy_components(id),
+    dependency_type TEXT NOT NULL CHECK(dependency_type IN (
+        'import','inheritance','composition','aggregation','method_call',
+        'field_access','annotation','injection','event','database','api_call',
+        'file_io','message_queue','external_service'
+    )),
+    weight REAL DEFAULT 1.0,
+    is_bidirectional INTEGER DEFAULT 0,
+    evidence TEXT,
+    UNIQUE(legacy_app_id, source_component_id, target_component_id, dependency_type)
+);
+
+-- Discovered API endpoints in legacy applications
+CREATE TABLE IF NOT EXISTS legacy_apis (
+    id TEXT PRIMARY KEY,
+    legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
+    component_id TEXT REFERENCES legacy_components(id),
+    method TEXT CHECK(method IN ('GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS','ALL')),
+    path TEXT NOT NULL,
+    handler_function TEXT,
+    parameters JSONB,
+    request_body JSONB,
+    response_type TEXT,
+    auth_required INTEGER DEFAULT 0,
+    discovered_at TEXT DEFAULT (now()::text),
+    UNIQUE(legacy_app_id, method, path)
+);
+
+-- Discovered database schemas in legacy applications
+CREATE TABLE IF NOT EXISTS legacy_db_schemas (
+    id TEXT PRIMARY KEY,
+    legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
+    db_type TEXT NOT NULL CHECK(db_type IN ('postgresql','mysql','oracle','mssql','db2','sybase','sqlite','h2','derby')),
+    schema_name TEXT DEFAULT 'public',
+    table_name TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    data_type TEXT NOT NULL,
+    is_nullable INTEGER DEFAULT 1,
+    is_primary_key INTEGER DEFAULT 0,
+    is_foreign_key INTEGER DEFAULT 0,
+    foreign_table TEXT,
+    foreign_column TEXT,
+    default_value TEXT,
+    constraints TEXT,
+    discovered_at TEXT DEFAULT (now()::text),
+    UNIQUE(legacy_app_id, schema_name, table_name, column_name)
+);
+
+-- 7R migration assessment scoring
+CREATE TABLE IF NOT EXISTS migration_assessments (
+    id TEXT PRIMARY KEY,
+    legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
+    component_id TEXT REFERENCES legacy_components(id),
+    assessment_scope TEXT DEFAULT 'application' CHECK(assessment_scope IN ('application','component','database','api')),
+    rehost_score REAL DEFAULT 0.0,
+    replatform_score REAL DEFAULT 0.0,
+    refactor_score REAL DEFAULT 0.0,
+    rearchitect_score REAL DEFAULT 0.0,
+    repurchase_score REAL DEFAULT 0.0,
+    retire_score REAL DEFAULT 0.0,
+    retain_score REAL DEFAULT 0.0,
+    recommended_strategy TEXT CHECK(recommended_strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain')),
+    cost_estimate_hours REAL,
+    risk_score REAL DEFAULT 0.0,
+    timeline_weeks INTEGER,
+    ato_impact TEXT CHECK(ato_impact IN ('none','low','medium','high','critical')),
+    tech_debt_reduction REAL DEFAULT 0.0,
+    scoring_weights JSONB,
+    evidence TEXT,
+    assessed_at TEXT DEFAULT (now()::text),
+    UNIQUE(legacy_app_id, component_id, assessment_scope)
+);
+
+-- Migration plans
+CREATE TABLE IF NOT EXISTS migration_plans (
+    id TEXT PRIMARY KEY,
+    legacy_app_id TEXT NOT NULL REFERENCES legacy_applications(id),
+    plan_name TEXT NOT NULL,
+    strategy TEXT NOT NULL CHECK(strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain','hybrid')),
+    target_language TEXT,
+    target_framework TEXT,
+    target_database TEXT,
+    target_architecture TEXT CHECK(target_architecture IN ('microservices','modular_monolith','serverless','event_driven','layered','hexagonal')),
+    migration_approach TEXT DEFAULT 'strangler_fig' CHECK(migration_approach IN ('big_bang','strangler_fig','parallel_run','blue_green','canary','phased')),
+    total_tasks INTEGER DEFAULT 0,
+    completed_tasks INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','approved','in_progress','paused','completed','cancelled')),
+    estimated_hours REAL,
+    actual_hours REAL DEFAULT 0.0,
+    start_date TEXT,
+    target_date TEXT,
+    completion_date TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(legacy_app_id, plan_name)
+);
+
+-- Individual migration tasks within a plan
+CREATE TABLE IF NOT EXISTS migration_tasks (
+    id TEXT PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES migration_plans(id),
+    legacy_component_id TEXT REFERENCES legacy_components(id),
+    task_type TEXT NOT NULL CHECK(task_type IN (
+        'analyze','document','decompose','generate_scaffold',
+        'generate_adapter','generate_facade','generate_test',
+        'migrate_schema','migrate_data','upgrade_version',
+        'upgrade_framework','extract_service','create_api',
+        'create_acl','validate','deploy','cutover','decommission'
+    )),
+    title TEXT NOT NULL,
+    description TEXT,
+    priority TEXT DEFAULT 'medium' CHECK(priority IN ('critical','high','medium','low')),
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','blocked','skipped')),
+    pi_number TEXT,
+    assigned_to TEXT,
+    estimated_hours REAL,
+    actual_hours REAL DEFAULT 0.0,
+    dependencies JSONB,
+    output_path TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    completed_at TEXT
+);
+
+-- Migration artifacts (generated files)
+CREATE TABLE IF NOT EXISTS migration_artifacts (
+    id SERIAL PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES migration_plans(id),
+    task_id TEXT REFERENCES migration_tasks(id),
+    artifact_type TEXT NOT NULL CHECK(artifact_type IN (
+        'architecture_doc','api_doc','data_flow_doc','component_doc',
+        'migration_script','adapter_code','facade_code','scaffold_code',
+        'test_code','schema_ddl','data_migration_sql','acl_code',
+        'deployment_manifest','rollback_script','validation_report',
+        'assessment_report','progress_report'
+    )),
+    file_path TEXT NOT NULL,
+    file_hash TEXT,
+    description TEXT,
+    created_at TEXT DEFAULT (now()::text)
+);
+
+-- Migration progress snapshots (PI-cadenced)
+CREATE TABLE IF NOT EXISTS migration_progress (
+    id SERIAL PRIMARY KEY,
+    plan_id TEXT NOT NULL REFERENCES migration_plans(id),
+    pi_number TEXT,
+    snapshot_type TEXT DEFAULT 'manual' CHECK(snapshot_type IN ('pi_start','pi_end','milestone','manual')),
+    tasks_total INTEGER DEFAULT 0,
+    tasks_completed INTEGER DEFAULT 0,
+    tasks_in_progress INTEGER DEFAULT 0,
+    tasks_blocked INTEGER DEFAULT 0,
+    components_migrated INTEGER DEFAULT 0,
+    components_remaining INTEGER DEFAULT 0,
+    apis_migrated INTEGER DEFAULT 0,
+    tables_migrated INTEGER DEFAULT 0,
+    test_coverage REAL DEFAULT 0.0,
+    compliance_score REAL DEFAULT 0.0,
+    hours_spent REAL DEFAULT 0.0,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    UNIQUE(plan_id, pi_number, snapshot_type)
+);
+
+-- ============================================================
+-- ALERTS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS alerts (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    severity TEXT NOT NULL CHECK(severity IN ('critical', 'warning', 'info')),
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'firing' CHECK(status IN ('firing', 'acknowledged', 'resolved')),
+    acknowledged_by TEXT,
+    resolved_at TIMESTAMP,
+    auto_healed BOOLEAN DEFAULT FALSE,
+    healing_event_id INTEGER REFERENCES self_healing_events(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- RICOAS: REQUIREMENTS INTAKE (Phase 20A)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS intake_sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    customer_name TEXT NOT NULL,
+    customer_org TEXT,
+    session_status TEXT DEFAULT 'active'
+        CHECK(session_status IN ('active', 'paused', 'completed', 'abandoned', 'approved')),
+    classification TEXT DEFAULT 'CUI',
+    impact_level TEXT DEFAULT 'IL5'
+        CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+    readiness_score REAL DEFAULT 0.0,
+    readiness_breakdown JSONB,
+    gap_count INTEGER DEFAULT 0,
+    ambiguity_count INTEGER DEFAULT 0,
+    total_requirements INTEGER DEFAULT 0,
+    decomposed_count INTEGER DEFAULT 0,
+    context_summary TEXT,
+    source_documents JSONB,
+    resumed_from TEXT REFERENCES intake_sessions(id),
+    created_by TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS intake_conversation (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    turn_number INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('customer', 'analyst', 'system')),
+    content TEXT NOT NULL,
+    content_type TEXT DEFAULT 'text'
+        CHECK(content_type IN ('text', 'clarification_request', 'gap_detection',
+            'requirement_extracted', 'decomposition_preview', 'readiness_update',
+            'document_upload', 'document_extraction', 'coa_preview',
+            'boundary_warning', 'approval_request')),
+    extracted_requirements JSONB,
+    metadata JSONB,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS intake_requirements (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    project_id TEXT REFERENCES projects(id),
+    source_turn INTEGER,
+    raw_text TEXT NOT NULL,
+    refined_text TEXT,
+    requirement_type TEXT DEFAULT 'functional'
+        CHECK(requirement_type IN ('functional', 'non_functional', 'interface',
+            'security', 'performance', 'compliance', 'data', 'constraint',
+            'operational', 'transitional')),
+    priority TEXT DEFAULT 'medium'
+        CHECK(priority IN ('critical', 'high', 'medium', 'low')),
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'clarified', 'validated', 'approved', 'rejected',
+            'decomposed', 'deferred')),
+    clarity_score REAL DEFAULT 0.0,
+    completeness_score REAL DEFAULT 0.0,
+    testability_score REAL DEFAULT 0.0,
+    feasibility_score REAL DEFAULT 0.0,
+    compliance_impact JSONB,
+    gaps JSONB,
+    ambiguities JSONB,
+    acceptance_criteria JSONB,
+    source_document TEXT,
+    source_section TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS safe_decomposition (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    project_id TEXT REFERENCES projects(id),
+    parent_id TEXT REFERENCES safe_decomposition(id),
+    level TEXT NOT NULL
+        CHECK(level IN ('epic', 'capability', 'feature', 'story', 'enabler')),
+    title TEXT NOT NULL,
+    description TEXT,
+    acceptance_criteria JSONB,
+    story_points INTEGER,
+    t_shirt_size TEXT CHECK(t_shirt_size IN ('XS', 'S', 'M', 'L', 'XL', 'XXL')),
+    pi_target TEXT,
+    team TEXT,
+    wsjf_score REAL,
+    source_requirement_ids JSONB,
+    nist_controls JSONB,
+    ato_impact_tier TEXT CHECK(ato_impact_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'refined', 'approved', 'committed', 'in_progress', 'done', 'rejected')),
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS intake_documents (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    document_type TEXT NOT NULL
+        CHECK(document_type IN ('sow', 'cdd', 'conops', 'srd', 'icd', 'ssp',
+            'use_case', 'brd', 'urd', 'rfp', 'rfi', 'other')),
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    file_size_bytes INTEGER,
+    mime_type TEXT,
+    extraction_status TEXT DEFAULT 'pending'
+        CHECK(extraction_status IN ('pending', 'extracting', 'extracted', 'failed')),
+    extracted_sections JSONB,
+    extracted_requirements_count INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    uploaded_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS readiness_scores (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    turn_number INTEGER,
+    overall_score REAL NOT NULL,
+    completeness REAL NOT NULL,
+    clarity REAL NOT NULL,
+    feasibility REAL NOT NULL,
+    compliance REAL NOT NULL,
+    testability REAL NOT NULL,
+    gap_count INTEGER DEFAULT 0,
+    ambiguity_count INTEGER DEFAULT 0,
+    requirement_count INTEGER DEFAULT 0,
+    scored_at TEXT DEFAULT (now()::text)
+);
+
+-- ============================================================
+-- RICOAS: ATO BOUNDARY & SUPPLY CHAIN (Phase 20B)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ato_system_registry (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    system_name TEXT NOT NULL,
+    system_acronym TEXT,
+    ato_type TEXT CHECK(ato_type IN ('ato', 'iato', 'dato', 'cato')),
+    ato_date TEXT,
+    ato_expiry TEXT,
+    authorizing_official TEXT,
+    accreditation_boundary JSONB,
+    ssp_document_id INTEGER REFERENCES ssp_documents(id),
+    impact_level TEXT CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+    data_types JSONB,
+    interconnections JSONB,
+    baseline_controls JSONB,
+    component_inventory JSONB,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, system_name)
+);
+
+CREATE TABLE IF NOT EXISTS boundary_impact_assessments (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES intake_sessions(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    system_id TEXT NOT NULL REFERENCES ato_system_registry(id),
+    requirement_id TEXT REFERENCES intake_requirements(id),
+    safe_item_id TEXT REFERENCES safe_decomposition(id),
+    impact_tier TEXT NOT NULL CHECK(impact_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+    impact_category TEXT NOT NULL
+        CHECK(impact_category IN ('architecture', 'data_flow', 'authentication',
+            'authorization', 'network', 'encryption', 'logging', 'boundary_change',
+            'new_interconnection', 'data_type_change', 'component_addition')),
+    impact_description TEXT NOT NULL,
+    affected_controls JSONB,
+    affected_components JSONB,
+    ssp_sections_impacted JSONB,
+    remediation_required TEXT,
+    alternative_approach TEXT,
+    risk_score REAL DEFAULT 0.0,
+    assessed_by TEXT DEFAULT 'icdev-requirements-analyst',
+    assessed_at TEXT DEFAULT (now()::text),
+    UNIQUE(requirement_id, system_id)
+);
+
+CREATE TABLE IF NOT EXISTS supply_chain_vendors (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    vendor_name TEXT NOT NULL,
+    vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),
+    country_of_origin TEXT,
+    scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')),
+    section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')),
+    dod_approved INTEGER DEFAULT 0,
+    contact_info JSONB,
+    isa_required INTEGER DEFAULT 0,
+    last_assessed TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, vendor_name)
+);
+
+CREATE TABLE IF NOT EXISTS supply_chain_dependencies (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    source_type TEXT NOT NULL
+        CHECK(source_type IN ('project', 'system', 'component', 'vendor', 'package')),
+    source_id TEXT NOT NULL,
+    target_type TEXT NOT NULL
+        CHECK(target_type IN ('project', 'system', 'component', 'vendor', 'package')),
+    target_id TEXT NOT NULL,
+    dependency_type TEXT NOT NULL
+        CHECK(dependency_type IN ('depends_on', 'supplies', 'integrates_with',
+            'data_flows_to', 'inherits_ato', 'shares_boundary')),
+    criticality TEXT DEFAULT 'medium'
+        CHECK(criticality IN ('critical', 'high', 'medium', 'low')),
+    isa_id TEXT,
+    metadata JSONB,
+    created_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, source_type, source_id, target_type, target_id, dependency_type)
+);
+
+CREATE TABLE IF NOT EXISTS isa_agreements (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    agreement_type TEXT NOT NULL CHECK(agreement_type IN ('isa', 'mou', 'moa', 'sla', 'ila')),
+    partner_system TEXT NOT NULL,
+    partner_org TEXT,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'review', 'signed', 'active', 'expiring', 'expired', 'terminated')),
+    signed_date TEXT,
+    expiry_date TEXT,
+    data_types_shared JSONB,
+    ports_protocols JSONB,
+    security_controls JSONB,
+    poc_name TEXT,
+    poc_email TEXT,
+    document_path TEXT,
+    review_cadence_days INTEGER DEFAULT 365,
+    next_review_date TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS scrm_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    vendor_id TEXT REFERENCES supply_chain_vendors(id),
+    package_name TEXT,
+    assessment_type TEXT NOT NULL
+        CHECK(assessment_type IN ('vendor', 'component', 'aggregate', 'supply_chain_event')),
+    risk_category TEXT
+        CHECK(risk_category IN ('tampering', 'counterfeit', 'malicious_insertion',
+            'supply_disruption', 'data_exposure', 'foreign_control',
+            'single_source', 'obsolescence')),
+    risk_score REAL DEFAULT 0.0,
+    likelihood TEXT CHECK(likelihood IN ('very_low', 'low', 'moderate', 'high', 'very_high')),
+    impact TEXT CHECK(impact IN ('very_low', 'low', 'moderate', 'high', 'very_high')),
+    mitigations JSONB,
+    residual_risk TEXT CHECK(residual_risk IN ('low', 'moderate', 'high', 'critical')),
+    nist_161_controls JSONB,
+    assessed_by TEXT DEFAULT 'icdev-supply-chain-agent',
+    assessed_at TEXT DEFAULT (now()::text),
+    next_assessment TEXT
+);
+
+CREATE TABLE IF NOT EXISTS cve_triage (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    cve_id TEXT NOT NULL,
+    package_name TEXT NOT NULL,
+    package_version TEXT,
+    severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+    cvss_score REAL,
+    exploitability TEXT CHECK(exploitability IN ('active', 'poc', 'theoretical', 'none_known')),
+    triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),
+    triage_rationale TEXT,
+    upstream_impact TEXT,
+    downstream_impact TEXT,
+    sla_deadline TEXT,
+    triaged_by TEXT,
+    triaged_at TEXT DEFAULT (now()::text),
+    remediated_at TEXT,
+    UNIQUE(project_id, cve_id, package_name)
+);
+
+-- ============================================================
+-- RICOAS: SIMULATION & COAs (Phase 20C)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS simulation_scenarios (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    session_id TEXT REFERENCES intake_sessions(id),
+    scenario_name TEXT NOT NULL,
+    scenario_type TEXT NOT NULL
+        CHECK(scenario_type IN ('what_if', 'coa_comparison', 'risk_monte_carlo',
+            'schedule_impact', 'cost_impact', 'compliance_impact',
+            'supply_chain_disruption', 'architecture_change', 'compound')),
+    base_state JSONB NOT NULL,
+    modifications JSONB NOT NULL,
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'archived')),
+    classification TEXT DEFAULT 'CUI',
+    created_by TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    completed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS simulation_results (
+    id SERIAL PRIMARY KEY,
+    scenario_id TEXT NOT NULL REFERENCES simulation_scenarios(id),
+    dimension TEXT NOT NULL
+        CHECK(dimension IN ('architecture', 'compliance', 'supply_chain',
+            'schedule', 'cost', 'risk')),
+    metric_name TEXT NOT NULL,
+    baseline_value REAL,
+    simulated_value REAL,
+    delta REAL,
+    delta_pct REAL,
+    confidence REAL DEFAULT 0.0,
+    impact_tier TEXT CHECK(impact_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+    details JSONB,
+    visualizations JSONB,
+    calculated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS monte_carlo_runs (
+    id TEXT PRIMARY KEY,
+    scenario_id TEXT NOT NULL REFERENCES simulation_scenarios(id),
+    iterations INTEGER NOT NULL DEFAULT 10000,
+    dimension TEXT NOT NULL CHECK(dimension IN ('schedule', 'cost', 'risk')),
+    distribution_type TEXT DEFAULT 'pert'
+        CHECK(distribution_type IN ('pert', 'triangular', 'normal', 'uniform', 'beta')),
+    input_parameters JSONB NOT NULL,
+    p10_value REAL,
+    p50_value REAL,
+    p80_value REAL,
+    p90_value REAL,
+    mean_value REAL,
+    std_deviation REAL,
+    histogram_data JSONB,
+    cdf_data JSONB,
+    confidence_intervals JSONB,
+    run_duration_ms INTEGER,
+    completed_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS coa_definitions (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    coa_type TEXT NOT NULL CHECK(coa_type IN ('speed', 'balanced', 'comprehensive', 'alternative')),
+    coa_name TEXT NOT NULL,
+    description TEXT,
+    architecture_summary JSONB,
+    cost_estimate JSONB,
+    risk_profile JSONB,
+    timeline JSONB,
+    compliance_impact JSONB,
+    supply_chain_impact JSONB,
+    boundary_tier TEXT CHECK(boundary_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+    safe_decomposition_id TEXT,
+    simulation_scenario_id TEXT REFERENCES simulation_scenarios(id),
+    mission_fit_pct REAL,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'simulated', 'presented', 'selected', 'rejected', 'archived')),
+    selected_by TEXT,
+    selected_at TEXT,
+    selection_rationale TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS coa_comparisons (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    coa_a_id TEXT NOT NULL REFERENCES coa_definitions(id),
+    coa_b_id TEXT NOT NULL REFERENCES coa_definitions(id),
+    dimension TEXT NOT NULL
+        CHECK(dimension IN ('architecture', 'compliance', 'supply_chain',
+            'schedule', 'cost', 'risk', 'overall')),
+    coa_a_score REAL,
+    coa_b_score REAL,
+    winner TEXT CHECK(winner IN ('coa_a', 'coa_b', 'tie')),
+    rationale TEXT,
+    created_at TEXT DEFAULT (now()::text)
+);
+
+-- ============================================================
+-- RICOAS: EXTERNAL INTEGRATION (Phase 20D)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS integration_connections (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    system_type TEXT NOT NULL
+        CHECK(system_type IN ('jira', 'servicenow', 'doors_ng', 'confluence', 'azure_devops')),
+    instance_url TEXT NOT NULL,
+    auth_method TEXT NOT NULL
+        CHECK(auth_method IN ('api_key', 'oauth2', 'pat', 'basic', 'pki', 'saml')),
+    auth_secret_ref TEXT NOT NULL,
+    sync_direction TEXT DEFAULT 'bidirectional'
+        CHECK(sync_direction IN ('push', 'pull', 'bidirectional')),
+    sync_status TEXT DEFAULT 'configured'
+        CHECK(sync_status IN ('configured', 'syncing', 'synced', 'error', 'disabled')),
+    last_sync TEXT,
+    sync_cadence_minutes INTEGER DEFAULT 60,
+    field_mapping JSONB NOT NULL,
+    filter_criteria JSONB,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, system_type, instance_url)
+);
+
+CREATE TABLE IF NOT EXISTS integration_sync_log (
+    id SERIAL PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES integration_connections(id),
+    sync_direction TEXT NOT NULL CHECK(sync_direction IN ('push', 'pull')),
+    items_synced INTEGER DEFAULT 0,
+    items_created INTEGER DEFAULT 0,
+    items_updated INTEGER DEFAULT 0,
+    items_failed INTEGER DEFAULT 0,
+    error_details TEXT,
+    sync_duration_ms INTEGER,
+    synced_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS integration_id_map (
+    id SERIAL PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES integration_connections(id),
+    icdev_type TEXT NOT NULL
+        CHECK(icdev_type IN ('intake_requirement', 'safe_decomposition', 'coa_definition',
+            'boundary_impact_assessment', 'intake_session')),
+    icdev_id TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    external_type TEXT,
+    external_url TEXT,
+    sync_status TEXT DEFAULT 'synced'
+        CHECK(sync_status IN ('synced', 'pending_push', 'pending_pull', 'conflict', 'error')),
+    last_synced TEXT DEFAULT (now()::text),
+    UNIQUE(connection_id, icdev_id, icdev_type)
+);
+
+CREATE TABLE IF NOT EXISTS approval_workflows (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    approval_type TEXT NOT NULL
+        CHECK(approval_type IN ('requirements_package', 'coa_selection',
+            'boundary_impact_acceptance', 'decomposition_approval',
+            'pi_commitment')),
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'in_review', 'approved', 'rejected',
+            'conditional', 'escalated')),
+    submitted_by TEXT NOT NULL,
+    submitted_at TEXT DEFAULT (now()::text),
+    reviewers JSONB NOT NULL,
+    current_reviewer TEXT,
+    approval_chain JSONB,
+    related_coa_id TEXT REFERENCES coa_definitions(id),
+    conditions TEXT,
+    decision_rationale TEXT,
+    decided_at TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+CREATE TABLE IF NOT EXISTS review_traceability (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    session_id TEXT REFERENCES intake_sessions(id),
+    requirement_id TEXT NOT NULL,
+    requirement_type TEXT NOT NULL
+        CHECK(requirement_type IN ('intake', 'doors', 'safe_item')),
+    sysml_element_ids JSONB,
+    code_module_ids JSONB,
+    test_file_ids JSONB,
+    compliance_control_ids JSONB,
+    uat_test_ids JSONB,
+    coverage_pct REAL DEFAULT 0.0,
+    gaps JSONB,
+    last_verified TEXT,
+    verified_by TEXT DEFAULT 'icdev-requirements-analyst',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, requirement_id, requirement_type)
+);
+
+-- ============================================================
+-- HOOK-BASED OBSERVABILITY (TAC-8 Phase A)
+-- ============================================================
+
+-- Hook event storage (append-only)
+CREATE TABLE IF NOT EXISTS hook_events (
+    id SERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    hook_type TEXT NOT NULL CHECK(hook_type IN (
+        'pre_tool_use', 'post_tool_use', 'notification', 'stop', 'subagent_stop'
+    )),
+    tool_name TEXT,
+    payload JSONB,
+    classification TEXT DEFAULT 'CUI',
+    signature TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Agent execution log (append-only)
+CREATE TABLE IF NOT EXISTS agent_executions (
+    id SERIAL PRIMARY KEY,
+    execution_id TEXT UNIQUE NOT NULL,
+    project_id TEXT,
+    agent_type TEXT,
+    model TEXT,
+    prompt_hash TEXT,
+    status TEXT CHECK(status IN ('started', 'completed', 'failed', 'retried', 'timeout')),
+    retry_count INTEGER DEFAULT 0,
+    duration_ms INTEGER,
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    output_path TEXT,
+    error_message TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- NLQ COMPLIANCE QUERIES (TAC-8 Phase B)
+-- ============================================================
+
+-- NLQ query history (append-only, for audit)
+CREATE TABLE IF NOT EXISTS nlq_queries (
+    id SERIAL PRIMARY KEY,
+    query_text TEXT NOT NULL,
+    generated_sql TEXT,
+    result_count INTEGER,
+    execution_time_ms INTEGER,
+    actor TEXT,
+    classification TEXT DEFAULT 'CUI',
+    status TEXT CHECK(status IN ('success', 'error', 'blocked')),
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- GIT WORKTREE PARALLEL CI/CD (TAC-8 Phase C)
+-- ============================================================
+
+-- Worktree tracking
+CREATE TABLE IF NOT EXISTS ci_worktrees (
+    id SERIAL PRIMARY KEY,
+    worktree_name TEXT UNIQUE NOT NULL,
+    task_id TEXT,
+    issue_number INTEGER,
+    branch_name TEXT,
+    target_directory TEXT,
+    classification TEXT DEFAULT 'CUI',
+    status TEXT CHECK(status IN ('active', 'completed', 'failed', 'cleaned')),
+    agent_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- GitLab task claims (prevent double-processing)
+CREATE TABLE IF NOT EXISTS gitlab_task_claims (
+    id SERIAL PRIMARY KEY,
+    issue_iid INTEGER NOT NULL,
+    issue_url TEXT,
+    icdev_tag TEXT,
+    worktree_name TEXT,
+    status TEXT CHECK(status IN ('claimed', 'processing', 'completed', 'failed')),
+    run_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- ============================================================
+-- AGENT ORCHESTRATION (Opus 4.6 Multi-Agent)
+-- ============================================================
+
+-- Token usage tracking per agent/project/task
+CREATE TABLE IF NOT EXISTS agent_token_usage (
+    id SERIAL PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    project_id TEXT,
+    task_id TEXT,
+    model_id TEXT NOT NULL,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    thinking_tokens INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    cost_estimate_usd REAL DEFAULT 0.0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Multi-agent workflow tracking
+CREATE TABLE IF NOT EXISTS agent_workflows (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    project_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+        'pending', 'running', 'completed', 'failed', 'partially_completed', 'canceled'
+    )),
+    total_subtasks INTEGER DEFAULT 0,
+    completed_subtasks INTEGER DEFAULT 0,
+    failed_subtasks INTEGER DEFAULT 0,
+    created_by TEXT DEFAULT 'orchestrator-agent',
+    input_data JSONB,
+    aggregated_result JSONB,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Subtasks within workflows
+CREATE TABLE IF NOT EXISTS agent_subtasks (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT NOT NULL REFERENCES agent_workflows(id),
+    a2a_task_id TEXT,
+    agent_id TEXT NOT NULL,
+    skill_id TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+        'pending', 'queued', 'working', 'completed', 'failed', 'canceled', 'blocked'
+    )),
+    depends_on JSONB,
+    input_data JSONB,
+    output_data JSONB,
+    error_message TEXT,
+    attempt_count INTEGER DEFAULT 0,
+    assigned_at TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Agent mailbox (HMAC-signed inter-agent messaging)
+CREATE TABLE IF NOT EXISTS agent_mailbox (
+    id TEXT PRIMARY KEY,
+    from_agent_id TEXT NOT NULL,
+    to_agent_id TEXT NOT NULL,
+    message_type TEXT NOT NULL CHECK(message_type IN (
+        'request', 'response', 'notification', 'veto', 'escalation',
+        'collaboration_invite', 'memory_share'
+    )),
+    subject TEXT NOT NULL,
+    body TEXT NOT NULL,
+    priority INTEGER DEFAULT 5 CHECK(priority BETWEEN 1 AND 10),
+    in_reply_to TEXT,
+    hmac_signature TEXT NOT NULL,
+    read_at TIMESTAMP,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Domain authority vetoes (append-only for audit)
+CREATE TABLE IF NOT EXISTS agent_vetoes (
+    id SERIAL PRIMARY KEY,
+    authority_agent_id TEXT NOT NULL,
+    vetoed_agent_id TEXT NOT NULL,
+    task_id TEXT,
+    workflow_id TEXT,
+    project_id TEXT,
+    topic TEXT NOT NULL,
+    veto_type TEXT NOT NULL CHECK(veto_type IN ('hard', 'soft')),
+    reason TEXT NOT NULL,
+    evidence TEXT,
+    status TEXT DEFAULT 'active' CHECK(status IN (
+        'active', 'overridden', 'expired', 'withdrawn'
+    )),
+    overridden_by TEXT,
+    override_justification TEXT,
+    override_approval_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Agent memory (project-scoped, per-agent + team-shared)
+CREATE TABLE IF NOT EXISTS agent_memory (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    project_id TEXT NOT NULL,
+    memory_type TEXT NOT NULL CHECK(memory_type IN (
+        'fact', 'preference', 'collaboration', 'dispute', 'pattern',
+        'context', 'lesson_learned', 'decision'
+    )),
+    content TEXT NOT NULL,
+    importance INTEGER DEFAULT 5 CHECK(importance BETWEEN 1 AND 10),
+    task_id TEXT,
+    related_agent_ids JSONB,
+    access_count INTEGER DEFAULT 0,
+    last_accessed_at TIMESTAMP,
+    expires_at TIMESTAMP,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Collaboration history (who worked with whom)
+CREATE TABLE IF NOT EXISTS agent_collaboration_history (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    agent_a_id TEXT NOT NULL,
+    agent_b_id TEXT NOT NULL,
+    collaboration_type TEXT NOT NULL CHECK(collaboration_type IN (
+        'review', 'debate', 'consensus', 'veto', 'delegation', 'escalation'
+    )),
+    task_id TEXT,
+    workflow_id TEXT,
+    outcome TEXT CHECK(outcome IN (
+        'agreement', 'disagreement', 'veto', 'escalation', 'timeout'
+    )),
+    lesson_learned TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- AGENTIC FITNESS ASSESSMENTS (Phase 19)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agentic_fitness_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    component_name TEXT NOT NULL,
+    spec_text TEXT,
+    scores JSONB NOT NULL,
+    overall_score REAL NOT NULL,
+    recommendation TEXT NOT NULL,
+    rationale TEXT,
+    assessed_by TEXT DEFAULT 'architect-agent',
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- CHILD APP REGISTRY (Phase 19 — Agentic Generation)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS child_app_registry (
+    id TEXT PRIMARY KEY,
+    parent_project_id TEXT REFERENCES projects(id),
+    child_name TEXT NOT NULL,
+    child_path TEXT NOT NULL,
+    blueprint_hash TEXT,
+    fitness_assessment_id TEXT REFERENCES agentic_fitness_assessments(id),
+    capabilities JSONB NOT NULL,
+    agent_count INTEGER DEFAULT 5,
+    cloud_provider TEXT DEFAULT 'aws',
+    callback_url TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- FIPS 199/200 SECURITY CATEGORIZATION (Phase 20)
+-- ============================================================
+
+-- FIPS 199 system categorizations
+CREATE TABLE IF NOT EXISTS fips199_categorizations (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    categorization_date TEXT DEFAULT (now()::text),
+    categorizer TEXT DEFAULT 'icdev-compliance-engine',
+    confidentiality_impact TEXT NOT NULL
+        CHECK(confidentiality_impact IN ('Low', 'Moderate', 'High')),
+    integrity_impact TEXT NOT NULL
+        CHECK(integrity_impact IN ('Low', 'Moderate', 'High')),
+    availability_impact TEXT NOT NULL
+        CHECK(availability_impact IN ('Low', 'Moderate', 'High')),
+    overall_categorization TEXT NOT NULL
+        CHECK(overall_categorization IN ('Low', 'Moderate', 'High')),
+    categorization_method TEXT DEFAULT 'information_type'
+        CHECK(categorization_method IN ('information_type', 'manual', 'inherited', 'cnssi_1253')),
+    justification TEXT,
+    information_types_summary JSONB,
+    cnssi_1253_applied INTEGER DEFAULT 0,
+    cnssi_overlay_ids JSONB,
+    baseline_selected TEXT
+        CHECK(baseline_selected IN ('Low', 'Moderate', 'High')),
+    approved_by TEXT,
+    approved_at TEXT,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft', 'review', 'approved', 'superseded')),
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text)
+);
+
+
+-- Information types assigned to a project (N:1 to fips199_categorizations)
+CREATE TABLE IF NOT EXISTS project_information_types (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    categorization_id INTEGER REFERENCES fips199_categorizations(id),
+    information_type_id TEXT NOT NULL,
+    information_type_name TEXT NOT NULL,
+    information_type_category TEXT NOT NULL,
+    provisional_confidentiality TEXT NOT NULL
+        CHECK(provisional_confidentiality IN ('N/A', 'Low', 'Moderate', 'High')),
+    provisional_integrity TEXT NOT NULL
+        CHECK(provisional_integrity IN ('N/A', 'Low', 'Moderate', 'High')),
+    provisional_availability TEXT NOT NULL
+        CHECK(provisional_availability IN ('N/A', 'Low', 'Moderate', 'High')),
+    adjusted_confidentiality TEXT,
+    adjusted_integrity TEXT,
+    adjusted_availability TEXT,
+    adjustment_justification TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, information_type_id)
+);
+
+
+-- FIPS 200 assessment results
+CREATE TABLE IF NOT EXISTS fips200_assessments (
+    id SERIAL PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    assessment_date TEXT DEFAULT (now()::text),
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    baseline TEXT NOT NULL
+        CHECK(baseline IN ('Low', 'Moderate', 'High')),
+    requirement_area_id TEXT NOT NULL,
+    requirement_area_name TEXT NOT NULL,
+    family TEXT NOT NULL,
+    total_required_controls INTEGER DEFAULT 0,
+    mapped_controls INTEGER DEFAULT 0,
+    implemented_controls INTEGER DEFAULT 0,
+    planned_controls INTEGER DEFAULT 0,
+    not_applicable_controls INTEGER DEFAULT 0,
+    coverage_pct REAL DEFAULT 0.0,
+    status TEXT DEFAULT 'not_assessed'
+        CHECK(status IN ('not_assessed', 'satisfied', 'partially_satisfied',
+                         'not_satisfied', 'not_applicable')),
+    gap_controls JSONB,
+    evidence_description TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (now()::text),
+    updated_at TEXT DEFAULT (now()::text),
+    UNIQUE(project_id, requirement_area_id)
+);
+
+
+"""
+
+PG_INDEX_SQL = [
+    "CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_trail(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_type ON audit_trail(event_type)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_trail(actor)",
+    "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_trail(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_cssp_assess_project ON cssp_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cssp_assess_area ON cssp_assessments(functional_area)",
+    "CREATE INDEX IF NOT EXISTS idx_cssp_incident_project ON cssp_incidents(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cssp_incident_status ON cssp_incidents(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cssp_vuln_project ON cssp_vuln_management(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sbd_assess_project ON sbd_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sbd_assess_domain ON sbd_assessments(domain)",
+    "CREATE INDEX IF NOT EXISTS idx_ivv_assess_project ON ivv_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ivv_assess_area ON ivv_assessments(process_area)",
+    "CREATE INDEX IF NOT EXISTS idx_ivv_finding_project ON ivv_findings(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ivv_finding_status ON ivv_findings(status)",
+    "CREATE INDEX IF NOT EXISTS idx_dep_inv_project ON dependency_inventory(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dep_inv_stale ON dependency_inventory(days_stale)",
+    "CREATE INDEX IF NOT EXISTS idx_dep_vuln_project ON dependency_vulnerabilities(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_dep_vuln_severity ON dependency_vulnerabilities(severity)",
+    "CREATE INDEX IF NOT EXISTS idx_dep_vuln_status ON dependency_vulnerabilities(status)",
+    "CREATE INDEX IF NOT EXISTS idx_dep_vuln_sla ON dependency_vulnerabilities(sla_deadline)",
+    "CREATE INDEX IF NOT EXISTS idx_maint_audit_project ON maintenance_audits(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_remed_project ON remediation_actions(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_remed_status ON remediation_actions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_crosswalk_nist ON control_crosswalk(nist_800_53_id)",
+    "CREATE INDEX IF NOT EXISTS idx_crosswalk_framework ON control_crosswalk(framework_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fedramp_project ON fedramp_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fedramp_baseline ON fedramp_assessments(baseline)",
+    "CREATE INDEX IF NOT EXISTS idx_cmmc_project ON cmmc_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cmmc_level ON cmmc_assessments(level)",
+    "CREATE INDEX IF NOT EXISTS idx_oscal_project ON oscal_artifacts(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_emass_sync_project ON emass_sync_log(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cato_evidence_project ON cato_evidence(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cato_evidence_status ON cato_evidence(status)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_project ON sysml_elements(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_type ON sysml_elements(element_type)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_parent ON sysml_elements(parent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_rel_project ON sysml_relationships(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_rel_source ON sysml_relationships(source_element_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_rel_target ON sysml_relationships(target_element_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sysml_rel_type ON sysml_relationships(relationship_type)",
+    "CREATE INDEX IF NOT EXISTS idx_doors_project ON doors_requirements(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_doors_type ON doors_requirements(requirement_type)",
+    "CREATE INDEX IF NOT EXISTS idx_doors_status ON doors_requirements(status)",
+    "CREATE INDEX IF NOT EXISTS idx_thread_project ON digital_thread_links(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_thread_source ON digital_thread_links(source_type, source_id)",
+    "CREATE INDEX IF NOT EXISTS idx_thread_target ON digital_thread_links(target_type, target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_thread_link_type ON digital_thread_links(link_type)",
+    "CREATE INDEX IF NOT EXISTS idx_imports_project ON model_imports(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_project ON model_snapshots(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_snapshots_pi ON model_snapshots(pi_number)",
+    "CREATE INDEX IF NOT EXISTS idx_mcm_project ON model_code_mappings(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_mcm_element ON model_code_mappings(sysml_element_id)",
+    "CREATE INDEX IF NOT EXISTS idx_des_project ON des_compliance(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_app_project ON legacy_applications(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_app_status ON legacy_applications(analysis_status)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_comp_app ON legacy_components(legacy_app_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_comp_type ON legacy_components(component_type)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_comp_parent ON legacy_components(parent_component_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_dep_app ON legacy_dependencies(legacy_app_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_dep_source ON legacy_dependencies(source_component_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_dep_target ON legacy_dependencies(target_component_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_api_app ON legacy_apis(legacy_app_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_db_app ON legacy_db_schemas(legacy_app_id)",
+    "CREATE INDEX IF NOT EXISTS idx_legacy_db_table ON legacy_db_schemas(table_name)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_assess_app ON migration_assessments(legacy_app_id)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_assess_strategy ON migration_assessments(recommended_strategy)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_plan_app ON migration_plans(legacy_app_id)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_plan_status ON migration_plans(status)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_task_plan ON migration_tasks(plan_id)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_task_status ON migration_tasks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_task_pi ON migration_tasks(pi_number)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_artifact_plan ON migration_artifacts(plan_id)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_artifact_type ON migration_artifacts(artifact_type)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_progress_plan ON migration_progress(plan_id)",
+    "CREATE INDEX IF NOT EXISTS idx_migration_progress_pi ON migration_progress(pi_number)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_session_project ON intake_sessions(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_session_status ON intake_sessions(session_status)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_conv_session ON intake_conversation(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_conv_turn ON intake_conversation(session_id, turn_number)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_req_session ON intake_requirements(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_req_project ON intake_requirements(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_req_status ON intake_requirements(status)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_req_type ON intake_requirements(requirement_type)",
+    "CREATE INDEX IF NOT EXISTS idx_safe_decomp_session ON safe_decomposition(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_safe_decomp_parent ON safe_decomposition(parent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_safe_decomp_level ON safe_decomposition(level)",
+    "CREATE INDEX IF NOT EXISTS idx_safe_decomp_project ON safe_decomposition(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_intake_doc_session ON intake_documents(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_readiness_session ON readiness_scores(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ato_registry_project ON ato_system_registry(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bia_project ON boundary_impact_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bia_tier ON boundary_impact_assessments(impact_tier)",
+    "CREATE INDEX IF NOT EXISTS idx_scv_project ON supply_chain_vendors(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_scv_risk ON supply_chain_vendors(scrm_risk_tier)",
+    "CREATE INDEX IF NOT EXISTS idx_scd_source ON supply_chain_dependencies(source_type, source_id)",
+    "CREATE INDEX IF NOT EXISTS idx_scd_target ON supply_chain_dependencies(target_type, target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_isa_project ON isa_agreements(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_isa_status ON isa_agreements(status)",
+    "CREATE INDEX IF NOT EXISTS idx_isa_expiry ON isa_agreements(expiry_date)",
+    "CREATE INDEX IF NOT EXISTS idx_scrm_project ON scrm_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_scrm_risk ON scrm_assessments(residual_risk)",
+    "CREATE INDEX IF NOT EXISTS idx_cve_triage_project ON cve_triage(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cve_triage_severity ON cve_triage(severity)",
+    "CREATE INDEX IF NOT EXISTS idx_sim_scenario_project ON simulation_scenarios(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sim_result_scenario ON simulation_results(scenario_id)",
+    "CREATE INDEX IF NOT EXISTS idx_mc_scenario ON monte_carlo_runs(scenario_id)",
+    "CREATE INDEX IF NOT EXISTS idx_coa_session ON coa_definitions(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_coa_project ON coa_definitions(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_coa_status ON coa_definitions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_coa_comp_session ON coa_comparisons(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_integ_conn_project ON integration_connections(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_integ_sync_conn ON integration_sync_log(connection_id)",
+    "CREATE INDEX IF NOT EXISTS idx_integ_map_icdev ON integration_id_map(icdev_type, icdev_id)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_session ON approval_workflows(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_approval_status ON approval_workflows(status)",
+    "CREATE INDEX IF NOT EXISTS idx_review_trace_project ON review_traceability(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_review_trace_req ON review_traceability(requirement_id)",
+    "CREATE INDEX IF NOT EXISTS idx_hook_events_session ON hook_events(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_hook_events_type ON hook_events(hook_type)",
+    "CREATE INDEX IF NOT EXISTS idx_hook_events_created ON hook_events(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_exec_id ON agent_executions(execution_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_exec_status ON agent_executions(status)",
+    "CREATE INDEX IF NOT EXISTS idx_nlq_queries_status ON nlq_queries(status)",
+    "CREATE INDEX IF NOT EXISTS idx_nlq_queries_created ON nlq_queries(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_worktree_name ON ci_worktrees(worktree_name)",
+    "CREATE INDEX IF NOT EXISTS idx_worktree_status ON ci_worktrees(status)",
+    "CREATE INDEX IF NOT EXISTS idx_gitlab_claim_iid ON gitlab_task_claims(issue_iid)",
+    "CREATE INDEX IF NOT EXISTS idx_gitlab_claim_status ON gitlab_task_claims(status)",
+    "CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON agent_token_usage(agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_token_usage_project ON agent_token_usage(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_token_usage_created ON agent_token_usage(created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_project ON agent_workflows(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_status ON agent_workflows(status)",
+    "CREATE INDEX IF NOT EXISTS idx_subtask_workflow ON agent_subtasks(workflow_id)",
+    "CREATE INDEX IF NOT EXISTS idx_subtask_agent ON agent_subtasks(agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_subtask_status ON agent_subtasks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_mailbox_to ON agent_mailbox(to_agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_mailbox_from ON agent_mailbox(from_agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_mailbox_type ON agent_mailbox(message_type)",
+    "CREATE INDEX IF NOT EXISTS idx_mailbox_unread ON agent_mailbox(to_agent_id, read_at)",
+    "CREATE INDEX IF NOT EXISTS idx_veto_project ON agent_vetoes(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_veto_authority ON agent_vetoes(authority_agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_veto_status ON agent_vetoes(status)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_mem_agent ON agent_memory(agent_id, project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_mem_project ON agent_memory(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_mem_type ON agent_memory(memory_type)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_mem_importance ON agent_memory(importance DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_collab_project ON agent_collaboration_history(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_collab_agents ON agent_collaboration_history(agent_a_id, agent_b_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fitness_project ON agentic_fitness_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fitness_score ON agentic_fitness_assessments(overall_score)",
+    "CREATE INDEX IF NOT EXISTS idx_child_app_parent ON child_app_registry(parent_project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_child_app_name ON child_app_registry(child_name)",
+    "CREATE INDEX IF NOT EXISTS idx_fips199_project ON fips199_categorizations(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fips199_status ON fips199_categorizations(status)",
+    "CREATE INDEX IF NOT EXISTS idx_proj_infotype_project ON project_information_types(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_proj_infotype_cat ON project_information_types(categorization_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fips200_project ON fips200_assessments(project_id)",
+    "CREATE INDEX IF NOT EXISTS idx_fips200_status ON fips200_assessments(status)",
+]
+
+PG_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS sysml_model_path TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS doors_module_path TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS mbse_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS des_compliant INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS modernization_status TEXT DEFAULT 'none'",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS legacy_app_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS ricoas_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS intake_session_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS active_coa_id TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS agentic_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS fitness_score REAL",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS architecture_recommendation TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS child_app_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS fips199_confidentiality TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS fips199_integrity TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS fips199_availability TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS fips199_overall TEXT",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS fips199_categorization_id INTEGER",
+    "ALTER TABLE projects ADD COLUMN IF NOT EXISTS nss_system INTEGER DEFAULT 0",
+]
+
+
+def get_pg_schema() -> str:
+    """Return the full PostgreSQL schema DDL."""
+    return PG_SCHEMA_SQL
+
+
+def get_pg_alter_sql() -> list:
+    """Return all ALTER TABLE statements."""
+    return PG_ALTER_SQL
+
+
+def get_pg_index_sql() -> list:
+    """Return all CREATE INDEX statements."""
+    return PG_INDEX_SQL
+
+
+def init_tenant_pg_db(db_url: str) -> None:
+    """Initialize a tenant PostgreSQL database.
+
+    Args:
+        db_url: PostgreSQL connection string
+    """
+    try:
+        import psycopg2
+    except ImportError:
+        raise ImportError("psycopg2 required. pip install psycopg2-binary")
+
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    for stmt in PG_SCHEMA_SQL.split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            try:
+                cur.execute(stmt)
+            except Exception as exc:
+                logger.warning("Skipped: %s -- %s", stmt[:80], exc)
+
+    for alter in PG_ALTER_SQL:
+        try:
+            cur.execute(alter)
+        except Exception:
+            pass
+
+    for idx in PG_INDEX_SQL:
+        try:
+            cur.execute(idx)
+        except Exception:
+            pass
+
+    cur.close()
+    conn.close()
+    logger.info("PG DB initialized")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Init ICDEV PG DB")
+    parser.add_argument("--db-url", required=True)
+    parser.add_argument("--print-schema", action="store_true")
+    args = parser.parse_args()
+
+    if args.print_schema:
+        print(PG_SCHEMA_SQL)
+    else:
+        init_tenant_pg_db(args.db_url)
+        print("Done.")

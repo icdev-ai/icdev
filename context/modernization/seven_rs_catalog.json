@@ -1,0 +1,369 @@
+{
+  "metadata": {
+    "classification": "CUI // SP-CTI",
+    "title": "7 Rs of Cloud Migration Strategy Catalog",
+    "source": "AWS Migration Framework + DoD Modernization Guide",
+    "version": "1.0.0",
+    "last_updated": "2026-02-16",
+    "description": "Comprehensive catalog of the 7 Rs cloud migration strategies tailored for DoD/GovCloud environments with ATO impact assessments and scoring criteria.",
+    "environment": "AWS GovCloud (us-gov-west-1)",
+    "compliance_framework": "NIST 800-53 Rev 5 / RMF"
+  },
+  "default_weights": {
+    "technical_fitness": 0.25,
+    "business_value": 0.20,
+    "risk": 0.20,
+    "cost": 0.15,
+    "ato_impact": 0.10,
+    "timeline": 0.10
+  },
+  "strategies": [
+    {
+      "id": "rehost",
+      "name": "Rehost",
+      "description": "Lift-and-shift migration of applications to AWS GovCloud with no code changes. Workloads are moved as-is onto cloud infrastructure, preserving existing architecture and configurations. Best suited for rapid datacenter exits and baseline cloud adoption.",
+      "when_to_use": [
+        "Datacenter exit timelines are aggressive and non-negotiable",
+        "Application has no planned feature enhancements in near term",
+        "Existing ATO artifacts are current and transfer-ready",
+        "Application architecture is already well-documented",
+        "Cost savings from infrastructure consolidation are the primary driver"
+      ],
+      "when_not_to_use": [
+        "Application has significant technical debt requiring remediation",
+        "Current architecture cannot meet cloud scalability requirements",
+        "Licensing model does not support cloud deployment",
+        "Application depends on hardware-specific interfaces or custom drivers"
+      ],
+      "scoring_criteria": {
+        "infrastructure_compatibility": {
+          "weight": 0.30,
+          "description": "Degree to which current infrastructure maps to GovCloud compute, storage, and networking services"
+        },
+        "dependency_portability": {
+          "weight": 0.25,
+          "description": "Ease of migrating dependent services, databases, and middleware without modification"
+        },
+        "licensing_transferability": {
+          "weight": 0.20,
+          "description": "Whether existing software licenses permit cloud deployment or require BYOL arrangements"
+        },
+        "data_migration_complexity": {
+          "weight": 0.15,
+          "description": "Volume and sensitivity of data requiring transfer, including CUI handling requirements"
+        },
+        "operational_readiness": {
+          "weight": 0.10,
+          "description": "Team familiarity with cloud operations and availability of runbooks for cloud-based management"
+        }
+      },
+      "effort_multiplier": 1.0,
+      "risk_level": "low",
+      "ato_impact": "none",
+      "typical_timeline_weeks": {
+        "min": 4,
+        "max": 12,
+        "typical": 8
+      }
+    },
+    {
+      "id": "replatform",
+      "name": "Replatform",
+      "description": "Lift-tinker-and-shift migration that introduces targeted optimizations during the move to GovCloud. Involves minor modifications such as swapping to managed services (e.g., RDS instead of self-managed databases) without altering core application architecture.",
+      "when_to_use": [
+        "Managed services can replace self-hosted middleware with minimal code changes",
+        "Database migration to RDS or Aurora provides clear operational benefits",
+        "Application can benefit from auto-scaling with minor configuration updates",
+        "Team wants incremental cloud-native improvements without full refactor",
+        "Operational overhead of current platform is a significant cost driver"
+      ],
+      "when_not_to_use": [
+        "Application requires fundamental architectural changes to function in cloud",
+        "Managed service equivalents do not exist in GovCloud region",
+        "Data residency or sovereignty requirements prevent use of managed services",
+        "Cost of managed services exceeds self-hosted operational costs at current scale"
+      ],
+      "scoring_criteria": {
+        "managed_service_availability": {
+          "weight": 0.25,
+          "description": "Availability of equivalent managed services in AWS GovCloud for current self-hosted components"
+        },
+        "modification_scope": {
+          "weight": 0.25,
+          "description": "Extent of configuration and code changes needed to adopt managed services"
+        },
+        "operational_improvement": {
+          "weight": 0.20,
+          "description": "Reduction in operational burden, patching requirements, and maintenance overhead"
+        },
+        "cost_optimization": {
+          "weight": 0.15,
+          "description": "Net cost impact of moving to managed services versus current hosting model"
+        },
+        "security_posture_change": {
+          "weight": 0.15,
+          "description": "Impact on security controls and shared responsibility model changes with managed services"
+        }
+      },
+      "effort_multiplier": 1.5,
+      "risk_level": "low",
+      "ato_impact": "low",
+      "typical_timeline_weeks": {
+        "min": 6,
+        "max": 16,
+        "typical": 10
+      }
+    },
+    {
+      "id": "refactor",
+      "name": "Refactor",
+      "description": "Modify existing application code to better leverage cloud-native features while preserving the overall architecture. Involves updating code patterns, adopting cloud SDKs, improving configuration management, and optimizing for cloud services without a full architectural redesign.",
+      "when_to_use": [
+        "Application needs performance improvements achievable through cloud-native patterns",
+        "Codebase requires modernization of specific modules but not full rearchitecture",
+        "Team wants to adopt cloud-native services like S3, SQS, or SNS incrementally",
+        "Technical debt in specific components blocks operational efficiency",
+        "Compliance requirements demand updated security patterns in code"
+      ],
+      "when_not_to_use": [
+        "Application architecture itself is fundamentally incompatible with cloud",
+        "Refactoring scope creep risk is high due to tightly coupled modules",
+        "Vendor will not support modified versions of their application",
+        "Time constraints do not allow for development and testing cycles",
+        "A COTS replacement exists that better meets mission requirements"
+      ],
+      "scoring_criteria": {
+        "code_modularity": {
+          "weight": 0.25,
+          "description": "Degree of separation between application modules enabling targeted refactoring"
+        },
+        "cloud_service_adoption": {
+          "weight": 0.20,
+          "description": "Potential to replace custom code with GovCloud-native services and SDKs"
+        },
+        "test_coverage": {
+          "weight": 0.20,
+          "description": "Existing automated test coverage enabling safe refactoring with regression detection"
+        },
+        "team_capability": {
+          "weight": 0.15,
+          "description": "Development team expertise with target cloud services and modern patterns"
+        },
+        "technical_debt_reduction": {
+          "weight": 0.10,
+          "description": "Measurable improvement in maintainability, readability, and defect density"
+        },
+        "compliance_alignment": {
+          "weight": 0.10,
+          "description": "Alignment of refactored code with NIST 800-53 security control requirements"
+        }
+      },
+      "effort_multiplier": 3.0,
+      "risk_level": "medium",
+      "ato_impact": "medium",
+      "typical_timeline_weeks": {
+        "min": 12,
+        "max": 30,
+        "typical": 20
+      }
+    },
+    {
+      "id": "rearchitect",
+      "name": "Rearchitect",
+      "description": "Fundamentally redesign and rebuild the application using cloud-native architecture. Typically involves decomposing monoliths into microservices, adopting serverless patterns, implementing event-driven designs, and building for horizontal scalability. Requires full ATO reassessment.",
+      "when_to_use": [
+        "Current architecture cannot scale to meet projected mission requirements",
+        "Monolithic design prevents independent deployment and team autonomy",
+        "Application must support multi-region or multi-classification deployment",
+        "Legacy technology stack has reached end-of-life with no vendor support",
+        "Mission-critical system requires high availability and fault tolerance beyond current capabilities"
+      ],
+      "when_not_to_use": [
+        "Application is nearing planned retirement within 24 months",
+        "Budget and timeline constraints cannot accommodate full rebuild",
+        "Existing architecture adequately meets current and projected requirements",
+        "Team lacks cloud-native development expertise and training timeline is insufficient",
+        "Regulatory requirements mandate specific architectural patterns incompatible with cloud-native"
+      ],
+      "scoring_criteria": {
+        "architectural_gap": {
+          "weight": 0.25,
+          "description": "Severity of mismatch between current architecture and target cloud-native requirements"
+        },
+        "mission_criticality": {
+          "weight": 0.20,
+          "description": "Importance of the application to mission operations and impact of downtime"
+        },
+        "scalability_requirements": {
+          "weight": 0.20,
+          "description": "Need for elastic scaling, multi-region deployment, or high-availability patterns"
+        },
+        "team_readiness": {
+          "weight": 0.15,
+          "description": "Team expertise in microservices, containers, serverless, and cloud-native DevSecOps"
+        },
+        "ato_reassessment_capacity": {
+          "weight": 0.10,
+          "description": "Organization capacity to execute full ATO reassessment including new boundary definitions"
+        },
+        "long_term_roi": {
+          "weight": 0.10,
+          "description": "Projected return on investment over 5-year horizon including operational savings"
+        }
+      },
+      "effort_multiplier": 5.0,
+      "risk_level": "high",
+      "ato_impact": "high",
+      "typical_timeline_weeks": {
+        "min": 26,
+        "max": 78,
+        "typical": 52
+      }
+    },
+    {
+      "id": "repurchase",
+      "name": "Repurchase",
+      "description": "Replace the existing application with a commercial off-the-shelf (COTS) or government off-the-shelf (GOTS) product, typically a SaaS solution authorized for GovCloud. Requires full ATO boundary redefinition and new authorization package since the underlying system changes entirely.",
+      "when_to_use": [
+        "A FedRAMP-authorized or DoD IL4+ SaaS solution exists that meets mission needs",
+        "Cost of maintaining custom-built application exceeds commercial alternative",
+        "Custom application duplicates functionality available in mature commercial products",
+        "Vendor ecosystem provides better integration and long-term support",
+        "Organization wants to shift from custom development to configuration-based delivery"
+      ],
+      "when_not_to_use": [
+        "No FedRAMP High or IL4+ authorized product meets mission-specific requirements",
+        "Vendor lock-in risk is unacceptable for mission-critical operations",
+        "Data migration from legacy to SaaS is technically infeasible or cost-prohibitive",
+        "Unique DoD workflows require extensive customization that negates SaaS benefits",
+        "Current application provides competitive or mission advantage not replicable by COTS"
+      ],
+      "scoring_criteria": {
+        "product_fit": {
+          "weight": 0.30,
+          "description": "Functional coverage of mission requirements by the replacement product without customization"
+        },
+        "fedramp_authorization": {
+          "weight": 0.25,
+          "description": "FedRAMP High or DoD IL4+ authorization status and reciprocity eligibility"
+        },
+        "data_migration_feasibility": {
+          "weight": 0.20,
+          "description": "Complexity of migrating existing data, including CUI, to the replacement product"
+        },
+        "total_cost_of_ownership": {
+          "weight": 0.15,
+          "description": "5-year TCO comparison between replacement product licensing and current system maintenance"
+        },
+        "vendor_viability": {
+          "weight": 0.10,
+          "description": "Vendor financial stability, GovCloud commitment, and DoD contract vehicle availability"
+        }
+      },
+      "effort_multiplier": 2.0,
+      "risk_level": "medium",
+      "ato_impact": "critical",
+      "typical_timeline_weeks": {
+        "min": 8,
+        "max": 26,
+        "typical": 16
+      }
+    },
+    {
+      "id": "retire",
+      "name": "Retire",
+      "description": "Decommission the application entirely. Data is archived per DoD retention policies, dependent systems are migrated to alternative solutions, and the ATO authorization is formally closed. Reduces attack surface, operational costs, and compliance burden.",
+      "when_to_use": [
+        "Application functionality has been superseded by another authorized system",
+        "User base has declined below operational cost justification threshold",
+        "Mission requirement the application served no longer exists",
+        "Application poses unacceptable security risk that cannot be cost-effectively remediated",
+        "Datacenter exit requires disposition of all workloads including decommission candidates"
+      ],
+      "when_not_to_use": [
+        "Any active users or downstream systems still depend on the application",
+        "Data retention requirements have not been fully assessed and addressed",
+        "No alternative system exists for remaining mission functions",
+        "Contractual obligations require continued operation for a defined period"
+      ],
+      "scoring_criteria": {
+        "dependency_analysis": {
+          "weight": 0.30,
+          "description": "Completeness of upstream and downstream dependency mapping and migration planning"
+        },
+        "data_disposition": {
+          "weight": 0.25,
+          "description": "Compliance of data archival plan with DoD 5015.02 records management and CUI handling"
+        },
+        "cost_savings": {
+          "weight": 0.20,
+          "description": "Projected annual savings from decommissioning including infrastructure, licensing, and personnel"
+        },
+        "risk_reduction": {
+          "weight": 0.15,
+          "description": "Reduction in organizational attack surface and compliance burden from system removal"
+        },
+        "stakeholder_alignment": {
+          "weight": 0.10,
+          "description": "Confirmation from all stakeholders that retirement is acceptable and alternatives are in place"
+        }
+      },
+      "effort_multiplier": 0.5,
+      "risk_level": "low",
+      "ato_impact": "none",
+      "typical_timeline_weeks": {
+        "min": 4,
+        "max": 16,
+        "typical": 8
+      }
+    },
+    {
+      "id": "retain",
+      "name": "Retain",
+      "description": "Keep the application in its current environment with no migration. The system remains on-premises or in its existing hosting arrangement. Applicable when migration is not justified, technically feasible, or when regulatory constraints prohibit cloud deployment. Reassess periodically.",
+      "when_to_use": [
+        "Application has hard regulatory or classification constraints preventing cloud hosting",
+        "Migration cost exceeds projected benefits within the planning horizon",
+        "Application is scheduled for retirement within 12 months",
+        "Technical dependencies on specialized hardware cannot be replicated in cloud",
+        "Application is in active development with a future cloud-native redesign planned"
+      ],
+      "when_not_to_use": [
+        "Datacenter exit mandate requires all workloads to migrate or decommission",
+        "Current hosting environment is reaching end-of-life with no renewal option",
+        "Security posture of current environment fails to meet minimum DoD requirements",
+        "Operational costs of current environment significantly exceed cloud equivalent"
+      ],
+      "scoring_criteria": {
+        "migration_blocker_validity": {
+          "weight": 0.30,
+          "description": "Legitimacy and documentation of technical, regulatory, or contractual migration blockers"
+        },
+        "current_environment_viability": {
+          "weight": 0.25,
+          "description": "Remaining operational life and supportability of current hosting infrastructure"
+        },
+        "cost_justification": {
+          "weight": 0.20,
+          "description": "Financial analysis showing retention is more cost-effective than migration alternatives"
+        },
+        "reassessment_plan": {
+          "weight": 0.15,
+          "description": "Defined timeline and criteria for re-evaluating migration readiness"
+        },
+        "risk_acceptance": {
+          "weight": 0.10,
+          "description": "Formal AO risk acceptance documentation for continued operation in current environment"
+        }
+      },
+      "effort_multiplier": 0.1,
+      "risk_level": "none",
+      "ato_impact": "none",
+      "typical_timeline_weeks": {
+        "min": 1,
+        "max": 4,
+        "typical": 2
+      }
+    }
+  ]
+}

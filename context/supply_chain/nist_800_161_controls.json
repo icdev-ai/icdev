@@ -1,0 +1,247 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "framework": "NIST SP 800-161 Rev 1",
+  "title": "Cybersecurity Supply Chain Risk Management Practices",
+  "description": "Supply chain risk management controls for federal information systems and organizations",
+  "controls": [
+    {
+      "id": "SR-1",
+      "title": "Policy and Procedures",
+      "description": "Develop, document, and disseminate supply chain risk management policy and procedures that address purpose, scope, roles, responsibilities, management commitment, coordination, and compliance",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12", "SR-1"],
+      "assessment_criteria": [
+        "SCRM policy exists and is approved",
+        "Policy updated within 12 months",
+        "Includes roles and responsibilities",
+        "Addresses coordination among entities",
+        "Defines compliance requirements"
+      ]
+    },
+    {
+      "id": "SR-2",
+      "title": "Supply Chain Risk Management Plan",
+      "description": "Develop a plan for managing supply chain risks associated with the research, development, design, manufacturing, acquisition, delivery, integration, operations, maintenance, and disposal of systems, components, or services",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(1)", "SR-2"],
+      "assessment_criteria": [
+        "SCRM plan exists for each system",
+        "Plan identifies critical components",
+        "Plan addresses threat landscape",
+        "Plan includes risk mitigation strategies",
+        "Plan is reviewed and updated annually"
+      ]
+    },
+    {
+      "id": "SR-3",
+      "title": "Supply Chain Controls and Processes",
+      "description": "Establish a process or processes to identify and address weaknesses or deficiencies in the supply chain elements and processes",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(2)", "SR-3"],
+      "assessment_criteria": [
+        "Supply chain control processes are documented",
+        "Weakness identification mechanisms exist",
+        "Deficiency remediation timelines defined",
+        "Controls cover procurement through disposal",
+        "Evidence of periodic process review"
+      ]
+    },
+    {
+      "id": "SR-4",
+      "title": "Provenance",
+      "description": "Document, monitor, and maintain valid provenance of systems, components, and associated data",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(13)", "SR-4"],
+      "assessment_criteria": [
+        "Component provenance is tracked",
+        "Chain of custody documented",
+        "Source code origin verified",
+        "Binary artifact provenance established",
+        "SBOM generated and maintained"
+      ]
+    },
+    {
+      "id": "SR-5",
+      "title": "Acquisition Strategies, Tools, and Methods",
+      "description": "Employ acquisition strategies, contract tools, and procurement methods to protect against, detect, and mitigate supply chain risks",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-4", "SR-5"],
+      "assessment_criteria": [
+        "Acquisition strategy includes SCRM requirements",
+        "Contract clauses address security requirements",
+        "Procurement methods include vendor assessment",
+        "Section 889 compliance verified",
+        "Country-of-origin restrictions enforced"
+      ]
+    },
+    {
+      "id": "SR-6",
+      "title": "Supplier Assessments and Reviews",
+      "description": "Assess and review the supply chain-related risks associated with suppliers or contractors and the system, system component, or system service they provide",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(14)", "SR-6"],
+      "assessment_criteria": [
+        "Supplier risk assessments conducted",
+        "Assessment cadence defined and followed",
+        "Risk scoring methodology documented",
+        "High-risk suppliers have mitigation plans",
+        "Assessment results inform procurement decisions"
+      ]
+    },
+    {
+      "id": "SR-7",
+      "title": "Supply Chain Operations Security",
+      "description": "Employ operations security controls to protect supply chain activities",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(4)", "SR-7"],
+      "assessment_criteria": [
+        "OPSEC plan covers supply chain activities",
+        "Critical information identified and protected",
+        "Threat analysis conducted for supply chain",
+        "Countermeasures implemented for identified threats",
+        "OPSEC indicators monitored"
+      ]
+    },
+    {
+      "id": "SR-8",
+      "title": "Notification Agreements",
+      "description": "Establish agreements and procedures with entities involved in the supply chain for notification of supply chain compromises and results of assessments or audits",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(5)", "SR-8"],
+      "assessment_criteria": [
+        "Notification agreements with suppliers",
+        "Incident notification timelines defined",
+        "Assessment result sharing procedures exist",
+        "ISA/MOU agreements are current",
+        "Notification test exercises conducted"
+      ]
+    },
+    {
+      "id": "SR-9",
+      "title": "Tamper Resistance and Detection",
+      "description": "Implement tamper protection for systems, system components, and associated data during development, manufacturing, and transportation",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(10)", "SR-9"],
+      "assessment_criteria": [
+        "Tamper-evident packaging required",
+        "Component integrity verification on receipt",
+        "Cryptographic signing for software/firmware",
+        "Transportation security controls defined",
+        "Tamper detection mechanisms in place"
+      ]
+    },
+    {
+      "id": "SR-10",
+      "title": "Inspection of Systems or Components",
+      "description": "Inspect systems or system components upon delivery, at random, or at a specific state in the system development life cycle to detect tampering",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(11)", "SR-10"],
+      "assessment_criteria": [
+        "Inspection procedures documented",
+        "Inspection occurs at delivery",
+        "Random inspection schedule exists",
+        "SDLC phase inspection points defined",
+        "Inspection results recorded and tracked"
+      ]
+    },
+    {
+      "id": "SR-11",
+      "title": "Component Authenticity",
+      "description": "Develop and implement anti-counterfeit policy and procedures that include the detection and prevention of counterfeit components",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(12)", "SR-11"],
+      "assessment_criteria": [
+        "Anti-counterfeit policy exists",
+        "Component verification procedures documented",
+        "Authorized distribution channels identified",
+        "Counterfeit detection training provided",
+        "Incident reporting for counterfeit components"
+      ]
+    },
+    {
+      "id": "SR-12",
+      "title": "Component Disposal",
+      "description": "Dispose of system components using organization-defined techniques and methods in accordance with applicable laws, executive orders, directives, policies, regulations, and standards",
+      "family": "Supply Chain Risk Management",
+      "nist_800_53_mapping": ["SA-12(3)", "SR-12"],
+      "assessment_criteria": [
+        "Disposal procedures documented",
+        "Data sanitization before disposal",
+        "Chain of custody maintained during disposal",
+        "Disposal certificates obtained",
+        "Compliance with environmental regulations"
+      ]
+    },
+    {
+      "id": "SA-12",
+      "title": "Supply Chain Protection",
+      "description": "Protect against supply chain threats to the system, system component, or system service by employing security safeguards as part of a comprehensive, defense-in-depth information security strategy",
+      "family": "System and Services Acquisition",
+      "nist_800_53_mapping": ["SA-12"],
+      "assessment_criteria": [
+        "Defense-in-depth strategy includes supply chain",
+        "Supply chain threat model exists",
+        "Multi-layered security safeguards implemented",
+        "Supply chain risk integrated into enterprise risk",
+        "Continuous monitoring of supply chain indicators"
+      ]
+    },
+    {
+      "id": "SA-22",
+      "title": "Unsupported System Components",
+      "description": "Replace system components when support for the components is no longer available from the developer, vendor, or manufacturer; and provide options for alternative sources for continued support for unsupported components",
+      "family": "System and Services Acquisition",
+      "nist_800_53_mapping": ["SA-22"],
+      "assessment_criteria": [
+        "EOL/EOS tracking for all components",
+        "Replacement plan for unsupported components",
+        "Alternative support sources identified",
+        "Risk assessment for unsupported components",
+        "Migration timeline defined for each EOL component"
+      ]
+    },
+    {
+      "id": "PM-30",
+      "title": "Supply Chain Risk Management Strategy",
+      "description": "Develop an organization-wide strategy for managing supply chain risks associated with the development, acquisition, maintenance, and disposal of systems, system components, and system services",
+      "family": "Program Management",
+      "nist_800_53_mapping": ["PM-30"],
+      "assessment_criteria": [
+        "Organization-wide SCRM strategy exists",
+        "Strategy approved by senior leadership",
+        "Strategy addresses all system lifecycle phases",
+        "Strategy defines acceptable risk levels",
+        "Strategy reviewed and updated annually"
+      ]
+    },
+    {
+      "id": "SA-4",
+      "title": "Acquisition Process",
+      "description": "Include security and supply chain risk management requirements, descriptions, and criteria in the acquisition contract for the system, system component, or system service",
+      "family": "System and Services Acquisition",
+      "nist_800_53_mapping": ["SA-4"],
+      "assessment_criteria": [
+        "Security requirements in acquisition contracts",
+        "SCRM clauses in all vendor agreements",
+        "Evaluation criteria include security posture",
+        "Vendor security certification requirements defined",
+        "Contract includes incident notification obligations"
+      ]
+    },
+    {
+      "id": "SA-9",
+      "title": "External System Services",
+      "description": "Require that providers of external system services comply with organizational security requirements and employ defined controls in accordance with applicable laws, executive orders, directives, policies, regulations, standards, and guidance",
+      "family": "System and Services Acquisition",
+      "nist_800_53_mapping": ["SA-9"],
+      "assessment_criteria": [
+        "External service provider agreements exist",
+        "Security requirements flowed to providers",
+        "Provider compliance monitoring in place",
+        "ISA/MOU for all external connections",
+        "Provider incident response integration"
+      ]
+    }
+  ]
+}

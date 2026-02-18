@@ -1,0 +1,58 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Rules for extracting requirements from DoD document types",
+  "document_types": {
+    "sow": {
+      "full_name": "Statement of Work",
+      "key_sections": [
+        {"name": "Performance Work Statement (PWS)", "contains": "functional_requirements"},
+        {"name": "Contract Line Item Numbers (CLINs)", "contains": "deliverables"},
+        {"name": "Contract Data Requirements List (CDRLs)", "contains": "data_requirements"},
+        {"name": "Quality Assurance", "contains": "non_functional_requirements"},
+        {"name": "Security Requirements", "contains": "security_requirements"},
+        {"name": "Period of Performance", "contains": "constraints"}
+      ],
+      "extraction_hints": ["Look for 'shall' statements as mandatory requirements", "CLINs map to Epics/Capabilities", "CDRLs map to Enablers"]
+    },
+    "cdd": {
+      "full_name": "Capability Development Document",
+      "key_sections": [
+        {"name": "Key Performance Parameters (KPPs)", "contains": "critical_requirements"},
+        {"name": "Key System Attributes (KSAs)", "contains": "non_functional_requirements"},
+        {"name": "Technical Performance Measures (TPMs)", "contains": "performance_requirements"},
+        {"name": "Operational Scenarios", "contains": "functional_requirements"},
+        {"name": "System Interfaces", "contains": "interface_requirements"},
+        {"name": "Information Assurance", "contains": "security_requirements"}
+      ],
+      "extraction_hints": ["KPPs are highest priority (critical)", "KSAs map to non-functional requirements", "TPMs define measurable acceptance criteria"]
+    },
+    "conops": {
+      "full_name": "Concept of Operations",
+      "key_sections": [
+        {"name": "Mission Description", "contains": "context"},
+        {"name": "Operational Scenarios", "contains": "functional_requirements"},
+        {"name": "User Classes", "contains": "personas"},
+        {"name": "Operational Environment", "contains": "constraints"},
+        {"name": "Support Environment", "contains": "operational_requirements"}
+      ],
+      "extraction_hints": ["Scenarios map to BDD features", "User classes become personas for user stories", "Operational constraints define NFRs"]
+    },
+    "srd": {
+      "full_name": "System Requirements Document",
+      "key_sections": [
+        {"name": "Functional Requirements", "contains": "functional_requirements"},
+        {"name": "Interface Requirements", "contains": "interface_requirements"},
+        {"name": "Performance Requirements", "contains": "performance_requirements"},
+        {"name": "Security Requirements", "contains": "security_requirements"},
+        {"name": "Design Constraints", "contains": "constraints"}
+      ],
+      "extraction_hints": ["Each numbered requirement maps directly to an intake_requirement", "Prioritize by 'shall' (mandatory) vs 'should' (desired)"]
+    }
+  },
+  "requirement_indicators": {
+    "mandatory": ["shall", "must", "is required to", "will"],
+    "desired": ["should", "may", "can", "is expected to"],
+    "informational": ["note:", "for information", "reference"]
+  }
+}

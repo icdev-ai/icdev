@@ -1,0 +1,32 @@
+{
+  "safe_to_jira_type_mapping": {
+    "epic": {"jira_type": "Epic", "label": null},
+    "capability": {"jira_type": "Epic", "label": "Capability"},
+    "feature": {"jira_type": "Story", "label": "Feature"},
+    "story": {"jira_type": "Sub-task", "label": null},
+    "enabler": {"jira_type": "Task", "label": "Enabler"}
+  },
+  "field_mapping": {
+    "title": "summary",
+    "description": "description",
+    "acceptance_criteria": "customfield_10001",
+    "t_shirt_size": "customfield_10002",
+    "story_points": "story_points",
+    "priority": "priority",
+    "status": "status",
+    "pi_target": "customfield_10003",
+    "wsjf_score": "customfield_10004"
+  },
+  "status_mapping": {
+    "pending": "To Do",
+    "in_progress": "In Progress",
+    "completed": "Done",
+    "blocked": "Blocked"
+  },
+  "priority_mapping": {
+    "P1": "Highest",
+    "P2": "High",
+    "P3": "Medium",
+    "P4": "Low"
+  }
+}

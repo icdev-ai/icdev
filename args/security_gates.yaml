@@ -1,0 +1,273 @@
+# ICDEV Security Gate Configuration
+# Defines what blocks merges and deployments
+
+code_review:
+  require_peer_review: true
+  require_security_scan: true
+  require_compliance_check: true
+  require_tests_pass: true
+
+merge_gates:
+  block_on:
+    - cat1_stig_finding
+    - critical_vulnerability
+    - high_vulnerability
+    - failed_tests
+    - missing_cui_markings
+    - secrets_detected
+  warn_on:
+    - cat2_stig_finding
+    - medium_vulnerability
+    - coverage_below_threshold
+
+deployment_gates:
+  block_on:
+    - any_merge_gate_failure
+    - sbom_not_generated
+    - ssp_not_current
+    - poam_has_overdue_items
+  auto_rollback_on:
+    - health_check_failure
+    - cat1_finding_post_deploy
+    - critical_vuln_runtime
+    - error_rate_spike
+
+cssp:
+  blocking:
+    - critical_requirements_not_satisfied
+    - ir_plan_missing
+    - siem_not_configured
+    - pki_cac_not_configured
+  warning:
+    - partial_requirements_below_80_pct
+    - vuln_scan_overdue_30_days
+    - ir_plan_not_tested
+    - xacta_sync_overdue
+
+sbd:
+  blocking:
+    - critical_sbd_requirements_not_satisfied
+    - default_credentials_detected
+    - no_mfa_configured
+    - no_vulnerability_disclosure_policy
+    - stack_traces_in_production
+  warning:
+    - partial_sbd_requirements_below_80_pct
+    - memory_unsafe_language_without_tooling
+    - sbom_stale_over_30_days
+    - threat_model_missing
+    - security_headers_incomplete
+
+ivv:
+  blocking:
+    - critical_ivv_findings_open
+    - test_coverage_below_threshold
+    - rtm_gaps_in_critical_requirements
+    - no_independent_security_assessment
+  warning:
+    - partial_ivv_requirements_below_70_pct
+    - code_review_incomplete
+    - bdd_feature_coverage_low
+    - pipeline_security_stages_missing
+
+thresholds:
+  sast:
+    max_critical: 0
+    max_high: 0
+    max_medium: 10
+  dependency:
+    max_critical: 0
+    max_high: 0
+  container:
+    max_critical: 0
+    max_high: 0
+  coverage:
+    minimum_percent: 80
+  stig:
+    max_cat1_open: 0
+    max_cat2_open: 20
+  cssp:
+    min_satisfied_pct: 80
+    max_critical_not_satisfied: 0
+    vuln_scan_max_age_days: 30
+    ir_plan_required: true
+    siem_config_required: true
+  sbd:
+    min_satisfied_pct: 80
+    max_critical_not_satisfied: 0
+    sbom_max_age_days: 30
+    mfa_required: true
+    vuln_disclosure_required: true
+    default_creds_max: 0
+  ivv:
+    min_verification_score: 70
+    min_validation_score: 70
+    max_critical_findings: 0
+    min_test_coverage_pct: 80
+    rtm_completeness_pct: 90
+  fedramp:
+    min_satisfied_pct: 80
+    max_other_than_satisfied_critical: 0
+    max_other_than_satisfied_high: 0
+    encryption_fips_required: true
+    boundary_protection_required: true
+    poam_max_overdue_days: 30
+  cmmc:
+    min_met_pct: 80
+    max_not_met_level2: 0
+    max_not_met_critical: 0
+    evidence_max_age_days: 90
+    nist_171_alignment_min_pct: 90
+  cato:
+    min_readiness_pct: 50
+    max_expired_critical: 0
+    max_stale_pct: 20
+    evidence_freshness_check_days: 7
+    reassessment_max_overdue_days: 30
+  maintenance:
+    maintenance_score_min: 50
+    max_overdue_critical_sla: 0
+    max_overdue_high_sla: 3
+    avg_staleness_max_days: 180
+    sla_compliant_min_pct: 80
+
+fedramp:
+  blocking:
+    - high_priority_controls_not_satisfied
+    - encryption_requirements_not_met
+    - boundary_protection_missing
+    - fedramp_assessment_not_completed
+  warning:
+    - fedramp_coverage_below_80_pct
+    - fedramp_poam_overdue_items
+    - fedramp_evidence_stale
+
+cmmc:
+  blocking:
+    - cmmc_level2_practice_not_met
+    - cmmc_assessment_score_below_threshold
+    - cmmc_critical_domain_gap
+  warning:
+    - cmmc_coverage_below_80_pct
+    - cmmc_evidence_stale
+    - cmmc_800_171_alignment_gap
+
+cato:
+  blocking:
+    - evidence_expired_on_critical_controls
+    - cato_readiness_below_50_pct
+  warning:
+    - evidence_stale_above_20_pct
+    - reassessment_overdue
+    - cato_readiness_below_80_pct
+
+maintenance:
+  blocking:
+    - overdue_critical_sla
+    - maintenance_score_below_50
+  warning:
+    - maintenance_score_below_70
+    - avg_staleness_over_180_days
+    - overdue_high_sla_count_above_3
+
+ricoas:
+  blocking:
+    - red_tier_requirement_without_alternative
+    - readiness_score_below_threshold
+    - unresolved_critical_gaps
+    - ambiguous_requirements_above_threshold
+  warning:
+    - readiness_score_below_80_pct
+    - orange_tier_requirements_without_review
+    - decomposition_incomplete
+    - bdd_criteria_missing
+
+supply_chain:
+  blocking:
+    - critical_scrm_risk_unmitigated
+    - isa_expired_with_active_data_flow
+    - critical_cve_sla_overdue
+    - section_889_prohibited_vendor
+  warning:
+    - scrm_risk_above_medium
+    - isa_expiring_within_30_days
+    - high_cve_sla_approaching
+    - vendor_assessment_stale
+
+# FIPS 199/200 Security Categorization Gates (Phase 20)
+fips199:
+  blocking:
+    - no_categorization_for_ato_project
+    - nss_system_without_cnssi_overlay
+  warning:
+    - categorization_not_approved
+    - no_information_types_assigned
+    - manual_categorization_without_justification
+  thresholds:
+    require_categorization_for_ato: true
+    require_cnssi_for_nss: true
+    max_draft_age_days: 30
+
+fips200:
+  blocking:
+    - any_area_not_satisfied
+    - missing_fips199_categorization
+  warning:
+    - partial_satisfaction_below_80_pct
+    - gap_controls_exceeds_threshold
+    - assessment_stale_over_90_days
+  thresholds:
+    min_satisfied_areas: 17
+    max_not_satisfied_areas: 0
+    min_coverage_pct: 80
+    max_gap_controls_per_area: 5
+    assessment_max_age_days: 90
+
+# Marketplace Asset Registry Gates (Phase 22)
+marketplace_publish:
+  blocking:
+    - sast_critical_or_high_findings
+    - secrets_detected
+    - critical_dependency_vulnerabilities
+    - cui_markings_missing
+    - sbom_generation_failed
+    - digital_signature_failed
+  warning:
+    - unpinned_dependencies
+    - medium_sast_findings
+    - sbom_generation_skipped
+
+marketplace_cross_tenant:
+  blocking:
+    - any_publish_gate_failure
+    - human_review_not_completed
+    - code_review_not_confirmed
+    - compliance_review_not_confirmed
+    - publisher_is_reviewer
+  warning:
+    - review_age_exceeds_threshold
+    - conditional_approval_conditions_unmet
+
+marketplace_install:
+  blocking:
+    - il_compatibility_violation
+    - asset_not_published
+    - required_dependency_missing
+  warning:
+    - optional_dependency_missing
+    - version_constraint_not_satisfied
+    - asset_deprecated
+
+marketplace:
+  thresholds:
+    sast:
+      max_critical: 0
+      max_high: 0
+    secret_detection:
+      max_findings: 0
+    dependency_audit:
+      max_critical: 0
+      max_high: 0
+    review:
+      max_age_days: 30
+      escalation_after_days: 7

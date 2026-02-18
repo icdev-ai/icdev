@@ -1,0 +1,23 @@
+{
+    "projects": "Core project registry — tracks all ICDEV-managed software projects with classification, impact level, and ATO status",
+    "agents": "Multi-agent system registry — 10 agents (orchestrator, architect, builder, compliance, security, infrastructure, MBSE, modernization, knowledge, monitor)",
+    "audit_trail": "Append-only immutable audit log (NIST 800-53 AU) — every significant action is recorded here",
+    "hook_events": "Claude Code hook event log — captures tool usage, notifications, session lifecycle for observability",
+    "agent_executions": "Agent subprocess execution log — tracks Claude Code CLI invocations with tokens, duration, retry status",
+    "compliance_controls": "NIST 800-53 Rev 5 control catalog",
+    "project_controls": "Per-project control implementation status",
+    "ssp_documents": "System Security Plan documents",
+    "poam_items": "Plan of Action & Milestones — tracks security weaknesses and remediation timelines",
+    "stig_findings": "Security Technical Implementation Guide findings with severity categories",
+    "sbom_records": "Software Bill of Materials records (CycloneDX format)",
+    "deployments": "Deployment tracking — dev/staging/prod with rollback support",
+    "knowledge_patterns": "Self-healing knowledge base — failure patterns, remediation, confidence scores",
+    "boundary_impact_assessments": "ATO boundary impact analysis — GREEN/YELLOW/ORANGE/RED tier system",
+    "supply_chain_vendors": "Supply chain vendor registry with SCRM risk tiers",
+    "intake_sessions": "RICOAS requirements intake sessions with readiness scoring",
+    "intake_requirements": "Individual requirements captured during intake with quality scores",
+    "safe_decomposition": "SAFe hierarchy decomposition — epics, capabilities, features, stories",
+    "simulation_scenarios": "Digital Program Twin simulation scenarios",
+    "coa_definitions": "Course of Action definitions — speed/balanced/comprehensive/alternative",
+    "nlq_queries": "NLQ query history — audit trail for natural language database queries"
+}

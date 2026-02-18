@@ -1,0 +1,44 @@
+{
+    "worktree_naming": {
+        "pattern": "icdev-{task_id}",
+        "branch_pattern": "icdev-{task_id}",
+        "description": "Consistent naming for worktrees and their branches"
+    },
+    "sparse_checkout_profiles": {
+        "full": {
+            "directories": ["."],
+            "description": "Full repository checkout"
+        },
+        "tools_only": {
+            "directories": ["tools/", "args/", "context/", "hardprompts/"],
+            "description": "ICDEV framework files only"
+        },
+        "app_only": {
+            "directories": ["src/", "tests/", "features/"],
+            "description": "Application source code only"
+        },
+        "compliance": {
+            "directories": ["tools/compliance/", "context/compliance/", "args/"],
+            "description": "Compliance tools and configuration"
+        },
+        "infra": {
+            "directories": ["tools/infra/", "k8s/", "docker/", "args/"],
+            "description": "Infrastructure and deployment files"
+        }
+    },
+    "classification_markers": {
+        "CUI": "CUI // SP-CTI",
+        "SECRET": "SECRET // NOFORN",
+        "UNCLASSIFIED": "UNCLASSIFIED"
+    },
+    "tag_workflow_map": {
+        "intake": {"workflow": "icdev_intake", "profile": "full", "description": "RICOAS requirements intake"},
+        "build": {"workflow": "icdev_build", "profile": "app_only", "description": "TDD build cycle"},
+        "sdlc": {"workflow": "icdev_sdlc", "profile": "full", "description": "Full SDLC pipeline"},
+        "comply": {"workflow": "icdev_comply", "profile": "compliance", "description": "Compliance artifact generation"},
+        "secure": {"workflow": "icdev_secure", "profile": "app_only", "description": "Security scanning"},
+        "modernize": {"workflow": "icdev_modernize", "profile": "full", "description": "Legacy modernization"},
+        "deploy": {"workflow": "icdev_deploy", "profile": "infra", "description": "IaC and deployment"},
+        "maintain": {"workflow": "icdev_maintain", "profile": "tools_only", "description": "Maintenance audit"}
+    }
+}

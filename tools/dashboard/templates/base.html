@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ICDEV Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body data-auto-refresh="true">
+    <!-- CUI Banner Top -->
+    <div class="cui-banner">{{ cui_banner_top }}</div>
+
+    <!-- Navigation -->
+    <nav class="navbar">
+        <a class="navbar-brand" href="/">ICDEV</a>
+        <ul class="navbar-nav">
+            <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+            <li><a href="/projects" class="{% if '/projects' in request.path %}active{% endif %}">Projects</a></li>
+            <li><a href="/agents" class="{% if '/agents' in request.path %}active{% endif %}">Agents</a></li>
+            <li><a href="/monitoring" class="{% if '/monitoring' in request.path %}active{% endif %}">Monitoring</a></li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- CUI Banner Bottom -->
+    <div class="cui-banner bottom">{{ cui_banner_bottom }}</div>
+
+    <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

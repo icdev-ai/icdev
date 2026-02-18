@@ -1,0 +1,57 @@
+{
+  "name": "ICDEV Infrastructure",
+  "description": "Infrastructure as Code generation for GovCloud: Terraform, Ansible playbooks, Kubernetes manifests, STIG-hardened Dockerfiles, and CI/CD pipeline configuration.",
+  "url": "https://localhost:8448",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "generate-terraform",
+      "name": "Generate Terraform",
+      "description": "Generate Terraform configurations for AWS GovCloud with proper provider setup, VPC, and security groups.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/plain"]
+    },
+    {
+      "id": "generate-ansible",
+      "name": "Generate Ansible",
+      "description": "Generate Ansible playbooks for server configuration, hardening, and application deployment.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/yaml"]
+    },
+    {
+      "id": "generate-k8s",
+      "name": "Generate Kubernetes Manifests",
+      "description": "Generate Kubernetes deployment, service, ingress, and configmap manifests with security contexts.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/yaml"]
+    },
+    {
+      "id": "generate-dockerfile",
+      "name": "Generate Dockerfile",
+      "description": "Generate STIG-hardened Dockerfiles with minimal attack surface, non-root users, and health checks.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/plain"]
+    },
+    {
+      "id": "generate-pipeline",
+      "name": "Generate CI/CD Pipeline",
+      "description": "Generate GitLab CI/CD pipeline configuration with security scanning, testing, and deployment stages.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/yaml"]
+    },
+    {
+      "id": "rollback-deployment",
+      "name": "Rollback Deployment",
+      "description": "Manage deployment rollbacks by reverting to a previous known-good version.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

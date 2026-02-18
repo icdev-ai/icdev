@@ -1,0 +1,47 @@
+# ICDEV Monitoring Configuration
+
+elk:
+  url: "https://elk.internal:9200"
+  index_pattern: "icdev-app-*"
+  default_time_range: "1h"
+
+splunk:
+  url: "https://splunk.internal:8089"
+  hec_url: "https://splunk.internal:8088"
+  index: "icdev"
+  default_time_range: "1h"
+
+prometheus:
+  url: "http://prometheus.internal:9090"
+  scrape_interval: "15s"
+
+grafana:
+  url: "http://grafana.internal:3000"
+  org_id: 1
+
+alerting:
+  channels:
+    - type: "slack"
+      webhook: "${SLACK_WEBHOOK_URL}"
+    - type: "email"
+      recipients: "${ALERT_EMAIL_RECIPIENTS}"
+
+self_healing:
+  enabled: true
+  confidence_threshold: 0.7
+  escalation_threshold: 0.3
+  max_auto_heal_per_hour: 5
+  cooldown_minutes: 10
+
+health_check:
+  endpoint: "/health"
+  interval_seconds: 30
+  timeout_seconds: 10
+  failure_threshold: 3
+  success_threshold: 1
+
+sla:
+  availability: 99.9
+  latency_p95_ms: 500
+  latency_p99_ms: 1000
+  error_rate_percent: 1.0

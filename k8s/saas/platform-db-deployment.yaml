@@ -1,0 +1,150 @@
+# CUI // SP-CTI
+# ICDEV SaaS - Platform PostgreSQL Database
+# For dev/test environments only — production should use AWS RDS
+# Stores platform-level tenant metadata, users, API keys, subscriptions
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icdev-platform-db
+  namespace: icdev-platform
+  labels:
+    app.kubernetes.io/name: platform-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: platform-db
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: platform-db
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: icdev
+        classification: CUI
+    spec:
+      serviceAccountName: icdev-platform-db
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: postgresql
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+              protocol: TCP
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: icdev-platform-db
+                  key: dbname
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: icdev-platform-db
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: icdev-platform-db
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - $(POSTGRES_USER)
+                - -d
+                - $(POSTGRES_DB)
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: icdev-platform-db-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icdev-platform-db
+  namespace: icdev-platform
+  labels:
+    app.kubernetes.io/name: platform-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  selector:
+    app.kubernetes.io/name: platform-db
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: icdev-platform-db-data
+  namespace: icdev-platform
+  labels:
+    app.kubernetes.io/name: platform-db
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3-encrypted
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-platform-db
+  namespace: icdev-platform
+  labels:
+    app.kubernetes.io/name: platform-db
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+automountServiceAccountToken: false

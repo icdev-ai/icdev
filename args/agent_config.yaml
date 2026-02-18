@@ -1,0 +1,273 @@
+# ICDEV Agent Configuration
+# Defines all 10 A2A agents and their connection settings
+
+agents:
+  orchestrator:
+    id: "orchestrator-agent"
+    name: "ICDEV Orchestrator"
+    description: "Top-level router. Decomposes tasks, dispatches to specialists, aggregates results."
+    host: "0.0.0.0"
+    port: 8443
+    tls:
+      cert: "/etc/icdev/certs/orchestrator.crt"
+      key: "/etc/icdev/certs/orchestrator.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "opus"
+      effort: "high"
+      max_tokens: 16384
+    max_concurrent: 20
+
+  architect:
+    id: "architect-agent"
+    name: "ICDEV Architect"
+    description: "System design, schema design, technology selection. Runs ATLAS A/T phases."
+    host: "0.0.0.0"
+    port: 8444
+    tls:
+      cert: "/etc/icdev/certs/architect.crt"
+      key: "/etc/icdev/certs/architect.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "opus"
+      effort: "max"
+      max_tokens: 32768
+    max_concurrent: 5
+
+  builder:
+    id: "builder-agent"
+    name: "ICDEV Builder"
+    description: "Code generation with TDD. Tests first (Cucumber/Gherkin), then implementation."
+    host: "0.0.0.0"
+    port: 8445
+    tls:
+      cert: "/etc/icdev/certs/builder.crt"
+      key: "/etc/icdev/certs/builder.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "opus"
+      effort: "max"
+      max_tokens: 32768
+    max_concurrent: 10
+
+  compliance:
+    id: "compliance-agent"
+    name: "ICDEV Compliance"
+    description: "ATO artifact generation: SSP, POAM, STIG, SBOM, CUI markings, NIST mapping."
+    host: "0.0.0.0"
+    port: 8446
+    tls:
+      cert: "/etc/icdev/certs/compliance.crt"
+      key: "/etc/icdev/certs/compliance.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "high"
+      max_tokens: 16384
+    max_concurrent: 5
+
+  security:
+    id: "security-agent"
+    name: "ICDEV Security"
+    description: "Vulnerability scanning, SAST/DAST, dependency auditing, secret detection."
+    host: "0.0.0.0"
+    port: 8447
+    tls:
+      cert: "/etc/icdev/certs/security.crt"
+      key: "/etc/icdev/certs/security.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "high"
+      max_tokens: 16384
+    max_concurrent: 5
+
+  infra:
+    id: "infra-agent"
+    name: "ICDEV Infrastructure"
+    description: "Terraform/Ansible generation, K8s manifests, Dockerfiles, pipeline config."
+    host: "0.0.0.0"
+    port: 8448
+    tls:
+      cert: "/etc/icdev/certs/infra.crt"
+      key: "/etc/icdev/certs/infra.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "medium"
+      max_tokens: 16384
+    max_concurrent: 5
+
+  knowledge:
+    id: "knowledge-agent"
+    name: "ICDEV Knowledge"
+    description: "Learning knowledge base. Pattern detection, recommendations, self-healing."
+    host: "0.0.0.0"
+    port: 8449
+    tls:
+      cert: "/etc/icdev/certs/knowledge.crt"
+      key: "/etc/icdev/certs/knowledge.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "medium"
+      max_tokens: 8192
+    max_concurrent: 10
+
+  monitor:
+    id: "monitor-agent"
+    name: "ICDEV Monitor"
+    description: "Production monitoring, log analysis, alert correlation, rollback decisions."
+    host: "0.0.0.0"
+    port: 8450
+    tls:
+      cert: "/etc/icdev/certs/monitor.crt"
+      key: "/etc/icdev/certs/monitor.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-3-5"
+      effort: "low"
+      max_tokens: 4096
+    max_concurrent: 10
+
+  mbse:
+    id: "mbse-agent"
+    name: "ICDEV MBSE"
+    description: "Model-Based Systems Engineering — SysML parsing, DOORS NG integration, digital thread, model-code sync, DES compliance."
+    host: "0.0.0.0"
+    port: 8451
+    tls:
+      cert: "/etc/icdev/certs/mbse.crt"
+      key: "/etc/icdev/certs/mbse.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "medium"
+      max_tokens: 16384
+    max_concurrent: 5
+    capabilities:
+      - xmi_parsing
+      - reqif_parsing
+      - digital_thread
+      - model_code_generation
+      - bidirectional_sync
+      - des_assessment
+
+  modernization:
+    id: "modernization-agent"
+    name: "ICDEV Modernization"
+    description: "Application modernization — legacy analysis, 7R assessment, migration planning, code generation, compliance bridge."
+    host: "0.0.0.0"
+    port: 8452
+    tls:
+      cert: "/etc/icdev/certs/modernization.crt"
+      key: "/etc/icdev/certs/modernization.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      region: "us-gov-west-1"
+      model_preference: "opus"
+      effort: "high"
+      max_tokens: 32768
+    max_concurrent: 5
+    capabilities:
+      - legacy_analysis
+      - seven_r_assessment
+      - migration_planning
+      - code_generation
+      - compliance_bridge
+      - version_migration
+
+  requirements_analyst:
+    id: "requirements-analyst-agent"
+    name: "ICDEV Requirements Analyst"
+    description: "AI-driven conversational requirements intake, gap detection, SAFe decomposition, readiness scoring, document extraction, COA generation, boundary analysis."
+    host: "0.0.0.0"
+    port: 8453
+    tls:
+      cert: "/etc/icdev/certs/requirements-analyst.crt"
+      key: "/etc/icdev/certs/requirements-analyst.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      region: "us-gov-west-1"
+      model_preference: "opus"
+      effort: "high"
+      max_tokens: 16384
+    max_concurrent: 10
+    capabilities:
+      - conversational_intake
+      - gap_detection
+      - safe_decomposition
+      - readiness_scoring
+      - document_extraction
+      - coa_generation
+      - boundary_analysis
+
+  supply_chain:
+    id: "supply-chain-agent"
+    name: "ICDEV Supply Chain"
+    description: "Supply chain intelligence — upstream/downstream impact propagation, SBOM aggregation, ISA lifecycle, CVE triage, NIST 800-161 SCRM."
+    host: "0.0.0.0"
+    port: 8454
+    tls:
+      cert: "/etc/icdev/certs/supply-chain.crt"
+      key: "/etc/icdev/certs/supply-chain.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "medium"
+      max_tokens: 8192
+    max_concurrent: 5
+    capabilities:
+      - dependency_graph
+      - sbom_aggregation
+      - isa_lifecycle
+      - cve_triage
+      - scrm_assessment
+      - impact_propagation
+
+  simulation:
+    id: "simulation-agent"
+    name: "ICDEV Simulation"
+    description: "Digital Program Twin — 6-dimension what-if simulation (architecture, compliance, supply chain, schedule, cost, risk), scenario management, Monte Carlo."
+    host: "0.0.0.0"
+    port: 8455
+    tls:
+      cert: "/etc/icdev/certs/simulation.crt"
+      key: "/etc/icdev/certs/simulation.key"
+      ca: "/etc/icdev/certs/ca.crt"
+    bedrock:
+      model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+      region: "us-gov-west-1"
+      model_preference: "sonnet-4-5"
+      effort: "medium"
+      max_tokens: 16384
+    max_concurrent: 5
+    capabilities:
+      - what_if_simulation
+      - monte_carlo_schedule
+      - compound_risk_analysis
+      - cost_modeling
+      - scenario_management
+      - inline_visualization

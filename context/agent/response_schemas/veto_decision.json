@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VetoDecision",
+  "description": "Schema for domain authority veto check output. Defines whether a domain authority agent vetoes an output, the type of veto, evidence, and remediation recommendations.",
+  "type": "object",
+  "required": ["veto"],
+  "additionalProperties": false,
+  "properties": {
+    "veto": {
+      "type": "boolean",
+      "description": "Whether the authority agent vetoes the output"
+    },
+    "veto_type": {
+      "type": ["string", "null"],
+      "enum": ["hard", "soft", null],
+      "description": "Type of veto: hard (blocks, requires human override) or soft (warns, orchestrator can override)"
+    },
+    "reason": {
+      "type": ["string", "null"],
+      "description": "Specific reason for the veto, or null if no veto"
+    },
+    "evidence": {
+      "type": ["string", "null"],
+      "description": "Concrete evidence of the violation, or null if no veto"
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of specific fixes to resolve the issues found",
+      "default": []
+    },
+    "classification": {
+      "type": "string",
+      "default": "CUI",
+      "description": "Classification marking for this veto decision"
+    }
+  }
+}

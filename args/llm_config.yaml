@@ -1,0 +1,241 @@
+# CUI // SP-CTI
+# ICDEV LLM Provider Configuration
+# Controls which models are used for each function across the platform.
+# Single source of truth — replaces scattered hardcoded model IDs.
+
+# -----------------------------------------------------------------------
+# Provider Definitions
+# -----------------------------------------------------------------------
+providers:
+  bedrock:
+    type: bedrock
+    region: ${AWS_DEFAULT_REGION:-us-gov-west-1}
+    # Uses boto3 credentials (IAM role, env vars, or ~/.aws/credentials)
+
+  anthropic:
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com
+
+  openai:
+    type: openai_compatible
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+
+  ollama:
+    type: openai_compatible
+    base_url: ${OLLAMA_BASE_URL:-http://localhost:11434/v1}
+    api_key: ollama
+
+  vllm:
+    type: openai_compatible
+    base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
+    api_key_env: VLLM_API_KEY
+
+# -----------------------------------------------------------------------
+# Model Registry
+# -----------------------------------------------------------------------
+models:
+  # -- Anthropic via Bedrock --
+  claude-opus:
+    provider: bedrock
+    model_id: anthropic.claude-opus-4-6-20260215-v1:0
+    max_output_tokens: 128000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+
+  claude-sonnet:
+    provider: bedrock
+    model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+
+  claude-haiku:
+    provider: bedrock
+    model_id: anthropic.claude-3-5-sonnet-20241022-v2:0
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+
+  # -- Anthropic Direct API --
+  claude-opus-api:
+    provider: anthropic
+    model_id: claude-opus-4-6-20260205
+    max_output_tokens: 128000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+
+  claude-sonnet-api:
+    provider: anthropic
+    model_id: claude-sonnet-4-5-20250929
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+
+  # -- OpenAI --
+  gpt-4o:
+    provider: openai
+    model_id: gpt-4o
+    max_output_tokens: 16384
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0025, output_per_1k: 0.010 }
+
+  gpt-4o-mini:
+    provider: openai
+    model_id: gpt-4o-mini
+    max_output_tokens: 16384
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+
+  o3:
+    provider: openai
+    model_id: o3
+    max_output_tokens: 100000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.010, output_per_1k: 0.040 }
+
+  # -- Local Models (Ollama) --
+  llama-local:
+    provider: ollama
+    model_id: llama3.3:70b
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  codestral-local:
+    provider: ollama
+    model_id: codestral:22b
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  deepseek-local:
+    provider: ollama
+    model_id: deepseek-r1:70b
+    max_output_tokens: 8192
+    supports_thinking: true
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+# -----------------------------------------------------------------------
+# Function -> Model Routing
+# -----------------------------------------------------------------------
+# Maps each ICDEV function to a model with fallback chain.
+# First available model in the chain is used.
+routing:
+  agent_architect:
+    chain: [claude-opus, o3, gpt-4o, llama-local]
+    effort: max
+
+  agent_orchestrator:
+    chain: [claude-opus, gpt-4o, llama-local]
+    effort: high
+
+  agent_builder:
+    chain: [claude-opus, gpt-4o, codestral-local]
+    effort: max
+
+  agent_compliance:
+    chain: [claude-sonnet, gpt-4o, llama-local]
+    effort: high
+
+  agent_security:
+    chain: [claude-sonnet, gpt-4o, llama-local]
+    effort: high
+
+  agent_infra:
+    chain: [claude-sonnet, gpt-4o-mini, llama-local]
+    effort: medium
+
+  agent_knowledge:
+    chain: [claude-sonnet, gpt-4o-mini, llama-local]
+    effort: medium
+
+  agent_monitor:
+    chain: [claude-haiku, gpt-4o-mini, llama-local]
+    effort: low
+
+  task_decomposition:
+    chain: [claude-opus, o3, gpt-4o]
+    effort: high
+
+  collaboration:
+    chain: [claude-sonnet, gpt-4o, llama-local]
+    effort: medium
+
+  nlq_sql:
+    chain: [gpt-4o-mini, claude-haiku, llama-local]
+    effort: low
+
+  code_generation:
+    chain: [claude-sonnet, gpt-4o, codestral-local]
+    effort: high
+
+  saas_proxy:
+    chain: [claude-sonnet, gpt-4o]
+    effort: medium
+
+  child_app:
+    chain: [claude-sonnet, gpt-4o]
+    effort: medium
+
+  default:
+    chain: [claude-sonnet, gpt-4o, llama-local]
+    effort: medium
+
+# -----------------------------------------------------------------------
+# Embedding Configuration
+# -----------------------------------------------------------------------
+embeddings:
+  default_chain: [openai-embed, nomic-embed-local]
+
+  models:
+    openai-embed:
+      provider: openai
+      model_id: text-embedding-3-small
+      dimensions: 1536
+      pricing: { input_per_1k: 0.00002 }
+
+    titan-embed:
+      provider: bedrock
+      model_id: amazon.titan-embed-text-v2:0
+      dimensions: 1024
+      pricing: { input_per_1k: 0.00002 }
+
+    nomic-embed-local:
+      provider: ollama
+      model_id: nomic-embed-text
+      dimensions: 768
+      pricing: { input_per_1k: 0.0 }
+
+# -----------------------------------------------------------------------
+# Global Settings
+# -----------------------------------------------------------------------
+settings:
+  max_retries: 5
+  base_retry_delay_seconds: 1.0
+  max_retry_delay_seconds: 30.0
+  availability_cache_ttl_seconds: 1800
+  prefer_local: false    # Set true in air-gapped environments

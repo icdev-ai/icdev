@@ -1,0 +1,166 @@
+# CUI // SP-CTI
+# ICDEV SaaS - Tenant Namespace Template
+# Replace {{TENANT_SLUG}}, {{IMPACT_LEVEL}}, {{TIER}} before applying
+#
+# Isolation model:
+#   IL2-IL4: Dedicated K8s namespace (icdev-tenant-{slug})
+#   IL5:     Dedicated namespace + dedicated node pool + dedicated RDS
+#   IL6:     Dedicated AWS sub-account (SIPR air-gapped)
+#
+# Usage:
+#   sed -e 's/{{TENANT_SLUG}}/acme-defense/g' \
+#       -e 's/{{IMPACT_LEVEL}}/IL4/g' \
+#       -e 's/{{TIER}}/professional/g' \
+#       k8s/saas/tenant-namespace-template.yaml | kubectl apply -f -
+#
+# Or use the provisioner:
+#   python tools/saas/infra/namespace_provisioner.py \
+#       --create --slug acme-defense --il IL4 --tier professional
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/managed-by: icdev-namespace-provisioner
+    icdev/tenant: "{{TENANT_SLUG}}"
+    icdev/impact-level: "{{IMPACT_LEVEL}}"
+    icdev/tier: "{{TIER}}"
+    classification: CUI
+---
+# Default deny all traffic — zero-trust baseline
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress: []
+  egress: []
+---
+# Allow ingress from API gateway (icdev-platform namespace) only
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-gateway
+  namespace: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: icdev-platform
+      ports:
+        - protocol: TCP
+          port: 8443
+        - protocol: TCP
+          port: 8444
+        - protocol: TCP
+          port: 8445
+---
+# Allow controlled egress (DNS, HTTPS to AWS, platform namespace)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-controlled-egress
+  namespace: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # HTTPS to AWS endpoints (Bedrock, S3, Secrets Manager)
+    - ports:
+        - protocol: TCP
+          port: 443
+    # PostgreSQL to RDS
+    - ports:
+        - protocol: TCP
+          port: 5432
+    # Platform namespace communication
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: icdev-platform
+---
+# Resource quota — values are for {{TIER}} tier
+# Tier defaults: starter=2CPU/4Gi, professional=8CPU/16Gi, enterprise=32CPU/64Gi
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tenant-quota
+  namespace: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    icdev/tier: "{{TIER}}"
+    classification: CUI
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: "16Gi"
+    limits.cpu: "16"
+    limits.memory: "32Gi"
+    pods: "20"
+    persistentvolumeclaims: "10"
+    services: "10"
+---
+# Limit range — enforce per-pod defaults and maximums
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: tenant-limits
+  namespace: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "4"
+        memory: "8Gi"
+    - type: Pod
+      max:
+        cpu: "8"
+        memory: "16Gi"
+---
+# Service account for tenant agents
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-agent
+  namespace: icdev-tenant-{{TENANT_SLUG}}
+  labels:
+    app.kubernetes.io/part-of: icdev
+    icdev/tenant: "{{TENANT_SLUG}}"
+    classification: CUI
+automountServiceAccountToken: false

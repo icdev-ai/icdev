@@ -1,0 +1,280 @@
+{
+  "metadata": {
+    "title": "ReqIF 1.2 Schema Mapping for DOORS NG",
+    "source": "OMG ReqIF 1.2 Specification (formal/16-07-01) + IBM DOORS Next Generation Export Schema",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "Maps ReqIF 1.2 XML elements and attributes to ICDEV database fields for parsing DOORS NG requirement exports. Used by the MBSE integration layer to import requirements into the digital thread."
+  },
+  "namespaces": {
+    "reqif": "http://www.omg.org/spec/ReqIF/20110401/reqif.xsd",
+    "reqif_content": "http://www.omg.org/spec/ReqIF/20110401/reqif-content.xsd",
+    "xhtml": "http://www.w3.org/1999/xhtml",
+    "doors": "http://www.ibm.com/xmlns/rdm/reqif"
+  },
+  "element_mappings": {
+    "REQ-IF": {
+      "description": "Root element of the ReqIF document containing header and core content",
+      "maps_to": null,
+      "children": ["THE-HEADER", "CORE-CONTENT", "TOOL-EXTENSIONS"]
+    },
+    "THE-HEADER": {
+      "description": "Document header with metadata including creation time, repository ID, and tool identification",
+      "maps_to": "import_metadata",
+      "key_attributes": {
+        "CREATION-TIME": "import_timestamp",
+        "REPOSITORY-ID": "source_repository_id",
+        "REQ-IF-TOOL-ID": "source_tool",
+        "REQ-IF-VERSION": "reqif_version",
+        "SOURCE-TOOL-ID": "source_tool_version",
+        "TITLE": "module_title"
+      }
+    },
+    "SPEC-OBJECT": {
+      "description": "Individual requirement object containing attribute values that define the requirement content",
+      "maps_to": "doors_requirements",
+      "db_table": "doors_requirements",
+      "key_attributes": {
+        "IDENTIFIER": "reqif_id",
+        "LAST-CHANGE": "last_modified",
+        "LONG-NAME": "title"
+      },
+      "child_elements": ["VALUES", "TYPE"]
+    },
+    "SPEC-RELATION": {
+      "description": "Typed relationship between two SPEC-OBJECTs representing parent-child, trace, or other links",
+      "maps_to": "sysml_relationships",
+      "db_table": "sysml_relationships",
+      "key_attributes": {
+        "IDENTIFIER": "relationship_id",
+        "LAST-CHANGE": "last_modified",
+        "LONG-NAME": "relationship_name"
+      },
+      "child_elements": ["SOURCE", "TARGET", "TYPE"]
+    },
+    "SPECIFICATION": {
+      "description": "A requirements module or document containing an ordered hierarchy of SPEC-OBJECTs",
+      "maps_to": "module_name",
+      "db_field": "source_module",
+      "key_attributes": {
+        "IDENTIFIER": "module_id",
+        "LONG-NAME": "module_name",
+        "LAST-CHANGE": "module_last_modified"
+      },
+      "child_elements": ["CHILDREN"]
+    },
+    "SPEC-HIERARCHY": {
+      "description": "Tree node within a SPECIFICATION defining the hierarchical order of requirements",
+      "maps_to": "requirement_hierarchy",
+      "key_attributes": {
+        "IDENTIFIER": "hierarchy_node_id",
+        "LONG-NAME": "section_name",
+        "IS-TABLE-INTERNAL": "is_table_row"
+      },
+      "child_elements": ["OBJECT", "CHILDREN"]
+    },
+    "DATATYPE-DEFINITION-STRING": {
+      "description": "Defines a string-typed attribute with optional max-length constraint",
+      "maps_to": "attribute_schema",
+      "data_type": "string"
+    },
+    "DATATYPE-DEFINITION-XHTML": {
+      "description": "Defines a rich-text attribute using XHTML markup for formatted requirement text",
+      "maps_to": "attribute_schema",
+      "data_type": "xhtml"
+    },
+    "DATATYPE-DEFINITION-ENUMERATION": {
+      "description": "Defines an enumerated attribute with a fixed set of allowed values",
+      "maps_to": "attribute_schema",
+      "data_type": "enum"
+    },
+    "DATATYPE-DEFINITION-INTEGER": {
+      "description": "Defines an integer-typed attribute for numeric requirement properties",
+      "maps_to": "attribute_schema",
+      "data_type": "integer"
+    },
+    "DATATYPE-DEFINITION-BOOLEAN": {
+      "description": "Defines a boolean-typed attribute for flag properties",
+      "maps_to": "attribute_schema",
+      "data_type": "boolean"
+    },
+    "DATATYPE-DEFINITION-DATE": {
+      "description": "Defines a date-typed attribute for temporal properties",
+      "maps_to": "attribute_schema",
+      "data_type": "datetime"
+    },
+    "SPEC-OBJECT-TYPE": {
+      "description": "Defines the type schema for SPEC-OBJECTs, listing which attributes each requirement can have",
+      "maps_to": "requirement_type_definition"
+    },
+    "SPEC-RELATION-TYPE": {
+      "description": "Defines the type schema for SPEC-RELATIONs including relationship semantics",
+      "maps_to": "relationship_type_definition"
+    }
+  },
+  "attribute_mappings": {
+    "doors_object_identifier": {
+      "reqif_attribute": "ReqIF.ForeignID",
+      "maps_to": "doors_id",
+      "db_column": "doors_id",
+      "data_type": "string",
+      "description": "DOORS unique object identifier (e.g., DOORS-REQ-001)",
+      "required": true
+    },
+    "doors_object_text": {
+      "reqif_attribute": "ReqIF.Text",
+      "maps_to": "description",
+      "db_column": "description",
+      "data_type": "xhtml",
+      "description": "Primary requirement text content in XHTML format",
+      "required": true
+    },
+    "doors_object_name": {
+      "reqif_attribute": "ReqIF.Name",
+      "maps_to": "title",
+      "db_column": "title",
+      "data_type": "string",
+      "description": "Short name or title of the requirement",
+      "required": true
+    },
+    "doors_created_by": {
+      "reqif_attribute": "ReqIF.ForeignCreatedBy",
+      "maps_to": "created_by",
+      "db_column": "created_by",
+      "data_type": "string",
+      "description": "Username of the requirement author",
+      "required": false
+    },
+    "doors_created_on": {
+      "reqif_attribute": "ReqIF.ForeignCreatedOn",
+      "maps_to": "created_at",
+      "db_column": "created_at",
+      "data_type": "datetime",
+      "description": "Timestamp when the requirement was originally created",
+      "required": false
+    },
+    "doors_modified_on": {
+      "reqif_attribute": "ReqIF.ForeignModifiedOn",
+      "maps_to": "updated_at",
+      "db_column": "updated_at",
+      "data_type": "datetime",
+      "description": "Timestamp of the last modification to the requirement",
+      "required": false
+    },
+    "doors_object_number": {
+      "reqif_attribute": "ReqIF.ForeignObjectNumber",
+      "maps_to": "object_number",
+      "db_column": "object_number",
+      "data_type": "integer",
+      "description": "DOORS internal object number for ordering within a module",
+      "required": false
+    }
+  },
+  "doors_specific": {
+    "standard_attributes": [
+      {
+        "name": "Artifact Type",
+        "description": "DOORS NG artifact type classification (e.g., Stakeholder Requirement, System Requirement, Heading)",
+        "maps_to": "requirement_type",
+        "common_values": ["Stakeholder Requirement", "System Requirement", "Derived Requirement", "Heading", "Information", "Constraint"]
+      },
+      {
+        "name": "Priority",
+        "description": "Requirement priority level assigned by the requirements author",
+        "maps_to": "priority",
+        "common_values": ["Critical", "High", "Medium", "Low"]
+      },
+      {
+        "name": "Status",
+        "description": "Current lifecycle status of the requirement within DOORS NG workflow",
+        "maps_to": "status",
+        "common_values": ["Draft", "In Review", "Approved", "Implemented", "Verified", "Deferred", "Deleted"]
+      },
+      {
+        "name": "Verification Method",
+        "description": "Method by which the requirement will be verified during test and evaluation",
+        "maps_to": "verification_method",
+        "common_values": ["Test", "Analysis", "Demonstration", "Inspection", "Simulation"]
+      },
+      {
+        "name": "Risk",
+        "description": "Risk level associated with the requirement implementation",
+        "maps_to": "risk_level",
+        "common_values": ["High", "Medium", "Low"]
+      }
+    ],
+    "custom_attributes": [
+      {
+        "name": "CUI Marking",
+        "description": "CUI designation indicator applied to individual requirement artifacts per DoDI 5200.48",
+        "maps_to": "cui_marking",
+        "default_value": "CUI // SP-CTI"
+      },
+      {
+        "name": "NIST Control",
+        "description": "Associated NIST 800-53 control identifier for compliance traceability",
+        "maps_to": "nist_control_id"
+      },
+      {
+        "name": "Allocation",
+        "description": "Target system element or subsystem to which the requirement is allocated",
+        "maps_to": "allocated_to"
+      },
+      {
+        "name": "Rationale",
+        "description": "Justification or design rationale for the requirement",
+        "maps_to": "rationale"
+      },
+      {
+        "name": "Source Document",
+        "description": "Originating document or specification from which the requirement was derived",
+        "maps_to": "source_document"
+      }
+    ],
+    "link_types": [
+      {
+        "name": "Satisfied By",
+        "description": "Links a requirement to the design element that satisfies it",
+        "source_type": "Requirement",
+        "target_type": "Design Element",
+        "maps_to_relationship": "satisfy"
+      },
+      {
+        "name": "Verified By",
+        "description": "Links a requirement to the test case that verifies it",
+        "source_type": "Requirement",
+        "target_type": "Test Case",
+        "maps_to_relationship": "verify"
+      },
+      {
+        "name": "Derived From",
+        "description": "Links a derived requirement to its parent requirement",
+        "source_type": "Derived Requirement",
+        "target_type": "Parent Requirement",
+        "maps_to_relationship": "derive"
+      },
+      {
+        "name": "Refined By",
+        "description": "Links a high-level requirement to a more detailed elaboration",
+        "source_type": "Requirement",
+        "target_type": "Refinement",
+        "maps_to_relationship": "refine"
+      },
+      {
+        "name": "Traced To",
+        "description": "General traceability link between two requirements or artifacts",
+        "source_type": "Requirement",
+        "target_type": "Requirement",
+        "maps_to_relationship": "trace"
+      }
+    ]
+  },
+  "parsing_rules": {
+    "xhtml_text_extraction": "Strip all XHTML tags from ReqIF.Text, preserving paragraph breaks as newlines. Retain list structure as bullet points.",
+    "enum_value_resolution": "Resolve ENUM-VALUE-REF identifiers to their LONG-NAME values from DATATYPE-DEFINITION-ENUMERATION.",
+    "hierarchy_depth": "Compute requirement hierarchy depth from nested SPEC-HIERARCHY elements. Map to parent_id in database.",
+    "duplicate_detection": "Use IDENTIFIER + REPOSITORY-ID as composite key for deduplication across imports.",
+    "encoding": "All ReqIF files must be parsed as UTF-8. XHTML content may contain HTML entities requiring decoding."
+  }
+}

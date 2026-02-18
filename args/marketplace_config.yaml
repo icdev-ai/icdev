@@ -1,0 +1,129 @@
+# CUI // SP-CTI
+# ICDEV Marketplace Configuration — Federated GOTCHA Asset Registry
+# Phase 22: Marketplace for skills, goals, hardprompts, context, args, compliance extensions
+
+marketplace:
+  # Registry mode: federated (each tenant manages own catalog, optional central sharing)
+  mode: federated
+
+  # Asset types shareable through marketplace
+  asset_types:
+    - skill          # SKILL.md + scripts/ + references/ + assets/
+    - goal           # Goal workflow definitions
+    - hardprompt     # Reusable LLM instruction templates
+    - context        # Reference material (JSON/YAML)
+    - args           # Behavior settings (YAML)
+    - compliance     # Compliance framework extensions (JSON)
+
+  # Catalog tiers
+  catalog_tiers:
+    tenant_local:
+      description: "Private catalog within a single tenant organization"
+      requires_approval: false   # Org-internal publishing only
+      auto_scan: true            # Always run security scanning
+    central_vetted:
+      description: "Curated registry available to all tenants (subject to IL compatibility)"
+      requires_approval: true    # Human + automated approval required
+      auto_scan: true
+      human_review_required: true
+
+  # Security scanning pipeline (7 gates)
+  scanning:
+    gates:
+      - name: sast_scan
+        description: "Static application security testing (bandit for Python, language-appropriate)"
+        blocking: true
+        max_critical: 0
+        max_high: 0
+      - name: secret_detection
+        description: "Detect hardcoded secrets, API keys, credentials"
+        blocking: true
+        max_findings: 0
+      - name: dependency_audit
+        description: "Audit dependencies for known vulnerabilities"
+        blocking: true
+        max_critical_vulns: 0
+        max_high_vulns: 0
+      - name: cui_marking_validation
+        description: "Verify CUI markings match declared impact level"
+        blocking: true
+      - name: sbom_generation
+        description: "Generate SBOM for executable assets"
+        blocking: true
+        required_for: ["skill"]   # Only required for assets with scripts
+      - name: supply_chain_provenance
+        description: "Verify dependency provenance chain"
+        blocking: false
+        warning_on_unknown_deps: true
+      - name: digital_signature
+        description: "RSA-SHA256 signature for tamper evidence"
+        blocking: true
+    scan_timeout_seconds: 300
+    max_asset_size_mb: 50
+
+  # Approval workflow
+  approval:
+    cross_tenant_sharing:
+      require_human_review: true
+      reviewer_roles: ["isso", "security_officer", "tenant_admin"]
+      min_approvals: 1
+      auto_approve_on_gates_pass: false   # Always require human for cross-tenant
+      max_review_age_days: 30
+      escalation_after_days: 7
+    tenant_local:
+      require_human_review: false
+      auto_approve_on_gates_pass: true
+
+  # Classification / Impact Level
+  classification:
+    marking_mode: independent      # Each asset declares its own IL
+    consumption_rule: high_watermark  # Consumer IL must be >= asset IL
+    valid_impact_levels: ["IL2", "IL4", "IL5", "IL6"]
+    il_hierarchy:
+      IL2: 0
+      IL4: 1
+      IL5: 2
+      IL6: 3
+
+  # Versioning
+  versioning:
+    scheme: semver                # Semantic versioning (major.minor.patch)
+    require_changelog: true
+    immutable_versions: true      # Published versions cannot be modified
+    max_versions_per_asset: 100
+
+  # Search configuration
+  search:
+    engine: hybrid                # keyword + semantic
+    bm25_weight: 0.6
+    semantic_weight: 0.4
+    embedding_model: nomic-embed-text   # Ollama local model (air-gapped)
+    embedding_dimensions: 768
+    max_results: 50
+    min_relevance_score: 0.3
+
+  # Federation sync
+  federation:
+    sync_interval_minutes: 60
+    batch_size: 50
+    conflict_resolution: newer_wins
+    propagate_ratings: true
+    propagate_scan_results: true
+
+  # Community features
+  community:
+    ratings_enabled: true
+    min_rating: 1
+    max_rating: 5
+    require_comment_with_rating: false
+    ratings_visible_to_publisher: true
+
+  # Audit trail (append-only, NIST AU compliant)
+  audit:
+    log_publish: true
+    log_install: true
+    log_uninstall: true
+    log_review: true
+    log_rate: true
+    log_search: false    # Too noisy for audit trail
+    log_federation_sync: true

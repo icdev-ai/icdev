@@ -1,0 +1,23 @@
+{
+  "reqif_version": "1.2",
+  "namespace": "http://www.omg.org/spec/ReqIF/20110401/reqif.xsd",
+  "datatypes": {
+    "string_type": {"id": "DT-STRING", "long_name": "String", "type": "xhtml"},
+    "priority_enum": {"id": "DT-PRIORITY", "long_name": "Priority", "values": ["P1-Critical", "P2-High", "P3-Medium", "P4-Low"]},
+    "type_enum": {"id": "DT-TYPE", "long_name": "RequirementType", "values": ["functional", "security", "performance", "interface", "data", "operational"]},
+    "status_enum": {"id": "DT-STATUS", "long_name": "Status", "values": ["draft", "extracted", "refined", "approved"]}
+  },
+  "spec_type": {
+    "id": "ST-REQ",
+    "long_name": "ICDEV Requirement",
+    "attributes": [
+      {"id": "AT-TITLE", "long_name": "Title", "datatype": "DT-STRING"},
+      {"id": "AT-DESC", "long_name": "Description", "datatype": "DT-STRING"},
+      {"id": "AT-PRIORITY", "long_name": "Priority", "datatype": "DT-PRIORITY"},
+      {"id": "AT-TYPE", "long_name": "Type", "datatype": "DT-TYPE"},
+      {"id": "AT-STATUS", "long_name": "Status", "datatype": "DT-STATUS"},
+      {"id": "AT-ACCEPT", "long_name": "AcceptanceCriteria", "datatype": "DT-STRING"},
+      {"id": "AT-SOURCE", "long_name": "Source", "datatype": "DT-STRING"}
+    ]
+  }
+}

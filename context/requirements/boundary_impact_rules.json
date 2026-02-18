@@ -1,0 +1,123 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "ATO boundary impact classification rules for requirements analysis",
+  "tiers": {
+    "GREEN": {
+      "score_range": [0, 25],
+      "description": "No boundary change — fits within existing controls, data flows, components",
+      "ato_impact": "None",
+      "indicators": {
+        "positive": ["existing API", "internal service", "within boundary", "current technology", "existing data flow", "authorized protocol", "existing user role", "no new interconnection"],
+        "negative": ["external", "cross-boundary", "new network", "classification change", "prohibited technology", "new interconnection"]
+      },
+      "required_actions": [],
+      "estimated_ato_delay_days": 0,
+      "approval_authority": "System Owner"
+    },
+    "YELLOW": {
+      "score_range": [26, 50],
+      "description": "Minor adjustment — new component within boundary, minor control update",
+      "ato_impact": "SSP addendum, possible POAM",
+      "indicators": {
+        "positive": ["new component", "new role", "additional service", "new user group", "new database table", "additional logging", "new report", "minor architecture change"],
+        "negative": []
+      },
+      "required_actions": [
+        "ssp_addendum",
+        "isso_notification"
+      ],
+      "estimated_ato_delay_days": 14,
+      "approval_authority": "ISSO"
+    },
+    "ORANGE": {
+      "score_range": [51, 75],
+      "description": "Significant change — new interconnection, cross-boundary data flow",
+      "ato_impact": "SSP revision, ISSO review, possible re-authorization",
+      "indicators": {
+        "positive": ["external API", "third-party", "cross-boundary", "new data flow", "interconnection", "new network segment", "cloud service integration", "new encryption requirement"],
+        "negative": []
+      },
+      "required_actions": [
+        "ssp_revision",
+        "isso_review",
+        "security_assessment",
+        "isa_review"
+      ],
+      "estimated_ato_delay_days": 60,
+      "approval_authority": "Authorizing Official"
+    },
+    "RED": {
+      "score_range": [76, 100],
+      "description": "ATO-invalidating — classification change, boundary expansion, prohibited tech",
+      "ato_impact": "FULL STOP. Alternative COAs required.",
+      "indicators": {
+        "positive": ["classification change", "secret", "ts/sci", "boundary expansion", "prohibited technology", "new network segment", "SIPR", "JWICS", "section 889 violation", "foreign national access", "new enclave"],
+        "negative": []
+      },
+      "required_actions": [
+        "full_stop",
+        "generate_alternative_coas",
+        "ao_notification",
+        "security_review_board"
+      ],
+      "estimated_ato_delay_days": 180,
+      "approval_authority": "Security Review Board + AO"
+    }
+  },
+  "scoring_factors": {
+    "classification_change": {
+      "weight": 40,
+      "description": "Requirement involves change in data classification level",
+      "examples": ["Processing SECRET data on CUI system", "Introducing TS/SCI data flow"]
+    },
+    "boundary_expansion": {
+      "weight": 30,
+      "description": "Requirement expands the ATO boundary to include new systems or networks",
+      "examples": ["Adding new server to boundary", "Including new network segment"]
+    },
+    "new_interconnection": {
+      "weight": 20,
+      "description": "Requirement introduces a new external system interconnection",
+      "examples": ["API integration with external partner", "New ISA required"]
+    },
+    "technology_change": {
+      "weight": 15,
+      "description": "Requirement introduces technology not in current baseline",
+      "examples": ["New database type", "New programming language", "New cloud service"]
+    },
+    "data_flow_change": {
+      "weight": 15,
+      "description": "Requirement modifies existing data flows or creates new ones",
+      "examples": ["New data export", "Cross-domain data transfer"]
+    },
+    "user_access_change": {
+      "weight": 10,
+      "description": "Requirement changes user access patterns or introduces new user types",
+      "examples": ["Foreign national access", "New privileged role", "Public-facing interface"]
+    },
+    "compliance_impact": {
+      "weight": 10,
+      "description": "Requirement affects compliance with specific controls",
+      "examples": ["New encryption requirement", "Modified audit logging", "Changed access control model"]
+    },
+    "prohibited_technology": {
+      "weight": 50,
+      "description": "Requirement involves Section 889 prohibited technology or sanctioned entities",
+      "examples": ["Huawei networking equipment", "ZTE components", "Sanctioned country software"]
+    }
+  },
+  "escalation_rules": {
+    "auto_red_triggers": [
+      "classification_change detected",
+      "prohibited_technology detected",
+      "section_889_violation detected",
+      "boundary_expansion > 50% of current boundary"
+    ],
+    "auto_orange_triggers": [
+      "new_interconnection with unclassified external system",
+      "new_data_flow crossing boundary",
+      "foreign national access requirement"
+    ]
+  }
+}

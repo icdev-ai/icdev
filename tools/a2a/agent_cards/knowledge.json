@@ -1,0 +1,43 @@
+{
+  "name": "ICDEV Knowledge",
+  "description": "Learning knowledge base for the ICDEV platform. Detects patterns from failures and successes, generates recommendations via AWS Bedrock, and triggers automated self-healing.",
+  "url": "https://localhost:8449",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "ingest-knowledge",
+      "name": "Ingest Knowledge",
+      "description": "Ingest patterns, lessons learned, and best practices into the knowledge base for future reference.",
+      "inputModes": ["application/json", "text/plain"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "detect-patterns",
+      "name": "Detect Patterns",
+      "description": "Analyze logs, metrics, and event data to detect recurring patterns (failures, successes, optimizations).",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "generate-recommendations",
+      "name": "Generate Recommendations",
+      "description": "Generate actionable recommendations based on detected patterns and historical knowledge using AWS Bedrock.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "self-heal",
+      "name": "Self-Heal",
+      "description": "Analyze failure data and automatically apply known remediations for auto-healable patterns.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

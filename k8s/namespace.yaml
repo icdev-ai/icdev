@@ -1,0 +1,8 @@
+# CUI // SP-CTI
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI

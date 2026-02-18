@@ -1,0 +1,231 @@
+# CUI // SP-CTI
+# CSP MCP Server Registry - maps cloud providers to their MCP servers
+# Used by: tools/builder/app_blueprint.py (resolve_csp_mcp_servers function)
+# Purpose: When generating cloud-native child apps, select relevant CSP MCP servers
+#          based on the app's capabilities and target cloud provider.
+# Phase: ICDEV Phase 19
+
+providers:
+  aws:
+    display_name: "Amazon Web Services"
+    govcloud_region: "us-gov-west-1"
+    default_region: "us-east-1"
+    mcp_servers:
+      core:
+        - name: "@aws/core-mcp-server"
+          description: "Core AWS service operations"
+          transport: "stdio"
+        - name: "@aws/aws-api-mcp-server"
+          description: "AWS API operations"
+          transport: "stdio"
+      iac:
+        - name: "@aws/cdk-mcp-server"
+          description: "AWS CDK infrastructure as code"
+          transport: "stdio"
+        - name: "@aws/terraform-mcp-server"
+          description: "Terraform for AWS"
+          transport: "stdio"
+        - name: "@aws/cloudformation-mcp-server"
+          description: "CloudFormation stack management"
+          transport: "stdio"
+      ai_ml:
+        - name: "@aws/bedrock-knowledge-bases-retrieval-mcp-server"
+          description: "Amazon Bedrock Knowledge Bases retrieval"
+          transport: "stdio"
+        - name: "@aws/sagemaker-mcp-server"
+          description: "SageMaker ML operations"
+          transport: "stdio"
+      data:
+        - name: "@aws/dynamodb-mcp-server"
+          description: "DynamoDB table operations"
+          transport: "stdio"
+        - name: "@aws/aurora-postgresql-mcp-server"
+          description: "Aurora PostgreSQL database"
+          transport: "stdio"
+        - name: "@aws/s3-tables-mcp-server"
+          description: "S3 object and table storage"
+          transport: "stdio"
+      containers:
+        - name: "@aws/eks-mcp-server"
+          description: "EKS Kubernetes management"
+          transport: "stdio"
+        - name: "@aws/ecs-mcp-server"
+          description: "ECS container service"
+          transport: "stdio"
+      security:
+        - name: "@aws/iam-mcp-server"
+          description: "IAM policy and role management"
+          transport: "stdio"
+        - name: "@aws/well-architected-security-mcp-server"
+          description: "Well-Architected security review"
+          transport: "stdio"
+      monitoring:
+        - name: "@aws/cloudwatch-mcp-server"
+          description: "CloudWatch metrics and logs"
+          transport: "stdio"
+        - name: "@aws/cloudtrail-mcp-server"
+          description: "CloudTrail audit logging"
+          transport: "stdio"
+        - name: "@aws/cost-explorer-mcp-server"
+          description: "Cost analysis and optimization"
+          transport: "stdio"
+      serverless:
+        - name: "@aws/serverless-mcp-server"
+          description: "Serverless application management"
+          transport: "stdio"
+        - name: "@aws/lambda-tool-mcp-server"
+          description: "Lambda function operations"
+          transport: "stdio"
+      docs:
+        - name: "@aws/aws-documentation-mcp-server"
+          description: "AWS documentation search"
+          transport: "stdio"
+        - name: "@aws/aws-knowledge-mcp-server"
+          description: "AWS knowledge base queries"
+          transport: "stdio"
+      messaging:
+        - name: "@aws/sns-sqs-mcp-server"
+          description: "SNS/SQS messaging"
+          transport: "stdio"
+        - name: "@aws/step-functions-mcp-server"
+          description: "Step Functions workflow orchestration"
+          transport: "stdio"
+      diagrams:
+        - name: "@aws/diagram-mcp-server"
+          description: "AWS architecture diagrams"
+          transport: "stdio"
+
+  gcp:
+    display_name: "Google Cloud Platform"
+    default_region: "us-central1"
+    managed_endpoint_pattern: "https://{service}.googleapis.com/mcp"
+    mcp_servers:
+      core:
+        - name: "@google-cloud/bigquery-mcp"
+          description: "BigQuery analytics"
+          transport: "stdio"
+        - name: "@google-cloud/gce-mcp"
+          description: "Compute Engine VM management"
+          transport: "stdio"
+        - name: "@google-cloud/gke-mcp"
+          description: "GKE Kubernetes management"
+          transport: "stdio"
+      data:
+        - name: "@google-cloud/cloud-storage-mcp"
+          description: "Cloud Storage object management"
+          transport: "stdio"
+        - name: "@google-cloud/alloydb-mcp"
+          description: "AlloyDB PostgreSQL"
+          transport: "stdio"
+      ai_ml:
+        - name: "@google-cloud/vertex-ai-mcp"
+          description: "Vertex AI ML operations"
+          transport: "stdio"
+      monitoring:
+        - name: "@google-cloud/cloud-monitoring-mcp"
+          description: "Cloud Monitoring metrics"
+          transport: "stdio"
+      docs:
+        - name: "@google-cloud/data-commons-mcp"
+          description: "Data Commons knowledge"
+          transport: "stdio"
+
+  azure:
+    display_name: "Microsoft Azure"
+    default_region: "eastus"
+    gov_region: "usgovvirginia"
+    mcp_servers:
+      core:
+        - name: "@microsoft/azure-mcp-server"
+          description: "Core Azure operations"
+          transport: "stdio"
+      devops:
+        - name: "@microsoft/azure-devops-mcp-server"
+          description: "Azure DevOps CI/CD"
+          transport: "stdio"
+      ai_ml:
+        - name: "@microsoft/foundry-mcp-server"
+          description: "Azure AI Foundry"
+          transport: "stdio"
+      security:
+        - name: "@microsoft/sentinel-mcp-server"
+          description: "Microsoft Sentinel SIEM"
+          transport: "stdio"
+      developer:
+        - name: "@microsoft/dev-box-mcp-server"
+          description: "Dev Box environments"
+          transport: "stdio"
+
+  oracle:
+    display_name: "Oracle Cloud Infrastructure"
+    default_region: "us-ashburn-1"
+    gov_region: "us-gov-ashburn-1"
+    mcp_servers:
+      core:
+        - name: "@oracle/oci-api-mcp-server"
+          description: "OCI API operations"
+          transport: "stdio"
+      data:
+        - name: "@oracle/database-mcp-server"
+          description: "Oracle Database operations"
+          transport: "stdio"
+      ai_ml:
+        - name: "@oracle/oci-data-science-mcp-server"
+          description: "OCI Data Science"
+          transport: "stdio"
+
+# Capability-to-CSP-category mapping
+# Maps child app capabilities to which CSP MCP server categories to include.
+# The blueprint engine iterates the app's declared capabilities and unions the
+# corresponding server categories for the target CSP.
+capability_mapping:
+  core:
+    aws: ["core", "docs"]
+    gcp: ["core"]
+    azure: ["core"]
+    oracle: ["core"]
+  compliance:
+    aws: ["security", "monitoring"]
+    gcp: []
+    azure: ["security"]
+    oracle: []
+  data:
+    aws: ["data"]
+    gcp: ["data"]
+    azure: []
+    oracle: ["data"]
+  cicd:
+    aws: []
+    gcp: []
+    azure: ["devops"]
+    oracle: []
+  monitoring:
+    aws: ["monitoring"]
+    gcp: ["monitoring"]
+    azure: []
+    oracle: []
+  containers:
+    aws: ["containers"]
+    gcp: ["core"]  # GKE is in GCP core category
+    azure: []
+    oracle: []
+  infrastructure:
+    aws: ["iac"]
+    gcp: []
+    azure: []
+    oracle: []
+  ai_ml:
+    aws: ["ai_ml"]
+    gcp: ["ai_ml"]
+    azure: ["ai_ml"]
+    oracle: ["ai_ml"]
+  serverless:
+    aws: ["serverless"]
+    gcp: []
+    azure: []
+    oracle: []
+  messaging:
+    aws: ["messaging"]
+    gcp: []
+    azure: []
+    oracle: []
