@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}Compliance Query — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a>
+    <span class="separator" aria-hidden="true">/</span>
+    <span class="current">Query</span>
+</nav>
+
+<div class="page-header">
+    <h1>Compliance Query</h1>
+    <p class="subtitle">Ask questions about your compliance data in plain English
+        <span class="help-icon" title="Natural Language Query (NLQ) converts your question into SQL, runs it read-only against the ICDEV database, and returns results. Powered by Bedrock LLM.">?</span>
+    </p>
+</div>
+
+<!-- Query Input -->
+<div class="card" style="margin-bottom: 1.5rem;">
+    <form id="nlq-form" onsubmit="runQuery(event)" style="display: flex; gap: 8px; align-items: flex-start;">
+        <div style="flex: 1;">
+            <label for="nlq-input" style="font-size: 0.85rem; display: block; margin-bottom: 4px;">Your question:</label>
+            <textarea id="nlq-input" rows="2" placeholder="e.g. How many open POAM items are critical? Which projects have no SSP?"
+                      aria-label="Natural language compliance query"
+                      style="width: 100%; box-sizing: border-box; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-size: 0.9rem; resize: vertical; font-family: inherit;"></textarea>
+        </div>
+        <button type="submit" id="nlq-submit"
+                style="background: var(--accent-blue); color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer; font-size: 0.9rem; margin-top: 22px; white-space: nowrap;">
+            Ask
+        </button>
+    </form>
+
+    <!-- Example queries -->
+    <div style="margin-top: 10px;">
+        <small class="text-muted">Try:</small>
+        <button class="nlq-example" onclick="setQuery('How many projects are active?')">How many projects are active?</button>
+        <button class="nlq-example" onclick="setQuery('Show all critical POAM items')">Show all critical POAM items</button>
+        <button class="nlq-example" onclick="setQuery('Which agents are registered?')">Which agents are registered?</button>
+        <button class="nlq-example" onclick="setQuery('List STIG findings by severity')">List STIG findings by severity</button>
+    </div>
+</div>
+
+<!-- Results -->
+<div id="nlq-result" class="card" style="display: none; margin-bottom: 1.5rem;">
+    <h2 style="margin-top: 0; font-size: 1rem;">Results</h2>
+    <div id="nlq-sql" style="display: none; margin-bottom: 10px;">
+        <small class="text-muted">Generated SQL:</small>
+        <pre style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; font-size: 0.8rem; overflow-x: auto;"><code id="nlq-sql-code"></code></pre>
+    </div>
+    <div id="nlq-data" class="table-container"></div>
+    <div id="nlq-error" style="display: none; color: var(--status-critical);"></div>
+</div>
+
+<!-- Query History -->
+<div class="card table-container">
+    <h2 style="margin-top: 0; font-size: 1rem;">Recent Queries</h2>
+    <table id="history-table" role="grid" aria-label="NLQ query history">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Question</th>
+                <th>Status</th>
+                <th>Rows</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="history-body">
+            {% if recent_queries %}
+                {% for q in recent_queries %}
+                <tr>
+                    <td><small>{{ q.created_at or '—' }}</small></td>
+                    <td>{{ q.query_text or q.natural_query or '—' }}</td>
+                    <td>
+                        {% if q.status == 'success' %}
+                            <span style="color: var(--status-healthy);">success</span>
+                        {% elif q.status == 'error' %}
+                            <span style="color: var(--status-critical);">error</span>
+                        {% else %}
+                            <span class="text-muted">{{ q.status or '—' }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ q.row_count or '—' }}</td>
+                    <td><a href="#" onclick="rerunQuery('{{ q.query_text or q.natural_query or '' }}');return false;">Re-run</a></td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr><td colspan="5" class="text-muted" style="text-align: center;">No queries yet. Ask a question above to get started.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+.nlq-example {
+    background: var(--bg-secondary);
+    color: var(--accent-blue-light);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 3px 10px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    margin: 2px;
+}
+.nlq-example:hover {
+    border-color: var(--accent-blue);
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    'use strict';
+
+    function esc(s) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(s || ''));
+        return d.innerHTML;
+    }
+
+    window.setQuery = function (text) {
+        document.getElementById('nlq-input').value = text;
+        document.getElementById('nlq-input').focus();
+    };
+
+    window.rerunQuery = function (text) {
+        document.getElementById('nlq-input').value = text;
+        document.getElementById('nlq-form').dispatchEvent(new Event('submit'));
+    };
+
+    window.runQuery = function (e) {
+        e.preventDefault();
+        var input = document.getElementById('nlq-input');
+        var query = input.value.trim();
+        if (!query) return;
+
+        var btn = document.getElementById('nlq-submit');
+        btn.disabled = true;
+        btn.textContent = 'Querying...';
+
+        var resultDiv = document.getElementById('nlq-result');
+        var sqlDiv = document.getElementById('nlq-sql');
+        var dataDiv = document.getElementById('nlq-data');
+        var errorDiv = document.getElementById('nlq-error');
+        resultDiv.style.display = 'block';
+        sqlDiv.style.display = 'none';
+        dataDiv.innerHTML = '<p class="text-muted">Running query...</p>';
+        errorDiv.style.display = 'none';
+
+        fetch('/api/nlq/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: query })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            btn.disabled = false;
+            btn.textContent = 'Ask';
+
+            if (data.error) {
+                errorDiv.textContent = data.error;
+                errorDiv.style.display = 'block';
+                dataDiv.innerHTML = '';
+                return;
+            }
+
+            // Show generated SQL
+            if (data.sql) {
+                document.getElementById('nlq-sql-code').textContent = data.sql;
+                sqlDiv.style.display = 'block';
+            }
+
+            // Show results as table
+            var rows = data.results || data.rows || [];
+            if (rows.length === 0) {
+                dataDiv.innerHTML = '<p class="text-muted">Query returned no results.</p>';
+                return;
+            }
+
+            var cols = Object.keys(rows[0]);
+            var html = '<table role="grid" aria-label="Query results"><thead><tr>';
+            cols.forEach(function (c) { html += '<th>' + esc(c) + '</th>'; });
+            html += '</tr></thead><tbody>';
+            rows.forEach(function (row) {
+                html += '<tr>';
+                cols.forEach(function (c) {
+                    html += '<td>' + esc(String(row[c] != null ? row[c] : '')) + '</td>';
+                });
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            html += '<p class="text-muted" style="font-size:0.8rem;margin-top:6px;">' + rows.length + ' row(s) returned</p>';
+            dataDiv.innerHTML = html;
+
+            // Refresh history
+            loadHistory();
+        })
+        .catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = 'Ask';
+            errorDiv.textContent = 'Request failed: ' + err;
+            errorDiv.style.display = 'block';
+            dataDiv.innerHTML = '';
+        });
+    };
+
+    function loadHistory() {
+        fetch('/api/nlq/history?limit=20')
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var queries = data.queries || [];
+                var tbody = document.getElementById('history-body');
+                if (queries.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-muted" style="text-align:center;">No queries yet.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = queries.map(function (q) {
+                    var text = q.query_text || q.natural_query || '';
+                    var statusColor = q.status === 'success' ? 'var(--status-healthy)' :
+                                      q.status === 'error' ? 'var(--status-critical)' : 'var(--text-muted)';
+                    return '<tr>' +
+                        '<td><small>' + esc(q.created_at) + '</small></td>' +
+                        '<td>' + esc(text) + '</td>' +
+                        '<td><span style="color:' + statusColor + ';">' + esc(q.status || '—') + '</span></td>' +
+                        '<td>' + (q.row_count != null ? q.row_count : '—') + '</td>' +
+                        '<td><a href="#" onclick="rerunQuery(\'' + esc(text).replace(/'/g, "\\'") + '\');return false;">Re-run</a></td>' +
+                        '</tr>';
+                }).join('');
+            })
+            .catch(function () {});
+    }
+})();
+</script>
+{% endblock %}
