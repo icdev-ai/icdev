@@ -819,10 +819,10 @@ def run_cssp_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Assessor:** ICDEV Compliance Engine (automated)",
+            "**Assessor:** ICDEV Compliance Engine (automated)",
             f"**Functional Area Scope:** {functional_area}",
             f"**DoDI 8530.01 Revision:** {metadata.get('revision', 'N/A')}",
-            f"**Classification:** CUI // SP-CTI",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",
@@ -873,7 +873,7 @@ def run_cssp_assessment(
                 "## CSSP Gate Evaluation",
                 "",
                 f"**Gate Result:** {gate_label}",
-                f"**Criteria:** 0 critical-priority requirements with status not_satisfied",
+                "**Criteria:** 0 critical-priority requirements with status not_satisfied",
                 f"**Critical Failures:** {critical_not_satisfied}",
                 "",
             ])
@@ -953,7 +953,7 @@ def run_cssp_assessment(
         }, out_file)
 
         # ── Console output ──
-        print(f"CSSP assessment completed:")
+        print("CSSP assessment completed:")
         print(f"  File: {out_file}")
         print(f"  Scope: {functional_area}")
         print(f"  Requirements assessed: {len(results)}")

@@ -46,7 +46,7 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -1087,7 +1087,7 @@ def main() -> None:
                     for issue in result["issues"]:
                         print(f"    - {issue}")
                 if result["recommendations"]:
-                    print(f"  Recommendations:")
+                    print("  Recommendations:")
                     for rec in result["recommendations"]:
                         print(f"    - {rec}")
             return

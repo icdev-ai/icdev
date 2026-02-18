@@ -7,9 +7,7 @@ Decision D29: SSE over WebSocket — Flask-native, simpler, unidirectional suffi
 
 import json
 import queue
-import sqlite3
 import threading
-import time
 from datetime import datetime
 from pathlib import Path
 

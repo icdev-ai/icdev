@@ -18,10 +18,8 @@ CLI: python tools/builder/child_app_generator.py --blueprint bp.json --project-p
 """
 
 import argparse
-import hashlib
 import json
 import logging
-import os
 import re
 import shutil
 import sqlite3
@@ -1271,7 +1269,7 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
         cat = server.get("category", "core")
         csp_config_lines.append(f"  - name: \"{name}\"")
         csp_config_lines.append(f"    category: \"{cat}\"")
-        csp_config_lines.append(f"    transport: stdio")
+        csp_config_lines.append("    transport: stdio")
 
     csp_config_path = child_root / "args" / "csp_mcp_config.yaml"
     csp_config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1369,7 +1367,7 @@ This is a 6-layer agentic system: Goals, Orchestration, Tools, Args, Context, Ha
         for a in agents:
             content += f"| {a['name']} | {a['port']} | {a.get('role', '')} |\n"
 
-        content += f"""
+        content += """
 ---
 
 ## Guardrails
@@ -1636,20 +1634,20 @@ def main():
         print(f"Elapsed:    {results.get('elapsed_seconds', 0)}s")
 
         if results.get("errors"):
-            print(f"\nErrors:")
+            print("\nErrors:")
             for err in results["errors"]:
                 print(f"  - {err}")
 
-        print(f"\nStep Results:")
+        print("\nStep Results:")
         for step_name, step_result in steps.items():
             icon = "OK" if step_result.get("status") == "success" else "FAIL"
             print(f"  [{icon}] {step_name}")
 
         if status == "success":
-            print(f"\nNext steps:")
+            print("\nNext steps:")
             print(f"  cd {results['child_root']}")
-            print(f"  python tools/memory/memory_read.py --format markdown")
-            print(f"  python tools/db/init_*_db.py")
+            print("  python tools/memory/memory_read.py --format markdown")
+            print("  python tools/db/init_*_db.py")
 
 
 if __name__ == "__main__":

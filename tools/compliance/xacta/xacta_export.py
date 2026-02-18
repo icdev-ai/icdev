@@ -19,10 +19,8 @@ Usage:
 
 import argparse
 import csv
-import io
 import json
 import sqlite3
-import sys
 import zipfile
 from datetime import datetime
 from pathlib import Path

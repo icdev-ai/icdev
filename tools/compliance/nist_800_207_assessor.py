@@ -22,8 +22,6 @@ Usage:
     python tools/compliance/nist_800_207_assessor.py --project-id proj-123 --project-dir /path/to/code --json
 """
 
-import json
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional

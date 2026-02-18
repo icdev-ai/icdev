@@ -319,7 +319,7 @@ def main():
     if args.format == "json":
         print(json.dumps(result, indent=2))
     else:
-        print(f"Project created successfully!")
+        print("Project created successfully!")
         print(f"  ID:             {result['project_id']}")
         print(f"  Name:           {result['name']}")
         print(f"  Type:           {result['type']}")

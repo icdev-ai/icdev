@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import sqlite3
 import sys
 from datetime import datetime
@@ -673,7 +672,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
         }, [str(manifest_path), str(report_path)])
 
         # Print summary
-        print(f"CSSP evidence collection completed:")
+        print("CSSP evidence collection completed:")
         print(f"  Project: {project.get('name', project_id)} ({project_id})")
         print(f"  Scanned: {scan_dir if can_scan else 'N/A (no project directory)'}")
         print(f"  Total file artifacts: {total_artifacts}")

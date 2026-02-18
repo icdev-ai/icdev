@@ -20,7 +20,6 @@ Workflow:
 
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -31,9 +30,7 @@ from tools.ci.modules.state import ICDevState
 from tools.ci.modules.git_ops import commit_changes, finalize_git_operations
 from tools.ci.modules.vcs import VCS
 from tools.ci.modules.workflow_ops import (
-    create_commit,
     format_issue_message,
-    AGENT_IMPLEMENTOR,
 )
 from tools.testing.utils import setup_logger
 
@@ -121,7 +118,7 @@ def format_test_summary(results: dict) -> str:
         if isinstance(results["e2e_tests"], dict) and results["e2e_tests"].get("skipped"):
             lines.append(f"**E2E Tests:** Skipped ({results['e2e_tests'].get('reason', '')})")
         else:
-            lines.append(f"**E2E Tests:** Completed")
+            lines.append("**E2E Tests:** Completed")
 
     # Gates
     if results.get("security_gate"):

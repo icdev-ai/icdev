@@ -7,7 +7,6 @@ import argparse
 import json
 import re
 import sqlite3
-from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -477,7 +476,7 @@ def main():
                   f"Start: {inc['start_time']}")
 
             if inc["related_alerts"]:
-                print(f"           Related:")
+                print("           Related:")
                 for ra in inc["related_alerts"][:3]:
                     print(f"             - [{ra['severity']}] {ra['title'][:50]} ({ra['source']})")
 

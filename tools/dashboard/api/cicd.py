@@ -12,7 +12,6 @@ Provides:
     GET /api/cicd/queue/<key>        — Queued events for a session
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

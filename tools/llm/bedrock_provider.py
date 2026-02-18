@@ -11,7 +11,7 @@ import logging
 import os
 import random
 import time
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator
 
 from tools.llm.provider import (
     LLMProvider,

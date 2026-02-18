@@ -16,7 +16,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -355,7 +355,7 @@ def prune(agent_id: str = None, project_id: str = None,
         # Build the WHERE clause
         conditions = [
             "(expires_at IS NOT NULL AND expires_at < datetime('now'))",
-            f"(created_at < ? AND importance <= 3)",
+            "(created_at < ? AND importance <= 3)",
         ]
         base_condition = f"({conditions[0]} OR {conditions[1]})"
         params: list = [cutoff_date]

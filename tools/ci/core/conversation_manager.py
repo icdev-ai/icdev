@@ -385,7 +385,7 @@ class ConversationManager:
         """Handle general conversational comment — forward to agent for response."""
         return {
             "action": "conversational",
-            "response": f"Received your message. Processing...",
+            "response": "Received your message. Processing...",
             "files_changed": [],
             "status": "processed",
         }

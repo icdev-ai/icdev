@@ -474,7 +474,7 @@ def main():
         # Severity breakdown
         sev = result.get("severity_counts", {})
         if sev:
-            print(f"\n  Severity breakdown:")
+            print("\n  Severity breakdown:")
             for level, count in sorted(sev.items(), key=lambda x: x[1], reverse=True):
                 print(f"    {level:>10s}: {count}")
 
@@ -497,7 +497,7 @@ def main():
         # Top messages
         top = result.get("top_messages", [])
         if top:
-            print(f"\n  TOP REPEATED MESSAGES:")
+            print("\n  TOP REPEATED MESSAGES:")
             for m in top[:5]:
                 print(f"    ({m['count']}x) {m['message'][:70]}")
 

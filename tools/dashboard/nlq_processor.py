@@ -7,7 +7,6 @@ Decision D34: Read-only SQL enforcement.
 """
 
 import json
-import os
 import re
 import sqlite3
 import time

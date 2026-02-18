@@ -33,17 +33,14 @@ import hashlib
 import json
 import logging
 import os
-import secrets
 import sqlite3
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import (
     Blueprint,
     g,
-    jsonify,
     redirect,
     render_template,
     request,

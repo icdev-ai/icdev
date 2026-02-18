@@ -30,7 +30,6 @@ Environment:
 
 import hashlib
 import hmac
-import json
 import os
 import subprocess
 import sys
@@ -46,7 +45,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
 from tools.ci.core.event_router import EventRouter
 from tools.ci.modules.vcs import VCS
-from tools.testing.utils import setup_logger
 
 # Configuration
 PORT = int(os.getenv("PORT", "8001"))
@@ -290,19 +288,19 @@ _register_mattermost_route()
 
 
 if __name__ == "__main__":
-    print(f"CUI // SP-CTI")
+    print("CUI // SP-CTI")
     print(f"Starting ICDEV Webhook Server on port {PORT}")
-    print(f"  GitHub endpoint:      POST /gh-webhook")
-    print(f"  GitLab endpoint:      POST /gl-webhook")
+    print("  GitHub endpoint:      POST /gh-webhook")
+    print("  GitLab endpoint:      POST /gl-webhook")
     slack_cfg = _CHANNEL_CONFIG.get("slack", {})
     mm_cfg = _CHANNEL_CONFIG.get("mattermost", {})
     if slack_cfg.get("enabled"):
         print(f"  Slack endpoint:       POST {slack_cfg.get('webhook_path', '/slack/events')}")
     else:
-        print(f"  Slack:                disabled")
+        print("  Slack:                disabled")
     if mm_cfg.get("enabled"):
         print(f"  Mattermost endpoint:  POST {mm_cfg.get('webhook_path', '/mattermost/events')}")
     else:
-        print(f"  Mattermost:           disabled")
-    print(f"  Health check:         GET  /health")
+        print("  Mattermost:           disabled")
+    print("  Health check:         GET  /health")
     app.run(host="0.0.0.0", port=PORT, debug=False)

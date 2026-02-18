@@ -759,7 +759,7 @@ def main() -> None:
     else:
         print("CUI // SP-CTI")
         ext = result
-        print(f"SysML Diagram Extraction")
+        print("SysML Diagram Extraction")
         print(f"  Image:         {Path(image_path).name}")
         print(f"  Diagram Type:  {ext.get('diagram_type', 'unknown')}")
         print(f"  Elements:      {len(ext.get('elements', []))}")
@@ -774,7 +774,7 @@ def main() -> None:
 
         if "storage" in output:
             s = output["storage"]
-            print(f"\n  Storage:")
+            print("\n  Storage:")
             print(f"    Elements Stored:      {s['elements_stored']}")
             print(f"    Relationships Stored: {s['relationships_stored']}")
             print(f"    Import ID:            {s['import_id']}")
@@ -786,7 +786,7 @@ def main() -> None:
 
         if "validation" in output:
             v = output["validation"]
-            print(f"\n  Validation Against Model:")
+            print("\n  Validation Against Model:")
             print(f"    Matched:              {v['matched']}")
             print(f"    Missing in Model:     {len(v['missing_in_model'])}")
             if v["missing_in_model"]:

@@ -922,7 +922,7 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print(f"Scenario forked successfully:")
+                print("Scenario forked successfully:")
                 print(f"  New ID: {result['new_scenario_id']}")
                 print(f"  Forked From: {result['forked_from']}")
                 print(f"  Name: {result['new_name']}")
@@ -966,7 +966,7 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print(f"Scenario exported:")
+                print("Scenario exported:")
                 print(f"  Scenario ID: {result['scenario_id']}")
                 print(f"  Output Path: {result['output_path']}")
                 print(f"  Size: {result['size_bytes']:,} bytes")
@@ -986,7 +986,7 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print(f"Scenario imported:")
+                print("Scenario imported:")
                 print(f"  New ID: {result['new_scenario_id']}")
                 print(f"  From: {result['imported_from']}")
                 print(f"  Results: {result['results_imported']}")
@@ -1052,7 +1052,7 @@ def main():
             else:
                 print(f"Comparison of {result['scenario_count']} scenarios:")
                 print(f"  Metrics compared: {result['metric_count']}")
-                print(f"\n  Scenario Summary:")
+                print("\n  Scenario Summary:")
                 for sid, info in result["scenarios"].items():
                     winner_marker = " <-- WINNER" if sid == result.get("overall_winner") else ""
                     print(f"    {info['scenario_name']} ({sid}): {info['wins']} wins{winner_marker}")

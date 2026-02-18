@@ -21,16 +21,14 @@ Usage:
 
 import argparse
 import json
-import os
 import re
 import signal
 import sqlite3
 import subprocess
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

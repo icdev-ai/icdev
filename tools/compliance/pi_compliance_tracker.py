@@ -909,7 +909,7 @@ def get_compliance_burndown(project_id, target_framework=None, db_path=None):
         print(f"  Avg velocity:            {avg_velocity} controls/PI")
         if projected_pis_remaining is not None:
             if projected_pis_remaining == 0:
-                print(f"  Status:                  ALL CONTROLS IMPLEMENTED")
+                print("  Status:                  ALL CONTROLS IMPLEMENTED")
             else:
                 print(f"  Projected PIs remaining: {projected_pis_remaining}")
                 if projected_completion_pi:
@@ -917,7 +917,7 @@ def get_compliance_burndown(project_id, target_framework=None, db_path=None):
                 if projected_completion_date:
                     print(f"  Projected completion:    {projected_completion_date}")
         elif remaining > 0:
-            print(f"  Projected completion:    INSUFFICIENT DATA (no closed PIs with velocity)")
+            print("  Projected completion:    INSUFFICIENT DATA (no closed PIs with velocity)")
 
         return result
 
@@ -1013,7 +1013,7 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
             f"**PI Period:** {pi_data['pi_start_date']} to {pi_data['pi_end_date']}",
             f"**Status:** {'Closed' if is_closed else 'Active'}",
             f"**Report Generated:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Classification:** CUI // SP-CTI",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",
@@ -1320,7 +1320,7 @@ def get_pi_details(project_id, pi_number, db_path=None):
         print(f"  Findings remediated:  {pi_data['findings_remediated'] or 0}")
         print(f"  Artifacts generated:  {len(artifacts)}")
         if velocity:
-            print(f"  Velocity:")
+            print("  Velocity:")
             for k, v in velocity.items():
                 print(f"    {k}: {v}")
 

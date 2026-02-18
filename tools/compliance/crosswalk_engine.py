@@ -1044,7 +1044,7 @@ def _format_summary(summary, as_json=False):
 
     lines = [
         f"{'=' * 60}",
-        f"  Control Framework Crosswalk Summary",
+        "  Control Framework Crosswalk Summary",
         f"{'=' * 60}",
         f"  Total NIST 800-53 controls mapped: {summary['total_controls']}",
         "",

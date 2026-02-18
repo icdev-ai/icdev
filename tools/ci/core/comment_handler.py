@@ -18,8 +18,6 @@ Usage:
     handler.post_response(envelope, "Pipeline completed successfully")
 """
 
-import json
-import os
 import sys
 from pathlib import Path
 from typing import Optional

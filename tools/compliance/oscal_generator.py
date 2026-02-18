@@ -789,7 +789,7 @@ def generate_oscal_ssp(project_id, output_dir=None, db_path=None):
             "affected_files": [str(out_file)],
         })
 
-        print(f"OSCAL SSP generated:")
+        print("OSCAL SSP generated:")
         print(f"  File: {out_file}")
         print(f"  UUID: {ssp_uuid}")
         print(f"  Controls: {len(controls)}")
@@ -1020,7 +1020,7 @@ def generate_oscal_poam(project_id, output_dir=None, db_path=None):
             "affected_files": [str(out_file)],
         })
 
-        print(f"OSCAL POA&M generated:")
+        print("OSCAL POA&M generated:")
         print(f"  File: {out_file}")
         print(f"  UUID: {poam_uuid}")
         print(f"  Items: {len(poam_items)}")
@@ -1436,7 +1436,7 @@ def generate_oscal_assessment_results(project_id, output_dir=None, db_path=None)
             "affected_files": [str(out_file)],
         })
 
-        print(f"OSCAL Assessment Results generated:")
+        print("OSCAL Assessment Results generated:")
         print(f"  File: {out_file}")
         print(f"  UUID: {ar_uuid}")
         print(f"  Total findings: {total_finding_count}")
@@ -1688,7 +1688,7 @@ def generate_oscal_component_definition(project_id, output_dir=None, db_path=Non
             "affected_files": [str(out_file)],
         })
 
-        print(f"OSCAL Component Definition generated:")
+        print("OSCAL Component Definition generated:")
         print(f"  File: {out_file}")
         print(f"  UUID: {cd_uuid}")
         print(f"  Components: {len(components)}")
@@ -2015,7 +2015,7 @@ def generate_all_oscal(project_id, output_dir=None, db_path=None):
         "results": results,
     }
 
-    print(f"\nOSCAL generation summary:")
+    print("\nOSCAL generation summary:")
     print(f"  Project: {project_id}")
     print(f"  OSCAL Version: {OSCAL_VERSION}")
     print(f"  Generated: {success_count}/{len(artifact_types)}")

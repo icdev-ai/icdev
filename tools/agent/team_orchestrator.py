@@ -252,7 +252,7 @@ class TeamOrchestrator:
         agent_config: dict = None,
     ) -> Workflow:
         """Use Bedrock to decompose the task into a subtask DAG."""
-        from tools.agent.bedrock_client import BedrockClient, BedrockRequest
+        from tools.agent.bedrock_client import BedrockRequest
 
         client = self._get_bedrock_client()
 
@@ -988,7 +988,7 @@ def main():
             print(f"Name: {workflow.name}")
             print(f"Project: {workflow.project_id}")
             print(f"Subtasks: {len(workflow.subtasks)}")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
             print()
             for st_id, st in workflow.subtasks.items():
                 deps = ", ".join(st.depends_on) if st.depends_on else "(none)"
@@ -1031,7 +1031,7 @@ def main():
         else:
             print(f"Workflow: {workflow.id}")
             print(f"Status: {workflow.status}")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
             if workflow.aggregated_result:
                 summary = workflow.aggregated_result.get("summary", {})
                 print(f"Completed: {summary.get('completed', 0)}/{summary.get('total', 0)}")
@@ -1051,7 +1051,7 @@ def main():
             print(f"Name: {status['name']}")
             print(f"Status: {status['status']}")
             print(f"Project: {status.get('project_id', 'N/A')}")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
             print()
             for st in status.get("subtasks", []):
                 print(f"  [{st['id']}] {st['agent_id']}:{st['skill_id']} -> {st['status']}")

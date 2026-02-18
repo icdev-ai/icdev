@@ -40,7 +40,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.testing.data_types import E2ETestResult
-from tools.testing.utils import make_run_id, setup_logger, ensure_run_dir, timestamp_iso
+from tools.testing.utils import make_run_id, setup_logger, ensure_run_dir
 
 
 # ---------------------------------------------------------------------------

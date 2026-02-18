@@ -17,7 +17,6 @@ Workflow:
     6. Push and update PR/MR
 """
 
-import json
 import logging
 import os
 import sys
@@ -32,8 +31,6 @@ from tools.ci.modules.vcs import VCS
 from tools.ci.modules.agent import execute_template
 from tools.ci.modules.workflow_ops import (
     format_issue_message,
-    implement_plan,
-    AGENT_PLANNER,
 )
 from tools.testing.data_types import AgentTemplateRequest
 from tools.testing.utils import setup_logger

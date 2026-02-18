@@ -8,7 +8,6 @@ No network access required — fully air-gap safe.
 """
 import argparse
 import base64
-import hashlib
 import json
 import logging
 import os

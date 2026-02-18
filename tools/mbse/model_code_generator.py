@@ -16,7 +16,6 @@ import hashlib
 import json
 import re
 import sqlite3
-import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -306,10 +305,10 @@ def _generate_python_class(block: dict, relationships: list, all_blocks: dict) -
     lines.append("@dataclass")
     lines.append(f"class {class_name}{base_str}:")
     lines.append(f'    """{class_name} -- SysML Block.')
-    lines.append(f"")
+    lines.append("")
     lines.append(f"    Description: {description}")
     lines.append(f"    Source Model: {source_file} (block: {block['name']})")
-    lines.append(f'    """')
+    lines.append('    """')
 
     # Value properties
     if value_props:
@@ -382,7 +381,7 @@ def _generate_python_class(block: dict, relationships: list, all_blocks: dict) -
             lines.append(f"    def {op_name}({params}) -> {py_return}:")
             lines.append(f'        """{op_name} -- from SysML operation."""')
             if is_abstract:
-                lines.append(f"        ...")
+                lines.append("        ...")
             else:
                 lines.append(f'        raise NotImplementedError("Generated stub -- implement {op_name} logic")')
 
@@ -422,10 +421,10 @@ def _generate_python_module(activity: dict, actions: list) -> str:
 
     lines: List[str] = []
     lines.append(f'"""Module: {mod_name} -- Generated from SysML Activity \'{activity["name"]}\'.')
-    lines.append(f"")
+    lines.append("")
     lines.append(f"Description: {description}")
     lines.append(f"Source Model: {source_file} (activity: {activity['name']})")
-    lines.append(f'"""')
+    lines.append('"""')
     lines.append("")
     lines.append("import logging")
     lines.append("from typing import Any, Dict, Optional")
@@ -440,15 +439,15 @@ def _generate_python_module(activity: dict, actions: list) -> str:
         lines.append("")
         lines.append(f"def {fn_name}(context: Dict[str, Any]) -> Dict[str, Any]:")
         lines.append(f'    """{fn_name} -- from SysML action.')
-        lines.append(f"")
+        lines.append("")
         lines.append(f"    {action_desc}")
-        lines.append(f"")
-        lines.append(f"    Args:")
-        lines.append(f"        context: Execution context dictionary.")
-        lines.append(f"")
-        lines.append(f"    Returns:")
-        lines.append(f"        Updated context dictionary.")
-        lines.append(f'    """')
+        lines.append("")
+        lines.append("    Args:")
+        lines.append("        context: Execution context dictionary.")
+        lines.append("")
+        lines.append("    Returns:")
+        lines.append("        Updated context dictionary.")
+        lines.append('    """')
         lines.append(f'    logger.info("Executing {fn_name}")')
         lines.append(f'    raise NotImplementedError("Generated stub -- implement {fn_name}")')
         lines.append("")
@@ -457,31 +456,31 @@ def _generate_python_module(activity: dict, actions: list) -> str:
     lines.append("")
     lines.append(f"def run_{mod_name}(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:")
     lines.append(f'    """Orchestrator for activity \'{activity["name"]}\'.')
-    lines.append(f"")
-    lines.append(f"    Calls action functions in sequence as defined by control flows.")
-    lines.append(f"")
-    lines.append(f"    Args:")
-    lines.append(f"        context: Initial execution context (defaults to empty dict).")
-    lines.append(f"")
-    lines.append(f"    Returns:")
-    lines.append(f"        Final context after all actions complete.")
-    lines.append(f'    """')
-    lines.append(f"    ctx = context or {{}}")
+    lines.append("")
+    lines.append("    Calls action functions in sequence as defined by control flows.")
+    lines.append("")
+    lines.append("    Args:")
+    lines.append("        context: Initial execution context (defaults to empty dict).")
+    lines.append("")
+    lines.append("    Returns:")
+    lines.append("        Final context after all actions complete.")
+    lines.append('    """')
+    lines.append("    ctx = context or {}")
     lines.append(f'    logger.info("Starting activity: {activity["name"]}")')
 
     # Decision node stubs
     for dn in decision_nodes:
         dn_name = _to_snake_case(dn["name"])
-        lines.append(f"")
+        lines.append("")
         lines.append(f"    # Decision: {dn['name']}")
         lines.append(f'    if ctx.get("{dn_name}_condition"):')
         lines.append(f"        pass  # TODO: implement true branch for {dn['name']}")
-        lines.append(f"    else:")
+        lines.append("    else:")
         lines.append(f"        pass  # TODO: implement false branch for {dn['name']}")
 
     # Fork/join stubs
     for fn in fork_nodes:
-        lines.append(f"")
+        lines.append("")
         lines.append(f"    # Fork: {fn['name']} -- parallel execution point")
         lines.append(f"    # TODO: implement parallel branches for {fn['name']}")
 
@@ -494,13 +493,13 @@ def _generate_python_module(activity: dict, actions: list) -> str:
             lines.append(f"    ctx = {fn_name}(ctx)")
 
     for jn in join_nodes:
-        lines.append(f"")
+        lines.append("")
         lines.append(f"    # Join: {jn['name']} -- synchronisation point")
         lines.append(f"    # TODO: merge parallel results for {jn['name']}")
 
-    lines.append(f"")
+    lines.append("")
     lines.append(f'    logger.info("Activity completed: {activity["name"]}")')
-    lines.append(f"    return ctx")
+    lines.append("    return ctx")
     lines.append("")
 
     content = _get_cui_header("python") + "\n"
@@ -518,10 +517,10 @@ def _generate_python_state_machine(sm: dict, states: list, transitions: list) ->
 
     lines: List[str] = []
     lines.append(f'"""Module: {mod_name} -- Generated from SysML StateMachine \'{sm["name"]}\'.')
-    lines.append(f"")
+    lines.append("")
     lines.append(f"Description: {description}")
     lines.append(f"Source Model: {source_file} (state_machine: {sm['name']})")
-    lines.append(f'"""')
+    lines.append('"""')
     lines.append("")
     lines.append("from enum import Enum, auto")
     lines.append("from typing import Any, Callable, Dict, Optional, Tuple")
@@ -541,7 +540,7 @@ def _generate_python_state_machine(sm: dict, states: list, transitions: list) ->
     lines.append("")
 
     # Transition table
-    lines.append(f"# Transition table: (current_state, event) -> next_state")
+    lines.append("# Transition table: (current_state, event) -> next_state")
     lines.append(f"TRANSITIONS: Dict[Tuple[{class_name}State, str], {class_name}State] = {{")
     if transitions:
         for t in transitions:
@@ -553,57 +552,57 @@ def _generate_python_state_machine(sm: dict, states: list, transitions: list) ->
             event_str = _to_snake_case(event)
             lines.append(f'    ({class_name}State.{src_enum}, "{event_str}"): {class_name}State.{tgt_enum},')
     else:
-        lines.append(f"    # No transitions defined yet")
-    lines.append(f"}}")
+        lines.append("    # No transitions defined yet")
+    lines.append("}")
     lines.append("")
     lines.append("")
 
     # State machine class
     lines.append(f"class {class_name}Machine:")
     lines.append(f'    """{class_name} state machine implementation.')
-    lines.append(f"")
-    lines.append(f"    Manages state transitions based on events.")
-    lines.append(f'    """')
-    lines.append(f"")
+    lines.append("")
+    lines.append("    Manages state transitions based on events.")
+    lines.append('    """')
+    lines.append("")
     initial_state = _to_snake_case(states[0]["name"]).upper() if states else "INITIAL"
     lines.append(f"    def __init__(self, initial_state: {class_name}State = {class_name}State.{initial_state}) -> None:")
-    lines.append(f'        """Initialize the state machine."""')
-    lines.append(f"        self.state = initial_state")
-    lines.append(f"        self.history: list = [initial_state]")
-    lines.append(f"        self._callbacks: Dict[str, Callable] = {{}}")
-    lines.append(f"")
+    lines.append('        """Initialize the state machine."""')
+    lines.append("        self.state = initial_state")
+    lines.append("        self.history: list = [initial_state]")
+    lines.append("        self._callbacks: Dict[str, Callable] = {}")
+    lines.append("")
     lines.append(f"    def handle_event(self, event: str) -> {class_name}State:")
-    lines.append(f'        """Process an event and transition to the next state.')
-    lines.append(f"")
-    lines.append(f"        Args:")
-    lines.append(f"            event: The event name to process.")
-    lines.append(f"")
-    lines.append(f"        Returns:")
-    lines.append(f"            The new state after transition.")
-    lines.append(f"")
-    lines.append(f"        Raises:")
-    lines.append(f"            ValueError: If no transition exists for (state, event).")
-    lines.append(f'        """')
-    lines.append(f"        key = (self.state, event)")
-    lines.append(f"        if key not in TRANSITIONS:")
-    lines.append(f'            raise ValueError(')
-    lines.append(f'                f"No transition for state={{self.state.name}}, event={{event}}"')
-    lines.append(f"            )")
-    lines.append(f"        old_state = self.state")
-    lines.append(f"        self.state = TRANSITIONS[key]")
-    lines.append(f"        self.history.append(self.state)")
-    lines.append(f"        if event in self._callbacks:")
-    lines.append(f"            self._callbacks[event](old_state, self.state)")
-    lines.append(f"        return self.state")
-    lines.append(f"")
-    lines.append(f"    def on(self, event: str, callback: Callable) -> None:")
-    lines.append(f'        """Register a callback for a specific event."""')
-    lines.append(f"        self._callbacks[event] = callback")
-    lines.append(f"")
-    lines.append(f"    @property")
+    lines.append('        """Process an event and transition to the next state.')
+    lines.append("")
+    lines.append("        Args:")
+    lines.append("            event: The event name to process.")
+    lines.append("")
+    lines.append("        Returns:")
+    lines.append("            The new state after transition.")
+    lines.append("")
+    lines.append("        Raises:")
+    lines.append("            ValueError: If no transition exists for (state, event).")
+    lines.append('        """')
+    lines.append("        key = (self.state, event)")
+    lines.append("        if key not in TRANSITIONS:")
+    lines.append('            raise ValueError(')
+    lines.append('                f"No transition for state={self.state.name}, event={event}"')
+    lines.append("            )")
+    lines.append("        old_state = self.state")
+    lines.append("        self.state = TRANSITIONS[key]")
+    lines.append("        self.history.append(self.state)")
+    lines.append("        if event in self._callbacks:")
+    lines.append("            self._callbacks[event](old_state, self.state)")
+    lines.append("        return self.state")
+    lines.append("")
+    lines.append("    def on(self, event: str, callback: Callable) -> None:")
+    lines.append('        """Register a callback for a specific event."""')
+    lines.append("        self._callbacks[event] = callback")
+    lines.append("")
+    lines.append("    @property")
     lines.append(f"    def current_state(self) -> {class_name}State:")
-    lines.append(f'        """Return the current state."""')
-    lines.append(f"        return self.state")
+    lines.append('        """Return the current state."""')
+    lines.append("        return self.state")
     lines.append("")
 
     content = _get_cui_header("python") + "\n"
@@ -625,10 +624,10 @@ def _generate_python_test(requirement: dict) -> str:
     lines: List[str] = []
     lines.append(f"def test_{fn_name}():")
     lines.append(f'    """Test for requirement: {req_title}')
-    lines.append(f"")
+    lines.append("")
     lines.append(f"    Requirement ID: {req_id}")
     lines.append(f"    Description: {req_desc}")
-    lines.append(f'    """')
+    lines.append('    """')
     lines.append(f"    # TODO: Implement test for requirement '{req_title}'")
     lines.append(f'    raise NotImplementedError("Test stub -- implement verification for {req_id}")')
     lines.append("")
@@ -859,12 +858,12 @@ def generate_tests_from_requirements(project_id: str, output_dir: str = None,
 
         # Build the test file
         lines: List[str] = []
-        lines.append(f'"""Auto-generated test stubs from SysML/DOORS requirements.')
-        lines.append(f"")
+        lines.append('"""Auto-generated test stubs from SysML/DOORS requirements.')
+        lines.append("")
         lines.append(f"Project: {project_id}")
         lines.append(f"Generated: {datetime.utcnow().isoformat()}Z")
         lines.append(f"Total requirements: {test_count}")
-        lines.append(f'"""')
+        lines.append('"""')
         lines.append("")
         lines.append("import pytest")
         lines.append("")

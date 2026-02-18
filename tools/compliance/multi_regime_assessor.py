@@ -21,7 +21,6 @@ import argparse
 import json
 import sqlite3
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -440,7 +439,7 @@ def main():
                         f"({fw['total_requirements']} reqs)"
                     )
                 if result.get("errors"):
-                    print(f"\n  Errors:")
+                    print("\n  Errors:")
                     for fw_id, err in result["errors"].items():
                         print(f"    {fw_id}: {err}")
 

@@ -3,7 +3,6 @@
 
 import argparse
 import sqlite3
-import json
 import struct
 from pathlib import Path
 

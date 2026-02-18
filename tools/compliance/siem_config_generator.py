@@ -6,9 +6,7 @@ markings, and logs an audit event."""
 
 import argparse
 import json
-import os
 import re
-import shutil
 import sqlite3
 import sys
 from datetime import datetime
@@ -498,7 +496,7 @@ def _generate_report(
         f"# SIEM Configuration Report — {system_name}",
         "",
         f"**Generated:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-        f"**Classification:** CUI // SP-CTI",
+        "**Classification:** CUI // SP-CTI",
         "",
         "## SIEM Targets Configured",
         "",

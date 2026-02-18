@@ -3,7 +3,6 @@
 Every ICDEV decision (why X over Y) is captured for traceability."""
 
 import argparse
-import json
 from pathlib import Path
 from tools.audit.audit_logger import log_event
 

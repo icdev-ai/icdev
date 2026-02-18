@@ -15,7 +15,6 @@ Usage:
     python tools/compliance/cjis_assessor.py --project-id proj-123 --json
 """
 
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Optional

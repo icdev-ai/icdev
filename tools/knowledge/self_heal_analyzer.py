@@ -473,7 +473,7 @@ def main():
         decision = result.get("decision", "unknown")
         reason = result.get("reason", "")
 
-        print(f"\n=== Self-Healing Analysis ===")
+        print("\n=== Self-Healing Analysis ===")
         print(f"  Decision: {decision.upper()}")
         print(f"  Reason:   {reason}")
 
@@ -491,7 +491,7 @@ def main():
 
         if result.get("suggestion"):
             s = result["suggestion"]
-            print(f"\n  SUGGESTION:")
+            print("\n  SUGGESTION:")
             print(f"    Pattern:     {s['pattern']}")
             print(f"    Root cause:  {s['root_cause']}")
             print(f"    Remediation: {s.get('remediation', 'N/A')}")

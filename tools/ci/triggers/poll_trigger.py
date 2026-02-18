@@ -32,7 +32,7 @@ from typing import Dict, Set, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
+from tools.ci.core.event_envelope import EventEnvelope
 from tools.ci.core.event_router import EventRouter
 from tools.ci.modules.vcs import VCS
 
@@ -151,7 +151,7 @@ def check_and_process_issues(vcs: VCS):
         issues = vcs.list_open_issues(limit=50)
 
         if not issues:
-            print(f"INFO: No open issues found")
+            print("INFO: No open issues found")
             return
 
         new_qualifying = []
@@ -174,7 +174,7 @@ def check_and_process_issues(vcs: VCS):
 
             for issue, latest_comment in new_qualifying:
                 if shutdown_requested:
-                    print(f"INFO: Shutdown requested, stopping")
+                    print("INFO: Shutdown requested, stopping")
                     break
 
                 issue_number = issue.get("number") or issue.get("iid")
@@ -183,7 +183,7 @@ def check_and_process_issues(vcs: VCS):
                 else:
                     print(f"WARNING: Failed to process issue #{issue_number}, will retry")
         else:
-            print(f"INFO: No new qualifying issues")
+            print("INFO: No new qualifying issues")
 
         cycle_time = time.time() - start_time
         print(f"INFO: Cycle completed in {cycle_time:.2f}s (processed: {len(processed_issues)} total)")
@@ -196,8 +196,8 @@ def check_and_process_issues(vcs: VCS):
 
 def main():
     """Main entry point for the poll trigger."""
-    print(f"CUI // SP-CTI")
-    print(f"INFO: Starting ICDEV Poll Trigger (EventRouter-based)")
+    print("CUI // SP-CTI")
+    print("INFO: Starting ICDEV Poll Trigger (EventRouter-based)")
     print(f"INFO: Poll interval: {POLL_INTERVAL} seconds")
 
     # Auto-detect platform
@@ -218,13 +218,13 @@ def main():
     check_and_process_issues(vcs)
 
     # Main loop
-    print(f"INFO: Entering main polling loop")
+    print("INFO: Entering main polling loop")
     while not shutdown_requested:
         time.sleep(POLL_INTERVAL)
         if not shutdown_requested:
             check_and_process_issues(vcs)
 
-    print(f"INFO: Shutdown complete")
+    print("INFO: Shutdown complete")
 
 
 if __name__ == "__main__":

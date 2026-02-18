@@ -12,7 +12,12 @@ Usage:
 
 Classification: CUI // SP-CTI
 """
-import argparse, collections, datetime, json, math, os, re, sqlite3, uuid
+import argparse
+import collections
+import json
+import re
+import sqlite3
+import uuid
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

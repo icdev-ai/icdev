@@ -1097,7 +1097,7 @@ def validate_xmi(file_path: str) -> Dict[str, Any]:
             "element_count": 0,
         }
 
-    if not fpath.suffix.lower() in (".xmi", ".xml", ".uml"):
+    if fpath.suffix.lower() not in (".xmi", ".xml", ".uml"):
         errors.append(f"Unexpected file extension: {fpath.suffix} (expected .xmi, .xml, or .uml)")
 
     # Attempt parse

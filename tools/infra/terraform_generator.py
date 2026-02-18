@@ -4,8 +4,6 @@ Produces provider.tf, variables.tf, outputs.tf, main.tf, and optional modules
 for RDS, ECR, and VPC — all with CUI header comments."""
 
 import argparse
-import json
-import os
 from datetime import datetime
 from pathlib import Path
 

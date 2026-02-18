@@ -30,7 +30,7 @@ import uuid
 from datetime import datetime, timezone
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 # ---------------------------------------------------------------------------
 # Paths

@@ -1329,19 +1329,19 @@ def _print_human_report(result, args):
     errors = result.get("errors", [])
     summary = result.get("summary", {})
 
-    print(f"\nMigration complete.")
+    print("\nMigration complete.")
     print(f"  Files processed     : {result.get('files_processed', 0)}")
     print(f"  Transformations     : {len(transforms)}")
     print(f"  Errors              : {len(errors)}")
 
     if summary:
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Total files in output  : {summary.get('total_files', 0)}")
         print(f"  Files changed          : {summary.get('files_changed', 0)}")
         print(f"  Total lines changed    : {summary.get('total_lines_changed', 0)}")
 
     if summary.get("per_file"):
-        print(f"\nPer-file breakdown:")
+        print("\nPer-file breakdown:")
         for pf in summary["per_file"]:
             status = pf.get("status", "modified")
             added = pf.get("lines_added", 0)
@@ -1355,19 +1355,19 @@ def _print_human_report(result, args):
     # Group transformations by rule
     if transforms:
         rule_counts = collections.Counter(t.get("rule", "unknown") for t in transforms)
-        print(f"\nTransformations by rule:")
+        print("\nTransformations by rule:")
         for rule, count in rule_counts.most_common():
             print(f"  {rule:45s} : {count}")
 
     if errors:
-        print(f"\nErrors:")
+        print("\nErrors:")
         for err in errors:
             print(f"  [ERROR] {err}")
 
     # Validation
     validation = result.get("validation")
     if validation:
-        print(f"\nValidation:")
+        print("\nValidation:")
         print(f"  Files validated        : {validation.get('files_validated', 0)}")
         print(f"  Files with errors      : {validation.get('files_with_errors', 0)}")
         if validation.get("details"):

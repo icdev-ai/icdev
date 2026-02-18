@@ -36,7 +36,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -56,7 +55,7 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 from tools.marketplace.catalog_manager import (
-    register_asset, add_version, update_status, get_asset,
+    register_asset, add_version, update_status,
 )
 from tools.marketplace.asset_scanner import run_full_scan
 

@@ -20,7 +20,6 @@ Enhancements:
   - rate limiting: max 3 concurrent + 10/hour per project
 """
 
-import json
 import sqlite3
 import subprocess
 import sys

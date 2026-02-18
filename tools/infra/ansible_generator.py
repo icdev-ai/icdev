@@ -3,7 +3,6 @@
 and monitoring configuration. All generated files include CUI headers."""
 
 import argparse
-import json
 from datetime import datetime
 from pathlib import Path
 

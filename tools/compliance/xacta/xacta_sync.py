@@ -251,7 +251,7 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
 
             # Fall back to export if API failed
             if api_result.get("fallback") or api_result.get("status") == "error":
-                print(f"API sync failed, falling back to export mode...")
+                print("API sync failed, falling back to export mode...")
                 export_result = _sync_via_export(project_id, output_dir, db_path)
                 summary["results"]["export"] = export_result
                 summary["mode_used"] = "export (fallback)"

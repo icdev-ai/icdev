@@ -430,7 +430,7 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     L = [cui.get("document_header", CUI_BANNER), "",
          "# Maintenance Audit Report", "",
          f"**Project:** {project_name} ({audit_data.get('project_id','N/A')})",
-         f"**Date:** {ts}", f"**Classification:** CUI // SP-CTI", "",
+         f"**Date:** {ts}", "**Classification:** CUI // SP-CTI", "",
          "## Executive Summary", "",
          "| Metric | Value |", "|--------|-------|",
          f"| **Maintenance Score** | **{score}/100** |",

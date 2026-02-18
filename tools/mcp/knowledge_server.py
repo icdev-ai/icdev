@@ -11,11 +11,9 @@ Tools:
 Runs as an MCP server over stdio with Content-Length framing.
 """
 
-import json
 import os
 import sqlite3
 import sys
-from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

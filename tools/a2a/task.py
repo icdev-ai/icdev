@@ -6,7 +6,7 @@ with full serialization support (to_dict / from_dict).
 """
 
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional

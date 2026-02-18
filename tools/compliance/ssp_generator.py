@@ -468,7 +468,7 @@ def generate_ssp(
             "output_file": str(out_file),
         }, out_file)
 
-        print(f"SSP generated successfully:")
+        print("SSP generated successfully:")
         print(f"  File: {out_file}")
         print(f"  Version: {new_version}")
         print(f"  System: {variables['system_name']}")

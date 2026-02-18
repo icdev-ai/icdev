@@ -403,7 +403,7 @@ def format_brief(data: dict) -> str:
     if s["sbom"]["version"]:
         lines.append(f"    SBOM:       v{s['sbom']['version']} ({s['sbom']['component_count']} components)")
     else:
-        lines.append(f"    SBOM:       not generated")
+        lines.append("    SBOM:       not generated")
 
     # Deployments
     lines.append("")
@@ -424,11 +424,11 @@ def format_brief(data: dict) -> str:
     if t["pass_rate"] is not None:
         lines.append(f"    Pass rate: {t['pass_rate']:.1f}%")
     else:
-        lines.append(f"    Pass rate: N/A")
+        lines.append("    Pass rate: N/A")
     if t["coverage"] is not None:
         lines.append(f"    Coverage:  {t['coverage']:.1f}%")
     else:
-        lines.append(f"    Coverage:  N/A")
+        lines.append("    Coverage:  N/A")
 
     lines.append("")
     return "\n".join(lines)

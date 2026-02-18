@@ -4,7 +4,6 @@ build, compliance-check, deploy-staging, deploy-prod.
 Includes security gates, manual approval for prod, and rollback job."""
 
 import argparse
-import json
 from datetime import datetime
 from pathlib import Path
 

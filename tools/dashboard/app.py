@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """
 ICDEV Web Dashboard - Flask Application
 ========================================
@@ -10,7 +11,6 @@ Usage:
 """
 
 import argparse
-import json
 import sqlite3
 import sys
 from pathlib import Path
@@ -273,19 +273,17 @@ def create_app() -> Flask:
 
     @app.route("/")
     def index():
-        """Dashboard home page."""
+        """Dashboard home page with Kanban board."""
         conn = _get_db()
         try:
-            # Project counts
-            total_projects = conn.execute("SELECT COUNT(*) as cnt FROM projects").fetchone()["cnt"]
-            active_projects = conn.execute(
-                "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"
-            ).fetchone()["cnt"]
-            completed_projects = conn.execute(
-                "SELECT COUNT(*) as cnt FROM projects WHERE status = 'completed'"
-            ).fetchone()["cnt"]
+            # All projects for Kanban board
+            projects = conn.execute(
+                "SELECT id, name, type, status, classification "
+                "FROM projects ORDER BY updated_at DESC, created_at DESC"
+            ).fetchall()
+            projects = [dict(r) for r in projects]
 
-            # Agent counts
+            # Agent counts (stat bar)
             total_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents").fetchone()["cnt"]
             active_agents = conn.execute(
                 "SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'"
@@ -302,21 +300,35 @@ def create_app() -> Flask:
                 "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 10"
             ).fetchall()
 
-            # Firing alert count
+            # Firing alert count (stat bar)
             firing_alerts = conn.execute(
                 "SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'"
             ).fetchone()["cnt"]
 
-            # Open POAM count
+            # Open POAM count (stat bar)
             open_poam = conn.execute(
                 "SELECT COUNT(*) as cnt FROM poam_items WHERE status = 'open'"
             ).fetchone()["cnt"]
 
+            # Group projects by status for Kanban columns
+            kanban_columns = {
+                "planning": [],
+                "active": [],
+                "completed": [],
+                "inactive": [],
+            }
+            for p in projects:
+                status = p.get("status", "inactive")
+                if status in kanban_columns:
+                    kanban_columns[status].append(p)
+                else:
+                    kanban_columns["inactive"].append(p)
+
             return render_template(
                 "index.html",
-                total_projects=total_projects,
-                active_projects=active_projects,
-                completed_projects=completed_projects,
+                projects=projects,
+                kanban_columns=kanban_columns,
+                total_projects=len(projects),
                 total_agents=total_agents,
                 active_agents=active_agents,
                 inactive_agents=inactive_agents,
@@ -587,11 +599,11 @@ def create_app() -> Flask:
                 ),
             },
             {
-                "selector": ".card-grid",
-                "title": "Summary Cards",
+                "selector": ".kanban-board",
+                "title": "Project Kanban Board",
                 "desc": (
-                    "At-a-glance metrics: project counts, active agents, "
-                    "firing alerts, and compliance status."
+                    "Projects organized by workflow stage: Planning, Active, "
+                    "Completed, and Inactive. Click any card to view details."
                 ),
             },
             {

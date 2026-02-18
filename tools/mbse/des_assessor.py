@@ -21,7 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -543,7 +543,7 @@ def _check_model_code_sync(project_id, project_dir, conn):
                 f"({sync_ratio:.0%}). Out-of-sync: {out_of_sync}."
             ),
             "details": (
-                f"Sync statuses: "
+                "Sync statuses: "
                 + ", ".join(f"{k}={v}" for k, v in sorted(status_counts.items()))
             ),
         }
@@ -924,8 +924,8 @@ def run_des_assessment(project_id, project_dir, db_path=None):
                 status = "not_assessed"
                 evidence = "Manual assessment required."
                 notes = (
-                    f"This requirement must be verified manually. "
-                    f"Assessment criteria: "
+                    "This requirement must be verified manually. "
+                    "Assessment criteria: "
                     + "; ".join(req.get("assessment_criteria", ["See requirement description."]))
                 )
             else:
@@ -1058,7 +1058,7 @@ def run_des_assessment(project_id, project_dir, db_path=None):
         )
 
         # Console output
-        print(f"DES assessment completed:")
+        print("DES assessment completed:")
         print(f"  Project:           {project.get('name', project_id)}")
         print(f"  Requirements:      {total}")
         print(f"  Compliant:         {compliant}")

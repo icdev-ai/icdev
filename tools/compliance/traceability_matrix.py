@@ -7,7 +7,6 @@ where requirements lack tests or tests lack requirements."""
 
 import argparse
 import json
-import os
 import re
 import sqlite3
 import sys
@@ -774,7 +773,7 @@ def _generate_rtm_markdown(
     lines.append(
         f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
     )
-    lines.append(f"**Generator:** ICDEV RTM Generator v1.0")
+    lines.append("**Generator:** ICDEV RTM Generator v1.0")
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -782,8 +781,8 @@ def _generate_rtm_markdown(
     # Discovery summary
     lines.append("## 1. Artifact Discovery Summary")
     lines.append("")
-    lines.append(f"| Artifact Type | Count |")
-    lines.append(f"|---------------|------:|")
+    lines.append("| Artifact Type | Count |")
+    lines.append("|---------------|------:|")
     lines.append(f"| Requirements | {len(requirements)} |")
     lines.append(f"| Design Artifacts | {len(design)} |")
     lines.append(f"| Code Modules | {len(code)} |")

@@ -1769,13 +1769,13 @@ def run_sbd_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Assessor:** ICDEV Compliance Engine (automated)",
+            "**Assessor:** ICDEV Compliance Engine (automated)",
             f"**Domain Scope:** {domain}",
             (
                 f"**CISA SbD Revision:** "
                 f"{metadata.get('revision', 'N/A')}"
             ),
-            f"**Classification:** CUI // SP-CTI",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",
@@ -1939,7 +1939,7 @@ def run_sbd_assessment(
         )
 
         # -- Console output --
-        print(f"SbD assessment completed:")
+        print("SbD assessment completed:")
         print(f"  File: {out_file}")
         print(f"  Scope: {domain}")
         print(f"  Requirements assessed: {len(results)}")

@@ -935,7 +935,7 @@ def generate_sbom(
             "serial_number": sbom["serialNumber"],
         }, out_file)
 
-        print(f"\nSBOM generated successfully:")
+        print("\nSBOM generated successfully:")
         print(f"  File: {out_file}")
         print(f"  Format: CycloneDX {CYCLONEDX_SPEC_VERSION}")
         print(f"  Version: {new_version}")

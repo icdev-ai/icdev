@@ -34,7 +34,6 @@ import json
 import os
 import sqlite3
 import textwrap
-import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -1332,7 +1331,7 @@ def generate_rollback_scripts(plan_id, output_dir="."):
             tname = trow["table_name"]
             ddl_stmts.append(f"-- Rollback: drop migrated table {tname}_new if it exists")
             ddl_stmts.append(f"DROP TABLE IF EXISTS {tname}_new;")
-            ddl_stmts.append(f"-- Restore: rename legacy backup back if it exists")
+            ddl_stmts.append("-- Restore: rename legacy backup back if it exists")
             ddl_stmts.append(f"-- ALTER TABLE {tname}_legacy_backup RENAME TO {tname};")
             ddl_stmts.append("")
         ddl_block = "\n".join(ddl_stmts)
@@ -1477,10 +1476,10 @@ def generate_all(plan_id, output_dir="."):
     index_lines = [
         f"<!-- {CUI_BANNER} -->",
         f"# Migration Code Generation — Plan {plan_id}",
-        f"",
+        "",
         f"Generated: {datetime.utcnow().isoformat()}",
         f"Language: {language} | Framework: {framework}",
-        f"",
+        "",
         "## Adapters",
     ]
     for a in summary["adapters"]:

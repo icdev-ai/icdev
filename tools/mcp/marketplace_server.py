@@ -22,9 +22,7 @@ Resources:
 Runs as an MCP server over stdio with Content-Length framing.
 """
 
-import json
 import os
-import sqlite3
 import sys
 from pathlib import Path
 

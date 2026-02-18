@@ -24,13 +24,11 @@ Usage:
 """
 
 import hashlib
-import json
 import logging
 import os
 import secrets
 import sqlite3
 import sys
-import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

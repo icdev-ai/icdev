@@ -18,7 +18,6 @@ Usage:
 """
 
 import logging
-import os
 import sys
 import threading
 import time
@@ -127,7 +126,7 @@ def register_rate_limiter(app):
     Must be registered after auth middleware so that g.tenant_id and
     g.auth_info are available.
     """
-    from flask import g, jsonify, request as flask_request
+    from flask import g, jsonify
 
     @app.before_request
     def _check_rate():

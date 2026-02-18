@@ -12,8 +12,6 @@ Usage:
 
 import argparse
 import json
-import sys
-from datetime import datetime
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -351,7 +349,7 @@ def runner(app):
     created.append(str(project_dir / "conftest.py"))
 
     # Sample BDD feature file
-    feature_content = f"""Feature: Health Check
+    feature_content = """Feature: Health Check
   As a system administrator
   I want to verify the application is running
   So that I can confirm the deployment is successful
@@ -366,7 +364,7 @@ def runner(app):
     created.append(str(project_dir / "tests" / "features" / "health.feature"))
 
     # BDD step definitions
-    steps_content = f'''"""Step definitions for health check feature."""
+    steps_content = '''"""Step definitions for health check feature."""
 
 from pytest_bdd import given, when, then, parsers, scenarios
 
@@ -389,7 +387,7 @@ def check_status(response):
     assert response.status_code == 200
 
 
-@then(parsers.parse('the response should contain "{{text}}"'))
+@then(parsers.parse('the response should contain "{text}"'))
 def check_content(response, text):
     assert text in response.get_data(as_text=True)
 '''
@@ -745,7 +743,7 @@ CMD ["uvicorn", "src.{slug}.main:app", "--host", "0.0.0.0", "--port", "8080", "-
     write_file(project_dir / "Dockerfile", dockerfile_content, classification)
 
     # .gitlab-ci.yml (same structure as webapp)
-    gitlab_ci_content = f"""stages:
+    gitlab_ci_content = """stages:
   - test
   - security
   - compliance
@@ -821,7 +819,7 @@ def scaffold_api(project_dir: Path, project_name: str, classification: str) -> l
     slug = project_name.lower().replace(" ", "_").replace("-", "_")
 
     # Add API-specific schema models file
-    schema_content = f'''"""Pydantic schemas for API request/response models."""
+    schema_content = '''"""Pydantic schemas for API request/response models."""
 
 from pydantic import BaseModel, Field
 from typing import Optional
@@ -963,7 +961,7 @@ ENTRYPOINT ["{slug}"]
     write_file(project_dir / "Dockerfile", dockerfile_content, classification)
 
     # .gitlab-ci.yml
-    gitlab_ci_content = f"""stages:
+    gitlab_ci_content = """stages:
   - test
   - security
   - build
@@ -1157,7 +1155,7 @@ CMD ["python", "-m", "src.{slug}.pipeline"]
     write_file(project_dir / "Dockerfile", dockerfile_content, classification)
 
     # .gitlab-ci.yml
-    gitlab_ci_content = f"""stages:
+    gitlab_ci_content = """stages:
   - test
   - security
   - build
@@ -1344,7 +1342,7 @@ commonLabels:
     write_file(project_dir / "k8s" / "base" / "kustomization.yaml", k8s_base_content, classification)
 
     # .gitlab-ci.yml for IaC
-    gitlab_ci_content = f"""stages:
+    gitlab_ci_content = """stages:
   - validate
   - plan
   - apply
@@ -1557,7 +1555,7 @@ CMD ["nginx", "-g", "daemon off;"]
     write_file(project_dir / "Dockerfile", dockerfile_content, classification)
 
     # .gitlab-ci.yml
-    gitlab_ci_content = f"""stages:
+    gitlab_ci_content = """stages:
   - test
   - security
   - build

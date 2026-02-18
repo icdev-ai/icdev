@@ -29,7 +29,7 @@ import re
 import sqlite3
 import sys
 import textwrap
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
@@ -384,11 +384,11 @@ def generate_schema_ddl(app_id: str, target_db: str, output_dir: str) -> str:
 
     lines = []
     lines.append(SQL_CUI_HEADER)
-    lines.append(f"-- DDL Migration Script")
+    lines.append("-- DDL Migration Script")
     lines.append(f"-- Source: {source_db} -> Target: {target_db}")
     lines.append(f"-- Application ID: {app_id}")
     lines.append(f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"-- WARNING: Review before execution. Do NOT run unreviewed.")
+    lines.append("-- WARNING: Review before execution. Do NOT run unreviewed.")
     lines.append(f"-- {'=' * 68}")
     lines.append("")
 
@@ -545,11 +545,11 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
 
     lines = []
     lines.append(SQL_CUI_HEADER)
-    lines.append(f"-- Data Migration Script")
+    lines.append("-- Data Migration Script")
     lines.append(f"-- Source: {source_db} -> Target: {target_db}")
     lines.append(f"-- Application ID: {app_id}")
     lines.append(f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"-- WARNING: Review before execution. Do NOT run unreviewed.")
+    lines.append("-- WARNING: Review before execution. Do NOT run unreviewed.")
     lines.append(f"-- {'=' * 68}")
     lines.append("")
 
@@ -595,7 +595,7 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
         target_cols = ", ".join(col_names)
 
         lines.append(f"INSERT INTO {qualified} ({target_cols})")
-        lines.append(f"    SELECT")
+        lines.append("    SELECT")
         lines.append(f"        {select_str}")
         lines.append(f"    FROM {source_qualified};")
         lines.append("")
@@ -612,7 +612,7 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
 
     # Append validation section
     lines.append(f"-- {'=' * 68}")
-    lines.append(f"-- ROW COUNT VALIDATION")
+    lines.append("-- ROW COUNT VALIDATION")
     lines.append(f"-- {'=' * 68}")
     lines.append("")
     lines.extend(validation_lines)
@@ -683,11 +683,11 @@ def translate_stored_procedures(app_id: str, target_db: str,
     translated_blocks = []
 
     translated_blocks.append(SQL_CUI_HEADER)
-    translated_blocks.append(f"-- Stored Procedure Translation")
+    translated_blocks.append("-- Stored Procedure Translation")
     translated_blocks.append(f"-- Source: {source_db} -> Target: {target_db}")
     translated_blocks.append(f"-- Application ID: {app_id}")
     translated_blocks.append(f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    translated_blocks.append(f"-- WARNING: Review before execution. Manual review required.")
+    translated_blocks.append("-- WARNING: Review before execution. Manual review required.")
     translated_blocks.append(f"-- {'=' * 68}")
     translated_blocks.append("")
 
@@ -897,11 +897,11 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
 
     lines = []
     lines.append(SQL_CUI_HEADER)
-    lines.append(f"-- Migration Validation Queries")
+    lines.append("-- Migration Validation Queries")
     lines.append(f"-- Application ID: {app_id}")
     lines.append(f"-- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(f"-- Run these queries against BOTH source and target databases")
-    lines.append(f"-- and compare results to verify migration correctness.")
+    lines.append("-- Run these queries against BOTH source and target databases")
+    lines.append("-- and compare results to verify migration correctness.")
     lines.append(f"-- {'=' * 68}")
     lines.append("")
 
@@ -914,7 +914,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
         lines.append("")
 
         # 1. Row count comparison
-        lines.append(f"-- Row count")
+        lines.append("-- Row count")
         lines.append(f"SELECT '{qualified}' AS table_name, COUNT(*) AS row_count FROM {qualified};")
         lines.append("")
 
@@ -925,7 +925,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
             pk_concat = " || '|' || ".join(
                 f"COALESCE(CAST({c['column_name']} AS TEXT), 'NULL')" for c in pk_cols
             )
-            lines.append(f"-- Primary key checksum")
+            lines.append("-- Primary key checksum")
             lines.append(
                 f"SELECT '{qualified}' AS table_name, "
                 f"COUNT(DISTINCT ({pk_concat})) AS distinct_pk_count "
@@ -936,7 +936,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
         # 3. NULL count comparison per nullable column
         nullable_cols = [c for c in columns if c["is_nullable"]]
         if nullable_cols:
-            lines.append(f"-- NULL counts per column")
+            lines.append("-- NULL counts per column")
             null_selects = []
             for col in nullable_cols:
                 null_selects.append(
@@ -966,7 +966,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
                 minmax_cols.append(col)
 
         if minmax_cols:
-            lines.append(f"-- MIN/MAX value checks")
+            lines.append("-- MIN/MAX value checks")
             mm_selects = []
             for col in minmax_cols:
                 mm_selects.append(f"MIN({col['column_name']}) AS {col['column_name']}_min")
@@ -1360,7 +1360,7 @@ def main():
         print(json.dumps(result, indent=2, default=str))
     else:
         if args.gen_type == "all":
-            print(f"\nMigration plan generated successfully.")
+            print("\nMigration plan generated successfully.")
             print(f"  Application: {args.app_id}")
             print(f"  Target DB:   {target_db}")
             print(f"  Output:      {result.get('output_dir', args.output_dir)}")
@@ -1376,7 +1376,7 @@ def main():
             if path:
                 print(f"\nArtifact generated: {path}")
             else:
-                print(f"\nNo output generated — check warnings above.")
+                print("\nNo output generated — check warnings above.")
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ import sys
 import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 logger = logging.getLogger("icdev.db_init_generator")
@@ -646,7 +646,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     cap_names_literal = repr(list(CAPABILITY_TABLE_MAP.keys()))
 
     parts: List[str] = []
-    parts.append(f"#!/usr/bin/env python3")
+    parts.append("#!/usr/bin/env python3")
     parts.append(cui_banner)
     parts.append(f'"""Initialize the {app_name} database.')
     parts.append("")

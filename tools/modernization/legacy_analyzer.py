@@ -1722,7 +1722,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
             analysis_result = analyze_csharp(app_id, source_path)
         else:
             print(f"[WARN] No analyzer available for language: {language}")
-            print(f"       Supported: python, java, csharp")
+            print("       Supported: python, java, csharp")
     except Exception as exc:
         print(f"[ERROR] Analysis failed: {exc}")
         conn = _get_db()

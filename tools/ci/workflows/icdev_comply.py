@@ -19,9 +19,7 @@ Workflow:
     8. Commit artifacts and post results
 """
 
-import json
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -29,10 +27,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import commit_changes, finalize_git_operations
+from tools.ci.modules.git_ops import commit_changes
 from tools.ci.modules.vcs import VCS
 from tools.ci.modules.workflow_ops import (
-    format_issue_message,
     BOT_IDENTIFIER,
 )
 from tools.testing.utils import setup_logger
@@ -231,7 +228,7 @@ def main():
     issue_number = sys.argv[1]
     run_id = sys.argv[2]
 
-    print(f"CUI // SP-CTI")
+    print("CUI // SP-CTI")
     print(f"ICDEV Comply — run_id: {run_id}, issue: #{issue_number}")
 
     # Set up
@@ -267,7 +264,7 @@ def main():
         )
 
         if results.get("errors"):
-            summary += f"\n\nErrors:\n" + "\n".join(
+            summary += "\n\nErrors:\n" + "\n".join(
                 f"- {e}" for e in results["errors"]
             )
 

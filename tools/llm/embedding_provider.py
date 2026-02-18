@@ -8,7 +8,7 @@ Titan embeddings through a unified EmbeddingProvider interface.
 import json
 import logging
 import os
-from typing import List, Optional
+from typing import List
 
 from tools.llm.provider import EmbeddingProvider
 

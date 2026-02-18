@@ -17,9 +17,8 @@ import argparse
 import json
 import os
 import sqlite3
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -342,7 +341,7 @@ def sample_data():
     files.append(str(root / "tests" / "steps" / ".gitkeep"))
 
     # Dockerfile
-    dockerfile = f"""\
+    dockerfile = """\
 # CUI // SP-CTI
 # STIG-hardened Python container
 FROM python:3.11-slim AS base
@@ -412,7 +411,7 @@ def scaffold_javascript_frontend(project_path: str, name: str) -> List[str]:
     package_json = json.dumps({
         "name": name,
         "version": "0.1.0",
-        "description": f"JavaScript frontend project - CUI // SP-CTI",
+        "description": "JavaScript frontend project - CUI // SP-CTI",
         "main": "src/index.js",
         "scripts": {
             "start": "node src/index.js",
@@ -467,7 +466,7 @@ module.exports = {{ main }};
     files.append(str(root / "tests" / ".gitkeep"))
 
     # Dockerfile
-    dockerfile = f"""\
+    dockerfile = """\
 # CUI // SP-CTI
 # Node.js container
 FROM node:18-alpine AS base
@@ -752,7 +751,7 @@ def client(app):
     files.append(str(root / "tests" / "steps" / ".gitkeep"))
 
     # Dockerfile
-    dockerfile = f"""\
+    dockerfile = """\
 # CUI // SP-CTI
 FROM python:3.11-slim AS base
 
@@ -1209,7 +1208,7 @@ import pytest
     files.append(str(root / "tests" / "steps" / ".gitkeep"))
 
     # Dockerfile
-    dockerfile = f"""\
+    dockerfile = """\
 # CUI // SP-CTI
 FROM python:3.11-slim AS base
 
@@ -1484,7 +1483,7 @@ def main():
 
     # Phase 19: If --agentic, run the full agentic generation pipeline
     if args.agentic:
-        print(f"\n--- Agentic Generation (Phase 19) ---")
+        print("\n--- Agentic Generation (Phase 19) ---")
         try:
             _run_agentic_generation(args, files)
         except Exception as e:

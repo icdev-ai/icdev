@@ -3,7 +3,6 @@
 """E2E tests for MCP Streamable HTTP transport (mcp_http.py)."""
 
 import hashlib
-import json
 import os
 import sqlite3
 import sys

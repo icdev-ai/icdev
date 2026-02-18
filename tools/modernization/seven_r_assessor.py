@@ -24,11 +24,9 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import math
-import os
 import sqlite3
 import sys
 import uuid
-from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 

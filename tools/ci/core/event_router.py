@@ -22,7 +22,6 @@ Usage:
 """
 
 import json
-import os
 import sqlite3
 import subprocess
 import sys

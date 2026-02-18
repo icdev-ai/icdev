@@ -389,11 +389,11 @@ def main():
                         print(f"\n  {lang}:")
                         print(f"    Package manager: {pm}")
                         if deps:
-                            print(f"    Dependency files:")
+                            print("    Dependency files:")
                             for dep in deps:
                                 print(f"      - {dep}")
                         else:
-                            print(f"    Dependency files: none found")
+                            print("    Dependency files: none found")
                 else:
                     print("No supported languages detected.")
 
@@ -425,7 +425,7 @@ def main():
                             print(f"    {k}: {v}")
                     else:
                         print(f"  {key}: {value}")
-                print(f"\nCUI header:")
+                print("\nCUI header:")
                 print(get_cui_header(language))
 
     except FileNotFoundError as e:

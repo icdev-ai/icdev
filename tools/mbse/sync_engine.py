@@ -651,12 +651,12 @@ def _generate_code_from_element(name: str, element_type: str, properties: str,
     if language != "python":
         # Fallback: produce a commented stub
         lines = [
-            f"// CUI // SP-CTI",
+            "// CUI // SP-CTI",
             f"// Auto-generated from SysML element: {name}",
             f"// Element type: {element_type}",
             f"// Stereotype: {stereotype}",
             f"// Description: {description}",
-            f"// CUI // SP-CTI",
+            "// CUI // SP-CTI",
         ]
         return "\n".join(lines)
 
@@ -1524,8 +1524,8 @@ def generate_sync_report(project_id: str,
         "",
         "## Summary",
         "",
-        f"| Status | Count |",
-        f"|--------|-------|",
+        "| Status | Count |",
+        "|--------|-------|",
         f"| Synced | {status_counts['synced']} |",
         f"| Model Ahead | {status_counts['model_ahead']} |",
         f"| Code Ahead | {status_counts['code_ahead']} |",

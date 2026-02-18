@@ -1230,12 +1230,12 @@ def _print_human_readable(result: dict):
             print(f"  Affected Controls: {', '.join(controls)}")
         sections = result.get("affected_ssp_sections", [])
         if sections:
-            print(f"  Affected SSP Sections:")
+            print("  Affected SSP Sections:")
             for s in sections:
                 print(f"    - {s}")
         steps = result.get("remediation_steps", [])
         if steps:
-            print(f"  Remediation Steps:")
+            print("  Remediation Steps:")
             for i, step in enumerate(steps, 1):
                 print(f"    {i}. {step}")
         return
@@ -1249,7 +1249,7 @@ def _print_human_readable(result: dict):
             print(f"    Feasibility: {alt.get('feasibility_score', 0):.0%}")
             print(f"    {alt.get('description')}")
             if alt.get("tradeoffs"):
-                print(f"    Tradeoffs:")
+                print("    Tradeoffs:")
                 for t in alt["tradeoffs"]:
                     print(f"      - {t}")
         return

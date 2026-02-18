@@ -256,13 +256,13 @@ def generate_poam(project_id, output_path=None, db_path=None):
             "",
             f"**Project ID:** {project_id}",
             "",
-            f"**POA&M Version:** 1.0",
+            "**POA&M Version:** 1.0",
             "",
             f"**Date Generated:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
             "",
-            f"**Prepared By:** ICDEV Compliance Engine",
+            "**Prepared By:** ICDEV Compliance Engine",
             "",
-            f"**Classification:** CUI // SP-CTI",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",
@@ -355,11 +355,11 @@ def generate_poam(project_id, output_path=None, db_path=None):
             "output_file": str(out_file),
         }, out_file)
 
-        print(f"POA&M generated successfully:")
+        print("POA&M generated successfully:")
         print(f"  File: {out_file}")
         print(f"  Total items: {len(poam_items)}")
         print(f"  New items added to DB: {new_count}")
-        print(f"  Severity breakdown:")
+        print("  Severity breakdown:")
         for sev, cnt in severity_counts.items():
             if cnt > 0:
                 print(f"    {sev}: {cnt}")

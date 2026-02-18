@@ -16,9 +16,7 @@ Run: pytest tests/test_event_envelope.py -v
 """
 
 import json
-import os
 import sqlite3
-import tempfile
 
 import pytest
 

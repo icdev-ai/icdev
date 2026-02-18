@@ -551,8 +551,8 @@ def run_stig_check(
             f"**STIG Version:** {stig_data.get('metadata', {}).get('version', 'N/A')}",
             f"**Target Type:** {target_type}",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Assessed By:** ICDEV STIG Checker (automated)",
-            f"**Classification:** CUI // SP-CTI",
+            "**Assessed By:** ICDEV STIG Checker (automated)",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",
@@ -580,7 +580,7 @@ def run_stig_check(
                 "## Security Gate Evaluation",
                 "",
                 f"**Gate Result:** {gate_icon}",
-                f"**Criteria:** 0 CAT1 findings Open",
+                "**Criteria:** 0 CAT1 findings Open",
                 f"**CAT1 Open:** {cat1_open}",
                 "",
             ])
@@ -634,7 +634,7 @@ def run_stig_check(
             "output_file": str(out_file),
         }, out_file)
 
-        print(f"STIG check completed:")
+        print("STIG check completed:")
         print(f"  File: {out_file}")
         print(f"  STIG: {stig_id}")
         print(f"  Findings assessed: {len(results)}")

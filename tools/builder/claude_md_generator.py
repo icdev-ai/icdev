@@ -36,7 +36,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -842,7 +842,7 @@ def _generate_fallback(blueprint: Dict[str, Any]) -> str:
     sections: List[str] = []
 
     # -- Header --
-    sections.append(f"# CLAUDE.md\n")
+    sections.append("# CLAUDE.md\n")
     sections.append(
         f"This file provides guidance to Claude Code (claude.ai/code) "
         f"when working with {ctx['app_name']}.\n"

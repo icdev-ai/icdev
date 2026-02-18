@@ -20,7 +20,6 @@ import sqlite3
 import ssl
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -29,7 +28,7 @@ try:
 except ImportError:
     Flask = None  # Handled at runtime
 
-from tools.a2a.task import Artifact, StatusEvent, Task, TaskStatus
+from tools.a2a.task import Task, TaskStatus
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

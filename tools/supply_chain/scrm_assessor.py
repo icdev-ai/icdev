@@ -517,7 +517,7 @@ def _print_human(data):
         print(f"Project SCRM Summary: {data['project_id']}")
         print(f"  Vendors: {data['vendor_count']}  Assessed: {data.get('assessed_count', '?')}")
         dist = data["risk_distribution"]
-        print(f"  Risk Distribution:")
+        print("  Risk Distribution:")
         print(f"    Critical: {dist.get('critical', 0)}")
         print(f"    High:     {dist.get('high', 0)}")
         print(f"    Moderate: {dist.get('moderate', 0)}")

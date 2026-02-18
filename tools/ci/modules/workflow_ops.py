@@ -14,13 +14,11 @@ Usage:
     branch_name, error = generate_branch_name(issue_json, issue_command, run_id, logger)
 """
 
-import json
 import logging
-import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Tuple, Optional, List
+from typing import Tuple, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
@@ -114,7 +112,7 @@ def classify_issue(
         run_id=run_id,
     )
 
-    logger.debug(f"Classifying issue...")
+    logger.debug("Classifying issue...")
     response = execute_template(request)
 
     if not response.success:

@@ -11,7 +11,6 @@ CUI // SP-CTI
 """
 
 import re
-import os
 import sys
 import json
 import shutil
@@ -19,7 +18,7 @@ import argparse
 import textwrap
 from pathlib import Path
 from datetime import datetime, timezone
-from collections import defaultdict, OrderedDict
+from collections import defaultdict
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -206,8 +205,8 @@ def _generate_migration_report(source_path, output_path, transformations):
     target_fw = transformations.get("target_framework", "unknown")
     generated_files = transformations.get("generated_files", [])
 
-    report_lines.append(f"| Metric | Value |")
-    report_lines.append(f"|--------|-------|")
+    report_lines.append("| Metric | Value |")
+    report_lines.append("|--------|-------|")
     report_lines.append(f"| Source framework | {source_fw} |")
     report_lines.append(f"| Target framework | {target_fw} |")
     report_lines.append(f"| Files modified | {total_files} |")
@@ -644,10 +643,10 @@ def migrate_ejb_to_spring(source_path, output_path):
             for name, cls in zip(bean_names, bean_classes):
                 simple_name = cls.rsplit(".", 1)[-1] if "." in cls else cls
                 config_lines.append(f"    // TODO [ICDEV-MIGRATION]: Verify bean: {name} -> {cls}")
-                config_lines.append(f"    // @Bean")
+                config_lines.append("    // @Bean")
                 config_lines.append(f"    // public {simple_name} {name}() {{")
                 config_lines.append(f"    //     return new {simple_name}();")
-                config_lines.append(f"    // }}")
+                config_lines.append("    // }")
                 config_lines.append("")
 
             config_lines.append("}")

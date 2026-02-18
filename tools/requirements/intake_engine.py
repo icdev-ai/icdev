@@ -423,7 +423,7 @@ def process_turn(
     if zta_signals.get("zta_detected"):
         pillars = zta_signals.get("detected_pillars", [])
         response_parts.append(
-            f"\nZero Trust Architecture requirement detected"
+            "\nZero Trust Architecture requirement detected"
             + (f" (pillars: {', '.join(pillars)})" if pillars else "")
             + ". NIST SP 800-207 framework will be included in compliance assessment."
         )

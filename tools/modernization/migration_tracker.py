@@ -53,11 +53,8 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import math
-import os
 import sqlite3
 import sys
-import uuid
-from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -811,8 +808,8 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
     skipped = by_status.get("skipped", 0)
     pct = round(completed / total_pi * 100, 1) if total_pi > 0 else 0.0
 
-    lines.append(f"| Status      | Count | Percentage |")
-    lines.append(f"|-------------|-------|------------|")
+    lines.append("| Status      | Count | Percentage |")
+    lines.append("|-------------|-------|------------|")
     lines.append(f"| Completed   | {completed:>5} | {pct:>9.1f}% |")
     if total_pi > 0:
         lines.append(f"| In Progress | {in_prog:>5} | {in_prog/total_pi*100:>9.1f}% |")
@@ -879,8 +876,8 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None,
         (t.get("actual_hours") or 0) for t in pi_data["tasks"]
     )
     variance = act_total - est_total
-    lines.append(f"| Metric    | Hours |")
-    lines.append(f"|-----------|-------|")
+    lines.append("| Metric    | Hours |")
+    lines.append("|-----------|-------|")
     lines.append(f"| Estimated | {est_total:>5.1f} |")
     lines.append(f"| Actual    | {act_total:>5.1f} |")
     lines.append(f"| Variance  | {variance:>+5.1f} |")

@@ -747,7 +747,7 @@ def _print_human_readable(result: Dict[str, Any]) -> None:
 def _print_batch_human_readable(batch: Dict[str, Any]) -> None:
     """Print batch analysis results in human-readable format."""
     summary = batch.get("summary", {})
-    print(f"=== UI Analysis Batch Summary ===")
+    print("=== UI Analysis Batch Summary ===")
     print(f"Screenshots analyzed: {summary.get('analyzed_count', 0)}")
     score = summary.get("average_deterministic_score", summary.get("average_complexity_score"))
     print(f"Average Complexity Score: {score}")

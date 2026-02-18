@@ -626,7 +626,7 @@ def main():
             if args.json:
                 print(json.dumps(result, indent=2, default=str))
             else:
-                print(f"\nCollection Summary:")
+                print("\nCollection Summary:")
                 print(f"  Due:       {result['total_due']}")
                 print(f"  Collected: {result['collected']}")
                 print(f"  Failed:    {result['failed']}")

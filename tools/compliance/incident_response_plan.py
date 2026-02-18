@@ -678,7 +678,7 @@ def generate_ir_plan(project_id, output_dir=None, db_path=None):
             "project_id": project_id,
         }
 
-        print(f"Incident Response Plan generated successfully:")
+        print("Incident Response Plan generated successfully:")
         print(f"  File: {out_file}")
         print(f"  Version: {version}")
         print(f"  System: {variables['system_name']}")

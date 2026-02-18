@@ -22,7 +22,6 @@ Decision D70: BedrockClient preserved for Bedrock-specific callers; tools.llm
 """
 
 import argparse
-import hashlib
 import json
 import logging
 import os
@@ -911,7 +910,7 @@ def main():
             }, indent=2))
         else:
             print(f"Region: {client._region}")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
             print(f"{'Model':<20} {'Model ID':<55} {'Available'}")
             print("-" * 90)
             for pref_key, cfg in client._models.items():
@@ -973,11 +972,11 @@ def main():
         else:
             print()  # Newline after streamed text
             usage = final_meta.get("usage", {})
-            print(f"\n--- Metadata ---")
+            print("\n--- Metadata ---")
             print(f"Model: {final_meta.get('model_id', 'unknown')}")
             print(f"Duration: {final_meta.get('duration_ms', 0)}ms")
             print(f"Tokens: {usage.get('input_tokens', 0)} in / {usage.get('output_tokens', 0)} out")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
     else:
         # Synchronous mode
         try:
@@ -1007,14 +1006,14 @@ def main():
             }, indent=2))
         else:
             print(resp.content)
-            print(f"\n--- Metadata ---")
+            print("\n--- Metadata ---")
             print(f"Model: {resp.model_id}")
             print(f"Duration: {resp.duration_ms}ms")
             print(f"Tokens: {resp.input_tokens} in / {resp.output_tokens} out")
             if resp.thinking_tokens:
                 print(f"Thinking tokens: {resp.thinking_tokens}")
             print(f"Stop reason: {resp.stop_reason}")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
 
 
 if __name__ == "__main__":

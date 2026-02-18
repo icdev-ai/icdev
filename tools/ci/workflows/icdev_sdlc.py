@@ -19,7 +19,6 @@ Flags:
     --orchestrated  Use multi-agent DAG orchestration (parallel execution)
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -141,7 +140,7 @@ def run_orchestrated(issue_number: str, run_id: str) -> bool:
         from tools.agent.team_orchestrator import TeamOrchestrator
 
         print(f"\n{'='*60}")
-        print(f"  ORCHESTRATED SDLC (Multi-Agent DAG)")
+        print("  ORCHESTRATED SDLC (Multi-Agent DAG)")
         print(f"{'='*60}")
 
         orchestrator = TeamOrchestrator(max_workers=4)
@@ -164,10 +163,10 @@ def run_orchestrated(issue_number: str, run_id: str) -> bool:
         workflow = orchestrator.execute_workflow(workflow, timeout=1200)
 
         if workflow.status == "completed":
-            print(f"\nOrchestrated SDLC completed successfully")
+            print("\nOrchestrated SDLC completed successfully")
             return True
         elif workflow.status == "partially_completed":
-            print(f"\nOrchestrated SDLC partially completed — check failed subtasks")
+            print("\nOrchestrated SDLC partially completed — check failed subtasks")
             return False
         else:
             print(f"\nOrchestrated SDLC failed: {workflow.status}")
@@ -202,14 +201,14 @@ def main():
 
     # Ensure run_id
     run_id = ensure_run_id(issue_number, run_id)
-    print(f"CUI // SP-CTI")
+    print("CUI // SP-CTI")
     print(f"ICDEV SDLC — run_id: {run_id}, issue: #{issue_number}")
 
     # Orchestrated mode: use TeamOrchestrator for DAG-based parallel execution
     if orchestrated:
         if run_orchestrated(issue_number, run_id):
             print(f"\n{'='*60}")
-            print(f"  ICDEV SDLC COMPLETE (Orchestrated)")
+            print("  ICDEV SDLC COMPLETE (Orchestrated)")
             print(f"{'='*60}")
             print(f"Run ID: {run_id}")
             print(f"Issue:  #{issue_number}")
@@ -243,11 +242,11 @@ def main():
         sys.exit(1)
 
     print(f"\n{'='*60}")
-    print(f"  ICDEV SDLC COMPLETE")
+    print("  ICDEV SDLC COMPLETE")
     print(f"{'='*60}")
     print(f"Run ID: {run_id}")
     print(f"Issue:  #{issue_number}")
-    print(f"All phases completed successfully.")
+    print("All phases completed successfully.")
 
 
 if __name__ == "__main__":

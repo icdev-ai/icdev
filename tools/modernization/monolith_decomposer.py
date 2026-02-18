@@ -14,8 +14,6 @@ NIST: SC-7 (Boundary Protection), SA-8 (Security Engineering Principles)
 
 import argparse
 import json
-import math
-import os
 import sqlite3
 import sys
 import uuid

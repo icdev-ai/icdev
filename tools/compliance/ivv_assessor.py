@@ -277,8 +277,8 @@ def _check_req_completeness(project_dir):
         return {
             "status": "partially_satisfied",
             "evidence": (
-                f"Only 1 type of requirements documentation found. "
-                f"At least 2 types required for full completeness."
+                "Only 1 type of requirements documentation found. "
+                "At least 2 types required for full completeness."
             ),
             "details": "; ".join(all_evidence),
         }
@@ -345,7 +345,7 @@ def _check_req_consistency(project_dir):
                 f"Requirements consistency: {matched}/{total} features "
                 f"({ratio:.0%}) have matching test files."
             ),
-            "details": f"Threshold: >80%. All features are consistent with test naming.",
+            "details": "Threshold: >80%. All features are consistent with test naming.",
         }
     elif ratio > 0.5:
         return {
@@ -432,7 +432,7 @@ def _check_req_testability(project_dir):
                 f"All {total} feature file(s) have corresponding step "
                 f"implementation files."
             ),
-            "details": f"Step files found for every .feature file.",
+            "details": "Step files found for every .feature file.",
         }
     elif ratio > 0.7:
         return {
@@ -1011,8 +1011,8 @@ def _check_security_tests(project_dir):
         return {
             "status": "partially_satisfied",
             "evidence": (
-                f"Security test coverage: only 1 security-specific test file found. "
-                f"At least 2 required for full compliance."
+                "Security test coverage: only 1 security-specific test file found. "
+                "At least 2 required for full compliance."
             ),
             "details": os.path.basename(security_test_files[0]),
         }
@@ -1954,14 +1954,14 @@ def run_ivv_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Assessor:** ICDEV IV&V Engine (automated)",
+            "**Assessor:** ICDEV IV&V Engine (automated)",
             f"**Process Area Scope:** {process_area}",
-            f"**IEEE 1012 Version:** IEEE 1012-2016",
+            "**IEEE 1012 Version:** IEEE 1012-2016",
             (
                 f"**Source Standards:** "
                 f"{metadata.get('source', 'IEEE 1012-2016, DoDI 5000.87, DoDI 8510.01')}"
             ),
-            f"**Classification:** CUI // SP-CTI",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",
@@ -2015,15 +2015,15 @@ def run_ivv_assessment(
         lines.extend([
             "## IV&V Scores",
             "",
-            f"| Metric | Score |",
-            f"|--------|-------|",
+            "| Metric | Score |",
+            "|--------|-------|",
             f"| Verification Score | {verification_score:.1f}% |",
             f"| Validation Score | {validation_score:.1f}% |",
             f"| **Overall IV&V Score** | **{overall_score:.1f}%** |",
             "",
             (
-                f"*Scoring: Overall = 0.6 x Verification + 0.4 x Validation. "
-                f"Per-area = 100 x (pass + partial x 0.5) / assessable.*"
+                "*Scoring: Overall = 0.6 x Verification + 0.4 x Validation. "
+                "Per-area = 100 x (pass + partial x 0.5) / assessable.*"
             ),
             "",
         ])
@@ -2055,7 +2055,7 @@ def run_ivv_assessment(
                 "## IV&V Gate Evaluation",
                 "",
                 f"**Gate Result:** {gate_label}",
-                f"**Criteria:** 0 critical IV&V findings",
+                "**Criteria:** 0 critical IV&V findings",
                 (
                     f"**Critical Findings:** "
                     f"{gate_result['critical_findings_count']}"
@@ -2201,7 +2201,7 @@ def run_ivv_assessment(
         )
 
         # -- Console output --
-        print(f"IV&V assessment completed:")
+        print("IV&V assessment completed:")
         print(f"  File: {out_file}")
         print(f"  Scope: {process_area}")
         print(f"  Requirements assessed: {len(results)}")

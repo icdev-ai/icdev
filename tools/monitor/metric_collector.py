@@ -482,7 +482,7 @@ def main():
                 print(f"  {name:>30s}: N/A")
 
         if result.get("errors"):
-            print(f"\n  Warnings:")
+            print("\n  Warnings:")
             for err in result["errors"][:5]:
                 print(f"    - {err}")
 

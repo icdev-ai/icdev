@@ -29,14 +29,12 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 
 import argparse
 import json
-import os
 import sqlite3
 import sys
 import textwrap
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
-from string import Template
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -543,8 +541,8 @@ def generate_assessment_report(app_id, output_dir=None, db_path=None):
     ato_desc = ATO_IMPACT_DESCRIPTIONS.get(ato_impact, "Impact level not determined.")
     ato_weeks = STRATEGY_ATO_WEEKS.get(recommended, 0)
     controls = STRATEGY_CONTROL_FAMILIES.get(recommended, [])
-    lines.append(f"| Attribute            | Value                        |")
-    lines.append(f"|----------------------|------------------------------|")
+    lines.append("| Attribute            | Value                        |")
+    lines.append("|----------------------|------------------------------|")
     lines.append(f"| Impact Level         | {ato_impact.upper()} |")
     lines.append(f"| Controls Affected    | {len(controls)} control families |")
     lines.append(f"| Estimated ATO Delay  | {ato_weeks} weeks |")
@@ -1417,7 +1415,7 @@ def generate_all_reports(app_id, plan_id=None, pi_number=None,
 
     # --- Generate report index ---
     index_lines = []
-    index_lines.append(f"# Migration Report Index")
+    index_lines.append("# Migration Report Index")
     index_lines.append("")
     index_lines.append(f"**Application ID:** {app_id}")
     if plan_id:

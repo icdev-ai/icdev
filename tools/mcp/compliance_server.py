@@ -13,10 +13,8 @@ Tools:
 Runs as an MCP server over stdio with Content-Length framing.
 """
 
-import json
 import os
 import sys
-import traceback
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent

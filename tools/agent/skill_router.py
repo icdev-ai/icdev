@@ -484,7 +484,7 @@ def main():
                 print(f"  Working: {load.get('working_count', 0)}")
                 print(f"  Queued: {load.get('queued_count', 0)}")
                 print(f"Last heartbeat: {agent.get('last_heartbeat', 'N/A')}")
-                print(f"Classification: CUI // SP-CTI")
+                print("Classification: CUI // SP-CTI")
         else:
             if args.json:
                 print(json.dumps({
@@ -511,7 +511,7 @@ def main():
             }, indent=2, default=str))
         else:
             print(f"Healthy agents (staleness window: {args.staleness}s):")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
             print(f"{'Agent ID':<30} {'Name':<25} {'URL':<35} {'Last Heartbeat'}")
             print("-" * 120)
             for agent in agents:
@@ -539,7 +539,7 @@ def main():
             }, indent=2, default=str))
         else:
             print(f"Routing Table (staleness window: {args.staleness}s):")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
             print()
             for skill_id, agents in sorted(table.items()):
                 print(f"  {skill_id}:")
@@ -565,7 +565,7 @@ def main():
             print(f"Working tasks: {load['working_count']}")
             print(f"Queued tasks: {load['queued_count']}")
             print(f"Total active: {load['total_active']}")
-            print(f"Classification: CUI // SP-CTI")
+            print("Classification: CUI // SP-CTI")
 
     else:
         parser.print_help()

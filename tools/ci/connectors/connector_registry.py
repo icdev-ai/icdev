@@ -25,8 +25,6 @@ Usage:
         slack.send_message(channel_id, "Hello", thread_id=ts)
 """
 
-import json
-import sys
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -59,7 +57,7 @@ class ConnectorRegistry:
                 from tools.ci.connectors.slack_connector import SlackConnector
                 connector = SlackConnector(slack_config)
                 cls.register(connector)
-                print(f"[ConnectorRegistry] Slack connector registered")
+                print("[ConnectorRegistry] Slack connector registered")
             except ImportError as e:
                 print(f"[ConnectorRegistry] Slack connector unavailable: {e}")
 
@@ -70,7 +68,7 @@ class ConnectorRegistry:
                 from tools.ci.connectors.mattermost_connector import MattermostConnector
                 connector = MattermostConnector(mm_config)
                 cls.register(connector)
-                print(f"[ConnectorRegistry] Mattermost connector registered")
+                print("[ConnectorRegistry] Mattermost connector registered")
             except ImportError as e:
                 print(f"[ConnectorRegistry] Mattermost connector unavailable: {e}")
 

@@ -1123,7 +1123,7 @@ def _build_device_trust_manifests(project_id: str, mdm_type: str, project: dict)
         },
         "type": "Opaque",
         "stringData": {
-            k: f"PLACEHOLDER — retrieve from AWS Secrets Manager"
+            k: "PLACEHOLDER — retrieve from AWS Secrets Manager"
             for k in _build_mdm_config(mdm_type, project).get("k8s_deployment", {}).get("secret_keys", [])
         },
     }
@@ -1248,7 +1248,7 @@ def main():
                     print(f"  Policy:   {policy}")
                 for note in pep.get("integration_notes", [])[:3]:
                     print(f"  Note:     {note}")
-            print(f"ADR:        ADR D124 — PDP is external; ICDEV generates PEP configs only")
+            print("ADR:        ADR D124 — PDP is external; ICDEV generates PEP configs only")
 
 
 if __name__ == "__main__":

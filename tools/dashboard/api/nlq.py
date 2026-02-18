@@ -10,9 +10,7 @@ Decision D30: Bedrock for NLQ→SQL (air-gap safe, GovCloud available).
 Decision D34: Read-only SQL enforcement (append-only audit must not be compromised).
 """
 
-import json
 import sqlite3
-import time
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request

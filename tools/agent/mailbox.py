@@ -17,9 +17,8 @@ import os
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

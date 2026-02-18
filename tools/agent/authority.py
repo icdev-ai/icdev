@@ -13,9 +13,7 @@ import json
 import logging
 import sqlite3
 import sys
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

@@ -22,11 +22,9 @@ import json
 import logging
 import re
 import sqlite3
-import sys
 import uuid
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -508,17 +506,17 @@ def main():
         print(json.dumps(output, indent=2))
     else:
         print(f"\n{'='*60}")
-        print(f"  AGENTIC FITNESS ASSESSMENT")
+        print("  AGENTIC FITNESS ASSESSMENT")
         print(f"{'='*60}")
         print(f"  Component: {scorecard['component']}")
         print(f"  Overall Score: {scorecard['overall_score']:.2f} / 10.0")
         print(f"  Architecture: {scorecard['recommendations']['architecture'].upper()}")
         print(f"{'='*60}")
-        print(f"\n  Dimension Scores:")
+        print("\n  Dimension Scores:")
         for dim, score in scorecard["scores"].items():
             bar = "#" * score + "." * (10 - score)
             print(f"    {dim:<25s} [{bar}] {score}/10")
-        print(f"\n  Recommendations:")
+        print("\n  Recommendations:")
         recs = scorecard["recommendations"]
         if recs.get("agent_components"):
             print(f"    Agent Components: {', '.join(recs['agent_components'])}")
@@ -526,7 +524,7 @@ def main():
             print(f"    NLQ Interfaces:   {', '.join(recs['nlq_interfaces'])}")
         if recs.get("traditional_components"):
             print(f"    Traditional:      {', '.join(recs['traditional_components'])}")
-        print(f"\n  Always-On: self_healing, a2a_interop, aiops, gotcha, governance, feedback")
+        print("\n  Always-On: self_healing, a2a_interop, aiops, gotcha, governance, feedback")
         print(f"\n  Rationale: {scorecard['rationale']}")
         print(f"{'='*60}\n")
 

@@ -11,7 +11,6 @@ Usage:
     python tools/testing/test_agent_models.py
 """
 
-import os
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -19,7 +18,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import AgentPromptRequest, AgentPromptResponse
+from tools.testing.data_types import AgentPromptRequest
 from tools.ci.modules.agent import prompt_claude_code
 from tools.testing.utils import make_run_id
 

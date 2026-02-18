@@ -21,7 +21,6 @@ Workflow:
 """
 
 import json
-import logging
 import os
 import sys
 from pathlib import Path
@@ -36,7 +35,6 @@ from tools.ci.modules.workflow_ops import (
     implement_plan,
     create_commit,
     format_issue_message,
-    ensure_run_id,
     AGENT_IMPLEMENTOR,
 )
 from tools.testing.utils import setup_logger

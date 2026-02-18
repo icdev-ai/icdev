@@ -39,7 +39,6 @@ import hashlib
 import json
 import re
 import secrets
-import sqlite3
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -61,8 +60,6 @@ if str(BASE_DIR) not in sys.path:
 # ---------------------------------------------------------------------------
 from tools.saas.platform_db import get_platform_connection  # noqa: E402
 from tools.saas.models import (  # noqa: E402
-    Tenant,
-    TenantCreate,
     TenantStatus,
     SubscriptionTier,
     ImpactLevel,

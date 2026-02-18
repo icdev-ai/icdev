@@ -424,7 +424,7 @@ def main():
         print(json.dumps(results, indent=2))
     else:
         print(f"\n{'='*60}")
-        print(f"  HEALTH CHECK REPORT")
+        print("  HEALTH CHECK REPORT")
         print(f"  Timestamp: {datetime.utcnow().isoformat()}")
         print(f"{'='*60}")
 
@@ -434,7 +434,7 @@ def main():
             if r.get("degraded"):
                 status = "DEGRADED"
 
-            print(f"\n  HTTP Health Check:")
+            print("\n  HTTP Health Check:")
             print(f"    URL:      {r['url']}")
             print(f"    Status:   {status}")
             print(f"    Code:     {r.get('final_status_code', 'N/A')}")
@@ -450,7 +450,7 @@ def main():
 
             # Show health data if available
             if r.get("health_data") and isinstance(r["health_data"], dict):
-                print(f"    Health data:")
+                print("    Health data:")
                 for k, v in r["health_data"].items():
                     print(f"      {k}: {v}")
 
@@ -459,7 +459,7 @@ def main():
             status = r.get("status", "unknown").upper()
             summary = r.get("summary", {})
 
-            print(f"\n  Kubernetes Pod Check:")
+            print("\n  Kubernetes Pod Check:")
             print(f"    Namespace:  {r.get('namespace', 'N/A')}")
             print(f"    Deployment: {r.get('deployment', 'N/A')}")
             print(f"    Status:     {status}")
@@ -475,7 +475,7 @@ def main():
                 print(f"    CrashLoops: {summary['crash_loops']}")
 
             if r.get("warnings"):
-                print(f"    Warnings:")
+                print("    Warnings:")
                 for w in r["warnings"]:
                     print(f"      - {w}")
 
@@ -483,7 +483,7 @@ def main():
                 print(f"    Error: {r['error']}")
 
             if r.get("pods"):
-                print(f"\n    Pods:")
+                print("\n    Pods:")
                 for pod in r["pods"]:
                     status_icon = "ready" if pod["ready"] else "NOT ready"
                     crash = " [CrashLoop!]" if pod["crash_loop"] else ""

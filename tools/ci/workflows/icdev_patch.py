@@ -17,7 +17,6 @@ Looks for 'icdev_patch' keyword in issue body or comments, then:
 
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 

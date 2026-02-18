@@ -14,7 +14,7 @@ Uses the openai Python SDK with configurable base_url.
 import json
 import logging
 import time
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator
 
 from tools.llm.provider import (
     LLMProvider,
@@ -22,7 +22,6 @@ from tools.llm.provider import (
     LLMResponse,
     messages_to_openai,
     tools_to_openai,
-    tool_calls_from_openai,
 )
 
 logger = logging.getLogger("icdev.llm.openai_compat")

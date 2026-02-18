@@ -428,7 +428,7 @@ def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str,
         print(f"  Thread links:   {thread_links_delta:+d}")
         print(f"  Hash changed:   {hash_changed}")
         if element_type_deltas:
-            print(f"  Element type changes:")
+            print("  Element type changes:")
             for et, delta in element_type_deltas.items():
                 print(f"    {et}: {delta:+d}")
         if coverage_delta["coverage_pct_delta"] != 0:
@@ -738,7 +738,7 @@ def generate_pi_model_report(project_id: str, pi_number: str,
             f"**Program Increment:** {pi_number}",
             f"**Snapshot Type:** {snap['snapshot_type']}",
             f"**Report Generated:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            f"**Classification:** CUI // SP-CTI",
+            "**Classification:** CUI // SP-CTI",
             "",
             "---",
             "",

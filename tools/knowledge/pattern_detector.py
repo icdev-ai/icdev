@@ -5,10 +5,8 @@ frequency anomaly detection, and deployment correlation analysis."""
 
 import argparse
 import json
-import math
 import re
 import sqlite3
-from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 

@@ -584,7 +584,7 @@ def build_agent_roster(
             "port": port,
             "role": agent_def["role"],
             "health_endpoint": f"https://localhost:{port}/health",
-            "agent_card_path": f"/.well-known/agent.json",
+            "agent_card_path": "/.well-known/agent.json",
             "core": True,
         })
 
@@ -598,7 +598,7 @@ def build_agent_roster(
                 "port": port,
                 "role": agent_def["role"],
                 "health_endpoint": f"https://localhost:{port}/health",
-                "agent_card_path": f"/.well-known/agent.json",
+                "agent_card_path": "/.well-known/agent.json",
                 "core": False,
             })
             logger.debug("Added conditional agent: %s (port %d)", agent_def["name"], port)
@@ -1327,7 +1327,7 @@ def _print_blueprint_summary(blueprint: Dict[str, Any]) -> None:
         core_tag = " (core)" if agent.get("core") else ""
         print(f"    - {agent['name']:<15s} port {agent['port']}{core_tag}")
 
-    print(f"\n  Cloud Provider:")
+    print("\n  Cloud Provider:")
     print(f"    Provider:  {cloud.get('provider', 'N/A')}")
     print(f"    Region:    {cloud.get('region', 'N/A')}")
     print(f"    GovCloud:  {cloud.get('govcloud', False)}")

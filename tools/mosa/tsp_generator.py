@@ -14,7 +14,11 @@ Usage:
     python tools/mosa/tsp_generator.py --project-id proj-123 --output-dir /tmp
     python tools/mosa/tsp_generator.py --project-id proj-123 --human
 """
-import argparse, json, sqlite3, sys, uuid
+import argparse
+import json
+import sqlite3
+import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -116,12 +120,12 @@ def detect_standards(project_dir):
 
 def _build_md(proj, tid, now, stds, devs, cfg):
     """Build CUI-marked TSP markdown."""
-    L = [f"CUI // SP-CTI\n\n# Technical Standard Profile (TSP)\n",
+    L = ["CUI // SP-CTI\n\n# Technical Standard Profile (TSP)\n",
          "## Document Identification\n",
          "| Field | Value |", "|-------|-------|",
          f"| TSP ID | {tid} |",
          f"| Project | {proj.get('name', proj['id'])} ({proj['id']}) |",
-         f"| Version | 1.0.0 |", f"| Date | {now.strftime('%Y-%m-%d')} |",
+         "| Version | 1.0.0 |", f"| Date | {now.strftime('%Y-%m-%d')} |",
          "| Classification | CUI // SP-CTI |",
          "| Authority | 10 U.S.C. Section 4401, DoDI 5000.87 |",
          "\n## Standards Inventory\n",
@@ -133,7 +137,7 @@ def _build_md(proj, tid, now, stds, devs, cfg):
     partial = sum(1 for s in stds if s["conformance"] == "partial")
     planned = sum(1 for s in stds if s["conformance"] == "planned")
     cats = len(set(s["category"] for s in stds))
-    L.extend([f"\n## Conformance Summary\n",
+    L.extend(["\n## Conformance Summary\n",
               f"- **Total standards:** {len(stds)}", f"- **Full:** {full}",
               f"- **Partial:** {partial}", f"- **Planned:** {planned}",
               f"- **Categories:** {cats} of {len(cfg['standard_categories'])}"])
@@ -144,7 +148,7 @@ def _build_md(proj, tid, now, stds, devs, cfg):
             L.append(f"| {d['standard']} | {d['conformance']} | {d.get('deviation_rationale') or 'Pending'} |")
     else:
         L.append("No deviations recorded.")
-    L.extend([f"\n## Validation\n", "- Status: **draft**", "- Approval: **pending**",
+    L.extend(["\n## Validation\n", "- Status: **draft**", "- Approval: **pending**",
               f"- Max age: {cfg['max_age_days']} days",
               f"- Next review: within {cfg['max_age_days']} days of approval",
               "\n---\nCUI // SP-CTI"])

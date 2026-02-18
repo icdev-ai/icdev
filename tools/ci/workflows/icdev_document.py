@@ -20,9 +20,7 @@ Workflow:
     5. Push and update PR/MR
 """
 
-import json
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,7 +33,6 @@ from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git
 from tools.ci.modules.vcs import VCS
 from tools.ci.modules.agent import execute_template
 from tools.ci.modules.workflow_ops import (
-    create_commit,
     format_issue_message,
 )
 from tools.testing.data_types import AgentTemplateRequest

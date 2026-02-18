@@ -11,7 +11,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 try:
     import yaml

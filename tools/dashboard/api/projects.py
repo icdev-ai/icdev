@@ -3,7 +3,6 @@ Flask Blueprint for project API endpoints.
 Queries icdev.db for project data, compliance status, and audit trail entries.
 """
 
-import json
 import sqlite3
 from flask import Blueprint, jsonify
 

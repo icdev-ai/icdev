@@ -44,10 +44,8 @@ Classification: CUI // SP-CTI
 import argparse
 import collections
 import json
-import os
 import sqlite3
 import textwrap
-import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -707,14 +705,14 @@ def generate_ato_impact_report(plan_id, output_dir=None):
         f"**Migration Strategy:** {plan.get('strategy', 'N/A')}",
         f"**Target Architecture:** {plan.get('target_architecture', 'N/A')}",
         f"**Generated:** {now}",
-        f"**Classification:** CUI // SP-CTI",
+        "**Classification:** CUI // SP-CTI",
         "",
         "---",
         "",
         "## Executive Summary",
         "",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Total Controls in ATO Baseline | {total_inherited} |",
         f"| Controls Inherited | {total_inherited} |",
         f"| Controls Distributed to Services | {total_distributed} |",

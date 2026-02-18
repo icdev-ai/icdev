@@ -16,11 +16,6 @@ Direct usage:
     python tools/cli_formatter.py --demo
 """
 
-import json
-import os
-import shutil
-import sys
-from datetime import datetime
 
 
 # ---------------------------------------------------------------------------

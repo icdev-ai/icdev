@@ -28,7 +28,6 @@ import argparse
 import json
 import os
 import sqlite3
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -590,8 +589,8 @@ def main():
             print(f"\n[Namespace Isolation] {iso['policy_count']} policies across {len(iso['namespaces'])} namespace(s)")
             for ns in iso["namespaces"]:
                 print(f"  Namespace: {ns}")
-                print(f"    - default-deny-ingress  (blocks all inbound traffic)")
-                print(f"    - default-deny-egress   (DNS-only exception to kube-system:53)")
+                print("    - default-deny-ingress  (blocks all inbound traffic)")
+                print("    - default-deny-egress   (DNS-only exception to kube-system:53)")
             print(f"  Output directory: {Path(iso['files'][0]).parent if iso['files'] else 'n/a'}")
 
         if combined.get("microsegmentation"):

@@ -18,38 +18,61 @@
     <a href="/wizard" class="btn btn-primary" style="background: var(--accent-blue); border-color: var(--accent-blue);">Get Started &rarr;</a>
 </div>
 
-<!-- Project Summary Cards -->
-<div class="card-grid">
-    <div class="card">
-        <div class="card-label">Total Projects</div>
-        <div class="card-value blue">{{ total_projects }}</div>
-        <div class="card-footer">All registered projects</div>
+<!-- Stat Bar (compact inline stats) -->
+<div class="stat-bar">
+    <div class="stat-bar-item">
+        <div class="stat-bar-value blue">{{ total_projects }}</div>
+        <div class="stat-bar-label">Total Projects</div>
     </div>
-    <div class="card">
-        <div class="card-label">Active Projects</div>
-        <div class="card-value green">{{ active_projects }}</div>
-        <div class="card-footer">Currently in development</div>
+    <div class="stat-bar-item">
+        <div class="stat-bar-value green">{{ active_agents }}</div>
+        <div class="stat-bar-label">Active Agents
+            <span class="text-muted" style="text-transform:none;letter-spacing:0;">({{ inactive_agents }} idle)</span>
+        </div>
     </div>
-    <div class="card">
-        <div class="card-label">Completed Projects</div>
-        <div class="card-value">{{ completed_projects }}</div>
-        <div class="card-footer">Successfully delivered</div>
+    <div class="stat-bar-item">
+        <div class="stat-bar-value {% if firing_alerts > 0 %}red{% else %}green{% endif %}">{{ firing_alerts }}</div>
+        <div class="stat-bar-label">Firing Alerts</div>
     </div>
-    <div class="card">
-        <div class="card-label">Active Agents</div>
-        <div class="card-value green">{{ active_agents }}</div>
-        <div class="card-footer">{{ inactive_agents }} inactive of {{ total_agents }} total</div>
+    <div class="stat-bar-item">
+        <div class="stat-bar-value {% if open_poam > 0 %}yellow{% else %}green{% endif %}">{{ open_poam }}</div>
+        <div class="stat-bar-label">Open <span data-glossary="POA&amp;M">POA&amp;M</span></div>
     </div>
-    <div class="card">
-        <div class="card-label">Firing Alerts</div>
-        <div class="card-value {% if firing_alerts > 0 %}red{% else %}green{% endif %}">{{ firing_alerts }}</div>
-        <div class="card-footer">Unresolved alerts requiring attention</div>
+</div>
+
+<!-- Project Kanban Board -->
+<div class="kanban-board" id="kanban-board">
+    {% set columns = [
+        ("planning", "Planning"),
+        ("active", "Active"),
+        ("completed", "Completed"),
+        ("inactive", "Inactive")
+    ] %}
+    {% for status_key, status_label in columns %}
+    <div class="kanban-column" data-status="{{ status_key }}">
+        <div class="kanban-column-header">
+            <h3>{{ status_label }}</h3>
+            <span class="kanban-column-count">{{ kanban_columns[status_key] | length }}</span>
+        </div>
+        <div class="kanban-column-body">
+            {% for project in kanban_columns[status_key] %}
+            <a href="/projects/{{ project.id }}" class="kanban-card" data-project-id="{{ project.id }}">
+                <div class="kanban-card-title" title="{{ project.name }}">{{ project.name }}</div>
+                <div class="kanban-card-meta">
+                    {% if project.type %}
+                    <span class="badge badge-info">{{ project.type }}</span>
+                    {% endif %}
+                    {% if project.classification %}
+                    <span class="badge badge-warning">{{ project.classification }}</span>
+                    {% endif %}
+                </div>
+            </a>
+            {% else %}
+            <div class="kanban-empty">No projects</div>
+            {% endfor %}
+        </div>
     </div>
-    <div class="card">
-        <div class="card-label">Open <span data-glossary="POA&amp;M">POA&amp;M</span> Items</div>
-        <div class="card-value {% if open_poam > 0 %}yellow{% else %}green{% endif %}">{{ open_poam }}</div>
-        <div class="card-footer">Security gaps with fix deadlines</div>
-    </div>
+    {% endfor %}
 </div>
 
 <!-- Charts Row -->

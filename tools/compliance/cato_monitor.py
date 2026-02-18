@@ -23,7 +23,6 @@ Database table: cato_evidence
 import argparse
 import hashlib
 import json
-import os
 import sqlite3
 import sys
 from datetime import datetime, timedelta
