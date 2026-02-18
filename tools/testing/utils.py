@@ -194,6 +194,17 @@ def get_safe_subprocess_env() -> Dict[str, str]:
         "TERM": os.getenv("TERM"),
         "LANG": os.getenv("LANG"),
 
+        # Windows-specific — needed for Python user site-packages and gh keyring
+        "USERPROFILE": os.getenv("USERPROFILE"),
+        "APPDATA": os.getenv("APPDATA"),
+        "LOCALAPPDATA": os.getenv("LOCALAPPDATA"),
+        "SYSTEMROOT": os.getenv("SYSTEMROOT"),
+        "TEMP": os.getenv("TEMP"),
+        "TMP": os.getenv("TMP"),
+
+        # GitHub CLI — needed for gh auth keyring access
+        "GH_TOKEN": os.getenv("GH_TOKEN") or os.getenv("GITHUB_PAT"),
+
         # Python-specific
         "PYTHONPATH": os.getenv("PYTHONPATH"),
         "PYTHONUNBUFFERED": "1",

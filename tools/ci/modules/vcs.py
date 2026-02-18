@@ -28,25 +28,20 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
 # Safe environment for subprocesses
 def _get_env() -> Dict[str, str]:
-    env = {
-        "PATH": os.getenv("PATH", ""),
-        "HOME": os.getenv("HOME") or os.getenv("USERPROFILE", ""),
-        "USER": os.getenv("USER") or os.getenv("USERNAME", ""),
-        "LANG": os.getenv("LANG", ""),
-        "TERM": os.getenv("TERM", ""),
-    }
-    # GitHub
+    # Start with full inherited environment so gh/glab can access OS keyring,
+    # APPDATA (Windows credential store), and other platform-specific paths.
+    env = os.environ.copy()
+    # Overlay explicit token overrides if set
     gh_token = os.getenv("GITHUB_PAT") or os.getenv("GH_TOKEN")
     if gh_token:
         env["GH_TOKEN"] = gh_token
-    # GitLab
     gl_token = os.getenv("GITLAB_TOKEN") or os.getenv("GLAB_TOKEN")
     if gl_token:
         env["GITLAB_TOKEN"] = gl_token
     gl_url = os.getenv("GITLAB_URL")
     if gl_url:
         env["GITLAB_URL"] = gl_url
-    return {k: v for k, v in env.items() if v}
+    return env
 
 
 def _run(cmd: List[str], cwd: str = None, timeout: int = 30) -> Tuple[str, str, int]:

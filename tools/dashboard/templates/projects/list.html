@@ -21,6 +21,7 @@
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Project ID</th>
                 <th>Type</th>
                 <th>Status</th>
                 <th>Classification</th>
@@ -31,13 +32,14 @@
             {% for project in projects %}
             <tr>
                 <td><a href="/projects/{{ project.id }}">{{ project.name }}</a></td>
+                <td><code style="font-size: 0.85em; user-select: all; cursor: pointer;" title="Click to select, then copy">{{ project.id }}</code></td>
                 <td>{{ project.type }}</td>
                 <td><span class="badge badge-{{ project.status }}">{{ project.status }}</span></td>
                 <td><span class="badge badge-warning">{{ project.classification }}</span></td>
                 <td class="text-muted" data-timestamp="{{ project.created_at }}">{{ project.created_at | friendly_time }}</td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="5">No projects found</td></tr>
+            <tr class="empty-row"><td colspan="6">No projects found</td></tr>
             {% endfor %}
         </tbody>
     </table>
