@@ -222,6 +222,8 @@
 | Test Orchestrator | tools/testing/test_orchestrator.py | Full test pipeline: unit + BDD + E2E + gates with retry | --project-dir, --skip-e2e | Summary + state |
 | E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback | --test-file, --discover, --run-all, --mode, --validate-screenshots | E2E results |
 | Screenshot Validator | tools/testing/screenshot_validator.py | Vision-based screenshot validation using LLM (Ollama LLaVA / Claude / GPT-4o) | --image, --assert, --batch-dir, --check | Pass/fail + explanation |
+| Integration Smoke Test | tools/testing/smoke_test.py | Verify all CLI tools are importable and --help works after refactors | --json, --quick, --verbose | N tools tested, N passed |
+| CLI Fuzz Test | tools/testing/fuzz_cli.py | Fuzz CLI tools with malformed inputs to catch crashes | --json, --tools, --discover | N tools fuzzed, 0 crashes |
 | UI Analyzer | tools/modernization/ui_analyzer.py | Legacy UI screenshot analysis for 7R migration scoring | --image, --image-dir, --app-id, --store, --score-only | UI complexity score + analysis |
 | Diagram Extractor | tools/mbse/diagram_extractor.py | Vision-based SysML diagram extraction from screenshots | --image, --diagram-type, --project-id, --store, --validate | Elements + relationships |
 | Diagram Validator | tools/compliance/diagram_validator.py | Compliance diagram validation (SSP, network zone, ATO boundary) | --image, --type, --expected-components, --expected-zones | Pass/fail per check |
@@ -346,7 +348,8 @@
 | LLM Router | tools/llm/router.py | Config-driven function→model routing with fallback chains, reads args/llm_config.yaml | function name | (provider, model_id, config) |
 | Bedrock Provider | tools/llm/bedrock_provider.py | AWS Bedrock LLMProvider: Anthropic models, thinking/effort, tools, structured output, retry/backoff | LLMRequest | LLMResponse |
 | Anthropic Provider | tools/llm/anthropic_provider.py | Direct Anthropic API LLMProvider via anthropic SDK | LLMRequest | LLMResponse |
-| OpenAI-Compat Provider | tools/llm/openai_provider.py | OpenAI-compatible LLMProvider: OpenAI, Ollama, vLLM, Azure via configurable base_url | LLMRequest | LLMResponse |
+| OpenAI-Compat Provider | tools/llm/openai_provider.py | OpenAI-compatible LLMProvider: OpenAI, vLLM, Azure via configurable base_url | LLMRequest | LLMResponse |
+| Ollama Native Provider | tools/llm/ollama_provider.py | Native Ollama REST API provider using /api/chat — faster than OpenAI-compat for local models, native vision support | LLMRequest | LLMResponse |
 | Embedding Provider | tools/llm/embedding_provider.py | Embedding providers: OpenAI, Bedrock Titan, Ollama (nomic-embed-text) | text | float[] |
 | LLM Config | args/llm_config.yaml | Master config: providers, models, per-function routing chains, embedding config, pricing | — | — |
 

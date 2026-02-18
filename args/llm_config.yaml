@@ -23,9 +23,8 @@ providers:
     base_url: https://api.openai.com/v1
 
   ollama:
-    type: openai_compatible
-    base_url: ${OLLAMA_BASE_URL:-http://localhost:11434/v1}
-    api_key: ollama
+    type: ollama
+    base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
 
   vllm:
     type: openai_compatible

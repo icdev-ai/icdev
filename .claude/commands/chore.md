@@ -143,32 +143,66 @@ These gates apply to every commit regardless of project type.
     python -m behave features/
     ```
 
-14. **SAST Security Scan**:
+14. **E2E Test** (if UI changes) — If an E2E test was created in `.claude/commands/e2e/`, execute it per `.claude/commands/test_e2e.md`.
+    **Prefer playwright-cli** over MCP Playwright for screenshots — it is faster and more token-efficient:
     ```bash
-    python tools/security/sast_runner.py --project-dir . --json
+    npx playwright screenshot http://localhost:5000/ .tmp/e2e-screenshot.png --full-page
+    ```
+    Then run **vision validation** on the screenshot (see step 20b).
+
+15. **SAST Security Scan**:
+    ```bash
+    python tools/security/sast_runner.py --project-path . --json
     ```
     **GATE: 0 critical, 0 high**.
 
-15. **Secret Detection**:
+16. **Secret Detection**:
     ```bash
-    python tools/security/secret_detector.py --project-dir . --json
+    python tools/security/secret_detector.py --project-path . --json
     ```
     **GATE: 0 secrets detected**.
+    Note: If a `.secrets.baseline` file exists, compare against it to filter known false positives.
 
-16. **Dependency Audit**:
+17. **Dependency Audit**:
     ```bash
-    python tools/security/dependency_auditor.py --project-dir . --json
+    python tools/security/dependency_auditor.py --project-path . --json
     ```
     **GATE: 0 critical, 0 high**.
 
-17. **CUI Marking Verification** — Confirm all new/modified `.py` files have CUI markings:
+18. **CUI Marking Verification** — Confirm all new/modified `.py` files have CUI markings:
     **GATE: missing_cui_markings blocks merge**.
 
-18. **SBOM Generation**:
+19. **SBOM Generation**:
     ```bash
-    python tools/compliance/sbom_generator.py --project-dir .
+    python tools/compliance/sbom_generator.py --project <project_id>
     ```
     **GATE: sbom_not_generated blocks deployment**.
+
+20. **Integration Smoke Test** — Verify all CLI tools are importable and respond to `--help` after refactoring:
+    ```bash
+    python tools/testing/smoke_test.py --json
+    ```
+    **GATE: 0 import failures across all CLI tools**. This catches broken imports from variable renames, removed imports, or refactored modules.
+    Use `--quick` for compile-only (faster), or full mode to also test `--help` responses.
+
+20b. **Vision Validation** (if UI changes / E2E screenshots taken) — Run computer vision analysis on E2E screenshots:
+    ```bash
+    python tools/testing/screenshot_validator.py \
+        --image .tmp/e2e-screenshot.png \
+        --assert "CUI // SP-CTI banner is visible at the top" \
+        --assert "No error dialogs or stack traces visible" \
+        --assert "<feature-specific assertion>" \
+        --json
+    ```
+    **GATE: All assertions must pass with confidence ≥ 0.5**. Uses Ollama LLaVA locally (air-gap safe) with fallback to Bedrock/OpenAI.
+    This is the sign-off gate — vision confirms what the human would see.
+
+20c. **CLI Fuzz Test** (if CLI tools were modified) — Fuzz-test modified CLI tools with malformed inputs:
+    ```bash
+    python tools/testing/fuzz_cli.py --tools <list of modified CLI .py files> --json
+    ```
+    **GATE: 0 crashes (SIGSEGV/SIGABRT) or unhandled tracebacks**. Tools must fail gracefully with argparse errors, not Python tracebacks.
+    Use `--discover` to fuzz all tools, or `--tools` for targeted testing.
 
 ---
 
@@ -345,11 +379,15 @@ Run these gates when the chore touches architecture, infrastructure, security co
     ✓ Ruff lint — <0 violations (or N fixed)>
     ✓ Unit tests — <N passed, 0 failed, N% coverage>
     ✓ BDD tests — <N scenarios passed (or N/A: no features/ dir)>
+    ✓ E2E tests — <N passed (or N/A: no UI changes)>
     ✓ SAST scan — <0 critical, 0 high, N medium, N low>
     ✓ Secret detection — <0 findings across N files scanned>
     ✓ Dependency audit — <0 critical, 0 high, N packages audited>
     ✓ CUI markings — <verified on N files>
     ✓ SBOM — <generated, N components cataloged>
+    ✓ Smoke test — <N tools tested, N passed, 0 import failures>
+    ✓ Vision validation — <N assertions passed via LLaVA/Claude (or N/A: no UI)>
+    ✓ CLI fuzz test — <N tools fuzzed, 0 crashes (or N/A: no CLI changes)>
 
     Tier 2 — ATO & Compliance Impact:
     ✓ NIST control mapping — <list controls>
@@ -430,8 +468,12 @@ Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. T
 - **Result**: <PASS / N/A>
 - **Details**: <N scenarios passed / "N/A — no features/ directory">
 
+### E2E Tests
+- **Result**: <PASS / N/A>
+- **Details**: <N tests passed / "N/A — no UI changes">
+
 ### SAST Security Scan
-- **Command**: `python tools/security/sast_runner.py --project-dir . --json`
+- **Command**: `python tools/security/sast_runner.py --project-path . --json`
 - **Timestamp**: <ISO 8601>
 - **Result**: PASS
 - **Details**: 0 critical, 0 high, <N> medium, <N> low across <N> files
@@ -441,13 +483,13 @@ Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. T
   ```
 
 ### Secret Detection
-- **Command**: `python tools/security/secret_detector.py --project-dir . --json`
+- **Command**: `python tools/security/secret_detector.py --project-path . --json`
 - **Timestamp**: <ISO 8601>
 - **Result**: PASS
 - **Details**: 0 secrets detected across <N> files scanned
 
 ### Dependency Audit
-- **Command**: `python tools/security/dependency_auditor.py --project-dir . --json`
+- **Command**: `python tools/security/dependency_auditor.py --project-path . --json`
 - **Timestamp**: <ISO 8601>
 - **Result**: PASS
 - **Details**: 0 critical, 0 high vulnerabilities across <N> packages
@@ -459,10 +501,29 @@ Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. T
 - **Files Verified**: <list files>
 
 ### SBOM Generation
-- **Command**: `python tools/compliance/sbom_generator.py --project-dir .`
+- **Command**: `python tools/compliance/sbom_generator.py --project <project_id>`
 - **Timestamp**: <ISO 8601>
 - **Result**: PASS
 - **Details**: SBOM generated, <N> components cataloged
+
+### Integration Smoke Test
+- **Command**: `python tools/testing/smoke_test.py --json`
+- **Timestamp**: <ISO 8601>
+- **Result**: PASS
+- **Details**: <N> tools tested, <N> passed, 0 import failures
+
+### Vision Validation
+- **Command**: `python tools/testing/screenshot_validator.py --image <screenshot> --assert "..." --json`
+- **Timestamp**: <ISO 8601>
+- **Result**: <PASS / N/A>
+- **Details**: <N assertions passed, model: llava:13b / N/A — no UI changes>
+- **Screenshot**: <path to screenshot file>
+
+### CLI Fuzz Test
+- **Command**: `python tools/testing/fuzz_cli.py --tools <modified tools> --json`
+- **Timestamp**: <ISO 8601>
+- **Result**: <PASS / N/A>
+- **Details**: <N tools fuzzed, N strategies, 0 crashes / N/A — no CLI changes>
 
 ## Tier 2 — ATO & Compliance Impact
 
@@ -575,10 +636,10 @@ IMPORTANT: Execute every step in order, top to bottom.
 - `python -m py_compile <file>` - Syntax check
 - `ruff check .` - Lint check
 - `python -m pytest tests/ -v --tb=short` - Unit tests
-- `python tools/security/sast_runner.py --project-dir . --json` - SAST scan
-- `python tools/security/secret_detector.py --project-dir . --json` - Secret detection
-- `python tools/security/dependency_auditor.py --project-dir . --json` - Dependency audit
-- `python tools/compliance/sbom_generator.py --project-dir .` - SBOM
+- `python tools/security/sast_runner.py --project-path . --json` - SAST scan
+- `python tools/security/secret_detector.py --project-path . --json` - Secret detection
+- `python tools/security/dependency_auditor.py --project-path . --json` - Dependency audit
+- `python tools/compliance/sbom_generator.py --project <project_id>` - SBOM
 - `python tools/compliance/control_mapper.py --activity "code.commit" --project-id "<project_id>"` - NIST mapping
 - `python tools/compliance/crosswalk_engine.py --project-id "<project_id>" --coverage` - Crosswalk
 - `python tools/compliance/stig_checker.py --project-id "<project_id>"` - STIG check
@@ -608,3 +669,4 @@ $ARGUMENTS
 - Include a **4-tier gate summary table** with actual results (not just pass/fail — include metrics like "14 tests passed", "0 critical, 0 high, 3 medium").
 - Include ATO boundary impact assessment result (GREEN/YELLOW/ORANGE/RED) with rationale.
 - Tell the user: "Run `/pull_request` to open a PR, or `/test` for a full validation suite."
+</output>

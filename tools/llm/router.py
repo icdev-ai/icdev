@@ -118,6 +118,13 @@ class LLMRouter:
                 base_url = provider_cfg.get("base_url", "https://api.anthropic.com")
                 instance = AnthropicLLMProvider(api_key=api_key, base_url=base_url)
 
+            elif ptype == "ollama":
+                from tools.llm.ollama_provider import OllamaProvider
+                base_url = _expand_env(
+                    provider_cfg.get("base_url", "http://localhost:11434")
+                )
+                instance = OllamaProvider(base_url=base_url)
+
             elif ptype in ("openai", "openai_compatible"):
                 from tools.llm.openai_provider import OpenAICompatibleProvider
                 api_key = provider_cfg.get("api_key", "")
@@ -243,10 +250,18 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("effort", "medium")
 
-    def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
-        """Resolve provider for function and invoke.
+    def _get_chain_for_function(self, function: str) -> list:
+        """Get the model chain for a function."""
+        routing = self._config.get("routing", {})
+        route = routing.get(function, routing.get("default", {}))
+        return route.get("chain", [])
 
-        Convenience method that combines routing + invocation.
+    def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Resolve provider for function and invoke with fallback.
+
+        Walks the full fallback chain: if the first provider fails at
+        invocation time (e.g. missing credentials, network error), tries
+        the next model in the chain rather than raising immediately.
 
         Args:
             function: ICDEV function name (e.g. 'code_generation', 'nlq_sql').
@@ -256,31 +271,74 @@ class LLMRouter:
             LLMResponse.
 
         Raises:
-            RuntimeError: If no provider is available for the function.
+            RuntimeError: If no provider in the chain can serve the request.
         """
-        provider, model_id, model_cfg = self.get_provider_for_function(function)
-        if provider is None:
-            raise RuntimeError(
-                "No LLM provider available for function '{}'. "
-                "Check llm_config.yaml and provider credentials.".format(function)
-            )
-
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
 
-        return provider.invoke(request, model_id, model_cfg)
+        chain = self._get_chain_for_function(function)
+        last_error = None
+
+        for model_name in chain:
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            provider_name = model_cfg.get("provider", "")
+            provider = self._get_provider(provider_name)
+            if provider is None:
+                continue
+            model_id = model_cfg.get("model_id", "")
+            try:
+                response = provider.invoke(request, model_id, model_cfg)
+                return response
+            except Exception as exc:
+                logger.warning(
+                    "Provider %s (%s) failed for %s: %s — trying next in chain",
+                    provider_name, model_id, function, exc,
+                )
+                last_error = exc
+                # Mark model as unavailable in cache so next call skips it
+                self._availability_cache[model_name] = False
+                continue
+
+        raise RuntimeError(
+            "All providers in chain {} failed for function '{}'. "
+            "Last error: {}".format(chain, function, last_error)
+        )
 
     def invoke_streaming(self, function: str, request: LLMRequest):
-        """Resolve provider and invoke with streaming."""
-        provider, model_id, model_cfg = self.get_provider_for_function(function)
-        if provider is None:
-            raise RuntimeError(
-                "No LLM provider available for function '{}'.".format(function)
-            )
+        """Resolve provider and invoke with streaming + fallback."""
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
-        return provider.invoke_streaming(request, model_id, model_cfg)
+
+        chain = self._get_chain_for_function(function)
+        last_error = None
+
+        for model_name in chain:
+            model_cfg = self._get_model_config(model_name)
+            if not model_cfg:
+                continue
+            provider_name = model_cfg.get("provider", "")
+            provider = self._get_provider(provider_name)
+            if provider is None:
+                continue
+            model_id = model_cfg.get("model_id", "")
+            try:
+                return provider.invoke_streaming(request, model_id, model_cfg)
+            except Exception as exc:
+                logger.warning(
+                    "Streaming provider %s (%s) failed for %s: %s — trying next",
+                    provider_name, model_id, function, exc,
+                )
+                last_error = exc
+                self._availability_cache[model_name] = False
+                continue
+
+        raise RuntimeError(
+            "All streaming providers in chain {} failed for function '{}'. "
+            "Last error: {}".format(chain, function, last_error)
+        )
 
     # -------------------------------------------------------------------
     # Embedding providers
