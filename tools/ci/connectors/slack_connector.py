@@ -121,9 +121,9 @@ class SlackConnector(ChatConnectorAdapter):
         if BOT_IDENTIFIER in text:
             return None
 
-        channel_id = event.get("channel", "")
-        thread_ts = event.get("thread_ts", event.get("ts", ""))
-        user = event.get("user", "")
+        event.get("channel", "")
+        event.get("thread_ts", event.get("ts", ""))
+        event.get("user", "")
 
         return EventEnvelope.from_slack_event(raw_payload)
 

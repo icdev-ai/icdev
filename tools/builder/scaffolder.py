@@ -30,7 +30,6 @@ try:
         get_marking_banner,
         get_code_header,
         get_document_banner,
-        get_classification_for_il,
     )
     _HAS_CLASSIFICATION_MGR = True
 except ImportError:
@@ -1318,7 +1317,7 @@ def _run_agentic_generation(args, base_files):
     """
     import importlib.util
 
-    project_path = Path(args.project_path) / args.name
+    Path(args.project_path) / args.name
 
     # Step 1: Load fitness scorecard
     scorecard = None

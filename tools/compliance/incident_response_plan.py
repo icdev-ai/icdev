@@ -658,7 +658,7 @@ def generate_ir_plan(project_id, output_dir=None, db_path=None):
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        project_name = re.sub(r"[^a-zA-Z0-9_-]", "_", project.get("name", project_id))
+        re.sub(r"[^a-zA-Z0-9_-]", "_", project.get("name", project_id))
         out_file = out_dir / f"incident-response-plan-v{version}.md"
 
         with open(out_file, "w", encoding="utf-8") as f:

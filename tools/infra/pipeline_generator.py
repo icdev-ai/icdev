@@ -203,7 +203,6 @@ def generate_pipeline(project_path: str, project_config: dict = None) -> list:
     else:
         stages = all_stages
 
-    base_image = python_image if app_type == "python" else node_image
 
     pipeline = f"""{_cui_header()}
 # =============================================================================

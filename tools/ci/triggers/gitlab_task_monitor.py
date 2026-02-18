@@ -256,7 +256,7 @@ def poll_gitlab_tasks(interval: int = 20, dry_run: bool = False):
                 print(f"[GitLab Task Monitor] Found: #{iid} '{title}' -> {{{{icdev: {tag}}}}}")
 
                 # Claim the issue
-                claim_id = claim_issue(iid, web_url, tag)
+                claim_issue(iid, web_url, tag)
 
                 # Add processing label
                 add_label(iid, "icdev-processing")

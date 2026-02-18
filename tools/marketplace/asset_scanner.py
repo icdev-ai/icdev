@@ -320,7 +320,7 @@ def scan_dependencies(asset_path, asset_id, version_id, db_path=None):
                 audit_data = json.loads(result.stdout)
                 for dep in audit_data.get("dependencies", []):
                     for vuln in dep.get("vulns", []):
-                        severity = vuln.get("fix_versions", "unknown")
+                        vuln.get("fix_versions", "unknown")
                         findings["dependencies"].append({
                             "package": dep.get("name"),
                             "version": dep.get("version"),

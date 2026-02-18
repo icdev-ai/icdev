@@ -631,7 +631,7 @@ def build_file_manifest(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
         List of manifest entry dicts.
     """
     capabilities = blueprint.get("capabilities", {})
-    app_name = blueprint.get("app_name", "child-app")
+    blueprint.get("app_name", "child-app")
     manifest: List[Dict[str, Any]] = []
 
     # Always-included directories

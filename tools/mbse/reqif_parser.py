@@ -1052,7 +1052,7 @@ def export_reqif(project_id: str, output_path: str,
 
         # THE-HEADER
         header_wrap = ET.SubElement(root, f"{{{REQIF_NS}}}THE-HEADER")
-        header = ET.SubElement(
+        ET.SubElement(
             header_wrap, f"{{{REQIF_NS}}}REQ-IF-HEADER",
             attrib={
                 "IDENTIFIER": f"header-{uuid.uuid4()}",

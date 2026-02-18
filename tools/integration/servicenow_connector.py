@@ -179,7 +179,7 @@ def push_to_servicenow(project_id, session_id=None, dry_run=False, db_path=None)
         connection_id = row["id"]
         instance_url = row["instance_url"]
         filter_criteria = json.loads(row["filter_criteria"] or "{}")
-        table_name = filter_criteria.get("table_name", "rm_story")
+        filter_criteria.get("table_name", "rm_story")
 
         # Get SAFe items
         if session_id:

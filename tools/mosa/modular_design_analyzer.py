@@ -377,7 +377,6 @@ def analyze_modularity(project_dir: str) -> Dict[str, Any]:
 
     # --- interface coverage ------------------------------------------------
     # Heuristic: % of modules that import at least one interface-bearing module
-    iface_modules: Set[str] = set()
     for mod in project_modules:
         # A module is an "interface module" if any of its files declared ABCs
         # We approximate: if the module contributes to iface_file_count

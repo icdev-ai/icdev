@@ -621,7 +621,7 @@ def migrate_java_version(source_path, output_path, from_ver="8", to_ver="17"):
     )
 
     # Diamond operator: new Type<X,Y>() where LHS already has generics
-    diamond_pattern = re.compile(
+    re.compile(
         r'new\s+(\w+)<([^>]+)>\s*\(\)',
     )
 

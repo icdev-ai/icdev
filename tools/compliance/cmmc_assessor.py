@@ -1046,7 +1046,7 @@ def run_cmmc_assessment(
         # 1. Load CMMC practice catalog
         catalog = load_cmmc_practices(level)
         practices = catalog.get("practices", [])
-        metadata = catalog.get("metadata", {})
+        catalog.get("metadata", {})
 
         if not practices:
             raise ValueError(

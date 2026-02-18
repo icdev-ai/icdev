@@ -84,24 +84,6 @@ GLOSSARY = {
 # 1. Jinja2 Template Filters
 # ---------------------------------------------------------------------------
 
-def format_timestamp(value):
-    """Convert ISO-8601 string to human-friendly format.
-
-    Examples:
-        >>> format_timestamp("2026-02-18T14:30:00Z")
-        'Feb 18, 2026 at 2:30 PM'
-        >>> format_timestamp(None)
-        '\u2014'
-    """
-    if not value:
-        return "\u2014"
-    try:
-        dt = _parse_iso(value)
-        return dt.strftime("%b %d, %Y at %-I:%M %p").replace("%-I", str(dt.hour % 12 or 12))
-    except Exception:
-        return str(value)
-
-
 def _format_time_12h(dt):
     """Format a datetime to '2:30 PM' style using only stdlib."""
     hour = dt.hour % 12 or 12

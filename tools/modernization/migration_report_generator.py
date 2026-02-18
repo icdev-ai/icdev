@@ -1005,7 +1005,7 @@ def generate_ato_impact_report(plan_id, output_dir=None, db_path=None):
         pre_coverage = len(covered_controls)
         affected_set = set(controls)
         gap_controls = affected_set - covered_controls
-        post_coverage = pre_coverage - len(affected_set & covered_controls)
+        pre_coverage - len(affected_set & covered_controls)
 
         lines.append(f"- **Pre-Migration Controls Documented:** {pre_coverage}")
         lines.append(f"- **Controls Requiring Update:** {len(affected_set)}")
@@ -1266,7 +1266,7 @@ def generate_executive_summary(app_id, output_dir=None, db_path=None):
 
     # Finding 2: Complexity / maintainability
     maint = app.get("maintainability_index", 0) or 0
-    complexity = app.get("complexity_score", 0) or 0
+    app.get("complexity_score", 0) or 0
     if maint < 30:
         findings.append(
             f"Maintainability index is **{maint:.1f}** (poor). The codebase presents "

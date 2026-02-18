@@ -69,7 +69,7 @@ except ImportError:
         return -1
 
 try:
-    from tools.saas.artifacts.signer import hash_artifact, sign_artifact
+    from tools.saas.artifacts.signer import sign_artifact
     _HAS_SIGNER = True
 except ImportError:
     _HAS_SIGNER = False

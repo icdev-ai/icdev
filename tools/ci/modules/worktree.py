@@ -250,7 +250,7 @@ def get_worktree_status(worktree_name: str) -> dict:
         # Git status
         result = _run_git(["status", "--porcelain"], cwd=str(worktree_path))
         if result.returncode == 0:
-            changes = [l for l in result.stdout.strip().split("\n") if l.strip()]
+            changes = [line for line in result.stdout.strip().split("\n") if line.strip()]
             status["changed_files"] = len(changes)
             status["changes"] = changes[:20]  # Limit output
 

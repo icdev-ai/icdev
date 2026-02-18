@@ -55,7 +55,7 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 
 # Graceful imports
 try:
-    from tools.saas.artifacts.signer import hash_artifact, verify_signature
+    from tools.saas.artifacts.signer import verify_signature
     _HAS_SIGNER = True
 except ImportError:
     _HAS_SIGNER = False

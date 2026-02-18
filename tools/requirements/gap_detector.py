@@ -235,11 +235,16 @@ def main():
         checks = {"security": True, "compliance": True, "testability": True,
                    "interfaces": True, "data": True}
     else:
-        if args.check_security: checks["security"] = True
-        if args.check_compliance: checks["compliance"] = True
-        if args.check_testability: checks["testability"] = True
-        if args.check_interfaces: checks["interfaces"] = True
-        if args.check_data: checks["data"] = True
+        if args.check_security:
+            checks["security"] = True
+        if args.check_compliance:
+            checks["compliance"] = True
+        if args.check_testability:
+            checks["testability"] = True
+        if args.check_interfaces:
+            checks["interfaces"] = True
+        if args.check_data:
+            checks["data"] = True
         if not checks:
             checks = {"security": True, "compliance": True, "testability": True,
                        "interfaces": True, "data": True}

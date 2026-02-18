@@ -208,7 +208,6 @@ def _extract_pdf_pages_via_vision(file_path):
         return f"[PDF file: {p.name} -- requires pypdf for page-by-page extraction]"
 
     try:
-        from tools.testing.screenshot_validator import encode_image
         from tools.llm import get_router
         from tools.llm.provider import LLMRequest
     except ImportError as exc:
@@ -694,7 +693,7 @@ def upload_document(session_id, file_path, document_type, db_path=None):
     mime_type = mime_map.get(p.suffix.lower(), "application/octet-stream")
 
     # Read raw text for storage
-    raw_text = _read_file_content(file_path)
+    _read_file_content(file_path)
 
     # Auto-classify images at upload time
     image_classification = None

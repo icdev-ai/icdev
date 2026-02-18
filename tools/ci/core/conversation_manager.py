@@ -308,7 +308,7 @@ class ConversationManager:
     def _handle_fix_code(self, session_id: str, comment: str, turn: int) -> dict:
         """Handle 'fix this' / 'fix it' command — invoke builder agent."""
         context = self.get_session_context(session_id)
-        session = self._get_session(session_id)
+        self._get_session(session_id)
 
         response_text = (
             f"Acknowledged fix request. Analyzing the issue and generating a fix...\n"

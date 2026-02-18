@@ -57,7 +57,6 @@ CONTROL_KEYWORD_MAP = {
     "IA": ["identity", "authenticate", "credential", "password", "mfa", "token"],
     "CM": ["config", "configuration", "baseline", "change_management"],
     "SI": ["integrity", "validation", "sanitize", "input_check", "patch"],
-    "AC": ["access", "auth", "login", "permission", "role", "rbac", "authorization"],
 }
 
 
@@ -806,7 +805,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
         for code_path_row in code_paths:
             code_path = code_path_row[0]
             file_stem = Path(code_path).stem.lower()
-            file_name = Path(code_path).name.lower()
+            Path(code_path).name.lower()
 
             # Match block name (snake_case) to file stem
             if snake_name == file_stem or lower_name == file_stem:

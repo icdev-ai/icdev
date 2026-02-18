@@ -129,7 +129,7 @@ class EventEnvelope:
                 timestamp=cls._now_iso(),
                 metadata={
                     "issue_title": issue.get("title", ""),
-                    "labels": [l.get("name", "") for l in issue.get("labels", [])],
+                    "labels": [lbl.get("name", "") for lbl in issue.get("labels", [])],
                 },
             )
 

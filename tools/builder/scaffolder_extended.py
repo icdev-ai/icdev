@@ -1320,41 +1320,6 @@ def scaffold_typescript_backend(project_path: str, name: str) -> List[str]:
     files: List[str] = []
 
     # -- package.json -----------------------------------------------------
-    package_json = f"""{CUI_HEADER_C_STYLE}
-{{
-  "name": "{name}",
-  "version": "0.1.0",
-  "description": "ICDEV scaffolded TypeScript backend — CUI // SP-CTI",
-  "main": "dist/index.js",
-  "scripts": {{
-    "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
-    "test": "jest --coverage",
-    "test:bdd": "cucumber-js features/",
-    "lint": "eslint src/ tests/",
-    "clean": "rm -rf dist/"
-  }},
-  "dependencies": {{
-    "express": "^4.18.2"
-  }},
-  "devDependencies": {{
-    "@cucumber/cucumber": "^10.3.1",
-    "@types/express": "^4.17.21",
-    "@types/jest": "^29.5.12",
-    "@types/node": "^20.11.19",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.1.2",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
-  }},
-  "engines": {{
-    "node": ">=20.0.0"
-  }},
-  "license": "SEE LICENSE IN NOTICE",
-  "private": true
-}}
-"""
     # Note: CUI_HEADER_C_STYLE at top of JSON is non-standard but signals classification.
     # In practice a .cui-header file or banner comment in the actual source is preferred.
     # We strip the header for valid JSON by writing the JSON portion only.

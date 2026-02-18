@@ -1063,10 +1063,9 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
         lines.append("| PI | Start Score | End Score | Delta |")
         lines.append("|----|-------------|-----------|-------|")
         for pi in all_pis:
-            pi_notes = {}
             if pi["notes"]:
                 try:
-                    pi_notes = json.loads(pi["notes"])
+                    json.loads(pi["notes"])
                 except (json.JSONDecodeError, TypeError):
                     pass
             s_start = pi["compliance_score_start"] or 0

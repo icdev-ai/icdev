@@ -38,23 +38,20 @@ from tools.mcp.base_server import MCPServer  # noqa: E402
 # Graceful imports of marketplace modules
 try:
     from tools.marketplace.catalog_manager import (
-        register_asset, add_version, update_status, get_asset,
-        list_assets, list_versions, deprecate_asset, promote_to_central,
+        get_asset,
+        list_assets,
     )
     from tools.marketplace.publish_pipeline import publish_asset as _publish_asset
     from tools.marketplace.install_manager import (
         install_asset as _install_asset,
         uninstall_asset as _uninstall_asset,
-        list_installations,
-        check_updates,
     )
     from tools.marketplace.search_engine import search_assets as _search_assets
     from tools.marketplace.review_queue import (
-        submit_review, complete_review, list_pending as _list_pending,
-        get_review,
+        complete_review, list_pending as _list_pending,
     )
     from tools.marketplace.compatibility_checker import full_compatibility_check
-    from tools.marketplace.asset_scanner import run_full_scan, get_scan_summary
+    from tools.marketplace.asset_scanner import run_full_scan
     from tools.marketplace.federation_sync import get_sync_status
     _MODULES_LOADED = True
 except ImportError as e:

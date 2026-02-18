@@ -716,8 +716,7 @@ def _build_poam_summary(poam_rows):
     in_progress = 0
     completed = 0
     accepted_risk = 0
-    overdue = 0
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    datetime.utcnow().strftime("%Y-%m-%d")
 
     for row in poam_rows:
         cnt = row.get("cnt", 0)
@@ -750,7 +749,7 @@ def _apply_cui_markings(content, cui_config):
     header = cui_config.get("document_header", "").strip()
     footer = cui_config.get("document_footer", "").strip()
     banner_top = cui_config.get("banner_top", "CUI // SP-CTI")
-    banner_bottom = cui_config.get("banner_bottom", "CUI // SP-CTI")
+    cui_config.get("banner_bottom", "CUI // SP-CTI")
 
     # If the content already contains the banner, skip
     if banner_top in content:
@@ -850,7 +849,7 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
         cui_config = _load_cui_config()
 
         # Determine version number
-        existing = conn.execute(
+        conn.execute(
             """SELECT MAX(CAST(
                    CASE WHEN status IS NOT NULL THEN 1 ELSE 0 END AS INTEGER
                )) as cnt FROM cssp_certifications WHERE project_id = ?""",

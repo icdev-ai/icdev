@@ -57,41 +57,52 @@ def _conn(db_path=None):
     p = db_path or DB_PATH
     if not Path(p).exists():
         raise FileNotFoundError(f"DB not found: {p}. Run: python tools/db/init_icdev_db.py")
-    c = sqlite3.connect(str(p)); c.row_factory = sqlite3.Row; return c
+    c = sqlite3.connect(str(p))
+    c.row_factory = sqlite3.Row
+    return c
 
 def _project(conn, pid):
     r = conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchone()
-    if not r: raise ValueError(f"Project '{pid}' not found")
+    if not r:
+        raise ValueError(f"Project '{pid}' not found")
     return dict(r)
 
 def _config():
     defaults = {"max_age_days": 180, "standard_categories": [
         "api_specification","data_format","communication_protocol",
         "authentication","containerization","programming_language","security"]}
-    if not CONFIG_PATH.exists(): return defaults
+    if not CONFIG_PATH.exists():
+        return defaults
     try:
         import yaml
         tsp = yaml.safe_load(CONFIG_PATH.open()).get("mosa",{}).get("tsp",{})
         return {"max_age_days": tsp.get("max_age_days", 180),
                 "standard_categories": tsp.get("standard_categories", defaults["standard_categories"])}
-    except Exception: return defaults
+    except Exception:
+        return defaults
 
 
 def detect_standards(project_dir):
     """Auto-detect standards from project tech stack."""
     pp = Path(project_dir)
-    if not pp.is_dir(): return []
+    if not pp.is_dir():
+        return []
     files = {p.name for pat in ("*","*/*","*/*/*") for p in pp.glob(pat) if p.is_file()}
     has_auth = has_k8s = False
     for ext in ("*.py","*.java","*.ts","*.js","*.yaml","*.yml"):
         for fp in pp.rglob(ext):
             try:
                 txt = fp.read_text(encoding="utf-8", errors="ignore")[:8192]
-                if any(k in txt.lower() for k in AUTH_KW): has_auth = True
-                if any(k in txt for k in K8S_KW): has_k8s = True
-                if has_auth and has_k8s: break
-            except Exception: continue
-        if has_auth and has_k8s: break
+                if any(k in txt.lower() for k in AUTH_KW):
+                    has_auth = True
+                if any(k in txt for k in K8S_KW):
+                    has_k8s = True
+                if has_auth and has_k8s:
+                    break
+            except Exception:
+                continue
+        if has_auth and has_k8s:
+            break
     detected, seen = [], set()
     def _add(name, ver, cat):
         if name not in seen:
@@ -99,22 +110,34 @@ def detect_standards(project_dir):
             detected.append({"category": cat, "standard": name, "version": ver,
                              "conformance": "full", "deviation_rationale": None})
     for inds, name, ver, cat in RULES:
-        if name in seen: continue
-        if cat in ALWAYS_CATS: _add(name, ver, cat); continue
-        if cat == "authentication":
-            if has_auth: _add(name, ver, cat); continue
-            else: continue
-        if "Kubernetes" in name:
-            if has_k8s: _add(name, ver, cat); continue
-            else: continue
-        if "JSON Schema" in name:
-            if any(f.endswith(".json") for f in files): _add(name, ver, cat)
+        if name in seen:
             continue
-        if not inds: continue
+        if cat in ALWAYS_CATS:
+            _add(name, ver, cat)
+            continue
+        if cat == "authentication":
+            if has_auth:
+                _add(name, ver, cat)
+                continue
+            else:
+                continue
+        if "Kubernetes" in name:
+            if has_k8s:
+                _add(name, ver, cat)
+                continue
+            else:
+                continue
+        if "JSON Schema" in name:
+            if any(f.endswith(".json") for f in files):
+                _add(name, ver, cat)
+            continue
+        if not inds:
+            continue
         for ind in inds:
             if ("*" in ind and any(f.endswith(ind.lstrip("*")) for f in files)) \
                or ind in files:
-                _add(name, ver, cat); break
+                _add(name, ver, cat)
+                break
     return sorted(detected, key=lambda s: (s["category"], s["standard"]))
 
 
@@ -230,8 +253,10 @@ def main():
         else:
             _print_plain(result)
     except (ValueError, FileNotFoundError) as e:
-        if args.json: print(json.dumps({"error": str(e)}, indent=2))
-        else: print(f"Error: {e}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": str(e)}, indent=2))
+        else:
+            print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
 

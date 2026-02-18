@@ -245,7 +245,7 @@ def translate_functions(app_id: str, target_db: str, content: str) -> str:
     if not content:
         return content
 
-    tgt = _normalise_db_name(target_db)
+    _normalise_db_name(target_db)
     result = content
 
     # ------- Oracle -> PostgreSQL translations -------
@@ -665,7 +665,7 @@ def translate_stored_procedures(app_id: str, target_db: str,
     # Determine source DB from the app record
     conn = _get_db()
     try:
-        app_row = conn.execute(
+        conn.execute(
             "SELECT * FROM legacy_applications WHERE id = ?", (app_id,)
         ).fetchone()
         schema_row = conn.execute(
@@ -677,7 +677,7 @@ def translate_stored_procedures(app_id: str, target_db: str,
 
     source_db = schema_row["db_type"] if schema_row else "oracle"
     src_key = _normalise_db_name(source_db)
-    mappings = load_type_mappings(source_db, target_db)
+    load_type_mappings(source_db, target_db)
 
     untranslatable = []
     translated_blocks = []
@@ -921,7 +921,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
         # 2. Checksum on primary key columns
         pk_cols = [c for c in columns if c["is_primary_key"]]
         if pk_cols:
-            pk_col_list = ", ".join(c["column_name"] for c in pk_cols)
+            ", ".join(c["column_name"] for c in pk_cols)
             pk_concat = " || '|' || ".join(
                 f"COALESCE(CAST({c['column_name']} AS TEXT), 'NULL')" for c in pk_cols
             )

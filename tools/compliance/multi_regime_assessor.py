@@ -135,8 +135,6 @@ def assess_all(
             errors[fw_id] = str(e)
 
     # Compute unified metrics
-    total_unique_nist = set()
-    total_implemented_nist = set()
     framework_summaries = []
 
     conn = _get_connection(db_path)

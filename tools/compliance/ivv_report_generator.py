@@ -1007,10 +1007,10 @@ def _build_executive_summary(
     )
 
     # Count assessments by status
-    pass_count = sum(
+    sum(
         1 for a in assessments if a.get("status") == "pass"
     )
-    fail_count = sum(
+    sum(
         1 for a in assessments if a.get("status") == "fail"
     )
 

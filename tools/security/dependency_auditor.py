@@ -479,7 +479,7 @@ def audit_go(
 
     # Check if govulncheck is available
     try:
-        version_check = subprocess.run(
+        subprocess.run(
             ["govulncheck", "-version"],
             capture_output=True, text=True, timeout=10,
         )

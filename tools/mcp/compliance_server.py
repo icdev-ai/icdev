@@ -474,7 +474,7 @@ def handle_oscal_generate(args: dict) -> dict:
     if not fn:
         return {"error": "oscal_generator module not available yet", "status": "pending"}
 
-    output_format = args.get("format", "json")
+    args.get("format", "json")
     return fn(project_id, db_path=str(DB_PATH))
 
 

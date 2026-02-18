@@ -65,7 +65,7 @@ class TestA2ACallback:
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
 
-        result = mod.call_parent("system.ping", {"echo": "hello"})
+        mod.call_parent("system.ping", {"echo": "hello"})
         assert mock_urlopen.called
         call_args = mock_urlopen.call_args
         request = call_args[0][0]

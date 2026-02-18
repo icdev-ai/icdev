@@ -703,7 +703,6 @@ def generate_pi_model_report(project_id: str, pi_number: str,
         ).fetchone()
 
         prev_pi = None
-        comparison = None
         if prev_snap:
             prev_pi = prev_snap["pi_number"]
 

@@ -833,7 +833,7 @@ def step_06_goals_and_hardprompts(
 
 def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path) -> dict:
     """Step 7: Copy and adapt args/ and context/ configuration files."""
-    app_name = blueprint["app_name"]
+    blueprint["app_name"]
     capabilities = blueprint.get("capabilities", {})
     copied = 0
 
@@ -1133,7 +1133,7 @@ if __name__ == "__main__":
 
 def step_09_cicd_setup(child_root: Path, blueprint: dict, icdev_root: Path) -> dict:
     """Step 9: Copy CI/CD tools and Claude Code commands."""
-    app_name = blueprint["app_name"]
+    blueprint["app_name"]
     copied = 0
 
     # Copy tools/ci/

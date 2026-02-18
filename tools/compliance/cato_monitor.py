@@ -217,7 +217,7 @@ def collect_evidence(
 
         if existing:
             # Mark old record as superseded if hash changed, else just refresh
-            old_row = conn.execute(
+            conn.execute(
                 "SELECT evidence_hash, status FROM cato_evidence WHERE id = ?",
                 (existing["id"],),
             ).fetchone()

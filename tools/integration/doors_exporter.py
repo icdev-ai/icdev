@@ -153,7 +153,7 @@ def _build_reqif_document(requirements, session_id, include_trace=True,
             "LONG-NAME": val,
         })
         props = ET.SubElement(ev, "PROPERTIES")
-        ep = ET.SubElement(props, "EMBEDDED-VALUE", {
+        ET.SubElement(props, "EMBEDDED-VALUE", {
             "KEY": str(idx),
             "OTHER-CONTENT": val,
         })
@@ -265,7 +265,7 @@ def _build_reqif_document(requirements, session_id, include_trace=True,
 
     # Spec relation type for traceability
     srt_id = _reqif_identifier()
-    srt = ET.SubElement(spec_types, "SPEC-RELATION-TYPE", {
+    ET.SubElement(spec_types, "SPEC-RELATION-TYPE", {
         "IDENTIFIER": srt_id,
         "LONG-NAME": "Traces To",
     })
@@ -413,8 +413,8 @@ def export_reqif(session_id, output_path, include_trace=True, db_path=None):
                           AND source_id IN ({placeholders})""",
                     req_ids,
                 ).fetchall()
-                trace_links = [(dict(l)["source_id"], dict(l)["target_id"],
-                               dict(l)["link_type"]) for l in links]
+                trace_links = [(dict(row)["source_id"], dict(row)["target_id"],
+                               dict(row)["link_type"]) for row in links]
 
         # Build XML
         root, relations_exported = _build_reqif_document(

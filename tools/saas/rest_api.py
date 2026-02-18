@@ -310,7 +310,7 @@ def create_api_key():
     try:
         data = request.get_json(force=True, silent=True) or {}
         name = data.get("name", "api-key")
-        scopes = data.get("scopes", [])
+        data.get("scopes", [])
 
         random_hex = secrets.token_hex(16)
         full_key = "icdev_" + random_hex
@@ -351,7 +351,7 @@ def revoke_api_key(key_id):
     """DELETE /api/v1/keys/<key_id> -- Revoke an API key."""
     try:
         conn = _platform_conn()
-        now = _utcnow()
+        _utcnow()
 
         # Verify ownership (admin can revoke any, others only their own)
         row = conn.execute(
@@ -698,7 +698,7 @@ def get_usage():
     """GET /api/v1/usage -- Get usage records for the current tenant."""
     try:
         conn = _platform_conn()
-        period = request.args.get("period", "day")
+        request.args.get("period", "day")
         limit = request.args.get("limit", 100, type=int)
 
         # Summary statistics

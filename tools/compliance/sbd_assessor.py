@@ -442,11 +442,6 @@ def _check_patch_cadence(project_dir):
         found.extend(dep_files)
 
     # Check for pip-compile, poetry.lock freshness indicators
-    lock_patterns = [
-        r"pip.compile|pip-compile",
-        r"poetry.*lock|poetry\.lock",
-        r"pipenv|Pipfile\.lock",
-    ]
     lock_files = _dir_or_file_exists(
         project_dir,
         glob_patterns=[

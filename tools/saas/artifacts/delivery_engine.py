@@ -204,7 +204,7 @@ def _deliver_s3(config: dict, artifact_path: str,
         extra_args["SSEKMSKeyId"] = kms_key_id
 
     logger.info("Uploading %s -> s3://%s/%s", artifact_path, bucket, s3_key)
-    response = s3_client.upload_file(
+    s3_client.upload_file(
         str(artifact_path), bucket, s3_key, ExtraArgs=extra_args or None)
 
     # upload_file returns None on success; head the object for ETag

@@ -187,7 +187,7 @@ def detect_frameworks(
 
             elif "impact_level in" in condition:
                 levels_str = condition.split("in")[1].strip().strip("()")
-                levels = [l.strip().strip("'\"") for l in levels_str.split(",")]
+                levels = [lvl.strip().strip("'\"") for lvl in levels_str.split(",")]
                 if il in levels:
                     matched = True
 

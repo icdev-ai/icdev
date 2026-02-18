@@ -1284,7 +1284,7 @@ def reimport_reqif(project_id: str, file_path: str,
         {"updated": int, "added": int, "deleted": int, "unchanged": int}
     """
     try:
-        from tools.mbse.reqif_parser import parse_reqif, _file_hash, _content_hash as _rp_content_hash  # type: ignore
+        from tools.mbse.reqif_parser import parse_reqif  # type: ignore
     except ImportError:
         parse_reqif = None
 

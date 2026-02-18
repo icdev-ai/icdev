@@ -620,7 +620,7 @@ def generate_pep_config(project_id: str, mesh: str = "istio", pdp_type: str = "d
 
 def _generate_istio_pep(project_id: str, pdp_type: str, project: dict) -> dict:
     """Generate Istio AuthorizationPolicy for external PDP."""
-    project_name = project.get("name", "app")
+    project.get("name", "app")
     namespace = f"icdev-{project_id[:8]}"
 
     # Determine ext_authz provider name based on PDP type

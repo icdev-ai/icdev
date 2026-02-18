@@ -531,7 +531,7 @@ def _check_model_code_sync(project_id, project_dir, conn):
 
     synced = status_counts.get("synced", 0) + status_counts.get("in_sync", 0)
     out_of_sync = status_counts.get("out_of_sync", 0) + status_counts.get("stale", 0)
-    unknown = total - synced - out_of_sync
+    total - synced - out_of_sync
 
     sync_ratio = synced / total if total > 0 else 0.0
 

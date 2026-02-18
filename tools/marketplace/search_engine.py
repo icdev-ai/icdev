@@ -175,7 +175,7 @@ def _bm25_score(query_terms, document_text):
         return 0.0
 
     score = 0.0
-    doc_len = len(doc_tokens)
+    len(doc_tokens)
 
     # Count term frequencies in document
     tf_map = {}
@@ -379,7 +379,7 @@ def _generate_embedding_fallback(text):
 
     for token in tokens:
         # Hash each token to get deterministic bytes
-        h = hashlib.sha256(token.encode("utf-8")).digest()
+        hashlib.sha256(token.encode("utf-8")).digest()
         # Extend hash if needed (SHA-256 = 32 bytes, we need 256 dims)
         # Use multiple rounds with index suffix
         token_vec = []

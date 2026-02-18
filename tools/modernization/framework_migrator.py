@@ -1142,15 +1142,6 @@ def migrate_django_version(source_path, output_path, from_ver="1", to_ver="4"):
     ]
 
     # --- Model transforms (ForeignKey on_delete) ---
-    model_transforms = [
-        {
-            "pattern": r"(ForeignKey\([^)]*?)(\))\s*$",
-            "replacement": r"\1, on_delete=models.CASCADE\2  # TODO [ICDEV-MIGRATION]: Verify on_delete behavior",
-            "flags": ["MULTILINE"],
-        },
-        # Only add on_delete if not already present
-        # This is a safety transform applied after the first one to clean up duplicates
-    ]
 
     # More targeted ForeignKey fix: only if on_delete is missing
     fk_no_ondelete = {

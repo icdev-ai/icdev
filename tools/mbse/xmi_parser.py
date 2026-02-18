@@ -255,8 +255,8 @@ def _build_stereotype_map(root: ET.Element, ns: Dict[str, str]) -> Dict[str, str
     """
     stereo_map: Dict[str, str] = {}
 
-    sysml_uri = ns.get("sysml", "")
-    md_uri = ns.get("md", "")
+    ns.get("sysml", "")
+    ns.get("md", "")
 
     # Iterate top-level children of root looking for stereotype applications
     for child in root:
@@ -268,7 +268,7 @@ def _build_stereotype_map(root: ET.Element, ns: Dict[str, str]) -> Dict[str, str
             local = tag
 
         # Common SysML stereotypes in Cameo exports
-        local_lower = local.lower()
+        local.lower()
         target_xmi_id: Optional[str] = None
 
         # Look for base_Class, base_NamedElement, base_Abstraction, etc.
@@ -949,7 +949,7 @@ def _parse_sysml_stereo_rels(root: ET.Element, ns: Dict[str, str],
     ``base_Abstraction`` (or ``base_Dependency``) plus ``client``/``supplier``
     attributes or nested sub-elements referencing the related model elements.
     """
-    sysml_uri = ns.get("sysml", "")
+    ns.get("sysml", "")
 
     for child in root:
         tag = child.tag
@@ -1329,7 +1329,7 @@ def import_xmi(project_id: str, file_path: str,
     elements = parsed["elements"]
     relationships = parsed["relationships"]
     source_hash = parsed["metadata"]["file_hash"]
-    source_file = parsed["metadata"]["file"]
+    parsed["metadata"]["file"]
 
     # Step 4 — Store in DB
     conn = _get_connection(db_path)

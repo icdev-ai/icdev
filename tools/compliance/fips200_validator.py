@@ -113,7 +113,7 @@ def validate_fips200(project_id, project_dir=None, gate=False, output_dir=None, 
     """
     conn = _get_connection(db_path)
     try:
-        project = _get_project(conn, project_id)
+        _get_project(conn, project_id)
         areas = _load_fips200_areas()
         baseline_info = _get_fips199_baseline(conn, project_id)
         baseline = baseline_info["baseline"].lower()  # "low", "moderate", "high"

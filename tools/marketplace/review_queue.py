@@ -273,7 +273,7 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
         if row["decision"] != "pending":
             return {"error": f"Review {review_id} is already {row['decision']}"}
 
-        now = _now()
+        _now()
         conn.execute(
             """UPDATE marketplace_reviews
                SET reviewer_id = ?, reviewer_role = ?

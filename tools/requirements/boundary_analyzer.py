@@ -1207,7 +1207,7 @@ def _print_human_readable(result: dict):
     if not result:
         return
 
-    status = result.get("status", "unknown")
+    result.get("status", "unknown")
 
     # Registration result
     if "system_id" in result and "baseline_controls_count" in result:

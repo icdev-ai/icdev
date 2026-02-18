@@ -232,7 +232,7 @@ def inherit_controls(legacy_app_id, plan_id):
     conn = _get_db()
     try:
         # Validate plan exists
-        plan = _get_plan_info(conn, plan_id)
+        _get_plan_info(conn, plan_id)
 
         # Get the project_id for the legacy application
         project_id = _get_legacy_app_project_id(conn, legacy_app_id)
@@ -1205,7 +1205,7 @@ def get_compliance_dashboard(plan_id):
                  AND link_type = 'traces_to'""",
             (project_id, f"{plan_id}::%"),
         ).fetchall()
-        distributed_set = {r["control_id"] for r in distributed_rows}
+        {r["control_id"] for r in distributed_rows}
 
     finally:
         conn.close()

@@ -84,15 +84,22 @@ def _log_audit_event(conn, project_id, action, details, file_path=None):
 
 def _parse_yaml_value(val):
     """Parse a YAML scalar string to Python type."""
-    if val.startswith('"') and val.endswith('"'): return val[1:-1]
-    if val.startswith("'") and val.endswith("'"): return val[1:-1]
+    if val.startswith('"') and val.endswith('"'):
+        return val[1:-1]
+    if val.startswith("'") and val.endswith("'"):
+        return val[1:-1]
     low = val.lower()
-    if low in ("true", "yes"): return True
-    if low in ("false", "no"): return False
-    if low in ("null", "~"): return None
+    if low in ("true", "yes"):
+        return True
+    if low in ("false", "no"):
+        return False
+    if low in ("null", "~"):
+        return None
     for cast in (int, float):
-        try: return cast(val)
-        except ValueError: pass
+        try:
+            return cast(val)
+        except ValueError:
+            pass
     return val
 
 
@@ -274,10 +281,14 @@ def _collect_staleness_stats(conn, project_id):
     # Distribution
     dist = {"current": 0, "warning": 0, "critical": 0, "unacceptable": 0}
     for s in stale_vals:
-        if s <= warn_d: dist["current"] += 1
-        elif s <= crit_d: dist["warning"] += 1
-        elif s <= max_d: dist["critical"] += 1
-        else: dist["unacceptable"] += 1
+        if s <= warn_d:
+            dist["current"] += 1
+        elif s <= crit_d:
+            dist["warning"] += 1
+        elif s <= max_d:
+            dist["critical"] += 1
+        else:
+            dist["unacceptable"] += 1
     return {"total_dependencies": total, "outdated_count": outdated,
             "avg_staleness_days": round(sum(stale_vals) / total, 1), "max_staleness_days": max(stale_vals),
             "by_language": by_lang, "staleness_distribution": dist}
@@ -301,13 +312,16 @@ def _collect_vulnerability_stats(conn, project_id):
     for r in rows:
         sev = r["severity"] or "unknown"
         by_sev[sev] = by_sev.get(sev, 0) + 1
-        if r["fix_available"]: fix_avail += 1
-        if r["exploit_available"]: exploit_avail += 1
+        if r["fix_available"]:
+            fix_avail += 1
+        if r["exploit_available"]:
+            exploit_avail += 1
         if r["sla_deadline"]:
             sla_total += 1
             if r["sla_deadline"] < now:
                 cat = r["sla_category"] or sev
-                if cat in overdue: overdue[cat] += 1
+                if cat in overdue:
+                    overdue[cat] += 1
                 overdue_items.append({"cve_id": r["cve_id"], "severity": sev,
                     "sla_category": r["sla_category"], "sla_deadline": r["sla_deadline"],
                     "title": r["title"], "status": r["status"]})
@@ -345,10 +359,14 @@ def _generate_trend_analysis(conn, project_id, lookback_days=90):
     if len(previous) >= 2:
         sd = previous[-1]["score"] - previous[0]["score"]
         vd = previous[-1]["vulnerable_count"] - previous[0]["vulnerable_count"]
-        if sd > 5: score_trend = "improving"
-        elif sd < -5: score_trend = "degrading"
-        if vd < 0: vuln_trend = "improving"
-        elif vd > 0: vuln_trend = "degrading"
+        if sd > 5:
+            score_trend = "improving"
+        elif sd < -5:
+            score_trend = "degrading"
+        if vd < 0:
+            vuln_trend = "improving"
+        elif vd > 0:
+            vuln_trend = "degrading"
     return {"previous_audits": previous, "score_trend": score_trend,
             "vulnerability_trend": vuln_trend, "audit_count": len(previous),
             "lookback_days": lookback_days}
@@ -464,7 +482,8 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     L += ["## Vulnerability Summary", "", "| Severity | Count |", "|----------|-------|"]
     for sev in ("critical", "high", "medium", "low", "unknown"):
         c = vl.get("by_severity", {}).get(sev, 0)
-        if c > 0: L.append(f"| {sev.upper()} | {c} |")
+        if c > 0:
+            L.append(f"| {sev.upper()} | {c} |")
     L += [f"| **Total** | **{vl.get('vulnerable_count',0)}** |", "",
           f"- Fixes available: {vl.get('fix_available_count',0)}",
           f"- Known exploits: {vl.get('exploit_available_count',0)}", ""]
@@ -623,8 +642,10 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
         if scanner:
             try:
                 fn = getattr(scanner, "scan_dependencies", None)
-                if fn: fn(project_id=project_id, project_dir=project_dir or None, offline=offline, db_path=db_path)
-                else: scanner_error = "dependency_scanner.scan_dependencies() not found"
+                if fn:
+                    fn(project_id=project_id, project_dir=project_dir or None, offline=offline, db_path=db_path)
+                else:
+                    scanner_error = "dependency_scanner.scan_dependencies() not found"
             except Exception as e:
                 scanner_error = f"Dependency scanner failed: {e}"
                 print(f"Warning: {scanner_error}", file=sys.stderr)
@@ -637,8 +658,10 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
         if checker:
             try:
                 fn = getattr(checker, "check_vulnerabilities", None)
-                if fn: fn(project_id=project_id, offline=offline, db_path=db_path)
-                else: checker_error = "vulnerability_checker.check_vulnerabilities() not found"
+                if fn:
+                    fn(project_id=project_id, offline=offline, db_path=db_path)
+                else:
+                    checker_error = "vulnerability_checker.check_vulnerabilities() not found"
             except Exception as e:
                 checker_error = f"Vulnerability checker failed: {e}"
                 print(f"Warning: {checker_error}", file=sys.stderr)
@@ -670,9 +693,12 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
         gate = _evaluate_gate(gate_input)
 
         # 8. Generate report
-        if output_dir: rpt_dir = output_dir
-        elif project_dir: rpt_dir = str(Path(project_dir) / "compliance" / "maintenance")
-        else: rpt_dir = str(BASE_DIR / ".tmp" / "maintenance" / project_id)
+        if output_dir:
+            rpt_dir = output_dir
+        elif project_dir:
+            rpt_dir = str(Path(project_dir) / "compliance" / "maintenance")
+        else:
+            rpt_dir = str(BASE_DIR / ".tmp" / "maintenance" / project_id)
 
         report_path = _generate_audit_report(
             {"project_id": project_id, "maintenance_score": maintenance_score,
@@ -721,12 +747,16 @@ def run_maintenance_audit(project_id, output_dir=None, offline=False, db_path=No
         print(f"  Report:         {report_path}")
         if gate["blockers"]:
             print("\n  BLOCKERS:")
-            for b in gate["blockers"]: print(f"    ! {b}")
+            for b in gate["blockers"]:
+                print(f"    ! {b}")
         if gate["warnings"]:
             print("\n  WARNINGS:")
-            for w in gate["warnings"]: print(f"    ~ {w}")
-        if scanner_error: print(f"\n  Note: {scanner_error}")
-        if checker_error: print(f"  Note: {checker_error}")
+            for w in gate["warnings"]:
+                print(f"    ~ {w}")
+        if scanner_error:
+            print(f"\n  Note: {scanner_error}")
+        if checker_error:
+            print(f"  Note: {checker_error}")
         print("=" * 60)
 
         # 12. Return result

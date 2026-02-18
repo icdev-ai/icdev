@@ -1204,7 +1204,7 @@ build-image:
 def scaffold_iac(project_dir: Path, project_name: str, classification: str) -> list:
     """Scaffold an Infrastructure-as-Code project (Terraform + Ansible)."""
     created = scaffold_common(project_dir, project_name, classification)
-    slug = project_name.lower().replace(" ", "_").replace("-", "_")
+    project_name.lower().replace(" ", "_").replace("-", "_")
 
     for d in [
         project_dir / "terraform" / "modules",

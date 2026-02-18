@@ -56,7 +56,7 @@ logger = logging.getLogger("saas.artifacts.signer")
 # ---------------------------------------------------------------------------
 try:
     from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding, utils
+    from cryptography.hazmat.primitives.asymmetric import padding
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False

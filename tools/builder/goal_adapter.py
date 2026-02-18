@@ -284,8 +284,6 @@ def copy_hardprompts(
     ]
 
     # Never copy these subdirectories to child apps
-    never_copy_dirs = {"modernization", "requirements", "simulation", "integration",
-                       "dashboard", "ci"}
 
     # Build the list of subdirectories to process
     dirs_to_copy: List[str] = list(always_copy_dirs)

@@ -168,12 +168,11 @@ def _parse_pyproject_toml(file_path):
         content = f.read()
 
     # Simple parser for [project.dependencies] section
-    in_deps = False
     for line in content.split("\n"):
         stripped = line.strip()
 
         if stripped == "[project]":
-            in_deps = False
+            pass
         if "dependencies" in stripped and "=" in stripped:
             # Handle inline list: dependencies = ["pkg1>=1.0", "pkg2"]
             match = re.search(r'dependencies\s*=\s*\[(.*?)\]', content, re.DOTALL)

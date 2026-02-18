@@ -175,7 +175,7 @@ def get_expiring(project_id, days_ahead=90, db_path=None):
     conn = _get_connection(db_path)
     try:
         cutoff = (datetime.utcnow() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        datetime.utcnow().strftime("%Y-%m-%d")
 
         rows = conn.execute(
             """SELECT * FROM isa_agreements

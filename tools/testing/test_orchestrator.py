@@ -150,7 +150,7 @@ def run_ruff(project_dir: str, logger) -> TestResult:
             # Issues found
             output = proc.stdout.strip() or proc.stderr.strip()
             # Count issues
-            issue_lines = [l for l in output.splitlines() if l.strip() and ":" in l and not l.startswith("Found")]
+            issue_lines = [line for line in output.splitlines() if line.strip() and ":" in line and not line.startswith("Found")]
             logger.info(f"Ruff: {len(issue_lines)} issues found")
 
             return TestResult(
@@ -341,7 +341,7 @@ def run_behave(project_dir: str, logger) -> Tuple[List[TestResult], int, int]:
             "--no-capture",
         ]
 
-        proc = subprocess.run(
+        subprocess.run(
             cmd, capture_output=True, text=True, env=env,
             timeout=300, cwd=project_dir
         )
@@ -773,7 +773,7 @@ def main():
 
     unit_results = [r for r in all_results if r.test_type == "unit"]
     bdd_results = [r for r in all_results if r.test_type == "bdd"]
-    security_results = [r for r in all_results if r.test_type == "security"]
+    [r for r in all_results if r.test_type == "security"]
 
     state.unit_passed = sum(1 for r in unit_results if r.passed)
     state.unit_failed = len(unit_results) - state.unit_passed

@@ -569,7 +569,7 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str,
 
     # Load authority info
     try:
-        from tools.agent.authority import check_authority, load_authority_matrix
+        from tools.agent.authority import check_authority
         authority_info = check_authority(authority_agent_id, topic)
     except ImportError:
         authority_info = {"has_authority": True, "veto_type": "soft", "topics": [topic]}

@@ -466,7 +466,7 @@ def create_merge_request(project_id, session_id, source_branch,
         if not row:
             return {"error": f"No active GitLab connection for project {project_id}"}
 
-        connection_id = row["id"]
+        row["id"]
         instance_url = row["instance_url"]
         filter_criteria = json.loads(row["filter_criteria"] or "{}")
         gitlab_project_id = filter_criteria.get("gitlab_project_id", "0")

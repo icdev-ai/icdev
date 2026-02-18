@@ -1158,7 +1158,7 @@ def compare_coas(session_id, db_path=None):
                     else:
                         winner = "tie"
 
-                    comp_id = _generate_id("comp")
+                    _generate_id("comp")
 
                     conn.execute(
                         """INSERT INTO coa_comparisons

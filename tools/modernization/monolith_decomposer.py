@@ -817,7 +817,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
         methods = []
         for dep in deps:
             dtype = dep["dependency_type"]
-            src_name = dep["source_name"]
+            dep["source_name"]
             if dtype == "method_call":
                 methods.append(f"call_{target_name.lower()}(request)")
             elif dtype == "import":

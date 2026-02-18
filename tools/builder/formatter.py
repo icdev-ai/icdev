@@ -385,7 +385,7 @@ def format_go(project_path: str, check_only: bool = False) -> Dict:
 
     # Check if gofmt is available
     try:
-        version_check = subprocess.run(
+        subprocess.run(
             ["gofmt", "-h"],
             capture_output=True, text=True, timeout=10,
         )

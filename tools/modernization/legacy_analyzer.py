@@ -493,7 +493,7 @@ def analyze_python(app_id, source_path):
                         # Extract methods inside the class
                         for child in ast.iter_child_nodes(node):
                             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                                method_decs = [_get_decorator_name(d) for d in child.decorator_list]
+                                [_get_decorator_name(d) for d in child.decorator_list]
 
                                 # Detect Flask/Blueprint route decorators
                                 for dec in child.decorator_list:
@@ -737,7 +737,7 @@ def analyze_java(app_id, source_path):
         r"(?:\s+implements\s+([\w,\s]+))?",
         re.MULTILINE,
     )
-    re_method = re.compile(
+    re.compile(
         r"(?:public|private|protected)\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
         r"(?:abstract\s+)?[\w<>\[\],\s?]+\s+(\w+)\s*\(",
         re.MULTILINE,
@@ -1003,7 +1003,7 @@ def _detect_spring_beans(source_path, app_id, conn):
                     )
                     for m in bean_pattern.finditer(content):
                         bean_id_str = m.group(1)
-                        bean_class = m.group(2)
+                        m.group(2)
                         # Look for property refs (injection)
                         ref_pattern = re.compile(
                             rf'<bean[^>]*id\s*=\s*["\'{bean_id_str}["\'].*?</bean>',
@@ -1057,7 +1057,7 @@ def analyze_csharp(app_id, source_path):
         r"(?:\s*:\s*([\w,\s.]+))?",
         re.MULTILINE,
     )
-    re_method = re.compile(
+    re.compile(
         r"(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?"
         r"(?:virtual\s+)?(?:override\s+)?(?:abstract\s+)?"
         r"[\w<>\[\]?,\s]+\s+(\w+)\s*\(",

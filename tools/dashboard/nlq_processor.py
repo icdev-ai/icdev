@@ -92,8 +92,6 @@ def validate_sql(sql: str) -> tuple:
 def generate_sql_via_bedrock(query: str, schema: dict) -> Optional[str]:
     """Generate SQL from natural language using Amazon Bedrock."""
     try:
-        import boto3
-
         # Load few-shot examples
         examples_path = BASE_DIR / "context" / "dashboard" / "nlq_examples.json"
         examples = []
@@ -213,7 +211,7 @@ def execute_safely(sql: str, db_path: Path = None) -> dict:
         cursor = conn.execute(sql)
         columns = [desc[0] for desc in cursor.description] if cursor.description else []
         rows = cursor.fetchmany(MAX_ROWS)
-        total_available = len(rows)
+        len(rows)
 
         # Check if there are more rows
         extra = cursor.fetchone()

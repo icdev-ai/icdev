@@ -510,7 +510,6 @@ def generate_service_scaffold(plan_id, service_name, language="python",
     task_id = task["id"] if task else None
     conn.close()
 
-    generated = []
 
     # -- Python / Flask -------------------------------------------------
     if language == "python" and framework in ("flask", "flask"):
@@ -592,9 +591,6 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             CMD ["python", "app.py"]
             # {CUI_BANNER}
         """))
-        generated = ["app.py", "config.py", "routes/__init__.py",
-                     "models/__init__.py", "tests/__init__.py",
-                     "tests/test_health.py", "requirements.txt", "Dockerfile"]
 
     # -- Python / FastAPI -----------------------------------------------
     elif language == "python" and framework == "fastapi":
@@ -665,9 +661,6 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
             # {CUI_BANNER}
         """))
-        generated = ["main.py", "config.py", f"routers/{svc_var}_router.py",
-                     "models/__init__.py", "tests/__init__.py",
-                     "tests/test_health.py", "requirements.txt", "Dockerfile"]
 
     # -- Java / Spring Boot ---------------------------------------------
     elif language == "java" and framework == "spring-boot":
@@ -739,9 +732,6 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             CMD ["java", "-jar", "app.jar"]
             # {CUI_BANNER}
         """))
-        generated = [f"src/main/java/{pkg_path}/{svc_class}Application.java",
-                     f"src/main/java/{pkg_path}/controller/{svc_class}Controller.java",
-                     "pom.xml", "Dockerfile"]
 
     # -- C# / ASP.NET Core ---------------------------------------------
     elif language == "csharp" and framework == "aspnet-core":
@@ -794,8 +784,6 @@ def generate_service_scaffold(plan_id, service_name, language="python",
             CMD ["dotnet", "{svc_var}.dll"]
             # {CUI_BANNER}
         """))
-        generated = ["Program.cs", f"Controllers/{svc_class}Controller.cs",
-                     f"{svc_var}.csproj", "Dockerfile"]
     else:
         raise ValueError(f"Unsupported language/framework: {language}/{framework}")
 

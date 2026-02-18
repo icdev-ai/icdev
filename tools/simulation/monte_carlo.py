@@ -186,7 +186,7 @@ def _build_cdf(sorted_values, num_points=CDF_POINTS):
     """Build cumulative distribution function data points."""
     if not sorted_values:
         return []
-    n = len(sorted_values)
+    len(sorted_values)
     cdf = []
     for i in range(num_points):
         p = i / (num_points - 1) if num_points > 1 else 0.5
@@ -500,7 +500,7 @@ def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS,
         cdf = _build_cdf(raw_results, CDF_POINTS)
 
         # Build summary
-        results_summary = {
+        {
             "mean": round(mean_val, 2),
             "std_dev": round(std_val, 2),
             "min": round(min_val, 2),

@@ -506,7 +506,7 @@ def _simulate_risk(conn, project_id, modifications):
         sim_compound *= (1.0 - p)
     sim_compound_risk = round(1.0 - sim_compound, 4)
 
-    sim_unmitigated = sim_total_risks - mitigated
+    sim_total_risks - mitigated
     sim_mitigation_eff = mitigated / sim_total_risks if sim_total_risks > 0 else 1.0
 
     baseline = {
@@ -721,7 +721,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
             )
 
             # Persist each dimension result
-            result_id = str(uuid4())
+            str(uuid4())
             conn.execute(
                 """INSERT INTO simulation_results
                    (scenario_id, dimension, metric_name,

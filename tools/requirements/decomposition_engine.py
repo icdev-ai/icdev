@@ -606,7 +606,6 @@ def main():
     try:
         if args.get:
             # Query existing decomposition
-            level_filter = args.level if args.level != "story" else None
             # If --level is explicitly provided with --get, use it; otherwise None
             # We detect explicit --level by checking if it differs from default
             # For --get without --level, return all levels

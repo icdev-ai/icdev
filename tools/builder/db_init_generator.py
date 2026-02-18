@@ -618,7 +618,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
             )
 
     capability_constants_src = "\n\n".join(capability_sql_constants)
-    capability_init_src = "\n".join(capability_init_calls) if capability_init_calls else "    pass  # No optional capabilities enabled at init time"
+    "\n".join(capability_init_calls) if capability_init_calls else "    pass  # No optional capabilities enabled at init time"
     migrate_map_src = "\n".join(migrate_cases) if migrate_cases else '    # No optional table groups defined'
 
     # --- Enabled capabilities comment for the header ----------------------

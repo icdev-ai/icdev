@@ -37,7 +37,7 @@ _cached_license: Optional[Dict[str, Any]] = None
 # Graceful import of cryptography (optional for signature verification)
 try:
     from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding, rsa
+    from cryptography.hazmat.primitives.asymmetric import padding
     HAS_CRYPTO = True
 except ImportError:
     HAS_CRYPTO = False

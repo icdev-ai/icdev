@@ -139,7 +139,7 @@ def parse_json(text: str, target_type: Type[T] = None) -> Union[T, Any]:
 
         # If target_type is provided and has __origin__ (e.g., List[SomeType])
         if target_type and hasattr(target_type, '__origin__'):
-            if target_type.__origin__ == list:
+            if target_type.__origin__ is list:
                 item_type = target_type.__args__[0]
                 if hasattr(item_type, 'model_validate'):
                     result = [item_type.model_validate(item) for item in result]
