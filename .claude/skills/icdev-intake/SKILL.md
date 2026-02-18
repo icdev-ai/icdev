@@ -22,7 +22,7 @@ Runs RICOAS Phase 1 — conversational requirements intake:
 6. **Decompose into SAFe hierarchy** — Epic > Capability > Feature > Story with BDD acceptance criteria
 7. **Export decomposed items** for handoff to Architect agent (ATLAS workflow)
 
-All operations produce CUI-marked output and record audit trail entries.
+All operations produce classification-marked output per project settings and record audit trail entries.
 
 ## Steps
 
@@ -141,7 +141,7 @@ Print final summary:
 ## Security Gates
 - Readiness gate: score >= 0.7 before decomposition proceeds
 - Gap gate: zero unresolved critical gaps before export
-- Classification gate: all output marked per impact level (CUI for IL4/IL5, SECRET for IL6)
+- Classification gate: all output marked per project classification resolved via `tools/compliance/resolve_marking.py` (CUI for IL4/IL5, SECRET for IL6, no marking for Public/IL2)
 
 ## Related Skills
 - `/icdev-init` — Initialize project (creates project record for intake to reference)

@@ -651,6 +651,42 @@ def get_project_data_categories(
         conn.close()
 
 
+def _resolve_default_categories(
+    project_id: str,
+    db_path: Optional[Path] = None,
+) -> list:
+    """Resolve default data categories from project metadata (ADR D132).
+
+    Called when no explicit data_classifications exist for a project.
+    Resolution:
+      - Public / IL2 -> empty (no marking required)
+      - SECRET / IL6 -> SECRET
+      - IL4/IL5 or CUI -> CUI (backward compat per ADR D54)
+      - Unknown -> CUI (conservative default)
+    """
+    try:
+        conn = _get_connection(db_path)
+        row = conn.execute(
+            "SELECT classification, impact_level FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        conn.close()
+        if row:
+            proj = dict(row)
+            cls = (proj.get("classification") or "").upper()
+            il = (proj.get("impact_level") or "").upper()
+            if cls == "PUBLIC" or il == "IL2":
+                return []  # No marking required
+            if cls in ("SECRET", "TOP SECRET", "TOP_SECRET") or il == "IL6":
+                return [{"data_category": "SECRET", "subcategory": "NSI"}]
+            # IL4/IL5 or CUI/FOUO -> CUI
+            return [{"data_category": "CUI", "subcategory": "CTI"}]
+    except Exception:
+        pass
+    # Ultimate fallback: CUI (backward compat)
+    return [{"data_category": "CUI", "subcategory": "CTI"}]
+
+
 def get_project_marking(
     project_id: str,
     db_path: Optional[Path] = None,
@@ -666,8 +702,8 @@ def get_project_marking(
     """
     categories_data = get_project_data_categories(project_id, db_path)
     if not categories_data:
-        # Default to CUI if no categories set
-        categories_data = [{"data_category": "CUI", "subcategory": "CTI"}]
+        # Resolve default from project metadata (ADR D132)
+        categories_data = _resolve_default_categories(project_id, db_path)
 
     categories = [c["data_category"] for c in categories_data]
     subcats = {
@@ -676,9 +712,11 @@ def get_project_marking(
         if c.get("subcategory")
     }
 
+    marking_required = bool(categories) and categories != ["PUBLIC"]
     return {
+        "marking_required": marking_required,
         "categories": categories,
-        "highest_sensitivity": get_highest_sensitivity(categories),
+        "highest_sensitivity": get_highest_sensitivity(categories) if categories else "PUBLIC",
         "banner": get_composite_banner(categories, subcats),
         "footer": get_composite_footer(categories),
         "portion_marking": get_composite_portion_marking(categories),

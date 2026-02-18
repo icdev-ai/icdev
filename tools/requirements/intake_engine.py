@@ -103,22 +103,45 @@ def create_session(
     customer_name: str,
     customer_org: str = None,
     impact_level: str = "IL5",
-    classification: str = "CUI",
+    classification: str = None,
     created_by: str = "icdev-requirements-analyst",
     db_path=None,
 ) -> dict:
-    """Create a new intake session. Returns session data dict."""
+    """Create a new intake session. Returns session data dict.
+
+    Classification is resolved dynamically (ADR D132):
+    - If provided explicitly, use that value.
+    - If None, resolve from project metadata (classification + impact_level).
+    - Public / IL2 -> "PUBLIC" (no marking required).
+    - IL4/IL5 -> "CUI", IL6 -> "SECRET" (backward compat per ADR D54).
+    """
     session_id = _generate_id("sess")
     conn = _get_connection(db_path)
 
     # Validate project exists if provided
     if project_id:
         row = conn.execute(
-            "SELECT id FROM projects WHERE id = ?", (project_id,)
+            "SELECT id, classification, impact_level FROM projects WHERE id = ?",
+            (project_id,),
         ).fetchone()
         if not row:
             conn.close()
             raise ValueError(f"Project '{project_id}' not found in database.")
+
+        # Resolve classification from project if not provided
+        if classification is None:
+            proj = dict(row) if hasattr(row, "keys") else {"classification": row[1], "impact_level": row[2]}
+            cls_val = (proj.get("classification") or "").upper()
+            il_val = (proj.get("impact_level") or "").upper()
+            if cls_val == "PUBLIC" or il_val == "IL2":
+                classification = "PUBLIC"
+            elif cls_val in ("SECRET", "TOP SECRET", "TOP_SECRET") or il_val == "IL6":
+                classification = "SECRET"
+            else:
+                classification = "CUI"
+    else:
+        if classification is None:
+            classification = "CUI"
 
     conn.execute(
         """INSERT INTO intake_sessions
@@ -617,14 +640,20 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
                 priority = prio
                 break
 
-        # Create requirement record
+        # Create requirement record — classification inherited from session
         req_id = _generate_id("req")
+        sess_row = conn.execute(
+            "SELECT classification FROM intake_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        req_classification = sess_row[0] if sess_row else "CUI"
         conn.execute(
             """INSERT INTO intake_requirements
                (id, session_id, source_turn, raw_text, requirement_type,
                 priority, status, classification)
-               VALUES (?, ?, ?, ?, ?, ?, 'draft', 'CUI')""",
-            (req_id, session_id, turn_number, sentence.strip(), req_type, priority),
+               VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
+            (req_id, session_id, turn_number, sentence.strip(), req_type,
+             priority, req_classification),
         )
 
         extracted.append({
@@ -1019,6 +1048,12 @@ def main():
         default="IL5",
         help="Classification impact level",
     )
+    parser.add_argument(
+        "--classification",
+        choices=["CUI", "FOUO", "Public", "SECRET", "TOP_SECRET", "NONE"],
+        default=None,
+        help="Data classification override (default: resolved from project)",
+    )
     parser.add_argument("--message", help="Customer message (single turn)")
     parser.add_argument("--resume", action="store_true", help="Resume paused session")
     parser.add_argument("--pause", action="store_true", help="Pause active session")
@@ -1053,11 +1088,16 @@ def main():
             result = get_session(args.session_id)
 
         elif args.customer_name and args.project_id:
+            # Resolve classification: NONE -> "PUBLIC", None -> resolve from project
+            cls_override = args.classification
+            if cls_override == "NONE":
+                cls_override = "PUBLIC"
             result = create_session(
                 project_id=args.project_id,
                 customer_name=args.customer_name,
                 customer_org=args.customer_org,
                 impact_level=args.impact_level,
+                classification=cls_override,
             )
 
         else:

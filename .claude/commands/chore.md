@@ -25,12 +25,20 @@ Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress
    git checkout -b "chore-issue-<number>-icdev-<run_id>-<concise-name>"
    ```
 
+3b. **Resolve Classification Marking** — Determine the project's classification:
+    ```bash
+    python tools/compliance/resolve_marking.py --project-id "<project_id>" --json
+    ```
+    Parse the JSON output to capture: `marking_required`, `banner`, `code_header`, `grep_pattern`, `vision_assertion`.
+    If the resolver is not available, fall back to `CUI // SP-CTI`.
+    If `marking_required` is false (Public/IL2 project), skip steps 9, 18, and CUI-related assertions in 20b.
+
 4. **Research Codebase** — Read relevant files to understand what needs to change.
 
 5. **Create Plan** — Write the plan to `specs/` directory with filename: `issue-<number>-icdev-<run_id>-icdev_planner-<descriptive-name>.md` using the `Plan Format` below.
    - IMPORTANT: Replace every `<placeholder>` with specific values.
    - Be thorough and precise so we don't miss anything or waste time with second-round changes.
-   - All generated artifacts MUST include CUI markings: `CUI // SP-CTI`
+   - If `marking_required` is true, all generated artifacts MUST include classification markings: `<resolved banner>`
 
 6. **Commit Plan**:
    ```bash
@@ -48,10 +56,7 @@ Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress
 
 8. **Execute the Plan** — Follow every step in the plan's `Step by Step Tasks` section, top to bottom.
 
-9. **CUI Markings** — Verify every new or modified Python file includes:
-   ```python
-   # CUI // SP-CTI
-   ```
+9. **Classification Markings** — If `marking_required` is true, verify every new or modified Python file includes the classification header comment (`<resolved code_header>`). Add it to any file missing the marking. If `marking_required` is false, skip this step.
 
 ### Phase 3: Validate — Full ICDEV DevSecOps Pipeline (Stress-test)
 
@@ -170,7 +175,10 @@ These gates apply to every commit regardless of project type.
     **GATE: 0 critical, 0 high**.
 
 18. **CUI Marking Verification** — Confirm all new/modified `.py` files have CUI markings:
-    **GATE: missing_cui_markings blocks merge**.
+    ```bash
+    grep -rL "<resolved grep_pattern>" <list of new/modified .py files>
+    ```
+    **GATE: missing_cui_markings blocks merge**. Add markings to any file missing them.
 
 19. **SBOM Generation**:
     ```bash
@@ -189,7 +197,7 @@ These gates apply to every commit regardless of project type.
     ```bash
     python tools/testing/screenshot_validator.py \
         --image .tmp/e2e-screenshot.png \
-        --assert "CUI // SP-CTI banner is visible at the top" \
+        --assert "<resolved vision_assertion>" \
         --assert "No error dialogs or stack traces visible" \
         --assert "<feature-specific assertion>" \
         --json
@@ -426,7 +434,7 @@ Run these gates when the chore touches architecture, infrastructure, security co
 Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. This is the auditor's evidence artifact — include actual tool output, not just pass/fail.
 
 ```md
-# CUI // SP-CTI
+# <resolved banner> (omit if marking_required is false)
 # Validation Report: Chore — <chore name>
 
 ## Metadata
@@ -494,10 +502,10 @@ Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. T
 - **Result**: PASS
 - **Details**: 0 critical, 0 high vulnerabilities across <N> packages
 
-### CUI Markings
+### Classification Markings
 - **Timestamp**: <ISO 8601>
-- **Result**: PASS
-- **Details**: CUI // SP-CTI verified on <N> new/modified .py files
+- **Result**: <PASS / N/A>
+- **Details**: <resolved banner> verified on <N> new/modified .py files (or "N/A — Public/IL2 project, no marking required")
 - **Files Verified**: <list files>
 
 ### SBOM Generation
@@ -600,13 +608,13 @@ Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. T
 - **Project ID**: <project_id>
 - **Logged At**: <ISO 8601>
 
-# CUI // SP-CTI
+# <resolved banner> (omit if marking_required is false)
 ```
 
 ## Plan Format
 
 ```md
-# CUI // SP-CTI
+# <resolved banner> (omit if marking_required is false)
 # Chore: <chore name>
 
 ## Metadata
@@ -653,7 +661,7 @@ IMPORTANT: Execute every step in order, top to bottom.
 ## Notes
 <additional context>
 
-# CUI // SP-CTI
+# <resolved banner> (omit if marking_required is false)
 ```
 
 ## Chore
