@@ -146,16 +146,16 @@
         return d.innerHTML;
     }
 
-    // Expose API to global scope for inline usage
-    window.ICDEV = {
-        fetchJSON: fetchJSON,
-        updateText: updateText,
-        updateHTML: updateHTML,
-        buildRow: buildRow,
-        startAutoRefresh: startAutoRefresh,
-        stopAutoRefresh: stopAutoRefresh,
-        refreshAlertBadge: refreshAlertBadge,
-        refreshHealthStatus: refreshHealthStatus,
-        escapeHTML: escapeHTML,
-    };
+    // Expose API to global scope — merge into existing ICDEV namespace (preserve inline scripts)
+    var ns = window.ICDEV || {};
+    ns.fetchJSON = fetchJSON;
+    ns.updateText = updateText;
+    ns.updateHTML = updateHTML;
+    ns.buildRow = buildRow;
+    ns.startAutoRefresh = startAutoRefresh;
+    ns.stopAutoRefresh = stopAutoRefresh;
+    ns.refreshAlertBadge = refreshAlertBadge;
+    ns.refreshHealthStatus = refreshHealthStatus;
+    ns.escapeHTML = escapeHTML;
+    window.ICDEV = ns;
 })();

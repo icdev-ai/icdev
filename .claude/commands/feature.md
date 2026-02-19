@@ -392,6 +392,59 @@ Run these gates when the feature touches architecture, infrastructure, security 
 
 ---
 
+### Phase 3.5: Auto-Issue Creation for Blockers
+
+If any gate in Tiers 1-4 produces a **blocker** finding that cannot be auto-fixed inline (e.g., requires multi-file refactoring, architectural changes, or domain expertise), create a tracking issue instead of blocking the entire workflow:
+
+43a. **Auto-Create Bug Issues for Blockers** — For each blocker that requires separate resolution:
+    1. Check for an existing open issue covering the same blocker (avoid duplicates):
+       ```bash
+       gh issue list --label "bug" --label "v&v-blocker" --state open --limit 5
+       ```
+    2. If NO existing issue covers this blocker, auto-create one:
+       ```bash
+       gh issue create --title "bug: <blocker description>" \
+         --label "bug" --label "v&v-blocker" --label "<tier>" \
+         --body "$(cat <<'BLOCKER_EOF'
+       ## V&V Blocker — Auto-Created
+
+       **Discovered during**: Issue #<current_issue_number> validation (run_id: <run_id>)
+       **Gate**: <gate name> (Tier <N>)
+       **Severity**: blocker
+
+       ### Description
+       <what failed and why>
+
+       ### Evidence
+       <paste relevant gate output — counts, file list, error messages>
+
+       ### Suggested Fix
+       <concrete steps to resolve — commands, files to modify, patterns to follow>
+
+       ### Acceptance Criteria
+       - [ ] Gate passes with 0 findings
+       - [ ] Full test suite still passes (121+ tests)
+       - [ ] No regressions introduced
+
+       Run `/bug` against this issue to auto-fix.
+       BLOCKER_EOF
+       )"
+       ```
+    3. Record the auto-created issue numbers in the validation report under the relevant tier.
+    4. Post a summary comment on the current issue listing all auto-created blocker issues.
+
+    **Examples of auto-issue blockers:**
+    - CUI markings missing on N files → `bug: Add CUI markings to N Python files`
+    - No BDD features/ directory → `bug: Create BDD features/ with .feature files for core capabilities`
+    - SAST finding requiring refactoring → `bug: Resolve SAST finding <type> in <module>`
+    - Dashboard page returning errors → `bug: Fix <page> rendering error on dashboard`
+    - Import failures in N tools → `bug: Fix broken imports in N tools after refactoring`
+
+    **Auto-fix vs. Auto-issue decision:**
+    - If the fix is < 10 lines and isolated to the current feature's files → **fix inline** (don't create issue)
+    - If the fix touches pre-existing code across multiple modules → **create issue** (track separately)
+    - If the fix requires domain knowledge or architectural decision → **create issue** (needs review)
+
 ### Phase 4: Commit & Close
 
 44. **Write Validation Report** — Create the audit evidence artifact at `audit/issue-<number>-icdev-<run_id>-validation-report.md` using the `Validation Report Format` below. Include actual output/metrics from every gate. Commit it with the implementation.

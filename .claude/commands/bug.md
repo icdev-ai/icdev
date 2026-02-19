@@ -389,6 +389,38 @@ Run these gates when the bug fix touches architecture, infrastructure, security 
 
 ---
 
+### Phase 3.5: Auto-Issue Creation for Blockers
+
+If any gate produces a **blocker** finding that cannot be auto-fixed inline, create a tracking issue:
+
+43a. **Auto-Create Bug Issues for Blockers** — For each blocker requiring separate resolution:
+    1. Check for existing open issue: `gh issue list --label "bug" --label "v&v-blocker" --state open --limit 5`
+    2. If none covers this blocker, auto-create:
+       ```bash
+       gh issue create --title "bug: <blocker description>" \
+         --label "bug" --label "v&v-blocker" --label "<tier>" \
+         --body "$(cat <<'BLOCKER_EOF'
+       ## V&V Blocker — Auto-Created
+       **Discovered during**: Issue #<current_issue_number> validation (run_id: <run_id>)
+       **Gate**: <gate name> (Tier <N>)
+       **Severity**: blocker
+       ### Description
+       <what failed and why>
+       ### Evidence
+       <gate output — counts, file list, error messages>
+       ### Suggested Fix
+       <concrete steps to resolve>
+       ### Acceptance Criteria
+       - [ ] Gate passes with 0 findings
+       - [ ] Full test suite passes
+       - [ ] No regressions introduced
+       Run `/bug` against this issue to auto-fix.
+       BLOCKER_EOF
+       )"
+       ```
+    3. Record auto-created issue numbers in the validation report.
+    **Decision:** Fix < 10 lines in current feature files → fix inline. Multi-module or architectural → create issue.
+
 ### Phase 4: Commit & Close
 
 44. **Write Validation Report** — Create the audit evidence artifact at `audit/issue-<number>-icdev-<run_id>-validation-report.md` using the `Validation Report Format` below. Include actual output/metrics from every gate. Commit it with the implementation.
