@@ -225,6 +225,7 @@
 | Screenshot Validator | tools/testing/screenshot_validator.py | Vision-based screenshot validation using LLM (Ollama LLaVA / Claude / GPT-4o) | --image, --assert, --batch-dir, --check | Pass/fail + explanation |
 | Integration Smoke Test | tools/testing/smoke_test.py | Verify all CLI tools are importable and --help works after refactors | --json, --quick, --verbose | N tools tested, N passed |
 | CLI Fuzz Test | tools/testing/fuzz_cli.py | Fuzz CLI tools with malformed inputs to catch crashes | --json, --tools, --discover | N tools fuzzed, 0 crashes |
+| Acceptance Validator | tools/testing/acceptance_validator.py | V&V gate: validate plan acceptance criteria against test evidence + DOM content checks | --plan, --test-results, --base-url, --pages, --json | AcceptanceReport JSON |
 | UI Analyzer | tools/modernization/ui_analyzer.py | Legacy UI screenshot analysis for 7R migration scoring | --image, --image-dir, --app-id, --store, --score-only | UI complexity score + analysis |
 | Diagram Extractor | tools/mbse/diagram_extractor.py | Vision-based SysML diagram extraction from screenshots | --image, --diagram-type, --project-id, --store, --validate | Elements + relationships |
 | Diagram Validator | tools/compliance/diagram_validator.py | Compliance diagram validation (SSP, network zone, ATO boundary) | --image, --type, --expected-components, --expected-zones | Pass/fail per check |

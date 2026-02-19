@@ -212,6 +212,20 @@ These gates apply to every commit regardless of project type.
     **GATE: 0 crashes (SIGSEGV/SIGABRT) or unhandled tracebacks**. Tools must fail gracefully with argparse errors, not Python tracebacks.
     Use `--discover` to fuzz all tools, or `--tools` for targeted testing.
 
+20d. **Acceptance Criteria Validation (V&V)** — Validate the plan's acceptance criteria against actual evidence:
+    ```bash
+    python tools/testing/acceptance_validator.py \
+        --plan specs/<plan_file> \
+        --test-results .tmp/test_runs/<run_id>/state.json \
+        --base-url <app_url if applicable> \
+        --pages <pages from plan acceptance criteria> \
+        --json
+    ```
+    **GATE: 0 failed criteria, 0 error pages, plan must have acceptance criteria** (per `acceptance_validation`).
+    This is the "did we build what was asked?" gate. It maps acceptance criteria to test evidence
+    and checks rendered pages for error patterns (500s, tracebacks, JS errors, TemplateNotFound).
+    Unlike E2E/vision which are conditional on UI changes, this step is **always required**.
+
 ---
 
 #### Tier 2: ATO & Compliance Impact (always run when project has a project_id)
@@ -396,6 +410,7 @@ Run these gates when the chore touches architecture, infrastructure, security co
     ✓ Smoke test — <N tools tested, N passed, 0 import failures>
     ✓ Vision validation — <N assertions passed via LLaVA/Claude (or N/A: no UI)>
     ✓ CLI fuzz test — <N tools fuzzed, 0 crashes (or N/A: no CLI changes)>
+    ✓ Acceptance V&V — <N criteria verified, 0 failed, N pages checked, 0 with errors>
 
     Tier 2 — ATO & Compliance Impact:
     ✓ NIST control mapping — <list controls>
@@ -532,6 +547,12 @@ Write this file to `audit/issue-<number>-icdev-<run_id>-validation-report.md`. T
 - **Timestamp**: <ISO 8601>
 - **Result**: <PASS / N/A>
 - **Details**: <N tools fuzzed, N strategies, 0 crashes / N/A — no CLI changes>
+
+### Acceptance Criteria Validation (V&V)
+- **Command**: `python tools/testing/acceptance_validator.py --plan <plan_file> --base-url <url> --pages <pages> --json`
+- **Timestamp**: <ISO 8601>
+- **Result**: PASS
+- **Details**: <N> criteria verified, 0 failed, <N> unverified, <N> pages checked (0 with errors)
 
 ## Tier 2 — ATO & Compliance Impact
 

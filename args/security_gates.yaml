@@ -70,6 +70,16 @@ ivv:
     - bdd_feature_coverage_low
     - pipeline_security_stages_missing
 
+# Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
+acceptance_validation:
+  blocking:
+    - acceptance_criteria_failed
+    - ui_page_renders_with_error
+    - plan_has_no_acceptance_criteria
+  warning:
+    - acceptance_criteria_unverified
+    - page_content_empty
+
 thresholds:
   sast:
     max_critical: 0
@@ -130,6 +140,10 @@ thresholds:
     max_overdue_high_sla: 3
     avg_staleness_max_days: 180
     sla_compliant_min_pct: 80
+  acceptance:
+    max_failed_criteria: 0
+    max_error_pages: 0
+    require_acceptance_criteria: true
 
 fedramp:
   blocking:

@@ -273,7 +273,7 @@ python tools/testing/screenshot_validator.py --image screenshot.png --assert "CU
 python tools/testing/screenshot_validator.py --batch-dir .tmp/test_runs/screenshots/ --json
 ```
 
-**Testing Architecture (8-step pipeline, adapted from ADW test.md):**
+**Testing Architecture (9-step pipeline, adapted from ADW test.md):**
 1. **py_compile** — Python syntax validation (catches missing colons, bad indentation before tests run)
 2. **Ruff** (`ruff>=0.12`) — Ultra-fast Python linter (replaces flake8+isort+black, written in Rust)
 3. **pytest** (tests/) — Unit/integration tests with coverage
@@ -281,7 +281,8 @@ python tools/testing/screenshot_validator.py --batch-dir .tmp/test_runs/screensh
 5. **Bandit** — SAST security scan (SQL injection, XSS, hardcoded secrets)
 6. **Playwright MCP** (.claude/commands/e2e/*.md) — Browser automation E2E tests
 7. **Vision validation** (optional) — LLM-based screenshot analysis (CUI banners, error detection, content verification)
-8. **Security + Compliance gates** — CUI markings, STIG (0 CAT1), secret detection
+8. **Acceptance validation** (V&V) — Deterministic acceptance criteria verification: maps plan criteria to test evidence, checks rendered pages for error patterns (per `acceptance_validation` gate in `security_gates.yaml`)
+9. **Security + Compliance gates** — CUI markings, STIG (0 CAT1), secret detection
 
 **Claude Code test commands** (in .claude/commands/):
 - `/test` — Full application validation suite (syntax + quality + unit + BDD + security)
@@ -853,6 +854,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **DevSecOps Gate:** 0 critical policy-as-code violations, 0 missing image attestations (when active), 0 unresolved critical SAST findings, 0 detected secrets
 - **ZTA Gate:** ZTA maturity ≥ Advanced (0.34) for IL4+, mTLS enforced when service mesh active, default-deny NetworkPolicy required, no pillar at 0.0
 - **MOSA Gate:** 0 external interfaces without ICD, 0 circular dependencies, modularity score ≥ 0.6, 0 direct coupling violations; warn on interface coverage < 80%, TSP expired/missing
+- **Acceptance Validation Gate:** 0 failed acceptance criteria, 0 pages with error patterns (500, tracebacks, JS errors), plan must contain `## Acceptance Criteria` section
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)

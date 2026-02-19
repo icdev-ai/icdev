@@ -163,3 +163,37 @@ class AgentTemplateRequest(BaseModel):
     args: List[str] = []
     run_id: str = ""
     model: Literal["sonnet", "opus", "haiku"] = "sonnet"
+
+
+# --- Acceptance Validation Types (V&V Gate) ---
+
+class AcceptanceCriterionResult(BaseModel):
+    """Result of validating a single acceptance criterion against test evidence."""
+    criterion: str
+    status: Literal["verified", "failed", "unverified"] = "unverified"
+    evidence_type: Optional[Literal["unit_test", "bdd_test", "e2e_test", "page_check", "manual"]] = None
+    evidence_detail: str = ""
+
+
+class UIPageCheckResult(BaseModel):
+    """Result of checking a rendered page for error patterns (deterministic DOM check)."""
+    url: str
+    status_code: int = 0
+    has_errors: bool = False
+    error_patterns_found: List[str] = []
+    content_length: int = 0
+
+
+class AcceptanceReport(BaseModel):
+    """Full acceptance validation report — gate artifact for V&V."""
+    plan_file: str
+    criteria_count: int = 0
+    criteria_verified: int = 0
+    criteria_failed: int = 0
+    criteria_unverified: int = 0
+    pages_checked: int = 0
+    pages_with_errors: int = 0
+    overall_pass: bool = False
+    criteria: List[AcceptanceCriterionResult] = []
+    page_checks: List[UIPageCheckResult] = []
+    timestamp: str = ""

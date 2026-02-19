@@ -16,7 +16,8 @@ Workflow (adapted from ADW adw_test.py):
 4. E2E tests (Playwright MCP) with retry + resolution
 5. Security gate evaluation
 6. Compliance gate evaluation
-7. Summary report with audit trail
+7. Acceptance criteria validation (V&V) — plan criteria + DOM content checks
+8. Summary report with audit trail
 
 Retry logic:
 - Unit/BDD: max 4 attempts (MAX_TEST_RETRY_ATTEMPTS)
@@ -738,6 +739,10 @@ def main():
     parser.add_argument("--skip-e2e", action="store_true", help="Skip E2E browser tests")
     parser.add_argument("--skip-security", action="store_true", help="Skip security gate")
     parser.add_argument("--skip-compliance", action="store_true", help="Skip compliance gate")
+    parser.add_argument("--skip-acceptance", action="store_true", help="Skip acceptance V&V gate")
+    parser.add_argument("--plan", help="Plan file for acceptance criteria validation (V&V)")
+    parser.add_argument("--base-url", help="Base URL for page content checks (e.g., http://localhost:5000)")
+    parser.add_argument("--pages", nargs="*", help="Page paths to check for acceptance V&V")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
     args = parser.parse_args()
 
@@ -870,8 +875,40 @@ def main():
     else:
         logger.info("No agent cards directory found, skipping agentic tests")
 
-    # Step 7: Summary
-    logger.info("\n=== Step 7: Summary ===")
+    # Step 7: Acceptance Criteria Validation (V&V)
+    acceptance_report = None
+    if not args.skip_acceptance:
+        logger.info("\n=== Step 7: Acceptance Criteria Validation (V&V) ===")
+        try:
+            from tools.testing.acceptance_validator import validate_acceptance
+            state_file_for_vv = run_dir / "state.json"
+            # Save interim state so acceptance validator can reference it
+            with open(state_file_for_vv, "w") as f:
+                json.dump(state.model_dump(), f, indent=2, default=str)
+
+            acceptance_report = validate_acceptance(
+                plan_path=args.plan,
+                test_results_path=str(state_file_for_vv) if args.plan else None,
+                base_url=args.base_url,
+                pages=args.pages,
+            )
+            if acceptance_report.overall_pass:
+                logger.info(
+                    f"Acceptance V&V: PASS — {acceptance_report.criteria_verified} criteria verified, "
+                    f"{acceptance_report.pages_checked} pages checked"
+                )
+            else:
+                logger.warning(
+                    f"Acceptance V&V: FAIL — {acceptance_report.criteria_failed} criteria failed, "
+                    f"{acceptance_report.pages_with_errors} pages with errors"
+                )
+        except (ImportError, Exception) as e:
+            logger.warning(f"Acceptance validation unavailable: {e}")
+    else:
+        logger.info("Skipping acceptance validation (--skip-acceptance flag)")
+
+    # Step 8: Summary
+    logger.info("\n=== Step 8: Summary ===")
     state.completed_at = timestamp_iso()
 
     # Merge agentic results into unit/bdd buckets for summary

@@ -265,15 +265,25 @@ What breaks?
 [ ] Long text doesn't break layout
 ```
 
-### User Acceptance
+### Acceptance Criteria Validation (V&V)
 
-Is this what was wanted?
+Validate that what was built matches what was required. This is a **mandatory gate** — not a soft checklist.
 
+```bash
+python tools/testing/acceptance_validator.py \
+    --plan <plan_file> \
+    --test-results .tmp/test_runs/<run_id>/state.json \
+    --base-url <app_url if applicable> \
+    --pages <list of pages from plan> \
+    --json
 ```
-[ ] Solves the original problem
-[ ] User can accomplish their goal
-[ ] No major friction points
-```
+
+**GATE (per `security_gates.yaml` `acceptance_validation`):**
+- 0 failed acceptance criteria
+- 0 pages rendering with error patterns (500, tracebacks, JS errors)
+- Plan MUST have `## Acceptance Criteria` section
+
+If gate fails: review the plan's acceptance criteria against actual implementation, fix gaps, and re-run.
 
 ### Output
 
@@ -281,6 +291,7 @@ Test report with:
 - What passed
 - What failed
 - What needs fixing
+- Acceptance criteria verification results
 
 ---
 
