@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Secure by Design (SbD) report generator.
 
 Loads sbd_report_template.md, queries sbd_assessments table, builds domain scores

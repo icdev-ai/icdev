@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Vulnerability Scanner — orchestrates all security scans.
 
 Implements:

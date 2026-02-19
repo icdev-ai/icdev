@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Extended Project Scaffolder — multi-language project templates.
 
 Implements additional project types beyond the core Python/JS scaffolders:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Create a new ICDEV-managed project.
 
 Generates a UUID, creates the project directory under projects/, scaffolds the

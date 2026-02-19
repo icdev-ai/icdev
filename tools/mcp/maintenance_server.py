@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Maintenance MCP Server — exposes dependency scanning, vulnerability checking,
 maintenance auditing, and remediation tools via MCP protocol.
 

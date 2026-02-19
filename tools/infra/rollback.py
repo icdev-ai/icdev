@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Deployment rollback manager. Queries deployment history, executes kubectl rollout undo,
 records actions in audit trail and deployments table."""
 

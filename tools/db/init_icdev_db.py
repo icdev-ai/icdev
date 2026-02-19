@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Initialize the ICDEV operational database with full schema."""
 
 import sqlite3

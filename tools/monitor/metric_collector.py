@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Prometheus metric collector. Queries Prometheus API for instant and range queries,
 collects application metrics, checks SLA compliance, and stores metric snapshots."""
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Alert correlation engine. Groups related alerts by service and time window,
 deduplicates alerts from multiple sources (ELK, Splunk, Prometheus),
 and escalates incidents when necessary."""

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Builder MCP server exposing TDD code generation, scaffolding, testing, and linting tools.
 
 Tools:

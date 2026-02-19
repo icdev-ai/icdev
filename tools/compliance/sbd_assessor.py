@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """SbD assessment tool per CISA Secure by Design and DoDI 5000.87.
 
 Loads SbD requirements from cisa_sbd_requirements.json, performs automated checks

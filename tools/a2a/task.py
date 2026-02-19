@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """A2A Task Model — dataclasses for the Agent-to-Agent protocol.
 
 Defines Task, Artifact, StatusEvent, and TaskStatus enum

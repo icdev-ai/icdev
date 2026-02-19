@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Read all memory: MEMORY.md + recent daily logs + DB entries."""
 
 import argparse

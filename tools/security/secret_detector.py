@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Secret Detector — scan codebases for accidentally committed secrets.
 
 Implements:

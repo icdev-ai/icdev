@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate embeddings for memory entries that don't have them yet."""
 
 import argparse

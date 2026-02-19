@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """A2A Agent Registry — agent discovery and registration.
 
 Provides:

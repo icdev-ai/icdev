@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Code Generator — generates implementation code from specifications.
 
 Implements:

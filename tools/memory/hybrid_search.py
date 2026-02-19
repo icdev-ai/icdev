@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Hybrid search: combines BM25 keyword search + semantic vector search."""
 
 import argparse

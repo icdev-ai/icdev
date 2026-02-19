@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Append-only audit trail writer. Satisfies NIST 800-53 AU controls.
 No UPDATE or DELETE operations — all entries are immutable."""
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate project directory structure based on project type.
 
 Supports: webapp, microservice, api, cli, data_pipeline, iac.

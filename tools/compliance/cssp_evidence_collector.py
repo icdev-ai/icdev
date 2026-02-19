@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Collect and organize evidence artifacts for CSSP assessment.
 Scans project directories and database records to build a comprehensive
 evidence manifest mapping artifacts to DoD CSSP 8530.01 requirements.

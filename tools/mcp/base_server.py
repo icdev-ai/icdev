@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Base MCP (Model Context Protocol) server implementing JSON-RPC 2.0 over stdio.
 
 Uses Content-Length framing (LSP-style):

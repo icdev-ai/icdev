@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """A2A Agent Server — HTTP-based agent server implementing the A2A protocol.
 
 Uses Flask for HTTP. Implements:

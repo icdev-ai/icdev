@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate recommendations based on patterns, failures, and project context.
 Uses rule-based analysis — no LLM call needed for the base version.
 Recommendations are ranked by confidence and relevance."""

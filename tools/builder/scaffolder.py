@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Project Scaffolder — generates project directory structures from templates.
 
 Implements all project types:

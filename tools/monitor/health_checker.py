@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Application health checker. Performs HTTP health checks with retries,
 checks Kubernetes pod status, and reports health status."""
 

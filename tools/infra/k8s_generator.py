@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate Kubernetes manifests with CUI metadata labels.
 Produces Deployment, Service, Ingress, ConfigMap, NetworkPolicy, and HPA."""
 

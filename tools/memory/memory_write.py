@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Write to daily log and/or memory database."""
 
 import argparse

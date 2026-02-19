@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate Splunk + ELK SIEM forwarding configurations for projects.
 Loads templates from context/compliance/siem_config_templates/, substitutes
 project-specific variables, validates log source coverage, applies CUI

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Infrastructure status report. Queries deployments table, checks K8s pod status
 if available, and produces a comprehensive status summary."""
 

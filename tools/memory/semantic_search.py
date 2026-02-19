@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Semantic (vector) search on memory entries. Requires OpenAI API key for embeddings."""
 
 import argparse

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Dependency Scanner — inventories all project dependencies with version staleness.
 
 For each detected language:

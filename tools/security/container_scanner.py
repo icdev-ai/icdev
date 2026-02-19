@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Container Scanner — scan container images and Dockerfiles for vulnerabilities.
 
 Implements:

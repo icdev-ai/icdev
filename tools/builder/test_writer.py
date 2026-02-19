@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """BDD Test Writer — generates Cucumber/Gherkin feature files and step definitions.
 
 Implements:

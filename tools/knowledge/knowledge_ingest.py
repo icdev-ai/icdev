@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Ingest patterns and failures into the knowledge base.
 Writes to knowledge_patterns and failure_log tables in icdev.db."""
 

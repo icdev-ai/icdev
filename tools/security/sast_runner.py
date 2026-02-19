@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """SAST Runner — Static Application Security Testing wrapper.
 
 Implements:

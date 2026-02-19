@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Self-healing decision engine. Analyzes failures, matches patterns,
 decides whether to auto-heal or escalate, executes remediation actions,
 and records outcomes."""

@@ -1,3 +1,4 @@
+# CUI // SP-CTI
 """
 Dashboard configuration.
 Loads settings from args/monitoring_config.yaml and args/cui_markings.yaml

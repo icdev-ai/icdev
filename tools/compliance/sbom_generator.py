@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate CycloneDX Software Bill of Materials (SBOM).
 Detects project type, parses dependency files, generates CycloneDX 1.4 JSON
 format SBOM with CUI classification metadata, records in sbom_records table,

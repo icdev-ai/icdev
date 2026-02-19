@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Knowledge MCP server exposing pattern detection, self-healing, and recommendation tools.
 
 Tools:

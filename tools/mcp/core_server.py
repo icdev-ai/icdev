@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Core MCP server exposing project management tools for the ICDEV system.
 
 Tools:

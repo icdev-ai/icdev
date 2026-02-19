@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Compliance MCP server exposing NIST 800-53, SSP, POAM, STIG, SBOM, and CUI tools.
 
 Tools:

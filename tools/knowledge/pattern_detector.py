@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Detect patterns in failures using statistical methods (no GPU required).
 Includes feature extraction, pattern matching via string similarity,
 frequency anomaly detection, and deployment correlation analysis."""

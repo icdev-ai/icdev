@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Dependency Auditor — audit Python and JavaScript dependencies for vulnerabilities.
 
 Implements:

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Infrastructure MCP server exposing IaC generation, CI/CD pipeline, and deployment tools.
 
 Tools:

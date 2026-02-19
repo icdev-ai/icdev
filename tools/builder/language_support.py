@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Language Support Module — unified language detection and registry for ICDEV.
 
 Provides:

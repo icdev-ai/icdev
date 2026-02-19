@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate GitLab CI/CD pipeline with 7 stages: lint, test, security-scan,
 build, compliance-check, deploy-staging, deploy-prod.
 Includes security gates, manual approval for prod, and rollback job."""

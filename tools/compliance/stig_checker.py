@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """STIG checklist auto-generation and assessment tool.
 Loads STIG template, performs automated checks where possible,
 stores results in stig_findings table, evaluates security gates,

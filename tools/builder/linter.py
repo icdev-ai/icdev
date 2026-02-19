@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Linting Wrapper — runs language-specific linters and returns structured findings.
 
 Implements:

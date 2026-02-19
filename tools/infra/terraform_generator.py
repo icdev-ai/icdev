@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate Terraform configurations for AWS GovCloud deployments.
 Produces provider.tf, variables.tf, outputs.tf, main.tf, and optional modules
 for RDS, ECR, and VPC — all with CUI header comments."""

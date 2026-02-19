@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate a project-specific Incident Response Plan per CSSP SOC requirements.
 Fills {{variables}} from project data in icdev.db, applies CUI markings,
 saves to project compliance directory, and logs an audit event."""

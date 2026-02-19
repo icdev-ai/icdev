@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """A2A Agent Client — sends tasks to remote A2A agents.
 
 Implements:

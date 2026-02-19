@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Remediation Engine — auto-implements dependency fixes and tracks remediation SLAs.
 
 For each vulnerable/outdated dependency:

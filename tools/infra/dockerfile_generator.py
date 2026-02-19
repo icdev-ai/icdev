@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Generate STIG-hardened Dockerfiles for Python and Node.js applications.
 Multi-stage builds, non-root user, no shell, minimal base, health checks, CUI labels."""
 

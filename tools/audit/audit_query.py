@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
 """Query the immutable audit trail. Read-only operations only."""
 
 import argparse
