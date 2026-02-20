@@ -6,7 +6,9 @@
         "@playwright/mcp@latest",
         "--isolated",
         "--config",
-        "./playwright-mcp-config.json"
+        "./playwright-mcp-config.json",
+        "--output-dir",
+        "playwright"
       ]
     },
     "icdev-core": {

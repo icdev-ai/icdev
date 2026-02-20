@@ -300,6 +300,34 @@ zero_trust:
     require_mtls_for_il4_plus: true
     require_network_policy: true
 
+# Remote Command Gateway Gates (Phase 28)
+remote_command:
+  blocking:
+    - unbound_user_command
+    - signature_verification_failed
+    - classification_level_exceeded
+    - rate_limit_exceeded
+    - blocked_command_on_remote
+  warning:
+    - unbound_attempts_approaching_limit
+    - response_redacted
+    - challenge_expired
+  thresholds:
+    binding_required: true
+    max_unbound_attempts: 3
+    challenge_ttl_minutes: 10
+    signature_required: true
+    replay_window_seconds: 300
+    rate_limit_per_user: 30
+    rate_limit_per_channel: 100
+    blocked_commands_remote:
+      - icdev-deploy
+      - icdev-init
+    confirmation_required:
+      - icdev-test
+      - icdev-secure
+      - icdev-build
+
 # CI/CD Self-Recovery Guard Rails (Phase 4 — D134)
 recovery:
   max_attempts: 3

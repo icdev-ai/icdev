@@ -157,6 +157,15 @@ These gates apply to every commit regardless of project type.
     ```
     Then run **vision validation** on the screenshot (see step 20b).
 
+14b. **Interactive User Verification** (MANDATORY when fix touches UI/dashboard/web pages) —
+    After automated E2E/vision checks pass, verify the fix works from the user's perspective:
+    1. Open the affected page(s) with Playwright MCP (`browser_navigate`)
+    2. Interact as the user would — click buttons, submit forms, watch real-time updates, trigger the fixed workflow
+    3. Take a screenshot (`browser_take_screenshot`) as evidence of the working state
+    4. Confirm the bug is actually fixed from the user's perspective
+    **GATE: Do NOT proceed to commit if interactive verification fails.**
+    API/CLI validation alone is insufficient — the user interacts through the browser, so that's where V&V must happen.
+
 15. **SAST Security Scan** — Run static analysis for vulnerabilities:
     ```bash
     python tools/security/sast_runner.py --project-path . --json

@@ -524,9 +524,13 @@ class BedrockClient:
 
     @staticmethod
     def _backoff_delay(attempt: int) -> float:
-        """Exponential backoff with full jitter: min(cap, base * 2^attempt) * random."""
-        delay = min(MAX_RETRY_DELAY, BASE_RETRY_DELAY * (2 ** attempt))
-        return delay * random.uniform(0.5, 1.0)
+        """Exponential backoff with full jitter (D147 — delegates to resilience.retry)."""
+        try:
+            from tools.resilience.retry import backoff_delay
+            return backoff_delay(attempt, BASE_RETRY_DELAY, MAX_RETRY_DELAY)
+        except ImportError:
+            delay = min(MAX_RETRY_DELAY, BASE_RETRY_DELAY * (2 ** attempt))
+            return delay * random.uniform(0.5, 1.0)
 
     # -----------------------------------------------------------------------
     # Core invocation

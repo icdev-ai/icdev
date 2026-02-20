@@ -1,0 +1,176 @@
+# CUI // SP-CTI
+# ICDEV Auto-Scaling Configuration
+# Controls HPA, PDB, topology spread, and node provisioning
+# Change scaling behavior without editing K8s manifests or tools
+# D141: CPU/memory baseline; custom metrics via Prometheus adapter as Phase 2
+# Cloud-agnostic — works on EKS, GKE, AKS, OpenShift, bare-metal K8s
+
+# -----------------------------------------------------------------------
+# Global scaling settings
+# -----------------------------------------------------------------------
+autoscaling:
+  enabled: true
+  api_version: autoscaling/v2          # autoscaling/v2 for K8s 1.25+
+  metrics_server_required: true        # Metrics Server must be deployed
+
+# -----------------------------------------------------------------------
+# Scaling profiles by agent tier
+# -----------------------------------------------------------------------
+profiles:
+  core:
+    # Orchestrator, Architect — always-on, fast scale-up
+    agents: [orchestrator, architect]
+    min_replicas: 2
+    max_replicas: 6
+    cpu_target_percent: 60
+    memory_target_percent: 70
+    scale_up:
+      stabilization_window_seconds: 60
+      max_percent_per_minute: 100      # Doubles capacity per minute
+      max_pods_per_minute: 4
+      select_policy: Max
+    scale_down:
+      stabilization_window_seconds: 300  # 5 min cooldown before scale-down
+      max_percent_per_minute: 25
+    pdb:
+      type: minAvailable
+      value: 1
+
+  domain:
+    # Builder, Compliance, Security, Infra, MBSE, Modernization,
+    # Requirements Analyst, Supply Chain, Simulation, Integration,
+    # DevSecOps, Gateway
+    agents:
+      - builder
+      - compliance
+      - security
+      - infrastructure
+      - mbse
+      - modernization
+      - requirements-analyst
+      - supply-chain
+      - simulation
+      - integration
+      - devsecops
+      - gateway
+    min_replicas: 1
+    max_replicas: 8
+    cpu_target_percent: 70
+    memory_target_percent: 80
+    scale_up:
+      stabilization_window_seconds: 60
+      max_percent_per_minute: 50
+      max_pods_per_minute: 2
+      select_policy: Max
+    scale_down:
+      stabilization_window_seconds: 300
+      max_percent_per_minute: 25
+    pdb:
+      type: maxUnavailable
+      value: 1
+
+  support:
+    # Knowledge, Monitor — conservative, low priority
+    agents: [knowledge, monitor]
+    min_replicas: 1
+    max_replicas: 4
+    cpu_target_percent: 75
+    memory_target_percent: 85
+    scale_up:
+      stabilization_window_seconds: 60
+      max_percent_per_minute: 25
+      max_pods_per_minute: 2
+      select_policy: Max
+    scale_down:
+      stabilization_window_seconds: 600  # 10 min cooldown
+      max_percent_per_minute: 25
+    pdb:
+      type: maxUnavailable
+      value: 1
+
+  dashboard:
+    min_replicas: 2
+    max_replicas: 10
+    cpu_target_percent: 70
+    memory_target_percent: 80
+    scale_up:
+      stabilization_window_seconds: 30
+      max_percent_per_minute: 100
+      max_pods_per_minute: 4
+      select_policy: Max
+    scale_down:
+      stabilization_window_seconds: 300
+      max_percent_per_minute: 25
+    pdb:
+      type: minAvailable
+      value: 1
+
+  api_gateway:
+    min_replicas: 2
+    max_replicas: 12
+    cpu_target_percent: 60
+    memory_target_percent: 70
+    scale_up:
+      stabilization_window_seconds: 30
+      max_percent_per_minute: 100
+      max_pods_per_minute: 4
+      select_policy: Max
+    scale_down:
+      stabilization_window_seconds: 300
+      max_percent_per_minute: 25
+    pdb:
+      type: minAvailable
+      value: 1
+
+# -----------------------------------------------------------------------
+# Topology spread (D144)
+# -----------------------------------------------------------------------
+topology_spread:
+  enabled: true
+  zone_spread:
+    max_skew: 1
+    topology_key: topology.kubernetes.io/zone
+    when_unsatisfiable: ScheduleAnyway    # Availability over strict spread
+  node_spread:
+    max_skew: 1
+    topology_key: kubernetes.io/hostname
+    when_unsatisfiable: ScheduleAnyway
+
+# -----------------------------------------------------------------------
+# Node autoscaling (cloud-agnostic — choose your provider)
+# -----------------------------------------------------------------------
+node_autoscaler:
+  # Cluster Autoscaler is cloud-agnostic (works on EKS, GKE, AKS, bare-metal)
+  type: cluster-autoscaler              # cluster-autoscaler | karpenter | none
+  scale_down_delay_after_add: 300s      # Wait 5 min after node add
+  scale_down_unneeded_time: 300s        # Remove node after 5 min idle
+  max_nodes: 50
+  # Provider-specific overlays:
+  #   EKS:  See k8s/overlays/eks/karpenter-provisioner.yaml
+  #   GKE:  GKE Autopilot handles scaling natively; standard mode uses CA
+  #   AKS:  Enable via az aks update --enable-cluster-autoscaler
+  #   OpenShift: Use MachineAutoscaler CRD
+
+# -----------------------------------------------------------------------
+# Custom metrics (Phase 2 — future)
+# -----------------------------------------------------------------------
+custom_metrics:
+  enabled: false
+  prometheus_adapter:
+    rules: []
+    # Example future rule:
+    # - name: agent_queue_depth
+    #   metric: icdev_agent_task_queue_length
+    #   target_value: 5
+
+# -----------------------------------------------------------------------
+# Rate limiter backend (required for multi-replica API gateway)
+# -----------------------------------------------------------------------
+rate_limiter:
+  backend: in_memory                     # in_memory | redis
+  redis:
+    host: ""                             # Required if backend=redis
+    port: 6379
+    db: 0
+    password_secret: ""                  # K8s secret name
+    key_prefix: "icdev:rate:"

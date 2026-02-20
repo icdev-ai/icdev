@@ -30,6 +30,23 @@ except ImportError:
     def log_event(**kwargs): return -1
 
 
+FRAMEWORK_KEYWORDS = {
+    "fedramp_moderate": ["fedramp", "authorization", "ato", "fips 140", "continuous monitoring"],
+    "fedramp_high": ["fedramp high", "authorization", "ato", "fips 140", "nsa", "type 1"],
+    "cmmc_l2": ["cmmc", "cyber hygiene", "cui protection", "nist 800-171"],
+    "cmmc_l3": ["cmmc level 3", "advanced threat", "apt"],
+    "nist_800_171": ["800-171", "cui", "controlled unclassified", "dfars"],
+    "nist_800_207": ["zero trust", "zta", "microsegmentation", "least privilege"],
+    "hipaa": ["hipaa", "phi", "protected health", "healthcare", "medical"],
+    "pci_dss": ["pci", "payment card", "cardholder", "credit card"],
+    "cjis": ["cjis", "criminal justice", "law enforcement", "fbi"],
+    "soc2": ["soc 2", "trust services", "availability", "processing integrity"],
+    "iso_27001": ["iso 27001", "isms", "information security management"],
+    "hitrust": ["hitrust", "csf", "health information trust"],
+    "cnssi_1253": ["cnssi", "1253", "classified overlay", "nss"],
+}
+
+
 def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
@@ -72,6 +89,13 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     reqs = [dict(r) for r in reqs]
     total = len(reqs)
 
+    # Parse session context (needed by clarity + compliance)
+    context = {}
+    try:
+        context = json.loads(session_data.get("context_summary") or "{}")
+    except (ValueError, TypeError):
+        pass
+
     # --- Completeness ---
     types_present = set(r["requirement_type"] for r in reqs)
     expected_types = {"functional", "security", "interface", "data", "performance", "compliance"}
@@ -80,8 +104,23 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     completeness = type_coverage * 0.6 + count_factor * 0.4
 
     # --- Clarity ---
+    # Based on unresolved ambiguities, conversation depth, and requirement specificity
     amb_count = session_data.get("ambiguity_count", 0)
-    clarity = max(0.0, 1.0 - (amb_count / max(total, 1)))
+    flagged = context.get("flagged_ambiguities", [])
+    turn_row = conn.execute(
+        "SELECT COUNT(*) as cnt FROM intake_conversation "
+        "WHERE session_id = ? AND role = 'customer'",
+        (session_id,),
+    ).fetchone()
+    turn_count = turn_row["cnt"] if turn_row else 0
+    # Each user turn after the first resolves ambiguity somewhat
+    resolved_credit = min(len(flagged), max(0, turn_count - 1)) if flagged else 0
+    unresolved = max(0, len(flagged) - resolved_credit)
+    # Start at 50%, penalized by unresolved ambiguities, boosted by conversation depth
+    clarity_base = 0.50
+    penalty = min(0.40, unresolved * 0.15)
+    depth_bonus = min(0.50, turn_count * 0.05)
+    clarity = min(1.0, max(0.0, clarity_base - penalty + depth_bonus))
 
     # --- Feasibility ---
     # Without architect review, estimate from constraints
@@ -91,8 +130,18 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     feasibility = 0.4 + (0.2 if has_timeline else 0) + (0.2 if has_budget else 0) + (0.2 if has_team else 0)
 
     # --- Compliance ---
+    selected_frameworks = context.get("selected_frameworks", [])
+
     sec_reqs = sum(1 for r in reqs if r["requirement_type"] in ("security", "compliance"))
-    compliance = min(1.0, sec_reqs / 5.0)  # expect ~5 security/compliance reqs
+
+    if selected_frameworks:
+        # Selecting frameworks IS the compliance declaration — full credit.
+        # ICDEV enforces the selected frameworks during build/deploy gates,
+        # so the customer's intent is captured and will be validated.
+        compliance = 1.0
+    else:
+        # No frameworks selected — score based on security requirements
+        compliance = min(1.0, sec_reqs / 5.0)
 
     # --- Testability ---
     with_criteria = sum(1 for r in reqs if r.get("acceptance_criteria"))

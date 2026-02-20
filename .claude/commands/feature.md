@@ -35,6 +35,34 @@ Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress
 
 4. **Research Codebase** — Read relevant files to understand patterns, architecture, and conventions.
 
+4b. **Load COA Context** (if session_id provided) — Check if a COA was selected for this session:
+    ```bash
+    python -c "
+import sqlite3, json, pathlib
+db = pathlib.Path('data/icdev.db')
+if not db.exists(): print(json.dumps({'coa': None})); exit()
+conn = sqlite3.connect(str(db)); conn.row_factory = sqlite3.Row
+row = conn.execute('SELECT * FROM coa_definitions WHERE session_id = ? AND status = ?', ('$ARGUMENTS'.split()[0] if ' ' in '$ARGUMENTS' else '$ARGUMENTS', 'selected')).fetchone()
+if row:
+    d = dict(row)
+    for k in ('architecture_summary','cost_estimate','risk_profile','timeline','compliance_impact','supply_chain_impact'):
+        if d.get(k) and isinstance(d[k], str):
+            try: d[k] = json.loads(d[k])
+            except: pass
+    print(json.dumps(d, default=str))
+else: print(json.dumps({'coa': None}))
+conn.close()
+"
+    ```
+    If a selected COA is found, use it to inform the plan:
+    - **Architecture pattern** from `architecture_summary.pattern` — e.g., microservices, monolith, serverless
+    - **Scope** from `architecture_summary.components` or the COA description — which requirements are included
+    - **Timeline** from `timeline.timeline_pis` — number of PIs planned
+    - **Infrastructure** from `architecture_summary.infrastructure` — cloud services, databases
+    - **Risk register** from `risk_profile` — identified risks and mitigations
+    - **Boundary tier** from `boundary_tier` — GREEN/YELLOW/ORANGE/RED for ATO assessment
+    If no COA is found, proceed with full requirements (backward compatible).
+
 5. **Create Plan** — Write the plan to `specs/` directory with filename: `issue-<number>-icdev-<run_id>-icdev_planner-<descriptive-name>.md` using the `Plan Format` below.
    - IMPORTANT: Replace every `<placeholder>` with specific values.
    - Use your reasoning model: THINK HARD about feature requirements, design, and implementation.
@@ -156,6 +184,15 @@ These gates apply to every commit regardless of project type.
     npx playwright screenshot http://localhost:5000/ .tmp/e2e-screenshot.png --full-page
     ```
     Then run **vision validation** on the screenshot (see step 20b).
+
+14b. **Interactive User Verification** (MANDATORY when feature touches UI/dashboard/web pages) —
+    After automated E2E/vision checks pass, verify the feature works from the user's perspective:
+    1. Open the affected page(s) with Playwright MCP (`browser_navigate`)
+    2. Interact as the user would — click buttons, submit forms, watch real-time updates, trigger workflows
+    3. Take a screenshot (`browser_take_screenshot`) as evidence of the working state
+    4. Confirm the feature behaves correctly from the user's perspective
+    **GATE: Do NOT proceed to commit if interactive verification fails.**
+    API/CLI validation alone is insufficient — the user interacts through the browser, so that's where V&V must happen.
 
 15. **SAST Security Scan** — Run static analysis for vulnerabilities:
     ```bash
@@ -720,6 +757,15 @@ So that <benefit/value>
 
 ## Solution Statement
 <describe the proposed solution approach>
+
+## COA Context
+<!-- If a COA was selected via /icdev-simulate or chat UI, populate from step 4b. Otherwise write "No COA selected — using full requirements." -->
+- **COA Name**: <name or "None">
+- **Architecture Pattern**: <from architecture_summary.pattern or "N/A">
+- **Scope**: <which requirements are included>
+- **Timeline**: <N PIs from timeline.timeline_pis or "N/A">
+- **Boundary Tier**: <GREEN/YELLOW/ORANGE/RED or "N/A">
+- **Key Risks**: <from risk_profile or "N/A">
 
 ## ATO Impact Assessment
 - **Boundary Impact**: <GREEN/YELLOW/ORANGE/RED>

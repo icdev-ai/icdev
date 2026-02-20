@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "mission_planner"
+version = "0.1.0"
+description = "mission-planner - ICDEV managed project"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0",
+    "gunicorn>=21.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-bdd>=7.0",
+    "pytest-cov>=4.1",
+    "flake8>=7.0",
+    "black>=24.0",
+    "bandit>=1.7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "--cov=src --cov-report=html --cov-report=term-missing"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]

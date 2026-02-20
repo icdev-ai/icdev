@@ -192,3 +192,48 @@ podSecurity:
   runAsUser: 1000
   readOnlyRootFilesystem: true
   dropAllCapabilities: true
+
+# -----------------------------------------------------------------------
+# Auto-Scaling (HPA + PDB)
+# D141: CPU/memory baseline; cloud-agnostic
+# -----------------------------------------------------------------------
+autoscaling:
+  enabled: false                         # Set true to enable HPA
+  apiGateway:
+    minReplicas: 2
+    maxReplicas: 12
+    cpuTarget: 60
+    memoryTarget: 70
+  orchestrator:
+    minReplicas: 2
+    maxReplicas: 6
+    cpuTarget: 60
+    memoryTarget: 70
+  builder:
+    minReplicas: 1
+    maxReplicas: 8
+    cpuTarget: 70
+    memoryTarget: 80
+  compliance:
+    minReplicas: 1
+    maxReplicas: 8
+    cpuTarget: 70
+    memoryTarget: 80
+  security:
+    minReplicas: 1
+    maxReplicas: 8
+    cpuTarget: 70
+    memoryTarget: 80
+
+# -----------------------------------------------------------------------
+# Topology Spread (D144)
+# Distribute pods across zones and nodes for resilience
+# -----------------------------------------------------------------------
+topologySpread:
+  enabled: true
+  zoneSpread:
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway    # Availability over strict spread
+  nodeSpread:
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway

@@ -115,6 +115,14 @@ class A2AAgentClient:
         meta = metadata or {}
         if project_id:
             meta["project_id"] = project_id
+        # Propagate correlation ID for distributed tracing (D149)
+        try:
+            from tools.resilience.correlation import get_correlation_id
+            cid = get_correlation_id()
+            if cid:
+                meta["correlation_id"] = cid
+        except ImportError:
+            pass
 
         payload = {
             "jsonrpc": "2.0",

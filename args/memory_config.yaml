@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+# Memory System Configuration — time-decay and ranking settings (D147)
+---
+
+time_decay:
+  # Exponential decay formula: decay_factor = 2^(-(age_days / half_life_days))
+  # Per-type half-lives (in days)
+  half_lives:
+    fact: 90          # Long-lived — organizational knowledge
+    preference: 180   # Very long-lived — user/system preferences rarely change
+    event: 7          # Short-lived — session events lose relevance quickly
+    insight: 30       # Medium — insights remain useful for ~1 month
+    task: 14          # Short-medium — task context relevant during sprint
+    relationship: 120 # Long-lived — people/system relationships persist
+
+  # Default half-life for unknown memory types
+  default_half_life: 30
+
+  # Minimum decay factor (prevents ancient entries from being completely zeroed)
+  min_decay_factor: 0.01
+
+  # Scoring weights when time-decay is enabled (must sum to 1.0)
+  weights:
+    relevance: 0.60    # BM25 + semantic hybrid score
+    recency: 0.25      # Time decay factor
+    importance: 0.15   # Normalized importance (importance / 10.0)
+
+  # Override: if importance >= this threshold, halve the decay effect
+  # (very important memories resist decay)
+  importance_decay_resistance_threshold: 8

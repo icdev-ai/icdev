@@ -105,8 +105,9 @@ def semantic_search(query, entries):
     return [s / max_score for s in scores]
 
 
-def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight):
-    """Combine BM25 and semantic scores."""
+def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_weight,
+                time_decay_enabled=False, decay_config=None):
+    """Combine BM25 and semantic scores, with optional time-decay (D147)."""
     results = []
     for i, entry in enumerate(entries):
         bm25_s = bm25_scores[i] if bm25_scores else 0.0
@@ -119,6 +120,21 @@ def hybrid_rank(entries, bm25_scores, semantic_scores, bm25_weight, semantic_wei
             combined = (bm25_weight * bm25_s) + (semantic_weight * sem_s)
 
         id_, content, type_, importance, _, created_at = entry
+
+        # D147: Apply time-decay reranking when enabled
+        if time_decay_enabled:
+            try:
+                from tools.memory.time_decay import compute_time_aware_score
+                combined = compute_time_aware_score(
+                    base_score=combined,
+                    created_at=created_at or "",
+                    memory_type=type_ or "event",
+                    importance=importance or 5,
+                    config=decay_config,
+                )
+            except (ImportError, Exception):
+                pass  # Fall through to original combined score
+
         results.append((combined, id_, content, type_, importance, created_at))
 
     results.sort(reverse=True, key=lambda x: x[0])
@@ -131,6 +147,7 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Max results")
     parser.add_argument("--bm25-weight", type=float, default=0.7, help="BM25 weight (default 0.7)")
     parser.add_argument("--semantic-weight", type=float, default=0.3, help="Semantic weight (default 0.3)")
+    parser.add_argument("--time-decay", action="store_true", help="Enable time-decay scoring (D147)")
     args = parser.parse_args()
 
     entries = get_all_entries()
@@ -144,14 +161,25 @@ def main():
     if semantic_scores is None:
         print("(Semantic search unavailable — using keyword search only)")
 
-    results = hybrid_rank(entries, bm25_scores, semantic_scores, args.bm25_weight, args.semantic_weight)
+    # D147: Load time-decay config if enabled
+    decay_config = None
+    if args.time_decay:
+        try:
+            from tools.memory.time_decay import load_decay_config
+            decay_config = load_decay_config()
+        except (ImportError, Exception):
+            print("(Time-decay module unavailable — using standard ranking)")
+
+    results = hybrid_rank(entries, bm25_scores, semantic_scores, args.bm25_weight, args.semantic_weight,
+                          time_decay_enabled=args.time_decay, decay_config=decay_config)
 
     # Log access
+    search_type = "hybrid_time_decay" if args.time_decay else "hybrid"
     conn = sqlite3.connect(str(DB_PATH))
     c = conn.cursor()
     c.execute(
         "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",
-        (args.query, min(args.limit, len(results)), "hybrid"),
+        (args.query, min(args.limit, len(results)), search_type),
     )
     conn.commit()
     conn.close()

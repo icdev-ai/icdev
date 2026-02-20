@@ -61,6 +61,19 @@ VALID_EVENT_TYPES = (
     "agent_collaboration_started", "agent_collaboration_completed",
     "agent_message_sent", "agent_memory_stored", "agent_memory_recalled",
     "agent_escalation_created",
+    # Remote Command Gateway events (Phase 28)
+    "remote_binding_created", "remote_binding_provisioned", "remote_binding_revoked",
+    "remote_command_received", "remote_command_rejected", "remote_command_completed",
+    "remote_response_filtered",
+    # Spec-kit events (D156-D161)
+    "spec_quality_check", "spec_consistency_check",
+    "constitution_added", "constitution_removed", "constitution_defaults_loaded",
+    "clarification_analyzed",
+    "spec.init", "spec.register",
+    # Phase 29: Heartbeat + Auto-Resolution (D141-D145)
+    "heartbeat_check_warning", "heartbeat_check_critical",
+    "auto_resolution_started", "auto_resolution_completed",
+    "auto_resolution_failed", "auto_resolution_escalated",
 )
 
 
@@ -79,6 +92,14 @@ def log_event(
     """Write an immutable audit trail entry. Returns the entry ID."""
     if event_type not in VALID_EVENT_TYPES:
         raise ValueError(f"Invalid event_type '{event_type}'. Valid: {VALID_EVENT_TYPES}")
+
+    # Auto-populate session_id from correlation context (D149)
+    if session_id is None:
+        try:
+            from tools.resilience.correlation import get_correlation_id
+            session_id = get_correlation_id()
+        except ImportError:
+            pass
 
     path = db_path or DB_PATH
     conn = sqlite3.connect(str(path))

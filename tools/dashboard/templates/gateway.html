@@ -1,0 +1,244 @@
+<!-- CUI // SP-CTI -->
+{% extends "base.html" %}
+{% block title %}Remote Command Gateway{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Gateway</li>
+        </ol>
+    </nav>
+
+    <h2>Remote Command Gateway</h2>
+    <p class="text-muted">Manage remote command access from messaging channels.</p>
+
+    <!-- Environment Mode -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Environment Mode</h5>
+                    <span class="badge {% if environment_mode == 'air_gapped' %}bg-warning text-dark{% else %}bg-success{% endif %}" style="font-size: 1.1em;">
+                        {{ environment_mode | upper | replace('_', '-') }}
+                    </span>
+                    <p class="mt-2 text-muted small">
+                        {% if environment_mode == 'air_gapped' %}
+                            Internet-dependent channels auto-disabled. Only internal chat and on-prem channels available.
+                        {% else %}
+                            All configured channels available. External messaging platforms connected.
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Active Channels</h5>
+                    <span style="font-size: 2em; font-weight: bold;">{{ channels | selectattr('available') | list | length }}</span>
+                    <span class="text-muted"> / {{ channels | length }}</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Active Bindings</h5>
+                    <span style="font-size: 2em; font-weight: bold;">{{ bindings | selectattr('binding_status', 'equalto', 'active') | list | length }}</span>
+                    <span class="text-muted"> bound users</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Channel Status -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Channel Status</h5></div>
+        <div class="card-body">
+            <div class="table-container">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Channel</th>
+                            <th>Status</th>
+                            <th>Max IL</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ch in channels %}
+                        <tr>
+                            <td><strong>{{ ch.name }}</strong></td>
+                            <td>
+                                {% if ch.available %}
+                                    <span class="badge bg-success">Active</span>
+                                {% elif ch.enabled %}
+                                    <span class="badge bg-warning text-dark">Disabled (air-gapped)</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Disabled</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="badge bg-info">{{ ch.max_il }}</span></td>
+                            <td class="text-muted small">{{ ch.description }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Bindings -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">User Bindings</h5></div>
+        <div class="card-body">
+            {% if bindings %}
+            <div class="table-container">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Channel</th>
+                            <th>Channel User</th>
+                            <th>ICDEV User</th>
+                            <th>Status</th>
+                            <th>Bound At</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for b in bindings %}
+                        <tr>
+                            <td><code>{{ b.id[:8] }}...</code></td>
+                            <td>{{ b.channel }}</td>
+                            <td>{{ b.channel_user_id }}</td>
+                            <td>{{ b.icdev_user_id or 'unbound' }}</td>
+                            <td>
+                                {% if b.binding_status == 'active' %}
+                                    <span class="badge bg-success">Active</span>
+                                {% elif b.binding_status == 'pending' %}
+                                    <span class="badge bg-warning text-dark">Pending</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Revoked</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-muted small">{{ b.bound_at or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">No bindings configured. Users must send <code>/bind</code> from a messaging channel to initiate binding.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Command Log -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Recent Commands</h5></div>
+        <div class="card-body">
+            {% if commands %}
+            <div class="table-container">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Channel</th>
+                            <th>Command</th>
+                            <th>Status</th>
+                            <th>Filtered</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cmd in commands %}
+                        <tr>
+                            <td class="text-muted small">{{ cmd.created_at }}</td>
+                            <td>{{ cmd.channel }}</td>
+                            <td><code>{{ cmd.raw_command }}</code></td>
+                            <td>
+                                {% if cmd.execution_status == 'completed' %}
+                                    <span class="badge bg-success">Completed</span>
+                                {% elif cmd.execution_status == 'rejected' %}
+                                    <span class="badge bg-danger">Rejected</span>
+                                {% elif cmd.execution_status == 'failed' %}
+                                    <span class="badge bg-warning text-dark">Failed</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ cmd.execution_status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if cmd.response_filtered %}
+                                    <span class="badge bg-warning text-dark">Redacted</span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="text-muted small">
+                                {% if cmd.execution_time_ms %}
+                                    {{ cmd.execution_time_ms }}ms
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">No commands received yet.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Command Allowlist -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Command Allowlist</h5></div>
+        <div class="card-body">
+            <div class="table-container">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Command</th>
+                            <th>Category</th>
+                            <th>Channels</th>
+                            <th>Max IL</th>
+                            <th>Confirmation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in command_allowlist %}
+                        <tr>
+                            <td><code>{{ entry.command }}</code></td>
+                            <td>
+                                {% if entry.category == 'read' %}
+                                    <span class="badge bg-info">Read</span>
+                                {% elif entry.category == 'execute' %}
+                                    <span class="badge bg-warning text-dark">Execute</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Write</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if entry.channels == '*' %}
+                                    <em>All</em>
+                                {% elif entry.channels == '' %}
+                                    <span class="text-danger">Disabled</span>
+                                {% else %}
+                                    {{ entry.channels }}
+                                {% endif %}
+                            </td>
+                            <td><span class="badge bg-secondary">{{ entry.max_il }}</span></td>
+                            <td>{{ 'Yes' if entry.requires_confirmation else 'No' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

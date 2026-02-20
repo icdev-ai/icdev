@@ -1,0 +1,200 @@
+# CUI // SP-CTI
+# Remote Command Gateway Configuration (Phase 28)
+# Controls which messaging channels can issue ICDEV commands remotely.
+#
+# D134: Air-gapped environments use internal chat + optional Mattermost only
+# D137: Command allowlist is YAML-driven with per-channel overrides
+# D139: environment.mode: air_gapped auto-disables internet-dependent channels
+
+# ─── Environment Mode ───────────────────────────────────────────────
+# "connected" = NIPR/Cloud (IL2–IL5), external channels available
+# "air_gapped" = SIPR/Disconnected (IL6), only internal + on-prem channels
+environment:
+  mode: connected
+
+# ─── Channel Definitions ────────────────────────────────────────────
+# Each channel declares:
+#   enabled:            whether to load this adapter on startup
+#   requires_internet:  if true, auto-disabled when environment.mode == air_gapped
+#   min_il / max_il:    impact level bounds for this channel
+#   webhook_path:       URL path the gateway listens on for inbound events
+#   signature_header:   HTTP header containing the HMAC/signing payload
+#   env_vars:           required environment variables for this channel
+channels:
+  telegram:
+    enabled: true
+    requires_internet: true
+    min_il: IL2
+    max_il: IL4
+    webhook_path: /gateway/telegram
+    signature_header: X-Telegram-Bot-Api-Secret-Token
+    env_vars:
+      - TELEGRAM_BOT_TOKEN
+      - TELEGRAM_WEBHOOK_SECRET
+    description: "Telegram Bot API — public internet, max IL4 (no CUI)"
+
+  slack:
+    enabled: true
+    requires_internet: true
+    min_il: IL2
+    max_il: IL5
+    webhook_path: /gateway/slack
+    signature_header: X-Slack-Signature
+    env_vars:
+      - SLACK_BOT_TOKEN
+      - SLACK_SIGNING_SECRET
+    description: "Slack Bolt — GovCloud for IL5"
+
+  teams:
+    enabled: true
+    requires_internet: true
+    min_il: IL2
+    max_il: IL5
+    webhook_path: /gateway/teams
+    signature_header: Authorization
+    env_vars:
+      - TEAMS_APP_ID
+      - TEAMS_APP_PASSWORD
+    description: "Microsoft Teams Bot Framework — GCC High for IL5"
+
+  mattermost:
+    enabled: false
+    requires_internet: false
+    min_il: IL2
+    max_il: IL6
+    webhook_path: /gateway/mattermost
+    signature_header: X-Mattermost-Token
+    env_vars:
+      - MATTERMOST_URL
+      - MATTERMOST_TOKEN
+    description: "Mattermost on-prem — air-gapped safe, no data leaves enclave"
+
+  internal_chat:
+    enabled: true
+    requires_internet: false
+    min_il: IL2
+    max_il: IL6
+    webhook_path: /gateway/internal
+    signature_header: ""
+    env_vars: []
+    description: "Internal /chat bridge — always available, all IL levels"
+
+# ─── Security ────────────────────────────────────────────────────────
+security:
+  # Binding ceremony
+  binding:
+    challenge_ttl_minutes: 10
+    max_unbound_attempts: 3
+    lock_duration_minutes: 30
+
+  # Signature verification
+  signature:
+    required: true
+    replay_window_seconds: 300
+
+  # Rate limiting
+  rate_limits:
+    per_user: 30        # requests per minute
+    per_channel: 100    # requests per minute
+    burst_multiplier: 2 # allow 2x burst for short periods
+
+  # HMAC secret env var (override in production via AWS Secrets Manager)
+  hmac_secret_env: ICDEV_GATEWAY_HMAC_SECRET
+
+# ─── Command Allowlist ───────────────────────────────────────────────
+# Each entry declares which commands are available on which channels.
+# channel: "*" means all channels. Otherwise, comma-separated channel names.
+# requires_confirmation: if true, gateway asks "are you sure?" before executing.
+# max_il: maximum IL level the command output can contain.
+command_allowlist:
+  # Read-only — available everywhere
+  - command: icdev-status
+    category: read
+    channels: "*"
+    max_il: IL5
+    requires_confirmation: false
+
+  - command: icdev-monitor
+    category: read
+    channels: "*"
+    max_il: IL5
+    requires_confirmation: false
+
+  - command: icdev-knowledge
+    category: read
+    channels: "*"
+    max_il: IL4
+    requires_confirmation: false
+
+  # Read-only — restricted channels
+  - command: icdev-comply
+    category: read
+    channels: "slack,teams,mattermost,internal_chat"
+    max_il: IL5
+    requires_confirmation: false
+
+  - command: icdev-query
+    category: read
+    channels: "slack,teams,mattermost,internal_chat"
+    max_il: IL5
+    requires_confirmation: false
+
+  # Execute — restricted channels, confirmation required
+  - command: icdev-test
+    category: execute
+    channels: "slack,teams,mattermost,internal_chat"
+    max_il: IL5
+    requires_confirmation: true
+
+  - command: icdev-secure
+    category: execute
+    channels: "slack,teams,mattermost,internal_chat"
+    max_il: IL5
+    requires_confirmation: true
+
+  # Write — internal only
+  - command: icdev-intake
+    category: write
+    channels: "internal_chat"
+    max_il: IL5
+    requires_confirmation: true
+
+  - command: icdev-build
+    category: execute
+    channels: "internal_chat"
+    max_il: IL5
+    requires_confirmation: true
+
+  # Deploy — disabled by default on all remote channels (D138)
+  - command: icdev-deploy
+    category: execute
+    channels: ""
+    max_il: IL5
+    requires_confirmation: true
+
+  # Always blocked remotely
+  - command: icdev-init
+    category: write
+    channels: ""
+    max_il: IL2
+    requires_confirmation: true
+
+# ─── Gateway Agent ───────────────────────────────────────────────────
+gateway:
+  host: "0.0.0.0"
+  port: 8458
+  debug: false
+  log_level: INFO
+
+  # Agent Card (A2A protocol)
+  agent_card:
+    name: "ICDEV Remote Command Gateway"
+    description: "Receives commands from messaging channels, validates through 8-gate security chain, executes via ICDEV tools, returns classification-filtered responses."
+    version: "1.0.0"
+
+  # Response formatting
+  response:
+    max_length: 4000           # max characters per channel reply
+    redaction_message: "[REDACTED] Response contains {classification} content. View in dashboard: {dashboard_url}"
+    include_timing: true       # include execution time in response
+    include_audit_id: true     # include audit trail ID for traceability

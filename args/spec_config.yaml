@@ -1,0 +1,53 @@
+# CUI // SP-CTI
+# Spec-Kit Pattern Configuration (D156-D161)
+# Adapted from GitHub's spec-kit for ICDEV GOTCHA framework.
+---
+
+spec_quality:
+  enabled: true
+  checklist_file: "context/requirements/spec_quality_checklist.json"
+  max_clarification_markers: 3
+  require_ato_assessment: true
+  require_nist_controls: true
+  min_acceptance_criteria: 3
+
+constitution:
+  enabled: true
+  defaults_file: "context/requirements/default_constitutions.json"
+  auto_load_on_project_create: true
+  categories:
+    - security
+    - compliance
+    - architecture
+    - quality
+    - operations
+    - general
+
+clarification:
+  enabled: true
+  max_questions_per_turn: 3
+  max_questions_per_spec: 5
+  impact_levels:
+    - mission_critical
+    - compliance_required
+    - enhancement
+  uncertainty_levels:
+    - unknown
+    - ambiguous
+    - assumed
+
+spec_directory:
+  enabled: true
+  auto_migrate: false
+  directory_pattern: "{issue_number}-{slug}"
+  files:
+    - spec.md
+    - plan.md
+    - tasks.md
+    - checklist.md
+    - constitution_check.md
+
+parallel_markers:
+  enabled: true
+  marker_prefix: "[P]"
+  auto_detect: true

@@ -574,6 +574,88 @@ def get_decomposition(session_id, level=None, db_path=None):
 
 
 # ---------------------------------------------------------------------------
+# Parallel group detection (D161, spec-kit Pattern 7)
+# ---------------------------------------------------------------------------
+
+_DEPENDENCY_KEYWORDS = [
+    "after", "depends on", "requires", "once", "from step",
+    "building on", "following", "result of", "output of",
+    "blocked by", "prerequisite", "prior to",
+]
+
+
+def detect_parallel_groups(session_id, db_path=None):
+    """Detect groups of independent SAFe items that can execute in parallel.
+
+    Items at the same level under the same parent with no cross-dependencies
+    are grouped together. Returns list of group dicts.
+
+    ADR D161: Reuses existing DAG infrastructure for concurrency annotation.
+    """
+    conn = _get_connection(db_path)
+    items = conn.execute(
+        """SELECT id, title, level, parent_id, acceptance_criteria,
+                  parallel_group
+           FROM safe_decomposition
+           WHERE session_id = ?
+           ORDER BY level, parent_id, created_at""",
+        (session_id,),
+    ).fetchall()
+    items = [dict(r) for r in items]
+    conn_write = conn  # reuse for updates
+
+    if not items:
+        conn.close()
+        return []
+
+    # Group items by (parent_id, level)
+    from collections import defaultdict
+    siblings = defaultdict(list)
+    for item in items:
+        key = (item.get("parent_id") or "_root", item.get("level", ""))
+        siblings[key].append(item)
+
+    groups = []
+    group_index = 0
+
+    for (parent_id, level), sibling_list in siblings.items():
+        if len(sibling_list) < 2:
+            continue  # Need at least 2 siblings for parallelism
+
+        # Check each item for dependency keywords in title + acceptance_criteria
+        independent = []
+        dependent = []
+        for item in sibling_list:
+            text = (item.get("title", "") + " " +
+                    (item.get("acceptance_criteria") or "")).lower()
+            has_dep = any(kw in text for kw in _DEPENDENCY_KEYWORDS)
+            if has_dep:
+                dependent.append(item)
+            else:
+                independent.append(item)
+
+        if len(independent) >= 2:
+            group_id = f"pg-{(parent_id or 'root')[:8]}-{group_index}"
+            group_index += 1
+            for item in independent:
+                conn_write.execute(
+                    "UPDATE safe_decomposition SET parallel_group = ? WHERE id = ?",
+                    (group_id, item["id"]),
+                )
+            groups.append({
+                "group_id": group_id,
+                "parent_id": parent_id,
+                "level": level,
+                "item_count": len(independent),
+                "items": [{"id": i["id"], "title": i["title"]} for i in independent],
+            })
+
+    conn_write.commit()
+    conn.close()
+    return groups
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -600,10 +682,32 @@ def main():
         "--get", action="store_true",
         help="Get existing decomposition instead of generating",
     )
+    parser.add_argument(
+        "--annotate-parallel", action="store_true",
+        help="Detect and annotate parallel task groups (D161)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
     try:
+        if args.annotate_parallel:
+            groups = detect_parallel_groups(args.session_id)
+            result = {
+                "status": "ok",
+                "session_id": args.session_id,
+                "parallel_groups": groups,
+                "total_groups": len(groups),
+            }
+            if args.json:
+                print(json.dumps(result, indent=2, default=str))
+            else:
+                print(f"Detected {len(groups)} parallel group(s)")
+                for g in groups:
+                    print(f"  [{g['group_id']}] {g['item_count']} items at {g['level']} level")
+                    for item in g["items"]:
+                        print(f"    - {item['title']}")
+            return
+
         if args.get:
             # Query existing decomposition
             # If --level is explicitly provided with --get, use it; otherwise None

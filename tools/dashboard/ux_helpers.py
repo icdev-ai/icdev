@@ -744,6 +744,36 @@ WIZARD_STEPS = [
                 "title": "Contracting Officer",
                 "desc": "I manage contracts and vendor requirements",
             },
+            {
+                "id": "analyst",
+                "icon": "\U0001f50d",
+                "title": "Analyst",
+                "desc": "I research data, requirements, and threats",
+            },
+            {
+                "id": "solutions_architect",
+                "icon": "\U0001f3d7",
+                "title": "Solutions Architect",
+                "desc": "I design technical solutions and architectures",
+            },
+            {
+                "id": "sales_engineer",
+                "icon": "\U0001f4e1",
+                "title": "Sales Engineer",
+                "desc": "I demo capabilities and support proposals",
+            },
+            {
+                "id": "innovator",
+                "icon": "\U0001f4a1",
+                "title": "Innovator",
+                "desc": "I explore emerging tech and prototype ideas",
+            },
+            {
+                "id": "biz_dev",
+                "icon": "\U0001f91d",
+                "title": "Business Development",
+                "desc": "I identify opportunities and grow partnerships",
+            },
         ],
     },
     {
@@ -787,6 +817,8 @@ WIZARD_STEPS = [
 # Otherwise the default goal-based mapping applies.
 _GOAL_ROLE_OVERRIDES = {
     ("build", "pm"): "intake_to_approval",
+    ("build", "sales_engineer"): "intake_to_approval",
+    ("build", "biz_dev"): "intake_to_approval",
     ("comply", "developer"): "build_and_ship",
 }
 

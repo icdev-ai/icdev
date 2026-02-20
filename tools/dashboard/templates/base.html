@@ -12,8 +12,10 @@
     <!-- Skip to main content (accessibility) -->
     <a href="#main-content" class="skip-link">Skip to main content</a>
 
-    <!-- CUI Banner Top -->
+    <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    {% if cui_banner_enabled %}
     <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+    {% endif %}
 
     <!-- Navigation -->
     <nav class="navbar" role="navigation" aria-label="Main navigation">
@@ -23,13 +25,26 @@
             <li><a href="/projects" class="{% if '/projects' in request.path %}active{% endif %}">Projects</a></li>
             <li><a href="/agents" class="{% if '/agents' in request.path %}active{% endif %}">Agents</a></li>
             <li><a href="/monitoring" class="{% if '/monitoring' in request.path %}active{% endif %}">Monitoring</a></li>
+            <li><a href="/activity" class="{% if '/activity' in request.path %}active{% endif %}">Activity</a></li>
+            <li><a href="/usage" class="{% if '/usage' in request.path %}active{% endif %}">Usage</a></li>
             <li><a href="/quick-paths" class="{% if '/quick-paths' in request.path %}active{% endif %}">Quick Paths</a></li>
             <li><a href="/batch" class="{% if '/batch' in request.path %}active{% endif %}">Batch</a></li>
             <li><a href="/diagrams" class="{% if '/diagrams' in request.path %}active{% endif %}">Diagrams</a></li>
             <li><a href="/cicd" class="{% if '/cicd' in request.path %}active{% endif %}">CI/CD</a></li>
+            <li><a href="/chat" class="{% if '/chat' in request.path %}active{% endif %}">Chat</a></li>
+            {% if current_user and current_user.role == 'admin' %}
+            <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
+            {% endif %}
             <li><a href="/wizard" class="{% if '/wizard' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Get Started</a></li>
         </ul>
-        <div class="role-selector" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+        <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            {% if current_user %}
+            <a href="/profile" class="user-badge" title="{{ current_user.email }}">
+                <span class="user-badge-name">{{ current_user.display_name }}</span>
+                <span class="user-badge-role">{{ current_user.role }}</span>
+            </a>
+            <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
+            {% endif %}
             <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
                     style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
             <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
@@ -49,8 +64,10 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- CUI Banner Bottom -->
+    <!-- CUI Banner Bottom (D173) -->
+    {% if cui_banner_enabled %}
     <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
+    {% endif %}
 
     <!-- Notification container for toasts -->
     <div class="notification-container" id="notification-container" aria-live="polite"></div>

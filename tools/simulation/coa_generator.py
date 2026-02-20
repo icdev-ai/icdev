@@ -362,7 +362,7 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
         # If no items mapped to this PI, assign based on COA type
         if not pi_items:
             if coa_type == "speed" and pi_num == 1:
-                pi_items = [r.get("refined_text", r.get("raw_text", "Requirement"))[:80]
+                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
                             for r in reqs_by_priority.get("critical", [])
                             + reqs_by_priority.get("high", [])]
             elif coa_type == "balanced":
@@ -370,7 +370,7 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
                     pool = reqs_by_priority.get("critical", []) + reqs_by_priority.get("high", [])
                 else:
                     pool = reqs_by_priority.get("medium", [])
-                pi_items = [r.get("refined_text", r.get("raw_text", "Requirement"))[:80]
+                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
                             for r in pool[:5]]
             elif coa_type == "comprehensive":
                 all_reqs = []
@@ -379,7 +379,7 @@ def _generate_pi_roadmap(coa_type, reqs_by_priority, decomposition):
                 chunk = len(all_reqs) // num_pis if num_pis else 1
                 chunk = max(chunk, 1)
                 start = (pi_num - 1) * chunk
-                pi_items = [r.get("refined_text", r.get("raw_text", "Requirement"))[:80]
+                pi_items = [(r.get("refined_text") or r.get("raw_text") or "Requirement")[:80]
                             for r in all_reqs[start:start + chunk]]
 
         milestones = []

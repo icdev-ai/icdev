@@ -131,7 +131,7 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 - **Monitoring:** ELK + Splunk + Prometheus/Grafana
 - **Secrets:** AWS Secrets Manager
 
-### Multi-Agent Architecture (14 Agents, 3 Tiers)
+### Multi-Agent Architecture (15 Agents, 3 Tiers)
 
 | Tier | Agent | Port | Role |
 |------|-------|------|------|
@@ -148,11 +148,12 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 | Domain | Simulation | 8455 | Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA generation |
 | Support | Knowledge | 8449 | Self-healing patterns, ML, recommendations |
 | Domain | DevSecOps & ZTA | 8457 | DevSecOps pipeline security, Zero Trust (NIST 800-207), policy-as-code, service mesh, ZTA maturity |
+| Domain | Gateway | 8458 | Remote command reception from messaging channels (Telegram, Slack, Teams, Mattermost), 8-gate security chain, classification filtering |
 | Support | Monitor | 8450 | Log analysis, metrics, alerts, health checks |
 
 Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s). Each publishes an Agent Card at `/.well-known/agent.json`.
 
-### MCP Servers (13 stdio servers for Claude Code)
+### MCP Servers (14 stdio servers for Claude Code)
 
 | Server | Config Key | Tools |
 |--------|-----------|-------|
@@ -170,6 +171,7 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | icdev-integration | `.mcp.json` | configure_jira, sync_jira, configure_servicenow, sync_servicenow, configure_gitlab, sync_gitlab, export_reqif, submit_approval, review_approval, build_traceability |
 | icdev-marketplace | `.mcp.json` | publish_asset, install_asset, uninstall_asset, search_assets, list_assets, get_asset, review_asset, list_pending, check_compat, sync_status, asset_scan |
 | icdev-devsecops | `.mcp.json` | devsecops_profile_create, devsecops_profile_get, devsecops_maturity_assess, zta_maturity_score, zta_assess, pipeline_security_generate, policy_generate, service_mesh_generate, network_segmentation_generate, attestation_verify, zta_posture_check, pdp_config_generate |
+| icdev-gateway | `.mcp.json` | bind_user, list_bindings, revoke_binding, send_command, gateway_status |
 
 ### Compliance Frameworks Supported
 | Framework | Catalog | Assessor | Report |
@@ -250,8 +252,55 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
 | `/icdev-mosa` | DoD MOSA (10 U.S.C. §4401) — MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC |
 
+### Cross-Platform Compatibility (D145)
+```bash
+# Platform check (run on first setup — validates OS compatibility)
+python tools/testing/platform_check.py               # Human output
+python tools/testing/platform_check.py --json         # JSON output
+
+# Platform utilities (import in Python code)
+from tools.compat.platform_utils import IS_WINDOWS, IS_MACOS, IS_LINUX
+from tools.compat.platform_utils import get_temp_dir, get_npx_cmd, get_home_dir
+from tools.compat.platform_utils import ensure_utf8_console
+```
+
+### Auto-Scaling (D141-D144)
+```bash
+# Apply HPA + PDB (requires Metrics Server)
+kubectl apply -f k8s/hpa.yaml                        # Horizontal Pod Autoscalers (18 components)
+kubectl apply -f k8s/pdb.yaml                        # Pod Disruption Budgets (18 components)
+kubectl apply -f k8s/node-autoscaler.yaml             # Cluster Autoscaler reference + prerequisites
+
+# Verify scaling
+kubectl get hpa -n icdev                              # Check HPA status
+kubectl get pdb -n icdev                              # Check PDB status
+kubectl top pods -n icdev                             # Check pod resource usage
+
+# Helm with autoscaling enabled
+helm install icdev deploy/helm/ --set autoscaling.enabled=true
+
+# Config: args/scaling_config.yaml — profiles, topology, node autoscaler, rate limiter backend
+```
+
 ### Testing Framework (Adapted from ADW)
 ```bash
+# ICDEV platform tests (D155 — 21 test files, ~330+ tests)
+pytest tests/ -v --tb=short                          # Run all platform tests
+pytest tests/test_circuit_breaker.py -v              # Circuit breaker tests
+pytest tests/test_retry.py -v                        # Retry utility tests
+pytest tests/test_correlation.py -v                  # Correlation ID tests
+pytest tests/test_errors.py -v                       # Error hierarchy tests
+pytest tests/test_migration_runner.py -v             # Migration runner tests
+pytest tests/test_backup_manager.py -v               # Backup/restore tests
+pytest tests/test_openapi_spec.py -v                 # OpenAPI spec tests
+pytest tests/test_metrics.py -v                      # Prometheus metrics tests
+pytest tests/test_rest_api.py -v                     # REST API endpoint tests
+pytest tests/test_swagger_ui.py -v                   # Swagger UI tests
+pytest tests/test_audit_logger.py -v                 # Audit logger tests
+pytest tests/test_init_icdev_db.py -v                # DB init tests
+pytest tests/test_platform_db.py -v                  # Platform DB tests
+pytest tests/test_readiness_scorer.py -v             # Readiness scorer tests
+
 # Health check
 python tools/testing/health_check.py                 # Full system health check
 python tools/testing/health_check.py --json           # JSON output
@@ -295,7 +344,25 @@ python tools/testing/screenshot_validator.py --batch-dir .tmp/test_runs/screensh
 ### ICDEV Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (95 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV database (143 tables)
+
+# Database Migrations (D150)
+python tools/db/migrate.py --status [--json]                      # Show migration status
+python tools/db/migrate.py --up [--target 005] [--dry-run]        # Apply pending migrations
+python tools/db/migrate.py --down [--target 003]                  # Roll back migrations
+python tools/db/migrate.py --validate [--json]                    # Validate checksums
+python tools/db/migrate.py --create "add_feature_table"           # Scaffold new migration
+python tools/db/migrate.py --mark-applied 001                    # Mark existing DB as migrated
+python tools/db/migrate.py --up --all-tenants                    # Apply to all tenant DBs
+
+# Database Backup/Restore (D152)
+python tools/db/backup.py --backup [--db icdev] [--json]         # Backup single database
+python tools/db/backup.py --backup --all [--json]                # Backup all databases
+python tools/db/backup.py --backup --tenants [--slug acme]       # Backup tenant databases
+python tools/db/backup.py --restore --backup-file path/to/bak    # Restore from backup
+python tools/db/backup.py --verify --backup-file path/to/bak     # Verify backup integrity
+python tools/db/backup.py --list [--json]                        # List available backups
+python tools/db/backup.py --prune [--retention-days 30]          # Remove old backups
 
 # Audit trail (append-only, NIST AU compliant)
 python tools/audit/audit_logger.py --event-type "code.commit" --actor "builder-agent" --action "Committed module X" --project-id "proj-123"
@@ -327,6 +394,24 @@ python tools/requirements/document_extractor.py --session-id "<id>" --upload --f
 python tools/requirements/document_extractor.py --session-id "<id>" --upload --file-path /path/to/whiteboard.png --document-type attachment --json    # Upload image (auto-classified)
 python tools/requirements/document_extractor.py --document-id "<id>" --extract --json                                                                 # Extract requirements
 python tools/requirements/document_extractor.py --document-id "<id>" --classify --json                                                                # Classify image document
+
+# Spec-Kit Patterns (D156-D161)
+python tools/requirements/spec_quality_checker.py --spec-file specs/3-dashboard-kanban/spec.md --json                                                   # Quality check
+python tools/requirements/spec_quality_checker.py --spec-file specs/foo.md --annotate --output specs/foo.annotated.md                                    # Annotate with [NEEDS CLARIFICATION]
+python tools/requirements/spec_quality_checker.py --spec-dir specs/ --json                                                                               # Batch check all specs
+python tools/requirements/consistency_analyzer.py --spec-file specs/3-dashboard-kanban/spec.md --json                                                    # Cross-artifact consistency
+python tools/requirements/consistency_analyzer.py --spec-dir specs/ --json                                                                                # Batch consistency check
+python tools/requirements/constitution_manager.py --project-id "proj-123" --load-defaults --json                                                         # Load DoD default principles
+python tools/requirements/constitution_manager.py --project-id "proj-123" --list --json                                                                  # List project principles
+python tools/requirements/constitution_manager.py --project-id "proj-123" --validate --spec-file specs/foo.md --json                                     # Validate spec vs constitution
+python tools/requirements/clarification_engine.py --spec-file specs/foo.md --max-questions 5 --json                                                      # Prioritized clarification questions
+python tools/requirements/clarification_engine.py --session-id "<id>" --max-questions 5 --json                                                           # Session-based clarification
+python tools/requirements/spec_organizer.py --init --issue 3 --slug "dashboard-kanban" --json                                                            # Init spec directory
+python tools/requirements/spec_organizer.py --migrate --spec-file specs/issue-3-foo.md --json                                                            # Migrate flat spec to directory
+python tools/requirements/spec_organizer.py --migrate-all --json                                                                                          # Migrate all flat specs
+python tools/requirements/spec_organizer.py --list --json                                                                                                 # List all spec directories
+python tools/requirements/spec_organizer.py --register --spec-dir specs/3-dashboard-kanban/ --project-id "proj-123" --json                               # Register spec in DB
+python tools/requirements/decomposition_engine.py --session-id "<id>" --annotate-parallel --json                                                          # Detect parallel task groups
 
 # ATO Boundary Impact (RICOAS Phase 2)
 python tools/requirements/boundary_analyzer.py --project-id "proj-123" --register-system --system-name "My System" --ato-status active --classification CUI --impact-level IL5 --json
@@ -556,8 +641,33 @@ python tools/knowledge/recommendation_engine.py --project-id "proj-123"
 python tools/monitor/log_analyzer.py --source elk --query "error"
 python tools/monitor/health_checker.py --target "http://service:8080/health"
 
+# Heartbeat Daemon (Phase 29 — Proactive Monitoring)
+python tools/monitor/heartbeat_daemon.py                # Foreground daemon (7 configurable checks)
+python tools/monitor/heartbeat_daemon.py --once          # Single pass of all checks
+python tools/monitor/heartbeat_daemon.py --check cato_evidence  # Specific check
+python tools/monitor/heartbeat_daemon.py --status --json # Show all check statuses
+
+# Webhook-Triggered Auto-Resolution (Phase 29)
+python tools/monitor/auto_resolver.py --analyze --alert-file alert.json --json   # Analyze without acting
+python tools/monitor/auto_resolver.py --resolve --alert-file alert.json --json   # Full pipeline: analyze + fix + PR
+python tools/monitor/auto_resolver.py --history --json                            # Resolution history
+
+# Selective Skill Injection (Phase 29)
+python tools/agent/skill_selector.py --query "fix the login tests" --json         # Keyword-based category matching
+python tools/agent/skill_selector.py --detect --project-dir /path --json          # File-based detection
+python tools/agent/skill_selector.py --query "deploy to staging" --format-context # Injection-ready markdown
+
+# Time-Decay Memory Ranking (Phase 29)
+python tools/memory/time_decay.py --score --entry-id 42 --json                    # Score single entry
+python tools/memory/time_decay.py --rank --query "keyword" --top-k 10 --json      # Time-decay ranked search
+python tools/memory/hybrid_search.py --query "test" --time-decay                   # Integrated time-decay search
+
 # Dashboard (Flask web UI — "GI proof" UX)
 python tools/dashboard/app.py                        # Start web dashboard on port 5000
+# Dashboard auth management (Phase 30 — D169-D172)
+python tools/dashboard/auth.py create-admin --email admin@icdev.local --name "Admin"   # Create first admin + API key
+python tools/dashboard/auth.py list-users            # List all dashboard users
+# Env vars: ICDEV_DASHBOARD_SECRET, ICDEV_CUI_BANNER_ENABLED, ICDEV_BYOK_ENABLED, ICDEV_BYOK_ENCRYPTION_KEY
 # Dashboard pages:
 #   /                  — Home dashboard with auto-notifications
 #   /projects          — Project listing with friendly timestamps
@@ -568,7 +678,18 @@ python tools/dashboard/app.py                        # Start web dashboard on po
 #   /quick-paths       — Quick Path workflow templates + error recovery reference
 #   /events            — Real-time event timeline (SSE)
 #   /query             — Natural language compliance queries
+#   /chat              — Agent chat interface (D20 — SQLite-based, no WebSocket)
+#   /gateway           — Remote Command Gateway admin (bindings, command log, channels)
 #   /batch             — Batch operations panel (multi-tool workflow execution)
+#   /login             — API key login page (D169-D172)
+#   /logout            — Clear session and redirect to login
+#   /activity          — Merged activity feed (audit + hook events, WebSocket + polling)
+#   /usage             — Usage tracking + cost dashboard (per-user, per-provider)
+#   /profile           — User profile + BYOK LLM key management
+#   /admin/users       — Admin user/key management (admin role only)
+# Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
+# RBAC: 5 roles (admin, pm, developer, isso, co) — D172
+# BYOK: bring-your-own LLM keys, Fernet AES-256 encrypted (D175-D178)
 # Role-based views:  ?role=pm | developer | isso | co
 # UX features: glossary tooltips, friendly timestamps, breadcrumbs, ARIA accessibility,
 #   skip-to-content, notification toasts, progress pipeline, help icons, error recovery
@@ -613,6 +734,15 @@ python tools/mosa/icd_generator.py --project-id "proj-123" --interface-id "iface
 python tools/mosa/tsp_generator.py --project-id "proj-123" --json                                              # Generate TSP
 python tools/compliance/cato_monitor.py --project-id "proj-123" --mosa-evidence                                # MOSA cATO evidence
 
+# Remote Command Gateway (Phase 28)
+python tools/gateway/gateway_agent.py                                          # Start gateway on port 8458
+python tools/gateway/user_binder.py --provision --channel mattermost --channel-user-id "user123" --icdev-user-id "admin@enclave.mil" --json  # Pre-provision binding (air-gapped)
+python tools/gateway/user_binder.py --list --json                              # List all bindings
+python tools/gateway/user_binder.py --revoke <binding-id>                      # Revoke a binding
+# Channels: telegram (IL2-IL4), slack (IL2-IL5), teams (IL2-IL5), mattermost (IL2-IL6, air-gapped), internal_chat (IL2-IL6, always available)
+# Config: args/remote_gateway_config.yaml — channels, allowlists, security, environment mode
+# Air-gapped: Set environment.mode: air_gapped to auto-disable internet-dependent channels
+
 # CLI Output Formatting
 # Any tool that supports --json also supports --human for colored terminal output:
 #   python tools/compliance/stig_checker.py --project-id "proj-123" --human
@@ -630,6 +760,11 @@ python tools/saas/tenant_manager.py --approve --tenant-id "tenant-uuid" --approv
 python tools/saas/tenant_manager.py --add-user --tenant-id "tenant-uuid" --email dev@acme.gov --role developer
 python tools/saas/api_gateway.py --port 8443 --debug                             # Start API gateway (dev mode)
 gunicorn -w 4 -b 0.0.0.0:8443 tools.saas.api_gateway:app                       # Start API gateway (production)
+# API gateway endpoints: /health, /api/v1/* (REST), /mcp/v1/ (MCP Streamable HTTP)
+#   /api/v1/docs         — Swagger UI (D153)
+#   /api/v1/openapi.json — OpenAPI 3.0.3 spec (D153)
+#   /metrics             — Prometheus metrics (D154)
+python tools/saas/openapi_spec.py [--output spec.json]                           # Generate OpenAPI spec to file
 python tools/saas/licensing/license_generator.py --generate --customer "ACME" --tier enterprise --expires-in-days 365 --private-key /path/key.pem
 python tools/saas/licensing/license_validator.py --validate --json               # Validate on-prem license
 python tools/saas/infra/namespace_provisioner.py --create --slug acme --il IL4 --tier professional  # Create tenant K8s NS
@@ -667,7 +802,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 121 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics) |
+| `data/icdev.db` | 143 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -680,7 +815,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | File | Purpose |
 |------|---------|
 | `args/project_defaults.yaml` | TDD settings, compliance baseline, security thresholds, infra defaults, CI/CD stages, monitoring, agent config |
-| `args/agent_config.yaml` | 13 agent definitions with ports, TLS certs, Bedrock model config |
+| `args/agent_config.yaml` | 15 agent definitions with ports, TLS certs, Bedrock model config |
 | `args/cui_markings.yaml` | CUI banner templates, designation indicators, portion marking rules |
 | `args/security_gates.yaml` | Gate thresholds for code review, merge, deployment, FedRAMP, CMMC, cATO, RICOAS, supply chain (CAT1/CAT2, critical/high vulns) |
 | `args/monitoring_config.yaml` | ELK/Splunk/Prometheus/Grafana endpoints, self-healing thresholds, SLA targets |
@@ -697,6 +832,13 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/devsecops_config.yaml` | DevSecOps profile schema: 10 stages, 5 maturity levels, tool selections, intake detection keywords |
 | `args/zta_config.yaml` | ZTA 7-pillar maturity model (DoD ZTA Strategy), service mesh options, policy engines, PDP references, posture scoring |
 | `args/cli_config.yaml` | Optional CLI capabilities: 4 independent toggles (CI/CD automation, parallel agents, container execution, scripted intake), tenant ceiling, cost controls, environment detection |
+| `args/remote_gateway_config.yaml` | Remote Command Gateway: environment mode (connected/air_gapped), 5 channel definitions (telegram, slack, teams, mattermost, internal_chat), security settings (binding TTL, signatures, rate limits), command allowlist with per-channel restrictions |
+| `args/scaling_config.yaml` | Auto-scaling: HPA profiles (core/domain/support/dashboard/api_gateway), PDB config, topology spread, node autoscaler type (cluster-autoscaler/karpenter/none), custom metrics (Phase 2), rate limiter backend (in_memory/redis) |
+| `args/resilience_config.yaml` | Circuit breaker defaults + per-service overrides (bedrock, redis, jira, servicenow, gitlab); retry defaults (max_retries, base_delay, max_delay) |
+| `args/db_config.yaml` | Database migration settings (auto_migrate, checksum validation, lock timeout); backup settings (retention, encryption, per-database schedules); tenant backup policies |
+| `args/spec_config.yaml` | Spec-kit pattern configuration (D156-D161): quality checklist, constitution, clarification (max questions, impact/uncertainty levels), spec directory structure, parallel markers |
+| `args/skill_injection_config.yaml` | Selective skill injection (D167): 9 category definitions with keywords→commands/goals/context_dirs, file_extension_map, path_pattern_map, always_include, confidence_threshold |
+| `args/memory_config.yaml` | Time-decay memory ranking (D168): per-type half-lives (fact=90d, preference=180d, event=7d, insight=30d, task=14d, relationship=120d), scoring weights (relevance=0.60, recency=0.25, importance=0.15), importance resistance threshold |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -825,6 +967,52 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **D130:** MOSA cATO evidence is optional (config flag `cato_integration.enabled: true` in mosa_config.yaml)
 - **D131:** Modularity metrics stored as time-series in `mosa_modularity_metrics` table for trend tracking
 - **D132:** CLI capabilities are optional per-project toggles with tenant-level ceiling. Tenant sets maximum allowed capabilities; project enables within ceiling. Default is all-disabled — VSCode extension provides full functionality. CLI adds headless/scripted/parallel/containerized execution modes for environments that support them. Cost controls enforce token budgets. Detection auto-checks CLI availability and falls back gracefully.
+- **D133:** Channel adapters are ABC + implementations (D66 pattern) — add new channels without modifying gateway core
+- **D134:** Air-gapped environments use internal chat + optional Mattermost, never internet channels — IL6/SIPR cannot reach Telegram/Slack/Teams APIs
+- **D135:** Response filter strips content above channel max_il, never upgrades — prevents CUI/SECRET leaking to unauthorized channels
+- **D136:** User binding is mandatory before any command execution — no anonymous remote commands, full identity chain
+- **D137:** Command allowlist is YAML-driven with per-channel overrides — add/remove commands without code changes (D26 pattern)
+- **D138:** Deploy commands disabled by default on all remote channels — destructive operations require dashboard/CLI access
+- **D139:** `environment.mode: air_gapped` auto-disables internet-dependent channels — single config toggle, no per-channel manual disable needed
+- **D140:** Mattermost adapter uses REST API (no WebSocket) — consistent with D20 (no WebSocket), simpler, works behind proxies
+- **D141:** HPA with CPU/memory metrics as baseline; custom metrics (queue depth, Bedrock token rate) via Prometheus adapter as Phase 2. All HPA manifests use `autoscaling/v2` API. Cloud-agnostic — works on EKS, GKE, AKS, OpenShift, bare-metal K8s
+- **D142:** Cluster Autoscaler as cloud-agnostic baseline for node auto-scaling; vendor-specific optimizations (Karpenter for EKS, GKE Autopilot, AKS cluster-autoscaler) as optional overlays
+- **D143:** PDB with `minAvailable=1` for core agents + dashboard + gateway; `maxUnavailable=1` for domain + support agents
+- **D144:** Cross-AZ topology spread with `whenUnsatisfiable: ScheduleAnyway` (availability over strict spread) for all scaled components
+- **D145:** Platform compatibility module (`tools/compat/`) centralizes OS detection — single source of truth for platform-specific behavior; stdlib only, air-gap safe
+- **D146:** Application-level circuit breaker using ABC + in-memory state (stdlib only); 3-state machine: CLOSED → OPEN → HALF_OPEN. D66 provider pattern for pluggable backends
+- **D147:** Reusable retry utility extracted from bedrock_client.py; exponential backoff + full jitter; decorator pattern with configurable exceptions and on_retry callback
+- **D148:** Structured error hierarchy for new code only (ICDevError → Transient/Permanent → ServiceUnavailable/RateLimited/Configuration); existing 450 bare exceptions left untouched to avoid mass-refactor risk
+- **D149:** Request-scoped correlation ID via Flask before_request middleware; propagated through A2A JSON-RPC metadata and audit trail session_id; 12-char UUID prefix
+- **D150:** Lightweight migration runner (stdlib only, no Alembic); `schema_migrations` table for version tracking; .sql/.py files with `@sqlite-only`/`@pg-only` directives; checksum validation
+- **D151:** Baseline migration (v001) delegates to init_icdev_db.py rather than duplicating 2860-line SQL; init_icdev_db.py preserved for backward compat, detects migration system
+- **D152:** Backup tool uses `sqlite3.backup()` API for SQLite (WAL-safe online backup), `pg_dump` for PostgreSQL; optional AES-256-CBC encryption via `cryptography` package (PBKDF2, 600K iterations)
+- **D153:** OpenAPI 3.0.3 spec generated programmatically from declarative schema dicts; no flask-restx dependency; Swagger UI loaded from CDN (bundleable for air-gap); 23 endpoints documented
+- **D154:** Prometheus metrics use optional `prometheus_client` with stdlib text-format fallback (D66 dual-backend pattern); /metrics exempt from auth; 8 metrics covering HTTP, errors, rate limits, circuit breakers, uptime, tenants
+- **D155:** Project-root conftest.py with shared fixtures (icdev_db, platform_db, api_gateway_app, dashboard_app, auth_headers) centralizes test DB setup; test strategy prioritizes security-critical paths first
+- **D156:** Spec quality checklist is declarative JSON — add/remove checks without code changes (consistent with D26 pattern)
+- **D157:** Cross-artifact consistency uses markdown section-header parsing (`## Header`) — simple, reliable, stdlib-only, air-gap safe
+- **D158:** Constitutions stored in DB per-project with defaults from JSON — allows per-project customization while maintaining DoD defaults
+- **D159:** Clarification prioritization uses deterministic Impact × Uncertainty 2D matrix — consistent with D21 readiness scoring approach
+- **D160:** Per-feature spec directories are optional (additive) — existing flat spec files continue to work unchanged
+- **D161:** Parallel markers use `parallel_group` field in safe_decomposition — reuses existing DAG infrastructure (D40) for concurrency annotation
+- **D162:** Heartbeat daemon uses configurable check registry with per-check intervals in YAML — each check type has its own cadence (D26 pattern)
+- **D163:** Heartbeat notifications fan out to 3 sinks: audit trail (always), SSE (if dashboard running), gateway channels (if configured)
+- **D164:** Auto-resolver extends existing webhook_server.py with `/alert-webhook` endpoint — avoids second Flask app, reuses HMAC verification
+- **D165:** Auto-resolver reuses existing 3-tier self-healing decision engine (≥0.7 auto, 0.3–0.7 suggest, <0.3 escalate) and rate limits (5/hour)
+- **D166:** Auto-resolver creates fix branches/PRs via existing VCS abstraction (`tools/ci/modules/vcs.py`)
+- **D167:** Selective skill injection via deterministic keyword-based category matching — no LLM required, declarative YAML config (D26 pattern)
+- **D168:** Time-decay uses exponential formula `2^(-(age/half_life))` with per-memory-type half-lives, opt-in via `--time-decay` flag (backward compatible)
+- **D169:** Dashboard auth is self-contained against `icdev.db` (not imported from SaaS layer) — keeps dashboard independently deployable
+- **D170:** WebSocket via Flask-SocketIO is additive — HTTP polling (D103) remains for backward compat. Falls back automatically when SocketIO unavailable
+- **D171:** Session cookies use Flask's built-in signed sessions. `app.secret_key` from `ICDEV_DASHBOARD_SECRET` env var or auto-generated
+- **D172:** Dashboard RBAC: 5 roles (admin, pm, developer, isso, co). Admin manages users/keys. Others map to existing `ROLE_VIEWS` for page visibility
+- **D173:** CUI banner toggle via `ICDEV_CUI_BANNER_ENABLED` env var (default `true`). Existing `CUI_BANNER_TOP/BOTTOM` env vars preserved
+- **D174:** Activity feed merges `audit_trail` + `hook_events` via UNION ALL query — read-only, preserves append-only contract (D6)
+- **D175:** BYOK keys stored AES-256 encrypted in `dashboard_user_llm_keys` table (Fernet symmetric encryption, key from env var). Per-user keys override per-department env vars, which override system config
+- **D176:** BYOK injection via `api_key_override` field on `LLMRequest` — router passes override to provider, provider uses it before config/env fallback
+- **D177:** Usage tracking extends `agent_token_usage` table with `user_id` column (nullable for backward compat). Cost dashboard aggregates by user and provider
+- **D178:** BYOK disabled by default (`ICDEV_BYOK_ENABLED=false`). When enabled, users see an "LLM Keys" section in their profile. Admin can enable/disable per-tenant
 
 ### Self-Healing System
 - **Confidence ≥ 0.7** + auto_healable → auto-remediate
@@ -855,6 +1043,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **ZTA Gate:** ZTA maturity ≥ Advanced (0.34) for IL4+, mTLS enforced when service mesh active, default-deny NetworkPolicy required, no pillar at 0.0
 - **MOSA Gate:** 0 external interfaces without ICD, 0 circular dependencies, modularity score ≥ 0.6, 0 direct coupling violations; warn on interface coverage < 80%, TSP expired/missing
 - **Acceptance Validation Gate:** 0 failed acceptance criteria, 0 pages with error patterns (500, tracebacks, JS errors), plan must contain `## Acceptance Criteria` section
+- **Remote Command Gate:** User binding required, signature verification on webhooks, replay window 300s, rate limit 30/user/min + 100/channel/min, icdev-deploy + icdev-init blocked on all remote channels, icdev-test/icdev-secure/icdev-build require confirmation
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -866,8 +1055,14 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - `docker/Dockerfile.simulation-agent` — STIG-hardened Simulation agent (port 8455)
 - `docker/Dockerfile.integration-agent` — STIG-hardened Integration agent (port 8456)
 - `docker/Dockerfile.devsecops-agent` — STIG-hardened DevSecOps/ZTA agent (port 8457)
+- `docker/Dockerfile.gateway-agent` — STIG-hardened Remote Command Gateway agent (port 8458)
 - `docker/Dockerfile.api-gateway` — STIG-hardened SaaS API gateway (port 8443, gunicorn)
 - `k8s/` — Full K8s manifests: namespace, configmap, secrets, network policies (default deny), ingress, 16+ deployment+service pairs
+- `k8s/hpa.yaml` — HPA manifests for all 15 agents + dashboard + API gateway (3-tier profiles: core/domain/support)
+- `k8s/pdb.yaml` — Pod Disruption Budgets (minAvailable/maxUnavailable per tier)
+- `k8s/node-autoscaler.yaml` — Cloud-agnostic Cluster Autoscaler reference deployment + prerequisites documentation
+- `k8s/devsecops-agent.yaml` — STIG-hardened DevSecOps/ZTA agent (port 8457)
+- `k8s/gateway-agent.yaml` — STIG-hardened Remote Command Gateway agent (port 8458)
 - `k8s/saas/` — SaaS-specific K8s manifests: tenant-namespace-template, api-gateway-deployment, platform-db-deployment
 - `deploy/helm/` — Helm chart for on-prem deployment (Chart.yaml, values.yaml, templates/)
 - `deploy/offline/` — Air-gapped installer (install.py, install.sh, README.md)
@@ -915,6 +1110,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | Zero Trust Architecture | `goals/zero_trust_architecture.md` | ZTA 7-pillar maturity scoring (DoD ZTA Strategy), NIST SP 800-207 compliance, service mesh (Istio/Linkerd), network segmentation, PDP/PEP config, cATO posture (Phase 25) |
 | MOSA Workflow | `goals/mosa_workflow.md` | DoD MOSA (10 U.S.C. §4401): MOSA assessment, modularity analysis (coupling/cohesion/circular deps), ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC, optional cATO evidence (Phase 26) |
 | CLI Capabilities | `goals/cli_capabilities.md` | Optional Claude CLI features: CI/CD pipeline automation, parallel agent execution, container-based execution, scripted batch intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |
+| Remote Command Gateway | `goals/remote_command_gateway.md` | Remote Command Gateway: messaging channel integration (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware response filtering, user binding ceremony, air-gapped/connected mode, command allowlist (Phase 28) |
 
 ---
 
@@ -1024,6 +1220,7 @@ Adapted from TAC-8 for the ICDEV GOTCHA framework. These are the 12 dimensions y
 - SBOM must be regenerated on every build
 - All containers must run as non-root with read-only root filesystem
 - IL6/SECRET projects require SIPR-only network, NSA Type 1 encryption, air-gapped CI/CD
+- **V&V before handoff** — NEVER declare a fix/feature complete based solely on API or CLI validation. If the change affects UI/dashboard, open the browser with Playwright MCP, interact with the feature as the user would (click buttons, submit forms, watch real-time updates), take a screenshot, and confirm it works from the user's perspective BEFORE reporting completion. API passing ≠ user experience working.
 
 ---
 

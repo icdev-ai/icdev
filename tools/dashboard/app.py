@@ -22,16 +22,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Flask, render_template, jsonify, request as flask_request
+from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for, flash
 
 from tools.dashboard.config import (
     DB_PATH,
     CUI_BANNER_TOP,
     CUI_BANNER_BOTTOM,
     CUI_DESIGNATION,
+    CUI_BANNER_ENABLED,
+    BYOK_ENABLED,
     PORT,
     DEBUG,
 )
+from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event
+from tools.dashboard.websocket import init_socketio, get_socketio
 from tools.dashboard.api.projects import projects_api
 from tools.dashboard.api.agents import agents_api
 from tools.dashboard.api.compliance import compliance_api
@@ -42,6 +46,10 @@ from tools.dashboard.api.nlq import nlq_bp
 from tools.dashboard.api.batch import batch_api
 from tools.dashboard.api.diagrams import diagrams_api
 from tools.dashboard.api.cicd import cicd_api
+from tools.dashboard.api.intake import intake_api
+from tools.dashboard.api.admin import admin_api
+from tools.dashboard.api.activity import activity_api
+from tools.dashboard.api.usage import usage_api
 from tools.dashboard.ux_helpers import register_ux_filters
 
 # ---------------------------------------------------------------------------
@@ -58,6 +66,19 @@ def create_app() -> Flask:
 
     # Register UX filters (glossary, timestamps, error recovery, quick paths)
     register_ux_filters(app)
+
+    # Register dashboard auth middleware (D169-D172)
+    register_dashboard_auth(app)
+
+    # Initialize WebSocket (D170 — optional, graceful fallback)
+    init_socketio(app)
+
+    # Correlation ID middleware (D149)
+    try:
+        from tools.resilience.correlation import register_correlation_middleware
+        register_correlation_middleware(app)
+    except ImportError:
+        pass
 
     # Role-based view configuration
     ROLE_VIEWS = {
@@ -81,20 +102,49 @@ def create_app() -> Flask:
             "show_tabs": ["overview", "compliance", "deployments"],
             "hide_columns": ["stig_id", "finding_id", "source"],
         },
+        "analyst": {
+            "label": "Analyst",
+            "show_tabs": ["overview", "compliance", "security", "audit"],
+            "hide_columns": [],
+        },
+        "solutions_architect": {
+            "label": "Solutions Architect",
+            "show_tabs": ["overview", "security", "deployments", "audit"],
+            "hide_columns": [],
+        },
+        "sales_engineer": {
+            "label": "Sales Engineer",
+            "show_tabs": ["overview", "compliance", "deployments"],
+            "hide_columns": ["stig_id", "finding_id"],
+        },
+        "innovator": {
+            "label": "Innovator",
+            "show_tabs": ["overview", "security", "deployments", "audit"],
+            "hide_columns": [],
+        },
+        "biz_dev": {
+            "label": "Business Development",
+            "show_tabs": ["overview", "compliance", "deployments"],
+            "hide_columns": ["stig_id", "finding_id", "source"],
+        },
     }
 
-    # Make CUI config and role available in all templates
+    # Make CUI config, role, and user info available in all templates
     @app.context_processor
     def inject_cui():
         role = flask_request.args.get("role", "")
         role_config = ROLE_VIEWS.get(role, None)
+        current_user = getattr(g, "current_user", None)
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
+            "cui_banner_enabled": CUI_BANNER_ENABLED,
             "cui_designation": CUI_DESIGNATION,
             "current_role": role,
             "role_config": role_config,
             "ROLE_VIEWS": ROLE_VIEWS,
+            "current_user": current_user,
+            "byok_enabled": BYOK_ENABLED,
         }
 
     # ---- Auto-register A2A agents from card files ----
@@ -117,6 +167,10 @@ def create_app() -> Flask:
     app.register_blueprint(batch_api)
     app.register_blueprint(diagrams_api)
     app.register_blueprint(cicd_api)
+    app.register_blueprint(intake_api)
+    app.register_blueprint(admin_api)
+    app.register_blueprint(activity_api)
+    app.register_blueprint(usage_api)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -544,10 +598,83 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/activity")
+    def activity_page():
+        """Activity feed — merged audit + hook events with real-time updates."""
+        return render_template("activity.html")
+
+    @app.route("/usage")
+    def usage_page():
+        """Usage tracking + cost dashboard."""
+        return render_template("usage.html")
+
     @app.route("/wizard")
     def wizard_page():
         """Getting Started wizard — guides new users to the right workflow."""
         return render_template("wizard.html")
+
+    @app.route("/chat")
+    def chat_new():
+        """Start a new requirements chat — wizard params set context."""
+        goal = flask_request.args.get("goal", "build")
+        role = flask_request.args.get("role", "developer")
+        classification = flask_request.args.get("classification", "il4")
+        frameworks = flask_request.args.get("frameworks", "")
+        custom_role_name = flask_request.args.get("custom_role_name", "")
+        custom_role_desc = flask_request.args.get("custom_role_desc", "")
+        return render_template(
+            "chat.html",
+            session_id=None,
+            messages=[],
+            wizard_goal=goal,
+            wizard_role=role,
+            wizard_classification=classification,
+            wizard_frameworks=frameworks,
+            wizard_custom_role_name=custom_role_name,
+            wizard_custom_role_desc=custom_role_desc,
+        )
+
+    @app.route("/chat/<session_id>")
+    def chat_session(session_id):
+        """Resume an existing requirements chat session."""
+        conn = _get_db()
+        try:
+            try:
+                session = conn.execute(
+                    "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+                ).fetchone()
+            except sqlite3.OperationalError:
+                session = None
+            if not session:
+                return render_template("404.html", message="Session not found"), 404
+            messages = conn.execute(
+                "SELECT turn_number, role, content, content_type, created_at "
+                "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+                (session_id,),
+            ).fetchall()
+            # Extract context for sidebar display
+            import json as _json
+            session_dict = dict(session)
+            ctx = {}
+            try:
+                ctx = _json.loads(session_dict.get("context_summary") or "{}")
+            except (ValueError, TypeError):
+                pass
+            return render_template(
+                "chat.html",
+                session_id=session_id,
+                session=session_dict,
+                messages=[dict(m) for m in messages],
+                wizard_goal=None,
+                wizard_role=None,
+                wizard_classification=None,
+                wizard_frameworks=",".join(ctx.get("selected_frameworks", [])),
+                wizard_custom_role_name="",
+                wizard_custom_role_desc="",
+                session_context=ctx,
+            )
+        finally:
+            conn.close()
 
     @app.route("/quick-paths")
     def quick_paths_page():
@@ -568,6 +695,64 @@ def create_app() -> Flask:
     def cicd_page():
         """CI/CD pipeline status, conversations, and connector health."""
         return render_template("cicd.html")
+
+    @app.route("/gateway")
+    def gateway_page():
+        """Remote Command Gateway admin — bindings, command log, channel status."""
+        import yaml as _yaml
+
+        # Load gateway config
+        gateway_config_path = BASE_DIR / "args" / "remote_gateway_config.yaml"
+        gw_config = {}
+        if gateway_config_path.exists():
+            with open(gateway_config_path) as f:
+                gw_config = _yaml.safe_load(f) or {}
+
+        env_mode = gw_config.get("environment", {}).get("mode", "connected")
+        channels = gw_config.get("channels", {})
+
+        # Determine active channels
+        active_channels = []
+        for name, ch in channels.items():
+            enabled = ch.get("enabled", False)
+            req_internet = ch.get("requires_internet", False)
+            available = enabled and not (env_mode == "air_gapped" and req_internet)
+            active_channels.append({
+                "name": name,
+                "enabled": enabled,
+                "available": available,
+                "max_il": ch.get("max_il", "IL4"),
+                "description": ch.get("description", ""),
+            })
+
+        # Load bindings and recent commands
+        conn = _get_db()
+        try:
+            bindings = conn.execute(
+                "SELECT * FROM remote_user_bindings ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+            bindings = [dict(r) for r in bindings]
+        except Exception:
+            bindings = []
+
+        try:
+            commands = conn.execute(
+                "SELECT * FROM remote_command_log ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+            commands = [dict(r) for r in commands]
+        except Exception:
+            commands = []
+
+        conn.close()
+
+        return render_template(
+            "gateway.html",
+            environment_mode=env_mode,
+            channels=active_channels,
+            bindings=bindings,
+            commands=commands,
+            command_allowlist=gw_config.get("command_allowlist", []),
+        )
 
     @app.route("/query")
     def query_page():
@@ -672,7 +857,108 @@ def create_app() -> Flask:
             "classification": "CUI",
         })
 
+    # ---- Profile routes (D172, D175-D178) ----
+
+    @app.route("/profile")
+    def profile_page():
+        """User profile page with BYOK key management."""
+        return render_template("profile.html")
+
+    @app.route("/profile/api/keys")
+    def profile_api_keys():
+        """List current user's dashboard API keys."""
+        from tools.dashboard.auth import list_api_keys_for_user
+        user = getattr(g, "current_user", None)
+        if not user:
+            return jsonify({"keys": []})
+        keys = list_api_keys_for_user(user["id"])
+        return jsonify({"keys": keys})
+
+    @app.route("/profile/api/llm-keys", methods=["GET"])
+    def profile_llm_keys():
+        """List current user's BYOK LLM keys."""
+        from tools.dashboard.byok import list_llm_keys
+        user = getattr(g, "current_user", None)
+        if not user:
+            return jsonify({"keys": []})
+        keys = list_llm_keys(user["id"])
+        return jsonify({"keys": keys})
+
+    @app.route("/profile/api/llm-keys", methods=["POST"])
+    def profile_add_llm_key():
+        """Store a new BYOK LLM key for the current user."""
+        from tools.dashboard.byok import store_llm_key
+        user = getattr(g, "current_user", None)
+        if not user:
+            return jsonify({"error": "Not authenticated"}), 401
+        data = flask_request.get_json(force=True)
+        provider = data.get("provider", "").strip()
+        api_key = data.get("api_key", "").strip()
+        label = data.get("label", "").strip()
+        if not provider or not api_key:
+            return jsonify({"error": "provider and api_key required"}), 400
+        result = store_llm_key(user["id"], provider, api_key, key_label=label)
+        return jsonify(result), 201
+
+    @app.route("/profile/api/llm-keys/<key_id>/revoke", methods=["POST"])
+    def profile_revoke_llm_key(key_id):
+        """Revoke a BYOK LLM key."""
+        from tools.dashboard.byok import revoke_llm_key
+        revoke_llm_key(key_id)
+        return jsonify({"status": "revoked"})
+
+    # ---- Auth routes (D169-D172) ----
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login_page():
+        """Login page — accepts API key via form or header."""
+        if flask_request.method == "POST":
+            raw_key = flask_request.form.get("api_key", "").strip()
+            user = validate_api_key(raw_key)
+            if user:
+                flask_session["user_id"] = user["id"]
+                log_auth_event(
+                    user["id"], "login_success",
+                    ip_address=flask_request.remote_addr,
+                    user_agent=flask_request.headers.get("User-Agent", "")[:256],
+                    details="via_login_form",
+                )
+                return redirect(url_for("index"))
+            else:
+                log_auth_event(
+                    None, "login_failed",
+                    ip_address=flask_request.remote_addr,
+                    user_agent=flask_request.headers.get("User-Agent", "")[:256],
+                    details="via_login_form",
+                )
+                return render_template("login.html", error="Invalid API key. Please try again.")
+        return render_template("login.html", error=None)
+
+    @app.route("/logout")
+    def logout():
+        """Clear session and redirect to login."""
+        user_id = flask_session.get("user_id")
+        if user_id:
+            log_auth_event(
+                user_id, "logout",
+                ip_address=flask_request.remote_addr,
+            )
+        flask_session.clear()
+        return redirect(url_for("login_page"))
+
     # ---- Error handlers ----
+
+    @app.errorhandler(401)
+    def unauthorized(e):
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({"error": "Unauthorized", "message": "Valid API key required"}), 401
+        return redirect(url_for("login_page"))
+
+    @app.errorhandler(403)
+    def forbidden(e):
+        if flask_request.is_json or flask_request.path.startswith("/api/"):
+            return jsonify({"error": "Forbidden", "message": "Insufficient permissions"}), 403
+        return render_template("404.html", message="You do not have permission to access this page."), 403
 
     @app.errorhandler(404)
     def not_found(e):
@@ -706,4 +992,12 @@ if __name__ == "__main__":
     print(f"[ICDEV Dashboard] Starting on http://127.0.0.1:{args.port}")
     print(f"[ICDEV Dashboard] Database: {DB_PATH}")
     print(f"[ICDEV Dashboard] CUI Marking: {CUI_BANNER_TOP}")
-    app.run(host="0.0.0.0", port=args.port, debug=args.debug)
+
+    # Use SocketIO runner if available (D170), otherwise plain Flask
+    socketio = get_socketio()
+    if socketio:
+        print("[ICDEV Dashboard] WebSocket enabled (Flask-SocketIO)")
+        socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)
+    else:
+        print("[ICDEV Dashboard] WebSocket not available — using HTTP polling")
+        app.run(host="0.0.0.0", port=args.port, debug=args.debug)

@@ -9,7 +9,7 @@
         <span class="current">Getting Started</span>
     </div>
     <h1>Getting Started</h1>
-    <p class="subtitle">Answer 3 quick questions and we'll recommend the best path for you</p>
+    <p class="subtitle">Answer 4 quick questions and we'll recommend the best path for you</p>
 </div>
 
 <div class="wizard-container">
@@ -19,6 +19,7 @@
         <div class="wizard-progress-dot" data-step="1"></div>
         <div class="wizard-progress-dot" data-step="2"></div>
         <div class="wizard-progress-dot" data-step="3"></div>
+        <div class="wizard-progress-dot" data-step="4"></div>
     </div>
 
     <!-- Step 1: Goal -->
@@ -72,6 +73,49 @@
                 <div class="wizard-option-title">Contracting Officer</div>
                 <div class="wizard-option-desc">I manage contracts and vendor requirements</div>
             </div>
+            <div class="wizard-option" data-value="analyst" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F50D;</span>
+                <div class="wizard-option-title">Analyst</div>
+                <div class="wizard-option-desc">I research data, requirements, and threats</div>
+            </div>
+            <div class="wizard-option" data-value="solutions_architect" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F3D7;</span>
+                <div class="wizard-option-title">Solutions Architect</div>
+                <div class="wizard-option-desc">I design technical solutions and architectures</div>
+            </div>
+            <div class="wizard-option" data-value="sales_engineer" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4E1;</span>
+                <div class="wizard-option-title">Sales Engineer</div>
+                <div class="wizard-option-desc">I demo capabilities and support proposals</div>
+            </div>
+            <div class="wizard-option" data-value="innovator" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4A1;</span>
+                <div class="wizard-option-title">Innovator</div>
+                <div class="wizard-option-desc">I explore emerging tech and prototype ideas</div>
+            </div>
+            <div class="wizard-option" data-value="biz_dev" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F91D;</span>
+                <div class="wizard-option-title">Business Development</div>
+                <div class="wizard-option-desc">I identify opportunities and grow partnerships</div>
+            </div>
+            <div class="wizard-option" data-value="custom" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x270D;</span>
+                <div class="wizard-option-title">Custom Role</div>
+                <div class="wizard-option-desc">Define your own role and persona</div>
+            </div>
+        </div>
+        <!-- Custom role input (hidden until "Custom" selected) -->
+        <div id="custom-role-form" style="display:none; margin-top:16px;">
+            <div style="margin-bottom:8px;">
+                <label for="custom-role-name" style="font-weight:600; display:block; margin-bottom:4px;">Role Name</label>
+                <input type="text" id="custom-role-name" placeholder="e.g., Logistics Officer"
+                       style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-primary); color:var(--text-primary);">
+            </div>
+            <div>
+                <label for="custom-role-desc" style="font-weight:600; display:block; margin-bottom:4px;">What do you do?</label>
+                <input type="text" id="custom-role-desc" placeholder="e.g., I manage supply chain operations and vendor logistics"
+                       style="width:100%; padding:8px 12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-primary); color:var(--text-primary);">
+            </div>
         </div>
     </div>
 
@@ -102,8 +146,19 @@
         </div>
     </div>
 
-    <!-- Step 4: Results -->
+    <!-- Step 4: Compliance Frameworks -->
     <div class="wizard-step" id="wizard-step-3">
+        <div class="wizard-question">Which compliance frameworks apply?</div>
+        <p style="color: var(--text-secondary); margin-bottom:16px; font-size:0.9rem;">
+            Auto-suggested based on your classification level. Check additional frameworks as needed.
+        </p>
+        <div class="wizard-frameworks" id="wizard-frameworks">
+            <!-- Populated by JS based on classification selection -->
+        </div>
+    </div>
+
+    <!-- Step 5: Results -->
+    <div class="wizard-step" id="wizard-step-4">
         <div class="wizard-result" id="wizard-result">
             <!-- Populated by JS -->
         </div>
@@ -114,7 +169,7 @@
         <button class="btn btn-secondary" id="wizard-back" onclick="ICDEV.wizardBack()" style="visibility: hidden;">
             &larr; Back
         </button>
-        <span id="wizard-step-label" class="text-muted">Step 1 of 3</span>
+        <span id="wizard-step-label" class="text-muted">Step 1 of 4</span>
         <button class="btn btn-primary" id="wizard-next" onclick="ICDEV.wizardNext()" disabled>
             Next &rarr;
         </button>
@@ -126,7 +181,33 @@
 {% block scripts %}
 <script>
 (function() {
-    var state = { step: 0, answers: [null, null, null] };
+    var state = { step: 0, answers: [null, null, null, null] };
+    var TOTAL_STEPS = 4;
+
+    // Framework definitions
+    var FRAMEWORKS = {
+        fedramp_moderate: { name: "FedRAMP Moderate", desc: "Federal cloud authorization — Moderate baseline" },
+        fedramp_high: { name: "FedRAMP High", desc: "Federal cloud authorization — High baseline" },
+        cmmc_l2: { name: "CMMC Level 2", desc: "Cybersecurity Maturity Model — Advanced" },
+        cmmc_l3: { name: "CMMC Level 3", desc: "Cybersecurity Maturity Model — Expert" },
+        nist_800_171: { name: "NIST 800-171", desc: "CUI protection (DFARS)" },
+        nist_800_207: { name: "NIST 800-207 (ZTA)", desc: "Zero Trust Architecture" },
+        cnssi_1253: { name: "CNSSI 1253", desc: "Classified system overlay" },
+        hipaa: { name: "HIPAA", desc: "Healthcare data protection" },
+        pci_dss: { name: "PCI DSS v4.0", desc: "Payment card data security" },
+        cjis: { name: "CJIS", desc: "Criminal justice information" },
+        soc2: { name: "SOC 2 Type II", desc: "Trust services criteria" },
+        iso_27001: { name: "ISO 27001:2022", desc: "Information security management" },
+        hitrust: { name: "HITRUST CSF", desc: "Health information trust" }
+    };
+
+    // Auto-suggest mapping per IL level
+    var IL_FRAMEWORKS = {
+        il2: ["fedramp_moderate"],
+        il4: ["fedramp_moderate", "cmmc_l2", "nist_800_171"],
+        il5: ["fedramp_high", "cmmc_l2", "nist_800_171", "nist_800_207"],
+        il6: ["fedramp_high", "cmmc_l3", "cnssi_1253", "nist_800_207"]
+    };
 
     var PATHS = {
         build_developer: {
@@ -203,12 +284,13 @@
     };
 
     function getPath(goal, role) {
+        var r = (typeof role === "object") ? "developer" : role;
         if (goal === "modernize") return PATHS.modernize;
         if (goal === "requirements") return PATHS.requirements;
-        if (goal === "comply" && role === "isso") return PATHS.comply_isso;
+        if (goal === "comply" && r === "isso") return PATHS.comply_isso;
         if (goal === "comply") return PATHS.comply_developer;
-        if (goal === "build" && role === "pm") return PATHS.build_pm;
-        if (goal === "build" && role === "co") return PATHS.build_pm;
+        var pmRoles = ["pm", "co", "sales_engineer", "biz_dev"];
+        if (goal === "build" && pmRoles.indexOf(r) !== -1) return PATHS.build_pm;
         return PATHS.build_developer;
     }
 
@@ -218,14 +300,58 @@
         var siblings = el.parentNode.querySelectorAll(".wizard-option");
         for (var i = 0; i < siblings.length; i++) siblings[i].classList.remove("selected");
         el.classList.add("selected");
-        state.answers[state.step] = el.getAttribute("data-value");
+        var val = el.getAttribute("data-value");
+
+        // Handle custom role
+        if (state.step === 1) {
+            var customForm = document.getElementById("custom-role-form");
+            if (val === "custom") {
+                customForm.style.display = "block";
+                state.answers[1] = { custom: true, name: "", description: "" };
+            } else {
+                customForm.style.display = "none";
+                state.answers[1] = val;
+            }
+        } else {
+            state.answers[state.step] = val;
+        }
+
         document.getElementById("wizard-next").disabled = false;
     };
 
+    // Update custom role fields on input
+    function wireCustomRoleInputs() {
+        var nameInput = document.getElementById("custom-role-name");
+        var descInput = document.getElementById("custom-role-desc");
+        if (nameInput) {
+            nameInput.addEventListener("input", function() {
+                if (typeof state.answers[1] === "object") {
+                    state.answers[1].name = nameInput.value.trim();
+                    // Enable next only if both fields have content
+                    document.getElementById("wizard-next").disabled =
+                        !nameInput.value.trim() || !descInput.value.trim();
+                }
+            });
+        }
+        if (descInput) {
+            descInput.addEventListener("input", function() {
+                if (typeof state.answers[1] === "object") {
+                    state.answers[1].description = descInput.value.trim();
+                    document.getElementById("wizard-next").disabled =
+                        !nameInput.value.trim() || !descInput.value.trim();
+                }
+            });
+        }
+    }
+
     ICDEV.wizardNext = function() {
-        if (state.step >= 2) {
+        // When leaving Step 3 (classification), populate Step 4 (frameworks)
+        if (state.step === 2) {
+            populateFrameworks(state.answers[2]);
+        }
+        if (state.step >= TOTAL_STEPS - 1) {
             showResult();
-            state.step = 3;
+            state.step = TOTAL_STEPS;
             updateUI();
             return;
         }
@@ -238,6 +364,50 @@
         state.step--;
         updateUI();
     };
+
+    function populateFrameworks(classification) {
+        var container = document.getElementById("wizard-frameworks");
+        var suggested = IL_FRAMEWORKS[classification] || [];
+        var html = "";
+
+        // Suggested frameworks section
+        html += '<div style="margin-bottom:12px; font-weight:600; color:var(--text-secondary);">Recommended for ' + classification.toUpperCase() + '</div>';
+
+        var allIds = Object.keys(FRAMEWORKS);
+        for (var i = 0; i < allIds.length; i++) {
+            var id = allIds[i];
+            var fw = FRAMEWORKS[id];
+            var isSuggested = suggested.indexOf(id) !== -1;
+            var checked = isSuggested ? " checked" : "";
+
+            if (i > 0 && !isSuggested && suggested.indexOf(allIds[i - 1]) !== -1) {
+                html += '<div style="margin:16px 0 12px; font-weight:600; color:var(--text-secondary); border-top:1px solid var(--border-color); padding-top:12px;">Additional Frameworks</div>';
+            }
+
+            html += '<label class="framework-checkbox' + (isSuggested ? ' suggested' : '') + '">';
+            html += '<input type="checkbox" value="' + id + '"' + checked + ' onchange="ICDEV.wizardFrameworkChange()">';
+            html += '<span class="framework-name">' + fw.name + '</span>';
+            html += '<span class="framework-desc">' + fw.desc + '</span>';
+            html += '</label>';
+        }
+        container.innerHTML = html;
+
+        // Set initial framework selection
+        updateFrameworkAnswer();
+    }
+
+    ICDEV.wizardFrameworkChange = function() {
+        updateFrameworkAnswer();
+    };
+
+    function updateFrameworkAnswer() {
+        var checks = document.querySelectorAll("#wizard-frameworks input[type=checkbox]:checked");
+        var selected = [];
+        for (var i = 0; i < checks.length; i++) selected.push(checks[i].value);
+        state.answers[3] = selected;
+        // Frameworks step is always valid (even with 0 selected)
+        document.getElementById("wizard-next").disabled = false;
+    }
 
     function updateUI() {
         var steps = document.querySelectorAll(".wizard-step");
@@ -257,21 +427,62 @@
 
         backBtn.style.visibility = state.step > 0 ? "visible" : "hidden";
 
-        if (state.step >= 3) {
+        if (state.step >= TOTAL_STEPS) {
             nav.style.display = "none";
         } else {
             nav.style.display = "flex";
-            nextBtn.disabled = !state.answers[state.step];
-            nextBtn.textContent = state.step === 2 ? "See Recommendation \u2192" : "Next \u2192";
-            label.textContent = "Step " + (state.step + 1) + " of 3";
+            // Framework step is always ready
+            if (state.step === 3) {
+                nextBtn.disabled = false;
+            } else if (state.step === 1 && typeof state.answers[1] === "object") {
+                // Custom role: need both name and desc
+                var n = document.getElementById("custom-role-name");
+                var d = document.getElementById("custom-role-desc");
+                nextBtn.disabled = !(n && n.value.trim() && d && d.value.trim());
+            } else {
+                nextBtn.disabled = !state.answers[state.step];
+            }
+            nextBtn.textContent = state.step === (TOTAL_STEPS - 1) ? "See Recommendation \u2192" : "Next \u2192";
+            label.textContent = "Step " + (state.step + 1) + " of " + TOTAL_STEPS;
         }
     }
 
     function showResult() {
-        var path = getPath(state.answers[0], state.answers[1]);
+        var roleVal = state.answers[1];
+        var roleParam = (typeof roleVal === "object") ? "custom" : roleVal;
+        var path = getPath(state.answers[0], roleVal);
+        var frameworks = state.answers[3] || [];
+
+        var chatUrl = "/chat?goal=" + encodeURIComponent(state.answers[0])
+            + "&role=" + encodeURIComponent(roleParam)
+            + "&classification=" + encodeURIComponent(state.answers[2])
+            + "&frameworks=" + encodeURIComponent(frameworks.join(","));
+
+        // Add custom role params if applicable
+        if (typeof roleVal === "object" && roleVal.custom) {
+            chatUrl += "&custom_role_name=" + encodeURIComponent(roleVal.name || "");
+            chatUrl += "&custom_role_desc=" + encodeURIComponent(roleVal.description || "");
+        }
+
         var html = '<h2>Recommended Path</h2>';
         html += '<div class="recommended-path">' + path.name + '</div>';
         html += '<p style="color: var(--text-secondary); margin-bottom: 20px;">' + path.desc + '</p>';
+
+        // Show selected persona
+        var personaLabel = roleParam;
+        if (typeof roleVal === "object" && roleVal.name) personaLabel = roleVal.name;
+        html += '<p style="color: var(--accent-blue); margin-bottom: 8px;"><strong>Your Persona:</strong> ' + personaLabel + '</p>';
+
+        // Show selected frameworks
+        if (frameworks.length > 0) {
+            html += '<p style="margin-bottom: 16px;"><strong>Compliance:</strong> ';
+            for (var f = 0; f < frameworks.length; f++) {
+                var fw = FRAMEWORKS[frameworks[f]];
+                if (fw) html += '<span class="framework-tag">' + fw.name + '</span> ';
+            }
+            html += '</p>';
+        }
+
         html += '<div class="path-steps">';
         for (var i = 0; i < path.steps.length; i++) {
             var s = path.steps[i];
@@ -284,10 +495,18 @@
         }
         html += '</div>';
         html += '<div style="margin-top:24px;">';
-        html += '<a href="/quick-paths" class="btn btn-primary">View All Quick Paths</a>';
-        html += ' <button class="btn btn-secondary" onclick="location.reload()">Start Over</button>';
+        html += '<a href="' + chatUrl + '" class="btn btn-primary btn-lg">Start Requirements Chat &rarr;</a> ';
+        html += '<a href="/quick-paths" class="btn btn-secondary">View All Quick Paths</a> ';
+        html += '<button class="btn btn-secondary" onclick="location.reload()">Start Over</button>';
         html += '</div>';
         document.getElementById("wizard-result").innerHTML = html;
+    }
+
+    // Wire custom role inputs after DOM ready
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", wireCustomRoleInputs);
+    } else {
+        wireCustomRoleInputs();
     }
 })();
 </script>

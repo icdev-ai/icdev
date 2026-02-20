@@ -1,7 +1,6 @@
 # CUI // SP-CTI
 """Tests for tools/compliance/resolve_marking.py."""
 
-import json
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -15,20 +14,22 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.compliance.resolve_marking import resolve_project_marking, _no_marking_result
 
+_TMP = tempfile.gettempdir().replace("'", "''")
+
 
 @pytest.fixture
 def db_path(tmp_path):
     """Create a temporary ICDEV database with minimal schema."""
     db_file = tmp_path / "test_icdev.db"
     conn = sqlite3.connect(str(db_file))
-    conn.execute("""
+    conn.execute(f"""
         CREATE TABLE projects (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             type TEXT NOT NULL DEFAULT 'webapp',
             classification TEXT NOT NULL DEFAULT 'CUI',
             status TEXT NOT NULL DEFAULT 'active',
-            directory_path TEXT NOT NULL DEFAULT '/tmp',
+            directory_path TEXT NOT NULL DEFAULT '{_TMP}',
             impact_level TEXT DEFAULT 'IL5',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -60,7 +61,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-cui", "CUI App", "CUI", "IL5", "/tmp"),
+            ("proj-cui", "CUI App", "CUI", "IL5", _TMP),
         )
         conn.commit()
         conn.close()
@@ -78,7 +79,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-pub", "Public App", "Public", "IL2", "/tmp"),
+            ("proj-pub", "Public App", "Public", "IL2", _TMP),
         )
         conn.commit()
         conn.close()
@@ -96,7 +97,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-sec", "Secret App", "SECRET", "IL6", "/tmp"),
+            ("proj-sec", "Secret App", "SECRET", "IL6", _TMP),
         )
         conn.commit()
         conn.close()
@@ -112,7 +113,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-il2", "IL2 App", "CUI", "IL2", "/tmp"),
+            ("proj-il2", "IL2 App", "CUI", "IL2", _TMP),
         )
         conn.commit()
         conn.close()
@@ -126,7 +127,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-phi", "Health App", "CUI", "IL5", "/tmp"),
+            ("proj-phi", "Health App", "CUI", "IL5", _TMP),
         )
         conn.execute(
             "INSERT INTO data_classifications (project_id, data_category) VALUES (?, ?)",
@@ -145,7 +146,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-comp", "Composite App", "CUI", "IL5", "/tmp"),
+            ("proj-comp", "Composite App", "CUI", "IL5", _TMP),
         )
         conn.execute(
             "INSERT INTO data_classifications (project_id, data_category) VALUES (?, ?)",
@@ -185,7 +186,7 @@ class TestResolveProjectMarking:
         conn.execute(
             "INSERT INTO projects (id, name, classification, impact_level, directory_path) "
             "VALUES (?, ?, ?, ?, ?)",
-            ("proj-fouo", "FOUO App", "FOUO", "IL4", "/tmp"),
+            ("proj-fouo", "FOUO App", "FOUO", "IL4", _TMP),
         )
         conn.commit()
         conn.close()

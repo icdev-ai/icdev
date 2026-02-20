@@ -192,6 +192,15 @@ class A2AAgentServer:
         task_id = params.get("id", str(uuid.uuid4()))
         metadata = params.get("metadata", {})
 
+        # Extract correlation ID from incoming A2A request (D149)
+        try:
+            from tools.resilience.correlation import set_correlation_id
+            cid = metadata.get("correlation_id")
+            if cid:
+                set_correlation_id(cid)
+        except ImportError:
+            pass
+
         if not skill_id:
             return self._jsonrpc_error(rpc_id, -32602, "Missing required param: skill_id")
 

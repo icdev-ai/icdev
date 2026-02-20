@@ -1,0 +1,105 @@
+# CUI // SP-CTI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: icdev-devsecops
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: devsecops-agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devsecops-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: devsecops-agent
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: icdev
+        classification: CUI
+    spec:
+      serviceAccountName: icdev-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: devsecops-agent
+          image: ${REGISTRY}/icdev-devsecops-agent:latest
+          args: ["tools/a2a/agent_server.py", "--agent-id", "devsecops-agent", "--port", "8457"]
+          ports:
+            - containerPort: 8457
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: icdev-config
+            - secretRef:
+                name: icdev-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8457
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8457
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: devsecops-agent
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: devsecops-agent
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: icdev-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: icdev-devsecops
+  namespace: icdev
+  labels:
+    classification: CUI
+spec:
+  selector:
+    app.kubernetes.io/name: devsecops-agent
+  ports:
+    - port: 8457
+      targetPort: 8457
+      protocol: TCP
+  type: ClusterIP

@@ -32,6 +32,9 @@ logger = logging.getLogger("saas.auth.middleware")
 PUBLIC_ENDPOINTS = {
     "/health",
     "/api/v1/health",
+    "/api/v1/openapi.json",
+    "/api/v1/docs",
+    "/metrics",
     "/portal/login",
     "/portal/static",
 }

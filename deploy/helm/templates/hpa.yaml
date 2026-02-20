@@ -1,0 +1,75 @@
+# CUI // SP-CTI
+# ICDEV HPA + PDB Templates — Configurable via values.yaml
+# D141: CPU/memory baseline; cloud-agnostic
+
+{{- if .Values.autoscaling.enabled }}
+
+# ======================================================================
+# API Gateway HPA
+# ======================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Release.Name }}-api-gateway-hpa
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "icdev.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Release.Name }}-api-gateway
+  minReplicas: {{ .Values.autoscaling.apiGateway.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.apiGateway.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.apiGateway.cpuTarget }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.apiGateway.memoryTarget }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
+        - type: Pods
+          value: 4
+          periodSeconds: 60
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+
+---
+# ======================================================================
+# API Gateway PDB
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-api-gateway-pdb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "icdev.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api-gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "icdev.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api-gateway
+
+{{- end }}

@@ -287,6 +287,55 @@ _register_slack_route()
 _register_mattermost_route()
 
 
+# ---------------------------------------------------------------------------
+# Phase 29: Alert webhook for auto-resolution (D143)
+# ---------------------------------------------------------------------------
+
+@app.route("/alert-webhook", methods=["POST"])
+def alert_webhook():
+    """Handle external alert webhooks (Sentry, Prometheus, ELK, generic).
+
+    Headers:
+        X-Alert-Source: sentry | prometheus | elk | generic (optional)
+        X-Alert-Signature: HMAC-SHA256 (optional, uses WEBHOOK_SECRET)
+    """
+    # Optional HMAC verification (reuse GitHub signature logic)
+    signature = request.headers.get("X-Alert-Signature")
+    if signature and WEBHOOK_SECRET:
+        import hmac as _hmac
+        import hashlib as _hashlib
+        body = request.get_data()
+        expected = "sha256=" + _hmac.new(
+            WEBHOOK_SECRET.encode(), body, _hashlib.sha256
+        ).hexdigest()
+        if not _hmac.compare_digest(signature, expected):
+            return jsonify({"status": "error", "message": "Invalid signature"}), 403
+
+    source = request.headers.get("X-Alert-Source", "generic").lower()
+    payload = request.get_json(silent=True) or {}
+
+    # Determine mode: analyze-only or full resolve
+    mode = request.args.get("mode", "resolve")
+
+    try:
+        from tools.monitor.auto_resolver import analyze_alert, resolve_alert
+
+        if mode == "analyze":
+            result = analyze_alert(payload, source=source)
+        else:
+            result = resolve_alert(payload, source=source)
+
+        return jsonify(result), 200
+    except ImportError:
+        return jsonify({
+            "status": "error",
+            "message": "auto_resolver module not available",
+        }), 500
+    except Exception as e:
+        print(f"Error processing alert webhook: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == "__main__":
     print("CUI // SP-CTI")
     print(f"Starting ICDEV Webhook Server on port {PORT}")
@@ -302,5 +351,6 @@ if __name__ == "__main__":
         print(f"  Mattermost endpoint:  POST {mm_cfg.get('webhook_path', '/mattermost/events')}")
     else:
         print("  Mattermost:           disabled")
+    print("  Alert webhook:        POST /alert-webhook")
     print("  Health check:         GET  /health")
     app.run(host="0.0.0.0", port=PORT, debug=False)

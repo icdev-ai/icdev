@@ -332,8 +332,8 @@ def check_claude_code() -> CheckResult:
 
 def check_playwright() -> CheckResult:
     """Check if Playwright is installed and browsers are available."""
-    import platform
-    npx = "npx.cmd" if platform.system() == "Windows" else "npx"
+    from tools.compat.platform_utils import get_npx_cmd
+    npx = get_npx_cmd()
     try:
         result = subprocess.run(
             [npx, "playwright", "--version"],

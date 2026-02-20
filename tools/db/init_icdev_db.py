@@ -160,7 +160,17 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'data_category_assigned', 'data_category_detected',
         'framework_applicability_set', 'iso_bridge_mapped',
         'cjis_assessed', 'hipaa_assessed', 'hitrust_assessed',
-        'soc2_assessed', 'pci_dss_assessed', 'iso27001_assessed'
+        'soc2_assessed', 'pci_dss_assessed', 'iso27001_assessed',
+        'remote_binding_created', 'remote_binding_provisioned', 'remote_binding_revoked',
+        'remote_command_received', 'remote_command_rejected', 'remote_command_completed',
+        'remote_response_filtered',
+        'spec_quality_check', 'spec_consistency_check',
+        'constitution_added', 'constitution_removed', 'constitution_defaults_loaded',
+        'clarification_analyzed',
+        'spec.init', 'spec.register',
+        'heartbeat_check_warning', 'heartbeat_check_critical',
+        'auto_resolution_started', 'auto_resolution_completed',
+        'auto_resolution_failed', 'auto_resolution_escalated'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -2801,6 +2811,205 @@ CREATE TABLE IF NOT EXISTS ci_conversation_turns (
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_turns_session ON ci_conversation_turns(session_id, turn_number);
+
+-- ============================================================
+-- REMOTE COMMAND GATEWAY (Phase 28)
+-- ============================================================
+
+-- Bound identities: channel user <-> ICDEV user
+CREATE TABLE IF NOT EXISTS remote_user_bindings (
+    id TEXT PRIMARY KEY,
+    channel TEXT NOT NULL,
+    channel_user_id TEXT NOT NULL,
+    icdev_user_id TEXT,
+    tenant_id TEXT,
+    binding_status TEXT DEFAULT 'pending' CHECK(binding_status IN ('pending', 'active', 'revoked')),
+    bound_at TEXT,
+    revoked_at TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(channel, channel_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bindings_channel ON remote_user_bindings(channel, channel_user_id);
+CREATE INDEX IF NOT EXISTS idx_bindings_user ON remote_user_bindings(icdev_user_id);
+
+-- Command execution log (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS remote_command_log (
+    id TEXT PRIMARY KEY,
+    binding_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    raw_command TEXT NOT NULL,
+    parsed_tool TEXT,
+    parsed_args TEXT,
+    gate_results TEXT,
+    execution_status TEXT CHECK(execution_status IN ('accepted', 'rejected', 'completed', 'failed')),
+    response_classification TEXT,
+    response_filtered INTEGER DEFAULT 0,
+    error_message TEXT,
+    execution_time_ms INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (binding_id) REFERENCES remote_user_bindings(id)
+);
+CREATE INDEX IF NOT EXISTS idx_cmdlog_binding ON remote_command_log(binding_id);
+CREATE INDEX IF NOT EXISTS idx_cmdlog_channel ON remote_command_log(channel);
+CREATE INDEX IF NOT EXISTS idx_cmdlog_status ON remote_command_log(execution_status);
+
+-- Command allowlist (which commands are available per channel)
+CREATE TABLE IF NOT EXISTS remote_command_allowlist (
+    id TEXT PRIMARY KEY,
+    channel TEXT NOT NULL,
+    command_pattern TEXT NOT NULL,
+    max_il TEXT DEFAULT 'IL4',
+    requires_confirmation INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_allowlist_channel ON remote_command_allowlist(channel);
+
+-- Spec-kit Pattern 3: Project constitutions (D158)
+CREATE TABLE IF NOT EXISTS project_constitutions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    principle_text TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    priority INTEGER DEFAULT 1,
+    is_active INTEGER DEFAULT 1,
+    created_by TEXT DEFAULT 'system',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+CREATE INDEX IF NOT EXISTS idx_constitutions_project ON project_constitutions(project_id);
+
+-- Spec-kit Pattern 6: Spec registry (D160)
+CREATE TABLE IF NOT EXISTS spec_registry (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    spec_path TEXT NOT NULL,
+    spec_dir TEXT,
+    issue_number TEXT,
+    run_id TEXT,
+    title TEXT,
+    quality_score REAL,
+    consistency_score REAL,
+    constitution_pass INTEGER,
+    last_checked_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_spec_registry_project ON spec_registry(project_id);
+
+-- Phase 29: Heartbeat daemon check results (D141)
+CREATE TABLE IF NOT EXISTS heartbeat_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    check_type TEXT NOT NULL,
+    last_run TEXT NOT NULL,
+    next_run TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'ok', 'warning', 'critical', 'error')),
+    result_summary TEXT,
+    items_found INTEGER DEFAULT 0,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_hb_check_type ON heartbeat_checks(check_type);
+CREATE INDEX IF NOT EXISTS idx_hb_status ON heartbeat_checks(status);
+CREATE INDEX IF NOT EXISTS idx_hb_next_run ON heartbeat_checks(next_run);
+
+-- Phase 29: Auto-resolution alert processing log (D143-D145)
+CREATE TABLE IF NOT EXISTS auto_resolution_log (
+    id TEXT PRIMARY KEY,
+    alert_source TEXT NOT NULL,
+    alert_type TEXT NOT NULL,
+    alert_payload TEXT NOT NULL,
+    project_id TEXT REFERENCES projects(id),
+    confidence REAL DEFAULT 0.0,
+    decision TEXT NOT NULL
+        CHECK(decision IN ('auto_fix', 'suggest', 'escalate')),
+    resolution_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(resolution_status IN ('pending', 'analyzing', 'fixing', 'testing',
+            'pr_created', 'completed', 'failed', 'escalated', 'suggested')),
+    branch_name TEXT,
+    pr_url TEXT,
+    test_passed BOOLEAN,
+    details TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_auto_res_source ON auto_resolution_log(alert_source);
+CREATE INDEX IF NOT EXISTS idx_auto_res_status ON auto_resolution_log(resolution_status);
+CREATE INDEX IF NOT EXISTS idx_auto_res_project ON auto_resolution_log(project_id);
+CREATE INDEX IF NOT EXISTS idx_auto_res_created ON auto_resolution_log(created_at);
+
+-- ============================================================
+-- DASHBOARD AUTHENTICATION (Phase 30 — D169-D178)
+-- ============================================================
+
+-- Dashboard users (admin-managed)
+CREATE TABLE IF NOT EXISTS dashboard_users (
+    id TEXT PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'developer'
+        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co')),
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'suspended')),
+    created_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Dashboard API keys (per-user, SHA-256 hashed)
+CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES dashboard_users(id),
+    key_hash TEXT NOT NULL,
+    key_prefix TEXT NOT NULL,
+    label TEXT,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'revoked')),
+    last_used_at TIMESTAMP,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    revoked_at TIMESTAMP,
+    revoked_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dash_apikey_hash ON dashboard_api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_dash_apikey_user ON dashboard_api_keys(user_id);
+
+-- Dashboard auth audit log (append-only, D6 compliant)
+CREATE TABLE IF NOT EXISTS dashboard_auth_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    event_type TEXT NOT NULL
+        CHECK(event_type IN (
+            'login_success', 'login_failed', 'logout',
+            'key_created', 'key_revoked',
+            'user_created', 'user_suspended', 'user_reactivated',
+            'session_expired', 'permission_denied'
+        )),
+    ip_address TEXT,
+    user_agent TEXT,
+    details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dash_auth_log_user ON dashboard_auth_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_dash_auth_log_created ON dashboard_auth_log(created_at);
+
+-- BYOK: User/department LLM API keys (Fernet AES-256 encrypted, D175)
+CREATE TABLE IF NOT EXISTS dashboard_user_llm_keys (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES dashboard_users(id),
+    provider TEXT NOT NULL,
+    encrypted_key TEXT NOT NULL,
+    key_label TEXT,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'revoked')),
+    department TEXT,
+    is_department_key INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dash_llm_keys_user ON dashboard_user_llm_keys(user_id);
+CREATE INDEX IF NOT EXISTS idx_dash_llm_keys_provider ON dashboard_user_llm_keys(provider);
 """
 
 
@@ -2855,10 +3064,47 @@ MOSA_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN mosa_modularity_score REAL",
 ]
 
+# Spec-kit Pattern 7: Parallel task markers (D161)
+SPECKIT_ALTER_SQL = [
+    "ALTER TABLE safe_decomposition ADD COLUMN parallel_group TEXT",
+]
+
+# Phase 30: Dashboard auth — extend agent_token_usage for per-user tracking (D177)
+DASHBOARD_AUTH_ALTER_SQL = [
+    "ALTER TABLE agent_token_usage ADD COLUMN user_id TEXT DEFAULT NULL",
+    "ALTER TABLE agent_token_usage ADD COLUMN api_key_source TEXT DEFAULT 'config'",
+]
+
+
+def _has_migration_system(path):
+    """Check if the database is managed by the migration framework (D150)."""
+    if not path.exists():
+        return False
+    try:
+        conn = sqlite3.connect(str(path))
+        c = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        )
+        has_table = c.fetchone() is not None
+        conn.close()
+        return has_table
+    except Exception:
+        return False
+
 
 def init_db(db_path=None):
-    """Initialize the ICDEV database with full schema."""
+    """Initialize the ICDEV database with full schema.
+
+    If the migration system (schema_migrations table) is detected, redirects
+    to the migration runner instead of re-running the monolithic init script.
+    """
     path = db_path or DB_PATH
+
+    # D150: Detect migration system — if active, delegate to migration runner
+    if _has_migration_system(path):
+        print(f"Migration system detected in {path} — use 'python tools/db/migrate.py --up' for schema changes.")
+        return []
+
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.executescript(SCHEMA_SQL)
@@ -2906,6 +3152,18 @@ def init_db(db_path=None):
             pass  # Column already exists
     # Phase 26: MOSA columns
     for sql in MOSA_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Spec-kit Pattern 7: Parallel task markers (D161)
+    for sql in SPECKIT_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 30: Dashboard auth — extend agent_token_usage (D177)
+    for sql in DASHBOARD_AUTH_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

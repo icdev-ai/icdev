@@ -321,6 +321,14 @@ def create_app(config=None):
 
     # ---- Register middleware (order matters) ----
 
+    # 0. Correlation ID middleware (must be first — D149)
+    try:
+        from tools.resilience.correlation import register_correlation_middleware
+        register_correlation_middleware(app)
+        logger.info("Correlation ID middleware registered")
+    except ImportError as exc:
+        logger.debug("Correlation middleware not available: %s", exc)
+
     # 1. Auth middleware (sets g.tenant_id, g.user_id, g.user_role)
     try:
         from tools.saas.auth.middleware import register_auth_middleware
@@ -384,6 +392,30 @@ def create_app(config=None):
         logger.info("Portal blueprint registered")
     except ImportError:
         logger.debug("Portal blueprint not found (optional)")
+
+    # OpenAPI / Swagger UI (D153)
+    try:
+        from tools.saas.swagger_ui import swagger_bp
+        app.register_blueprint(swagger_bp)
+        logger.info("Swagger UI blueprint registered at /api/v1/docs")
+    except ImportError as exc:
+        logger.debug("Swagger UI blueprint not available: %s", exc)
+
+    # Prometheus metrics (D154)
+    try:
+        from tools.saas.metrics import get_collector
+        collector = get_collector()
+        collector.register_metrics_middleware(app)
+        logger.info("Prometheus metrics middleware registered")
+    except ImportError as exc:
+        logger.debug("Metrics middleware not available: %s", exc)
+
+    try:
+        from tools.saas.metrics_blueprint import metrics_bp
+        app.register_blueprint(metrics_bp)
+        logger.info("Prometheus metrics blueprint registered at /metrics")
+    except ImportError as exc:
+        logger.debug("Metrics blueprint not available: %s", exc)
 
     # ---- Startup banner ----
     logger.info(

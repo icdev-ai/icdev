@@ -94,5 +94,23 @@ SELF_HEALING = MONITORING_CONFIG.get("self_healing", {})
 HEALTH_CHECK = MONITORING_CONFIG.get("health_check", {})
 SLA = MONITORING_CONFIG.get("sla", {})
 
+# CUI banner toggle (D173)
+CUI_BANNER_ENABLED = os.environ.get(
+    "ICDEV_CUI_BANNER_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+
+# Dashboard auth (D169-D172)
+DASHBOARD_SECRET = os.environ.get(
+    "ICDEV_DASHBOARD_SECRET",
+    "",  # Empty = auto-generate at app startup
+)
+
+# BYOK — Bring Your Own Key (D175-D178)
+BYOK_ENABLED = os.environ.get(
+    "ICDEV_BYOK_ENABLED", "false"
+).lower() in ("1", "true", "yes")
+
+BYOK_ENCRYPTION_KEY = os.environ.get("ICDEV_BYOK_ENCRYPTION_KEY", "")
+
 # Classification
 DEFAULT_CLASSIFICATION = os.environ.get("ICDEV_CLASSIFICATION", "CUI")

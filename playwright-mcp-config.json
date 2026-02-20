@@ -6,7 +6,7 @@
     },
     "contextOptions": {
       "recordVideo": {
-        "dir": "./videos",
+        "dir": "./playwright/videos",
         "size": {
           "width": 1920,
           "height": 1080

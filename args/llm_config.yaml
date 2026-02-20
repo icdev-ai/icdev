@@ -248,6 +248,14 @@ routing:
     chain: [claude-sonnet, gpt-4o-mini, gemma3-local, llava-local]
     effort: low
 
+  intake_persona_response:
+    chain: [claude-sonnet, claude-opus, gpt-4o, llama-local]
+    effort: medium
+
+  bdd_preview:
+    chain: [claude-sonnet, gpt-4o, codestral-local]
+    effort: low
+
   default:
     chain: [claude-sonnet, gpt-4o, llama-local]
     effort: medium

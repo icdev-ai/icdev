@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}Requirements Chat - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        {% if session_id %}
+        <a href="/chat">Requirements Chat</a>
+        <span class="separator">/</span>
+        <span class="current">{{ session_id }}</span>
+        {% else %}
+        <span class="current">Requirements Chat</span>
+        {% endif %}
+    </div>
+    <h1>Requirements Chat</h1>
+    <p class="subtitle">Describe what you want to build. ICDEV will capture requirements, detect gaps, and score readiness.</p>
+</div>
+
+<div class="chat-layout" id="chat-layout">
+    <!-- Left pane: messages + input -->
+    <div class="chat-messages-pane">
+        <div class="chat-messages" id="chat-messages">
+            {% if messages %}
+                {% for msg in messages %}
+                <div class="message-bubble message-{{ msg.role }}">
+                    <div class="message-role">{{ 'You' if msg.role == 'customer' else 'ICDEV Analyst' }}</div>
+                    <div class="message-content">{{ msg.content }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="message-bubble message-analyst">
+                <div class="message-role">ICDEV Analyst</div>
+                <div class="message-content">Welcome! I'm the ICDEV Requirements Analyst. Tell me about the application you want to build — what problem does it solve, who are the users, and what are the key capabilities needed?
+
+You can also upload documents (SOW, CDD, CONOPS) or images (whiteboard photos, diagrams) using the paperclip button below.</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Upload drop zone overlay -->
+        <div class="chat-upload-zone" id="chat-upload-zone">
+            <div class="chat-upload-zone-text">Drop files here to upload<br>
+            <small>PDF, DOCX, TXT, PNG, JPG supported</small></div>
+        </div>
+
+        <!-- Input area -->
+        <div class="chat-input-area" id="chat-input-area">
+            <button class="chat-upload-btn" id="chat-upload-btn" title="Upload document or image" aria-label="Upload file">
+                &#x1F4CE;
+            </button>
+            <textarea id="chat-input" class="chat-input" rows="1"
+                      placeholder="Describe your requirements..."
+                      aria-label="Message input"></textarea>
+            <button class="btn btn-primary chat-send-btn" id="chat-send-btn" onclick="ICDEV.chatSend()" disabled>
+                Send &#x2192;
+            </button>
+            <input type="file" id="chat-file-input" style="display:none"
+                   accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
+        </div>
+    </div>
+
+    <!-- Right sidebar: readiness + stats + frameworks + BDD -->
+    <div class="chat-sidebar" id="chat-sidebar">
+        <!-- Compliance Frameworks -->
+        <div class="sidebar-section" id="frameworks-section" style="display:none;">
+            <h3>Compliance Frameworks</h3>
+            <div id="framework-tags" class="framework-tags"></div>
+        </div>
+
+        <!-- Complexity / Scale-Adaptive Indicator -->
+        <div class="sidebar-section" id="complexity-section" style="display:none;">
+            <h3>Project Complexity</h3>
+            <div class="complexity-indicator" id="complexity-indicator">
+                <div class="complexity-level" id="complexity-level"></div>
+                <div class="complexity-bar-container">
+                    <div class="complexity-bar-fill" id="complexity-bar" style="width:0%"></div>
+                </div>
+                <div class="complexity-score-text" id="complexity-score-text"></div>
+            </div>
+            <div class="complexity-recommendation" id="complexity-recommendation" style="display:none;"></div>
+        </div>
+
+        <h3>Readiness Score</h3>
+        <div class="readiness-gauge-container" id="readiness-gauge">
+            <svg viewBox="0 0 120 120" class="readiness-gauge-svg">
+                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
+                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent-blue)" stroke-width="10"
+                        stroke-dasharray="314" stroke-dashoffset="314" stroke-linecap="round"
+                        transform="rotate(-90 60 60)" id="readiness-arc"/>
+                <text x="60" y="60" text-anchor="middle" dominant-baseline="central"
+                      fill="var(--text-primary)" font-size="24" font-weight="bold" id="readiness-pct">0%</text>
+            </svg>
+        </div>
+
+        <div class="readiness-dimensions" id="readiness-dimensions">
+            <div class="readiness-dim">
+                <span class="readiness-dim-label">Completeness</span>
+                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-completeness" style="width:0%"></div></div>
+                <span class="readiness-dim-value" id="val-completeness">0%</span>
+            </div>
+            <div class="readiness-dim">
+                <span class="readiness-dim-label">Clarity</span>
+                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-clarity" style="width:0%"></div></div>
+                <span class="readiness-dim-value" id="val-clarity">0%</span>
+            </div>
+            <div class="readiness-dim">
+                <span class="readiness-dim-label">Feasibility</span>
+                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-feasibility" style="width:0%"></div></div>
+                <span class="readiness-dim-value" id="val-feasibility">0%</span>
+            </div>
+            <div class="readiness-dim">
+                <span class="readiness-dim-label">Compliance</span>
+                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-compliance" style="width:0%"></div></div>
+                <span class="readiness-dim-value" id="val-compliance">0%</span>
+            </div>
+            <div class="readiness-dim">
+                <span class="readiness-dim-label">Testability</span>
+                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-testability" style="width:0%"></div></div>
+                <span class="readiness-dim-value" id="val-testability">0%</span>
+            </div>
+        </div>
+
+        <div class="chat-stats" id="chat-stats">
+            <div class="chat-stat">
+                <span class="chat-stat-label">Requirements</span>
+                <span class="chat-stat-value" id="stat-requirements">0</span>
+            </div>
+            <div class="chat-stat">
+                <span class="chat-stat-label">Documents</span>
+                <span class="chat-stat-value" id="stat-documents">0</span>
+            </div>
+            <div class="chat-stat">
+                <span class="chat-stat-label">Turns</span>
+                <span class="chat-stat-value" id="stat-turns">{{ messages|length if messages else 0 }}</span>
+            </div>
+        </div>
+
+        <!-- Elicitation Techniques -->
+        <div class="sidebar-section" id="techniques-section">
+            <h3>Elicitation Techniques</h3>
+            <div id="technique-active" class="technique-active-banner" style="display:none;">
+                <span id="technique-active-name"></span>
+                <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
+            </div>
+            <div id="technique-chips" class="technique-chips"></div>
+        </div>
+
+        <!-- BDD Preview -->
+        <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
+            <h3>BDD Scenarios (Draft)</h3>
+            <div id="bdd-preview-list" class="bdd-preview-list"></div>
+        </div>
+
+        <!-- Courses of Action -->
+        <div class="sidebar-section" id="coa-section" style="display:none;">
+            <h3>Courses of Action</h3>
+            <div id="coa-list"></div>
+            <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">
+                &#x2713; <span id="coa-selected-name"></span> selected
+            </div>
+        </div>
+
+        <div id="chat-actions" style="margin-top: 16px;">
+            <button class="btn btn-success btn-lg" id="generate-plan-btn"
+                    style="display:none; width:100%;"
+                    onclick="ICDEV.chatGeneratePlan()">
+                Generate Plan &#x2192;
+            </button>
+            <button class="btn btn-secondary" id="export-btn"
+                    style="width:100%; margin-top:8px; display:none;"
+                    onclick="ICDEV.chatExport()">
+                Export Requirements
+            </button>
+        </div>
+
+        <!-- Post-export actions (hidden until export) -->
+        <div id="post-export-actions" class="post-export-actions" style="display:none;">
+            <h4>What's next?</h4>
+            <button class="btn btn-primary" style="width:100%; margin-bottom:8px;"
+                    onclick="ICDEV.chatTriggerBuild()">
+                Generate Application
+            </button>
+            <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
+                    onclick="ICDEV.chatRunSimulation()">
+                Run Simulation (COAs)
+            </button>
+            <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
+                    onclick="ICDEV.chatViewRequirements()">
+                View Requirements
+            </button>
+            <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
+                    onclick="ICDEV.chatGeneratePRD()">
+                &#x1F4C4; Generate PRD
+            </button>
+            <button class="btn btn-secondary" style="width:100%;"
+                    onclick="ICDEV.chatValidatePRD()">
+                &#x2714; Validate PRD
+            </button>
+        </div>
+
+        <!-- Build Pipeline (hidden until build starts) -->
+        <div class="sidebar-section" id="build-pipeline-section" style="display:none;">
+            <h3>Build Pipeline</h3>
+            <div id="build-pipeline-phases" class="build-pipeline"></div>
+            <div id="build-pipeline-status" class="build-pipeline-status"></div>
+            <div id="build-done-actions" class="build-done-actions" style="display:none;">
+                <button class="btn btn-primary" style="width:100%; margin-bottom:8px;"
+                        onclick="ICDEV.chatViewProject()">
+                    View Project
+                </button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
+                        onclick="ICDEV.chatRunTests()">
+                    Run Tests
+                </button>
+                <button class="btn btn-secondary" style="width:100%;"
+                        onclick="window.open('/events','_blank')">
+                    View Events
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Pass config to JS -->
+<script>
+    window._CHAT_CONFIG = {
+        sessionId: {{ session_id|tojson }},
+        wizardGoal: {{ (wizard_goal or '')|tojson }},
+        wizardRole: {{ (wizard_role or '')|tojson }},
+        wizardClassification: {{ (wizard_classification or '')|tojson }},
+        wizardFrameworks: {{ (wizard_frameworks or '')|tojson }},
+        customRoleName: {{ (wizard_custom_role_name or '')|tojson }},
+        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson }}
+    };
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+{% endblock %}

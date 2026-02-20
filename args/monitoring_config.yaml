@@ -14,6 +14,28 @@ splunk:
 prometheus:
   url: "http://prometheus.internal:9090"
   scrape_interval: "15s"
+  metrics_path: "/metrics"
+  agent_health_probe:
+    enabled: true
+    interval_seconds: 60
+    timeout_seconds: 10
+    agents:
+      - name: orchestrator
+        port: 8443
+      - name: architect
+        port: 8444
+      - name: builder
+        port: 8445
+      - name: compliance
+        port: 8446
+      - name: security
+        port: 8447
+      - name: infrastructure
+        port: 8448
+      - name: knowledge
+        port: 8449
+      - name: monitor
+        port: 8450
 
 grafana:
   url: "http://grafana.internal:3000"
@@ -45,3 +67,61 @@ sla:
   latency_p95_ms: 500
   latency_p99_ms: 1000
   error_rate_percent: 1.0
+
+# Phase 29: Heartbeat daemon (D141-D142)
+heartbeat:
+  enabled: true
+  base_interval_seconds: 60
+  notification_sinks:
+    audit_trail: true
+    sse_broadcast: true
+    gateway_channels: false
+  checks:
+    cato_evidence:
+      enabled: true
+      interval_seconds: 3600
+      severity_threshold: warning
+    agent_health:
+      enabled: true
+      interval_seconds: 300
+      stale_threshold_seconds: 600
+    cve_sla:
+      enabled: true
+      interval_seconds: 1800
+    pending_intake:
+      enabled: true
+      interval_seconds: 7200
+      idle_threshold_hours: 48
+    failing_tests:
+      enabled: true
+      interval_seconds: 900
+      lookback_hours: 24
+    expiring_isas:
+      enabled: true
+      interval_seconds: 86400
+      expiry_warning_days: 90
+    memory_maintenance:
+      enabled: true
+      interval_seconds: 86400
+      stale_days: 90
+
+# Phase 29: Auto-resolution pipeline (D143-D145)
+auto_resolution:
+  enabled: true
+  confidence_threshold: 0.7
+  escalation_threshold: 0.3
+  max_auto_fixes_per_hour: 5
+  cooldown_minutes: 10
+  auto_create_pr: true
+  run_tests_before_pr: true
+  base_branch: "main"
+  branch_prefix: "fix/auto-resolve-"
+  supported_sources:
+    - sentry
+    - prometheus
+    - elk
+    - generic
+  notifications:
+    audit_trail: true
+    sse_broadcast: true
+    gateway_channels: false

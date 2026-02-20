@@ -1,0 +1,50 @@
+# CUI // SP-CTI
+# ICDEV Resilience Configuration
+# D146: Circuit breaker settings per service
+# D147: Retry defaults
+
+circuit_breaker:
+  default:
+    failure_threshold: 5
+    recovery_timeout_seconds: 30
+    half_open_max_calls: 3
+  services:
+    bedrock:
+      failure_threshold: 3
+      recovery_timeout_seconds: 60
+      half_open_max_calls: 2
+    redis:
+      failure_threshold: 5
+      recovery_timeout_seconds: 30
+      half_open_max_calls: 3
+    jira:
+      failure_threshold: 5
+      recovery_timeout_seconds: 120
+      half_open_max_calls: 2
+    servicenow:
+      failure_threshold: 5
+      recovery_timeout_seconds: 120
+      half_open_max_calls: 2
+    gitlab:
+      failure_threshold: 5
+      recovery_timeout_seconds: 60
+      half_open_max_calls: 3
+
+retry:
+  default:
+    max_retries: 3
+    base_delay: 1.0
+    max_delay: 30.0
+  services:
+    bedrock:
+      max_retries: 5
+      base_delay: 1.0
+      max_delay: 30.0
+    redis:
+      max_retries: 2
+      base_delay: 0.5
+      max_delay: 5.0
+    http_integration:
+      max_retries: 3
+      base_delay: 2.0
+      max_delay: 60.0

@@ -1,0 +1,9 @@
+{
+  "description": "Baseline schema from init_icdev_db.py (Phases 1-28, 124 tables)",
+  "date": "2026-02-19",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "For existing databases, use: python tools/db/migrate.py --mark-applied 001"
+}

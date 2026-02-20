@@ -1,0 +1,322 @@
+# CUI // SP-CTI
+# Skill Injection Configuration — keyword-to-category mapping (D146)
+# Add new rules without code changes (D26 pattern)
+---
+
+categories:
+  build:
+    description: "Code generation, scaffolding, TDD, language-specific planning"
+    keywords:
+      - "build"
+      - "code"
+      - "implement"
+      - "scaffold"
+      - "generate"
+      - "tdd"
+      - "test"
+      - "lint"
+      - "format"
+      - "refactor"
+      - "python"
+      - "java"
+      - "javascript"
+      - "typescript"
+      - "go"
+      - "golang"
+      - "rust"
+      - "csharp"
+      - "flask"
+      - "fastapi"
+      - "spring"
+      - "express"
+      - "react"
+    commands:
+      - "feature"
+      - "bug"
+      - "chore"
+      - "patch"
+      - "implement"
+      - "test"
+      - "test_e2e"
+      - "resolve_failed_test"
+      - "resolve_failed_e2e_test"
+      - "plan_python"
+      - "plan_java"
+      - "plan_go"
+      - "plan_rust"
+      - "plan_csharp"
+      - "plan_typescript"
+      - "commit"
+      - "pull_request"
+      - "review"
+    goals:
+      - "build_app.md"
+      - "tdd_workflow.md"
+      - "integration_testing.md"
+      - "framework_planning.md"
+    context_dirs:
+      - "languages"
+      - "templates"
+      - "patterns"
+
+  compliance:
+    description: "ATO artifacts, compliance frameworks, security categorization"
+    keywords:
+      - "compliance"
+      - "ato"
+      - "nist"
+      - "stig"
+      - "sbom"
+      - "fedramp"
+      - "cmmc"
+      - "oscal"
+      - "emass"
+      - "cato"
+      - "ssp"
+      - "poam"
+      - "cui"
+      - "fips"
+      - "cnssi"
+      - "hipaa"
+      - "pci"
+      - "cjis"
+      - "soc2"
+      - "iso27001"
+      - "authorization"
+      - "control"
+      - "crosswalk"
+    commands: []
+    goals:
+      - "compliance_workflow.md"
+      - "ato_acceleration.md"
+      - "security_categorization.md"
+      - "universal_compliance.md"
+      - "sbd_ivv_workflow.md"
+    context_dirs:
+      - "compliance"
+
+  infrastructure:
+    description: "Deployment, IaC, pipelines, DevSecOps, ZTA"
+    keywords:
+      - "deploy"
+      - "terraform"
+      - "ansible"
+      - "k8s"
+      - "kubernetes"
+      - "pipeline"
+      - "infrastructure"
+      - "iac"
+      - "cicd"
+      - "gitlab"
+      - "github"
+      - "docker"
+      - "container"
+      - "helm"
+      - "devsecops"
+      - "zero trust"
+      - "zta"
+      - "service mesh"
+      - "istio"
+      - "linkerd"
+    commands: []
+    goals:
+      - "deploy_workflow.md"
+      - "cicd_integration.md"
+      - "parallel_cicd.md"
+      - "devsecops_workflow.md"
+      - "zero_trust_architecture.md"
+    context_dirs:
+      - "ci"
+
+  requirements:
+    description: "Requirements intake, simulation, COA generation"
+    keywords:
+      - "requirements"
+      - "intake"
+      - "spec"
+      - "coa"
+      - "simulation"
+      - "monte carlo"
+      - "readiness"
+      - "decomposition"
+      - "safe"
+      - "epic"
+      - "story"
+      - "bdd"
+      - "gherkin"
+      - "stakeholder"
+      - "elicitation"
+    commands: []
+    goals:
+      - "requirements_intake.md"
+      - "simulation_engine.md"
+      - "external_integration.md"
+    context_dirs:
+      - "requirements"
+      - "simulation"
+
+  maintenance:
+    description: "Dependency management, vulnerability remediation, modernization"
+    keywords:
+      - "maintenance"
+      - "dependency"
+      - "vulnerability"
+      - "cve"
+      - "modernize"
+      - "migrate"
+      - "legacy"
+      - "strangler"
+      - "remediate"
+      - "update"
+      - "upgrade"
+      - "audit"
+      - "supply chain"
+      - "scrm"
+      - "isa"
+      - "vendor"
+    commands: []
+    goals:
+      - "maintenance_audit.md"
+      - "modernization_workflow.md"
+      - "boundary_supply_chain.md"
+    context_dirs:
+      - "modernization"
+
+  mbse:
+    description: "Model-Based Systems Engineering, SysML, DOORS NG, digital thread"
+    keywords:
+      - "model"
+      - "sysml"
+      - "doors"
+      - "digital thread"
+      - "mbse"
+      - "xmi"
+      - "reqif"
+      - "des"
+      - "cameo"
+      - "block diagram"
+      - "traceability"
+    commands: []
+    goals:
+      - "mbse_integration.md"
+      - "mosa_workflow.md"
+    context_dirs:
+      - "mbse"
+
+  marketplace:
+    description: "GOTCHA asset marketplace, publishing, installation"
+    keywords:
+      - "marketplace"
+      - "asset"
+      - "publish"
+      - "install"
+      - "federation"
+      - "catalog"
+    commands: []
+    goals:
+      - "marketplace.md"
+    context_dirs:
+      - "marketplace"
+
+  dashboard:
+    description: "Web dashboard, UX, monitoring, agents"
+    keywords:
+      - "dashboard"
+      - "web"
+      - "ui"
+      - "ux"
+      - "flask"
+      - "template"
+      - "jinja"
+      - "monitoring"
+      - "agent"
+      - "health"
+      - "heartbeat"
+      - "self-healing"
+      - "chat"
+      - "gateway"
+      - "kanban"
+    commands: []
+    goals:
+      - "dashboard.md"
+      - "monitoring.md"
+      - "agent_management.md"
+      - "self_healing.md"
+      - "observability.md"
+      - "nlq_compliance.md"
+      - "remote_command_gateway.md"
+    context_dirs:
+      - "dashboard"
+      - "agent"
+
+  agentic:
+    description: "Agentic child app generation, multi-agent orchestration"
+    keywords:
+      - "agentic"
+      - "child app"
+      - "gotcha"
+      - "orchestration"
+      - "multi-agent"
+      - "agent team"
+      - "workflow"
+      - "dag"
+      - "collaboration"
+    commands: []
+    goals:
+      - "agentic_generation.md"
+      - "multi_agent_orchestration.md"
+    context_dirs:
+      - "agentic"
+      - "agent"
+
+# File extension to category mapping (for --detect mode)
+file_extension_map:
+  ".py": ["build"]
+  ".java": ["build"]
+  ".js": ["build"]
+  ".ts": ["build"]
+  ".go": ["build"]
+  ".rs": ["build"]
+  ".cs": ["build"]
+  ".tf": ["infrastructure"]
+  ".html": ["dashboard"]
+  ".css": ["dashboard"]
+  ".feature": ["build", "requirements"]
+  ".xmi": ["mbse"]
+  ".reqif": ["mbse", "requirements"]
+
+# Path pattern to category mapping
+path_pattern_map:
+  "tools/compliance/": ["compliance"]
+  "tools/security/": ["compliance"]
+  "tools/infra/": ["infrastructure"]
+  "tools/devsecops/": ["infrastructure"]
+  "tools/builder/": ["build"]
+  "tools/requirements/": ["requirements"]
+  "tools/simulation/": ["requirements"]
+  "tools/maintenance/": ["maintenance"]
+  "tools/modernization/": ["maintenance"]
+  "tools/mbse/": ["mbse"]
+  "tools/supply_chain/": ["maintenance"]
+  "tools/marketplace/": ["marketplace"]
+  "tools/dashboard/": ["dashboard"]
+  "tools/agent/": ["agentic"]
+  "tools/gateway/": ["dashboard"]
+  "tools/monitor/": ["dashboard"]
+
+# Always-include items (core infrastructure, always relevant)
+always_include:
+  commands:
+    - "commit"
+    - "pull_request"
+    - "classify_issue"
+    - "classify_workflow"
+    - "generate_branch_name"
+  goals: []
+  context_dirs: []
+
+# Confidence threshold: below this, include ALL items (safety fallback)
+confidence_threshold: 0.3
+
+# Minimum matches to consider a category active
+min_keyword_matches: 1

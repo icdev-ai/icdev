@@ -1,0 +1,288 @@
+# CUI // SP-CTI
+# ICDEV Pod Disruption Budgets
+# D143: minAvailable=1 for core/dashboard/gateway, maxUnavailable=1 for domain/support
+
+# ======================================================================
+# Core Tier — minAvailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-orchestrator-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orchestrator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-architect-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: architect
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: architect
+---
+# ======================================================================
+# Domain Tier — maxUnavailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-builder-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: builder
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: builder
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-compliance-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: compliance
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: compliance
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-security-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: security
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: security
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-infra-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: infra
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: infra
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-mbse-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: mbse-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mbse-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-modernization-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: modernization-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: modernization-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-requirements-analyst-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: requirements-analyst-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: requirements-analyst-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-supply-chain-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: supply-chain-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: supply-chain-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-simulation-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: simulation-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: simulation-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-integration-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: integration-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: integration-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-devsecops-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: devsecops-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devsecops-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-gateway-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: gateway-agent
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-agent
+---
+# ======================================================================
+# Support Tier — maxUnavailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-knowledge-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: knowledge
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knowledge
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-monitor-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: monitor
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: monitor
+---
+# ======================================================================
+# Dashboard — minAvailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-dashboard-pdb
+  namespace: icdev
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dashboard
+---
+# ======================================================================
+# API Gateway — minAvailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: icdev-api-gateway-pdb
+  namespace: icdev-platform
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway

@@ -62,7 +62,9 @@ metadata:
     {{- include "icdev.labels" . | nindent 4 }}
     app.kubernetes.io/component: api-gateway
 spec:
+  {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.apiGateway.replicas }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "icdev.selectorLabels" . | nindent 6 }}
@@ -146,6 +148,23 @@ spec:
       {{- with .Values.apiGateway.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.topologySpread.enabled }}
+      topologySpreadConstraints:
+        - maxSkew: {{ .Values.topologySpread.zoneSpread.maxSkew }}
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: {{ .Values.topologySpread.zoneSpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "icdev.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api-gateway
+        - maxSkew: {{ .Values.topologySpread.nodeSpread.maxSkew }}
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: {{ .Values.topologySpread.nodeSpread.whenUnsatisfiable }}
+          labelSelector:
+            matchLabels:
+              {{- include "icdev.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: api-gateway
       {{- end }}
 
 ---

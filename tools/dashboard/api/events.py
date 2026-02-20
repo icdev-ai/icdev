@@ -230,4 +230,20 @@ def ingest_event():
     # SSE broadcast for legacy clients
     sse_manager.broadcast(data, event_type="hook_event")
 
+    # WebSocket broadcast for activity feed (D170)
+    try:
+        from tools.dashboard.websocket import broadcast_activity
+        broadcast_activity({
+            "source": "hook",
+            "id": data.get("id", ""),
+            "event_type": data.get("hook_type", ""),
+            "actor_or_agent": data.get("agent_id", data.get("tool_name", "")),
+            "summary": data.get("tool_name", data.get("message", "")),
+            "project_id": data.get("project_id", ""),
+            "classification": data.get("classification", ""),
+            "created_at": data.get("timestamp", data.get("created_at", "")),
+        })
+    except Exception:
+        pass  # WebSocket broadcast is best-effort
+
     return jsonify({"status": "ok"}), 200

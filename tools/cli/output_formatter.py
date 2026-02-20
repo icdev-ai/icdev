@@ -31,13 +31,8 @@ import sys
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # Ensure UTF-8 output on Windows (box-drawing and Unicode block chars).
-if sys.platform == "win32":
-    try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
-    except (AttributeError, OSError):
-        sys.stdout = io.TextIOWrapper(
-            sys.stdout.buffer, encoding="utf-8", errors="replace"
-        )
+from tools.compat.platform_utils import ensure_utf8_console
+ensure_utf8_console()
 
 # ---------------------------------------------------------------------------
 # CUI banner

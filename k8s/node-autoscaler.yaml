@@ -1,0 +1,113 @@
+# CUI // SP-CTI
+# ICDEV Node Auto-Scaling — Cloud-Agnostic Configuration
+# D142 (revised): Cloud-agnostic Cluster Autoscaler as baseline;
+#   provider-specific optimizations in k8s/overlays/
+#
+# This ConfigMap documents prerequisites and provides a reference
+# deployment for the Kubernetes Cluster Autoscaler.
+# Vendor-specific overlays are in k8s/overlays/<provider>/
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: icdev-scaling-prerequisites
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    classification: CUI
+data:
+  README: |
+    ICDEV Auto-Scaling Prerequisites
+    =================================
+
+    1. METRICS SERVER (required for HPA)
+       All K8s distributions:
+         kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+       Verify:
+         kubectl top nodes && kubectl top pods -n icdev
+
+    2. CLUSTER AUTOSCALER (optional — scales nodes)
+       The Cluster Autoscaler works on all major cloud providers:
+
+       EKS (AWS):
+         helm install cluster-autoscaler autoscaler/cluster-autoscaler \
+           --set autoDiscovery.clusterName=<CLUSTER_NAME> \
+           --set awsRegion=<REGION> \
+           -n kube-system
+         Or use Karpenter: see k8s/overlays/eks/karpenter-provisioner.yaml
+
+       GKE (Google Cloud):
+         GKE Autopilot: scaling is built-in, no additional setup needed.
+         GKE Standard: enable via gcloud container clusters update <NAME> --enable-autoscaling
+
+       AKS (Azure):
+         az aks update --resource-group <RG> --name <CLUSTER> --enable-cluster-autoscaler \
+           --min-count 2 --max-count 50
+
+       OpenShift:
+         Use ClusterAutoscaler and MachineAutoscaler CRDs.
+
+       Bare-metal / on-prem:
+         No node autoscaling available. Set max_replicas in HPA to fit
+         available cluster capacity. Monitor utilization and add nodes manually.
+
+    3. APPLY HPA + PDB
+         kubectl apply -f k8s/hpa.yaml
+         kubectl apply -f k8s/pdb.yaml
+
+    4. VERIFY
+         kubectl get hpa -n icdev
+         kubectl get pdb -n icdev
+
+---
+# ======================================================================
+# Cluster Autoscaler Deployment (cloud-agnostic reference)
+# Customize for your provider before applying.
+# ======================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: cluster-autoscaler
+    classification: CUI
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-autoscaler
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-autoscaler
+    spec:
+      serviceAccountName: cluster-autoscaler
+      containers:
+        - name: cluster-autoscaler
+          image: registry.k8s.io/autoscaling/cluster-autoscaler:v1.30.0
+          command:
+            - ./cluster-autoscaler
+            - --v=4
+            - --stderrthreshold=info
+            - --cloud-provider=auto            # auto-detects EKS/GKE/AKS
+            - --skip-nodes-with-local-storage=false
+            - --expander=least-waste
+            - --scale-down-delay-after-add=5m
+            - --scale-down-unneeded-time=5m
+            - --max-nodes-total=50
+            - --balance-similar-node-groups=true
+            - --skip-nodes-with-system-pods=true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 300Mi
+            limits:
+              cpu: 500m
+              memory: 600Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

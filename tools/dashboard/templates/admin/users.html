@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}User Management — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<h1>User Management</h1>
+<p class="text-muted">Manage dashboard users, API keys, and roles.</p>
+
+<!-- Create user form -->
+<div class="profile-section">
+    <h3>Create New User</h3>
+    <form id="create-user-form" class="admin-form">
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+            <div class="form-group" style="flex: 1; min-width: 160px;">
+                <label for="new-email">Email</label>
+                <input type="email" id="new-email" class="form-control" placeholder="user@example.com" required>
+            </div>
+            <div class="form-group" style="flex: 1; min-width: 140px;">
+                <label for="new-name">Display Name</label>
+                <input type="text" id="new-name" class="form-control" placeholder="Full Name" required>
+            </div>
+            <div class="form-group" style="width: 140px;">
+                <label for="new-role">Role</label>
+                <select id="new-role" class="form-control">
+                    <option value="developer">Developer</option>
+                    <option value="pm">PM</option>
+                    <option value="isso">ISSO</option>
+                    <option value="co">CO</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-primary" style="padding: 6px 16px; height: fit-content;">Create User</button>
+        </div>
+    </form>
+    <div id="create-result" style="margin-top: 10px;"></div>
+</div>
+
+<!-- Users table -->
+<div class="table-container">
+    <table class="data-table" id="users-table">
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr data-user-id="{{ u.id }}">
+                <td>{{ u.email }}</td>
+                <td>{{ u.display_name }}</td>
+                <td><span class="source-badge">{{ u.role }}</span></td>
+                <td>
+                    {% if u.status == 'active' %}
+                    <span style="color: #28a745;">Active</span>
+                    {% else %}
+                    <span style="color: #dc3545;">Suspended</span>
+                    {% endif %}
+                </td>
+                <td>{{ u.created_at }}</td>
+                <td class="admin-actions">
+                    <button class="btn-sm" onclick="generateKey('{{ u.id }}')">Gen Key</button>
+                    {% if u.status == 'active' %}
+                    <button class="btn-sm btn-danger" onclick="suspendUser('{{ u.id }}')">Suspend</button>
+                    {% else %}
+                    <button class="btn-sm" onclick="reactivateUser('{{ u.id }}')">Reactivate</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Key display area -->
+<div id="key-display" class="profile-section" style="display:none; margin-top:1rem;">
+    <h3>New API Key</h3>
+    <p style="color: #ffc107; font-size: 0.85rem;">Save this key now — it will not be shown again!</p>
+    <code id="key-value" style="display: block; padding: 12px; background: var(--bg-primary); border-radius: 4px; font-size: 0.9rem; word-break: break-all; color: #28a745;"></code>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // Create user
+    var form = document.getElementById('create-user-form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var email = document.getElementById('new-email').value;
+            var name = document.getElementById('new-name').value;
+            var role = document.getElementById('new-role').value;
+            fetch('/admin/api/users', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email: email, display_name: name, role: role})
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) {
+                    document.getElementById('create-result').innerHTML =
+                        '<span style="color:#f88;">' + data.error + '</span>';
+                } else {
+                    location.reload();
+                }
+            });
+        });
+    }
+
+    // Generate key
+    window.generateKey = function(userId) {
+        fetch('/admin/api/users/' + userId + '/keys', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({label: 'Dashboard access'})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.raw_key) {
+                document.getElementById('key-value').textContent = data.raw_key;
+                document.getElementById('key-display').style.display = 'block';
+            }
+        });
+    };
+
+    // Suspend user
+    window.suspendUser = function(userId) {
+        if (!confirm('Suspend this user?')) return;
+        fetch('/admin/api/users/' + userId + '/suspend', {method: 'POST'})
+        .then(function() { location.reload(); });
+    };
+
+    // Reactivate user
+    window.reactivateUser = function(userId) {
+        fetch('/admin/api/users/' + userId + '/reactivate', {method: 'POST'})
+        .then(function() { location.reload(); });
+    };
+})();
+</script>
+{% endblock %}

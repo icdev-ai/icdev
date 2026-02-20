@@ -1,0 +1,107 @@
+stages:
+  - test
+  - security
+  - compliance
+  - build
+  - deploy
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+    - .venv
+
+# --- Test Stage ---
+unit-tests:
+  stage: test
+  image: python:3.11-slim
+  script:
+    - pip install --upgrade pip
+    - pip install .[dev]
+    - pytest --junitxml=report.xml --cov=src --cov-report=xml
+  artifacts:
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+# --- Security Stage ---
+sast-scan:
+  stage: security
+  image: python:3.11-slim
+  script:
+    - pip install bandit
+    - bandit -r src/ -f json -o bandit-report.json || true
+  artifacts:
+    paths:
+      - bandit-report.json
+
+dependency-audit:
+  stage: security
+  image: python:3.11-slim
+  script:
+    - pip install pip-audit
+    - pip-audit --format=json --output=pip-audit-report.json || true
+  artifacts:
+    paths:
+      - pip-audit-report.json
+
+secret-detection:
+  stage: security
+  image: python:3.11-slim
+  script:
+    - pip install detect-secrets
+    - detect-secrets scan --all-files > secrets-report.json || true
+  artifacts:
+    paths:
+      - secrets-report.json
+
+# --- Compliance Stage ---
+compliance-check:
+  stage: compliance
+  image: python:3.11-slim
+  script:
+    - echo "Compliance checks run by ICDEV compliance engine"
+    - echo "Classification: Public"
+  allow_failure: true
+
+# --- Build Stage ---
+build-image:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+  only:
+    - main
+    - develop
+
+# --- Deploy Stage ---
+deploy-dev:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - echo "Deploying to dev environment"
+  environment:
+    name: development
+  only:
+    - develop
+
+deploy-staging:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - echo "Deploying to staging environment"
+  environment:
+    name: staging
+  only:
+    - main
+  when: manual

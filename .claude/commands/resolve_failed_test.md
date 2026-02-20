@@ -30,6 +30,13 @@ Fix a specific failing test using the provided failure details.
    - Do NOT run other tests or the full test suite
    - Focus only on fixing this specific test
 
+6. **User Perspective Verification** (if fix touches UI/dashboard code)
+   - Open the affected page in the browser using Playwright MCP (`browser_navigate`)
+   - Interact with the feature as the user would — click buttons, submit forms, observe real-time updates
+   - Take a screenshot (`browser_take_screenshot`) as evidence
+   - Confirm the fix works from the user's perspective, not just from CLI/API
+   - API passing does NOT guarantee the user experience works — always verify the deliverable
+
 ## Test Failure Input
 
 $ARGUMENTS

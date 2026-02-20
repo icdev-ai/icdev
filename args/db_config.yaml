@@ -1,0 +1,40 @@
+# CUI // SP-CTI
+# ICDEV Database Configuration — Migrations & Backup
+# ADRs: D150 (migrations), D151 (baseline), D152 (backup)
+---
+
+migrations:
+  enabled: true
+  migrations_dir: "tools/db/migrations"
+  auto_migrate: false            # If true, run pending migrations on app startup
+  checksum_validation: true      # Verify file checksums against applied records
+  lock_timeout_seconds: 30       # Max wait for migration lock
+
+backup:
+  enabled: true
+  backup_dir: "data/backups"
+  retention_days: 30             # Auto-prune backups older than this
+  max_backups: 50                # Maximum number of backups to keep
+  compression: false             # gzip compression (future)
+  encryption:
+    enabled: false               # Requires 'cryptography' package
+    algorithm: "AES-256-CBC"
+    pbkdf2_iterations: 600000
+
+  databases:
+    icdev:
+      path: "data/icdev.db"
+      schedule: "daily"
+    platform:
+      path: "data/platform.db"
+      schedule: "daily"
+    memory:
+      path: "data/memory.db"
+      schedule: "weekly"
+    activity:
+      path: "data/activity.db"
+      schedule: "weekly"
+
+  tenants:
+    backup_on_provision: true    # Backup tenant DB during provisioning
+    backup_on_migrate: true      # Backup before running migrations

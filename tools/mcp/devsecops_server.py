@@ -21,6 +21,7 @@ Runs as an MCP server over stdio with Content-Length framing.
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -175,12 +176,12 @@ def handle_network_segmentation_generate(args: dict) -> dict:
         if not gen:
             return {"error": "network_segmentation_generator not available"}
         services = args.get("services", [])
-        return gen(project_path or "/tmp", services)
+        return gen(project_path or tempfile.gettempdir(), services)
     else:
         gen = _import_tool("tools.devsecops.network_segmentation_generator", "generate_namespace_isolation")
         if not gen:
             return {"error": "network_segmentation_generator not available"}
-        return gen(project_path or "/tmp", namespaces)
+        return gen(project_path or tempfile.gettempdir(), namespaces)
 
 
 def handle_attestation_verify(args: dict) -> dict:

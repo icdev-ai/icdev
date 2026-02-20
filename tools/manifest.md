@@ -9,13 +9,26 @@
 | Memory Write | tools/memory/memory_write.py | Write to daily log + DB | --content, --type, --importance | Confirmation |
 | Memory DB | tools/memory/memory_db.py | Keyword search on memory database | --action search, --query | Search results |
 | Semantic Search | tools/memory/semantic_search.py | Vector similarity search (requires OpenAI key) | --query | Ranked results |
-| Hybrid Search | tools/memory/hybrid_search.py | Combined keyword + semantic search | --query, --bm25-weight, --semantic-weight | Ranked results |
+| Hybrid Search | tools/memory/hybrid_search.py | Combined keyword + semantic search, optional --time-decay flag for recency weighting | --query, --bm25-weight, --semantic-weight, --time-decay | Ranked results |
 | Embed Memory | tools/memory/embed_memory.py | Generate embeddings for memory entries | --all | Confirmation |
+| Time-Decay Scoring | tools/memory/time_decay.py | Exponential time-decay scoring for memory entries: per-type half-lives, importance resistance, combined relevance+recency+importance scoring (D147) | --score --entry-id, --rank --query, --top-k, --json | Decay factors + ranked results |
 
 ## Database
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Init ICDEV DB | tools/db/init_icdev_db.py | Initialize ICDEV operational database (60 tables) | --db-path, --reset | Confirmation + table list |
+| Init ICDEV DB | tools/db/init_icdev_db.py | Initialize ICDEV operational database (124 tables) — detects migration system (D150) | --db-path, --reset | Confirmation + table list |
+| Migration Runner | tools/db/migration_runner.py | Lightweight DB migration framework (D150) — schema versioning, checksums, dual-engine | (library) | MigrationRunner class |
+| Migrate CLI | tools/db/migrate.py | CLI wrapper for migration runner | --status, --up, --down, --create, --validate, --mark-applied, --all-tenants | Status / results |
+| Backup Manager | tools/db/backup_manager.py | Database backup/restore with WAL-safe sqlite3.backup() API (D152) | (library) | BackupManager class |
+| Backup CLI | tools/db/backup.py | CLI wrapper for backup manager | --backup, --restore, --verify, --list, --prune, --all, --tenants | Backup metadata / results |
+
+## Resilience (D146-D149)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Circuit Breaker | tools/resilience/circuit_breaker.py | 3-state circuit breaker with ABC + InMemory backend (D146) | (library) | CircuitBreakerBackend |
+| Retry | tools/resilience/retry.py | Exponential backoff + full jitter decorator (D147) | (library) | @retry decorator |
+| Errors | tools/resilience/errors.py | Structured exception hierarchy (D148) | (library) | ICDevError hierarchy |
+| Correlation | tools/resilience/correlation.py | Request-scoped correlation ID middleware (D149) | (library) | Flask middleware + get_correlation_id |
 
 ## Audit Trail
 | Tool | File | Description | Input | Output |
@@ -190,6 +203,8 @@
 | Metric Collector | tools/monitor/metric_collector.py | Prometheus metric collection | --project | Metrics |
 | Alert Correlator | tools/monitor/alert_correlator.py | Correlate alerts across sources | --time-window | Correlated incidents |
 | Health Checker | tools/monitor/health_checker.py | Application health check | --url, --retries | Health status |
+| Heartbeat Daemon | tools/monitor/heartbeat_daemon.py | Proactive daemon: 7 configurable checks (cATO evidence, agent health, CVE SLA, pending intake, failing tests, expiring ISAs, memory maintenance) (D141-D142) | --once, --check, --status, --json | Check results + notifications |
+| Auto-Resolver | tools/monitor/auto_resolver.py | Webhook-triggered auto-resolution: alert → normalize → analyze → fix → PR → notify (D143-D145) | --analyze, --resolve, --alert-file, --source, --dry-run, --json | Resolution log + PR URL |
 
 ## Dashboard
 | Tool | File | Description | Input | Output |
@@ -303,6 +318,15 @@
 | Readiness Scorer | tools/requirements/readiness_scorer.py | 5-dimension scoring: completeness, clarity, feasibility, compliance, testability | --session-id, --threshold, --trend, --json | Readiness score + trend |
 | MCP Requirements Server | tools/mcp/requirements_server.py | MCP server for requirements tools (10 tools: intake, gaps, readiness, decompose, documents) | stdio | JSON-RPC responses |
 
+## Spec-Kit Patterns (D156–D161)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Spec Quality Checker | tools/requirements/spec_quality_checker.py | "Unit tests for English" — validates spec markdown against configurable checklist (D156), annotates with [NEEDS CLARIFICATION] markers (D160) | --spec-file, --spec-dir, --annotate, --strip-markers, --json | Quality score + check results |
+| Consistency Analyzer | tools/requirements/consistency_analyzer.py | Cross-artifact consistency validation — acceptance vs testing, phases vs tasks, NIST vs ATO, file existence (D157) | --spec-file, --spec-dir, --fix-suggestions, --json | Consistency score + results |
+| Constitution Manager | tools/requirements/constitution_manager.py | Per-project immutable principles management with DoD defaults — add, list, remove, validate specs against principles (D158) | --project-id, --add, --list, --validate, --load-defaults, --json | Principles + validation |
+| Clarification Engine | tools/requirements/clarification_engine.py | Impact × Uncertainty prioritized clarification questions for specs and intake sessions (D159) | --spec-file, --session-id, --max-questions, --json | Prioritized questions + clarity score |
+| Spec Organizer | tools/requirements/spec_organizer.py | Per-feature spec directories with [P] parallel task markers — init, migrate, register, status (D160, D161) | --init, --migrate, --migrate-all, --status, --list, --register, --json | Spec directories + status |
+
 ## ATO Boundary Impact (RICOAS Phase 2)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
@@ -342,6 +366,7 @@
 |------|------|-------------|-------|--------|
 | Agent Executor | tools/agent/agent_executor.py | Subprocess-based Claude Code CLI invocation with JSONL parsing, retry, audit | --prompt, --model, --max-retries, --timeout, --json | AgentPromptResponse |
 | Agent Models | tools/agent/agent_models.py | Dataclasses: AgentPromptRequest, AgentPromptResponse, RetryCode enum | — | — |
+| Skill Selector | tools/agent/skill_selector.py | Selective skill injection: keyword-based category matching, file detection, context-aware skill/goal/context loading (D146) | --query, --detect, --project-dir, --resolve, --format-context, --json | Matched categories + commands + goals |
 
 ## LLM Provider Abstraction (Vendor-Agnostic)
 | Tool | File | Description | Input | Output |
@@ -437,6 +462,10 @@
 | Account Provisioner | tools/saas/infra/account_provisioner.py | Create AWS sub-accounts for IL5/IL6 tenants via Organizations | --provision, --slug | Account ID |
 | License Validator | tools/saas/licensing/license_validator.py | Offline RSA-SHA256 license key validation (air-gap safe) | --validate, --info | License status |
 | License Generator | tools/saas/licensing/license_generator.py | Admin tool: generate signed license keys for on-prem customers | --generate, --customer, --tier | License JSON |
+| OpenAPI Spec | tools/saas/openapi_spec.py | OpenAPI 3.0.3 spec generator — 23 endpoints, 13 schemas (D153) | --output, --compact | OpenAPI JSON |
+| Swagger UI | tools/saas/swagger_ui.py | Flask Blueprint: /api/v1/docs (Swagger UI) + /api/v1/openapi.json (D153) | /api/v1/docs | HTML + JSON |
+| Metrics | tools/saas/metrics.py | Prometheus metrics collector — dual-backend: prometheus_client or stdlib fallback (D154) | (library) | MetricsCollector |
+| Metrics Blueprint | tools/saas/metrics_blueprint.py | Flask Blueprint: GET /metrics — Prometheus text exposition (D154) | /metrics | text/plain |
 
 ## Marketplace (Phase 22)
 | Tool | File | Description | Input | Output |
@@ -475,6 +504,17 @@
 | TSP Generator | tools/mosa/tsp_generator.py | Technical Standard Profile generation (auto-detect standards) | --project-id, --json | TSP markdown + DB |
 | Modular Design Analyzer | tools/mosa/modular_design_analyzer.py | Static analysis: coupling, cohesion, interface coverage, circular deps | --project-dir, --project-id, --store, --json | Metrics + score |
 | MOSA Code Enforcer | tools/mosa/mosa_code_enforcer.py | MOSA violation scanner (coupling, boundary, missing specs) | --project-dir, --fix-suggestions, --json | Violations list |
+
+## Dashboard Auth, Activity Feed, BYOK & Usage Tracking (Phase 30)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Dashboard Auth | tools/dashboard/auth.py | API key auth, session mgmt, RBAC (5 roles), CLI bootstrap, auth logging | API key / session | User context |
+| Dashboard BYOK | tools/dashboard/byok.py | BYOK key management: Fernet AES-256 encrypt/decrypt, key resolution (user→dept→env→config) | user_id, provider, key | Encrypted storage |
+| WebSocket Manager | tools/dashboard/websocket.py | Flask-SocketIO init, room-based broadcast, graceful fallback to HTTP polling | app | SocketIO instance |
+| Activity Feed API | tools/dashboard/api/activity.py | Merged audit_trail + hook_events UNION ALL, filters, polling, stats | source, event_type, actor | Merged events JSON |
+| Admin API | tools/dashboard/api/admin.py | User CRUD, API key gen/revoke, auth log query (admin-only) | user data, key_id | User/key records |
+| Usage API | tools/dashboard/api/usage.py | Per-user token aggregation, per-provider breakdown, time-series, cost estimates | user_id, days | Usage stats JSON |
+| Activity Feed JS | tools/dashboard/static/js/activity.js | WebSocket + HTTP polling client, filter state, CSV export | (browser) | Real-time UI |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

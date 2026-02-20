@@ -130,8 +130,33 @@ def dashboard_app(tmp_path):
     conn.commit()
     conn.close()
 
+    # Add dashboard_users table for auth (Phase 30)
+    conn2 = sqlite3.connect(db_path)
+    conn2.executescript("""
+        CREATE TABLE IF NOT EXISTS dashboard_users (
+            id TEXT PRIMARY KEY, email TEXT UNIQUE, display_name TEXT,
+            role TEXT DEFAULT 'admin', status TEXT DEFAULT 'active',
+            created_by TEXT, created_at TIMESTAMP, updated_at TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+            id TEXT PRIMARY KEY, user_id TEXT, key_hash TEXT, key_prefix TEXT,
+            label TEXT, status TEXT DEFAULT 'active', last_used_at TIMESTAMP,
+            expires_at TIMESTAMP, created_at TIMESTAMP, revoked_at TIMESTAMP, revoked_by TEXT
+        );
+        CREATE TABLE IF NOT EXISTS dashboard_auth_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, event_type TEXT,
+            ip_address TEXT, user_agent TEXT, details TEXT, created_at TIMESTAMP
+        );
+        INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role)
+        VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin');
+    """)
+    conn2.commit()
+    conn2.close()
+
     with patch("tools.dashboard.config.DB_PATH", db_path), \
-         patch("tools.dashboard.api.projects.DB_PATH", db_path):
+         patch("tools.dashboard.app.DB_PATH", db_path), \
+         patch("tools.dashboard.api.projects.DB_PATH", db_path), \
+         patch("tools.dashboard.auth.DB_PATH", db_path):
         from tools.dashboard.app import create_app
         app = create_app()
         app.config["TESTING"] = True
@@ -140,8 +165,11 @@ def dashboard_app(tmp_path):
 
 @pytest.fixture
 def client(dashboard_app):
-    """Create test client."""
-    return dashboard_app.test_client()
+    """Create authenticated test client."""
+    client = dashboard_app.test_client()
+    with client.session_transaction() as sess:
+        sess["user_id"] = "test-admin"
+    return client
 
 
 class TestIndexRoute:
@@ -248,12 +276,31 @@ class TestIndexEmptyState:
                 id TEXT PRIMARY KEY, target_agent_id TEXT, status TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS dashboard_users (
+                id TEXT PRIMARY KEY, email TEXT UNIQUE, display_name TEXT,
+                role TEXT DEFAULT 'admin', status TEXT DEFAULT 'active',
+                created_by TEXT, created_at TIMESTAMP, updated_at TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS dashboard_api_keys (
+                id TEXT PRIMARY KEY, user_id TEXT, key_hash TEXT, key_prefix TEXT,
+                label TEXT, status TEXT DEFAULT 'active', last_used_at TIMESTAMP,
+                expires_at TIMESTAMP, created_at TIMESTAMP, revoked_at TIMESTAMP,
+                revoked_by TEXT
+            );
+            CREATE TABLE IF NOT EXISTS dashboard_auth_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT, event_type TEXT,
+                ip_address TEXT, user_agent TEXT, details TEXT, created_at TIMESTAMP
+            );
+            INSERT OR IGNORE INTO dashboard_users (id, email, display_name, role)
+            VALUES ('test-admin', 'admin@test.local', 'Test Admin', 'admin');
         """)
         conn.commit()
         conn.close()
 
         with patch("tools.dashboard.config.DB_PATH", db_path), \
-             patch("tools.dashboard.api.projects.DB_PATH", db_path):
+             patch("tools.dashboard.app.DB_PATH", db_path), \
+             patch("tools.dashboard.api.projects.DB_PATH", db_path), \
+             patch("tools.dashboard.auth.DB_PATH", db_path):
             from tools.dashboard.app import create_app
             app = create_app()
             app.config["TESTING"] = True
@@ -261,11 +308,15 @@ class TestIndexEmptyState:
 
     def test_empty_state_returns_200(self, empty_app):
         client = empty_app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         resp = client.get("/")
         assert resp.status_code == 200
 
     def test_empty_state_shows_kanban(self, empty_app):
         client = empty_app.test_client()
+        with client.session_transaction() as sess:
+            sess["user_id"] = "test-admin"
         resp = client.get("/")
         html = resp.data.decode("utf-8")
         assert "kanban-board" in html

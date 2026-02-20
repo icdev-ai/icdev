@@ -130,8 +130,8 @@ def parse_test_spec(test_file: str) -> dict:
 
 def _npx_cmd() -> str:
     """Return correct npx command for the platform (npx.cmd on Windows)."""
-    import platform
-    return "npx.cmd" if platform.system() == "Windows" else "npx"
+    from tools.compat.platform_utils import get_npx_cmd
+    return get_npx_cmd()
 
 
 def check_playwright_installed() -> bool:

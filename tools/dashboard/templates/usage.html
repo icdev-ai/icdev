@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Usage Dashboard — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<h1>Usage Dashboard</h1>
+<p class="text-muted">
+    Token usage and estimated cost
+    {% if current_user and current_user.role == 'admin' %}
+    across all users.
+    {% else %}
+    for your account.
+    {% endif %}
+</p>
+
+<!-- Summary cards -->
+<div class="usage-summary-grid" id="usage-summary">
+    <div class="usage-card">
+        <div class="card-title">Total Requests</div>
+        <div class="card-value" id="total-requests">-</div>
+    </div>
+    <div class="usage-card">
+        <div class="card-title">Input Tokens</div>
+        <div class="card-value" id="total-input">-</div>
+    </div>
+    <div class="usage-card">
+        <div class="card-title">Output Tokens</div>
+        <div class="card-value" id="total-output">-</div>
+    </div>
+    <div class="usage-card">
+        <div class="card-title">Estimated Cost</div>
+        <div class="card-value" id="total-cost">-</div>
+    </div>
+    {% if current_user and current_user.role == 'admin' %}
+    <div class="usage-card">
+        <div class="card-title">Active Users</div>
+        <div class="card-value" id="unique-users">-</div>
+    </div>
+    {% endif %}
+    <div class="usage-card">
+        <div class="card-title">Models Used</div>
+        <div class="card-value" id="unique-models">-</div>
+    </div>
+</div>
+
+<!-- Time range selector -->
+<div class="activity-filters" style="margin-bottom: 1rem;">
+    <label for="time-range" class="text-muted" style="font-size: 0.85rem;">Time range:</label>
+    <select id="time-range">
+        <option value="7">Last 7 days</option>
+        <option value="30" selected>Last 30 days</option>
+        <option value="90">Last 90 days</option>
+    </select>
+</div>
+
+<!-- Cost trend chart (SVG rendered by charts.js) -->
+<div class="profile-section">
+    <h3>Cost Trend</h3>
+    <div id="cost-chart" style="height: 200px; position: relative;"></div>
+</div>
+
+<!-- Per-user breakdown (admin only) -->
+{% if current_user and current_user.role == 'admin' %}
+<div class="profile-section">
+    <h3>Usage by User</h3>
+    <div class="table-container">
+        <table class="data-table" id="user-usage-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Requests</th>
+                    <th>Input Tokens</th>
+                    <th>Output Tokens</th>
+                    <th>Est. Cost</th>
+                </tr>
+            </thead>
+            <tbody id="user-usage-body"></tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Per-provider breakdown -->
+<div class="profile-section">
+    <h3>Usage by Model</h3>
+    <div class="table-container">
+        <table class="data-table" id="provider-usage-table">
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Key Source</th>
+                    <th>Requests</th>
+                    <th>Input Tokens</th>
+                    <th>Output Tokens</th>
+                    <th>Est. Cost</th>
+                </tr>
+            </thead>
+            <tbody id="provider-usage-body"></tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var isAdmin = {{ 'true' if current_user and current_user.role == 'admin' else 'false' }};
+
+    function fmt(n) {
+        if (n === null || n === undefined) return '-';
+        return typeof n === 'number' ? n.toLocaleString() : String(n);
+    }
+    function fmtCost(n) {
+        if (n === null || n === undefined) return '-';
+        return '$' + (typeof n === 'number' ? n.toFixed(4) : n);
+    }
+    function setText(id, v) { var el = document.getElementById(id); if (el) el.textContent = v; }
+
+    // Load totals
+    function loadTotals() {
+        fetch('/api/usage/totals')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            setText('total-requests', fmt(d.total_requests));
+            setText('total-input', fmt(d.total_input));
+            setText('total-output', fmt(d.total_output));
+            setText('total-cost', fmtCost(d.total_cost));
+            setText('unique-users', fmt(d.unique_users));
+            setText('unique-models', fmt(d.unique_models));
+        });
+    }
+
+    // Load per-user (admin)
+    function loadUserUsage() {
+        if (!isAdmin) return;
+        fetch('/api/usage/summary')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var body = document.getElementById('user-usage-body');
+            if (!body) return;
+            body.innerHTML = '';
+            (d.usage || []).forEach(function(u) {
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td>' + (u.user_id || 'system') + '</td>' +
+                    '<td>' + fmt(u.request_count) + '</td>' +
+                    '<td>' + fmt(u.total_input) + '</td>' +
+                    '<td>' + fmt(u.total_output) + '</td>' +
+                    '<td>' + fmtCost(u.total_cost) + '</td>';
+                body.appendChild(tr);
+            });
+        });
+    }
+
+    // Load per-provider
+    function loadProviderUsage() {
+        fetch('/api/usage/by-provider')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var body = document.getElementById('provider-usage-body');
+            if (!body) return;
+            body.innerHTML = '';
+            (d.providers || []).forEach(function(p) {
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td><code>' + (p.model_id || '-') + '</code></td>' +
+                    '<td><span class="source-badge">' + (p.key_source || 'config') + '</span></td>' +
+                    '<td>' + fmt(p.request_count) + '</td>' +
+                    '<td>' + fmt(p.total_input) + '</td>' +
+                    '<td>' + fmt(p.total_output) + '</td>' +
+                    '<td>' + fmtCost(p.total_cost) + '</td>';
+                body.appendChild(tr);
+            });
+        });
+    }
+
+    // Load time series + render chart
+    function loadTimeSeries() {
+        var days = document.getElementById('time-range').value;
+        fetch('/api/usage/time-series?days=' + days)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var container = document.getElementById('cost-chart');
+            if (!container) return;
+            var series = d.series || [];
+            if (series.length === 0) {
+                container.innerHTML = '<p style="text-align:center;color:var(--text-secondary);padding:40px 0;">No usage data yet.</p>';
+                return;
+            }
+
+            // Use charts.js if available
+            if (typeof ICDEV !== 'undefined' && ICDEV.charts && ICDEV.charts.line) {
+                var labels = series.map(function(s) { return s.day; });
+                var values = series.map(function(s) { return s.cost || 0; });
+                container.innerHTML = '';
+                ICDEV.charts.line(container, labels, values, {
+                    title: 'Daily Cost ($)',
+                    color: '#4a90d9',
+                    height: 200
+                });
+            } else {
+                // Simple text fallback
+                var html = '<div style="overflow-x:auto;">';
+                series.forEach(function(s) {
+                    html += '<div style="display:inline-block;padding:4px 8px;font-size:0.75rem;">' +
+                            s.day + ': ' + fmtCost(s.cost) + '</div>';
+                });
+                html += '</div>';
+                container.innerHTML = html;
+            }
+        });
+    }
+
+    // Init
+    loadTotals();
+    loadUserUsage();
+    loadProviderUsage();
+    loadTimeSeries();
+
+    var timeRange = document.getElementById('time-range');
+    if (timeRange) {
+        timeRange.addEventListener('change', loadTimeSeries);
+    }
+})();
+</script>
+{% endblock %}
