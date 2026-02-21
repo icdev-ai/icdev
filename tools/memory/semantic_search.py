@@ -76,7 +76,7 @@ def embedding_to_blob(embedding):
     return struct.pack(f"{len(embedding)}f", *embedding)
 
 
-def search(query, limit=10):
+def search(query, limit=10, user_id=None, tenant_id=None):
     client = get_openai_client()
     if not client:
         return []
@@ -85,9 +85,16 @@ def search(query, limit=10):
 
     conn = sqlite3.connect(str(DB_PATH))
     c = conn.cursor()
-    c.execute(
-        "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE embedding IS NOT NULL"
-    )
+
+    sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE embedding IS NOT NULL"
+    params = []
+    if user_id:
+        sql += " AND (user_id = ? OR user_id IS NULL)"
+        params.append(user_id)
+    if tenant_id:
+        sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
+        params.append(tenant_id)
+    c.execute(sql, params)
     rows = c.fetchall()
 
     results = []
@@ -113,9 +120,11 @@ def main():
     parser = argparse.ArgumentParser(description="Semantic search on memory")
     parser.add_argument("--query", required=True, help="Search query")
     parser.add_argument("--limit", type=int, default=10, help="Max results")
+    parser.add_argument("--user-id", help="Filter by user ID (D180)")
+    parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
     args = parser.parse_args()
 
-    results = search(args.query, args.limit)
+    results = search(args.query, args.limit, user_id=args.user_id, tenant_id=args.tenant_id)
     if not results:
         print("No results (entries may need embeddings — run embed_memory.py --all)")
         return

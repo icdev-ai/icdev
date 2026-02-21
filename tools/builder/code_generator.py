@@ -20,6 +20,20 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
+
+def _build_profile_context(project_id, task_type="code_generation"):
+    """Build dev profile context for LLM prompt injection (Phase 34, D187).
+
+    Calls inject_for_task() to extract relevant dimensions as markdown.
+    Returns empty string if no profile exists (graceful fallback).
+    """
+    try:
+        from tools.builder.dev_profile_manager import inject_for_task
+        context = inject_for_task(project_id, task_type)
+        return context or ""
+    except (ImportError, Exception):
+        return ""
+
 CUI_HEADER = '''\
 # CUI // SP-CTI
 # Controlled by: Department of Defense
@@ -3387,6 +3401,7 @@ def generate_from_spec(
     output_dir: Optional[str] = None,
     force_type: Optional[str] = None,
     language: str = "python",
+    project_id: Optional[str] = None,
 ) -> List[str]:
     """Generate implementation code from a specification.
 
@@ -3396,10 +3411,15 @@ def generate_from_spec(
         output_dir: Optional output directory (defaults to {project}/src/).
         force_type: Force a specific code type (api, model, service, cli, module).
         language: Target language (python, java, go, typescript, rust, csharp).
+        project_id: Optional project ID for dev profile injection (Phase 34, D187).
 
     Returns:
         List of paths to generated files.
     """
+    # Phase 34: Build profile context for LLM-aware generation
+    profile_context = ""
+    if project_id:
+        profile_context = _build_profile_context(project_id, "code_generation")
     project = Path(project_path)
     src_dir = Path(output_dir) if output_dir else project / "src"
     src_dir.mkdir(parents=True, exist_ok=True)
@@ -3493,6 +3513,10 @@ def main():
         choices=["python", "java", "go", "typescript", "csharp", "rust"],
         help="Target language for code generation (default: python)",
     )
+    parser.add_argument(
+        "--project-id", default=None,
+        help="Project ID for dev profile injection (Phase 34, D187)",
+    )
     args = parser.parse_args()
 
     files = generate_from_spec(
@@ -3501,6 +3525,7 @@ def main():
         output_dir=args.output_dir,
         force_type=args.type,
         language=args.language,
+        project_id=args.project_id,
     )
     print(f"\nGenerated {len(files)} file(s) [{args.language}]:")
     for f in files:

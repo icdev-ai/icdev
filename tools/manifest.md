@@ -11,7 +11,9 @@
 | Semantic Search | tools/memory/semantic_search.py | Vector similarity search (requires OpenAI key) | --query | Ranked results |
 | Hybrid Search | tools/memory/hybrid_search.py | Combined keyword + semantic search, optional --time-decay flag for recency weighting | --query, --bm25-weight, --semantic-weight, --time-decay | Ranked results |
 | Embed Memory | tools/memory/embed_memory.py | Generate embeddings for memory entries | --all | Confirmation |
-| Time-Decay Scoring | tools/memory/time_decay.py | Exponential time-decay scoring for memory entries: per-type half-lives, importance resistance, combined relevance+recency+importance scoring (D147) | --score --entry-id, --rank --query, --top-k, --json | Decay factors + ranked results |
+| Time-Decay Scoring | tools/memory/time_decay.py | Exponential time-decay scoring for memory entries: per-type half-lives, importance resistance, combined relevance+recency+importance scoring (D147) | --score --entry-id, --rank --query, --top-k, --user-id, --json | Decay factors + ranked results |
+| Auto-Capture | tools/memory/auto_capture.py | Auto-capture content from hooks into memory buffer with dedup (D181) | --content, --source, --type, --tool-name, --flush, --buffer-status, --user-id, --json | Capture/flush result |
+| Maintenance Cron | tools/memory/maintenance_cron.py | Orchestrate memory maintenance: flush buffer, embed, prune, backup (D179-D182) | --all, --flush-buffer, --embed-unembedded, --prune-stale, --backup, --days, --json | Maintenance results |
 
 ## Database
 | Tool | File | Description | Input | Output |

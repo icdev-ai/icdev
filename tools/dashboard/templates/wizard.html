@@ -20,6 +20,7 @@
         <div class="wizard-progress-dot" data-step="2"></div>
         <div class="wizard-progress-dot" data-step="3"></div>
         <div class="wizard-progress-dot" data-step="4"></div>
+        <div class="wizard-progress-dot" data-step="5"></div>
     </div>
 
     <!-- Step 1: Goal -->
@@ -157,8 +158,33 @@
         </div>
     </div>
 
-    <!-- Step 5: Results -->
+    <!-- Step 5: Development Standards (Phase 34) -->
     <div class="wizard-step" id="wizard-step-4">
+        <div class="wizard-question">How should we set up your development standards?</div>
+        <p style="color: var(--text-secondary); margin-bottom:16px; font-size:0.9rem;">
+            Choose how to configure coding conventions, tooling preferences, and quality standards.
+        </p>
+        <div class="wizard-options">
+            <div class="wizard-option" data-value="template_recommended" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F4CB;</span>
+                <div class="wizard-option-title">Use recommended standards</div>
+                <div class="wizard-option-desc">Apply the recommended template based on your sector and compliance needs</div>
+            </div>
+            <div class="wizard-option" data-value="scan_codebase" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x1F50D;</span>
+                <div class="wizard-option-title">Scan my existing codebase</div>
+                <div class="wizard-option-desc">Auto-detect standards from an existing repository (advisory — you review before applying)</div>
+            </div>
+            <div class="wizard-option" data-value="skip_profile" onclick="ICDEV.wizardSelect(this)">
+                <span class="wizard-option-icon">&#x23ED;</span>
+                <div class="wizard-option-title">Skip for now</div>
+                <div class="wizard-option-desc">Configure development standards later via the Dev Profiles page</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 6: Results -->
+    <div class="wizard-step" id="wizard-step-5">
         <div class="wizard-result" id="wizard-result">
             <!-- Populated by JS -->
         </div>
@@ -169,7 +195,7 @@
         <button class="btn btn-secondary" id="wizard-back" onclick="ICDEV.wizardBack()" style="visibility: hidden;">
             &larr; Back
         </button>
-        <span id="wizard-step-label" class="text-muted">Step 1 of 4</span>
+        <span id="wizard-step-label" class="text-muted">Step 1 of 5</span>
         <button class="btn btn-primary" id="wizard-next" onclick="ICDEV.wizardNext()" disabled>
             Next &rarr;
         </button>
@@ -181,8 +207,8 @@
 {% block scripts %}
 <script>
 (function() {
-    var state = { step: 0, answers: [null, null, null, null] };
-    var TOTAL_STEPS = 4;
+    var state = { step: 0, answers: [null, null, null, null, null] };
+    var TOTAL_STEPS = 5;
 
     // Framework definitions
     var FRAMEWORKS = {

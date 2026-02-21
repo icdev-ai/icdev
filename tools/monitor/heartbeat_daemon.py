@@ -426,7 +426,7 @@ def check_memory_maintenance(
     config: Optional[dict] = None,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    """Detect stale memory entries not accessed within ``stale_days``."""
+    """Detect stale memory entries + flush auto-capture buffer (D181)."""
     stale_days = 90
     if config and isinstance(config, dict):
         stale_days = config.get("stale_days", stale_days)
@@ -434,6 +434,24 @@ def check_memory_maintenance(
     if db_path and db_path != DB_PATH:
         # Allow overriding for tests; assume memory.db lives next to icdev.db
         mem_path = db_path.parent / "memory.db"
+
+    items = []
+
+    # D181: Flush auto-capture buffer as first step
+    try:
+        from tools.memory.auto_capture import flush_buffer, buffer_status
+        buf = buffer_status(db_path=mem_path)
+        if buf.get("total_buffered", 0) > 0:
+            flush_result = flush_buffer(db_path=mem_path)
+            items.append({
+                "type": "buffer_flush",
+                "flushed": flush_result.get("flushed", 0),
+                "duplicates": flush_result.get("duplicates", 0),
+            })
+    except (ImportError, Exception):
+        pass  # auto_capture not available
+
+    # Original: detect stale entries
     try:
         conn = sqlite3.connect(str(mem_path), timeout=10)
         conn.row_factory = sqlite3.Row
@@ -452,12 +470,14 @@ def check_memory_maintenance(
             ).fetchall()
         finally:
             conn.close()
-        items = [dict(r) for r in rows]
+        stale_items = [dict(r) for r in rows]
+        items.extend(stale_items[:20])
         count = len(items)
         status = "warning" if count > 0 else "ok"
-        return {"status": status, "count": count, "items": items[:20]}
+        return {"status": status, "count": count, "items": items}
     except Exception as exc:
-        return {"status": "ok", "count": 0, "items": [], "note": f"table not found or error: {exc}"}
+        return {"status": "ok", "count": len(items), "items": items,
+                "note": f"table not found or error: {exc}"}
 
 
 # ---------------------------------------------------------------------------

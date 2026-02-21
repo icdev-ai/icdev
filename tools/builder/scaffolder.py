@@ -1281,6 +1281,59 @@ except Exception:
     pass  # Extended scaffolders not available
 
 
+def _load_dev_profile(scope_id, scope="project", db_path=None):
+    """Load resolved dev profile for scaffolding overrides (Phase 34, D184).
+
+    Returns a dict of resolved profile dimensions, or empty dict if unavailable.
+    """
+    try:
+        from tools.builder.dev_profile_manager import resolve_profile
+        result = resolve_profile(scope, scope_id, db_path=db_path)
+        if result and "resolved" in result:
+            return result["resolved"]
+    except (ImportError, Exception):
+        pass
+    return {}
+
+
+def _apply_profile_overrides(content, profile, language="python"):
+    """Apply dev profile overrides to scaffolded file content.
+
+    Replaces hardcoded default values with profile-specified values:
+    - Python version (>=3.10 -> profile value)
+    - Line length (100 -> profile value)
+    - Container base image (python:3.11-slim -> profile value)
+    """
+    if not profile:
+        return content
+
+    style = profile.get("style", {})
+    lang = profile.get("language", {})
+    arch = profile.get("architecture", {})
+
+    # Line length override
+    max_line = style.get("max_line_length")
+    if max_line:
+        content = content.replace("line-length = 100", f"line-length = {max_line}")
+        content = content.replace("line_length = 100", f"line_length = {max_line}")
+
+    # Python version override
+    versions = lang.get("versions", {})
+    py_version = versions.get("python")
+    if py_version and language == "python":
+        content = content.replace('requires-python = ">=3.10"',
+                                  f'requires-python = "{py_version}"')
+
+    # Container base image override
+    container_bases = arch.get("container_base", {})
+    if language == "python" and container_bases.get("python"):
+        content = content.replace("python:3.11-slim", container_bases["python"])
+    elif language in ("javascript", "typescript") and container_bases.get("typescript"):
+        content = content.replace("node:18-alpine", container_bases["typescript"])
+
+    return content
+
+
 def _log_audit(project_path: str, name: str, project_type: str, files: List[str]) -> None:
     """Log scaffolding to audit trail."""
     try:
@@ -1420,6 +1473,14 @@ def main():
         help="Project type to scaffold",
     )
 
+    # Phase 34: Dev profile override
+    parser.add_argument(
+        "--dev-profile-scope", type=str, default=None,
+        help="Dev profile scope to load (e.g., 'project')")
+    parser.add_argument(
+        "--dev-profile-scope-id", type=str, default=None,
+        help="Dev profile scope ID to resolve (e.g., 'proj-123')")
+
     # Phase 26: MOSA scaffolding flag
     parser.add_argument(
         "--mosa", action="store_true",
@@ -1459,9 +1520,40 @@ def main():
 
     args = parser.parse_args()
 
+    # Phase 34: Load dev profile for overrides
+    dev_profile = {}
+    if args.dev_profile_scope_id:
+        dev_profile = _load_dev_profile(
+            args.dev_profile_scope_id,
+            scope=args.dev_profile_scope or "project",
+        )
+        if dev_profile:
+            print(f"  Dev profile loaded: {len(dev_profile)} dimensions")
+
     # Run base scaffold
     scaffolder = SCAFFOLDERS[args.type]
     files = scaffolder(args.project_path, args.name)
+
+    # Phase 34: Apply dev profile overrides to generated files
+    if dev_profile:
+        lang = "python"  # Default; detect from project type
+        if args.type in ("javascript-frontend", "typescript-backend", "typescript"):
+            lang = "typescript"
+        elif args.type in ("java-backend", "java"):
+            lang = "java"
+        elif args.type in ("go-backend", "go"):
+            lang = "go"
+
+        for fpath in files:
+            try:
+                p = Path(fpath)
+                if p.exists() and p.suffix in (".toml", ".yaml", ".yml", ".json", ".md", ""):
+                    original = p.read_text(encoding="utf-8")
+                    updated = _apply_profile_overrides(original, dev_profile, language=lang)
+                    if updated != original:
+                        p.write_text(updated, encoding="utf-8")
+            except Exception:
+                pass  # Non-critical: profile overrides are best-effort
 
     _log_audit(args.project_path, args.name, args.type, files)
 

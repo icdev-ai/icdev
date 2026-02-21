@@ -32,6 +32,7 @@
             <li><a href="/diagrams" class="{% if '/diagrams' in request.path %}active{% endif %}">Diagrams</a></li>
             <li><a href="/cicd" class="{% if '/cicd' in request.path %}active{% endif %}">CI/CD</a></li>
             <li><a href="/chat" class="{% if '/chat' in request.path %}active{% endif %}">Chat</a></li>
+            <li><a href="/dev-profiles" class="{% if '/dev-profiles' in request.path %}active{% endif %}">Profiles</a></li>
             {% if current_user and current_user.role == 'admin' %}
             <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
             {% endif %}

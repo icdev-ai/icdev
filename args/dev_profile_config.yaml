@@ -1,0 +1,144 @@
+# CUI // SP-CTI
+# Dev Profile Configuration (Phase 34, D183-D188)
+# Used by: tools/builder/dev_profile_manager.py, intake_engine.py, scaffolder.py, code_generator.py
+
+dimensions:
+  language:
+    description: "Primary and allowed programming languages"
+    lockable_by: [architect, admin]
+    enforcement: enforced
+    cascade_behavior: override
+    fields: [primary, allowed, forbidden, versions, package_managers, virtual_env_tool, banned_packages, approved_registries]
+
+  style:
+    description: "Code style and formatting conventions"
+    lockable_by: [architect]
+    enforcement: enforced
+    cascade_behavior: merge
+    fields: [naming_convention, indent_style, indent_size, max_line_length, docstring_format, import_order, formatter, linter, trailing_commas, quote_style]
+
+  testing:
+    description: "Testing standards and coverage requirements"
+    lockable_by: [pm, architect]
+    enforcement: enforced
+    cascade_behavior: override_if_stricter
+    fields: [methodology, min_coverage, require_bdd, require_unit, require_e2e, bdd_framework, test_naming_pattern, flaky_test_policy]
+
+  architecture:
+    description: "Architecture patterns and constraints"
+    lockable_by: [architect, admin]
+    enforcement: enforced
+    cascade_behavior: override
+    fields: [web_framework, database, orm, auth_pattern, api_style, container_base, error_handling, logging_format, project_structure]
+
+  security:
+    description: "Security standards and requirements"
+    lockable_by: [isso, admin]
+    enforcement: enforced
+    cascade_behavior: strictest_wins
+    fields: [encryption_standard, secret_management, sast_tools, dependency_audit, container_hardening, vulnerability_sla, secret_rotation_days, image_signing]
+
+  compliance:
+    description: "Compliance framework requirements"
+    lockable_by: [isso, admin]
+    enforcement: enforced
+    cascade_behavior: union
+    fields: [frameworks, cui_required, audit_trail_required, classification_level, sbom_format, ato_approach]
+
+  operations:
+    description: "Operational standards"
+    lockable_by: [pm, architect]
+    enforcement: advisory
+    cascade_behavior: merge
+    fields: [deployment_target, container_runtime, ci_cd_platform, monitoring_stack, region, service_mesh, network_policy, backup_strategy]
+
+  documentation:
+    description: "Documentation standards"
+    lockable_by: [pm]
+    enforcement: advisory
+    cascade_behavior: merge
+    fields: [readme_required, api_docs_required, adr_required, changelog_required, diagram_tool, spec_format, runbook_required]
+
+  git:
+    description: "Git workflow conventions"
+    lockable_by: [architect, pm]
+    enforcement: advisory
+    cascade_behavior: override
+    fields: [branching_strategy, merge_strategy, commit_format, branch_naming, min_approvals, gpg_signing, pr_size_limit, delete_branch_on_merge]
+
+  ai:
+    description: "AI/LLM usage conventions"
+    lockable_by: [admin]
+    enforcement: advisory
+    cascade_behavior: merge
+    fields: [preferred_provider, code_gen_model, compliance_model, token_budget_monthly, attribution, byok_enabled, prompt_governance]
+
+cascade_rules:
+  order: [platform, tenant, program, project, user]
+  strictest_wins_dimensions: [security, compliance]
+  merge_dimensions: [style, operations, documentation, git, ai]
+  override_dimensions: [language, architecture, testing]
+
+# Task type -> relevant dimensions for LLM injection (D187)
+task_dimension_map:
+  code_generation: [language, style, testing, architecture]
+  code_review: [language, style, testing, security, compliance]
+  planning: [architecture, compliance, operations, documentation]
+  testing: [testing, security]
+  deployment: [operations, security, compliance]
+  compliance_review: [compliance, security, documentation]
+
+detection:
+  file_indicators:
+    python: ["*.py", "pyproject.toml", "requirements.txt", "setup.py", "setup.cfg", "Pipfile", "uv.lock"]
+    java: ["*.java", "pom.xml", "build.gradle", "build.gradle.kts"]
+    go: ["*.go", "go.mod", "go.sum"]
+    rust: ["*.rs", "Cargo.toml", "Cargo.lock"]
+    csharp: ["*.cs", "*.csproj", "*.sln"]
+    typescript: ["*.ts", "*.tsx", "tsconfig.json"]
+    javascript: ["*.js", "*.jsx", "package.json"]
+
+  config_files:
+    editorconfig: ".editorconfig"
+    prettier: [".prettierrc", ".prettierrc.json", ".prettierrc.yaml", "prettier.config.js"]
+    eslint: [".eslintrc", ".eslintrc.json", ".eslintrc.yaml", ".eslintrc.js", "eslint.config.js"]
+    ruff: ["ruff.toml", "pyproject.toml"]
+    black: ["pyproject.toml"]
+
+  git_signals:
+    conventional_commits: "^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\\(.+\\))?[!]?:"
+    trunk_based: ["main", "trunk"]
+    gitflow: ["develop", "feature/", "release/", "hotfix/"]
+
+  ci_signals:
+    github_actions: ".github/workflows"
+    gitlab_ci: ".gitlab-ci.yml"
+    jenkins: "Jenkinsfile"
+    azure_devops: "azure-pipelines.yml"
+
+intake_detection:
+  keywords:
+    - "coding standards"
+    - "development standards"
+    - "code style"
+    - "naming convention"
+    - "snake_case"
+    - "camelCase"
+    - "test coverage"
+    - "development profile"
+    - "engineering standards"
+    - "code quality"
+    - "linting rules"
+    - "formatting rules"
+    - "package manager"
+    - "virtual environment"
+    - "base image"
+    - "alpine"
+    - "distroless"
+  language_keywords:
+    python: ["python", "flask", "django", "fastapi", "pytest", "pydantic", "uv", "poetry", "pip"]
+    java: ["java", "spring boot", "maven", "gradle", "junit", "cucumber"]
+    go: ["go", "golang", "gin", "net/http", "godog"]
+    rust: ["rust", "actix", "cargo", "clippy", "memory-safe"]
+    typescript: ["typescript", "express", "nestjs", "jest", "prettier"]
+    csharp: ["c#", "csharp", "dotnet", ".net", "asp.net", "specflow"]

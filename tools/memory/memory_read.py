@@ -30,15 +30,24 @@ def read_recent_logs(days=2):
     return logs
 
 
-def read_db_recent(limit=10):
+def read_db_recent(limit=10, user_id=None, tenant_id=None):
     if not DB_PATH.exists():
         return []
     conn = sqlite3.connect(str(DB_PATH))
     c = conn.cursor()
-    c.execute(
-        "SELECT content, type, importance, created_at FROM memory_entries ORDER BY created_at DESC LIMIT ?",
-        (limit,),
-    )
+
+    sql = "SELECT content, type, importance, created_at FROM memory_entries WHERE 1=1"
+    params = []
+    if user_id:
+        sql += " AND (user_id = ? OR user_id IS NULL)"
+        params.append(user_id)
+    if tenant_id:
+        sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
+        params.append(tenant_id)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+
+    c.execute(sql, params)
     rows = c.fetchall()
     conn.close()
     return rows
@@ -71,11 +80,13 @@ def main():
     parser.add_argument("--format", choices=["markdown", "raw"], default="markdown")
     parser.add_argument("--days", type=int, default=2, help="Number of days of logs to include")
     parser.add_argument("--db-limit", type=int, default=10, help="Number of recent DB entries")
+    parser.add_argument("--user-id", help="Filter by user ID (D180)")
+    parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
     args = parser.parse_args()
 
     memory_text = read_memory_file()
     logs = read_recent_logs(args.days)
-    db_entries = read_db_recent(args.db_limit)
+    db_entries = read_db_recent(args.db_limit, user_id=args.user_id, tenant_id=args.tenant_id)
 
     if args.format == "markdown":
         print(format_markdown(memory_text, logs, db_entries))

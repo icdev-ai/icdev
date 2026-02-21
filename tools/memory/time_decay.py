@@ -35,6 +35,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "insight": 30,
         "task": 14,
         "relationship": 120,
+        "thinking": 3,  # D182 — reasoning traces decay rapidly
     },
     "default_half_life": 30,
     "min_decay_factor": 0.01,
@@ -85,10 +86,18 @@ def load_decay_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
 def _parse_timestamp(ts_str: str) -> datetime:
     """Parse an ISO-ish timestamp string into a timezone-aware datetime.
 
-    Handles multiple SQLite timestamp formats.
+    Handles multiple SQLite timestamp formats and timezone-aware ISO strings.
     """
     if ts_str is None:
         return datetime.now(timezone.utc)
+    # Try fromisoformat first (handles +00:00 timezone suffix)
+    try:
+        dt = datetime.fromisoformat(ts_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        pass
     for fmt in (
         "%Y-%m-%dT%H:%M:%S.%f",
         "%Y-%m-%dT%H:%M:%S",
@@ -251,16 +260,24 @@ def rank_with_decay(
     top_k: int = 10,
     db_path: Optional[Path] = None,
     config: Optional[Dict[str, Any]] = None,
+    user_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Run time-decay-aware search: BM25 base + time-decay reranking."""
     cfg = config or load_decay_config()
     conn = _get_connection(db_path)
 
     try:
-        rows = conn.execute(
-            "SELECT id, content, type, importance, embedding, created_at "
-            "FROM memory_entries"
-        ).fetchall()
+        sql = ("SELECT id, content, type, importance, embedding, created_at "
+               "FROM memory_entries WHERE 1=1")
+        params: list = []
+        if user_id:
+            sql += " AND (user_id = ? OR user_id IS NULL)"
+            params.append(user_id)
+        if tenant_id:
+            sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
+            params.append(tenant_id)
+        rows = conn.execute(sql, params).fetchall()
     except sqlite3.OperationalError:
         conn.close()
         return []
@@ -356,6 +373,10 @@ def main() -> None:
                         help="Max results (default 10)")
     parser.add_argument("--json", action="store_true",
                         help="JSON output")
+    parser.add_argument("--user-id", type=str,
+                        help="Filter by user ID (D180)")
+    parser.add_argument("--tenant-id", type=str,
+                        help="Filter by tenant ID (D180)")
     parser.add_argument("--db-path", type=Path,
                         help="Override database path")
     parser.add_argument("--config", type=Path,
@@ -385,7 +406,8 @@ def main() -> None:
             print("Error: --query required with --rank", file=sys.stderr)
             sys.exit(1)
         results = rank_with_decay(args.query, top_k=args.top_k,
-                                  db_path=db, config=cfg)
+                                  db_path=db, config=cfg,
+                                  user_id=args.user_id, tenant_id=args.tenant_id)
         if args.json:
             print(json.dumps({
                 "classification": "CUI // SP-CTI",

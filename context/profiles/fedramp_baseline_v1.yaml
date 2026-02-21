@@ -1,0 +1,143 @@
+# CUI // SP-CTI
+# FedRAMP Baseline Development Profile v1
+# For FedRAMP cloud service providers (IL2-IL5)
+name: "FedRAMP Baseline"
+version: "1.0.0"
+description: "Development standards for FedRAMP-authorized cloud service providers"
+applicable_to: [isv_enterprise, si_enterprise]
+impact_levels: [IL2, IL4, IL5]
+
+language:
+  primary: python
+  allowed: [python, java, typescript, go]
+  forbidden: []
+  versions:
+    python: ">=3.11"
+    java: ">=17"
+    typescript: ">=5.0"
+    go: ">=1.22"
+  package_managers:
+    python: pip
+    java: maven
+    typescript: npm
+    go: go
+  virtual_env_tool: venv
+  banned_packages: []
+  approved_registries: []
+
+style:
+  naming_convention: snake_case
+  indent_style: spaces
+  indent_size: 4
+  max_line_length: 100
+  docstring_format: google
+  import_order: isort
+  formatter:
+    python: black
+    java: google-java-format
+    typescript: prettier
+    go: gofmt
+  linter:
+    python: ruff
+    java: checkstyle
+    typescript: eslint
+    go: golangci-lint
+  trailing_commas: true
+  quote_style: double
+
+testing:
+  methodology: tdd
+  min_coverage: 80
+  require_bdd: true
+  require_unit: true
+  require_e2e: true
+  bdd_framework:
+    python: behave
+    java: cucumber-jvm
+    typescript: cucumber-js
+    go: godog
+  test_naming_pattern: "test_{description}"
+  flaky_test_policy: quarantine_and_fix
+
+architecture:
+  web_framework:
+    python: flask
+    java: spring-boot
+    typescript: express
+    go: gin
+  database: postgresql
+  orm:
+    python: sqlalchemy
+    java: hibernate
+  auth_pattern: oauth2_oidc
+  api_style: rest_openapi
+  container_base:
+    python: "python:3.12-slim"
+    java: "eclipse-temurin:17-jre-alpine"
+  error_handling: structured_hierarchy
+  logging_format: structured_json
+  project_structure: layered
+
+security:
+  encryption_standard: fips_140_2
+  secret_management: aws_secrets_manager
+  sast_tools:
+    python: bandit
+    java: spotbugs
+    typescript: eslint-security
+    go: gosec
+  dependency_audit: true
+  container_hardening: stig
+  vulnerability_sla:
+    critical: "24h"
+    high: "7d"
+    medium: "30d"
+    low: "90d"
+  secret_rotation_days: 90
+  image_signing: false
+
+compliance:
+  frameworks: [nist_800_53, fedramp_moderate, cmmc_level_2]
+  cui_required: true
+  audit_trail_required: true
+  classification_level: CUI
+  sbom_format: cyclonedx
+  ato_approach: fedramp_jab
+
+operations:
+  deployment_target: kubernetes
+  container_runtime: containerd
+  ci_cd_platform: gitlab
+  monitoring_stack: [prometheus, grafana, elk]
+  region: us-gov-west-1
+  service_mesh: none
+  network_policy: default_deny
+  backup_strategy: daily
+
+documentation:
+  readme_required: true
+  api_docs_required: true
+  adr_required: true
+  changelog_required: true
+  diagram_tool: mermaid
+  spec_format: markdown
+  runbook_required: true
+
+git:
+  branching_strategy: trunk_based
+  merge_strategy: squash
+  commit_format: conventional_commits
+  branch_naming: "{type}-issue-{num}-{slug}"
+  min_approvals: 1
+  gpg_signing: recommended
+  pr_size_limit: 500
+  delete_branch_on_merge: true
+
+ai:
+  preferred_provider: bedrock
+  code_gen_model: claude-sonnet
+  compliance_model: claude-sonnet
+  token_budget_monthly: 3000000
+  attribution: required
+  byok_enabled: true
+  prompt_governance: centralized

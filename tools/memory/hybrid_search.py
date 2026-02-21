@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Hybrid search: combines BM25 keyword search + semantic vector search."""
+"""Hybrid search: combines BM25 keyword search + semantic vector search.
+
+Supports user-scoped queries (D180), time-decay ranking (D147), and JSON output.
+"""
 
 import argparse
+import json
 import sqlite3
 import struct
 from pathlib import Path
@@ -11,10 +15,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
-def get_all_entries():
+def get_all_entries(user_id=None, tenant_id=None):
     conn = sqlite3.connect(str(DB_PATH))
     c = conn.cursor()
-    c.execute("SELECT id, content, type, importance, embedding, created_at FROM memory_entries")
+
+    sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE 1=1"
+    params = []
+
+    if user_id:
+        sql += " AND (user_id = ? OR user_id IS NULL)"
+        params.append(user_id)
+    if tenant_id:
+        sql += " AND (tenant_id = ? OR tenant_id IS NULL)"
+        params.append(tenant_id)
+
+    c.execute(sql, params)
     rows = c.fetchall()
     conn.close()
     return rows
@@ -148,17 +163,23 @@ def main():
     parser.add_argument("--bm25-weight", type=float, default=0.7, help="BM25 weight (default 0.7)")
     parser.add_argument("--semantic-weight", type=float, default=0.3, help="Semantic weight (default 0.3)")
     parser.add_argument("--time-decay", action="store_true", help="Enable time-decay scoring (D147)")
+    parser.add_argument("--user-id", help="Filter by user ID (D180)")
+    parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
+    parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
-    entries = get_all_entries()
+    entries = get_all_entries(user_id=args.user_id, tenant_id=args.tenant_id)
     if not entries:
-        print("No memory entries found.")
+        if args.json:
+            print(json.dumps({"classification": "CUI // SP-CTI", "count": 0, "entries": []}))
+        else:
+            print("No memory entries found.")
         return
 
     bm25_scores = bm25_search(args.query, entries)
     semantic_scores = semantic_search(args.query, entries)
 
-    if semantic_scores is None:
+    if semantic_scores is None and not args.json:
         print("(Semantic search unavailable — using keyword search only)")
 
     # D147: Load time-decay config if enabled
@@ -168,7 +189,8 @@ def main():
             from tools.memory.time_decay import load_decay_config
             decay_config = load_decay_config()
         except (ImportError, Exception):
-            print("(Time-decay module unavailable — using standard ranking)")
+            if not args.json:
+                print("(Time-decay module unavailable — using standard ranking)")
 
     results = hybrid_rank(entries, bm25_scores, semantic_scores, args.bm25_weight, args.semantic_weight,
                           time_decay_enabled=args.time_decay, decay_config=decay_config)
@@ -184,9 +206,29 @@ def main():
     conn.commit()
     conn.close()
 
-    for score, id_, content, type_, importance, created_at in results[: args.limit]:
-        if score > 0:
-            print(f"[#{id_}] (score:{score:.3f}, {type_}, importance:{importance}) {content}  — {created_at}")
+    if args.json:
+        output_entries = []
+        for score, id_, content, type_, importance, created_at in results[: args.limit]:
+            if score > 0:
+                output_entries.append({
+                    "id": id_,
+                    "score": round(score, 4),
+                    "content": content,
+                    "type": type_,
+                    "importance": importance,
+                    "created_at": created_at,
+                })
+        print(json.dumps({
+            "classification": "CUI // SP-CTI",
+            "count": len(output_entries),
+            "search_type": search_type,
+            "semantic_available": semantic_scores is not None,
+            "entries": output_entries,
+        }, indent=2))
+    else:
+        for score, id_, content, type_, importance, created_at in results[: args.limit]:
+            if score > 0:
+                print(f"[#{id_}] (score:{score:.3f}, {type_}, importance:{importance}) {content}  — {created_at}")
 
 
 if __name__ == "__main__":

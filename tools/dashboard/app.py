@@ -907,6 +907,77 @@ def create_app() -> Flask:
         revoke_llm_key(key_id)
         return jsonify({"status": "revoked"})
 
+    # ---- Dev profile routes (Phase 34, D183-D188) ----
+
+    @app.route("/dev-profiles")
+    def dev_profiles_page():
+        """Dev profile management — list, create, view profiles."""
+        return render_template("dev_profiles.html")
+
+    @app.route("/dev-profiles/api/list")
+    def dev_profiles_api_list():
+        """List all dev profiles (JSON)."""
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                """SELECT id, scope, scope_id, version, is_active, inherits_from,
+                          created_by, created_at, change_summary
+                   FROM dev_profiles WHERE is_active = 1
+                   ORDER BY created_at DESC LIMIT 50"""
+            ).fetchall()
+            return jsonify({"profiles": [dict(r) for r in rows]})
+        except Exception as e:
+            return jsonify({"profiles": [], "error": str(e)})
+        finally:
+            conn.close()
+
+    @app.route("/dev-profiles/api/resolve/<scope>/<scope_id>")
+    def dev_profiles_api_resolve(scope, scope_id):
+        """Resolve 5-layer cascade for a scope (JSON)."""
+        try:
+            from tools.builder.dev_profile_manager import resolve_profile
+            result = resolve_profile(scope, scope_id)
+            return jsonify(result)
+        except (ImportError, Exception) as e:
+            return jsonify({"error": str(e)})
+
+    @app.route("/dev-profiles/api/templates")
+    def dev_profiles_api_templates():
+        """List available starter templates (JSON)."""
+        templates = []
+        templates_dir = Path(__file__).resolve().parent.parent.parent / "context" / "profiles"
+        if templates_dir.exists():
+            try:
+                import yaml
+                for f in sorted(templates_dir.glob("*.yaml")):
+                    with open(f, "r", encoding="utf-8") as fh:
+                        data = yaml.safe_load(fh)
+                        templates.append({
+                            "name": data.get("name", f.stem),
+                            "file": f.name,
+                            "description": data.get("description", ""),
+                            "impact_levels": data.get("impact_levels", []),
+                        })
+            except Exception:
+                pass
+        return jsonify({"templates": templates})
+
+    @app.route("/dev-profiles/api/create", methods=["POST"])
+    def dev_profiles_api_create():
+        """Create a dev profile from template or data (JSON)."""
+        try:
+            from tools.builder.dev_profile_manager import create_profile
+            data = flask_request.get_json(silent=True) or {}
+            result = create_profile(
+                scope=data.get("scope", "project"),
+                scope_id=data.get("scope_id", ""),
+                template_name=data.get("template"),
+                created_by=data.get("created_by", "dashboard"),
+            )
+            return jsonify(result), 201 if "error" not in result else 400
+        except (ImportError, Exception) as e:
+            return jsonify({"error": str(e)}), 500
+
     # ---- Auth routes (D169-D172) ----
 
     @app.route("/login", methods=["GET", "POST"])

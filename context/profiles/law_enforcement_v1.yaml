@@ -1,0 +1,129 @@
+# CUI // SP-CTI
+# Law Enforcement Baseline Development Profile v1
+# For CJIS-regulated law enforcement agencies
+name: "Law Enforcement Baseline"
+version: "1.0.0"
+description: "Development standards for law enforcement agencies handling CJIS data"
+applicable_to: [law_enforcement]
+impact_levels: [IL4, IL5]
+
+language:
+  primary: python
+  allowed: [python, java]
+  forbidden: [javascript, typescript]
+  versions:
+    python: ">=3.11"
+    java: ">=17"
+  package_managers:
+    python: pip
+    java: maven
+  virtual_env_tool: venv
+  banned_packages: []
+  approved_registries: ["internal-pypi"]
+
+style:
+  naming_convention: snake_case
+  indent_style: spaces
+  indent_size: 4
+  max_line_length: 100
+  docstring_format: google
+  import_order: isort
+  formatter:
+    python: black
+    java: google-java-format
+  linter:
+    python: ruff
+    java: checkstyle
+  trailing_commas: true
+  quote_style: double
+
+testing:
+  methodology: tdd
+  min_coverage: 85
+  require_bdd: true
+  require_unit: true
+  require_e2e: true
+  bdd_framework:
+    python: behave
+    java: cucumber-jvm
+  test_naming_pattern: "test_{description}"
+  flaky_test_policy: fix_immediately
+
+architecture:
+  web_framework:
+    python: flask
+    java: spring-boot
+  database: postgresql
+  orm:
+    python: sqlalchemy
+    java: hibernate
+  auth_pattern: cac_piv
+  api_style: rest_openapi
+  container_base:
+    python: "python:3.12-alpine3.20"
+    java: "eclipse-temurin:17-jre-alpine"
+  error_handling: structured_hierarchy
+  logging_format: structured_json
+  project_structure: layered
+
+security:
+  encryption_standard: fips_140_2
+  secret_management: aws_secrets_manager
+  sast_tools:
+    python: bandit
+    java: spotbugs
+  dependency_audit: true
+  container_hardening: stig
+  vulnerability_sla:
+    critical: "24h"
+    high: "3d"
+    medium: "14d"
+    low: "30d"
+  secret_rotation_days: 60
+  image_signing: true
+
+compliance:
+  frameworks: [cjis_security_policy, fips_199_200, nist_800_53]
+  cui_required: true
+  audit_trail_required: true
+  classification_level: CJIS
+  sbom_format: cyclonedx
+  ato_approach: traditional
+
+operations:
+  deployment_target: kubernetes
+  container_runtime: containerd
+  ci_cd_platform: gitlab
+  monitoring_stack: [prometheus, grafana, splunk]
+  region: us-gov-west-1
+  service_mesh: none
+  network_policy: default_deny
+  backup_strategy: daily
+
+documentation:
+  readme_required: true
+  api_docs_required: true
+  adr_required: true
+  changelog_required: true
+  diagram_tool: mermaid
+  spec_format: markdown
+  runbook_required: true
+
+git:
+  branching_strategy: trunk_based
+  merge_strategy: squash
+  commit_format: conventional_commits
+  branch_naming: "{type}-issue-{num}-{slug}"
+  min_approvals: 2
+  gpg_signing: required
+  pr_size_limit: 300
+  delete_branch_on_merge: true
+
+ai:
+  preferred_provider: bedrock
+  code_gen_model: claude-sonnet
+  compliance_model: claude-sonnet
+  token_budget_monthly: 2000000
+  attribution: required
+  byok_enabled: false
+  prompt_governance: centralized

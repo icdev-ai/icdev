@@ -840,6 +840,9 @@ def process_turn(
     # --- MOSA signals (Phase 26, D125) ---
     mosa_signals = _detect_mosa_signals(customer_message, session_data)
 
+    # --- Dev profile signals (Phase 34, D184-D188) ---
+    dev_profile_signals = _detect_dev_profile_signals(customer_message, session_data)
+
     # --- Structured clarification (D159, spec-kit Pattern 4) ---
     clarification_signals = []
     try:
@@ -1736,6 +1739,79 @@ def _detect_mosa_signals(text, session_data=None):
         "dod_ic_detected": dod_ic_detected,
         "detected_pillars": sorted(detected_pillars),
         "pillar_count": len(detected_pillars),
+    }
+
+
+def _detect_dev_profile_signals(text, session_data=None):
+    """Detect development profile signals from customer text (Phase 34, D184-D188).
+
+    Identifies coding standards, tooling preferences, and development methodology
+    signals to recommend or auto-apply a development profile template.
+    """
+    try:
+        from tools.builder.profile_detector import detect_from_text
+        raw = detect_from_text(text)
+        # Normalize to expected shape
+        signals = raw.get("detected_signals", {})
+        return {
+            "profile_detected": raw.get("signal_count", 0) > 0,
+            "detected_dimensions": sorted(signals.keys()),
+            "dimension_count": raw.get("signal_count", 0),
+            "suggested_templates": [],
+            "raw_signals": signals,
+        }
+    except (ImportError, Exception):
+        pass
+
+    # Fallback: inline minimal keyword detection
+    lower = text.lower()
+    detected_dimensions = []
+
+    dimension_keywords = {
+        "language": ["python", "java", "go", "golang", "rust", "typescript", "c#",
+                     "csharp", ".net", "flask", "fastapi", "spring boot", "express"],
+        "style": ["snake_case", "camelcase", "camel case", "naming convention",
+                  "code style", "indent", "line length", "prettier", "black",
+                  "eslint", "ruff", "gofmt", "formatting", "linter"],
+        "testing": ["tdd", "bdd", "test driven", "test coverage", "unit test",
+                    "e2e test", "cucumber", "behave", "jest", "pytest"],
+        "architecture": ["microservice", "monolith", "api gateway", "rest",
+                         "graphql", "event driven", "hexagonal", "layered"],
+        "security": ["fips", "encryption", "secret management", "sast",
+                     "container hardening", "stig", "vulnerability"],
+        "operations": ["kubernetes", "k8s", "docker", "docker compose",
+                       "gitlab ci", "github actions", "jenkins", "air-gapped"],
+        "git": ["trunk-based", "gitflow", "github flow", "squash merge",
+                "conventional commits", "branch naming"],
+        "ai": ["bedrock", "openai", "ollama", "byok", "token budget",
+               "llm", "ai model", "code generation model"],
+    }
+
+    for dim, keywords in dimension_keywords.items():
+        if any(kw in lower for kw in keywords):
+            detected_dimensions.append(dim)
+
+    # Check for template-matching signals
+    template_signals = {
+        "dod_baseline": ["dod", "department of defense", "il4", "il5", "il6",
+                         "cmmc", "stig"],
+        "fedramp_baseline": ["fedramp", "fed ramp", "jab", "3pao"],
+        "healthcare_baseline": ["hipaa", "hitrust", "phi", "health"],
+        "financial_baseline": ["pci dss", "pci", "sox", "financial"],
+        "law_enforcement_baseline": ["cjis", "law enforcement", "fbi"],
+        "startup": ["startup", "mvp", "lean", "fast iteration"],
+    }
+
+    suggested_templates = []
+    for template, keywords in template_signals.items():
+        if any(kw in lower for kw in keywords):
+            suggested_templates.append(template)
+
+    return {
+        "profile_detected": len(detected_dimensions) > 0,
+        "detected_dimensions": sorted(detected_dimensions),
+        "dimension_count": len(detected_dimensions),
+        "suggested_templates": suggested_templates,
     }
 
 

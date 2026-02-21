@@ -320,6 +320,99 @@ def handle_generate_blueprint(args: dict) -> dict:
         return {"error": str(e)}
 
 
+def handle_dev_profile_create(args: dict) -> dict:
+    """Create a dev profile from template or explicit data (Phase 34)."""
+    create = _import_tool("tools.builder.dev_profile_manager", "create_profile")
+    if create:
+        return create(
+            scope=args.get("scope", "project"),
+            scope_id=args["scope_id"],
+            profile_data=args.get("profile_data"),
+            template_name=args.get("template"),
+            created_by=args.get("created_by", "mcp-client"),
+        )
+    # Fallback: subprocess
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+           "--scope", args.get("scope", "project"),
+           "--scope-id", args["scope_id"], "--create", "--json"]
+    if args.get("template"):
+        cmd.extend(["--template", args["template"]])
+    if args.get("created_by"):
+        cmd.extend(["--created-by", args["created_by"]])
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
+        if proc.returncode == 0:
+            return json.loads(proc.stdout) if proc.stdout.strip() else {"stdout": proc.stdout}
+        return {"error": proc.stderr or proc.stdout, "returncode": proc.returncode}
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+        return {"error": str(e)}
+
+
+def handle_dev_profile_get(args: dict) -> dict:
+    """Get the current dev profile for a scope (Phase 34)."""
+    get_fn = _import_tool("tools.builder.dev_profile_manager", "get_profile")
+    if get_fn:
+        return get_fn(
+            scope=args.get("scope", "project"),
+            scope_id=args["scope_id"],
+            version=args.get("version"),
+        )
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+           "--scope", args.get("scope", "project"),
+           "--scope-id", args["scope_id"], "--get", "--json"]
+    if args.get("version"):
+        cmd.extend(["--version", str(args["version"])])
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
+        if proc.returncode == 0:
+            return json.loads(proc.stdout) if proc.stdout.strip() else {"stdout": proc.stdout}
+        return {"error": proc.stderr or proc.stdout, "returncode": proc.returncode}
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+        return {"error": str(e)}
+
+
+def handle_dev_profile_resolve(args: dict) -> dict:
+    """Resolve 5-layer cascade for a scope (Phase 34)."""
+    resolve = _import_tool("tools.builder.dev_profile_manager", "resolve_profile")
+    if resolve:
+        return resolve(
+            scope=args.get("scope", "project"),
+            scope_id=args["scope_id"],
+        )
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "dev_profile_manager.py"),
+           "--scope", args.get("scope", "project"),
+           "--scope-id", args["scope_id"], "--resolve", "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
+        if proc.returncode == 0:
+            return json.loads(proc.stdout) if proc.stdout.strip() else {"stdout": proc.stdout}
+        return {"error": proc.stderr or proc.stdout, "returncode": proc.returncode}
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+        return {"error": str(e)}
+
+
+def handle_dev_profile_detect(args: dict) -> dict:
+    """Auto-detect dev profile from repository (Phase 34, D185 advisory)."""
+    detect = _import_tool("tools.builder.profile_detector", "detect_from_repo")
+    if detect:
+        result = detect(args["repo_path"])
+        # Optionally store detection results
+        if args.get("store", False):
+            store = _import_tool("tools.builder.profile_detector", "store_detection")
+            if store:
+                store(result, tenant_id=args.get("tenant_id"), project_id=args.get("project_id"))
+        return result
+    cmd = [sys.executable, str(BASE_DIR / "tools" / "builder" / "profile_detector.py"),
+           "--repo", args["repo_path"], "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60, cwd=str(BASE_DIR))
+        if proc.returncode == 0:
+            return json.loads(proc.stdout) if proc.stdout.strip() else {"stdout": proc.stdout}
+        return {"error": proc.stderr or proc.stdout, "returncode": proc.returncode}
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError) as e:
+        return {"error": str(e)}
+
+
 def handle_generate_child_app(args: dict) -> dict:
     """Generate a mini-ICDEV clone child application."""
     generate = _import_tool("tools.builder.child_app_generator", "generate_child_app")
@@ -545,6 +638,82 @@ def create_server() -> MCPServer:
             "required": ["blueprint"],
         },
         handler=handle_generate_child_app,
+    )
+
+    # Phase 34: Dev profile management tools (D183-D188)
+    server.register_tool(
+        name="dev_profile_create",
+        description="Create a tenant/project development profile from a starter template or explicit data. Supports 6 starter templates (dod_baseline, fedramp_baseline, healthcare_baseline, financial_baseline, law_enforcement, startup). Profiles define coding standards, tooling preferences, and compliance requirements.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "description": "Profile scope level",
+                    "enum": ["platform", "tenant", "program", "project", "user"],
+                    "default": "project",
+                },
+                "scope_id": {"type": "string", "description": "Scope entity ID (e.g., tenant-abc, proj-123)"},
+                "template": {"type": "string", "description": "Starter template name (e.g., dod_baseline, fedramp_baseline, startup)"},
+                "profile_data": {"type": "object", "description": "Explicit profile data (merged on top of template if both given)"},
+                "created_by": {"type": "string", "description": "Creator identity", "default": "mcp-client"},
+            },
+            "required": ["scope_id"],
+        },
+        handler=handle_dev_profile_create,
+    )
+
+    server.register_tool(
+        name="dev_profile_get",
+        description="Get the current active development profile for a scope. Returns all profile dimensions (language, style, testing, architecture, security, compliance, operations, documentation, git, ai).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": ["platform", "tenant", "program", "project", "user"],
+                    "default": "project",
+                },
+                "scope_id": {"type": "string", "description": "Scope entity ID"},
+                "version": {"type": "integer", "description": "Specific version number (omit for current)"},
+            },
+            "required": ["scope_id"],
+        },
+        handler=handle_dev_profile_get,
+    )
+
+    server.register_tool(
+        name="dev_profile_resolve",
+        description="Resolve the 5-layer cascade (platform -> tenant -> program -> project -> user) to produce the effective merged profile with provenance tracking. Shows which scope set each value and whether dimensions are locked.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "scope": {
+                    "type": "string",
+                    "enum": ["platform", "tenant", "program", "project", "user"],
+                    "default": "project",
+                },
+                "scope_id": {"type": "string", "description": "Scope entity ID to resolve from"},
+            },
+            "required": ["scope_id"],
+        },
+        handler=handle_dev_profile_resolve,
+    )
+
+    server.register_tool(
+        name="dev_profile_detect",
+        description="Auto-detect development profile from an existing repository. Scans files, git history, CI/CD configs, and code patterns to suggest profile dimensions with confidence scores. Advisory only (D185) — requires explicit acceptance.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "repo_path": {"type": "string", "description": "Path to repository to scan"},
+                "tenant_id": {"type": "string", "description": "Tenant ID (for storing detection results)"},
+                "project_id": {"type": "string", "description": "Project ID (for storing detection results)"},
+                "store": {"type": "boolean", "description": "Whether to store detection results in DB", "default": False},
+            },
+            "required": ["repo_path"],
+        },
+        handler=handle_dev_profile_detect,
     )
 
     return server

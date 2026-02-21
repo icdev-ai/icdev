@@ -84,7 +84,9 @@
       "Bash(do if ! head -5 \"$f\")",
       "Bash(then echo \"$f\")",
       "Bash(PYTHONPATH=. python:*)",
-      "mcp__playwright__browser_fill_form"
+      "mcp__playwright__browser_fill_form",
+      "Bash(git rm:*)",
+      "Bash(git config:*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",

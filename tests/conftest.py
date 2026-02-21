@@ -108,6 +108,50 @@ CREATE TABLE IF NOT EXISTS stig_findings (
     title TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS dev_profiles (
+    id TEXT PRIMARY KEY,
+    scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')),
+    scope_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    profile_md TEXT,
+    profile_yaml TEXT NOT NULL,
+    inherits_from TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER DEFAULT 1,
+    change_summary TEXT,
+    approved_by TEXT,
+    approved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dev_profiles_scope ON dev_profiles(scope, scope_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_dev_profiles_active ON dev_profiles(scope_id, is_active, version);
+
+CREATE TABLE IF NOT EXISTS dev_profile_locks (
+    id TEXT PRIMARY KEY,
+    profile_id TEXT NOT NULL REFERENCES dev_profiles(id),
+    dimension_path TEXT NOT NULL,
+    lock_owner_role TEXT NOT NULL CHECK(lock_owner_role IN ('isso','architect','pm','admin')),
+    locked_by TEXT NOT NULL,
+    locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reason TEXT,
+    is_active INTEGER DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_dev_profile_locks_profile ON dev_profile_locks(profile_id, is_active);
+
+CREATE TABLE IF NOT EXISTS dev_profile_detections (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    project_id TEXT,
+    session_id TEXT,
+    repo_url TEXT,
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    detection_results TEXT NOT NULL,
+    accepted INTEGER DEFAULT 0,
+    accepted_by TEXT,
+    accepted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_dev_profile_detections_tenant ON dev_profile_detections(tenant_id);
 """
 
 # ---------------------------------------------------------------------------

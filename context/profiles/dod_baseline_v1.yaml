@@ -1,0 +1,145 @@
+# CUI // SP-CTI
+# DoD Baseline Development Profile v1
+# For DoD contractor teams building mission systems (IL4-IL6)
+name: "DoD Baseline"
+version: "1.0.0"
+description: "Default development standards for DoD contractor teams"
+applicable_to: [dod_team, si_enterprise, govcloud_full]
+impact_levels: [IL4, IL5, IL6]
+
+language:
+  primary: python
+  allowed: [python, java, go, rust]
+  forbidden: []
+  versions:
+    python: ">=3.11"
+    java: ">=17"
+    go: ">=1.22"
+    rust: ">=1.75"
+  package_managers:
+    python: uv
+    java: maven
+    go: go
+    rust: cargo
+  virtual_env_tool: uv
+  banned_packages: []
+  approved_registries: ["internal-pypi", "internal-maven"]
+
+style:
+  naming_convention: snake_case
+  indent_style: spaces
+  indent_size: 4
+  max_line_length: 100
+  docstring_format: google
+  import_order: isort
+  formatter:
+    python: ruff
+    java: google-java-format
+    go: gofmt
+    rust: rustfmt
+  linter:
+    python: ruff
+    java: checkstyle
+    go: golangci-lint
+    rust: clippy
+  trailing_commas: true
+  quote_style: double
+
+testing:
+  methodology: tdd
+  min_coverage: 80
+  require_bdd: true
+  require_unit: true
+  require_e2e: true
+  bdd_framework:
+    python: behave
+    java: cucumber-jvm
+    go: godog
+    rust: cucumber-rs
+  test_naming_pattern: "test_{description}"
+  flaky_test_policy: quarantine_and_fix
+
+architecture:
+  web_framework:
+    python: flask
+    java: spring-boot
+    go: gin
+    rust: actix-web
+  database: postgresql
+  orm:
+    python: sqlalchemy
+    java: hibernate
+  auth_pattern: oauth2_cac_piv
+  api_style: rest_openapi
+  container_base:
+    python: "python:3.12-alpine3.20"
+    java: "eclipse-temurin:17-jre-alpine"
+    go: "golang:1.22-alpine3.20"
+    rust: "rust:1.75-alpine3.20"
+  error_handling: structured_hierarchy
+  logging_format: structured_json
+  project_structure: layered
+
+security:
+  encryption_standard: fips_140_2
+  secret_management: aws_secrets_manager
+  sast_tools:
+    python: bandit
+    java: spotbugs
+    go: gosec
+    rust: cargo-audit
+  dependency_audit: true
+  container_hardening: stig
+  vulnerability_sla:
+    critical: "24h"
+    high: "7d"
+    medium: "30d"
+    low: "90d"
+  secret_rotation_days: 90
+  image_signing: true
+
+compliance:
+  frameworks: [nist_800_53, fedramp_high, cmmc_level_2, fips_199_200]
+  cui_required: true
+  audit_trail_required: true
+  classification_level: CUI
+  sbom_format: cyclonedx
+  ato_approach: cato
+
+operations:
+  deployment_target: kubernetes
+  container_runtime: containerd
+  ci_cd_platform: gitlab
+  monitoring_stack: [prometheus, grafana, elk, splunk]
+  region: us-gov-west-1
+  service_mesh: istio
+  network_policy: default_deny
+  backup_strategy: daily
+
+documentation:
+  readme_required: true
+  api_docs_required: true
+  adr_required: true
+  changelog_required: true
+  diagram_tool: mermaid
+  spec_format: markdown
+  runbook_required: true
+
+git:
+  branching_strategy: trunk_based
+  merge_strategy: squash
+  commit_format: "conventional_commits_with_scope"
+  branch_naming: "{type}-issue-{num}-icdev-{id}-{slug}"
+  min_approvals: 2
+  gpg_signing: required
+  pr_size_limit: 400
+  delete_branch_on_merge: true
+
+ai:
+  preferred_provider: bedrock
+  code_gen_model: claude-opus
+  compliance_model: claude-sonnet
+  token_budget_monthly: 5000000
+  attribution: required
+  byok_enabled: false
+  prompt_governance: centralized

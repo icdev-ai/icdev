@@ -159,7 +159,7 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 |--------|-----------|-------|
 | icdev-core | `.mcp.json` | project_create, project_list, project_status, task_dispatch, agent_status |
 | icdev-compliance | `.mcp.json` | ssp_generate, poam_generate, stig_check, sbom_generate, cui_mark, control_map, nist_lookup, cssp_assess, cssp_report, cssp_ir_plan, cssp_evidence, xacta_sync, xacta_export, sbd_assess, sbd_report, ivv_assess, ivv_report, rtm_generate, **crosswalk_query, fedramp_assess, fedramp_report, cmmc_assess, cmmc_report, oscal_generate, emass_sync, cato_monitor, pi_compliance, classification_check, fips199_categorize, fips200_validate, security_categorize** |
-| icdev-builder | `.mcp.json` | scaffold, generate_code, write_tests, run_tests, lint, format |
+| icdev-builder | `.mcp.json` | scaffold, generate_code, write_tests, run_tests, lint, format, dev_profile_create, dev_profile_get, dev_profile_resolve, dev_profile_detect |
 | icdev-infra | `.mcp.json` | terraform_plan, terraform_apply, ansible_run, k8s_deploy, pipeline_generate, rollback |
 | icdev-knowledge | `.mcp.json` | search_knowledge, add_pattern, get_recommendations, analyze_failure, self_heal |
 | icdev-maintenance | `.mcp.json` | scan_dependencies, check_vulnerabilities, run_maintenance_audit, remediate |
@@ -300,6 +300,7 @@ pytest tests/test_audit_logger.py -v                 # Audit logger tests
 pytest tests/test_init_icdev_db.py -v                # DB init tests
 pytest tests/test_platform_db.py -v                  # Platform DB tests
 pytest tests/test_readiness_scorer.py -v             # Readiness scorer tests
+pytest tests/test_dev_profile_manager.py -v          # Dev profile manager tests (33 tests)
 
 # Health check
 python tools/testing/health_check.py                 # Full system health check
@@ -392,7 +393,7 @@ python tools/installer/platform_setup.py --generate helm-values --modules core,l
 ### ICDEV Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (143 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV database (146 tables)
 
 # Database Migrations (D150)
 python tools/db/migrate.py --status [--json]                      # Show migration status
@@ -636,6 +637,24 @@ python tools/builder/language_support.py --list                          # List 
 python tools/builder/linter.py --project-dir "/path"
 python tools/builder/formatter.py --project-dir "/path"
 
+# Dev Profiles & Personalization (Phase 34)
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --create --template dod_baseline --json       # Create from template
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --create --data '{"language":{"primary":"go"}}' --created-by "admin" --json  # Create explicit
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --get --json                                  # Get current profile
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --get --version 2 --json                     # Get specific version
+python tools/builder/dev_profile_manager.py --scope project --scope-id "proj-123" --resolve --json                               # Resolve 5-layer cascade
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --update --changes '{"style":{"line_length":120}}' --change-summary "Update line length" --updated-by "admin" --json  # Update (new version)
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --lock --dimension-path "security" --lock-role isso --locked-by "isso@mil" --json   # Lock dimension
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --unlock --dimension-path "security" --unlocked-by "isso@mil" --role isso --json    # Unlock dimension
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --diff --v1 1 --v2 3 --json                   # Diff versions
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --rollback --target-version 1 --rolled-back-by "admin" --json  # Rollback (creates new version)
+python tools/builder/dev_profile_manager.py --scope project --scope-id "proj-123" --inject --task-type code_generation --json    # LLM injection context
+python tools/builder/dev_profile_manager.py --scope tenant --scope-id "tenant-abc" --history --json                              # Version history
+python tools/builder/profile_detector.py --repo-path /path/to/repo --json                    # Auto-detect from repo
+python tools/builder/profile_detector.py --text "We use Go, snake_case, 120-char lines" --json  # Detect from text
+python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --json     # Generate PROFILE.md
+python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --output /path/PROFILE.md --store  # Generate + store in DB
+
 # Maintenance Audit
 python tools/maintenance/dependency_scanner.py --project-id "proj-123"           # Scan all deps
 python tools/maintenance/vulnerability_checker.py --project-id "proj-123"        # Check CVEs
@@ -734,6 +753,7 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /activity          — Merged activity feed (audit + hook events, WebSocket + polling)
 #   /usage             — Usage tracking + cost dashboard (per-user, per-provider)
 #   /profile           — User profile + BYOK LLM key management
+#   /dev-profiles      — Dev profile management (create, resolve cascade, lock, version history)
 #   /admin/users       — Admin user/key management (admin role only)
 # Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
 # RBAC: 5 roles (admin, pm, developer, isso, co) — D172
@@ -850,7 +870,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 143 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178) |
+| `data/icdev.db` | 146 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -887,6 +907,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/spec_config.yaml` | Spec-kit pattern configuration (D156-D161): quality checklist, constitution, clarification (max questions, impact/uncertainty levels), spec directory structure, parallel markers |
 | `args/skill_injection_config.yaml` | Selective skill injection (D167): 9 category definitions with keywords→commands/goals/context_dirs, file_extension_map, path_pattern_map, always_include, confidence_threshold |
 | `args/memory_config.yaml` | Time-decay memory ranking (D168): per-type half-lives (fact=90d, preference=180d, event=7d, insight=30d, task=14d, relationship=120d), scoring weights (relevance=0.60, recency=0.25, importance=0.15), importance resistance threshold |
+| `args/dev_profile_config.yaml` | Dev profile dimensions (D184): 10 dimension categories (language, style, testing, architecture, security, compliance, operations, documentation, git, ai), cascade rules, detection keywords, intake signals, task-dimension mapping |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1061,6 +1082,12 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **D176:** BYOK injection via `api_key_override` field on `LLMRequest` — router passes override to provider, provider uses it before config/env fallback
 - **D177:** Usage tracking extends `agent_token_usage` table with `user_id` column (nullable for backward compat). Cost dashboard aggregates by user and provider
 - **D178:** BYOK disabled by default (`ICDEV_BYOK_ENABLED=false`). When enabled, users see an "LLM Keys" section in their profile. Admin can enable/disable per-tenant
+- **D183:** Version-based immutability — no UPDATE on `dev_profiles`, insert new version (consistent with D6 append-only)
+- **D184:** 5-layer deterministic cascade (Platform → Tenant → Program → Project → User) — locked dimensions skip-propagate (child cannot override locked parent)
+- **D185:** Auto-detection is advisory only — detected profile dimensions require human acceptance (consistent with D110 compliance auto-detection)
+- **D186:** PROFILE.md generated from dev_profile via Jinja2 (consistent with D50 dynamic CLAUDE.md) — read-only narrative, not separately editable
+- **D187:** LLM injection uses selective dimension extraction per task context (consistent with D167 skill injection) — code gen gets language+style, review gets testing+security
+- **D188:** Starter templates in `context/profiles/*.yaml` (consistent with `context/requirements/default_constitutions.json`) — 6 sector-specific templates (DoD, FedRAMP, Healthcare, Financial, Law Enforcement, Startup)
 
 ### Self-Healing System
 - **Confidence ≥ 0.7** + auto_healable → auto-remediate
@@ -1160,6 +1187,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | CLI Capabilities | `goals/cli_capabilities.md` | Optional Claude CLI features: CI/CD pipeline automation, parallel agent execution, container-based execution, scripted batch intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |
 | Remote Command Gateway | `goals/remote_command_gateway.md` | Remote Command Gateway: messaging channel integration (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware response filtering, user binding ceremony, air-gapped/connected mode, command allowlist (Phase 28) |
 | Modular Installation | `goals/modular_installation.md` | Modular installer: interactive wizard, profile-based deployment (10 profiles), compliance posture configuration, platform artifact generation (Docker/K8s/Helm), module dependency resolution, add/upgrade existing installations (Phase 33) |
+| Dev Profiles | `goals/dev_profiles.md` | Tenant dev profiles & personalization: 5-layer cascade (Platform→Tenant→Program→Project→User), role-based lock governance, auto-detection from codebases, PROFILE.md generation, LLM prompt injection, 6 starter templates, version history with diff/rollback (Phase 34) |
 
 ---
 

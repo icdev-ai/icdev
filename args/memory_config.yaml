@@ -1,5 +1,6 @@
 # CUI // SP-CTI
-# Memory System Configuration — time-decay and ranking settings (D147)
+# Memory System Configuration — time-decay, dedup, auto-capture, maintenance
+# (D147, D179-D182)
 ---
 
 time_decay:
@@ -12,6 +13,7 @@ time_decay:
     insight: 30       # Medium — insights remain useful for ~1 month
     task: 14          # Short-medium — task context relevant during sprint
     relationship: 120 # Long-lived — people/system relationships persist
+    thinking: 3       # Very short — reasoning traces decay rapidly (D182)
 
   # Default half-life for unknown memory types
   default_half_life: 30
@@ -28,3 +30,26 @@ time_decay:
   # Override: if importance >= this threshold, halve the decay effect
   # (very important memories resist decay)
   importance_decay_resistance_threshold: 8
+
+# Content deduplication (D179)
+deduplication:
+  enabled: true
+  hash_algorithm: "sha256"    # SHA-256 content hash before INSERT
+
+# Auto-capture settings (D181)
+auto_capture:
+  enabled: true
+  buffer_flush_threshold: 100   # Flush when buffer exceeds this count
+  default_importance: 3         # Importance for auto-captured entries
+  max_content_length: 2000      # Truncate captured content to this length
+
+# Maintenance pipeline settings (D179-D182)
+maintenance:
+  enabled: true
+  prune_stale_days: 180         # Prune low-importance entries older than this
+  prune_min_importance: 3       # Only prune entries with importance <= this
+  prune_types:                  # Only prune these memory types
+    - event
+    - thinking
+  embed_batch_size: 20          # Batch size for embedding generation
+  backup_before_prune: true     # Backup memory.db before pruning
