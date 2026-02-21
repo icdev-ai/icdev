@@ -1,0 +1,79 @@
+# CUI // SP-CTI
+# ICDEV Platform CI/CD Pipeline
+# Classification: CUI // SP-CTI
+
+stages:
+  - lint
+  - test
+  - security
+  - bdd
+  - docker
+  - helm
+
+default:
+  image: python:3.11-slim
+  before_script:
+    - pip install --quiet -r requirements.txt
+
+lint:
+  stage: lint
+  script:
+    - pip install ruff
+    - ruff check tools/ tests/ --select E,F,W
+  allow_failure: false
+
+test:unit:
+  stage: test
+  script:
+    - pytest tests/ -v --tb=short --ignore=tests/e2e --junitxml=report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+
+security:bandit:
+  stage: security
+  script:
+    - pip install bandit
+    - bandit -r tools/ -ll -f json -o bandit-report.json
+  artifacts:
+    when: always
+    paths:
+      - bandit-report.json
+  allow_failure: true
+
+bdd:
+  stage: bdd
+  script:
+    - pip install behave
+    - behave features/ --no-capture --format json -o behave-report.json || true
+  artifacts:
+    when: always
+    paths:
+      - behave-report.json
+  allow_failure: true
+
+docker:build:
+  stage: docker
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script: []
+  script:
+    - docker build -f docker/Dockerfile.agent-base -t icdev/agent-base:test .
+    - docker build -f docker/Dockerfile.dashboard -t icdev/dashboard:test .
+    - docker build -f docker/Dockerfile.orchestrator -t icdev/orchestrator:test .
+    - docker build -f docker/Dockerfile.architect -t icdev/architect:test .
+    - docker build -f docker/Dockerfile.builder -t icdev/builder:test .
+    - docker build -f docker/Dockerfile.compliance -t icdev/compliance:test .
+    - docker build -f docker/Dockerfile.security -t icdev/security:test .
+    - docker build -f docker/Dockerfile.infrastructure -t icdev/infrastructure:test .
+
+helm:lint:
+  stage: helm
+  image: alpine/helm:latest
+  before_script: []
+  script:
+    - helm lint deploy/helm/
+    - helm template icdev deploy/helm/ > /dev/null
+# CUI // SP-CTI

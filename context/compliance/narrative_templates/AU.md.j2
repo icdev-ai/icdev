@@ -1,0 +1,106 @@
+<!-- CUI // SP-CTI -->
+## {{ control_id }} — {{ control_title }}
+
+### Implementation Status
+
+**Status:** {{ status }}
+**Family:** {{ family }}
+
+### Implementation Narrative
+
+{% if implementation_detail %}
+{{ implementation_detail }}
+{% else %}
+This control has not yet been fully documented. Evidence gathering is in progress.
+{% endif %}
+
+### Audit Event Types Captured
+
+{% if control_id == "AU-2" or control_id.startswith("AU-2(") %}
+The system is configured to audit the following event types in accordance with NIST 800-53 AU-2 and organizational policy:
+
+- **Authentication Events:** Successful and failed login attempts, account lockouts, password changes, MFA challenges, and session establishment/termination.
+- **Authorization Events:** Access control decisions (grants and denials), privilege escalation attempts, role changes, and permission modifications.
+- **Data Events:** Creation, modification, deletion, and access of CUI/sensitive records. Bulk data exports and database queries exceeding defined thresholds.
+- **System Events:** System startup and shutdown, service start/stop, configuration changes, software installation/removal, and patch application.
+- **Administrative Events:** Account creation/modification/deletion, security policy changes, audit configuration changes, and security group modifications.
+- **Network Events:** Firewall rule changes, VPN connections, network segmentation changes, and anomalous traffic patterns.
+
+Audit events are generated with sufficient detail to establish what type of event occurred, when it occurred, where it occurred, the source of the event, the outcome, and the identity of any individuals or subjects associated with the event.
+{% else %}
+Auditable event types are defined under AU-2. This control ({{ control_id }}) supports the overall audit capability.
+{% endif %}
+
+### Log Retention Policy
+
+{% if control_id == "AU-11" or control_id.startswith("AU-11(") %}
+Audit records are retained in accordance with the following policy:
+
+- **Online Retention:** Audit logs are retained in active storage for a minimum of 90 days, accessible for real-time analysis and incident response.
+- **Archive Retention:** After the online retention period, logs are archived to immutable storage (e.g., AWS S3 Glacier with Object Lock) for the organizationally defined retention period (minimum 1 year for IL4/IL5, 5 years for IL6).
+- **Integrity Protection:** Archived logs are cryptographically hashed (SHA-256) at time of archival. Integrity is verified periodically and upon retrieval.
+- **Disposal:** Audit records are disposed of only after the full retention period has elapsed and in accordance with the organizationally defined media sanitization procedures.
+
+The audit trail is append-only and immutable. No UPDATE or DELETE operations are permitted on audit tables.
+{% else %}
+Log retention policies are defined under AU-11. This control ({{ control_id }}) operates within the established retention framework.
+{% endif %}
+
+### Audit Review Procedures
+
+{% if control_id == "AU-6" or control_id.startswith("AU-6(") %}
+Audit records are reviewed and analyzed through the following procedures:
+
+- **Review Frequency:** Audit logs are reviewed at least weekly for indicators of inappropriate or unusual activity. High-severity events trigger immediate review.
+- **Automated Analysis:** Automated tools correlate audit records across multiple sources to detect anomalous patterns, policy violations, and potential security incidents.
+- **Escalation:** Findings from audit review are reported to the organizationally defined personnel or roles. Critical findings are escalated to the ISSO and incident response team within the defined timeframe.
+- **Documentation:** Audit review activities, findings, and resulting actions are documented and retained as part of the security assessment record.
+- **Adjustment:** Audit review frequency and scope are adjusted based on threat intelligence, risk assessment changes, and lessons learned from previous incidents.
+{% else %}
+Audit review procedures are documented under AU-6. This control ({{ control_id }}) contributes to the overall audit review and analysis capability.
+{% endif %}
+
+### SIEM Integration Status
+
+The system integrates with Security Information and Event Management (SIEM) infrastructure as follows:
+
+- **SIEM Platform:** Logs are forwarded to the organizationally approved SIEM solution (e.g., Splunk, ELK Stack) for centralized correlation and analysis.
+- **Log Forwarding:** Real-time log forwarding is configured using syslog (TLS-encrypted) or direct API integration. All audit event types defined in AU-2 are forwarded.
+- **Correlation Rules:** SIEM correlation rules are configured to detect known attack patterns, policy violations, and anomalous behavior. Rules are reviewed and updated quarterly.
+- **Alerting:** Automated alerts are configured for high-severity events including unauthorized access attempts, privilege escalation, data exfiltration indicators, and audit system failures.
+- **Dashboard:** SIEM dashboards provide near-real-time visibility into security posture, audit event trends, and compliance status.
+
+### Evidence
+
+{% if evidence_items %}
+{% for item in evidence_items %}
+- **{{ item.source }}** ({{ item.date | default("N/A") }}): {{ item.description }}
+{% endfor %}
+{% else %}
+No formal evidence has been collected for this control.
+{% endif %}
+
+### Assessment History
+
+{% if audit_events %}
+| Date | Actor | Action |
+|------|-------|--------|
+{% for event in audit_events[:10] %}
+| {{ event.created_at | default("N/A") }} | {{ event.actor | default("system") }} | {{ event.action | default("") }} |
+{% endfor %}
+{% else %}
+No assessment history available.
+{% endif %}
+
+### Related Framework Mappings
+
+{% if crosswalk_mappings %}
+{% for mapping in crosswalk_mappings %}
+- **{{ mapping.framework }}**: {{ mapping.requirement_id }} ({{ mapping.status | default("not_assessed") }})
+{% endfor %}
+{% else %}
+No crosswalk mappings available for this control.
+{% endif %}
+
+---
+*CUI // SP-CTI — Generated by ICDEV Narrative Generator*

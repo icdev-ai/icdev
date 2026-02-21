@@ -358,9 +358,9 @@ def configure_tls(namespace, tls_cert, tls_key):
                     .issuer_name(issuer)
                     .public_key(private_key.public_key())
                     .serial_number(x509.random_serial_number())
-                    .not_valid_before(datetime.datetime.utcnow())
+                    .not_valid_before(datetime.datetime.now(datetime.timezone.utc))
                     .not_valid_after(
-                        datetime.datetime.utcnow() + datetime.timedelta(days=365))
+                        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=365))
                     .sign(private_key, hashes.SHA256())
                 )
 

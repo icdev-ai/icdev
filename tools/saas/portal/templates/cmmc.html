@@ -1,0 +1,498 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "cmmc" %}
+{% block title %}CMMC Assessment - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('portal.compliance') }}">Compliance</a>
+    <span class="separator">/</span>
+    <span class="current"><span data-glossary="CMMC">CMMC</span> Assessment</span>
+</nav>
+<div class="page-header">
+    <h1><span data-glossary="CMMC">CMMC</span> Self-Assessment</h1>
+    <p>Cybersecurity Maturity Model Certification — assess your project against CMMC Level 2/3 practices</p>
+</div>
+
+<!-- Step Indicator -->
+<div class="cmmc-steps" role="navigation" aria-label="Assessment steps">
+    <div class="step active" data-step="1">
+        <span class="step-number">1</span>
+        <span class="step-label">Select Project</span>
+    </div>
+    <div class="step" data-step="2">
+        <span class="step-number">2</span>
+        <span class="step-label">Domain Overview</span>
+    </div>
+    <div class="step" data-step="3">
+        <span class="step-number">3</span>
+        <span class="step-label">Run Assessment</span>
+    </div>
+    <div class="step" data-step="4">
+        <span class="step-number">4</span>
+        <span class="step-label">Results</span>
+    </div>
+    <div class="step" data-step="5">
+        <span class="step-number">5</span>
+        <span class="step-label">Export</span>
+    </div>
+</div>
+
+<!-- Step 1: Select Project -->
+<div class="cmmc-panel" id="cmmc-step-1">
+    <div class="card">
+        <h2>Select a Project</h2>
+        <p>Choose which project to assess against <span data-glossary="CMMC">CMMC</span> practices.</p>
+        {% if projects %}
+        <div class="table-wrapper">
+            <table class="data-table" aria-label="Project list for CMMC assessment">
+                <thead>
+                    <tr>
+                        <th>Project</th>
+                        <th>Status</th>
+                        <th>Compliance Score</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in projects %}
+                    <tr>
+                        <td><strong>{{ p.name }}</strong></td>
+                        <td>
+                            <span class="badge {% if p.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}">
+                                {{ p.status }}
+                            </span>
+                        </td>
+                        <td>{{ p.compliance_score or 0 }}%</td>
+                        <td>
+                            <button class="btn btn-primary btn-sm" onclick="selectCmmcProject('{{ p.id }}', '{{ p.name }}')">
+                                Select
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="empty-state">No projects found. Create a project first to run a CMMC assessment.</p>
+        {% endif %}
+
+        <div class="form-group" style="margin-top: 1rem;">
+            <label for="cmmc-level">CMMC Level</label>
+            <select id="cmmc-level" class="form-select">
+                <option value="2" selected>Level 2 — Advanced (110 practices)</option>
+                <option value="3">Level 3 — Expert (130+ practices)</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Step 2: Domain Overview -->
+<div class="cmmc-panel" id="cmmc-step-2" style="display:none;">
+    <div class="card">
+        <h2>CMMC Domains</h2>
+        <p>Project: <strong id="cmmc-selected-project">—</strong></p>
+        <p>The assessment covers 14 CMMC security domains:</p>
+        <div class="cmmc-domains">
+            <div class="domain-card"><strong>AC</strong> Access Control</div>
+            <div class="domain-card"><strong>AT</strong> Awareness & Training</div>
+            <div class="domain-card"><strong>AU</strong> Audit & Accountability</div>
+            <div class="domain-card"><strong>CA</strong> Assessment & Authorization</div>
+            <div class="domain-card"><strong>CM</strong> Configuration Management</div>
+            <div class="domain-card"><strong>IA</strong> Identification & Authentication</div>
+            <div class="domain-card"><strong>IR</strong> Incident Response</div>
+            <div class="domain-card"><strong>MA</strong> Maintenance</div>
+            <div class="domain-card"><strong>MP</strong> Media Protection</div>
+            <div class="domain-card"><strong>PE</strong> Physical Protection</div>
+            <div class="domain-card"><strong>PS</strong> Personnel Security</div>
+            <div class="domain-card"><strong>RA</strong> Risk Assessment</div>
+            <div class="domain-card"><strong>SC</strong> System & Communications Protection</div>
+            <div class="domain-card"><strong>SI</strong> System & Information Integrity</div>
+        </div>
+        <div class="btn-group" style="margin-top: 1.5rem;">
+            <button class="btn btn-secondary" onclick="cmmcGoToStep(1)">Back</button>
+            <button class="btn btn-primary" onclick="cmmcGoToStep(3)">Continue to Assessment</button>
+        </div>
+    </div>
+</div>
+
+<!-- Step 3: Run Assessment -->
+<div class="cmmc-panel" id="cmmc-step-3" style="display:none;">
+    <div class="card">
+        <h2>Run Assessment</h2>
+        <p>Project: <strong id="cmmc-run-project">—</strong></p>
+        <p>Click below to run the automated <span data-glossary="CMMC">CMMC</span> assessment. This analyzes
+           your project's controls, configurations, and evidence against CMMC practices.</p>
+        <div id="cmmc-run-status" class="alert alert-info" style="display:none;">
+            Running assessment... this may take a few moments.
+        </div>
+        <div class="btn-group" style="margin-top: 1.5rem;">
+            <button class="btn btn-secondary" onclick="cmmcGoToStep(2)">Back</button>
+            <button class="btn btn-primary" id="cmmc-run-btn" onclick="runCmmcAssessment()">
+                Run CMMC Assessment
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Step 4: Results -->
+<div class="cmmc-panel" id="cmmc-step-4" style="display:none;">
+    <div class="card">
+        <h2>Assessment Results</h2>
+        <p>Project: <strong id="cmmc-results-project">—</strong></p>
+
+        <!-- Summary -->
+        <div class="summary-cards" style="margin: 1.5rem 0;">
+            <div class="summary-card">
+                <div class="card-label">Overall Score</div>
+                <div class="card-value" id="cmmc-score">—</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Gate Status</div>
+                <div class="card-value" id="cmmc-gate">—</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Practices Assessed</div>
+                <div class="card-value" id="cmmc-total">—</div>
+            </div>
+            <div class="summary-card">
+                <div class="card-label">Met</div>
+                <div class="card-value" id="cmmc-met">—</div>
+            </div>
+        </div>
+
+        <!-- Domain Breakdown -->
+        <h3>Domain Breakdown</h3>
+        <div class="table-wrapper">
+            <table class="data-table" id="cmmc-domain-table" aria-label="CMMC domain results">
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Practices</th>
+                        <th>Met</th>
+                        <th>Partially Met</th>
+                        <th>Not Met</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+                <tbody id="cmmc-domain-tbody">
+                    <!-- Populated by JS -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Findings -->
+        <h3 style="margin-top: 1.5rem;">Key Findings</h3>
+        <div id="cmmc-findings" class="findings-list">
+            <!-- Populated by JS -->
+        </div>
+
+        <div class="btn-group" style="margin-top: 1.5rem;">
+            <button class="btn btn-secondary" onclick="cmmcGoToStep(3)">Re-Run</button>
+            <button class="btn btn-primary" onclick="cmmcGoToStep(5)">Export Report</button>
+        </div>
+    </div>
+</div>
+
+<!-- Step 5: Export -->
+<div class="cmmc-panel" id="cmmc-step-5" style="display:none;">
+    <div class="card">
+        <h2>Export CMMC Report</h2>
+        <p>Download the assessment results in your preferred format.</p>
+        <div class="export-options" style="margin: 1.5rem 0;">
+            <button class="btn btn-primary" onclick="exportCmmcReport('json')">
+                Export JSON
+            </button>
+            <button class="btn btn-secondary" onclick="exportCmmcReport('csv')">
+                Export CSV
+            </button>
+            <button class="btn btn-secondary" onclick="exportCmmcReport('executive_summary')">
+                Executive Summary (Markdown)
+            </button>
+        </div>
+        <div id="cmmc-export-result" style="display:none;">
+            <h3>Export Complete</h3>
+            <pre id="cmmc-export-content" class="code-block" style="max-height:400px;overflow:auto;"></pre>
+        </div>
+        <div class="btn-group" style="margin-top: 1.5rem;">
+            <button class="btn btn-secondary" onclick="cmmcGoToStep(4)">Back to Results</button>
+            <button class="btn btn-secondary" onclick="cmmcGoToStep(1)">New Assessment</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+    .cmmc-steps {
+        display: flex;
+        justify-content: center;
+        gap: 0.5rem;
+        margin: 1.5rem 0;
+        flex-wrap: wrap;
+    }
+    .cmmc-steps .step {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        background: var(--card-bg, #161b22);
+        border: 1px solid var(--border-color, #30363d);
+        opacity: 0.5;
+        transition: opacity 0.2s;
+    }
+    .cmmc-steps .step.active {
+        opacity: 1;
+        border-color: #58a6ff;
+    }
+    .cmmc-steps .step.completed {
+        opacity: 0.8;
+        border-color: #3fb950;
+    }
+    .step-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: #30363d;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .step.active .step-number { background: #58a6ff; color: #0d1117; }
+    .step.completed .step-number { background: #3fb950; color: #0d1117; }
+    .step-label { font-size: 0.85rem; }
+    .cmmc-domains {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 0.75rem;
+        margin-top: 1rem;
+    }
+    .domain-card {
+        padding: 0.75rem 1rem;
+        border-radius: 6px;
+        background: var(--card-bg, #161b22);
+        border: 1px solid var(--border-color, #30363d);
+        font-size: 0.9rem;
+    }
+    .domain-card strong { color: #58a6ff; margin-right: 0.5rem; }
+    .btn-group { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .export-options { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .findings-list .finding-item {
+        padding: 0.75rem 1rem;
+        border-left: 3px solid #f0883e;
+        background: var(--card-bg, #161b22);
+        margin-bottom: 0.5rem;
+        border-radius: 0 4px 4px 0;
+    }
+    .findings-list .finding-item.met { border-left-color: #3fb950; }
+    .findings-list .finding-item.not-met { border-left-color: #f85149; }
+    .code-block {
+        background: #0d1117;
+        border: 1px solid #30363d;
+        padding: 1rem;
+        border-radius: 6px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+</style>
+<script>
+(function() {
+    "use strict";
+
+    var selectedProjectId = null;
+    var selectedProjectName = null;
+    var lastResults = null;
+
+    window.selectCmmcProject = function(projectId, projectName) {
+        selectedProjectId = projectId;
+        selectedProjectName = projectName;
+        document.getElementById("cmmc-selected-project").textContent = projectName;
+        document.getElementById("cmmc-run-project").textContent = projectName;
+        document.getElementById("cmmc-results-project").textContent = projectName;
+        cmmcGoToStep(2);
+    };
+
+    window.cmmcGoToStep = function(step) {
+        // Hide all panels
+        var panels = document.querySelectorAll(".cmmc-panel");
+        for (var i = 0; i < panels.length; i++) {
+            panels[i].style.display = "none";
+        }
+        // Show target panel
+        var target = document.getElementById("cmmc-step-" + step);
+        if (target) target.style.display = "block";
+        // Update step indicators
+        var steps = document.querySelectorAll(".cmmc-steps .step");
+        for (var j = 0; j < steps.length; j++) {
+            var stepNum = parseInt(steps[j].getAttribute("data-step"));
+            steps[j].classList.remove("active", "completed");
+            if (stepNum === step) {
+                steps[j].classList.add("active");
+            } else if (stepNum < step) {
+                steps[j].classList.add("completed");
+            }
+        }
+    };
+
+    window.runCmmcAssessment = function() {
+        if (!selectedProjectId) {
+            window.showToast("Please select a project first.", "warning");
+            return;
+        }
+
+        var level = document.getElementById("cmmc-level").value;
+        var statusEl = document.getElementById("cmmc-run-status");
+        var runBtn = document.getElementById("cmmc-run-btn");
+
+        statusEl.style.display = "block";
+        runBtn.disabled = true;
+        runBtn.textContent = "Running...";
+
+        window.apiCall("POST", "/api/v1/projects/" + selectedProjectId + "/cmmc", {
+            level: parseInt(level)
+        }).then(function(data) {
+            lastResults = data.cmmc || data;
+            renderCmmcResults(lastResults);
+            cmmcGoToStep(4);
+            window.showToast("CMMC assessment complete.", "success");
+        }).catch(function(err) {
+            statusEl.textContent = "Assessment failed. " + (err.message || "Please try again.");
+            statusEl.className = "alert alert-error";
+        }).finally(function() {
+            runBtn.disabled = false;
+            runBtn.textContent = "Run CMMC Assessment";
+        });
+    };
+
+    function renderCmmcResults(results) {
+        // Summary
+        var coverage = results.coverage_pct || results.coverage || 0;
+        document.getElementById("cmmc-score").textContent = coverage + "%";
+        document.getElementById("cmmc-gate").textContent = results.gate_status || "unknown";
+        document.getElementById("cmmc-total").textContent = results.total_practices || results.total_requirements || "—";
+
+        var met = 0;
+        if (results.status_counts) {
+            met = results.status_counts.met || results.status_counts.satisfied || 0;
+        }
+        document.getElementById("cmmc-met").textContent = met;
+
+        // Gate badge color
+        var gateEl = document.getElementById("cmmc-gate");
+        if (results.gate_status === "PASS") {
+            gateEl.style.color = "#3fb950";
+        } else {
+            gateEl.style.color = "#f85149";
+        }
+
+        // Domain breakdown
+        var tbody = document.getElementById("cmmc-domain-tbody");
+        tbody.innerHTML = "";
+
+        var domains = results.domain_scores || results.domains || [];
+        if (Array.isArray(domains)) {
+            for (var i = 0; i < domains.length; i++) {
+                var d = domains[i];
+                var row = document.createElement("tr");
+                row.innerHTML =
+                    "<td><strong>" + escapeHtml(d.domain || d.name || "") + "</strong></td>" +
+                    "<td>" + (d.total || 0) + "</td>" +
+                    "<td>" + (d.met || d.satisfied || 0) + "</td>" +
+                    "<td>" + (d.partially_met || d.partial || 0) + "</td>" +
+                    "<td>" + (d.not_met || d.not_satisfied || 0) + "</td>" +
+                    "<td>" + (d.score || d.coverage || 0) + "%</td>";
+                tbody.appendChild(row);
+            }
+        }
+
+        // Findings
+        var findingsEl = document.getElementById("cmmc-findings");
+        findingsEl.innerHTML = "";
+        var findings = results.findings || results.not_met_practices || [];
+        if (findings.length === 0) {
+            findingsEl.innerHTML = '<p class="empty-state">No critical findings. All assessed practices are met.</p>';
+        } else {
+            var limit = Math.min(findings.length, 20);
+            for (var j = 0; j < limit; j++) {
+                var f = findings[j];
+                var cls = (f.status === "met" || f.status === "satisfied") ? "met" : "not-met";
+                var item = document.createElement("div");
+                item.className = "finding-item " + cls;
+                item.innerHTML = "<strong>" + escapeHtml(f.practice_id || f.requirement_id || "") +
+                    "</strong> — " + escapeHtml(f.title || f.description || "") +
+                    " <span class='badge badge-" + (cls === "met" ? "success" : "danger") + "'>" +
+                    escapeHtml(f.status || "") + "</span>";
+                findingsEl.appendChild(item);
+            }
+        }
+    }
+    window.renderCmmcResults = renderCmmcResults;
+
+    window.exportCmmcReport = function(format) {
+        if (!lastResults) {
+            window.showToast("No results to export. Run an assessment first.", "warning");
+            return;
+        }
+
+        var content;
+        if (format === "json") {
+            content = JSON.stringify(lastResults, null, 2);
+        } else if (format === "csv") {
+            content = "practice_id,title,status,domain\n";
+            var items = lastResults.findings || lastResults.results || [];
+            for (var i = 0; i < items.length; i++) {
+                var it = items[i];
+                content += csvEscape(it.practice_id || it.requirement_id || "") + "," +
+                           csvEscape(it.title || "") + "," +
+                           csvEscape(it.status || "") + "," +
+                           csvEscape(it.domain || "") + "\n";
+            }
+        } else {
+            // Executive summary markdown
+            content = "# CMMC Assessment — Executive Summary\n\n";
+            content += "**Project:** " + (selectedProjectName || "—") + "\n";
+            content += "**Date:** " + new Date().toISOString().slice(0, 10) + "\n";
+            content += "**Level:** " + (document.getElementById("cmmc-level").value || "2") + "\n";
+            content += "**Coverage:** " + (lastResults.coverage_pct || 0) + "%\n";
+            content += "**Gate:** " + (lastResults.gate_status || "unknown") + "\n\n";
+            content += "## Domain Scores\n\n";
+            var ds = lastResults.domain_scores || lastResults.domains || [];
+            for (var k = 0; k < ds.length; k++) {
+                content += "- **" + (ds[k].domain || ds[k].name || "") + "**: " +
+                           (ds[k].score || ds[k].coverage || 0) + "%\n";
+            }
+            content += "\n---\n*CUI // SP-CTI — Generated by ICDEV CMMC Exporter*\n";
+        }
+
+        var resultEl = document.getElementById("cmmc-export-result");
+        var contentEl = document.getElementById("cmmc-export-content");
+        contentEl.textContent = content;
+        resultEl.style.display = "block";
+        window.showToast("Report exported as " + format + ".", "success");
+    };
+
+    function escapeHtml(str) {
+        var div = document.createElement("div");
+        div.appendChild(document.createTextNode(str || ""));
+        return div.innerHTML;
+    }
+
+    function csvEscape(val) {
+        val = String(val || "");
+        if (val.indexOf(",") !== -1 || val.indexOf('"') !== -1 || val.indexOf("\n") !== -1) {
+            return '"' + val.replace(/"/g, '""') + '"';
+        }
+        return val;
+    }
+})();
+</script>
+{% endblock %}

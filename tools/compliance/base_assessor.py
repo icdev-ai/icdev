@@ -28,7 +28,7 @@ import json
 import sqlite3
 import sys
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -250,7 +250,7 @@ class BaseAssessor(ABC):
             # Run automated checks
             auto_checks = self.get_automated_checks(project, project_dir)
 
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             results = []
             status_counts = {s: 0 for s in self.STATUS_VALUES}
 
@@ -427,6 +427,72 @@ class BaseAssessor(ABC):
             conn.close()
 
     # -----------------------------------------------------------------
+    # Export (Enhancement #3 — auditor-friendly compliance exports)
+    # -----------------------------------------------------------------
+
+    def export_results(
+        self,
+        project_id: str,
+        output_dir: str = ".",
+        formats: str = "all",
+    ) -> Dict:
+        """Export assessment results to auditor-friendly formats.
+
+        Args:
+            project_id: Project to export results for.
+            output_dir: Directory to write exported files.
+            formats: Comma-separated list or 'all'. Options:
+                csv, executive_summary, evidence_package, poam, all.
+
+        Returns:
+            Dict with exported file paths.
+        """
+        # Get assessment data
+        assessment_data = self.assess(project_id)
+
+        try:
+            from tools.compliance.compliance_exporter import (
+                export_control_matrix,
+                export_executive_summary,
+                export_evidence_package,
+                export_poam_csv,
+            )
+        except ImportError:
+            return {
+                "error": "compliance_exporter not available",
+                "assessment": assessment_data,
+            }
+
+        out_dir = Path(output_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{self.FRAMEWORK_ID}_{project_id}"
+        exported = {}
+        fmt_set = set(f.strip() for f in formats.split(","))
+        do_all = "all" in fmt_set
+
+        if do_all or "csv" in fmt_set:
+            path = out_dir / f"{prefix}_controls.csv"
+            export_control_matrix(assessment_data, str(path))
+            exported["csv"] = str(path)
+
+        if do_all or "executive_summary" in fmt_set:
+            path = out_dir / f"{prefix}_executive_summary.md"
+            export_executive_summary(assessment_data, str(path))
+            exported["executive_summary"] = str(path)
+
+        if do_all or "evidence_package" in fmt_set:
+            path = out_dir / f"{prefix}_evidence.md"
+            export_evidence_package(assessment_data, str(path))
+            exported["evidence_package"] = str(path)
+
+        if do_all or "poam" in fmt_set:
+            path = out_dir / f"{prefix}_poam.csv"
+            export_poam_csv(assessment_data, str(path))
+            exported["poam"] = str(path)
+
+        return {"exported_files": exported, "framework": self.FRAMEWORK_ID}
+
+    # -----------------------------------------------------------------
     # CLI interface
     # -----------------------------------------------------------------
 
@@ -458,6 +524,14 @@ class BaseAssessor(ABC):
         parser.add_argument(
             "--db-path", type=Path, default=None,
             help="Database path override",
+        )
+        parser.add_argument(
+            "--export",
+            help="Export results to files. Formats: csv, executive_summary, evidence_package, poam, all",
+        )
+        parser.add_argument(
+            "--output-dir", default=".",
+            help="Output directory for exported files (used with --export)",
         )
         args = parser.parse_args()
 
@@ -496,6 +570,26 @@ class BaseAssessor(ABC):
                         if count > 0:
                             print(f"  {status}: {count}")
                     print(f"{'=' * 65}")
+
+            # Handle --export flag
+            if args.export:
+                export_result = self.export_results(
+                    args.project_id,
+                    output_dir=args.output_dir,
+                    formats=args.export,
+                )
+                if args.json:
+                    print(json.dumps(export_result, indent=2))
+                else:
+                    exported = export_result.get("exported_files", {})
+                    if exported:
+                        print(f"\nExported {len(exported)} file(s):")
+                        for fmt, path in exported.items():
+                            print(f"  {fmt}: {path}")
+                    else:
+                        print("\nNo files exported.")
+                        if "error" in export_result:
+                            print(f"  Error: {export_result['error']}")
 
         except (FileNotFoundError, ValueError) as e:
             print(f"ERROR: {e}", file=sys.stderr)

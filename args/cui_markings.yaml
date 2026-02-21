@@ -1,6 +1,8 @@
 # CUI Classification Marking Configuration
 # Applied to all ICDEV-generated artifacts per DoD CUI Program
 
+enabled: false
+
 banner_top: "CUI // SP-CTI"
 banner_bottom: "CUI // SP-CTI"
 

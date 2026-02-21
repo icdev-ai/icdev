@@ -256,9 +256,36 @@ routing:
     chain: [claude-sonnet, gpt-4o, codestral-local]
     effort: low
 
+  narrative_generation:
+    chain: [claude-sonnet, gpt-4o, llama-local]
+    effort: high
+
+  compliance_export:
+    chain: [claude-sonnet, gpt-4o-mini, llama-local]
+    effort: medium
+
   default:
     chain: [claude-sonnet, gpt-4o, llama-local]
     effort: medium
+
+# -----------------------------------------------------------------------
+# Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)
+# -----------------------------------------------------------------------
+agent_effort_defaults:
+  orchestrator-agent: high
+  architect-agent: max
+  builder-agent: max
+  compliance-agent: high
+  security-agent: high
+  infra-agent: medium
+  knowledge-agent: medium
+  monitor-agent: low
+  mbse-agent: high
+  modernization-agent: medium
+  requirements-agent: medium
+  supply-chain-agent: medium
+  simulation-agent: high
+  devsecops-agent: high
 
 # -----------------------------------------------------------------------
 # Embedding Configuration

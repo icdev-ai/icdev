@@ -21,7 +21,7 @@ import sqlite3
 import sys
 import textwrap
 from collections import OrderedDict, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -204,7 +204,7 @@ def _write_doc(filepath, content):
 
 def _now_iso():
     """Return the current UTC datetime as an ISO-formatted string."""
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 # ---------------------------------------------------------------------------

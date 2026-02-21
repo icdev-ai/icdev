@@ -21,7 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -497,7 +497,7 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
         - sync_start, sync_end timestamps
     """
     conn = _get_connection(db_path)
-    sync_start = datetime.utcnow().isoformat() + "Z"
+    sync_start = datetime.now(timezone.utc).isoformat() + "Z"
 
     try:
         _ensure_sync_tables(conn)
@@ -543,7 +543,7 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
         else:
             raise ValueError(f"Unknown sync mode: {mode}. Must be api, export, or hybrid.")
 
-        summary["sync_end"] = datetime.utcnow().isoformat() + "Z"
+        summary["sync_end"] = datetime.now(timezone.utc).isoformat() + "Z"
         summary["status"] = "completed"
 
         # Determine the effective result status
@@ -591,7 +591,7 @@ def sync_to_emass(project_id, mode="hybrid", db_path=None):
             "error": str(e),
             "classification": "CUI // SP-CTI",
             "sync_start": sync_start,
-            "sync_end": datetime.utcnow().isoformat() + "Z",
+            "sync_end": datetime.now(timezone.utc).isoformat() + "Z",
         }
 
         # Best-effort logging on failure
@@ -701,7 +701,7 @@ def pull_ato_status(project_id, db_path=None):
             "authorizationTerminationDate": auth_result.get("authorizationTerminationDate", ""),
             "authorizationType": auth_result.get("authorizationType", ""),
             "systemLifecycle": auth_result.get("systemLifecycle", ""),
-            "pulled_at": datetime.utcnow().isoformat() + "Z",
+            "pulled_at": datetime.now(timezone.utc).isoformat() + "Z",
         }
 
         _log_audit(conn, project_id, "pull_ato_status", {

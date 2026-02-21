@@ -15,7 +15,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -104,7 +104,7 @@ def run_all_scans(
     aggregated = {
         "project_path": project_path,
         "project_id": project_id,
-        "scan_timestamp": datetime.utcnow().isoformat() + "Z",
+        "scan_timestamp": datetime.now(timezone.utc).isoformat() + "Z",
         "languages_detected": languages,
         "scans": {},
         "total_findings": 0,

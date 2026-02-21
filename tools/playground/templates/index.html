@@ -1,0 +1,46 @@
+<!-- CUI // SP-CTI -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICDEV Playground</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='playground.css') }}">
+</head>
+<body>
+    <div class="demo-banner">{{ demo_banner }}</div>
+    <div class="container">
+        <h1>ICDEV Playground</h1>
+        <p class="subtitle">Explore ICDEV compliance capabilities with pre-loaded sample data</p>
+        <div class="nav">
+            <a href="/" class="active">Home</a>
+            <a href="/compliance">Compliance</a>
+            <a href="/crosswalk">Crosswalk</a>
+            <a href="/assessment">Assessment</a>
+            <a href="/ssp-preview">SSP Preview</a>
+        </div>
+        <div class="cards-grid">
+            <div class="card feature-card">
+                <h3>Compliance Overview</h3>
+                <p>View compliance scores across 3 sample projects with NIST 800-53, FedRAMP, and CMMC frameworks.</p>
+                <p><a href="/compliance">Explore &rarr;</a></p>
+            </div>
+            <div class="card feature-card">
+                <h3>Control Crosswalk</h3>
+                <p>See how implementing one NIST control cascades to FedRAMP, CMMC, 800-171, CJIS, and HIPAA.</p>
+                <p><a href="/crosswalk">Explore &rarr;</a></p>
+            </div>
+            <div class="card feature-card">
+                <h3>CMMC + FedRAMP Assessment</h3>
+                <p>Pre-computed assessment results with domain/family scores and gap analysis.</p>
+                <p><a href="/assessment">Explore &rarr;</a></p>
+            </div>
+            <div class="card feature-card">
+                <h3>SSP Preview</h3>
+                <p>Sample System Security Plan rendered with CUI markings and control narratives.</p>
+                <p><a href="/ssp-preview">Explore &rarr;</a></p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

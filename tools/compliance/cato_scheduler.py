@@ -20,7 +20,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -112,7 +112,7 @@ def _compute_next_due(last_collected_str, automation_frequency):
     try:
         last_collected = datetime.fromisoformat(last_collected_str)
     except (ValueError, TypeError):
-        last_collected = datetime.utcnow() - timedelta(days=365)
+        last_collected = datetime.now(timezone.utc) - timedelta(days=365)
 
     return last_collected + timedelta(days=interval_days)
 
@@ -145,7 +145,7 @@ def schedule_collections(project_id, db_path=None):
             (project_id,),
         ).fetchall()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         schedule = []
 
         for row in rows:
@@ -290,7 +290,7 @@ def get_upcoming_collections(project_id, days=30, db_path=None):
         List of dicts with evidence details and days until due.
     """
     schedule = schedule_collections(project_id, db_path=db_path)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     cutoff = now + timedelta(days=days)
 
     upcoming = []
@@ -335,7 +335,7 @@ def get_overdue_collections(project_id, db_path=None):
         List of dicts with overdue evidence details and days overdue.
     """
     schedule = schedule_collections(project_id, db_path=db_path)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     overdue = []
     for item in schedule:
@@ -388,7 +388,7 @@ def generate_collection_calendar(project_id, db_path=None):
         and collections list.
     """
     schedule = schedule_collections(project_id, db_path=db_path)
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Build 12-week calendar
     weeks = []
@@ -432,7 +432,7 @@ def generate_collection_calendar(project_id, db_path=None):
 
     calendar = {
         "project_id": project_id,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "lookahead_weeks": 12,
         "overdue_count": len(overdue),
         "overdue": overdue,

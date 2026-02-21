@@ -25,7 +25,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter, defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -72,7 +72,7 @@ def _parse_time_range(time_range: str) -> dict:
     unit_map = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
     delta = timedelta(**{unit_map[unit]: value})
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     return {
         "start": (now - delta).isoformat() + "Z",
         "end": now.isoformat() + "Z",
@@ -377,7 +377,7 @@ def analyze_logs(source: str, query: str, time_range: str,
         "source": source,
         "query": query,
         "time_range": time_range,
-        "analyzed_at": datetime.utcnow().isoformat() + "Z",
+        "analyzed_at": datetime.now(timezone.utc).isoformat() + "Z",
         "total_logs": total,
         "severity_counts": dict(severity_counts),
         "error_rate": error_rate,
@@ -399,7 +399,7 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
     """Store analysis findings as metric snapshots in the database."""
     try:
         conn = _get_db(db_path)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         metrics = {
             "log_error_rate": analysis.get("error_rate", 0.0),

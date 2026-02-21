@@ -16,7 +16,7 @@ import hashlib
 import json
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -861,7 +861,7 @@ def generate_tests_from_requirements(project_id: str, output_dir: str = None,
         lines.append('"""Auto-generated test stubs from SysML/DOORS requirements.')
         lines.append("")
         lines.append(f"Project: {project_id}")
-        lines.append(f"Generated: {datetime.utcnow().isoformat()}Z")
+        lines.append(f"Generated: {datetime.now(timezone.utc).isoformat()}Z")
         lines.append(f"Total requirements: {test_count}")
         lines.append('"""')
         lines.append("")
@@ -931,7 +931,7 @@ def generate_all(project_id: str, language: str = "python",
         "project_id": project_id,
         "language": language,
         "output_dir": str(out_base),
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
         "blocks": {},
         "activities": {},
         "state_machines": {},

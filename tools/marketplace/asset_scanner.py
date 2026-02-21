@@ -42,7 +42,7 @@ import sqlite3
 import subprocess
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ def _gen_id(prefix="scan"):
 
 
 def _now():
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _record_scan(asset_id, version_id, gate_name, status, findings_count=0,

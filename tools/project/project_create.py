@@ -16,7 +16,7 @@ import json
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -229,7 +229,7 @@ def create_project(
             "frontend": tech_frontend,
             "database": tech_database,
         },
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
     if scaffold_result:

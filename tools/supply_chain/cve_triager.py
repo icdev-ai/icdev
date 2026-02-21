@@ -27,7 +27,7 @@ import os
 import sqlite3
 import sys
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -192,7 +192,7 @@ def triage_cve(project_id, cve_id, component, cvss_score, severity,
     if cvss_score < 0 or cvss_score > 10:
         raise ValueError("cvss_score must be between 0 and 10")
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     sla_hours = SLA_HOURS.get(severity, 720)
     sla_deadline = (now + timedelta(hours=sla_hours)).isoformat()
 
@@ -271,7 +271,7 @@ def update_triage(triage_id, status, remediation_plan=None, assigned_to=None,
             raise ValueError(f"Triage record '{triage_id}' not found.")
 
         d = dict(row)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Build update
         updates = ["triage_decision = ?"]
@@ -375,7 +375,7 @@ def check_sla(project_id, db_path=None):
             (project_id,),
         ).fetchall()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         total_open = len(rows)
         sla_compliant = 0
         sla_overdue = 0

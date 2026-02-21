@@ -195,6 +195,13 @@ class BedrockClient:
     """
 
     def __init__(self, config_path: Optional[str] = None, db_path: Optional[str] = None):
+        import warnings
+        warnings.warn(
+            "BedrockClient is deprecated. Use tools.llm.router.LLMRouter instead. "
+            "See D70 for migration guidance.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._region = os.environ.get("AWS_DEFAULT_REGION", "us-gov-west-1")
         self._db_path = Path(db_path) if db_path else DB_PATH
         self._models: Dict[str, Dict[str, Any]] = {}

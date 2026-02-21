@@ -61,7 +61,7 @@ import os
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -87,7 +87,7 @@ except ImportError:
         try:
             conn.execute(
                 "UPDATE marketplace_assets SET status = ?, updated_at = ? WHERE id = ?",
-                (status, datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), asset_id),
+                (status, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), asset_id),
             )
             conn.commit()
         finally:
@@ -101,7 +101,7 @@ except ImportError:
         try:
             conn.execute(
                 "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = ? WHERE id = ?",
-                (datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"), asset_id),
+                (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), asset_id),
             )
             conn.commit()
         finally:
@@ -147,7 +147,7 @@ def _gen_id(prefix="rev"):
 
 def _now():
     """ISO-8601 timestamp."""
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, project_id=None, details=None):
@@ -638,7 +638,7 @@ def escalate_review(review_id, escalation_reason, db_path=None):
         submitted_at = row["submitted_at"]
         try:
             submitted_dt = datetime.strptime(submitted_at, "%Y-%m-%dT%H:%M:%SZ")
-            days_pending = (datetime.utcnow() - submitted_dt).days
+            days_pending = (datetime.now(timezone.utc) - submitted_dt).days
         except (ValueError, TypeError):
             days_pending = -1
 

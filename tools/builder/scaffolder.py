@@ -1012,7 +1012,7 @@ logging, and checkpoint support.
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -1037,9 +1037,9 @@ class PipelineStep:
             Transformed data for the next step.
         """
         logger.info(f"Running step: {{self.name}}")
-        start = datetime.utcnow()
+        start = datetime.now(timezone.utc)
         result = self.func(data)
-        elapsed = (datetime.utcnow() - start).total_seconds()
+        elapsed = (datetime.now(timezone.utc) - start).total_seconds()
         logger.info(f"Step {{self.name}} completed in {{elapsed:.2f}}s")
         return result
 
@@ -1139,7 +1139,7 @@ def load(data: Any) -> Any:
     """
     logger.info(f"Loading data to destination")
     # TODO: Implement load logic
-    return {{"status": "loaded", "timestamp": datetime.utcnow().isoformat()}}
+    return {{"status": "loaded", "timestamp": datetime.now(timezone.utc).isoformat()}}
 
 
 def create_default_pipeline() -> Pipeline:

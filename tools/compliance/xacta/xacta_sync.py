@@ -16,7 +16,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -218,7 +218,7 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
         Dict with comprehensive sync results.
     """
     conn = _get_connection(db_path)
-    sync_start = datetime.utcnow().isoformat()
+    sync_start = datetime.now(timezone.utc).isoformat()
 
     try:
         # Load all project data
@@ -258,7 +258,7 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
             else:
                 summary["mode_used"] = "api"
 
-        summary["sync_end"] = datetime.utcnow().isoformat()
+        summary["sync_end"] = datetime.now(timezone.utc).isoformat()
         summary["status"] = "completed"
 
         # Update last sync timestamp
@@ -293,7 +293,7 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
             "status": "error",
             "error": str(e),
             "sync_start": sync_start,
-            "sync_end": datetime.utcnow().isoformat(),
+            "sync_end": datetime.now(timezone.utc).isoformat(),
         }
         try:
             _log_audit(conn, project_id, f"sync_failed_{mode}", {"error": str(e)})

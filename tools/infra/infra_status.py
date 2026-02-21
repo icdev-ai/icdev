@@ -7,7 +7,7 @@ import argparse
 import json
 import sqlite3
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -26,7 +26,7 @@ def get_status(project_id: str, db_path: Path = None) -> dict:
     conn = _get_db(db_path)
     status = {
         "project_id": project_id,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "environments": {},
         "recent_deployments": [],
         "active_alerts": [],

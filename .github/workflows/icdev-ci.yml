@@ -1,0 +1,87 @@
+# CUI // SP-CTI
+name: ICDEV CI
+
+on:
+  push:
+    branches: [master, main, "feature-*"]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check tools/ tests/ --select E,F,W
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -r requirements.txt
+      - run: pytest tests/ -v --tb=short --ignore=tests/e2e -x
+        env:
+          ICDEV_CUI_BANNER_ENABLED: "true"
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install bandit pip-audit
+      - run: bandit -r tools/ -ll -q
+      - run: pip install -r requirements.txt && pip-audit --skip-editable -q
+        continue-on-error: true
+
+  docker-build:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build agent-base
+        run: docker build -f docker/Dockerfile.agent-base -t icdev/agent-base:test .
+      - name: Build dashboard
+        run: docker build -f docker/Dockerfile.dashboard -t icdev/dashboard:test .
+      - name: Build orchestrator
+        run: docker build -f docker/Dockerfile.orchestrator -t icdev/orchestrator:test .
+      - name: Build architect
+        run: docker build -f docker/Dockerfile.architect -t icdev/architect:test .
+      - name: Build builder
+        run: docker build -f docker/Dockerfile.builder -t icdev/builder:test .
+      - name: Build compliance
+        run: docker build -f docker/Dockerfile.compliance -t icdev/compliance:test .
+      - name: Build security
+        run: docker build -f docker/Dockerfile.security -t icdev/security:test .
+      - name: Build infrastructure
+        run: docker build -f docker/Dockerfile.infrastructure -t icdev/infrastructure:test .
+
+  helm-lint:
+    name: Helm Chart Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: helm lint deploy/helm/
+      - name: Template validation
+        run: helm template icdev deploy/helm/ > /dev/null
+# CUI // SP-CTI

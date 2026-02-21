@@ -17,7 +17,7 @@ import sqlite3
 import subprocess
 import sys
 from dataclasses import dataclass, asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -134,7 +134,7 @@ def create_worktree(task_id: str, target_dir: str, classification: str = "CUI",
         "worktree_name": worktree_name,
         "agent_id": agent_id,
         "classification": classification,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }, indent=2))
 
     info = WorktreeInfo(
@@ -147,7 +147,7 @@ def create_worktree(task_id: str, target_dir: str, classification: str = "CUI",
         status="active",
         agent_id=agent_id,
         issue_number=issue_number,
-        created_at=datetime.utcnow().isoformat(),
+        created_at=datetime.now(timezone.utc).isoformat(),
     )
 
     _log_to_db(info, "active")

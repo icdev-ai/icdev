@@ -30,14 +30,15 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 logger = logging.getLogger("icdev.collaboration")
 
-# Graceful Bedrock import
+# Graceful LLM import (Enhancement #4 — Bedrock decoupling)
 try:
-    from tools.agent.bedrock_client import BedrockClient, BedrockRequest
-    _BEDROCK_AVAILABLE = True
+    from tools.llm.router import LLMRouter
+    from tools.llm.provider import LLMRequest
+    _LLM_AVAILABLE = True
 except ImportError:
-    _BEDROCK_AVAILABLE = False
-    BedrockClient = None
-    BedrockRequest = None
+    _LLM_AVAILABLE = False
+    LLMRouter = None
+    LLMRequest = None
 
 # Graceful audit import
 try:
@@ -89,27 +90,26 @@ def _load_prompt_template(template_name: str) -> str:
     return ""
 
 
-def _invoke_bedrock(system_prompt: str, user_prompt: str,
-                    agent_id: str = "", project_id: str = "",
-                    output_schema: dict = None) -> dict:
-    """Invoke Bedrock and parse JSON response. Returns parsed dict or fallback."""
-    if not _BEDROCK_AVAILABLE:
-        logger.warning("Bedrock unavailable — returning empty fallback")
+def _invoke_llm(system_prompt: str, user_prompt: str,
+                agent_id: str = "", project_id: str = "",
+                output_schema: dict = None) -> dict:
+    """Invoke LLM via router and parse JSON response. Returns parsed dict or fallback."""
+    if not _LLM_AVAILABLE:
+        logger.warning("LLM router unavailable — returning empty fallback")
         return {}
 
-    client = BedrockClient()
-    request = BedrockRequest(
+    router = LLMRouter()
+    request = LLMRequest(
         messages=[{"role": "user", "content": [{"type": "text", "text": user_prompt}]}],
         system_prompt=system_prompt,
         agent_id=agent_id,
         project_id=project_id,
-        model_preference="sonnet-4-5",
         effort="medium",
         max_tokens=4096,
         output_schema=output_schema,
         classification="CUI",
     )
-    resp = client.invoke(request)
+    resp = router.invoke("collaboration", request)
 
     # Try structured output first, then parse content as JSON
     if resp.structured_output:
@@ -206,7 +206,7 @@ def reviewer_pattern(producer_output: dict, reviewer_agent_id: str,
         }, indent=2)
 
         # Invoke Bedrock for review decision
-        decision = _invoke_bedrock(
+        decision = _invoke_llm(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             agent_id=reviewer_agent_id,
@@ -327,7 +327,7 @@ def debate_pattern(topic: str, agent_ids: List[str], project_id: str,
                 "previous_positions": previous_positions_text,
             }, indent=2)
 
-            result = _invoke_bedrock(
+            result = _invoke_llm(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 agent_id=agent_id,
@@ -463,7 +463,7 @@ def consensus_pattern(proposal: dict, voter_agent_ids: List[str],
             "threshold": threshold,
         }, indent=2)
 
-        result = _invoke_bedrock(
+        result = _invoke_llm(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             agent_id=agent_id,
@@ -591,7 +591,7 @@ def veto_pattern(output: dict, authority_agent_id: str, topic: str,
         "content": output,
     }, indent=2)
 
-    decision = _invoke_bedrock(
+    decision = _invoke_llm(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         agent_id=authority_agent_id,

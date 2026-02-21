@@ -37,7 +37,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -1223,7 +1223,7 @@ def run_fedramp_assessment(
         else:
             can_auto_check = False
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         results = []
         family_cache = {}  # Cache auto-check results per family/control
 

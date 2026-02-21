@@ -23,7 +23,7 @@ import os
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -280,7 +280,7 @@ def assess_vendor(project_id, vendor_id, db_path=None):
 
         # Store assessment
         assessment_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Build mitigations text from recommendations
         mitigations = json.dumps(recommendations)

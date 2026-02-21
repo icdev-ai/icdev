@@ -188,16 +188,18 @@
         try {
             var data = await apiCall("POST", API_BASE + "/keys", { name: keyName });
 
-            if (data.key) {
+            // REST API returns { key: { id, key, prefix, name, ... } }
+            var rawKey = (data.key && data.key.key) ? data.key.key : data.key;
+            if (rawKey) {
                 // Show the key in the modal
                 var modal = document.getElementById("key-modal");
                 var keyDisplay = document.getElementById("modal-key-value");
                 if (modal && keyDisplay) {
-                    keyDisplay.textContent = data.key;
+                    keyDisplay.textContent = rawKey;
                     modal.style.display = "flex";
                 } else {
                     // Fallback: reload page with key shown
-                    window.location.href = "/portal/keys?new_key=" + encodeURIComponent(data.key);
+                    window.location.href = "/portal/keys?new_key=" + encodeURIComponent(rawKey);
                 }
                 showToast("API key created successfully.", "success");
                 if (nameInput) nameInput.value = "";
@@ -666,6 +668,70 @@
     }
 
     // -----------------------------------------------------------------------
+    // LLM Provider Key Management (Phase 32)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Add a new LLM provider key via the REST API.
+     * @param {Event} event - Form submit event
+     */
+    async function addLlmKey(event) {
+        event.preventDefault();
+
+        var providerSelect = document.getElementById("llm-provider");
+        var labelInput = document.getElementById("llm-key-label");
+        var keyInput = document.getElementById("llm-api-key");
+
+        var provider = providerSelect ? providerSelect.value : "";
+        var keyLabel = labelInput ? labelInput.value.trim() : "";
+        var apiKey = keyInput ? keyInput.value.trim() : "";
+
+        if (!provider) {
+            showToast("Please select a provider.", "warning");
+            return;
+        }
+        if (!apiKey) {
+            showToast("API key is required.", "warning");
+            return;
+        }
+
+        try {
+            await apiCall("POST", API_BASE + "/llm-keys", {
+                provider: provider,
+                key_label: keyLabel || provider,
+                api_key: apiKey
+            });
+            showToast("LLM key added for " + provider + ".", "success");
+            // Clear form
+            if (providerSelect) providerSelect.value = "";
+            if (labelInput) labelInput.value = "";
+            if (keyInput) keyInput.value = "";
+            // Reload to show the new key in the table
+            setTimeout(function () {
+                window.location.reload();
+            }, 800);
+        } catch (err) {
+            // Error already shown by apiCall
+        }
+    }
+
+    /**
+     * Revoke an LLM provider key.
+     * @param {string} keyId - The LLM key ID to revoke
+     */
+    async function revokeLlmKey(keyId) {
+        try {
+            await apiCall("DELETE", API_BASE + "/llm-keys/" + keyId);
+            showToast("LLM key revoked.", "success");
+            setTimeout(function () {
+                window.location.reload();
+            }, 800);
+        } catch (err) {
+            // Error already shown by apiCall
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Export to global scope (for inline onclick handlers in templates)
     // -----------------------------------------------------------------------
     window.apiCall = apiCall;
@@ -677,5 +743,7 @@
     window.copyToClipboard = copyToClipboard;
     window.inviteUser = inviteUser;
     window.removeUser = removeUser;
+    window.addLlmKey = addLlmKey;
+    window.revokeLlmKey = revokeLlmKey;
 
 })();

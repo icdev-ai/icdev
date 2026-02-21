@@ -21,7 +21,7 @@ import importlib.util
 import json
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -297,7 +297,7 @@ def _collect_staleness_stats(conn, project_id):
 
 def _collect_vulnerability_stats(conn, project_id):
     """Query dependency_vulnerabilities for SLA compliance stats."""
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     rows = conn.execute(
         "SELECT severity, sla_category, sla_deadline, status, fix_available, "
         "exploit_available, cve_id, title FROM dependency_vulnerabilities "
@@ -347,7 +347,7 @@ def _generate_trend_analysis(conn, project_id, lookback_days=90):
     - score_trend: "improving" | "stable" | "degrading"
     - vulnerability_trend: "improving" | "stable" | "degrading"
     """
-    cutoff = (datetime.utcnow() - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%Y-%m-%d")
     rows = conn.execute(
         "SELECT audit_date, maintenance_score, total_dependencies, vulnerable_count, "
         "outdated_count, avg_staleness_days, critical_vulns, high_vulns "
@@ -436,7 +436,7 @@ def _generate_audit_report(audit_data, output_dir, project_name):
     Returns: report file path
     """
     cui = _load_cui_config()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     ts = now.strftime("%Y-%m-%d %H:%M UTC")
     score = audit_data.get("maintenance_score", 0)
     gate = audit_data.get("gate", {})

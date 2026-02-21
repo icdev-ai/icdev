@@ -43,7 +43,7 @@ import json
 import os
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -244,7 +244,7 @@ def register_system(
     boundary_def = boundary_definition or {}
     controls = baseline_controls or []
     connected = connected_systems or []
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Map ato_status to the DB ato_type enum
     status_to_type = {
@@ -395,7 +395,7 @@ def _ato_type_to_status(ato_type, ato_expiry):
     if ato_expiry:
         try:
             expiry_dt = datetime.fromisoformat(ato_expiry)
-            if expiry_dt < datetime.utcnow():
+            if expiry_dt < datetime.now(timezone.utc):
                 return "expired"
         except (ValueError, TypeError):
             pass
@@ -676,7 +676,7 @@ def assess_boundary_impact(
 
     # Create assessment ID
     assessment_id = _generate_id("bia")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Insert into boundary_impact_assessments table
     # Handle potential UNIQUE constraint (requirement_id, system_id)
@@ -966,7 +966,7 @@ def generate_alternatives(
         """UPDATE boundary_impact_assessments
            SET alternative_approach = ?, assessed_at = ?
            WHERE id = ?""",
-        (json.dumps(alternatives), datetime.utcnow().isoformat(), assessment_id),
+        (json.dumps(alternatives), datetime.now(timezone.utc).isoformat(), assessment_id),
     )
     conn.commit()
     conn.close()

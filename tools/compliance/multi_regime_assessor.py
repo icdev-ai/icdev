@@ -21,7 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -186,7 +186,7 @@ def assess_all(
 
     unified = {
         "project_id": project_id,
-        "assessment_date": datetime.utcnow().isoformat(),
+        "assessment_date": datetime.now(timezone.utc).isoformat(),
         "frameworks_assessed": total_frameworks,
         "framework_results": framework_summaries,
         "errors": errors,
@@ -247,7 +247,7 @@ def evaluate_all_gates(
         "overall_status": "compliant" if all_pass else "non_compliant",
         "frameworks_evaluated": len(gate_results),
         "gate_results": gate_results,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 

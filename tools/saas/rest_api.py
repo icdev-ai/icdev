@@ -16,6 +16,13 @@ Endpoint groups:
     /api/v1/keys              - API key management
     /api/v1/projects          - Project CRUD (delegates to existing tools)
     /api/v1/projects/<id>/... - Compliance & security (delegates to tools)
+    /api/v1/projects/<id>/devsecops - DevSecOps profile management
+    /api/v1/projects/<id>/zta - Zero Trust Architecture maturity
+    /api/v1/projects/<id>/simulations - Simulation scenario management
+    /api/v1/projects/<id>/mosa - MOSA assessment
+    /api/v1/projects/<id>/supply-chain/graph - Supply chain dependency graph
+    /api/v1/marketplace/search - Marketplace asset search
+    /api/v1/events            - SSE platform audit event stream
     /api/v1/usage             - Usage & billing data
 
 Usage:
@@ -24,13 +31,15 @@ Usage:
 """
 
 import hashlib
+import json as json_mod
 import logging
 import os
 import secrets
 import sqlite3
 import sys
+import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -40,7 +49,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request, stream_with_context
 
 logger = logging.getLogger("saas.rest_api")
 
@@ -267,6 +276,95 @@ def delete_user(user_id):
         return _error(str(exc), status=404)
     except Exception as exc:
         logger.error("delete_user error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# LLM PROVIDER KEY MANAGEMENT (Phase 32 — D141)
+# ============================================================================
+
+@api_bp.route("/llm-keys", methods=["POST"])
+def create_llm_key():
+    """POST /api/v1/llm-keys -- Store a new LLM provider key."""
+    role_err = _require_role("tenant_admin")
+    if role_err:
+        return role_err
+
+    data = request.get_json(force=True, silent=True) or {}
+    provider = data.get("provider", "").strip().lower()
+    api_key_value = data.get("api_key", "").strip()
+    key_label = data.get("key_label", "").strip()
+
+    if not provider:
+        return _error("provider is required")
+    if not api_key_value:
+        return _error("api_key is required")
+
+    try:
+        from tools.saas.tenant_llm_keys import store_tenant_llm_key
+        result = store_tenant_llm_key(
+            tenant_id=g.tenant_id,
+            provider=provider,
+            plaintext_key=api_key_value,
+            key_label=key_label or provider,
+            created_by=getattr(g, "user_id", None),
+        )
+        return jsonify({"llm_key": result}), 201
+    except ImportError as exc:
+        logger.error("create_llm_key import error: %s", exc)
+        return _error(
+            "LLM key management is not available. Missing dependency: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except RuntimeError as exc:
+        logger.error("create_llm_key runtime error: %s", exc)
+        return _error(str(exc), code="SERVICE_UNAVAILABLE", status=503)
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("create_llm_key error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/llm-keys", methods=["GET"])
+def list_llm_keys_route():
+    """GET /api/v1/llm-keys -- List LLM provider keys (redacted)."""
+    try:
+        from tools.saas.tenant_llm_keys import list_tenant_llm_keys
+        keys = list_tenant_llm_keys(g.tenant_id)
+        return jsonify({"llm_keys": keys, "total": len(keys)})
+    except ImportError as exc:
+        logger.error("list_llm_keys import error: %s", exc)
+        return _error(
+            "LLM key management is not available. Missing dependency: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except Exception as exc:
+        logger.error("list_llm_keys error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/llm-keys/<key_id>", methods=["DELETE"])
+def revoke_llm_key_route(key_id):
+    """DELETE /api/v1/llm-keys/<key_id> -- Revoke an LLM provider key."""
+    role_err = _require_role("tenant_admin")
+    if role_err:
+        return role_err
+
+    try:
+        from tools.saas.tenant_llm_keys import revoke_tenant_llm_key
+        success = revoke_tenant_llm_key(g.tenant_id, key_id)
+        if not success:
+            return _error("LLM key not found", code="NOT_FOUND", status=404)
+        return jsonify({"result": {"id": key_id, "status": "revoked"}})
+    except ImportError as exc:
+        logger.error("revoke_llm_key import error: %s", exc)
+        return _error(
+            "LLM key management is not available. Missing dependency: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except Exception as exc:
+        logger.error("revoke_llm_key error: %s", exc)
         return _error(str(exc), code="INTERNAL_ERROR", status=500)
 
 
@@ -592,6 +690,41 @@ def run_fips200(project_id):
 
 
 # ============================================================================
+# CMMC ASSESSMENT (Phase 4 — Enhancement #8)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/cmmc", methods=["POST"])
+def run_cmmc_assessment(project_id):
+    """POST /api/v1/projects/<id>/cmmc -- Run CMMC assessment."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        data = request.get_json(force=True, silent=True) or {}
+        level = data.get("level", 2)
+
+        from tools.compliance.cmmc_assessor import assess_cmmc
+        result = call_tool(
+            assess_cmmc, g.tenant_id,
+            project_id=project_id,
+            level=level,
+        )
+        return jsonify({"cmmc": result}), 201
+    except ImportError as exc:
+        logger.error("run_cmmc_assessment import error: %s", exc)
+        return _error(
+            "CMMC assessor not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("run_cmmc_assessment error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
 # SECURITY SCANNING
 # ============================================================================
 
@@ -695,11 +828,42 @@ def get_project_audit(project_id):
 
 @api_bp.route("/usage", methods=["GET"])
 def get_usage():
-    """GET /api/v1/usage -- Get usage records for the current tenant."""
+    """GET /api/v1/usage -- Get usage records for the current tenant.
+
+    Query parameters:
+        period: Filter window — ``7d``, ``30d``, or ``90d``.  If omitted,
+                all records are included (no time filter).
+        limit:  Maximum number of recent records to return (default 100,
+                capped at 500).
+    """
     try:
         conn = _platform_conn()
-        request.args.get("period", "day")
+        period = request.args.get("period", "").strip()
         limit = request.args.get("limit", 100, type=int)
+
+        # Validate and resolve period to a cutoff timestamp
+        period_map = {"7d": 7, "30d": 30, "90d": 90}
+        cutoff = None
+        if period:
+            days = period_map.get(period)
+            if days is None:
+                conn.close()
+                return _error(
+                    "Invalid period '{}'. Valid values: 7d, 30d, 90d".format(period),
+                    code="BAD_REQUEST",
+                    status=400,
+                )
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(days=days)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        # Build WHERE clause parts
+        where_parts = ["tenant_id = ?"]
+        params_base = [g.tenant_id]
+        if cutoff:
+            where_parts.append("recorded_at >= ?")
+            params_base.append(cutoff)
+        where_clause = " AND ".join(where_parts)
 
         # Summary statistics
         summary_row = conn.execute(
@@ -707,8 +871,8 @@ def get_usage():
                       COALESCE(SUM(tokens_used), 0) as total_tokens,
                       COALESCE(AVG(duration_ms), 0) as avg_duration_ms
                FROM usage_records
-               WHERE tenant_id = ?""",
-            (g.tenant_id,),
+               WHERE {}""".format(where_clause),
+            params_base,
         ).fetchone()
 
         # Top endpoints
@@ -716,11 +880,11 @@ def get_usage():
             """SELECT endpoint, COUNT(*) as call_count,
                       COALESCE(AVG(duration_ms), 0) as avg_ms
                FROM usage_records
-               WHERE tenant_id = ?
+               WHERE {}
                GROUP BY endpoint
                ORDER BY call_count DESC
-               LIMIT 10""",
-            (g.tenant_id,),
+               LIMIT 10""".format(where_clause),
+            params_base,
         ).fetchall()
 
         # Recent records
@@ -728,10 +892,10 @@ def get_usage():
             """SELECT endpoint, method, status_code, duration_ms,
                       tokens_used, recorded_at
                FROM usage_records
-               WHERE tenant_id = ?
+               WHERE {}
                ORDER BY recorded_at DESC
-               LIMIT ?""",
-            (g.tenant_id, min(limit, 500)),
+               LIMIT ?""".format(where_clause),
+            params_base + [min(limit, 500)],
         ).fetchall()
 
         conn.close()
@@ -739,6 +903,7 @@ def get_usage():
         return jsonify({
             "usage": {
                 "tenant_id": g.tenant_id,
+                "period": period or "all",
                 "summary": {
                     "total_api_calls": summary_row["total_calls"] if summary_row else 0,
                     "total_tokens": summary_row["total_tokens"] if summary_row else 0,
@@ -752,6 +917,371 @@ def get_usage():
     except Exception as exc:
         logger.error("get_usage error: %s", exc)
         return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# DEVSECOPS PROFILE (Phase 24)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/devsecops", methods=["GET"])
+def get_devsecops_profile(project_id):
+    """GET /api/v1/projects/<id>/devsecops -- Get DevSecOps profile."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        call_tool, _, _ = _import_tenant_db()
+        from tools.devsecops.profile_manager import get_profile
+        result = call_tool(get_profile, g.tenant_id, project_id=project_id)
+        return jsonify({"devsecops": result})
+    except ImportError as exc:
+        logger.error("get_devsecops_profile import error: %s", exc)
+        return _error(
+            "DevSecOps profile manager not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), code="NOT_FOUND", status=404)
+    except Exception as exc:
+        logger.error("get_devsecops_profile error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/devsecops", methods=["POST"])
+def create_devsecops_profile(project_id):
+    """POST /api/v1/projects/<id>/devsecops -- Create DevSecOps profile."""
+    role_err = _require_role("tenant_admin", "isso")
+    if role_err:
+        return role_err
+
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        call_tool, _, _ = _import_tenant_db()
+        from tools.devsecops.profile_manager import create_profile
+
+        data = request.get_json(force=True, silent=True) or {}
+        maturity_level = data.get("maturity_level")
+        stages = data.get("stages")
+        stage_configs = data.get("stage_configs")
+
+        result = call_tool(
+            create_profile, g.tenant_id,
+            project_id=project_id,
+            maturity_level=maturity_level,
+            stages=stages,
+            stage_configs=stage_configs,
+        )
+        return jsonify({"devsecops": result}), 201
+    except ImportError as exc:
+        logger.error("create_devsecops_profile import error: %s", exc)
+        return _error(
+            "DevSecOps profile manager not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("create_devsecops_profile error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# ZERO TRUST ARCHITECTURE (Phase 25)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/zta", methods=["GET"])
+def get_zta_maturity(project_id):
+    """GET /api/v1/projects/<id>/zta -- Score all ZTA pillars."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        call_tool, _, _ = _import_tenant_db()
+        from tools.devsecops.zta_maturity_scorer import score_all_pillars
+        result = call_tool(
+            score_all_pillars, g.tenant_id,
+            project_id=project_id,
+        )
+        return jsonify({"zta": result})
+    except ImportError as exc:
+        logger.error("get_zta_maturity import error: %s", exc)
+        return _error(
+            "ZTA maturity scorer not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), code="NOT_FOUND", status=404)
+    except Exception as exc:
+        logger.error("get_zta_maturity error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# MARKETPLACE SEARCH (Phase 22)
+# ============================================================================
+
+@api_bp.route("/marketplace/search", methods=["GET"])
+def search_marketplace():
+    """GET /api/v1/marketplace/search -- Search marketplace assets.
+
+    Query parameters:
+        q:            Search query string (required).
+        asset_type:   Filter by asset type (skill, goal, hardprompt, etc.).
+        impact_level: Filter by impact level (IL2, IL4, IL5, IL6).
+        limit:        Maximum results (default 50, capped at 200).
+    """
+    q = request.args.get("q", "").strip()
+    if not q:
+        return _error("Query parameter 'q' is required", code="BAD_REQUEST", status=400)
+
+    asset_type = request.args.get("asset_type")
+    impact_level = request.args.get("impact_level")
+    limit = request.args.get("limit", 50, type=int)
+    limit = min(max(limit, 1), 200)
+
+    try:
+        from tools.marketplace.search_engine import search_assets
+        result = search_assets(
+            query=q,
+            asset_type=asset_type,
+            impact_level=impact_level,
+            tenant_id=g.tenant_id,
+            limit=limit,
+        )
+        return jsonify({"marketplace": result})
+    except ImportError as exc:
+        logger.error("search_marketplace import error: %s", exc)
+        return _error(
+            "Marketplace search not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except Exception as exc:
+        logger.error("search_marketplace error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# SIMULATION SCENARIOS (RICOAS Phase 3)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/simulations", methods=["GET"])
+def list_simulations(project_id):
+    """GET /api/v1/projects/<id>/simulations -- List simulation scenarios."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        call_tool, _, _ = _import_tenant_db()
+        from tools.simulation.simulation_engine import list_scenarios
+        result = call_tool(
+            list_scenarios, g.tenant_id,
+            project_id=project_id,
+        )
+        return jsonify({"simulations": result})
+    except ImportError as exc:
+        logger.error("list_simulations import error: %s", exc)
+        return _error(
+            "Simulation engine not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), code="NOT_FOUND", status=404)
+    except Exception as exc:
+        logger.error("list_simulations error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/simulations", methods=["POST"])
+def create_simulation(project_id):
+    """POST /api/v1/projects/<id>/simulations -- Create a simulation scenario."""
+    role_err = _require_role("tenant_admin", "pm", "developer")
+    if role_err:
+        return role_err
+
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        data = request.get_json(force=True, silent=True) or {}
+        scenario_name = data.get("scenario_name", "").strip()
+        if not scenario_name:
+            return _error("scenario_name is required")
+
+        scenario_type = data.get("scenario_type", "what_if")
+        valid_types = ("what_if", "coa_comparison", "risk_analysis")
+        if scenario_type not in valid_types:
+            return _error(
+                "Invalid scenario_type '{}'. Valid: {}".format(
+                    scenario_type, ", ".join(valid_types)),
+                code="BAD_REQUEST", status=400,
+            )
+
+        modifications = data.get("modifications", {})
+        base_session_id = data.get("base_session_id")
+
+        call_tool, _, _ = _import_tenant_db()
+        from tools.simulation.simulation_engine import create_scenario
+        result = call_tool(
+            create_scenario, g.tenant_id,
+            project_id=project_id,
+            scenario_name=scenario_name,
+            scenario_type=scenario_type,
+            modifications=modifications,
+            base_session_id=base_session_id,
+        )
+        return jsonify({"simulation": result}), 201
+    except ImportError as exc:
+        logger.error("create_simulation import error: %s", exc)
+        return _error(
+            "Simulation engine not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("create_simulation error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# MOSA ASSESSMENT (Phase 26)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/mosa", methods=["GET"])
+def get_mosa_assessment(project_id):
+    """GET /api/v1/projects/<id>/mosa -- Run MOSA assessment."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        from tools.compliance.mosa_assessor import MOSAAssessor
+        assessor = MOSAAssessor()
+        # Inject tenant DB path for isolation
+        call_tool, _, _ = _import_tenant_db()
+        result = call_tool(
+            assessor.assess, g.tenant_id,
+            project_id=project_id,
+        )
+        return jsonify({"mosa": result})
+    except ImportError as exc:
+        logger.error("get_mosa_assessment import error: %s", exc)
+        return _error(
+            "MOSA assessor not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), code="NOT_FOUND", status=404)
+    except Exception as exc:
+        logger.error("get_mosa_assessment error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# SUPPLY CHAIN DEPENDENCY GRAPH (RICOAS Phase 2)
+# ============================================================================
+
+@api_bp.route("/projects/<project_id>/supply-chain/graph", methods=["GET"])
+def get_supply_chain_graph(project_id):
+    """GET /api/v1/projects/<id>/supply-chain/graph -- Build dependency graph."""
+    try:
+        _, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        call_tool, _, _ = _import_tenant_db()
+        from tools.supply_chain.dependency_graph import build_graph
+        result = call_tool(
+            build_graph, g.tenant_id,
+            project_id=project_id,
+        )
+        return jsonify({"supply_chain": result})
+    except ImportError as exc:
+        logger.error("get_supply_chain_graph import error: %s", exc)
+        return _error(
+            "Supply chain dependency graph not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), code="NOT_FOUND", status=404)
+    except Exception as exc:
+        logger.error("get_supply_chain_graph error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# PLATFORM EVENTS (SSE)
+# ============================================================================
+
+@api_bp.route("/events", methods=["GET"])
+def stream_platform_events():
+    """GET /api/v1/events -- SSE stream of platform audit events.
+
+    Returns ``text/event-stream`` that polls the ``audit_platform`` table
+    and emits new events as ``data:`` lines.  The stream sends a heartbeat
+    comment every 15 seconds to keep the connection alive.
+
+    Query parameters:
+        last_id: Resume from this audit event ID (default 0).
+    """
+    last_id = request.args.get("last_id", 0, type=int)
+    # Capture tenant_id before entering the generator — the Flask request
+    # context (and therefore ``g``) is not available inside the streaming
+    # generator function.
+    tenant_id = g.tenant_id
+
+    def _generate():
+        nonlocal last_id
+        # Limit iterations to prevent infinite loops in non-browser contexts
+        max_iterations = 600  # ~5 minutes at 0.5s sleep
+        iteration = 0
+        while iteration < max_iterations:
+            iteration += 1
+            try:
+                conn = _platform_conn()
+                rows = conn.execute(
+                    """SELECT id, tenant_id, actor, action, resource_type,
+                              resource_id, details, created_at
+                       FROM audit_platform
+                       WHERE id > ? AND (tenant_id = ? OR tenant_id IS NULL)
+                       ORDER BY id ASC
+                       LIMIT 50""",
+                    (last_id, tenant_id),
+                ).fetchall()
+                conn.close()
+
+                for row in rows:
+                    event_data = dict(row)
+                    last_id = event_data["id"]
+                    yield "data: {}\n\n".format(
+                        json_mod.dumps(event_data, default=str))
+
+                if not rows:
+                    # Heartbeat comment to keep connection alive
+                    yield ": heartbeat\n\n"
+
+            except Exception as exc:
+                logger.error("stream_platform_events error: %s", exc)
+                yield "event: error\ndata: {}\n\n".format(
+                    json_mod.dumps({"error": str(exc)}))
+
+            time.sleep(0.5)
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ============================================================================

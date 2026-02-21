@@ -43,7 +43,7 @@ import shutil
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -92,7 +92,7 @@ def _gen_id(prefix="inst"):
 
 def _now():
     """ISO-8601 UTC timestamp."""
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, project_id=None, details=None):

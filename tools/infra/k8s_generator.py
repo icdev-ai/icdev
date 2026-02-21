@@ -6,7 +6,7 @@ Produces Deployment, Service, Ingress, ConfigMap, NetworkPolicy, and HPA."""
 import argparse
 import json
 import yaml as _yaml_mod
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -28,7 +28,7 @@ CUI_LABELS = {
 
 
 def _cui_header() -> str:
-    return CUI_HEADER.format(timestamp=datetime.utcnow().isoformat())
+    return CUI_HEADER.format(timestamp=datetime.now(timezone.utc).isoformat())
 
 
 def _write(path: Path, content: str) -> Path:
@@ -92,7 +92,7 @@ def generate_deployment(project_path: str, app_config: dict = None) -> list:
             "labels": _labels(name, {"app.kubernetes.io/component": "server"}),
             "annotations": {
                 "classification": "CUI",
-                "icdev.io/generated": datetime.utcnow().isoformat(),
+                "icdev.io/generated": datetime.now(timezone.utc).isoformat(),
             },
         },
         "spec": {
@@ -575,7 +575,7 @@ def generate_agent_deployments(project_path: str, blueprint: dict = None) -> lis
                 }),
                 "annotations": {
                     "classification": "CUI",
-                    "icdev.io/generated": datetime.utcnow().isoformat(),
+                    "icdev.io/generated": datetime.now(timezone.utc).isoformat(),
                     "icdev.io/agent-port": str(port),
                 },
             },

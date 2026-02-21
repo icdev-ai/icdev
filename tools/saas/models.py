@@ -63,6 +63,15 @@ class BedrockMode(str, Enum):
     BYOK = "byok"
 
 
+class LLMProvider(str, Enum):
+    """Supported LLM providers for tenant BYOK keys (Phase 32 — D141)."""
+    ANTHROPIC = "anthropic"
+    OPENAI = "openai"
+    BEDROCK = "bedrock"
+    OLLAMA = "ollama"
+    VLLM = "vllm"
+
+
 # ---- Request/Response Models ----
 
 class ArtifactConfig(BaseModel):
@@ -199,6 +208,7 @@ TIER_LIMITS = {
         "allowed_il_levels": ["IL2", "IL4"],
         "allowed_frameworks": ["nist_800_53"],
         "bedrock_pool_enabled": False,
+        "byok_llm_enabled": False,
         "rate_limit_per_minute": 60,
         "rate_limit_per_hour": 500,
         # CLI capabilities ceiling (D132) — Starter: scripted intake only
@@ -219,6 +229,7 @@ TIER_LIMITS = {
             "cisa_sbd", "ieee_ivv", "dodi_des", "oscal", "emass",
         ],
         "bedrock_pool_enabled": True,
+        "byok_llm_enabled": True,
         "rate_limit_per_minute": 300,
         "rate_limit_per_hour": 5000,
         # CLI capabilities ceiling (D132) — Professional: all except container execution
@@ -240,6 +251,7 @@ TIER_LIMITS = {
             "cnssi_1253", "cato", "fips_199", "fips_200",
         ],
         "bedrock_pool_enabled": True,
+        "byok_llm_enabled": True,
         "rate_limit_per_minute": -1,  # unlimited
         "rate_limit_per_hour": -1,
         # CLI capabilities ceiling (D132) — Enterprise: all capabilities

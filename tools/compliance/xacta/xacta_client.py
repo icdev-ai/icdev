@@ -17,7 +17,7 @@ import json
 import logging
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -237,7 +237,7 @@ class XactaClient:
                 for m in control_mappings
             ],
             "source": "ICDEV",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/controls", data=payload)
 
@@ -266,7 +266,7 @@ class XactaClient:
             "system_id": project_id,
             "assessment_type": "CSSP",
             "framework": "DoD Instruction 8530.01",
-            "assessment_date": datetime.utcnow().isoformat(),
+            "assessment_date": datetime.now(timezone.utc).isoformat(),
             "assessor": "icdev-compliance-engine",
             "results": [
                 {
@@ -320,7 +320,7 @@ class XactaClient:
                 for f in findings
             ],
             "source": "ICDEV",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/findings", data=payload)
 
@@ -361,7 +361,7 @@ class XactaClient:
                 for p in poam_items
             ],
             "source": "ICDEV",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/poam", data=payload)
 
@@ -390,7 +390,7 @@ class XactaClient:
             "system_id": project_id,
             "evidence": evidence_manifest,
             "source": "ICDEV",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/evidence", data=payload)
 

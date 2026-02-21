@@ -1,0 +1,60 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "audit" %}
+{% block title %}Audit Trail - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Audit Trail</span>
+</nav>
+<div class="page-header">
+    <h1>Audit Trail</h1>
+    <p>{{ total_entries }} total entries (immutable, append-only)</p>
+</div>
+
+{% if audit_entries %}
+<div class="card">
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Audit trail entries">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Event</th>
+                    <th>Action</th>
+                    <th>IP Address</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in audit_entries %}
+                <tr>
+                    <td class="td-mono">{{ entry.id }}</td>
+                    <td><span class="badge badge-info" role="status">{{ entry.event_type }}</span></td>
+                    <td>{{ entry.action }}</td>
+                    <td class="td-mono">{{ entry.ip_address or '-' }}</td>
+                    <td class="td-nowrap">{{ entry.recorded_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination">
+        {% if page_num > 1 %}
+        <a href="{{ url_for('portal.audit', page=page_num - 1) }}" class="btn btn-secondary btn-sm">Previous</a>
+        {% endif %}
+        <span class="pagination-info">Page {{ page_num }} of {{ total_pages }}</span>
+        {% if page_num < total_pages %}
+        <a href="{{ url_for('portal.audit', page=page_num + 1) }}" class="btn btn-secondary btn-sm">Next</a>
+        {% endif %}
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p class="empty-state">No audit entries found.</p>
+</div>
+{% endif %}
+{% endblock %}

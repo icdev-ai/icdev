@@ -38,9 +38,10 @@ apiGateway:
   affinity: {}
 
 # -----------------------------------------------------------------------
-# Orchestrator Agent
+# Orchestrator Agent — Core Tier (port 8443)
 # -----------------------------------------------------------------------
 orchestrator:
+  enabled: true
   replicas: 1
   port: 8443
   resources:
@@ -52,9 +53,25 @@ orchestrator:
       memory: 2Gi
 
 # -----------------------------------------------------------------------
-# Builder Agent
+# Architect Agent — Core Tier (port 8444)
+# -----------------------------------------------------------------------
+architect:
+  enabled: true
+  replicas: 1
+  port: 8444
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Builder Agent — Domain Tier (port 8445)
 # -----------------------------------------------------------------------
 builder:
+  enabled: true
   replicas: 2
   port: 8445
   resources:
@@ -66,9 +83,10 @@ builder:
       memory: 4Gi
 
 # -----------------------------------------------------------------------
-# Compliance Agent
+# Compliance Agent — Domain Tier (port 8446)
 # -----------------------------------------------------------------------
 compliance:
+  enabled: true
   replicas: 1
   port: 8446
   resources:
@@ -80,9 +98,10 @@ compliance:
       memory: 2Gi
 
 # -----------------------------------------------------------------------
-# Security Agent
+# Security Agent — Domain Tier (port 8447)
 # -----------------------------------------------------------------------
 security:
+  enabled: true
   replicas: 1
   port: 8447
   resources:
@@ -92,6 +111,172 @@ security:
     limits:
       cpu: "1"
       memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Infrastructure Agent — Domain Tier (port 8448)
+# -----------------------------------------------------------------------
+infrastructure:
+  enabled: true
+  replicas: 1
+  port: 8448
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Knowledge Agent — Support Tier (port 8449)
+# -----------------------------------------------------------------------
+knowledge:
+  enabled: true
+  replicas: 1
+  port: 8449
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# -----------------------------------------------------------------------
+# Monitor Agent — Support Tier (port 8450)
+# -----------------------------------------------------------------------
+monitor:
+  enabled: true
+  replicas: 1
+  port: 8450
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# -----------------------------------------------------------------------
+# MBSE Agent — Domain Tier (port 8451)
+# -----------------------------------------------------------------------
+mbse:
+  enabled: true
+  replicas: 1
+  port: 8451
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Modernization Agent — Domain Tier (port 8452)
+# -----------------------------------------------------------------------
+modernization:
+  enabled: true
+  replicas: 1
+  port: 8452
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Requirements Analyst Agent — Domain Tier (port 8453)
+# -----------------------------------------------------------------------
+requirements-analyst:
+  enabled: true
+  replicas: 1
+  port: 8453
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Supply Chain Agent — Domain Tier (port 8454)
+# -----------------------------------------------------------------------
+supply-chain:
+  enabled: true
+  replicas: 1
+  port: 8454
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# -----------------------------------------------------------------------
+# Simulation Agent — Domain Tier (port 8455)
+# -----------------------------------------------------------------------
+simulation:
+  enabled: true
+  replicas: 1
+  port: 8455
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# DevSecOps Agent — Domain Tier (port 8457)
+# -----------------------------------------------------------------------
+devsecops:
+  enabled: true
+  replicas: 1
+  port: 8457
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+
+# -----------------------------------------------------------------------
+# Gateway Agent — Domain Tier (port 8458)
+# -----------------------------------------------------------------------
+gateway:
+  enabled: true
+  replicas: 1
+  port: 8458
+  resources:
+    requests:
+      cpu: 150m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# -----------------------------------------------------------------------
+# Dashboard — Web UI (port 5000)
+# -----------------------------------------------------------------------
+dashboard:
+  enabled: true
+  replicas: 2
+  port: 5000
+  existingSecret: ""          # K8s secret with key "secret_key" for ICDEV_DASHBOARD_SECRET
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
 
 # -----------------------------------------------------------------------
 # Platform Database
@@ -199,31 +384,108 @@ podSecurity:
 # -----------------------------------------------------------------------
 autoscaling:
   enabled: false                         # Set true to enable HPA
+  # API Gateway — Core entry point
   apiGateway:
     minReplicas: 2
     maxReplicas: 12
     cpuTarget: 60
     memoryTarget: 70
+  # Orchestrator — Core tier
   orchestrator:
     minReplicas: 2
     maxReplicas: 6
     cpuTarget: 60
     memoryTarget: 70
+  # Architect — Core tier
+  architect:
+    minReplicas: 1
+    maxReplicas: 4
+    cpuTarget: 60
+    memoryTarget: 70
+  # Builder — Domain tier (high compute)
   builder:
     minReplicas: 1
     maxReplicas: 8
     cpuTarget: 70
     memoryTarget: 80
+  # Compliance — Domain tier
   compliance:
     minReplicas: 1
     maxReplicas: 8
     cpuTarget: 70
     memoryTarget: 80
+  # Security — Domain tier
   security:
     minReplicas: 1
     maxReplicas: 8
     cpuTarget: 70
     memoryTarget: 80
+  # Infrastructure — Domain tier
+  infrastructure:
+    minReplicas: 1
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
+  # Knowledge — Support tier
+  knowledge:
+    minReplicas: 1
+    maxReplicas: 4
+    cpuTarget: 70
+    memoryTarget: 80
+  # Monitor — Support tier
+  monitor:
+    minReplicas: 1
+    maxReplicas: 4
+    cpuTarget: 70
+    memoryTarget: 80
+  # MBSE — Domain tier
+  mbse:
+    minReplicas: 1
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
+  # Modernization — Domain tier
+  modernization:
+    minReplicas: 1
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
+  # Requirements Analyst — Domain tier
+  requirements-analyst:
+    minReplicas: 1
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
+  # Supply Chain — Domain tier
+  supply-chain:
+    minReplicas: 1
+    maxReplicas: 4
+    cpuTarget: 70
+    memoryTarget: 80
+  # Simulation — Domain tier
+  simulation:
+    minReplicas: 1
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
+  # DevSecOps — Domain tier
+  devsecops:
+    minReplicas: 1
+    maxReplicas: 6
+    cpuTarget: 70
+    memoryTarget: 80
+  # Gateway — Domain tier
+  gateway:
+    minReplicas: 1
+    maxReplicas: 4
+    cpuTarget: 70
+    memoryTarget: 80
+  # Dashboard — Support tier (user-facing)
+  dashboard:
+    minReplicas: 2
+    maxReplicas: 8
+    cpuTarget: 60
+    memoryTarget: 70
 
 # -----------------------------------------------------------------------
 # Topology Spread (D144)

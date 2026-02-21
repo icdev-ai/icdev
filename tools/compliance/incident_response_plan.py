@@ -9,7 +9,7 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -512,7 +512,7 @@ Responsibilities) and stored in the project compliance directory.
 
 def _build_variables(project, defaults):
     """Build the {{variable}} substitution dictionary."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Pull infra settings from project defaults if available
     infra = defaults.get("infrastructure", {})

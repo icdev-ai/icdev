@@ -824,7 +824,7 @@ def scaffold_api(project_dir: Path, project_name: str, classification: str) -> l
 
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class HealthResponse(BaseModel):
@@ -1040,7 +1040,7 @@ def scaffold_data_pipeline(project_dir: Path, project_name: str, classification:
     pipeline_content = f'''"""Main pipeline orchestration for {project_name}."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -1057,28 +1057,28 @@ class Pipeline:
     def extract(self, source: str) -> dict:
         """Extract data from source."""
         logger.info("Extracting from %s", source)
-        return {{"source": source, "rows": [], "extracted_at": datetime.utcnow().isoformat()}}
+        return {{"source": source, "rows": [], "extracted_at": datetime.now(timezone.utc).isoformat()}}
 
     def transform(self, data: dict) -> dict:
         """Transform extracted data."""
         logger.info("Transforming %d rows", len(data.get("rows", [])))
-        return {{**data, "transformed": True, "transformed_at": datetime.utcnow().isoformat()}}
+        return {{**data, "transformed": True, "transformed_at": datetime.now(timezone.utc).isoformat()}}
 
     def load(self, data: dict, target: str) -> dict:
         """Load transformed data to target."""
         logger.info("Loading to %s", target)
-        return {{**data, "target": target, "loaded_at": datetime.utcnow().isoformat()}}
+        return {{**data, "target": target, "loaded_at": datetime.now(timezone.utc).isoformat()}}
 
     def run(self, source: str, target: str) -> dict:
         """Execute full ETL pipeline."""
-        self.started_at = datetime.utcnow()
+        self.started_at = datetime.now(timezone.utc)
         logger.info("Pipeline '%s' starting", self.name)
 
         data = self.extract(source)
         data = self.transform(data)
         result = self.load(data, target)
 
-        self.completed_at = datetime.utcnow()
+        self.completed_at = datetime.now(timezone.utc)
         result["duration_seconds"] = (self.completed_at - self.started_at).total_seconds()
         logger.info("Pipeline '%s' completed in %.2fs", self.name, result["duration_seconds"])
         return result

@@ -341,6 +341,54 @@ python tools/testing/screenshot_validator.py --batch-dir .tmp/test_runs/screensh
 
 **Key patterns from ADW:** parse_json (markdown-wrapped JSON), Pydantic data types (TestResult, E2ETestResult), dual logging (file+console), safe subprocess env, retry with resolution (max 4 unit / max 2 E2E), fail-fast E2E, stdin=DEVNULL for Claude Code subprocesses
 
+### Modular Installation (Phase 33)
+
+ICDEV supports modular deployment configured by compliance posture, platform, organizational role, and team size. Not all modules are required — pick what fits your mission.
+
+```bash
+# Interactive wizard — guided setup
+python tools/installer/installer.py --interactive
+
+# Profile-based — use a pre-built bundle
+python tools/installer/installer.py --profile dod_team --compliance fedramp_high,cmmc --platform k8s
+python tools/installer/installer.py --profile isv_startup --platform docker
+python tools/installer/installer.py --profile healthcare --compliance hipaa,hitrust
+
+# Add features to existing installation
+python tools/installer/installer.py --add-module marketplace
+python tools/installer/installer.py --add-compliance hipaa
+python tools/installer/installer.py --upgrade                   # Show what can be added
+
+# Status and validation
+python tools/installer/installer.py --status --json
+python tools/installer/module_registry.py --validate
+python tools/installer/compliance_configurator.py --list-postures
+
+# Platform artifact generation
+python tools/installer/platform_setup.py --generate docker --modules core,llm,builder,dashboard
+python tools/installer/platform_setup.py --generate k8s-rbac --modules core,builder
+python tools/installer/platform_setup.py --generate env --modules core,llm
+python tools/installer/platform_setup.py --generate helm-values --modules core,llm,builder
+```
+
+**Deployment Profiles:**
+| Profile | Modules | Compliance | Platform | CUI |
+|---------|---------|------------|----------|-----|
+| ISV Startup | 7 core | None | Docker | No |
+| ISV Enterprise | 11 | FedRAMP Moderate | K8s | No |
+| SI Consulting | 5 + RICOAS | FedRAMP + CMMC | Docker | Yes |
+| SI Enterprise | 14 | FedRAMP High + CMMC + CJIS | K8s | Yes |
+| DoD Team | 14 | FedRAMP High + CMMC + FIPS + cATO | K8s | Yes |
+| Healthcare | 9 | HIPAA + HITRUST + SOC 2 | K8s | No |
+| Financial | 9 | PCI DSS + SOC 2 + ISO 27001 | K8s | No |
+| Law Enforcement | 9 | CJIS + FIPS 199/200 | K8s | Yes |
+| GovCloud Full | ALL | ALL | K8s | Yes |
+| Custom | 3 minimum | User choice | User choice | Configurable |
+
+**Key Config Files:**
+- `args/installation_manifest.yaml` — Module definitions, dependencies, DB table groups
+- `args/deployment_profiles.yaml` — Profile bundles with platform and compliance defaults
+
 ### ICDEV Commands
 ```bash
 # Database
@@ -1111,6 +1159,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | MOSA Workflow | `goals/mosa_workflow.md` | DoD MOSA (10 U.S.C. §4401): MOSA assessment, modularity analysis (coupling/cohesion/circular deps), ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC, optional cATO evidence (Phase 26) |
 | CLI Capabilities | `goals/cli_capabilities.md` | Optional Claude CLI features: CI/CD pipeline automation, parallel agent execution, container-based execution, scripted batch intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |
 | Remote Command Gateway | `goals/remote_command_gateway.md` | Remote Command Gateway: messaging channel integration (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware response filtering, user binding ceremony, air-gapped/connected mode, command allowlist (Phase 28) |
+| Modular Installation | `goals/modular_installation.md` | Modular installer: interactive wizard, profile-based deployment (10 profiles), compliance posture configuration, platform artifact generation (Docker/K8s/Helm), module dependency resolution, add/upgrade existing installations (Phase 33) |
 
 ---
 

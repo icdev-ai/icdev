@@ -298,74 +298,107 @@ def execute_agent_bedrock(
         classification=request.classification,
     )
 
-    try:
-        from tools.agent.bedrock_client import BedrockClient, BedrockRequest
-    except ImportError:
-        print("Warning: bedrock_client not available, falling back to CLI", file=sys.stderr)
-        return execute_agent(request, max_retries=max_retries)
+    # Enhancement #4: Use LLMRouter for vendor-agnostic invocation
+    agent_id = request.env_vars.get("AGENT_ID", "") if request.env_vars else ""
 
-    try:
-        client = BedrockClient()
+    # Inject agent memory context into system prompt
+    system_prompt = request.system_prompt or ""
+    if agent_id and request.project_dir:
+        try:
+            from tools.agent.agent_memory import inject_context
+            memory_context = inject_context(
+                agent_id=agent_id,
+                project_id=request.project_dir,
+                max_memories=5,
+            )
+            if memory_context:
+                system_prompt = f"{system_prompt}\n\n{memory_context}" if system_prompt else memory_context
+        except ImportError:
+            pass
+        except Exception:
+            pass
 
-        # Map request.model to Bedrock model_preference
-        model_map = {
-            "opus": "opus",
-            "sonnet": "sonnet-4-5",
-            "sonnet-4-5": "sonnet-4-5",
-            "sonnet-3-5": "sonnet-3-5",
-            "haiku": "sonnet-3-5",  # Fallback: no Haiku on Bedrock GovCloud
-        }
-        model_preference = model_map.get(request.model, "sonnet-4-5")
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": request.prompt}]},
+    ]
 
-        # Load per-agent effort from agent_config.yaml (via BedrockClient)
-        agent_id = request.env_vars.get("AGENT_ID", "") if request.env_vars else ""
-        effort = client._agent_effort_overrides.get(agent_id, "medium")
+    # Map model names to routing functions
+    function_map = {
+        "opus": "agent_orchestrator",
+        "sonnet": "agent_builder",
+        "sonnet-4-5": "agent_builder",
+        "sonnet-3-5": "agent_builder",
+        "haiku": "agent_builder",
+    }
+    routing_function = function_map.get(request.model, "agent_builder")
 
-        # Inject agent memory context into system prompt (Phase C)
-        system_prompt = request.system_prompt or ""
-        if agent_id and request.project_dir:
-            try:
-                from tools.agent.agent_memory import inject_context
-                memory_context = inject_context(
-                    agent_id=agent_id,
-                    project_id=request.project_dir,
-                    max_memories=5,
-                )
-                if memory_context:
-                    system_prompt = f"{system_prompt}\n\n{memory_context}" if system_prompt else memory_context
-            except ImportError:
-                pass  # agent_memory not yet available
-            except Exception:
-                pass  # Best-effort memory injection
-
-        # Build Bedrock request
-        messages = [
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": request.prompt}],
+    # For tool_use loops, fall back to BedrockClient (it has invoke_with_tools)
+    if tool_handlers:
+        try:
+            from tools.agent.bedrock_client import BedrockClient, BedrockRequest
+            client = BedrockClient()
+            model_map = {
+                "opus": "opus", "sonnet": "sonnet-4-5",
+                "sonnet-4-5": "sonnet-4-5", "sonnet-3-5": "sonnet-3-5",
+                "haiku": "sonnet-3-5",
             }
-        ]
-
-        bedrock_req = BedrockRequest(
-            messages=messages,
-            system_prompt=system_prompt,
-            agent_id=agent_id,
-            project_id=request.project_dir or "",
-            model_preference=model_preference,
-            effort=effort,
-            max_tokens=request.max_turns * 4096,  # Scale with turns
-            classification=request.classification,
-        )
-
-        # Execute via Bedrock (with or without tools)
-        if tool_handlers:
+            model_preference = model_map.get(request.model, "sonnet-4-5")
+            effort = client._agent_effort_overrides.get(agent_id, "medium")
+            bedrock_req = BedrockRequest(
+                messages=messages, system_prompt=system_prompt,
+                agent_id=agent_id, project_id=request.project_dir or "",
+                model_preference=model_preference, effort=effort,
+                max_tokens=request.max_turns * 4096,
+                classification=request.classification,
+            )
             resp = client.invoke_with_tools(
-                bedrock_req,
-                tool_handlers=tool_handlers,
+                bedrock_req, tool_handlers=tool_handlers,
                 max_iterations=request.max_turns,
             )
-        else:
-            resp = client.invoke(bedrock_req)
+        except ImportError:
+            print("Warning: bedrock_client not available for tool_use, falling back to CLI", file=sys.stderr)
+            return execute_agent(request, max_retries=max_retries)
+    else:
+        # Use vendor-agnostic LLMRouter
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+            router = LLMRouter()
+            llm_req = LLMRequest(
+                messages=messages,
+                system_prompt=system_prompt,
+                agent_id=agent_id,
+                project_id=request.project_dir or "",
+                effort="medium",
+                max_tokens=request.max_turns * 4096,
+                classification=request.classification,
+            )
+            resp = router.invoke(routing_function, llm_req)
+        except ImportError:
+            # Fall back to BedrockClient
+            try:
+                from tools.agent.bedrock_client import BedrockClient, BedrockRequest
+                client = BedrockClient()
+                model_map = {
+                    "opus": "opus", "sonnet": "sonnet-4-5",
+                    "sonnet-4-5": "sonnet-4-5", "sonnet-3-5": "sonnet-3-5",
+                    "haiku": "sonnet-3-5",
+                }
+                model_preference = model_map.get(request.model, "sonnet-4-5")
+                effort = client._agent_effort_overrides.get(agent_id, "medium")
+                bedrock_req = BedrockRequest(
+                    messages=messages, system_prompt=system_prompt,
+                    agent_id=agent_id, project_id=request.project_dir or "",
+                    model_preference=model_preference, effort=effort,
+                    max_tokens=request.max_turns * 4096,
+                    classification=request.classification,
+                )
+                resp = client.invoke(bedrock_req)
+            except ImportError:
+                print("Warning: No LLM backend available, falling back to CLI", file=sys.stderr)
+                return execute_agent(request, max_retries=max_retries)
+
+    try:
 
         # Map BedrockResponse -> AgentPromptResponse
         final_response.status = "completed"

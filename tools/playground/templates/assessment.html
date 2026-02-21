@@ -1,0 +1,166 @@
+<!-- CUI // SP-CTI -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assessment Results — ICDEV Playground</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='playground.css') }}">
+</head>
+<body>
+    <div class="demo-banner">{{ demo_banner }}</div>
+    <div class="container">
+        <h1>Assessment Results</h1>
+        <p class="subtitle">CMMC Level 2 and FedRAMP Moderate assessment for Mission Planning System</p>
+        <div class="nav">
+            <a href="/">Home</a>
+            <a href="/compliance">Compliance</a>
+            <a href="/crosswalk">Crosswalk</a>
+            <a href="/assessment" class="active">Assessment</a>
+            <a href="/ssp-preview">SSP Preview</a>
+        </div>
+
+        <h2>CMMC Level 2 — Domain Scores</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Domain</th>
+                        <th>Total</th>
+                        <th>Met</th>
+                        <th>Partial</th>
+                        <th>Not Met</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in cmmc_domains %}
+                    <tr>
+                        <td><strong>{{ d.domain }}</strong></td>
+                        <td>{{ d.total }}</td>
+                        <td><span class="badge badge-success">{{ d.met }}</span></td>
+                        <td>
+                            {% if d.partial > 0 %}
+                                <span class="badge badge-warning">{{ d.partial }}</span>
+                            {% else %}
+                                <span class="badge badge-success">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if d.not_met > 0 %}
+                                <span class="badge badge-danger">{{ d.not_met }}</span>
+                            {% else %}
+                                <span class="badge badge-success">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill {% if d.score >= 90 %}bg-green{% elif d.score >= 70 %}bg-yellow{% else %}bg-red{% endif %}" style="width: {{ d.score }}%"></div>
+                            </div>
+                            {{ "%.1f" | format(d.score) }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% set cmmc_total_met = cmmc_domains | sum(attribute='met') %}
+        {% set cmmc_total_all = cmmc_domains | sum(attribute='total') %}
+        {% set cmmc_total_partial = cmmc_domains | sum(attribute='partial') %}
+        {% set cmmc_total_not_met = cmmc_domains | sum(attribute='not_met') %}
+        <div class="card">
+            <h3 style="color: var(--accent); margin-bottom: 0.75rem;">CMMC Summary</h3>
+            <div class="stat-row">
+                <div class="stat-item">
+                    <div class="stat-value score-green">{{ cmmc_total_met }}</div>
+                    <div class="stat-label">Met</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value score-yellow">{{ cmmc_total_partial }}</div>
+                    <div class="stat-label">Partial</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value score-red">{{ cmmc_total_not_met }}</div>
+                    <div class="stat-label">Not Met</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" style="color: var(--blue);">{{ cmmc_total_all }}</div>
+                    <div class="stat-label">Total Practices</div>
+                </div>
+            </div>
+        </div>
+
+        <h2>FedRAMP Moderate — Family Scores</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Family</th>
+                        <th>Total</th>
+                        <th>Satisfied</th>
+                        <th>Partial</th>
+                        <th>Not Satisfied</th>
+                        <th>Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in fedramp_families %}
+                    <tr>
+                        <td><strong>{{ f.family }}</strong></td>
+                        <td>{{ f.total }}</td>
+                        <td><span class="badge badge-success">{{ f.satisfied }}</span></td>
+                        <td>
+                            {% if f.partial > 0 %}
+                                <span class="badge badge-warning">{{ f.partial }}</span>
+                            {% else %}
+                                <span class="badge badge-success">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if f.not_satisfied > 0 %}
+                                <span class="badge badge-danger">{{ f.not_satisfied }}</span>
+                            {% else %}
+                                <span class="badge badge-success">0</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill {% if f.score >= 90 %}bg-green{% elif f.score >= 70 %}bg-yellow{% else %}bg-red{% endif %}" style="width: {{ f.score }}%"></div>
+                            </div>
+                            {{ "%.1f" | format(f.score) }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% set fed_total_sat = fedramp_families | sum(attribute='satisfied') %}
+        {% set fed_total_all = fedramp_families | sum(attribute='total') %}
+        {% set fed_total_partial = fedramp_families | sum(attribute='partial') %}
+        {% set fed_total_not_sat = fedramp_families | sum(attribute='not_satisfied') %}
+        <div class="card">
+            <h3 style="color: var(--accent); margin-bottom: 0.75rem;">FedRAMP Summary</h3>
+            <div class="stat-row">
+                <div class="stat-item">
+                    <div class="stat-value score-green">{{ fed_total_sat }}</div>
+                    <div class="stat-label">Satisfied</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value score-yellow">{{ fed_total_partial }}</div>
+                    <div class="stat-label">Partial</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value score-red">{{ fed_total_not_sat }}</div>
+                    <div class="stat-label">Not Satisfied</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" style="color: var(--blue);">{{ fed_total_all }}</div>
+                    <div class="stat-label">Total Controls</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

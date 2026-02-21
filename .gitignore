@@ -61,3 +61,4 @@ playwright/
 
 # Generated projects (created by project_create.py)
 # projects/  # Uncomment to ignore generated projects
+videos/

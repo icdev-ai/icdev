@@ -1,0 +1,614 @@
+# ICDEV Kubernetes RBAC — Least-Privilege Service Accounts
+# Namespace: icdev
+#
+# Architecture:
+#   - icdev-agent-role          — Baseline read-only for domain/support agents
+#   - icdev-orchestrator-role   — Elevated: pod/job management for agent lifecycle
+#   - icdev-infrastructure-role — Elevated: deployment/networking for IaC operations
+#   - Per-agent ServiceAccounts with appropriate RoleBindings
+#
+# Usage:
+#   kubectl apply -f k8s/rbac.yaml
+#
+# Generate a custom RBAC for your module set:
+#   python tools/installer/platform_setup.py --generate k8s-rbac --modules core,builder
+
+# ======================================================================
+# Roles
+# ======================================================================
+
+# Baseline agent role — read-only pods/services/configmaps, get secrets, create events
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: icdev-agent-role
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, endpoints]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+
+---
+# Orchestrator role — needs pod/job management for agent lifecycle and workflow execution
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: icdev-orchestrator-role
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, endpoints, configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch, update, patch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, delete]
+
+---
+# Infrastructure agent role — needs broader access for Terraform/Ansible/K8s IaC operations
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: icdev-infrastructure-role
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, endpoints, configmaps, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, replicasets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies, ingresses]
+    verbs: [get, list, watch, create, update, patch]
+
+# ======================================================================
+# ServiceAccounts — Core Tier
+# ======================================================================
+
+---
+# Orchestrator Agent (port 8443)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-orchestrator-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: orchestrator
+    icdev/tier: core
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-orchestrator-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: orchestrator
+subjects:
+  - kind: ServiceAccount
+    name: icdev-orchestrator-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-orchestrator-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Architect Agent (port 8444)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-architect-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: architect
+    icdev/tier: core
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-architect-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: architect
+subjects:
+  - kind: ServiceAccount
+    name: icdev-architect-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+# ======================================================================
+# ServiceAccounts — Domain Tier
+# ======================================================================
+
+---
+# Builder Agent (port 8445)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-builder-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: builder
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-builder-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: builder
+subjects:
+  - kind: ServiceAccount
+    name: icdev-builder-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Compliance Agent (port 8446)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-compliance-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: compliance
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-compliance-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: compliance
+subjects:
+  - kind: ServiceAccount
+    name: icdev-compliance-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Security Agent (port 8447)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-security-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: security
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-security-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: security
+subjects:
+  - kind: ServiceAccount
+    name: icdev-security-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Infrastructure Agent (port 8448)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-infrastructure-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: infrastructure
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-infrastructure-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: infrastructure
+subjects:
+  - kind: ServiceAccount
+    name: icdev-infrastructure-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-infrastructure-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# MBSE Agent (port 8451)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-mbse-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: mbse
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-mbse-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: mbse
+subjects:
+  - kind: ServiceAccount
+    name: icdev-mbse-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Modernization Agent (port 8452)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-modernization-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: modernization
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-modernization-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: modernization
+subjects:
+  - kind: ServiceAccount
+    name: icdev-modernization-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Requirements Analyst Agent (port 8453)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-requirements-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: requirements
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-requirements-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: requirements
+subjects:
+  - kind: ServiceAccount
+    name: icdev-requirements-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Supply Chain Agent (port 8454)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-supply-chain-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: supply-chain
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-supply-chain-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: supply-chain
+subjects:
+  - kind: ServiceAccount
+    name: icdev-supply-chain-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Simulation Agent (port 8455)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-simulation-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: simulation
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-simulation-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: simulation
+subjects:
+  - kind: ServiceAccount
+    name: icdev-simulation-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# DevSecOps Agent (port 8457)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-devsecops-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: devsecops
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-devsecops-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: devsecops
+subjects:
+  - kind: ServiceAccount
+    name: icdev-devsecops-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Gateway Agent (port 8458)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-gateway-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: gateway
+    icdev/tier: domain
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-gateway-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: gateway
+subjects:
+  - kind: ServiceAccount
+    name: icdev-gateway-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+# ======================================================================
+# ServiceAccounts — Support Tier
+# ======================================================================
+
+---
+# Knowledge Agent (port 8449)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-knowledge-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: knowledge
+    icdev/tier: support
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-knowledge-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: knowledge
+subjects:
+  - kind: ServiceAccount
+    name: icdev-knowledge-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Monitor Agent (port 8450)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-monitor-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: monitor
+    icdev/tier: support
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-monitor-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: monitor
+subjects:
+  - kind: ServiceAccount
+    name: icdev-monitor-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Dashboard (port 5000)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-dashboard-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: dashboard
+    icdev/tier: support
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-dashboard-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: dashboard
+subjects:
+  - kind: ServiceAccount
+    name: icdev-dashboard-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# SaaS API Gateway (port 9443)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: icdev-api-gateway-sa
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: api-gateway
+    icdev/tier: core
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: icdev-api-gateway-sa-binding
+  namespace: icdev
+  labels:
+    app.kubernetes.io/part-of: icdev
+    app.kubernetes.io/component: api-gateway
+subjects:
+  - kind: ServiceAccount
+    name: icdev-api-gateway-sa
+    namespace: icdev
+roleRef:
+  kind: Role
+  name: icdev-agent-role
+  apiGroup: rbac.authorization.k8s.io

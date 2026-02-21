@@ -8,7 +8,7 @@ import argparse
 import json
 import sqlite3
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -392,7 +392,7 @@ def get_recommendations(project_id: str, context: dict = None, db_path: Path = N
 
     return {
         "project_id": project_id,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_recommendations": len(all_recs),
         "summary": {
             "critical": severity_counts.get("critical", 0),

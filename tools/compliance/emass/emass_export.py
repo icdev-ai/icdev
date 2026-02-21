@@ -27,7 +27,7 @@ import csv
 import json
 import sqlite3
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -265,7 +265,7 @@ def export_controls_emass(project_id, output_dir=None, db_path=None):
         ).fetchall()
 
         out_dir = _ensure_output_dir(project_id, output_dir)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         out_file = out_dir / f"emass-controls-{project_id}-{timestamp}.csv"
 
         with open(out_file, "w", newline="", encoding="utf-8") as f:
@@ -289,7 +289,7 @@ def export_controls_emass(project_id, output_dir=None, db_path=None):
                     r.get("responsible_role", r.get("responsible_entity", "")),
                     r.get("implementation_description", "Planned"),
                     r.get("evidence_reference", r.get("evidence_path", "")),
-                    r.get("assessment_date", datetime.utcnow().strftime("%Y-%m-%d")),
+                    r.get("assessment_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                 ])
 
         _log_audit(conn, project_id, "export_controls_emass", {
@@ -337,7 +337,7 @@ def export_poam_emass(project_id, output_dir=None, db_path=None):
         ).fetchall()
 
         out_dir = _ensure_output_dir(project_id, output_dir)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         out_file = out_dir / f"emass-poam-{project_id}-{timestamp}.csv"
 
         with open(out_file, "w", newline="", encoding="utf-8") as f:
@@ -407,7 +407,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
     try:
         project = _get_project(conn, project_id)
         out_dir = _ensure_output_dir(project_id, output_dir)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         zip_path = out_dir / f"emass-artifacts-{project_id}-{timestamp}.zip"
 
         artifact_manifest = []
@@ -497,7 +497,7 @@ def export_artifacts_emass(project_id, output_dir=None, db_path=None):
             metadata = {
                 "project_id": project_id,
                 "project_name": project.get("name", project_id),
-                "export_date": datetime.utcnow().isoformat() + "Z",
+                "export_date": datetime.now(timezone.utc).isoformat() + "Z",
                 "classification": "CUI // SP-CTI",
                 "source": "ICDEV Compliance Engine",
                 "target_system": "eMASS (Enterprise Mission Assurance Support Service)",
@@ -563,7 +563,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
             pass
 
         out_dir = _ensure_output_dir(project_id, output_dir)
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         out_file = out_dir / f"emass-test-results-{project_id}-{timestamp}.csv"
 
         result_count = 0
@@ -587,7 +587,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
                 r = dict(row)
                 writer.writerow([
                     r.get("cci", r.get("control_id", r.get("rule_id", ""))),
-                    r.get("assessed_at", datetime.utcnow().strftime("%Y-%m-%d")),
+                    r.get("assessed_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                     r.get("assessed_by", "ICDEV Compliance Engine"),
                     r.get("title", r.get("description", "")),
                     _map_compliance_status(r.get("status", "")),
@@ -602,7 +602,7 @@ def export_test_results_emass(project_id, output_dir=None, db_path=None):
                 r = dict(row)
                 writer.writerow([
                     r.get("cci", r.get("control_id", "")),
-                    r.get("scan_date", datetime.utcnow().strftime("%Y-%m-%d")),
+                    r.get("scan_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                     r.get("scanner", r.get("scanned_by", "ICDEV Security Scanner")),
                     r.get("description", r.get("scan_type", "Vulnerability Scan")),
                     _map_compliance_status(r.get("status", r.get("result", ""))),
@@ -648,7 +648,7 @@ def export_all_emass(project_id, output_dir=None, db_path=None):
     """
     results = {
         "project_id": project_id,
-        "export_date": datetime.utcnow().isoformat() + "Z",
+        "export_date": datetime.now(timezone.utc).isoformat() + "Z",
         "classification": "CUI // SP-CTI",
         "target_system": "eMASS",
         "files": {},

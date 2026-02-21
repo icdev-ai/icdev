@@ -8,7 +8,7 @@ import argparse
 import json
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -201,7 +201,7 @@ def detect_frequency_anomaly(
     Returns list of anomalies found."""
     conn = _get_db(db_path)
     try:
-        window_start = (datetime.utcnow() - timedelta(hours=window_hours)).isoformat()
+        window_start = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
         rows = conn.execute(
             """SELECT error_type, error_message, COUNT(*) as count
@@ -368,7 +368,7 @@ def update_pattern_confidence(
 
         conn.execute(
             "UPDATE knowledge_patterns SET confidence = ?, updated_at = ? WHERE id = ?",
-            (new_conf, datetime.utcnow().isoformat(), pattern_id),
+            (new_conf, datetime.now(timezone.utc).isoformat(), pattern_id),
         )
         conn.commit()
 
@@ -391,7 +391,7 @@ def analyze_project(project_id: str, db_path: Path = None) -> dict:
     """Run full pattern analysis on a project."""
     result = {
         "project_id": project_id,
-        "analyzed_at": datetime.utcnow().isoformat(),
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
         "frequency_anomalies": [],
         "deployment_correlations": [],
         "pattern_matches": [],

@@ -43,7 +43,7 @@ import hashlib
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -713,7 +713,7 @@ def generate_pi_model_report(project_id: str, pi_number: str,
             (project_id, pi_number),
         ).fetchone()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # CUI markings
         cui_header = (

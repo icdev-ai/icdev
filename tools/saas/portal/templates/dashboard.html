@@ -1,385 +1,84 @@
-<!DOCTYPE html>
 <!-- CUI // SP-CTI -->
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICDEV Portal - {{ tenant_name }}</title>
-    <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
-</head>
-<body>
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+{% extends "portal_base.html" %}
+{% set active_page = "dashboard" %}
+{% block title %}Dashboard - {{ tenant_name }}{% endblock %}
 
-    <!-- CUI Banner Top -->
-    <div class="cui-banner">CUI // SP-CTI</div>
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <span class="current">Home</span>
+</nav>
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <p>Overview for {{ tenant_name }}</p>
+</div>
 
-    <div class="portal-layout">
-        <!-- Sidebar Navigation -->
-        <nav class="sidebar" role="navigation" aria-label="Main navigation">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
-                        <rect width="48" height="48" rx="8" fill="#58a6ff"/>
-                        <path d="M14 16h20v2H14zm0 6h16v2H14zm0 6h20v2H14zm0 6h12v2H14z" fill="#0d1117"/>
-                    </svg>
-                </div>
-                <div class="sidebar-title">
-                    <span class="sidebar-brand">ICDEV</span>
-                    <span class="sidebar-tenant">{{ tenant_name }}</span>
-                </div>
-            </div>
-
-            <ul class="sidebar-nav">
-                <li class="{% if not page or page == 'dashboard' %}active{% endif %}">
-                    <a href="{{ url_for('portal.dashboard') }}">
-                        <span class="nav-icon">&#9632;</span> Dashboard
-                    </a>
-                </li>
-                <li class="{% if page == 'projects' %}active{% endif %}">
-                    <a href="{{ url_for('portal.projects') }}">
-                        <span class="nav-icon">&#9776;</span> Projects
-                    </a>
-                </li>
-                <li class="{% if page == 'compliance' %}active{% endif %}">
-                    <a href="{{ url_for('portal.compliance') }}">
-                        <span class="nav-icon">&#10003;</span> Compliance
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.team') }}">
-                        <span class="nav-icon">&#9734;</span> Team
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.settings') }}">
-                        <span class="nav-icon">&#9881;</span> Settings
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.api_keys') }}">
-                        <span class="nav-icon">&#9919;</span> API Keys
-                    </a>
-                </li>
-                <li class="{% if page == 'usage' %}active{% endif %}">
-                    <a href="{{ url_for('portal.usage') }}">
-                        <span class="nav-icon">&#9650;</span> Usage
-                    </a>
-                </li>
-                <li class="{% if page == 'audit' %}active{% endif %}">
-                    <a href="{{ url_for('portal.audit') }}">
-                        <span class="nav-icon">&#9998;</span> Audit Trail
-                    </a>
-                </li>
-            </ul>
-
-            <div class="sidebar-footer">
-                <div class="sidebar-user">
-                    <span class="user-name">{{ user_name }}</span>
-                    <span class="user-role">{{ user_role }}</span>
-                </div>
-                <a href="{{ url_for('portal.logout') }}" class="btn btn-secondary btn-sm">Sign Out</a>
-            </div>
-        </nav>
-
-        <!-- Main Content -->
-        <main class="main-content" id="main-content" role="main">
-            {% if not page or page == 'dashboard' %}
-            <!-- Dashboard View -->
-            <nav class="breadcrumbs" aria-label="Breadcrumb">
-                <span class="current">Home</span>
-            </nav>
-            <div class="page-header">
-                <h1>Dashboard</h1>
-                <p>Overview for {{ tenant_name }}</p>
-            </div>
-
-            <div class="summary-cards">
-                <div class="card summary-card">
-                    <div class="card-label">Total Projects</div>
-                    <div class="card-value">{{ project_count }}</div>
-                </div>
-                <div class="card summary-card">
-                    <div class="card-label">Active Projects</div>
-                    <div class="card-value">{{ active_projects }}</div>
-                </div>
-                <div class="card summary-card">
-                    <div class="card-label">Compliance Score <span class="help-icon" title="Average compliance score across all frameworks (NIST, FedRAMP, CMMC). 100% means all controls are satisfied.">?</span></div>
-                    <div class="card-value {% if compliance_score >= 80 %}text-green{% elif compliance_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
-                        {{ compliance_score }}%
-                    </div>
-                </div>
-                <div class="card summary-card">
-                    <div class="card-label">Active Alerts</div>
-                    <div class="card-value {% if alerts > 0 %}text-red{% else %}text-green{% endif %}">
-                        {{ alerts }}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Quick Actions -->
-            <div class="card">
-                <h2 class="card-title">Quick Actions</h2>
-                <div class="quick-actions">
-                    <button class="btn btn-primary" onclick="showToast('Navigate to project creation via API', 'info')">
-                        New Project
-                    </button>
-                    <button class="btn btn-secondary" onclick="showToast('SSP generation requires a project ID', 'info')">
-                        Generate SSP
-                    </button>
-                    <button class="btn btn-secondary" onclick="showToast('Security scan initiated via API', 'info')">
-                        Run Security Scan
-                    </button>
-                </div>
-            </div>
-
-            <!-- Recent Activity -->
-            <div class="card">
-                <h2 class="card-title">Recent Activity</h2>
-                {% if recent_activity %}
-                <div class="table-wrapper">
-                    <table class="data-table" aria-label="Recent activity log">
-                        <thead>
-                            <tr>
-                                <th>Event</th>
-                                <th>Action</th>
-                                <th>Details</th>
-                                <th>Timestamp</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for entry in recent_activity %}
-                            <tr>
-                                <td><span class="badge badge-info" role="status">{{ entry.event_type }}</span></td>
-                                <td>{{ entry.action }}</td>
-                                <td class="td-truncate">{{ entry.details }}</td>
-                                <td class="td-nowrap">{{ entry.recorded_at }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                <p class="empty-state">No recent activity recorded.</p>
-                {% endif %}
-            </div>
-
-            {% elif page == 'projects' %}
-            <!-- Projects View -->
-            <nav class="breadcrumbs" aria-label="Breadcrumb">
-                <a href="{{ url_for('portal.dashboard') }}">Home</a>
-                <span class="separator">/</span>
-                <span class="current">Projects</span>
-            </nav>
-            <div class="page-header">
-                <h1>Projects</h1>
-                <p>All projects for {{ tenant_name }}</p>
-            </div>
-
-            {% if projects %}
-            <div class="card">
-                <div class="table-wrapper">
-                    <table class="data-table" aria-label="Projects list">
-                        <thead>
-                            <tr>
-                                <th>Name</th>
-                                <th>Status</th>
-                                <th>Compliance</th>
-                                <th>Created</th>
-                                <th>Updated</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for proj in projects %}
-                            <tr>
-                                <td><strong>{{ proj.name }}</strong></td>
-                                <td>
-                                    <span class="badge {% if proj.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
-                                        {{ proj.status }}
-                                    </span>
-                                </td>
-                                <td>{{ proj.compliance_score or 0 }}%</td>
-                                <td class="td-nowrap">{{ proj.created_at }}</td>
-                                <td class="td-nowrap">{{ proj.updated_at }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% else %}
-            <div class="card">
-                <p class="empty-state">No projects found. Create one using the ICDEV API.</p>
-            </div>
-            {% endif %}
-
-            {% elif page == 'compliance' %}
-            <!-- Compliance View -->
-            <nav class="breadcrumbs" aria-label="Breadcrumb">
-                <a href="{{ url_for('portal.dashboard') }}">Home</a>
-                <span class="separator">/</span>
-                <span class="current">Compliance</span>
-            </nav>
-            <div class="page-header">
-                <h1>Compliance Overview</h1>
-                <p><span data-glossary="NIST 800-53">NIST 800-53</span>, <span data-glossary="FedRAMP">FedRAMP</span>, <span data-glossary="CMMC">CMMC</span> status across all projects</p>
-            </div>
-
-            {% if compliance_data %}
-            <div class="card">
-                <div class="table-wrapper">
-                    <table class="data-table" aria-label="Compliance status by project">
-                        <thead>
-                            <tr>
-                                <th>Project</th>
-                                <th>Status</th>
-                                <th>Compliance Score</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in compliance_data %}
-                            <tr>
-                                <td><strong>{{ item.project_name }}</strong></td>
-                                <td>
-                                    <span class="badge {% if item.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
-                                        {{ item.status }}
-                                    </span>
-                                </td>
-                                <td>
-                                    <div class="progress-bar">
-                                        <div class="progress-fill {% if (item.compliance_score or 0) >= 80 %}bg-green{% elif (item.compliance_score or 0) >= 50 %}bg-yellow{% else %}bg-red{% endif %}"
-                                             style="width: {{ item.compliance_score or 0 }}%"></div>
-                                    </div>
-                                    <span>{{ item.compliance_score or 0 }}%</span>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% else %}
-            <div class="card">
-                <p class="empty-state">No compliance data available. Generate ATO artifacts for your projects.</p>
-            </div>
-            {% endif %}
-
-            {% elif page == 'usage' %}
-            <!-- Usage View -->
-            <nav class="breadcrumbs" aria-label="Breadcrumb">
-                <a href="{{ url_for('portal.dashboard') }}">Home</a>
-                <span class="separator">/</span>
-                <span class="current">Usage</span>
-            </nav>
-            <div class="page-header">
-                <h1>Usage Metrics</h1>
-                <p>API usage and resource consumption</p>
-            </div>
-
-            <div class="summary-cards">
-                <div class="card summary-card">
-                    <div class="card-label">Total API Calls</div>
-                    <div class="card-value">{{ usage_data.total_api_calls }}</div>
-                </div>
-                <div class="card summary-card">
-                    <div class="card-label">Total Tokens Used</div>
-                    <div class="card-value">{{ usage_data.total_tokens }}</div>
-                </div>
-            </div>
-
-            {% if usage_data.top_endpoints %}
-            <div class="card">
-                <h2 class="card-title">Top Endpoints</h2>
-                <div class="table-wrapper">
-                    <table class="data-table" aria-label="Top API endpoints by usage">
-                        <thead>
-                            <tr>
-                                <th>Endpoint</th>
-                                <th>Calls</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for ep in usage_data.top_endpoints %}
-                            <tr>
-                                <td><code>{{ ep.endpoint }}</code></td>
-                                <td>{{ ep.cnt }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% else %}
-            <div class="card">
-                <p class="empty-state">No usage data recorded yet.</p>
-            </div>
-            {% endif %}
-
-            {% elif page == 'audit' %}
-            <!-- Audit Trail View -->
-            <nav class="breadcrumbs" aria-label="Breadcrumb">
-                <a href="{{ url_for('portal.dashboard') }}">Home</a>
-                <span class="separator">/</span>
-                <span class="current">Audit Trail</span>
-            </nav>
-            <div class="page-header">
-                <h1>Audit Trail</h1>
-                <p>{{ total_entries }} total entries (immutable, append-only)</p>
-            </div>
-
-            {% if audit_entries %}
-            <div class="card">
-                <div class="table-wrapper">
-                    <table class="data-table" aria-label="Audit trail entries">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Event</th>
-                                <th>Action</th>
-                                <th>IP Address</th>
-                                <th>Timestamp</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for entry in audit_entries %}
-                            <tr>
-                                <td class="td-mono">{{ entry.id }}</td>
-                                <td><span class="badge badge-info" role="status">{{ entry.event_type }}</span></td>
-                                <td>{{ entry.action }}</td>
-                                <td class="td-mono">{{ entry.ip_address or '-' }}</td>
-                                <td class="td-nowrap">{{ entry.recorded_at }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Pagination -->
-                <div class="pagination">
-                    {% if page_num > 1 %}
-                    <a href="{{ url_for('portal.audit', page=page_num - 1) }}" class="btn btn-secondary btn-sm">Previous</a>
-                    {% endif %}
-                    <span class="pagination-info">Page {{ page_num }} of {{ total_pages }}</span>
-                    {% if page_num < total_pages %}
-                    <a href="{{ url_for('portal.audit', page=page_num + 1) }}" class="btn btn-secondary btn-sm">Next</a>
-                    {% endif %}
-                </div>
-            </div>
-            {% else %}
-            <div class="card">
-                <p class="empty-state">No audit entries found.</p>
-            </div>
-            {% endif %}
-
-            {% endif %}
-        </main>
+<div class="summary-cards">
+    <div class="card summary-card">
+        <div class="card-label">Total Projects</div>
+        <div class="card-value">{{ project_count }}</div>
     </div>
+    <div class="card summary-card">
+        <div class="card-label">Active Projects</div>
+        <div class="card-value">{{ active_projects }}</div>
+    </div>
+    <div class="card summary-card">
+        <div class="card-label">Compliance Score <span class="help-icon" title="Average compliance score across all frameworks (NIST, FedRAMP, CMMC). 100% means all controls are satisfied.">?</span></div>
+        <div class="card-value {% if compliance_score >= 80 %}text-green{% elif compliance_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
+            {{ compliance_score }}%
+        </div>
+    </div>
+    <div class="card summary-card">
+        <div class="card-label">Active Alerts</div>
+        <div class="card-value {% if alerts > 0 %}text-red{% else %}text-green{% endif %}">
+            {{ alerts }}
+        </div>
+    </div>
+</div>
 
-    <!-- CUI Banner Bottom -->
-    <div class="cui-banner">CUI // SP-CTI</div>
+<!-- Quick Actions -->
+<div class="card">
+    <h2 class="card-title">Quick Actions</h2>
+    <div class="quick-actions">
+        <button class="btn btn-primary" onclick="showToast('Navigate to project creation via API', 'info')">
+            New Project
+        </button>
+        <button class="btn btn-secondary" onclick="showToast('SSP generation requires a project ID', 'info')">
+            Generate SSP
+        </button>
+        <button class="btn btn-secondary" onclick="showToast('Security scan initiated via API', 'info')">
+            Run Security Scan
+        </button>
+    </div>
+</div>
 
-    <!-- Toast Container -->
-    <div id="toast-container" aria-live="polite"></div>
-
-    <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
-</body>
-</html>
+<!-- Recent Activity -->
+<div class="card">
+    <h2 class="card-title">Recent Activity</h2>
+    {% if recent_activity %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Recent activity log">
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                    <th>Timestamp</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in recent_activity %}
+                <tr>
+                    <td><span class="badge badge-info" role="status">{{ entry.event_type }}</span></td>
+                    <td>{{ entry.action }}</td>
+                    <td class="td-truncate">{{ entry.details }}</td>
+                    <td class="td-nowrap">{{ entry.recorded_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No recent activity recorded.</p>
+    {% endif %}
+</div>
+{% endblock %}

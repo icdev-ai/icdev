@@ -21,7 +21,7 @@ import os
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ def handle_project_create(args: dict) -> dict:
         "classification": classification,
         "directory": str(project_dir),
         "status": "active",
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -455,7 +455,7 @@ def handle_task_dispatch(args: dict) -> dict:
         "status": dispatch_status,
         "priority": priority,
         "dispatch_error": dispatch_error,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

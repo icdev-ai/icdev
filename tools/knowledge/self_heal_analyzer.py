@@ -9,7 +9,7 @@ import json
 import sqlite3
 import subprocess
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -223,7 +223,7 @@ def analyze_and_heal(failure_data: dict, dry_run: bool = False, db_path: Path = 
     from tools.knowledge.pattern_detector import extract_features, match_known_pattern
 
     result = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "failure_data": failure_data,
         "dry_run": dry_run,
     }
@@ -374,7 +374,7 @@ def _record_healing_event(
                 json.dumps(failure_data),
                 pattern.get("remediation") if pattern else None,
                 outcome,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         conn.commit()

@@ -159,19 +159,19 @@ class TeamOrchestrator:
         """
         self._max_workers = max_workers
         self._db_path = Path(db_path) if db_path else DB_PATH
-        self._bedrock_client = None
+        self._llm_router = None
         self._agent_client = None
         _ensure_tables(self._db_path)
 
     # -------------------------------------------------------------------
-    # Bedrock client (lazy init)
+    # LLM Router (lazy init — Enhancement #4 Bedrock decoupling)
     # -------------------------------------------------------------------
-    def _get_bedrock_client(self):
-        """Return cached BedrockClient, creating if needed."""
-        if self._bedrock_client is None:
-            from tools.agent.bedrock_client import BedrockClient
-            self._bedrock_client = BedrockClient(db_path=str(self._db_path))
-        return self._bedrock_client
+    def _get_llm_router(self):
+        """Return cached LLMRouter, creating if needed."""
+        if self._llm_router is None:
+            from tools.llm.router import LLMRouter
+            self._llm_router = LLMRouter()
+        return self._llm_router
 
     # -------------------------------------------------------------------
     # A2A client (lazy init)
@@ -251,10 +251,10 @@ class TeamOrchestrator:
         project_id: str,
         agent_config: dict = None,
     ) -> Workflow:
-        """Use Bedrock to decompose the task into a subtask DAG."""
-        from tools.agent.bedrock_client import BedrockRequest
+        """Use LLM to decompose the task into a subtask DAG."""
+        from tools.llm.provider import LLMRequest
 
-        client = self._get_bedrock_client()
+        router = self._get_llm_router()
 
         # Load hardprompt
         system_prompt = ""
@@ -342,21 +342,20 @@ class TeamOrchestrator:
             f"{agent_context}"
         )
 
-        request = BedrockRequest(
+        llm_request = LLMRequest(
             messages=[
                 {"role": "user", "content": [{"type": "text", "text": user_message}]},
             ],
             system_prompt=system_prompt,
             agent_id="orchestrator-agent",
             project_id=project_id,
-            model_preference="opus",
             effort="high",
             max_tokens=8192,
             output_schema=output_schema,
             classification="CUI",
         )
 
-        response = client.invoke(request)
+        response = router.invoke("task_decomposition", llm_request)
 
         # Parse structured output
         decomposition = response.structured_output

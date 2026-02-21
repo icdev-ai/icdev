@@ -11,7 +11,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -451,7 +451,7 @@ def run_stig_check(
 
         findings = stig_data.get("findings", [])
         results = []
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         for finding in findings:
             status = "Not_Reviewed"

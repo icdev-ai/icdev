@@ -315,3 +315,121 @@ def admin_headers():
         "Content-Type": "application/json",
         "X-Tenant-ID": SEED_TENANT_ID,
     }
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 fixtures — compliance_db, llm_config, rate_limiter_backend
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def compliance_db(tmp_path):
+    """ICDEV database seeded with compliance data for testing.
+
+    Seeds nist_controls with AC-2, AC-3, SC-7, SI-4 in mixed statuses
+    and STIG findings at various severity levels.
+    """
+    db_path = tmp_path / "compliance.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(MINIMAL_ICDEV_SCHEMA)
+    _seed_icdev_db(conn)
+
+    # Seed NIST controls in various statuses
+    controls = [
+        ("ctrl-ac2", "AC-2", SEED_PROJECT_ID, "Account Management", "satisfied", "implemented"),
+        ("ctrl-ac3", "AC-3", SEED_PROJECT_ID, "Access Enforcement", "partially_satisfied", "partial"),
+        ("ctrl-sc7", "SC-7", SEED_PROJECT_ID, "Boundary Protection", "not_satisfied", "planned"),
+        ("ctrl-si4", "SI-4", SEED_PROJECT_ID, "Information System Monitoring", "satisfied", "implemented"),
+        ("ctrl-au2", "AU-2", SEED_PROJECT_ID, "Audit Events", "not_assessed", None),
+        ("ctrl-ia2", "IA-2", SEED_PROJECT_ID, "Identification and Authentication", "satisfied", "implemented"),
+    ]
+    for c in controls:
+        conn.execute(
+            "INSERT OR IGNORE INTO nist_controls (id, control_id, project_id, title, status, implementation_status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            c,
+        )
+
+    # Seed STIG findings
+    findings = [
+        ("stig-001", SEED_PROJECT_ID, "SV-230221r1", "high", "open", "CAT-I: Disable root login"),
+        ("stig-002", SEED_PROJECT_ID, "SV-230222r1", "medium", "open", "CAT-II: Set password complexity"),
+        ("stig-003", SEED_PROJECT_ID, "SV-230223r1", "medium", "closed", "CAT-II: Enable audit logging"),
+        ("stig-004", SEED_PROJECT_ID, "SV-230224r1", "low", "open", "CAT-III: Set login banner"),
+    ]
+    for f in findings:
+        conn.execute(
+            "INSERT OR IGNORE INTO stig_findings (id, project_id, rule_id, severity, status, title) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            f,
+        )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+@pytest.fixture
+def llm_config(tmp_path):
+    """Write a mock llm_config.yaml to tmp_path for LLM router tests."""
+    import yaml
+
+    config = {
+        "default_provider": "mock-openai",
+        "providers": {
+            "mock-openai": {
+                "type": "openai_compat",
+                "base_url": "http://localhost:11434/v1",
+                "models": {
+                    "mock-model": {
+                        "model_id": "mock-model-v1",
+                        "capabilities": ["text_generation", "code_generation"],
+                        "max_tokens": 4096,
+                    }
+                },
+            }
+        },
+        "routing": {
+            "code_generation": {
+                "provider": "mock-openai",
+                "model": "mock-model",
+                "fallback_chain": [],
+            },
+            "task_decomposition": {
+                "provider": "mock-openai",
+                "model": "mock-model",
+                "fallback_chain": [],
+            },
+            "collaboration": {
+                "provider": "mock-openai",
+                "model": "mock-model",
+                "fallback_chain": [],
+            },
+            "narrative_generation": {
+                "provider": "mock-openai",
+                "model": "mock-model",
+                "fallback_chain": [],
+            },
+            "compliance_export": {
+                "provider": "mock-openai",
+                "model": "mock-model",
+                "fallback_chain": [],
+            },
+        },
+        "agent_effort_defaults": {
+            "orchestrator-agent": "high",
+            "builder-agent": "max",
+        },
+    }
+
+    config_path = tmp_path / "llm_config.yaml"
+    config_path.write_text(yaml.dump(config, default_flow_style=False))
+    return config_path
+
+
+@pytest.fixture
+def rate_limiter_backend():
+    """Fresh in-memory rate limiter backend for testing."""
+    try:
+        from tools.saas.rate_limiter import InMemoryBackend
+        return InMemoryBackend()
+    except ImportError:
+        pytest.skip("rate_limiter module not available")

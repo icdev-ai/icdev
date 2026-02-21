@@ -18,7 +18,7 @@ import sqlite3
 import sys
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -758,7 +758,7 @@ def _store_dependency(conn, project_id, language, dep, latest_version, days_stal
                 dep["package_name"],
                 dep["current_version"],
                 latest_version,
-                datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
                 days_stale,
                 purl,
                 dep.get("scope", "required"),
@@ -824,7 +824,7 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
                 "total_dependencies": 0,
                 "outdated_count": 0,
                 "dependencies": [],
-                "scan_date": datetime.utcnow().isoformat(),
+                "scan_date": datetime.now(timezone.utc).isoformat(),
                 "message": "No supported languages detected in project directory.",
             }
 
@@ -927,7 +927,7 @@ def scan_dependencies(project_id, language=None, offline=False, project_dir=None
             "total_dependencies": len(all_deps),
             "outdated_count": outdated_count,
             "dependencies": all_deps,
-            "scan_date": datetime.utcnow().isoformat(),
+            "scan_date": datetime.now(timezone.utc).isoformat(),
         }
 
     finally:

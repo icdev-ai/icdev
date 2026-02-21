@@ -31,6 +31,7 @@ Usage:
 import argparse
 import logging
 import os
+import secrets
 import sqlite3
 import sys
 import time
@@ -122,6 +123,14 @@ def _register_cors(app):
     """Register CORS headers on all responses."""
     allowed_origins = _get_allowed_origins()
 
+    # Reject CORS wildcard in production (Enhancement #1D)
+    if not app.debug and "*" in allowed_origins:
+        logger.warning(
+            "CORS wildcard '*' is not allowed in production mode — removing. "
+            "Set CORS_ALLOWED_ORIGINS to explicit origins."
+        )
+        allowed_origins = [o for o in allowed_origins if o != "*"]
+
     @app.after_request
     def _add_cors_headers(response):
         origin = None
@@ -182,6 +191,16 @@ def _register_cui_headers(app):
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = (
             "geolocation=(), camera=(), microphone=()"
+        )
+        # Content-Security-Policy (Enhancement #1C)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "font-src 'self'; "
+            "frame-ancestors 'none'"
         )
         # ICDEV gateway identification
         response.headers["X-Powered-By"] = GATEWAY_NAME
@@ -305,6 +324,9 @@ def create_app(config=None):
     app.config["JSON_SORT_KEYS"] = False
     app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max request
 
+    # Secret key for Flask sessions (portal login uses session cookies)
+    app.secret_key = os.environ.get("ICDEV_SAAS_SECRET", secrets.token_hex(32))
+
     # Load .env if python-dotenv is available
     try:
         from dotenv import load_dotenv
@@ -366,6 +388,15 @@ def create_app(config=None):
 
     # ---- Health check ----
     _register_health_check(app)
+
+    # ---- Auto-initialize platform DB if missing ----
+    try:
+        from tools.saas.platform_db import init_platform_db, SQLITE_PATH
+        if not SQLITE_PATH.exists():
+            logger.info("Platform DB not found — initializing at %s", SQLITE_PATH)
+            init_platform_db()
+    except Exception as exc:
+        logger.warning("Could not auto-initialize platform DB: %s", exc)
 
     # ---- Register blueprints ----
 

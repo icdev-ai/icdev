@@ -6,7 +6,7 @@ Writes to knowledge_patterns and failure_log tables in icdev.db."""
 import argparse
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -58,7 +58,7 @@ def ingest_pattern(
 
     conn = _get_db(db_path)
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         # Check for existing pattern with same signature
         existing = conn.execute(
@@ -151,7 +151,7 @@ def ingest_failure(
                 error_message,
                 stack_trace,
                 context_json,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         conn.commit()

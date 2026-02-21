@@ -8,7 +8,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -85,7 +85,7 @@ def create_mapping(
             (project_id, control_id.upper()),
         ).fetchone()
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         if existing:
             conn.execute(
@@ -163,7 +163,7 @@ def verify_mappings(project_id, db_path=None):
 
         report = {
             "project_id": project_id,
-            "verified_at": datetime.utcnow().isoformat(),
+            "verified_at": datetime.now(timezone.utc).isoformat(),
             "total_required": 0,
             "total_mapped": len(mappings),
             "families": {},
@@ -254,7 +254,7 @@ def generate_matrix(project_id, output_path=None, db_path=None):
     header = config.get("document_header", "CUI // SP-CTI").strip()
     footer = config.get("document_footer", "CUI // SP-CTI").strip()
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     lines = [
         header,
@@ -360,7 +360,7 @@ def generate_matrix(project_id, output_path=None, db_path=None):
         output_dir = Path(output_path).parent
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"control_matrix_{project_id}_{datetime.utcnow().strftime('%Y%m%d')}.md"
+    output_file = output_dir / f"control_matrix_{project_id}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.md"
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(content)

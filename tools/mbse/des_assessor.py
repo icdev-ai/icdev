@@ -21,7 +21,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -210,7 +210,7 @@ def _check_model_authority(project_id, project_dir, conn):
     else:
         last_import = None
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if last_import and (now - last_import).days <= 90:
         return {
             "status": "compliant",
@@ -404,7 +404,7 @@ def _check_model_currency(project_id, project_dir, conn):
             "details": "Cannot parse last import timestamp.",
         }
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_since = (now - last_import).days
 
     if days_since <= 42:
@@ -772,7 +772,7 @@ def _check_pi_snapshots(project_id, project_dir, conn):
             "details": "Verify snapshot date format in model_snapshots table.",
         }
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     days_since = (now - latest).days
 
     if days_since <= 42:
@@ -870,7 +870,7 @@ def run_des_assessment(project_id, project_dir, db_path=None):
         # 1. Load DES requirements catalog
         requirements = load_des_requirements()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         results = []
 
         # 2. Assess each requirement

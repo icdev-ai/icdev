@@ -40,3 +40,4 @@
 | Zero Trust Architecture | goals/zero_trust_architecture.md | ZTA 7-pillar maturity scoring, NIST SP 800-207 compliance, service mesh generation (Istio/Linkerd), network segmentation, PDP/PEP config, cATO posture monitoring (Phase 25) |
 | MOSA Workflow | goals/mosa_workflow.md | DoD MOSA (10 U.S.C. §4401): MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection, cATO evidence (Phase 26) |
 | CLI Capabilities | goals/cli_capabilities.md | Optional Claude CLI features: CI/CD automation, parallel agents, container execution, scripted intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |
+| Remote Command Gateway | goals/remote_command_gateway.md | Remote Command Gateway: messaging channel integration, 8-gate security chain, IL-aware response filtering, user binding, air-gapped/connected mode (Phase 28) |

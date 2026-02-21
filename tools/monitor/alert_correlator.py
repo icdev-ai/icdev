@@ -8,7 +8,7 @@ import argparse
 import json
 import re
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -92,9 +92,9 @@ def correlate(alerts: list, time_window: timedelta = None) -> list:
                     ts.replace("Z", "+00:00").replace("+00:00", "")
                 )
             except ValueError:
-                alert["_dt"] = datetime.utcnow()
+                alert["_dt"] = datetime.now(timezone.utc)
         else:
-            alert["_dt"] = datetime.utcnow()
+            alert["_dt"] = datetime.now(timezone.utc)
 
     # Sort by timestamp
     normalized.sort(key=lambda a: a["_dt"])
@@ -214,9 +214,9 @@ def deduplicate(alerts: list) -> list:
                     ts.replace("Z", "+00:00").replace("+00:00", "")
                 )
             except ValueError:
-                alert["_dt"] = datetime.utcnow()
+                alert["_dt"] = datetime.now(timezone.utc)
         else:
-            alert["_dt"] = datetime.utcnow()
+            alert["_dt"] = datetime.now(timezone.utc)
 
     deduped = []
     used = set()
@@ -278,7 +278,7 @@ def escalate(incident: dict, db_path: Path = None) -> dict:
         Escalation record.
     """
     conn = _get_db(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     escalation = {
         "incident_id": incident.get("incident_id", "unknown"),
@@ -372,7 +372,7 @@ def _load_alerts_from_db(
     """Load alerts from the database for a given project and time window."""
     conn = _get_db(db_path)
     try:
-        start = (datetime.utcnow() - time_window).isoformat()
+        start = (datetime.now(timezone.utc) - time_window).isoformat()
         rows = conn.execute(
             """SELECT id, project_id, severity, source, title, description,
                       status, created_at
@@ -452,7 +452,7 @@ def main():
     result = {
         "project_id": args.project,
         "time_window": args.time_window,
-        "analyzed_at": datetime.utcnow().isoformat(),
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
         "total_alerts": len(alerts),
         "total_incidents": len(incidents),
         "incidents": incidents,

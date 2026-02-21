@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<!-- CUI // SP-CTI -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICDEV Portal - {% block title %}{{ tenant_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
+    {% if session.get('portal_session_token') %}
+    <meta name="api-key" content="{{ session.get('portal_session_token', '') }}">
+    {% endif %}
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- CUI Banner Top (configurable via args/cui_markings.yaml or ICDEV_CUI_BANNER_* env vars) -->
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+    {% endif %}
+
+    <div class="portal-layout">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar" role="navigation" aria-label="Main navigation">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
+                        <rect width="48" height="48" rx="8" fill="#58a6ff"/>
+                        <path d="M14 16h20v2H14zm0 6h16v2H14zm0 6h20v2H14zm0 6h12v2H14z" fill="#0d1117"/>
+                    </svg>
+                </div>
+                <div class="sidebar-title">
+                    <span class="sidebar-brand">ICDEV</span>
+                    <span class="sidebar-tenant">{{ tenant_name }}</span>
+                </div>
+            </div>
+
+            <ul class="sidebar-nav">
+                <li class="{% if active_page == 'dashboard' %}active{% endif %}">
+                    <a href="{{ url_for('portal.dashboard') }}">
+                        <span class="nav-icon">&#9632;</span> Dashboard
+                    </a>
+                </li>
+                <li class="{% if active_page == 'projects' %}active{% endif %}">
+                    <a href="{{ url_for('portal.projects') }}">
+                        <span class="nav-icon">&#9776;</span> Projects
+                    </a>
+                </li>
+                <li class="{% if active_page == 'compliance' %}active{% endif %}">
+                    <a href="{{ url_for('portal.compliance') }}">
+                        <span class="nav-icon">&#10003;</span> Compliance
+                    </a>
+                </li>
+                <li class="{% if active_page == 'team' %}active{% endif %}">
+                    <a href="{{ url_for('portal.team') }}">
+                        <span class="nav-icon">&#9734;</span> Team
+                    </a>
+                </li>
+                <li class="{% if active_page == 'settings' %}active{% endif %}">
+                    <a href="{{ url_for('portal.settings') }}">
+                        <span class="nav-icon">&#9881;</span> Settings
+                    </a>
+                </li>
+                <li class="{% if active_page == 'profile' %}active{% endif %}">
+                    <a href="{{ url_for('portal.profile') }}">
+                        <span class="nav-icon">&#9823;</span> Profile
+                    </a>
+                </li>
+                <li class="{% if active_page == 'api_keys' %}active{% endif %}">
+                    <a href="{{ url_for('portal.api_keys') }}">
+                        <span class="nav-icon">&#9919;</span> API Keys
+                    </a>
+                </li>
+                <li class="{% if active_page == 'usage' %}active{% endif %}">
+                    <a href="{{ url_for('portal.usage') }}">
+                        <span class="nav-icon">&#9650;</span> Usage
+                    </a>
+                </li>
+                <li class="{% if active_page == 'cmmc' %}active{% endif %}">
+                    <a href="{{ url_for('portal.cmmc') }}">
+                        <span class="nav-icon">&#9733;</span> CMMC
+                    </a>
+                </li>
+                <li class="{% if active_page == 'audit' %}active{% endif %}">
+                    <a href="{{ url_for('portal.audit') }}">
+                        <span class="nav-icon">&#9998;</span> Audit Trail
+                    </a>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-user">
+                    <span class="user-name">{{ user_name }}</span>
+                    <span class="user-role">{{ user_role }}</span>
+                </div>
+                <a href="{{ url_for('portal.logout') }}" class="btn btn-secondary btn-sm">Sign Out</a>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content" id="main-content" role="main">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <!-- CUI Banner Bottom -->
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
+    {% endif %}
+
+    <!-- Toast Container -->
+    <div id="toast-container" aria-live="polite"></div>
+
+    {% block modals %}{% endblock %}
+
+    <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

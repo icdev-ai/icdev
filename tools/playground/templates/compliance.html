@@ -1,0 +1,145 @@
+<!-- CUI // SP-CTI -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compliance Overview — ICDEV Playground</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='playground.css') }}">
+</head>
+<body>
+    <div class="demo-banner">{{ demo_banner }}</div>
+    <div class="container">
+        <h1>Compliance Overview</h1>
+        <p class="subtitle">Project compliance scores and status across frameworks</p>
+        <div class="nav">
+            <a href="/">Home</a>
+            <a href="/compliance" class="active">Compliance</a>
+            <a href="/crosswalk">Crosswalk</a>
+            <a href="/assessment">Assessment</a>
+            <a href="/ssp-preview">SSP Preview</a>
+        </div>
+
+        <h2>Projects</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Project</th>
+                        <th>Classification</th>
+                        <th>Impact Level</th>
+                        <th>Status</th>
+                        <th>Compliance Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in projects %}
+                    <tr>
+                        <td>{{ p.name }}</td>
+                        <td><span class="badge badge-warning">{{ p.classification }}</span></td>
+                        <td><span class="badge badge-info">{{ p.impact_level }}</span></td>
+                        <td>
+                            {% if p.status == 'active' %}
+                                <span class="badge badge-success">Active</span>
+                            {% elif p.status == 'planning' %}
+                                <span class="badge badge-info">Planning</span>
+                            {% else %}
+                                <span class="badge badge-warning">{{ p.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="progress-bar">
+                                <div class="progress-fill {% if p.compliance_score >= 80 %}bg-green{% elif p.compliance_score >= 60 %}bg-yellow{% else %}bg-red{% endif %}" style="width: {{ p.compliance_score }}%"></div>
+                            </div>
+                            {{ p.compliance_score }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h2>STIG Findings</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Rule ID</th>
+                        <th>Title</th>
+                        <th>Severity</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stigs %}
+                    <tr>
+                        <td>{{ s.rule_id }}</td>
+                        <td>{{ s.title }}</td>
+                        <td>
+                            {% if s.severity == 'high' %}
+                                <span class="badge badge-danger">High</span>
+                            {% elif s.severity == 'medium' %}
+                                <span class="badge badge-warning">Medium</span>
+                            {% else %}
+                                <span class="badge badge-info">Low</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if s.status == 'open' %}
+                                <span class="badge badge-danger">Open</span>
+                            {% elif s.status == 'remediated' %}
+                                <span class="badge badge-success">Remediated</span>
+                            {% else %}
+                                <span class="badge badge-warning">{{ s.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Plan of Action &amp; Milestones (POA&amp;M)</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Finding</th>
+                        <th>Severity</th>
+                        <th>Milestone</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pm in poams %}
+                    <tr>
+                        <td>{{ pm.finding }}</td>
+                        <td>
+                            {% if pm.severity == 'high' %}
+                                <span class="badge badge-danger">High</span>
+                            {% elif pm.severity == 'medium' %}
+                                <span class="badge badge-warning">Medium</span>
+                            {% else %}
+                                <span class="badge badge-info">Low</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ pm.milestone }}</td>
+                        <td>{{ pm.due_date }}</td>
+                        <td>
+                            {% if pm.status == 'open' %}
+                                <span class="badge badge-danger">Open</span>
+                            {% elif pm.status == 'closed' %}
+                                <span class="badge badge-success">Closed</span>
+                            {% else %}
+                                <span class="badge badge-warning">{{ pm.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

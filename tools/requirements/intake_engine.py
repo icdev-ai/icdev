@@ -33,7 +33,7 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -710,7 +710,7 @@ def resume_session(session_id: str, db_path=None) -> dict:
     # Update status to active
     conn.execute(
         "UPDATE intake_sessions SET session_status = 'active', updated_at = ? WHERE id = ?",
-        (datetime.utcnow().isoformat(), session_id),
+        (datetime.now(timezone.utc).isoformat(), session_id),
     )
     conn.commit()
     conn.close()
@@ -744,7 +744,7 @@ def pause_session(session_id: str, db_path=None) -> dict:
     conn = _get_connection(db_path)
     conn.execute(
         "UPDATE intake_sessions SET session_status = 'paused', updated_at = ? WHERE id = ?",
-        (datetime.utcnow().isoformat(), session_id),
+        (datetime.now(timezone.utc).isoformat(), session_id),
     )
     conn.commit()
     conn.close()
@@ -873,7 +873,7 @@ def process_turn(
                ambiguity_count = ambiguity_count + ?,
                updated_at = ?
            WHERE id = ?""",
-        (req_count, len(ambiguities), datetime.utcnow().isoformat(), session_id),
+        (req_count, len(ambiguities), datetime.now(timezone.utc).isoformat(), session_id),
     )
 
     # --- BDD preview generation + store as acceptance criteria ---
@@ -1871,7 +1871,7 @@ def export_requirements(session_id: str, db_path=None) -> dict:
         "readiness_score": dict(session).get("readiness_score", 0.0),
         "total_requirements": len(reqs),
         "requirements": [dict(r) for r in reqs],
-        "exported_at": datetime.utcnow().isoformat(),
+        "exported_at": datetime.now(timezone.utc).isoformat(),
     }
 
 

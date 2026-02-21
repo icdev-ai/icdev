@@ -516,6 +516,14 @@
 | Usage API | tools/dashboard/api/usage.py | Per-user token aggregation, per-provider breakdown, time-series, cost estimates | user_id, days | Usage stats JSON |
 | Activity Feed JS | tools/dashboard/static/js/activity.js | WebSocket + HTTP polling client, filter state, CSV export | (browser) | Real-time UI |
 
+## Modular Installation (Phase 33)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Installer | tools/installer/installer.py | Interactive wizard + profile-based modular deployment with compliance posture configuration | --interactive, --profile, --add-module, --add-compliance, --upgrade, --status, --json | Installation manifest |
+| Module Registry | tools/installer/module_registry.py | Module definition registry: dependencies, DB table groups, validation | --validate, --list, --json | Module graph |
+| Compliance Configurator | tools/installer/compliance_configurator.py | Compliance posture selection and framework activation | --list-postures, --apply, --json | Compliance config |
+| Platform Setup | tools/installer/platform_setup.py | Platform artifact generation (Docker Compose, K8s RBAC, .env, Helm values) | --generate docker\|k8s-rbac\|env\|helm-values, --modules | Platform artifacts |
+
 ## Safety Hooks
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

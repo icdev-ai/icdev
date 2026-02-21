@@ -31,7 +31,7 @@ import json
 import re
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -728,7 +728,7 @@ def register_spec(spec_dir: Path, project_id: str = None, db_path=None) -> dict:
     metadata = _parse_spec_metadata(content)
 
     conn = _get_connection(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Check for existing entry by spec_dir
     existing = conn.execute(
@@ -812,7 +812,7 @@ def update_checklist(spec_dir: Path, check_results: dict) -> Path:
     spec_dir = Path(spec_dir)
     spec_dir.mkdir(parents=True, exist_ok=True)
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     score = check_results.get("score", 0.0)
     checks = check_results.get("checks", [])
 
@@ -852,7 +852,7 @@ def update_constitution_check(spec_dir: Path, validation_results: dict) -> Path:
     spec_dir = Path(spec_dir)
     spec_dir.mkdir(parents=True, exist_ok=True)
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     passed = validation_results.get("passed", False)
     violations = validation_results.get("violations", [])
     summary = validation_results.get("summary", "")

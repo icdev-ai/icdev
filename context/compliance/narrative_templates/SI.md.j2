@@ -1,0 +1,111 @@
+<!-- CUI // SP-CTI -->
+## {{ control_id }} — {{ control_title }}
+
+### Implementation Status
+
+**Status:** {{ status }}
+**Family:** {{ family }}
+
+### Implementation Narrative
+
+{% if implementation_detail %}
+{{ implementation_detail }}
+{% else %}
+This control has not yet been fully documented. Evidence gathering is in progress.
+{% endif %}
+
+### Flaw Remediation SLA
+
+{% if control_id == "SI-2" or control_id.startswith("SI-2(") %}
+The organization identifies, reports, and corrects information system flaws in accordance with the following service level agreements:
+
+- **Critical Severity (CVSS 9.0-10.0):** Remediation within 15 calendar days of identification. Emergency patches may be deployed outside the standard change window with ISSO approval.
+- **High Severity (CVSS 7.0-8.9):** Remediation within 30 calendar days. Mitigating controls must be documented within 72 hours if the patch cannot be applied immediately.
+- **Medium Severity (CVSS 4.0-6.9):** Remediation within 90 calendar days during the next scheduled maintenance window.
+- **Low Severity (CVSS 0.1-3.9):** Remediation within 180 calendar days or the next major release cycle.
+- **Tracking:** All identified flaws are tracked in the Plan of Action and Milestones (POAM) with assigned owners, milestones, and estimated completion dates. SLA compliance is reported monthly.
+- **Testing:** Flaw remediation patches are tested in a staging environment prior to production deployment. Regression testing confirms that patches do not introduce new vulnerabilities or degrade functionality.
+- **Vendor Notifications:** The organization monitors vendor security advisories, CISA alerts, and IAVA/IAVB notifications for applicable flaws and initiates remediation within SLA timelines.
+{% else %}
+Flaw remediation SLAs are documented under SI-2. This control ({{ control_id }}) operates within the established flaw remediation framework.
+{% endif %}
+
+### Malicious Code Protection
+
+{% if control_id == "SI-3" or control_id.startswith("SI-3(") %}
+The system employs malicious code protection mechanisms at information system entry and exit points:
+
+- **Endpoint Protection:** Anti-malware/endpoint detection and response (EDR) software is deployed on all endpoints and servers. Definitions and signatures are updated automatically.
+- **Real-Time Scanning:** Real-time scanning is enabled for file system access, email attachments, and web downloads. On-access scanning detects malicious code at the point of introduction.
+- **Scheduled Scanning:** Full system scans are performed at the organizationally defined frequency (minimum weekly) during periods of low system utilization.
+- **Automatic Response:** Upon detection of malicious code, the system automatically quarantines the affected file, blocks the associated process, alerts the security operations team, and generates an audit record.
+- **False Positive Management:** False positive detections are reviewed, documented, and addressed through signature exclusion policies maintained by the security team.
+- **Container Scanning:** Container images are scanned for malware and known-vulnerable components prior to deployment. Runtime container monitoring detects anomalous process execution.
+{% else %}
+Malicious code protection is documented under SI-3. This control ({{ control_id }}) supports the malware defense architecture.
+{% endif %}
+
+### Information System Monitoring Tools
+
+{% if control_id == "SI-4" or control_id.startswith("SI-4(") %}
+The organization monitors the information system to detect attacks, indicators of potential attacks, unauthorized connections, and anomalous behavior:
+
+- **Intrusion Detection/Prevention:** Network-based IDS/IPS is deployed at managed network interfaces to detect and prevent known attack signatures and anomalous traffic patterns.
+- **Host-Based Monitoring:** Host-based intrusion detection (HIDS) and file integrity monitoring (FIM) are deployed on critical servers to detect unauthorized changes to system files, configurations, and binaries.
+- **Log Aggregation:** Security-relevant logs from all system components are aggregated in a centralized SIEM platform for correlation, analysis, and alerting. Log forwarding uses encrypted channels.
+- **Behavioral Analytics:** User and entity behavior analytics (UEBA) tools establish baseline behavior profiles and alert on deviations that may indicate compromised accounts or insider threats.
+- **Network Traffic Analysis:** Network flow data (NetFlow/sFlow) is collected and analyzed to identify anomalous communication patterns, data exfiltration attempts, and command-and-control traffic.
+- **Alert Management:** Monitoring alerts are triaged based on severity and confidence. High-fidelity alerts trigger automated incident response workflows. Alert fatigue is mitigated through tuning and correlation.
+{% else %}
+Information system monitoring tools are documented under SI-4. This control ({{ control_id }}) contributes to the overall continuous monitoring capability.
+{% endif %}
+
+### Software and Firmware Integrity Verification
+
+{% if control_id == "SI-7" or control_id.startswith("SI-7(") %}
+The organization employs integrity verification tools to detect unauthorized changes to software and firmware:
+
+- **Integrity Checking:** Cryptographic hash verification (SHA-256 minimum) is used to validate software and firmware integrity at boot time, at defined intervals, and upon notification of potential compromise.
+- **Supply Chain Verification:** Software packages are verified against publisher-provided signatures or checksums before installation. SBOM (Software Bill of Materials) is generated and maintained for all deployed software.
+- **Code Signing:** All internally developed code is digitally signed prior to deployment. Signature verification is enforced at deployment time; unsigned or tampered code is rejected.
+- **Firmware Protections:** Firmware updates are applied only from authenticated sources with verified digital signatures. Secure boot is enabled where supported by hardware.
+- **Automated Detection:** Automated integrity monitoring tools generate alerts when unauthorized modifications are detected. Automated response includes notification, quarantine, and rollback to a known-good state.
+- **Baseline Management:** A cryptographic baseline of authorized software and firmware versions is maintained. Deviations from the baseline trigger investigation and remediation.
+{% else %}
+Software and firmware integrity verification is documented under SI-7. This control ({{ control_id }}) supports the integrity assurance framework.
+{% endif %}
+
+### Evidence
+
+{% if evidence_items %}
+{% for item in evidence_items %}
+- **{{ item.source }}** ({{ item.date | default("N/A") }}): {{ item.description }}
+{% endfor %}
+{% else %}
+No formal evidence has been collected for this control.
+{% endif %}
+
+### Assessment History
+
+{% if audit_events %}
+| Date | Actor | Action |
+|------|-------|--------|
+{% for event in audit_events[:10] %}
+| {{ event.created_at | default("N/A") }} | {{ event.actor | default("system") }} | {{ event.action | default("") }} |
+{% endfor %}
+{% else %}
+No assessment history available.
+{% endif %}
+
+### Related Framework Mappings
+
+{% if crosswalk_mappings %}
+{% for mapping in crosswalk_mappings %}
+- **{{ mapping.framework }}**: {{ mapping.requirement_id }} ({{ mapping.status | default("not_assessed") }})
+{% endfor %}
+{% else %}
+No crosswalk mappings available for this control.
+{% endif %}
+
+---
+*CUI // SP-CTI — Generated by ICDEV Narrative Generator*

@@ -26,7 +26,7 @@ import argparse
 import json
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -157,7 +157,7 @@ def add_principle(
 
     conn = _get_connection(db_path)
     principle_id = _generate_id("con")
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     conn.execute(
         """INSERT INTO project_constitutions
@@ -339,7 +339,7 @@ def load_defaults(project_id: str, db_path=None) -> dict:
             """INSERT INTO project_constitutions
                    (id, project_id, principle_text, category, priority, is_active, created_by, created_at)
                VALUES (?, ?, ?, ?, ?, 1, 'system', ?)""",
-            (principle_id, project_id, text, category, priority, datetime.utcnow().isoformat()),
+            (principle_id, project_id, text, category, priority, datetime.now(timezone.utc).isoformat()),
         )
         loaded += 1
 

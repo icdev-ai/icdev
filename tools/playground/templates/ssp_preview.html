@@ -1,0 +1,187 @@
+<!-- CUI // SP-CTI -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSP Preview — ICDEV Playground</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='playground.css') }}">
+</head>
+<body>
+    <div class="demo-banner">{{ demo_banner }}</div>
+    <div class="container">
+        <h1>System Security Plan (SSP) Preview</h1>
+        <p class="subtitle">Sample SSP for {{ project.get('name', 'Demo Project') }} with CUI markings</p>
+        <div class="nav">
+            <a href="/">Home</a>
+            <a href="/compliance">Compliance</a>
+            <a href="/crosswalk">Crosswalk</a>
+            <a href="/assessment">Assessment</a>
+            <a href="/ssp-preview" class="active">SSP Preview</a>
+        </div>
+
+        <div class="card" style="text-align: center; border-color: var(--accent);">
+            <div class="cui-mark">CUI // SP-CTI</div>
+            <h2 style="margin: 0.5rem 0;">System Security Plan</h2>
+            <p style="color: var(--text-muted);">{{ project.get('name', 'Mission Planning System') }}</p>
+            <p style="color: var(--text-muted); font-size: 0.85rem;">Classification: {{ project.get('classification', 'CUI') }} | Impact Level: {{ project.get('impact_level', 'IL5') }}</p>
+            <div class="cui-mark" style="margin-top: 0.5rem;">CONTROLLED UNCLASSIFIED INFORMATION</div>
+        </div>
+
+        <div class="ssp-section">
+            <h3>1. System Identification</h3>
+            <table>
+                <tr><td style="width: 200px; color: var(--text-muted);">System Name</td><td>{{ project.get('name', 'Mission Planning System') }}</td></tr>
+                <tr><td style="color: var(--text-muted);">System ID</td><td>{{ project.get('id', 'proj-demo-001') }}</td></tr>
+                <tr><td style="color: var(--text-muted);">Classification</td><td>{{ project.get('classification', 'CUI') }} // SP-CTI</td></tr>
+                <tr><td style="color: var(--text-muted);">Impact Level</td><td>{{ project.get('impact_level', 'IL5') }} (Moderate Confidentiality, Moderate Integrity, Moderate Availability)</td></tr>
+                <tr><td style="color: var(--text-muted);">Authorization Status</td><td><span class="badge badge-warning">Conditional ATO</span></td></tr>
+                <tr><td style="color: var(--text-muted);">Authorization Date</td><td>2026-01-15</td></tr>
+                <tr><td style="color: var(--text-muted);">Expiration Date</td><td>2027-01-15</td></tr>
+            </table>
+        </div>
+
+        <div class="ssp-section">
+            <h3>2. System Description</h3>
+            <p>The {{ project.get('name', 'Mission Planning System') }} is a web-based application deployed on AWS GovCloud (us-gov-west-1) that provides mission planning, coordination, and execution tracking capabilities for Department of Defense personnel. The system processes Controlled Unclassified Information (CUI) with Special Protection for Counter-Terrorism Information (SP-CTI) markings.</p>
+            <p style="margin-top: 0.5rem;">The system operates within a FedRAMP Moderate authorization boundary and is subject to CMMC Level 2 requirements as it handles CUI on behalf of DoD programs.</p>
+        </div>
+
+        <div class="ssp-section">
+            <h3>3. System Architecture</h3>
+            <p>The system follows a three-tier architecture:</p>
+            <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                <li><strong>Presentation Tier:</strong> React frontend served via CloudFront CDN with WAF protection</li>
+                <li><strong>Application Tier:</strong> Flask/Python API deployed on EKS with mTLS service mesh (Istio)</li>
+                <li><strong>Data Tier:</strong> Amazon RDS PostgreSQL with encryption at rest (AES-256) and TLS 1.3 in transit</li>
+            </ul>
+            <p style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">All components operate within a dedicated VPC with no public internet access. Egress is restricted to approved AWS services via VPC endpoints.</p>
+        </div>
+
+        <div class="ssp-section">
+            <h3>4. Security Control Implementation</h3>
+            <p class="subtitle">20 controls assessed for {{ project.get('name', 'Mission Planning System') }}</p>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Control</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                        <th>Implementation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in controls %}
+                    <tr>
+                        <td><strong>{{ c.control_id }}</strong></td>
+                        <td>{{ c.title }}</td>
+                        <td>
+                            {% if c.status == 'satisfied' %}
+                                <span class="badge badge-success">Satisfied</span>
+                            {% elif c.status == 'partially_satisfied' %}
+                                <span class="badge badge-warning">Partial</span>
+                            {% elif c.status == 'not_satisfied' %}
+                                <span class="badge badge-danger">Not Satisfied</span>
+                            {% else %}
+                                <span class="badge badge-info">{{ c.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if c.implementation_status == 'implemented' %}
+                                <span class="badge badge-success">Implemented</span>
+                            {% elif c.implementation_status == 'partial' %}
+                                <span class="badge badge-warning">Partial</span>
+                            {% elif c.implementation_status == 'planned' %}
+                                <span class="badge badge-info">Planned</span>
+                            {% else %}
+                                <span class="badge">{{ c.implementation_status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% set satisfied_count = controls | selectattr('status', 'equalto', 'satisfied') | list | length %}
+        {% set partial_count = controls | selectattr('status', 'equalto', 'partially_satisfied') | list | length %}
+        {% set not_sat_count = controls | selectattr('status', 'equalto', 'not_satisfied') | list | length %}
+        <div class="card">
+            <h3 style="color: var(--accent); margin-bottom: 0.75rem;">Control Summary</h3>
+            <div class="stat-row">
+                <div class="stat-item">
+                    <div class="stat-value score-green">{{ satisfied_count }}</div>
+                    <div class="stat-label">Satisfied</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value score-yellow">{{ partial_count }}</div>
+                    <div class="stat-label">Partial</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value score-red">{{ not_sat_count }}</div>
+                    <div class="stat-label">Not Satisfied</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" style="color: var(--blue);">{{ controls | length }}</div>
+                    <div class="stat-label">Total</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="ssp-section">
+            <h3>5. Plan of Action &amp; Milestones (POA&amp;M)</h3>
+            {% if poams %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Finding</th>
+                        <th>Severity</th>
+                        <th>Milestone</th>
+                        <th>Due Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pm in poams %}
+                    <tr>
+                        <td>{{ pm.finding }}</td>
+                        <td>
+                            {% if pm.severity == 'high' %}
+                                <span class="badge badge-danger">High</span>
+                            {% elif pm.severity == 'medium' %}
+                                <span class="badge badge-warning">Medium</span>
+                            {% else %}
+                                <span class="badge badge-info">Low</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ pm.milestone }}</td>
+                        <td>{{ pm.due_date }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color: var(--text-muted);">No POA&amp;M items found.</p>
+            {% endif %}
+        </div>
+
+        <div class="ssp-section">
+            <h3>6. Continuous Monitoring</h3>
+            <p>The system implements continuous monitoring in accordance with NIST SP 800-137:</p>
+            <ul style="margin: 0.5rem 0; padding-left: 1.5rem;">
+                <li>Automated vulnerability scanning (weekly, via RA-5)</li>
+                <li>Configuration baseline monitoring (daily, via CM-2/CM-6)</li>
+                <li>Audit log review and analysis (continuous, via AU-6)</li>
+                <li>Incident response readiness (quarterly tabletop, via IR-4)</li>
+                <li>POA&amp;M tracking and remediation (monthly review)</li>
+            </ul>
+            <p style="margin-top: 0.5rem; color: var(--text-muted); font-size: 0.85rem;">cATO evidence freshness is monitored via the ICDEV heartbeat daemon. Critical control evidence must be refreshed within 30 days.</p>
+        </div>
+
+        <div class="card" style="text-align: center; border-color: var(--accent);">
+            <div class="cui-mark">CUI // SP-CTI</div>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem;">End of System Security Plan Preview</p>
+            <div class="cui-mark">CONTROLLED UNCLASSIFIED INFORMATION</div>
+        </div>
+    </div>
+</body>
+</html>

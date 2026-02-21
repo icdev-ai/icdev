@@ -4,7 +4,7 @@
 Multi-stage builds, non-root user, no shell, minimal base, health checks, CUI labels."""
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -21,7 +21,7 @@ CUI_HEADER = (
 
 
 def _cui_header() -> str:
-    return CUI_HEADER.format(timestamp=datetime.utcnow().isoformat())
+    return CUI_HEADER.format(timestamp=datetime.now(timezone.utc).isoformat())
 
 
 def _write(path: Path, content: str) -> Path:
@@ -79,7 +79,7 @@ LABEL classification="CUI" \\
       org.opencontainers.image.title="{project_name}" \\
       org.opencontainers.image.description="STIG-hardened Python application" \\
       org.opencontainers.image.vendor="ICDev" \\
-      org.opencontainers.image.created="{datetime.utcnow().isoformat()}"
+      org.opencontainers.image.created="{datetime.now(timezone.utc).isoformat()}"
 
 # Prevent Python from writing .pyc files and enable unbuffered output
 ENV PYTHONDONTWRITEBYTECODE=1 \\
@@ -235,7 +235,7 @@ LABEL classification="CUI" \\
       org.opencontainers.image.title="{project_name}" \\
       org.opencontainers.image.description="STIG-hardened Node.js application" \\
       org.opencontainers.image.vendor="ICDev" \\
-      org.opencontainers.image.created="{datetime.utcnow().isoformat()}"
+      org.opencontainers.image.created="{datetime.now(timezone.utc).isoformat()}"
 
 ENV NODE_ENV=production \\
     APP_PORT={app_port} \\

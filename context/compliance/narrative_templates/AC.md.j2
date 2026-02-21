@@ -1,0 +1,101 @@
+<!-- CUI // SP-CTI -->
+## {{ control_id }} — {{ control_title }}
+
+### Implementation Status
+
+**Status:** {{ status }}
+**Family:** {{ family }}
+
+### Implementation Narrative
+
+{% if implementation_detail %}
+{{ implementation_detail }}
+{% else %}
+This control has not yet been fully documented. Evidence gathering is in progress.
+{% endif %}
+
+### Account Management Procedures
+
+{% if control_id == "AC-2" or control_id.startswith("AC-2(") %}
+The organization manages information system accounts through the following procedures:
+
+- **Account Types:** Individual, group, system, application, guest, and temporary accounts are identified and categorized per organizational policy.
+- **Account Lifecycle:** Accounts follow a defined lifecycle from creation through modification, disabling, and removal. Inactive accounts are disabled after the organizationally defined inactivity period.
+- **Account Reviews:** Periodic account reviews are conducted to verify continued need, appropriate privilege levels, and compliance with separation of duties.
+- **Notification:** Account managers are notified when accounts are no longer required, when users are terminated or transferred, and when system usage or need-to-know changes.
+{% else %}
+Account management procedures are documented under AC-2. This control ({{ control_id }}) inherits or supplements those baseline account management practices as applicable.
+{% endif %}
+
+### Access Enforcement Mechanisms
+
+{% if control_id == "AC-3" or control_id.startswith("AC-3(") %}
+Access enforcement is implemented through the following mechanisms:
+
+- **Access Control Model:** The system enforces approved authorizations for logical access using role-based access control (RBAC), attribute-based access control (ABAC), or a combination as defined in the system security architecture.
+- **Policy Enforcement Points:** Access decisions are enforced at application, middleware, and infrastructure layers. Deny-by-default policies are applied at all enforcement points.
+- **Discretionary vs. Mandatory:** The system implements mandatory access control for classified/CUI data flows and discretionary access control for collaborative workspaces as appropriate to the impact level.
+{% else %}
+Access enforcement mechanisms are documented under AC-3. This control ({{ control_id }}) supports the overall access enforcement architecture.
+{% endif %}
+
+### Least Privilege Implementation
+
+{% if control_id == "AC-6" or control_id.startswith("AC-6(") %}
+Least privilege is enforced through:
+
+- **Privilege Assignment:** Users and processes are assigned only the minimum privileges necessary to accomplish assigned tasks in accordance with organizational missions and business functions.
+- **Privileged Accounts:** Privileged accounts (administrators, root, service accounts) are separately tracked, audited, and subject to enhanced monitoring. Privileged access is time-limited and requires justification.
+- **Privilege Escalation:** Temporary privilege escalation is logged, requires approval, and automatically reverts after the defined time window.
+- **Separation of Duties:** Critical functions are divided among different individuals to reduce the risk of malicious activity without collusion.
+{% else %}
+Least privilege principles are documented under AC-6. This control ({{ control_id }}) adheres to the organizationally defined least privilege policies.
+{% endif %}
+
+### Remote Access Controls
+
+{% if control_id == "AC-17" or control_id.startswith("AC-17(") %}
+Remote access to the information system is controlled through:
+
+- **Authorized Methods:** Only organizationally approved remote access methods are permitted (e.g., VPN with FIPS 140-2/3 validated encryption, virtual desktop infrastructure).
+- **Usage Restrictions:** Remote access is restricted to authorized users with valid need-to-know. All remote sessions are encrypted end-to-end.
+- **Monitoring:** Remote access sessions are monitored and audited. Anomalous remote access patterns trigger automated alerts.
+- **Termination:** Remote sessions are automatically terminated after the organizationally defined inactivity timeout. Users are required to disconnect remote access when no longer needed.
+{% else %}
+Remote access controls are documented under AC-17. This control ({{ control_id }}) supports the remote access protection strategy.
+{% endif %}
+
+### Evidence
+
+{% if evidence_items %}
+{% for item in evidence_items %}
+- **{{ item.source }}** ({{ item.date | default("N/A") }}): {{ item.description }}
+{% endfor %}
+{% else %}
+No formal evidence has been collected for this control.
+{% endif %}
+
+### Assessment History
+
+{% if audit_events %}
+| Date | Actor | Action |
+|------|-------|--------|
+{% for event in audit_events[:10] %}
+| {{ event.created_at | default("N/A") }} | {{ event.actor | default("system") }} | {{ event.action | default("") }} |
+{% endfor %}
+{% else %}
+No assessment history available.
+{% endif %}
+
+### Related Framework Mappings
+
+{% if crosswalk_mappings %}
+{% for mapping in crosswalk_mappings %}
+- **{{ mapping.framework }}**: {{ mapping.requirement_id }} ({{ mapping.status | default("not_assessed") }})
+{% endfor %}
+{% else %}
+No crosswalk mappings available for this control.
+{% endif %}
+
+---
+*CUI // SP-CTI — Generated by ICDEV Narrative Generator*

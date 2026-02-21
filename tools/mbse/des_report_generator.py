@@ -14,7 +14,7 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -607,7 +607,7 @@ def generate_des_report(project_id, output_path=None, db_path=None):
             report_count = 0
         new_version = f"{report_count + 1}.0"
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # 7. Build substitution dict
         variables = {

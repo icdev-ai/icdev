@@ -34,7 +34,7 @@ import json
 import os
 import sqlite3
 import textwrap
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ def _record_artifact(plan_id, task_id, artifact_type, file_path, description):
         "(plan_id, task_id, artifact_type, file_path, file_hash, description, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (plan_id, task_id, artifact_type, file_path_str, file_hash, description,
-         datetime.utcnow().isoformat()),
+         datetime.now(timezone.utc).isoformat()),
     )
     conn.commit()
     conn.close()
@@ -1465,7 +1465,7 @@ def generate_all(plan_id, output_dir="."):
         f"<!-- {CUI_BANNER} -->",
         f"# Migration Code Generation — Plan {plan_id}",
         "",
-        f"Generated: {datetime.utcnow().isoformat()}",
+        f"Generated: {datetime.now(timezone.utc).isoformat()}",
         f"Language: {language} | Framework: {framework}",
         "",
         "## Adapters",

@@ -8,8 +8,10 @@
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
 </head>
 <body class="login-body">
-    <!-- CUI Banner Top -->
-    <div class="cui-banner">CUI // SP-CTI</div>
+    <!-- CUI Banner Top (configurable via args/cui_markings.yaml or ICDEV_CUI_BANNER_* env vars) -->
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+    {% endif %}
 
     <div class="login-container">
         <div class="login-card">
@@ -31,6 +33,7 @@
             {% endif %}
 
             <form method="POST" action="{{ url_for('portal.login_post') }}" class="login-form">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <div class="form-group">
                     <label for="api_key">API Key</label>
                     <input type="password" id="api_key" name="api_key"
@@ -64,6 +67,8 @@
     </div>
 
     <!-- CUI Banner Bottom -->
-    <div class="cui-banner">CUI // SP-CTI</div>
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
+    {% endif %}
 </body>
 </html>

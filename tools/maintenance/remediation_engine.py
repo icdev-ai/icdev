@@ -18,7 +18,7 @@ import re
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -480,7 +480,7 @@ def _record_remediation_action(
             branch,
             commit_hash,
             status,
-            datetime.utcnow().isoformat() + "Z" if status in ("applied", "tested") else None,
+            datetime.now(timezone.utc).isoformat() + "Z" if status in ("applied", "tested") else None,
             json.dumps(test_results) if test_results else None,
             "CUI",
         ),
@@ -490,7 +490,7 @@ def _record_remediation_action(
 
 def _update_vulnerability_status(conn, vuln_id, new_status, action_desc=None):
     """Update the status of a dependency_vulnerability row."""
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat() + "Z"
     conn.execute(
         """UPDATE dependency_vulnerabilities
            SET status = ?, remediated_at = ?, remediation_action = ?,

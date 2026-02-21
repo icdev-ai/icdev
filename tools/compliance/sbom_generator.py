@@ -12,7 +12,7 @@ import re
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -684,7 +684,7 @@ def _generate_bom_ref(component):
 
 def _build_cyclonedx_sbom(project, components, serial_number=None):
     """Build a CycloneDX 1.4 JSON SBOM document."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     if serial_number is None:
         serial_number = f"urn:uuid:{uuid.uuid4()}"
@@ -890,7 +890,7 @@ def generate_sbom(
             else:
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
             out_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             out_file = out_dir / f"sbom_{project_id}_{timestamp}.cdx.json"
 
         out_file.parent.mkdir(parents=True, exist_ok=True)

@@ -14,7 +14,7 @@ import logging
 import sqlite3
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List
 
@@ -350,7 +350,7 @@ def prune(agent_id: str = None, project_id: str = None,
     """
     conn = _get_db(db_path)
     try:
-        cutoff_date = (datetime.utcnow() - timedelta(days=max_age_days)).isoformat()
+        cutoff_date = (datetime.now(timezone.utc) - timedelta(days=max_age_days)).isoformat()
 
         # Build the WHERE clause
         conditions = [

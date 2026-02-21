@@ -1,0 +1,114 @@
+<!-- CUI // SP-CTI -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control Crosswalk — ICDEV Playground</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='playground.css') }}">
+</head>
+<body>
+    <div class="demo-banner">{{ demo_banner }}</div>
+    <div class="container">
+        <h1>Control Crosswalk</h1>
+        <p class="subtitle">Dual-hub model: NIST 800-53 cascades to FedRAMP, CMMC, 800-171, CJIS, HIPAA</p>
+        <div class="nav">
+            <a href="/">Home</a>
+            <a href="/compliance">Compliance</a>
+            <a href="/crosswalk" class="active">Crosswalk</a>
+            <a href="/assessment">Assessment</a>
+            <a href="/ssp-preview">SSP Preview</a>
+        </div>
+
+        <h2>NIST 800-53 Controls (Source Hub)</h2>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Control ID</th>
+                        <th>Title</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in controls %}
+                    <tr>
+                        <td><strong>{{ c.control_id }}</strong></td>
+                        <td>{{ c.title }}</td>
+                        <td>
+                            {% if c.status == 'satisfied' %}
+                                <span class="badge badge-success">Satisfied</span>
+                            {% elif c.status == 'partially_satisfied' %}
+                                <span class="badge badge-warning">Partial</span>
+                            {% elif c.status == 'not_satisfied' %}
+                                <span class="badge badge-danger">Not Satisfied</span>
+                            {% else %}
+                                <span class="badge badge-info">{{ c.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <h2>Crosswalk Mappings</h2>
+        <p class="subtitle">Implementing a NIST control automatically satisfies mapped requirements in other frameworks</p>
+        <div class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>NIST Control</th>
+                        <th>Target Framework</th>
+                        <th>Target Requirement</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in mappings %}
+                    <tr>
+                        <td><strong>{{ m.source_control }}</strong></td>
+                        <td>
+                            {% if m.target_framework == 'FedRAMP' %}
+                                <span class="badge badge-info">FedRAMP</span>
+                            {% elif m.target_framework == 'CMMC' %}
+                                <span class="badge badge-warning">CMMC</span>
+                            {% elif m.target_framework == 'NIST 800-171' %}
+                                <span class="badge badge-success">800-171</span>
+                            {% elif m.target_framework == 'CJIS' %}
+                                <span class="badge badge-danger">CJIS</span>
+                            {% elif m.target_framework == 'HIPAA' %}
+                                <span class="badge badge-info">HIPAA</span>
+                            {% else %}
+                                <span class="badge">{{ m.target_framework }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ m.target_requirement }}</td>
+                        <td>
+                            {% if m.status == 'satisfied' or m.status == 'met' %}
+                                <span class="badge badge-success">{{ m.status | capitalize }}</span>
+                            {% elif m.status == 'inherited' %}
+                                <span class="badge badge-info">Inherited</span>
+                            {% else %}
+                                <span class="badge badge-warning">{{ m.status | capitalize }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3 style="color: var(--accent); margin-bottom: 0.75rem;">How It Works</h3>
+            <p>ICDEV uses a <strong>dual-hub crosswalk model</strong>:</p>
+            <ul style="margin: 0.75rem 0; padding-left: 1.5rem;">
+                <li><strong>US Hub:</strong> NIST 800-53 Rev 5 — domestic frameworks (FedRAMP, CMMC, 800-171, CJIS) map directly</li>
+                <li><strong>International Hub:</strong> ISO/IEC 27001:2022 — international frameworks map via bridge</li>
+                <li><strong>Bridge:</strong> Bidirectional mapping between NIST 800-53 and ISO 27001 connects both hubs</li>
+            </ul>
+            <p style="color: var(--text-muted); font-size: 0.9rem;">Implementing AC-2 satisfies FedRAMP AC-2, 800-171 3.1.1, CMMC AC.L2-3.1.1, and cascades to CJIS, HIPAA, SOC 2, PCI DSS, and ISO 27001.</p>
+        </div>
+    </div>
+</body>
+</html>

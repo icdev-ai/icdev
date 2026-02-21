@@ -17,7 +17,7 @@ import random
 import sqlite3
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -536,7 +536,7 @@ def run_monte_carlo(scenario_id, dimension, iterations=DEFAULT_ITERATIONS,
                 json.dumps(cdf),
                 json.dumps({"confidence_levels": confidence_levels, "percentiles": percentiles}),
                 duration_ms,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         conn.commit()

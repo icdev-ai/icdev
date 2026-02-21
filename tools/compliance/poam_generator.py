@@ -9,7 +9,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -86,7 +86,7 @@ def _stig_severity_to_poam(stig_severity):
 def _get_milestone_date(severity):
     """Calculate milestone date based on severity."""
     days = REMEDIATION_TIMELINES.get(severity, 90)
-    return (datetime.utcnow() + timedelta(days=days)).strftime("%Y-%m-%d")
+    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 def _load_cui_config():
@@ -162,7 +162,7 @@ def _build_poam_detail(item_num, item):
         "",
         f"**Source:** {item.get('source', 'STIG Assessment')}",
         "",
-        f"**Date Identified:** {item.get('date_identified', datetime.utcnow().strftime('%Y-%m-%d'))}",
+        f"**Date Identified:** {item.get('date_identified', datetime.now(timezone.utc).strftime('%Y-%m-%d'))}",
         "",
         "**Deficiency Description:**",
         "",
@@ -230,7 +230,7 @@ def generate_poam(project_id, output_path=None, db_path=None):
                 "completion_date": "",
                 "responsible": "Security Engineering Team",
                 "source": f"STIG Assessment ({finding['stig_id']})",
-                "date_identified": finding.get("created_at", datetime.utcnow().strftime("%Y-%m-%d")),
+                "date_identified": finding.get("created_at", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                 "stig_severity": finding["severity"],
             })
 
@@ -244,7 +244,7 @@ def generate_poam(project_id, output_path=None, db_path=None):
         cui_config = _load_cui_config()
         header = cui_config.get("document_header", "CUI // SP-CTI").strip()
         footer = cui_config.get("document_footer", "CUI // SP-CTI").strip()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         lines = [
             header,

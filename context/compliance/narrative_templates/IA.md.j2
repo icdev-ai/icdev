@@ -1,0 +1,104 @@
+<!-- CUI // SP-CTI -->
+## {{ control_id }} — {{ control_title }}
+
+### Implementation Status
+
+**Status:** {{ status }}
+**Family:** {{ family }}
+
+### Implementation Narrative
+
+{% if implementation_detail %}
+{{ implementation_detail }}
+{% else %}
+This control has not yet been fully documented. Evidence gathering is in progress.
+{% endif %}
+
+### Authentication Mechanisms (MFA, CAC/PIV)
+
+{% if control_id == "IA-2" or control_id.startswith("IA-2(") %}
+The system implements the following authentication mechanisms for user identification and authentication:
+
+- **Multi-Factor Authentication (MFA):** MFA is required for all privileged and non-privileged network access. Authentication factors include something you know (password/PIN), something you have (hardware token, CAC/PIV, FIDO2 key), and something you are (biometric) as applicable.
+- **CAC/PIV Authentication:** For DoD and federal users, Common Access Card (CAC) or Personal Identity Verification (PIV) card authentication is supported and enforced where required by organizational policy. Certificate validation includes revocation checking via OCSP or CRL.
+- **Phishing-Resistant MFA:** The system supports phishing-resistant authenticators (FIDO2/WebAuthn, PIV/CAC) in accordance with OMB M-22-09 and CISA guidance.
+- **Replay Resistance:** All authentication mechanisms implement replay resistance through nonce-based challenges, time-based tokens, or cryptographic protocols.
+
+Authentication mechanisms are validated against NIST SP 800-63B Digital Identity Guidelines at the appropriate assurance level for the system impact level.
+{% else %}
+Authentication mechanisms are documented under IA-2. This control ({{ control_id }}) supports the identification and authentication architecture.
+{% endif %}
+
+### Password and Authenticator Policies
+
+{% if control_id == "IA-5" or control_id.startswith("IA-5(") %}
+Authenticator management follows these organizational policies:
+
+- **Password Complexity:** Passwords meet minimum length requirements (15+ characters for privileged, 12+ for non-privileged) with composition rules per NIST SP 800-63B. Passwords are screened against known-compromised password lists.
+- **Password Rotation:** Password expiration is implemented per organizational policy. NIST SP 800-63B guidance on event-driven rotation (breach-triggered) is followed where applicable.
+- **Authenticator Protection:** Authenticators are protected at a level commensurate with the security category of the information to which use of the authenticator permits access. Passwords are stored using approved one-way cryptographic hashing (e.g., bcrypt, Argon2, PBKDF2).
+- **Token/Certificate Management:** Hardware tokens and digital certificates follow defined issuance, renewal, and revocation procedures. Expired or compromised authenticators are revoked immediately.
+- **Initial Distribution:** Initial authenticators are distributed through secure, out-of-band channels with identity verification. Temporary authenticators are changed upon first use.
+{% else %}
+Authenticator policies are documented under IA-5. This control ({{ control_id }}) operates within the established authenticator management framework.
+{% endif %}
+
+### Service Account Management
+
+Service accounts are managed with the following controls:
+
+- **Inventory:** All service accounts are inventoried, assigned an owner, and documented with their purpose and required privileges.
+- **Authentication:** Service accounts use strong authentication mechanisms (API keys, certificates, managed identities) rather than passwords where technically feasible.
+- **Least Privilege:** Service accounts are granted minimum necessary permissions. Wildcard or administrative permissions are prohibited unless explicitly justified and approved.
+- **Rotation:** Service account credentials are rotated on a defined schedule. Automated rotation through secrets management (e.g., AWS Secrets Manager) is preferred.
+- **Monitoring:** Service account usage is monitored for anomalous behavior including off-hours access, unusual API call patterns, and access from unexpected sources.
+- **Deprovisioning:** Service accounts are disabled or removed when the associated application or service is decommissioned.
+
+### Federation and SSO Configuration
+
+{% if control_id == "IA-8" or control_id.startswith("IA-8(") %}
+The system supports federated identity and single sign-on (SSO) through:
+
+- **Identity Federation:** The system accepts assertions from organizationally approved identity providers (IdPs) using SAML 2.0 or OpenID Connect (OIDC) protocols.
+- **SSO Integration:** Single sign-on reduces authentication fatigue while maintaining session security. SSO sessions are bounded by organizationally defined timeout values.
+- **Cross-Domain Trust:** Cross-domain trust relationships are documented, reviewed annually, and limited to approved partner organizations. Trust boundaries are enforced at the assertion consumer service.
+- **Attribute Mapping:** Federated identity attributes (roles, clearance level, organization) are mapped to local authorization decisions. Unmapped or unrecognized attributes default to minimum privilege.
+- **Session Management:** Federated sessions implement single logout (SLO) capabilities. Session tokens are cryptographically protected and validated on each request.
+{% else %}
+Federation and SSO configurations are documented under IA-8. This control ({{ control_id }}) supports the federated identity architecture.
+{% endif %}
+
+### Evidence
+
+{% if evidence_items %}
+{% for item in evidence_items %}
+- **{{ item.source }}** ({{ item.date | default("N/A") }}): {{ item.description }}
+{% endfor %}
+{% else %}
+No formal evidence has been collected for this control.
+{% endif %}
+
+### Assessment History
+
+{% if audit_events %}
+| Date | Actor | Action |
+|------|-------|--------|
+{% for event in audit_events[:10] %}
+| {{ event.created_at | default("N/A") }} | {{ event.actor | default("system") }} | {{ event.action | default("") }} |
+{% endfor %}
+{% else %}
+No assessment history available.
+{% endif %}
+
+### Related Framework Mappings
+
+{% if crosswalk_mappings %}
+{% for mapping in crosswalk_mappings %}
+- **{{ mapping.framework }}**: {{ mapping.requirement_id }} ({{ mapping.status | default("not_assessed") }})
+{% endfor %}
+{% else %}
+No crosswalk mappings available for this control.
+{% endif %}
+
+---
+*CUI // SP-CTI — Generated by ICDEV Narrative Generator*

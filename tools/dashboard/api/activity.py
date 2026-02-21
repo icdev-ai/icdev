@@ -43,10 +43,10 @@ SELECT * FROM (
     SELECT
         'hook' AS source,
         id,
-        event_type,
-        agent_id AS actor_or_agent,
+        hook_type AS event_type,
+        session_id AS actor_or_agent,
         tool_name AS summary,
-        project_id,
+        NULL AS project_id,
         classification,
         created_at
     FROM hook_events
@@ -134,7 +134,7 @@ def activity_filter_options():
             "SELECT DISTINCT event_type FROM audit_trail ORDER BY event_type"
         ).fetchall()
         hook_types = conn.execute(
-            "SELECT DISTINCT event_type FROM hook_events ORDER BY event_type"
+            "SELECT DISTINCT hook_type AS event_type FROM hook_events ORDER BY hook_type"
         ).fetchall()
 
         # Actors / agents
@@ -142,7 +142,7 @@ def activity_filter_options():
             "SELECT DISTINCT actor FROM audit_trail WHERE actor IS NOT NULL ORDER BY actor"
         ).fetchall()
         agents = conn.execute(
-            "SELECT DISTINCT agent_id FROM hook_events WHERE agent_id IS NOT NULL ORDER BY agent_id"
+            "SELECT DISTINCT session_id AS agent_id FROM hook_events WHERE session_id IS NOT NULL ORDER BY session_id"
         ).fetchall()
 
         # Projects

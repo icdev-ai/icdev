@@ -54,7 +54,7 @@ import re
 import sqlite3
 import struct
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ def _get_db(db_path=None):
 
 def _now():
     """ISO-8601 timestamp."""
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _audit(event_type, actor, action, details=None):

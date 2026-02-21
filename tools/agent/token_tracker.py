@@ -8,7 +8,7 @@ aggregated summaries and cost estimates by project, agent, and model.
 import argparse
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -122,7 +122,7 @@ def log_usage(
                 duration_ms,
                 task_id,
                 cost_estimate_usd,
-                datetime.utcnow().isoformat(),
+                datetime.now(timezone.utc).isoformat(),
             ),
         )
         conn.commit()

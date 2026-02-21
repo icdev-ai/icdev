@@ -13,7 +13,7 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -652,7 +652,7 @@ def _build_remediation_table(assessments):
     if not needing_remediation:
         return "*No items require remediation at this time.*"
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     lines = [
         "| Requirement ID | Functional Area | Current Status | Target Date | Priority |",
         "|----------------|-----------------|----------------|-------------|----------|",
@@ -717,7 +717,7 @@ def _build_poam_summary(poam_rows):
     in_progress = 0
     completed = 0
     accepted_risk = 0
-    datetime.utcnow().strftime("%Y-%m-%d")
+    datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     for row in poam_rows:
         cnt = row.get("cnt", 0)
@@ -865,7 +865,7 @@ def generate_cssp_report(project_id, output_path=None, db_path=None):
         report_count = report_count_row["cnt"] if report_count_row else 0
         new_version = f"{report_count + 1}.0"
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # 6. Build the complete variable substitution dict
         variables = {

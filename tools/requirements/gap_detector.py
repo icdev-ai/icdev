@@ -17,7 +17,7 @@ Usage:
 import argparse
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -187,7 +187,7 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
     # Update session
     conn.execute(
         "UPDATE intake_sessions SET gap_count = ?, updated_at = ? WHERE id = ?",
-        (len(gaps), datetime.utcnow().isoformat(), session_id),
+        (len(gaps), datetime.now(timezone.utc).isoformat(), session_id),
     )
     conn.commit()
     conn.close()

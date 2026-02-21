@@ -16,7 +16,7 @@ Usage:
 import argparse
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -185,7 +185,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
          json.dumps({"completeness": round(completeness, 4), "clarity": round(clarity, 4),
                       "feasibility": round(feasibility, 4), "compliance": round(compliance, 4),
                       "testability": round(testability, 4)}),
-         datetime.utcnow().isoformat(), session_id),
+         datetime.now(timezone.utc).isoformat(), session_id),
     )
 
     conn.commit()

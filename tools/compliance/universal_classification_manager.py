@@ -44,7 +44,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -617,7 +617,7 @@ def add_project_data_category(
             "subcategory": subcategory,
             "source": source,
             "confidence": confidence,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
         return {
@@ -839,7 +839,7 @@ def detect_data_categories(
             "all_recommended_frameworks": sorted(all_recommended - all_required),
             "advisory_note": "Detection is advisory (ADR D110). "
                              "Confirm categories before applying markings.",
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         _log_audit_event(conn, project_id, "Data category auto-detection", {
@@ -944,7 +944,7 @@ def validate_project_markings(
             "highest_sensitivity": highest,
             "issues": issues,
             "recommendations": recommendations,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         _log_audit_event(conn, project_id, "Marking validation", {

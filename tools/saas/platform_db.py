@@ -19,11 +19,14 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import sys
+import uuid
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -141,6 +144,21 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     UNIQUE (tenant_id, window_start, window_type)
 );
 CREATE INDEX IF NOT EXISTS idx_rate_limits_tenant ON rate_limits(tenant_id, window_start);
+
+CREATE TABLE IF NOT EXISTS tenant_llm_keys (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    provider VARCHAR(32) NOT NULL CHECK (provider IN ('anthropic','openai','bedrock','ollama','vllm')),
+    encrypted_key TEXT NOT NULL,
+    key_label VARCHAR(128) NOT NULL DEFAULT '',
+    key_prefix VARCHAR(16) NOT NULL DEFAULT '',
+    status VARCHAR(12) NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+    created_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_tenant ON tenant_llm_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_provider ON tenant_llm_keys(tenant_id, provider);
 """
 
 # ---------------------------------------------------------------------------
@@ -250,6 +268,21 @@ CREATE TABLE IF NOT EXISTS rate_limits (
     UNIQUE (tenant_id, window_start, window_type)
 );
 CREATE INDEX IF NOT EXISTS idx_rate_limits_tenant ON rate_limits(tenant_id, window_start);
+
+CREATE TABLE IF NOT EXISTS tenant_llm_keys (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL CHECK (provider IN ('anthropic','openai','bedrock','ollama','vllm')),
+    encrypted_key TEXT NOT NULL,
+    key_label TEXT NOT NULL DEFAULT '',
+    key_prefix TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_tenant ON tenant_llm_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_provider ON tenant_llm_keys(tenant_id, provider);
 """
 
 # ---------------------------------------------------------------------------
@@ -258,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_rate_limits_tenant ON rate_limits(tenant_id, wind
 EXPECTED_TABLES = [
     "tenants", "users", "api_keys", "subscriptions",
     "usage_records", "audit_platform", "rate_limits",
+    "tenant_llm_keys",
 ]
 
 
@@ -555,6 +589,105 @@ def log_platform_audit(
 
 
 # ---------------------------------------------------------------------------
+# Seed Demo Data
+# ---------------------------------------------------------------------------
+def seed_demo_data():
+    """Create a demo tenant, admin user, API key, and subscription.
+
+    Returns:
+        dict with tenant_id, user_id, raw_api_key, and status.
+    """
+    conn = get_platform_connection()
+    cursor = conn.cursor()
+    try:
+        # Check if demo tenant already exists
+        cursor.execute("SELECT id FROM tenants WHERE slug = 'icdev-demo'")
+        if cursor.fetchone():
+            logger.info("Demo tenant already exists — skipping seed")
+            # Fetch existing key prefix for display
+            cursor.execute(
+                "SELECT k.key_prefix FROM api_keys k "
+                "JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id "
+                "WHERE u.email = 'admin@icdev.local' AND k.status = 'active' "
+                "ORDER BY k.created_at DESC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            prefix = row[0] if row else "unknown"
+            return {
+                "status": "exists",
+                "message": f"Demo tenant already exists. Key prefix: {prefix}...",
+            }
+
+        tenant_id = str(uuid.uuid4())
+        user_id = str(uuid.uuid4())
+        key_id = str(uuid.uuid4())
+        sub_id = str(uuid.uuid4())
+
+        # Generate API key
+        raw_key = "icdev_" + secrets.token_hex(32)
+        key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+        key_prefix = raw_key[:16]
+
+        # 1. Create tenant
+        cursor.execute(
+            "INSERT INTO tenants (id, name, slug, status, tier, impact_level) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (tenant_id, "ICDEV Demo", "icdev-demo", "active", "starter", "IL4"),
+        )
+
+        # 2. Create admin user
+        cursor.execute(
+            "INSERT INTO users (id, tenant_id, email, display_name, role, status) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, tenant_id, "admin@icdev.local", "Demo Admin",
+             "tenant_admin", "active"),
+        )
+
+        # 3. Create API key
+        cursor.execute(
+            "INSERT INTO api_keys (id, tenant_id, user_id, key_hash, key_prefix, "
+            "name, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (key_id, tenant_id, user_id, key_hash, key_prefix, "Demo key", "active"),
+        )
+
+        # 4. Create subscription
+        cursor.execute(
+            "INSERT INTO subscriptions (id, tenant_id, tier, max_projects, max_users, "
+            "status) VALUES (?, ?, ?, ?, ?, ?)",
+            (sub_id, tenant_id, "starter", 5, 3, "active"),
+        )
+
+        # 5. Audit event
+        try:
+            cursor.execute(
+                "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
+                "action, details) VALUES (?, ?, ?, ?, ?)",
+                (tenant_id, user_id, "tenant.seed", "seed_demo_data",
+                 json.dumps({"tenant": "ICDEV Demo", "user": "admin@icdev.local"})),
+            )
+        except Exception:
+            pass  # Audit logging should not block seed
+
+        conn.commit()
+        logger.info("Demo data seeded: tenant=%s, user=admin@icdev.local", tenant_id)
+
+        return {
+            "status": "ok",
+            "tenant_id": tenant_id,
+            "user_id": user_id,
+            "raw_api_key": raw_key,
+            "message": "Demo tenant created successfully",
+        }
+    except Exception as exc:
+        conn.rollback()
+        logger.error("Failed to seed demo data: %s", exc)
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():
@@ -570,12 +703,14 @@ def main():
                         help="Verify schema integrity")
     parser.add_argument("--info", action="store_true",
                         help="Show connection info")
+    parser.add_argument("--seed", action="store_true",
+                        help="Create demo tenant + admin user + API key")
     parser.add_argument("--json", action="store_true",
                         help="Output as JSON")
 
     args = parser.parse_args()
 
-    if not any([args.init, args.verify, args.info]):
+    if not any([args.init, args.verify, args.info, args.seed]):
         parser.print_help()
         sys.exit(1)
 
@@ -623,6 +758,27 @@ def main():
                     print(f"  ! {t}")
         if result["status"] == "error":
             sys.exit(1)
+
+    if args.seed:
+        # Auto-init if DB does not exist yet
+        if not SQLITE_PATH.exists():
+            logger.info("Platform DB not found — initializing before seed")
+            init_platform_db()
+        result = seed_demo_data()
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            if result["status"] == "exists":
+                print(f"[INFO] {result['message']}")
+            elif result["status"] == "ok":
+                print(f"[OK] {result['message']}")
+                print(f"  Tenant: ICDEV Demo (IL4 / Starter)")
+                print(f"  Admin:  admin@icdev.local")
+                print(f"  API Key (copy this to log in — shown only once):")
+                print(f"    {result['raw_api_key']}")
+            else:
+                print(f"[ERROR] {result.get('message', 'Unknown error')}")
+                sys.exit(1)
 
 
 if __name__ == "__main__":

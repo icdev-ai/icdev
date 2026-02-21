@@ -1,0 +1,480 @@
+# ICDEV Docker Compose — GovCloud Full Profile (all services enabled)
+#
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose up -d icdev-dashboard    # Start only the dashboard
+#   docker compose logs -f icdev-dashboard  # Follow dashboard logs
+#   docker compose down                     # Stop all services
+#
+# Customization:
+#   - Comment out or remove services you don't need
+#   - Create .env file with your secrets (see .env.template)
+#   - Generate a custom docker-compose for your profile:
+#       python tools/installer/platform_setup.py --generate docker --profile isv_startup
+#
+# Volumes:
+#   icdev-data — Shared persistent volume mounted at /app/data in all containers.
+#   Contains icdev.db, platform.db, memory.db, activity.db, and tenant databases.
+
+services:
+
+  # ====================================================================
+  # Core Tier
+  # ====================================================================
+
+  # Orchestrator Agent — task routing, workflow management
+  icdev-orchestrator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/orchestrator:latest
+    container_name: icdev-orchestrator
+    ports:
+      - "8443:8443"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8443
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8443/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "orchestrator-agent", "--port", "8443"]
+
+  # Architect Agent — ATLAS/M-ATLAS A/T phases, system design
+  icdev-architect:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/architect:latest
+    container_name: icdev-architect
+    ports:
+      - "8444:8444"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8444
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8444/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "architect-agent", "--port", "8444"]
+
+  # ====================================================================
+  # Domain Tier
+  # ====================================================================
+
+  # Builder Agent — TDD code generation (RED-GREEN-REFACTOR)
+  icdev-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/builder:latest
+    container_name: icdev-builder
+    ports:
+      - "8445:8445"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8445
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8445/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "builder-agent", "--port", "8445"]
+
+  # Compliance Agent — ATO artifacts (SSP, POAM, STIG, SBOM, FedRAMP, CMMC)
+  icdev-compliance:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/compliance:latest
+    container_name: icdev-compliance
+    ports:
+      - "8446:8446"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8446
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8446/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "compliance-agent", "--port", "8446"]
+
+  # Security Agent — SAST, dependency audit, secret detection, container scan
+  icdev-security:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/security:latest
+    container_name: icdev-security
+    ports:
+      - "8447:8447"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8447
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8447/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "security-agent", "--port", "8447"]
+
+  # Infrastructure Agent — Terraform, Ansible, K8s, pipeline gen
+  icdev-infrastructure:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/infrastructure:latest
+    container_name: icdev-infrastructure
+    ports:
+      - "8448:8448"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8448
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8448/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "infrastructure-agent", "--port", "8448"]
+
+  # MBSE Agent — SysML parsing, DOORS NG, digital thread, model-code sync
+  icdev-mbse:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mbse-agent
+    image: icdev/mbse:latest
+    container_name: icdev-mbse
+    ports:
+      - "8451:8451"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8451
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8451/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "mbse-agent", "--port", "8451"]
+
+  # Modernization Agent — Legacy analysis, 7R assessment, migration planning
+  icdev-modernization:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.modernization-agent
+    image: icdev/modernization:latest
+    container_name: icdev-modernization
+    ports:
+      - "8452:8452"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8452
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8452/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "modernization-agent", "--port", "8452"]
+
+  # Requirements Analyst Agent — Conversational intake, gap detection, SAFe decomposition
+  icdev-requirements:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.requirements-analyst-agent
+    image: icdev/requirements:latest
+    container_name: icdev-requirements
+    ports:
+      - "8453:8453"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8453
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8453/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "requirements-analyst-agent", "--port", "8453"]
+
+  # Supply Chain Agent — Dependency graph, SBOM aggregation, ISA lifecycle, CVE triage
+  icdev-supply-chain:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.supply-chain-agent
+    image: icdev/supply-chain:latest
+    container_name: icdev-supply-chain
+    ports:
+      - "8454:8454"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8454
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8454/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "supply-chain-agent", "--port", "8454"]
+
+  # Simulation Agent — Digital Program Twin, Monte Carlo, COA generation
+  icdev-simulation:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simulation-agent
+    image: icdev/simulation:latest
+    container_name: icdev-simulation
+    ports:
+      - "8455:8455"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8455
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8455/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "simulation-agent", "--port", "8455"]
+
+  # DevSecOps Agent — Pipeline security, ZTA maturity, policy-as-code
+  icdev-devsecops:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.devsecops-agent
+    image: icdev/devsecops:latest
+    container_name: icdev-devsecops
+    ports:
+      - "8457:8457"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8457
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8457/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "devsecops-agent", "--port", "8457"]
+
+  # Gateway Agent — Remote command reception from messaging channels
+  icdev-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway-agent
+    image: icdev/gateway:latest
+    container_name: icdev-gateway
+    ports:
+      - "8458:8458"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8458
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8458/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "gateway-agent", "--port", "8458"]
+
+  # ====================================================================
+  # Support Tier
+  # ====================================================================
+
+  # Knowledge Agent — Self-healing patterns, ML, recommendations
+  icdev-knowledge:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/knowledge:latest
+    container_name: icdev-knowledge
+    ports:
+      - "8449:8449"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8449
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8449/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "knowledge-agent", "--port", "8449"]
+
+  # Monitor Agent — Log analysis, metrics, alerts, health checks
+  icdev-monitor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.agent-base
+    image: icdev/monitor:latest
+    container_name: icdev-monitor
+    ports:
+      - "8450:8450"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=8450
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8450/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["tools/a2a/agent_server.py", "--agent-id", "monitor-agent", "--port", "8450"]
+
+  # Web Dashboard — Flask web UI on port 5000
+  icdev-dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    image: icdev/dashboard:latest
+    container_name: icdev-dashboard
+    ports:
+      - "5000:5000"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=5000
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["python", "tools/dashboard/app.py", "--port", "5000"]
+
+  # SaaS API Gateway — REST + MCP Streamable HTTP entry point
+  icdev-api-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api-gateway
+    image: icdev/api-gateway:latest
+    container_name: icdev-api-gateway
+    ports:
+      - "9443:9443"
+    environment:
+      - ICDEV_DB_PATH=/app/data/icdev.db
+      - ICDEV_PROJECT_ROOT=/app
+      - PORT=9443
+    env_file:
+      - .env
+    volumes:
+      - icdev-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9443/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    command: ["python", "tools/saas/api_gateway.py", "--port", "9443"]
+
+# ======================================================================
+# Volumes
+# ======================================================================
+volumes:
+  icdev-data:
+    driver: local

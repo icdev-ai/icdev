@@ -52,7 +52,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -584,7 +584,7 @@ def compute_crosswalk_coverage(project_id, db_path=None):
             }
 
         # Update project_framework_status table
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for fw_key, data in coverage.items():
             gate = "not_started"
             if data["coverage_pct"] >= 100.0:
@@ -765,7 +765,7 @@ def map_implementation_across_frameworks(project_id, control_id, db_path=None):
         satisfied = list(frameworks.keys())
 
         # Populate control_crosswalk table
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         for fw_key, fw_val in frameworks.items():
             fw_control_id = str(fw_val) if fw_val is not True else None
             try:

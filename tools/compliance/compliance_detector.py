@@ -23,7 +23,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -277,7 +277,7 @@ def detect_frameworks(
                 "Detection is advisory (ADR D110). Run with --apply to store "
                 "results, then --confirm to mark as reviewed."
             ),
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
         # Log detection
@@ -317,7 +317,7 @@ def apply_detection(
     try:
         _ensure_tables(conn)
         applied = []
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         for fw in detection["required_frameworks"]:
             conn.execute(
@@ -370,7 +370,7 @@ def confirm_frameworks(
     conn = _get_connection(db_path)
     try:
         _ensure_tables(conn)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """UPDATE framework_applicability
                SET confirmed = 1, confirmed_by = ?, confirmed_at = ?

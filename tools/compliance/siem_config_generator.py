@@ -10,7 +10,7 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -487,7 +487,7 @@ def _generate_report(
     log_sources, validation, generated_files,
 ):
     """Generate the siem-config-report.md summary document."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     header = cui_config.get("document_header", "CUI // SP-CTI")
     footer = cui_config.get("document_footer", "CUI // SP-CTI")
 

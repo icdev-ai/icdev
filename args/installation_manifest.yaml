@@ -1,0 +1,1087 @@
+# ICDEV Installation Manifest — Module Dependency Graph
+# Master definition of all ICDEV modules, their packages, configs, and database table groups.
+# Used by installers, tenant provisioners, and the Helm chart to determine what to deploy.
+#
+# ADR References:
+#   D58 — SaaS wraps existing tools (modules are additive)
+#   D60 — Separate database per tenant (table groups provision per-tenant)
+#   D150 — Migration runner uses this manifest to scope table creation
+#   D151 — Baseline migration delegates to init_icdev_db.py
+#
+# Module Types:
+#   required           — Always installed; cannot be deselected
+#   compliance_posture — Pick based on mission/data categories
+#   capability         — Optional feature modules
+
+# ============================================================
+# MODULE DEFINITIONS
+# ============================================================
+
+modules:
+
+  # ── Required Modules (always installed) ────────────────────
+
+  core:
+    name: "ICDEV Core"
+    description: "Project management, audit trail, memory system, database initialization, platform compatibility, CLI output, and resilience primitives (circuit breaker, retry, correlation, errors)."
+    required: true
+    packages:
+      - tools/db/init_icdev_db.py
+      - tools/db/migrate.py
+      - tools/db/backup.py
+      - tools/audit/audit_logger.py
+      - tools/audit/audit_query.py
+      - tools/audit/decision_recorder.py
+      - tools/memory/memory_read.py
+      - tools/memory/memory_write.py
+      - tools/memory/memory_db.py
+      - tools/memory/semantic_search.py
+      - tools/memory/hybrid_search.py
+      - tools/memory/embed_memory.py
+      - tools/memory/time_decay.py
+      - tools/project/project_create.py
+      - tools/project/project_list.py
+      - tools/project/project_status.py
+      - tools/compat/platform_utils.py
+      - tools/cli/output_formatter.py
+      - tools/resilience/circuit_breaker.py
+      - tools/resilience/retry.py
+      - tools/resilience/correlation.py
+      - tools/resilience/errors.py
+    configs:
+      - args/project_defaults.yaml
+      - args/db_config.yaml
+      - args/resilience_config.yaml
+      - args/memory_config.yaml
+    db_table_groups:
+      - projects
+      - audit
+      - alerts
+    depends_on: []
+
+  llm:
+    name: "LLM Provider Router"
+    description: "Vendor-agnostic LLM routing (Bedrock, Anthropic, OpenAI-compat, Ollama). Function-level model selection with fallback chains."
+    required: true
+    packages:
+      - tools/llm/router.py
+      - tools/llm/provider_sdk.py
+    configs:
+      - args/llm_config.yaml
+      - args/bedrock_models.yaml
+    db_table_groups: []
+    depends_on:
+      - core
+
+  compliance_base:
+    name: "Compliance Base"
+    description: "Core compliance infrastructure: NIST 800-53 control mapping, crosswalk engine (dual-hub), classification manager, CUI markings, universal data classification, framework auto-detection, multi-regime assessment."
+    required: true
+    packages:
+      - tools/compliance/control_mapper.py
+      - tools/compliance/nist_lookup.py
+      - tools/compliance/crosswalk_engine.py
+      - tools/compliance/classification_manager.py
+      - tools/compliance/base_assessor.py
+      - tools/compliance/cui_marker.py
+      - tools/compliance/universal_classification_manager.py
+      - tools/compliance/compliance_detector.py
+      - tools/compliance/multi_regime_assessor.py
+    configs:
+      - args/cui_markings.yaml
+      - args/security_gates.yaml
+      - args/classification_config.yaml
+      - args/framework_registry.yaml
+    db_table_groups:
+      - compliance_controls
+      - framework_profiles
+      - universal_compliance
+    depends_on:
+      - core
+
+  # ── Compliance Posture Modules (pick based on mission) ─────
+
+  fedramp_moderate:
+    name: "FedRAMP Moderate"
+    description: "FedRAMP Moderate baseline assessment and reporting. Required for IL4 CUI workloads in commercial cloud."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/fedramp_assessor.py
+      - tools/compliance/fedramp_report_generator.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - fedramp
+    depends_on:
+      - compliance_base
+
+  fedramp_high:
+    name: "FedRAMP High"
+    description: "FedRAMP High baseline assessment and reporting. Required for IL5 CUI and mission-critical workloads."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/fedramp_assessor.py
+      - tools/compliance/fedramp_report_generator.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - fedramp
+    depends_on:
+      - compliance_base
+
+  cmmc:
+    name: "CMMC Level 2/3"
+    description: "Cybersecurity Maturity Model Certification assessment and reporting. Required for DoD CUI handling (DFARS 252.204-7012)."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/cmmc_assessor.py
+      - tools/compliance/cmmc_report_generator.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - cmmc
+    depends_on:
+      - compliance_base
+
+  cjis:
+    name: "FBI CJIS Security Policy"
+    description: "Criminal Justice Information Services security assessment. Required for law enforcement data systems."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/cjis_assessor.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - cjis
+    depends_on:
+      - compliance_base
+
+  hipaa:
+    name: "HIPAA Security Rule"
+    description: "Health Insurance Portability and Accountability Act security assessment. Required for systems handling PHI."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/hipaa_assessor.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - hipaa
+    depends_on:
+      - compliance_base
+
+  hitrust:
+    name: "HITRUST CSF v11"
+    description: "HITRUST Common Security Framework assessment. Healthcare sector certification for PHI and PII."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/hitrust_assessor.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - hitrust
+    depends_on:
+      - compliance_base
+
+  soc2:
+    name: "SOC 2 Type II"
+    description: "Service Organization Control 2 trust service criteria assessment. Required for commercial SaaS platforms handling PII."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/soc2_assessor.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - soc2
+    depends_on:
+      - compliance_base
+
+  pci_dss:
+    name: "PCI DSS v4.0"
+    description: "Payment Card Industry Data Security Standard assessment. Required for systems processing payment card data."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/pci_dss_assessor.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - pci_dss
+    depends_on:
+      - compliance_base
+
+  iso27001:
+    name: "ISO/IEC 27001:2022"
+    description: "International information security management system certification. International hub of the dual-hub crosswalk model (ADR D111)."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/iso27001_assessor.py
+    configs:
+      - args/security_gates.yaml
+      - args/framework_registry.yaml
+    db_table_groups:
+      - iso27001
+    depends_on:
+      - compliance_base
+
+  fips_199_200:
+    name: "FIPS 199/200 Security Categorization"
+    description: "Federal system security categorization using SP 800-60 information types with high watermark. CNSSI 1253 overlay for IL6/SECRET. Dynamic SSP baseline selection."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/fips199_categorizer.py
+      - tools/compliance/fips200_validator.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - fips_199_200
+    depends_on:
+      - compliance_base
+
+  oscal:
+    name: "OSCAL Generation"
+    description: "Open Security Controls Assessment Language artifact generation. Machine-readable compliance documentation (NIST OSCAL format)."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/oscal_generator.py
+    configs: []
+    db_table_groups:
+      - oscal
+    depends_on:
+      - compliance_base
+
+  emass:
+    name: "eMASS Integration"
+    description: "Enterprise Mission Assurance Support Service bidirectional sync. Push/pull control status, POAMs, and artifacts to/from eMASS."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/emass/emass_sync.py
+      - tools/compliance/emass/emass_export.py
+    configs: []
+    db_table_groups:
+      - emass
+    depends_on:
+      - compliance_base
+
+  cato:
+    name: "cATO Continuous Monitoring"
+    description: "Continuous Authority to Operate monitoring and scheduling. Evidence freshness tracking, readiness scoring, and automated evidence collection."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/cato_monitor.py
+      - tools/compliance/cato_scheduler.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - cato
+    depends_on:
+      - compliance_base
+
+  cssp:
+    name: "DoD CSSP (DI 8530.01)"
+    description: "Cybersecurity Service Provider compliance assessment, incident response planning, SIEM configuration generation, and evidence collection."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/cssp_assessor.py
+      - tools/compliance/cssp_report_generator.py
+      - tools/compliance/incident_response_plan.py
+      - tools/compliance/siem_config_generator.py
+      - tools/compliance/cssp_evidence_collector.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - cssp
+    depends_on:
+      - compliance_base
+
+  sbd_ivv:
+    name: "Secure by Design & IV&V"
+    description: "CISA Secure by Design assessment, IEEE 1012 Independent Verification & Validation, DoDI 5000.87 Digital Engineering Strategy compliance, and requirements traceability matrix."
+    required: false
+    compliance_posture: true
+    packages:
+      - tools/compliance/sbd_assessor.py
+      - tools/compliance/sbd_report_generator.py
+      - tools/compliance/ivv_assessor.py
+      - tools/compliance/ivv_report_generator.py
+      - tools/compliance/traceability_matrix.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - sbd
+      - ivv
+    depends_on:
+      - compliance_base
+
+  # ── Capability Modules ─────────────────────────────────────
+
+  builder:
+    name: "Code Builder"
+    description: "TDD code generation (RED-GREEN-REFACTOR), scaffolding for 6 languages, linting, formatting, and test writing."
+    required: false
+    packages:
+      - tools/builder/test_writer.py
+      - tools/builder/code_generator.py
+      - tools/builder/scaffolder.py
+      - tools/builder/language_support.py
+      - tools/builder/linter.py
+      - tools/builder/formatter.py
+    configs:
+      - args/project_defaults.yaml
+    db_table_groups:
+      - code_reviews
+    depends_on:
+      - core
+      - llm
+
+  security:
+    name: "Security Scanning"
+    description: "SAST, dependency auditing, secret detection, and container image scanning."
+    required: false
+    packages:
+      - tools/security/sast_runner.py
+      - tools/security/dependency_auditor.py
+      - tools/security/secret_detector.py
+      - tools/security/container_scanner.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups:
+      - stig
+      - sbom
+    depends_on:
+      - core
+
+  testing:
+    name: "Testing Framework"
+    description: "Test orchestration (unit + BDD + E2E + gates), Playwright E2E runner, screenshot validation, health checks, and platform compatibility checks."
+    required: false
+    packages:
+      - tools/testing/test_orchestrator.py
+      - tools/testing/e2e_runner.py
+      - tools/testing/screenshot_validator.py
+      - tools/testing/health_check.py
+      - tools/testing/platform_check.py
+    configs:
+      - args/security_gates.yaml
+    db_table_groups: []
+    depends_on:
+      - core
+
+  agent_orchestration:
+    name: "Multi-Agent Orchestration"
+    description: "Opus 4.6 multi-agent system: Bedrock client, DAG-based workflow decomposition, parallel execution, collaboration patterns, domain authority vetoes, agent mailbox, and agent memory."
+    required: false
+    packages:
+      - tools/agent/agent_executor.py
+      - tools/agent/bedrock_client.py
+      - tools/agent/team_orchestrator.py
+      - tools/agent/collaboration.py
+      - tools/agent/skill_router.py
+      - tools/agent/authority.py
+      - tools/agent/mailbox.py
+      - tools/agent/agent_memory.py
+      - tools/agent/token_tracker.py
+      - tools/agent/skill_selector.py
+    configs:
+      - args/agent_config.yaml
+      - args/bedrock_models.yaml
+      - args/agent_authority.yaml
+      - args/skill_injection_config.yaml
+    db_table_groups:
+      - agent_orchestration
+    depends_on:
+      - core
+      - llm
+
+  cicd:
+    name: "CI/CD Integration"
+    description: "GitHub + GitLab dual-platform webhooks, issue polling, SDLC workflow automation, git worktree parallel task isolation, and GitLab task board monitoring."
+    required: false
+    packages:
+      - tools/ci/triggers/webhook_server.py
+      - tools/ci/triggers/poll_trigger.py
+      - tools/ci/triggers/gitlab_task_monitor.py
+      - tools/ci/workflows/icdev_plan.py
+      - tools/ci/workflows/icdev_build.py
+      - tools/ci/workflows/icdev_test.py
+      - tools/ci/workflows/icdev_review.py
+      - tools/ci/workflows/icdev_sdlc.py
+      - tools/ci/workflows/icdev_plan_build.py
+      - tools/ci/modules/worktree.py
+      - tools/ci/modules/vcs.py
+    configs:
+      - args/cicd_config.yaml
+      - args/observability_config.yaml
+      - args/worktree_config.yaml
+    db_table_groups:
+      - cicd_observability
+      - cicd_pipeline
+    depends_on:
+      - core
+      - builder
+
+  infrastructure:
+    name: "Infrastructure as Code"
+    description: "Terraform generation, Ansible playbooks, Kubernetes manifests, CI/CD pipeline generation, and rollback management."
+    required: false
+    packages:
+      - tools/infra/terraform_generator.py
+      - tools/infra/ansible_generator.py
+      - tools/infra/k8s_generator.py
+      - tools/infra/pipeline_generator.py
+      - tools/infra/rollback.py
+    configs:
+      - args/project_defaults.yaml
+      - args/scaling_config.yaml
+    db_table_groups:
+      - deployments
+    depends_on:
+      - core
+
+  dashboard:
+    name: "Web Dashboard"
+    description: "Flask web UI with role-based views, CUI banners, real-time SSE updates, NLQ compliance queries, agent chat, batch operations, onboarding tour, and BYOK LLM key management."
+    required: false
+    packages:
+      - tools/dashboard/app.py
+      - tools/dashboard/auth.py
+    configs:
+      - args/nlq_config.yaml
+      - args/role_personas.yaml
+    db_table_groups:
+      - dashboard_auth
+    depends_on:
+      - core
+      - llm
+
+  mbse:
+    name: "MBSE Integration"
+    description: "Model-Based Systems Engineering: SysML XMI parsing, DOORS NG ReqIF import, digital thread traceability, model-code sync, DES compliance assessment, diagram extraction."
+    required: false
+    packages:
+      - tools/mbse/xmi_parser.py
+      - tools/mbse/reqif_parser.py
+      - tools/mbse/digital_thread.py
+      - tools/mbse/model_code_generator.py
+      - tools/mbse/model_control_mapper.py
+      - tools/mbse/sync_engine.py
+      - tools/mbse/des_assessor.py
+      - tools/mbse/des_report_generator.py
+      - tools/mbse/pi_model_tracker.py
+      - tools/mbse/diagram_extractor.py
+    configs: []
+    db_table_groups:
+      - mbse
+    depends_on:
+      - core
+      - compliance_base
+
+  modernization:
+    name: "Application Modernization"
+    description: "Legacy application analysis, 7R assessment, version/framework migration, monolith decomposition, strangler fig tracking, database migration planning, and ATO compliance bridge."
+    required: false
+    packages:
+      - tools/modernization/legacy_analyzer.py
+      - tools/modernization/architecture_extractor.py
+      - tools/modernization/doc_generator.py
+      - tools/modernization/seven_r_assessor.py
+      - tools/modernization/version_migrator.py
+      - tools/modernization/framework_migrator.py
+      - tools/modernization/monolith_decomposer.py
+      - tools/modernization/db_migration_planner.py
+      - tools/modernization/strangler_fig_manager.py
+      - tools/modernization/compliance_bridge.py
+      - tools/modernization/migration_code_generator.py
+      - tools/modernization/migration_report_generator.py
+      - tools/modernization/migration_tracker.py
+      - tools/modernization/ui_analyzer.py
+    configs: []
+    db_table_groups:
+      - modernization
+    depends_on:
+      - core
+      - compliance_base
+
+  ricoas:
+    name: "RICOAS — Requirements, COA & Approval"
+    description: "AI-driven conversational requirements intake, gap detection, SAFe decomposition, readiness scoring, document extraction, ATO boundary impact analysis, supply chain intelligence, simulation engine, and external integration (Jira/ServiceNow/GitLab/DOORS)."
+    required: false
+    packages:
+      - tools/requirements/intake_engine.py
+      - tools/requirements/gap_detector.py
+      - tools/requirements/readiness_scorer.py
+      - tools/requirements/decomposition_engine.py
+      - tools/requirements/document_extractor.py
+      - tools/requirements/boundary_analyzer.py
+      - tools/requirements/spec_quality_checker.py
+      - tools/requirements/consistency_analyzer.py
+      - tools/requirements/constitution_manager.py
+      - tools/requirements/clarification_engine.py
+      - tools/requirements/spec_organizer.py
+      - tools/requirements/traceability_builder.py
+      - tools/supply_chain/dependency_graph.py
+      - tools/supply_chain/isa_manager.py
+      - tools/supply_chain/scrm_assessor.py
+      - tools/supply_chain/cve_triager.py
+      - tools/simulation/simulation_engine.py
+      - tools/simulation/monte_carlo.py
+      - tools/simulation/coa_generator.py
+      - tools/simulation/scenario_manager.py
+      - tools/integration/jira_connector.py
+      - tools/integration/servicenow_connector.py
+      - tools/integration/gitlab_connector.py
+      - tools/integration/doors_exporter.py
+      - tools/integration/approval_manager.py
+    configs:
+      - args/ricoas_config.yaml
+      - args/spec_config.yaml
+      - args/supply_chain_config.yaml
+    db_table_groups:
+      - intake
+      - boundary_supply_chain
+      - simulation
+      - integration
+      - spec_kit
+    depends_on:
+      - core
+      - compliance_base
+      - llm
+
+  devsecops_zta:
+    name: "DevSecOps & Zero Trust Architecture"
+    description: "DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), image attestation, ZTA 7-pillar maturity scoring, NIST SP 800-207 compliance, service mesh (Istio/Linkerd), network segmentation, PDP/PEP configuration."
+    required: false
+    packages:
+      - tools/devsecops/profile_manager.py
+      - tools/devsecops/pipeline_security_generator.py
+      - tools/devsecops/policy_generator.py
+      - tools/devsecops/attestation_manager.py
+      - tools/devsecops/zta_maturity_scorer.py
+      - tools/devsecops/service_mesh_generator.py
+      - tools/devsecops/network_segmentation_generator.py
+      - tools/devsecops/zta_terraform_generator.py
+      - tools/devsecops/pdp_config_generator.py
+      - tools/compliance/nist_800_207_assessor.py
+    configs:
+      - args/devsecops_config.yaml
+      - args/zta_config.yaml
+      - args/security_gates.yaml
+    db_table_groups:
+      - devsecops_zta
+    depends_on:
+      - core
+      - compliance_base
+
+  mosa:
+    name: "DoD MOSA (Modular Open Systems Approach)"
+    description: "MOSA assessment per 10 U.S.C. section 4401, modularity analysis (coupling/cohesion/circular dependencies), ICD generation, TSP generation, code enforcement, and optional cATO evidence."
+    required: false
+    packages:
+      - tools/compliance/mosa_assessor.py
+      - tools/mosa/modular_design_analyzer.py
+      - tools/mosa/mosa_code_enforcer.py
+      - tools/mosa/icd_generator.py
+      - tools/mosa/tsp_generator.py
+    configs:
+      - args/mosa_config.yaml
+      - args/security_gates.yaml
+    db_table_groups:
+      - mosa
+    depends_on:
+      - core
+      - compliance_base
+
+  monitoring:
+    name: "Monitoring, Knowledge & Maintenance"
+    description: "Production monitoring (log analysis, metrics, alerts, health checks), self-healing knowledge base (pattern detection, recommendations), dependency scanning, vulnerability checking, SLA enforcement, auto-remediation, heartbeat daemon, and auto-resolver."
+    required: false
+    packages:
+      - tools/monitor/log_analyzer.py
+      - tools/monitor/health_checker.py
+      - tools/monitor/heartbeat_daemon.py
+      - tools/monitor/auto_resolver.py
+      - tools/knowledge/pattern_detector.py
+      - tools/knowledge/self_heal_analyzer.py
+      - tools/knowledge/recommendation_engine.py
+      - tools/maintenance/dependency_scanner.py
+      - tools/maintenance/vulnerability_checker.py
+      - tools/maintenance/maintenance_auditor.py
+      - tools/maintenance/remediation_engine.py
+    configs:
+      - args/monitoring_config.yaml
+      - args/maintenance_config.yaml
+    db_table_groups:
+      - knowledge_self_healing
+      - maintenance
+      - metric_snapshots
+      - heartbeat
+    depends_on:
+      - core
+
+  gateway:
+    name: "Remote Command Gateway"
+    description: "Messaging channel integration (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware response filtering, user binding ceremony, air-gapped/connected mode, and command allowlist."
+    required: false
+    packages:
+      - tools/gateway/gateway_agent.py
+      - tools/gateway/user_binder.py
+    configs:
+      - args/remote_gateway_config.yaml
+    db_table_groups:
+      - remote_gateway
+    depends_on:
+      - core
+      - llm
+
+  saas:
+    name: "SaaS Multi-Tenancy Platform"
+    description: "Multi-tenant API gateway (REST + MCP Streamable HTTP), per-tenant DB isolation, 3 auth methods (API key, OAuth, CAC/PIV), subscription tiers, rate limiting, artifact delivery, tenant portal, licensing, and Helm on-prem deployment."
+    required: false
+    packages:
+      - tools/saas/platform_db.py
+      - tools/saas/tenant_manager.py
+      - tools/saas/api_gateway.py
+      - tools/saas/rest_api.py
+      - tools/saas/mcp_http.py
+      - tools/saas/tenant_db_adapter.py
+      - tools/saas/rate_limiter.py
+      - tools/saas/models.py
+      - tools/saas/openapi_spec.py
+      - tools/saas/db/db_compat.py
+      - tools/saas/db/pg_schema.py
+      - tools/saas/auth/middleware.py
+      - tools/saas/auth/rbac.py
+      - tools/saas/artifacts/delivery_engine.py
+      - tools/saas/bedrock/bedrock_proxy.py
+      - tools/saas/licensing/license_generator.py
+      - tools/saas/licensing/license_validator.py
+      - tools/saas/infra/namespace_provisioner.py
+      - tools/saas/tenant_llm_keys.py
+      - tools/saas/portal/app.py
+    configs:
+      - args/scaling_config.yaml
+      - args/cli_config.yaml
+    db_table_groups: []
+    # SaaS uses its own platform.db (tenants, users, api_keys, subscriptions,
+    # usage_records, audit_platform) plus per-tenant copies of icdev.db schema.
+    depends_on:
+      - core
+      - compliance_base
+      - llm
+
+  marketplace:
+    name: "Federated GOTCHA Marketplace"
+    description: "Publish, install, search, review, and sync skills/goals/hardprompts/context/args/compliance extensions across tenant orgs with 7-gate security pipeline, IL compatibility checks, and federation sync."
+    required: false
+    packages:
+      - tools/marketplace/publish_pipeline.py
+      - tools/marketplace/search_engine.py
+      - tools/marketplace/compatibility_checker.py
+      - tools/marketplace/install_manager.py
+      - tools/marketplace/review_queue.py
+      - tools/marketplace/federation_sync.py
+      - tools/marketplace/asset_scanner.py
+      - tools/marketplace/catalog_manager.py
+      - tools/marketplace/provenance_tracker.py
+    configs:
+      - args/marketplace_config.yaml
+    db_table_groups:
+      - marketplace
+    depends_on:
+      - core
+      - compliance_base
+      - saas
+
+  agentic_generation:
+    name: "Agentic Child App Generation"
+    description: "Generate mini-ICDEV clone child applications with GOTCHA/ATLAS. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
+    required: false
+    packages:
+      - tools/builder/agentic_fitness.py
+      - tools/builder/app_blueprint.py
+      - tools/builder/child_app_generator.py
+      - tools/builder/claude_md_generator.py
+      - tools/builder/goal_adapter.py
+      - tools/builder/db_init_generator.py
+    configs:
+      - args/agentic_fitness.yaml
+    db_table_groups:
+      - agentic_generation
+    depends_on:
+      - core
+      - builder
+      - llm
+
+  mcp_servers:
+    name: "MCP Stdio Servers"
+    description: "14 Model Context Protocol stdio servers exposing ICDEV tools to Claude Code. Each server publishes an Agent Card at /.well-known/agent.json."
+    required: false
+    packages:
+      - tools/mcp/core_server.py
+      - tools/mcp/compliance_server.py
+      - tools/mcp/builder_server.py
+      - tools/mcp/infra_server.py
+      - tools/mcp/knowledge_server.py
+      - tools/mcp/maintenance_server.py
+      - tools/mcp/mbse_server.py
+      - tools/mcp/requirements_server.py
+      - tools/mcp/supply_chain_server.py
+      - tools/mcp/simulation_server.py
+      - tools/mcp/integration_server.py
+      - tools/mcp/standalone/
+    configs: []
+    db_table_groups: []
+    depends_on:
+      - core
+
+
+# ============================================================
+# DATABASE TABLE GROUPS
+# ============================================================
+# Maps group IDs to actual table names from init_icdev_db.py SCHEMA_SQL.
+# Used by migration runner and tenant provisioner to scope table creation.
+
+db_table_groups:
+
+  # ── Core ───────────────────────────────────────────────────
+
+  projects:
+    description: "Project and agent management"
+    tables:
+      - projects
+      - agents
+      - a2a_tasks
+      - a2a_task_history
+      - a2a_task_artifacts
+
+  audit:
+    description: "Append-only audit trail (NIST AU controls)"
+    tables:
+      - audit_trail
+
+  alerts:
+    description: "System alert notifications"
+    tables:
+      - alerts
+
+  # ── Compliance Base ────────────────────────────────────────
+
+  compliance_controls:
+    description: "NIST 800-53 control tracking and SSP/POAM artifacts"
+    tables:
+      - compliance_controls
+      - project_controls
+      - control_narratives
+      - ssp_documents
+      - poam_items
+
+  framework_profiles:
+    description: "Multi-framework crosswalk profiles and status tracking"
+    tables:
+      - framework_profiles
+      - control_crosswalk
+      - project_framework_status
+      - pi_compliance_tracking
+
+  universal_compliance:
+    description: "Universal Compliance Platform (Phase 23): data classifications, framework detection, crosswalk bridges"
+    tables:
+      - data_classifications
+      - framework_applicability
+      - compliance_detection_log
+      - crosswalk_bridges
+      - framework_catalog_versions
+
+  # ── Compliance Posture ─────────────────────────────────────
+
+  fedramp:
+    description: "FedRAMP Moderate/High assessment records"
+    tables:
+      - fedramp_assessments
+
+  cmmc:
+    description: "CMMC Level 2/3 assessment records"
+    tables:
+      - cmmc_assessments
+
+  cjis:
+    description: "FBI CJIS Security Policy assessment records"
+    tables:
+      - cjis_assessments
+
+  hipaa:
+    description: "HIPAA Security Rule assessment records"
+    tables:
+      - hipaa_assessments
+
+  hitrust:
+    description: "HITRUST CSF v11 assessment records"
+    tables:
+      - hitrust_assessments
+
+  soc2:
+    description: "SOC 2 Type II assessment records"
+    tables:
+      - soc2_assessments
+
+  pci_dss:
+    description: "PCI DSS v4.0 assessment records"
+    tables:
+      - pci_dss_assessments
+
+  iso27001:
+    description: "ISO/IEC 27001:2022 assessment records"
+    tables:
+      - iso27001_assessments
+
+  fips_199_200:
+    description: "FIPS 199 security categorization and FIPS 200 gap assessment"
+    tables:
+      - fips199_categorizations
+      - project_information_types
+      - fips200_assessments
+
+  oscal:
+    description: "OSCAL machine-readable compliance artifacts"
+    tables:
+      - oscal_artifacts
+
+  emass:
+    description: "eMASS system registration and sync log"
+    tables:
+      - emass_systems
+      - emass_sync_log
+
+  cato:
+    description: "Continuous ATO evidence tracking"
+    tables:
+      - cato_evidence
+
+  cssp:
+    description: "DoD CSSP (DI 8530.01) assessments, incidents, vulnerability management, certifications"
+    tables:
+      - cssp_assessments
+      - cssp_incidents
+      - cssp_vuln_management
+      - cssp_certifications
+
+  sbd:
+    description: "CISA Secure by Design assessments"
+    tables:
+      - sbd_assessments
+
+  ivv:
+    description: "IEEE 1012 IV&V assessments, findings, and certifications"
+    tables:
+      - ivv_assessments
+      - ivv_findings
+      - ivv_certifications
+
+  # ── Capability Modules ─────────────────────────────────────
+
+  code_reviews:
+    description: "Code review tracking"
+    tables:
+      - code_reviews
+
+  stig:
+    description: "STIG findings"
+    tables:
+      - stig_findings
+
+  sbom:
+    description: "Software bill of materials"
+    tables:
+      - sbom_records
+
+  deployments:
+    description: "Deployment lifecycle tracking"
+    tables:
+      - deployments
+
+  metric_snapshots:
+    description: "Periodic metric snapshots"
+    tables:
+      - metric_snapshots
+
+  knowledge_self_healing:
+    description: "Knowledge base patterns, self-healing events, and failure log"
+    tables:
+      - knowledge_patterns
+      - self_healing_events
+      - failure_log
+
+  maintenance:
+    description: "Dependency inventory, vulnerability tracking, maintenance audits, and remediation actions"
+    tables:
+      - dependency_inventory
+      - dependency_vulnerabilities
+      - maintenance_audits
+      - remediation_actions
+
+  heartbeat:
+    description: "Proactive monitoring: heartbeat checks and auto-resolution log"
+    tables:
+      - heartbeat_checks
+      - auto_resolution_log
+
+  dashboard_auth:
+    description: "Dashboard authentication: users, API keys, auth log, and BYOK LLM keys (D169-D178)"
+    tables:
+      - dashboard_users
+      - dashboard_api_keys
+      - dashboard_auth_log
+      - dashboard_user_llm_keys
+
+  mbse:
+    description: "MBSE: SysML elements, relationships, DOORS requirements, digital thread, model imports, snapshots, code mappings, DES compliance"
+    tables:
+      - sysml_elements
+      - sysml_relationships
+      - doors_requirements
+      - digital_thread_links
+      - model_imports
+      - model_snapshots
+      - model_code_mappings
+      - des_compliance
+
+  modernization:
+    description: "Legacy application analysis, migration planning, and tracking"
+    tables:
+      - legacy_applications
+      - legacy_components
+      - legacy_dependencies
+      - legacy_apis
+      - legacy_db_schemas
+      - migration_assessments
+      - migration_plans
+      - migration_tasks
+      - migration_artifacts
+      - migration_progress
+
+  intake:
+    description: "RICOAS requirements intake: sessions, conversation, requirements, decomposition, documents, readiness"
+    tables:
+      - intake_sessions
+      - intake_conversation
+      - intake_requirements
+      - safe_decomposition
+      - intake_documents
+      - readiness_scores
+
+  boundary_supply_chain:
+    description: "ATO boundary impact assessment and supply chain intelligence"
+    tables:
+      - ato_system_registry
+      - boundary_impact_assessments
+      - supply_chain_vendors
+      - supply_chain_dependencies
+      - isa_agreements
+      - scrm_assessments
+      - cve_triage
+
+  simulation:
+    description: "Digital Program Twin: scenarios, results, Monte Carlo, COA definitions, COA comparisons"
+    tables:
+      - simulation_scenarios
+      - simulation_results
+      - monte_carlo_runs
+      - coa_definitions
+      - coa_comparisons
+
+  integration:
+    description: "External integration: connections, sync log, ID mapping, approval workflows, traceability"
+    tables:
+      - integration_connections
+      - integration_sync_log
+      - integration_id_map
+      - approval_workflows
+      - review_traceability
+
+  spec_kit:
+    description: "Spec-kit patterns: project constitutions and spec registry (D156-D161)"
+    tables:
+      - project_constitutions
+      - spec_registry
+
+  cicd_observability:
+    description: "TAC-8 observability: hook events, agent executions, NLQ queries, worktrees, GitLab task claims"
+    tables:
+      - hook_events
+      - agent_executions
+      - nlq_queries
+      - ci_worktrees
+      - gitlab_task_claims
+
+  cicd_pipeline:
+    description: "CI/CD pipeline runs, event queue, and conversation feedback loop"
+    tables:
+      - ci_pipeline_runs
+      - ci_event_queue
+      - ci_conversations
+      - ci_conversation_turns
+
+  agent_orchestration:
+    description: "Multi-agent orchestration: token usage, workflows, subtasks, mailbox, vetoes, memory, collaboration history"
+    tables:
+      - agent_token_usage
+      - agent_workflows
+      - agent_subtasks
+      - agent_mailbox
+      - agent_vetoes
+      - agent_memory
+      - agent_collaboration_history
+
+  agentic_generation:
+    description: "Agentic child app generation: fitness assessments and child app registry"
+    tables:
+      - agentic_fitness_assessments
+      - child_app_registry
+
+  marketplace:
+    description: "Federated GOTCHA marketplace: assets, versions, reviews, installations, scans, ratings, embeddings, dependencies"
+    tables:
+      - marketplace_assets
+      - marketplace_versions
+      - marketplace_reviews
+      - marketplace_installations
+      - marketplace_scan_results
+      - marketplace_ratings
+      - marketplace_embeddings
+      - marketplace_dependencies
+
+  devsecops_zta:
+    description: "DevSecOps profiles, ZTA maturity scores, posture evidence, NIST 800-207 assessments, pipeline audit"
+    tables:
+      - devsecops_profiles
+      - zta_maturity_scores
+      - zta_posture_evidence
+      - nist_800_207_assessments
+      - devsecops_pipeline_audit
+
+  mosa:
+    description: "DoD MOSA: assessments, ICD documents, TSP documents, modularity metrics"
+    tables:
+      - mosa_assessments
+      - icd_documents
+      - tsp_documents
+      - mosa_modularity_metrics
+
+  remote_gateway:
+    description: "Remote Command Gateway: user bindings, command log, command allowlist"
+    tables:
+      - remote_user_bindings
+      - remote_command_log
+      - remote_command_allowlist

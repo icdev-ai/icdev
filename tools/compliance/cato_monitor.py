@@ -26,7 +26,7 @@ import hashlib
 import json
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -146,7 +146,7 @@ def _compute_expires_at(collected_at_str, automation_frequency):
     try:
         collected_at = datetime.fromisoformat(collected_at_str)
     except (ValueError, TypeError):
-        collected_at = datetime.utcnow()
+        collected_at = datetime.now(timezone.utc)
 
     days = EXPIRY_WINDOWS.get(automation_frequency, 90)
     expires_at = collected_at + timedelta(days=days)
@@ -199,7 +199,7 @@ def collect_evidence(
     try:
         _verify_project(conn, project_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         collected_at = now.isoformat()
         expires_at = _compute_expires_at(collected_at, automation_frequency)
 
@@ -323,7 +323,7 @@ def check_evidence_freshness(project_id, db_path=None):
             (project_id,),
         ).fetchall()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         now_str = now.isoformat()
         summary = {
             "total": len(rows),
@@ -532,7 +532,7 @@ def auto_reassess(project_id, project_dir=None, db_path=None):
                     refreshed = True
 
             if refreshed:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 collected_at = now.isoformat()
                 expires_at = _compute_expires_at(collected_at, freq)
 
@@ -731,8 +731,8 @@ def get_cato_dashboard_data(project_id, db_path=None):
             freshness_chart[row["status"]] = row["cnt"]
 
         # --- Upcoming expirations (next 30 days) ---
-        cutoff = (datetime.utcnow() + timedelta(days=30)).isoformat()
-        now_str = datetime.utcnow().isoformat()
+        cutoff = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        now_str = datetime.now(timezone.utc).isoformat()
 
         expiring_rows = conn.execute(
             """SELECT id, control_id, evidence_type, evidence_source,
@@ -750,7 +750,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
         for row in expiring_rows:
             try:
                 exp_dt = datetime.fromisoformat(row["expires_at"])
-                days_until = (exp_dt - datetime.utcnow()).days
+                days_until = (exp_dt - datetime.now(timezone.utc)).days
             except (ValueError, TypeError):
                 days_until = -1
 
@@ -786,7 +786,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
             })
 
         # --- Trend data: evidence collected per day (last 30 days) ---
-        thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
+        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
 
         trend_rows = conn.execute(
             """SELECT DATE(collected_at) as day, COUNT(*) as cnt
@@ -821,7 +821,7 @@ def get_cato_dashboard_data(project_id, db_path=None):
 
         result = {
             "project_id": project_id,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "readiness": readiness,
             "freshness_chart": freshness_chart,
             "upcoming_expirations": upcoming_expirations,
@@ -860,7 +860,7 @@ def expire_old_evidence(project_id, db_path=None):
     try:
         _verify_project(conn, project_id)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         now_str = now.isoformat()
 
         # Find all evidence that should be expired

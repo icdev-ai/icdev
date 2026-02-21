@@ -8,7 +8,7 @@ with full serialization support (to_dict / from_dict).
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -66,7 +66,7 @@ class StatusEvent:
 
     def __post_init__(self):
         if not self.timestamp:
-            self.timestamp = datetime.utcnow().isoformat() + "Z"
+            self.timestamp = datetime.now(timezone.utc).isoformat() + "Z"
 
     def to_dict(self) -> dict:
         return {
@@ -107,7 +107,7 @@ class Task:
     def __post_init__(self):
         if not self.id:
             self.id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(timezone.utc).isoformat() + "Z"
         if not self.created_at:
             self.created_at = now
         if not self.updated_at:
@@ -124,7 +124,7 @@ class Task:
         if not TaskStatus.is_valid(new_status):
             raise ValueError(f"Invalid status '{new_status}'. Valid: {[s.value for s in TaskStatus]}")
         self.status = new_status
-        self.updated_at = datetime.utcnow().isoformat() + "Z"
+        self.updated_at = datetime.now(timezone.utc).isoformat() + "Z"
         self.history.append(StatusEvent(
             status=new_status,
             message=message,
@@ -140,7 +140,7 @@ class Task:
             classification=classification,
         )
         self.artifacts.append(artifact)
-        self.updated_at = datetime.utcnow().isoformat() + "Z"
+        self.updated_at = datetime.now(timezone.utc).isoformat() + "Z"
         return artifact
 
     def is_terminal(self) -> bool:

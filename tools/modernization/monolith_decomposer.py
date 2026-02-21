@@ -18,7 +18,7 @@ import sqlite3
 import sys
 import uuid
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -514,7 +514,7 @@ def generate_decomposition_plan(app_id, target_architecture="microservices", db_
     plan = {
         "app_id": app_id,
         "target_architecture": target_architecture,
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.now(timezone.utc).isoformat() + "Z",
         "total_services": len(boundaries),
         "phases": [],
         "summary": {},
@@ -1122,8 +1122,8 @@ def create_migration_plan(
 
         app_name = app_row["name"]
         plan_id = _gen_id("mplan-")
-        plan_name = f"{strategy}_{app_name}_{datetime.utcnow().strftime('%Y%m%d')}"
-        now = datetime.utcnow().isoformat() + "Z"
+        plan_name = f"{strategy}_{app_name}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+        now = datetime.now(timezone.utc).isoformat() + "Z"
 
         tasks = []
 

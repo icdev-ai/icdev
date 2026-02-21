@@ -46,7 +46,7 @@ import collections
 import json
 import sqlite3
 import textwrap
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -278,7 +278,7 @@ def inherit_controls(legacy_app_id, plan_id):
                             "original_status": row["implementation_status"],
                             "description": row["implementation_description"],
                         }),
-                        datetime.utcnow().isoformat(),
+                        datetime.now(timezone.utc).isoformat(),
                     ),
                 )
                 inherited_count += 1
@@ -419,7 +419,7 @@ def distribute_controls(plan_id, service_map):
                                 "family": family,
                                 "distribution_rule": "universal" if family in UNIVERSAL_FAMILIES else "targeted",
                             }),
-                            datetime.utcnow().isoformat(),
+                            datetime.now(timezone.utc).isoformat(),
                         ),
                     )
                     links_created += 1
@@ -692,7 +692,7 @@ def generate_ato_impact_report(plan_id, output_dir=None):
     else:
         overall_risk = "CRITICAL"
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     # Build report
     lines = [
@@ -860,7 +860,7 @@ def generate_ato_impact_report(plan_id, output_dir=None):
     if output_dir:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        filename = f"ato_impact_report_{plan_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.md"
+        filename = f"ato_impact_report_{plan_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.md"
         file_path = output_path / filename
         with open(str(file_path), "w", encoding="utf-8") as f:
             f.write(content)
@@ -904,7 +904,7 @@ def create_compliance_thread(plan_id):
         ).fetchall()
 
         links_created = 0
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         for task in tasks:
             task_id = task["id"]
@@ -1254,7 +1254,7 @@ def get_compliance_dashboard(plan_id):
         },
         "migration_compliance_gate": gate,
         "gate_threshold_pct": 95.0,
-        "generated_at": datetime.utcnow().isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
     return dashboard

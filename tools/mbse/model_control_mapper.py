@@ -7,7 +7,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -315,7 +315,7 @@ def generate_mapping_report(project_id: str, db_path=None) -> str:
     finally:
         conn.close()
 
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     L = ["CUI // SP-CTI", "", "# Model-to-Control Mapping Report", "",
          f"**Project:** {name}", f"**Project ID:** {project_id}",
          f"**Generated:** {now}", "**Classification:** CUI // SP-CTI", "", "---", "",

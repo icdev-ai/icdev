@@ -33,7 +33,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -1087,7 +1087,7 @@ def run_cmmc_assessment(
                             "details": "Domain auto-check failed; manual review required.",
                         }
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         results = []
 
         # 5. Assess each practice

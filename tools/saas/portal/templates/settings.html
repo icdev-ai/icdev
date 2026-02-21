@@ -1,290 +1,302 @@
-<!DOCTYPE html>
 <!-- CUI // SP-CTI -->
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICDEV Portal - Settings</title>
-    <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
-</head>
-<body>
-    <a href="#main-content" class="skip-link">Skip to main content</a>
+{% extends "portal_base.html" %}
+{% set active_page = "settings" %}
+{% block title %}Settings - {{ tenant_name }}{% endblock %}
 
-    <!-- CUI Banner Top -->
-    <div class="cui-banner">CUI // SP-CTI</div>
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Settings</span>
+</nav>
+<div class="page-header">
+    <h1>Tenant Settings</h1>
+    <p>Configuration for {{ tenant_name }}</p>
+</div>
 
-    <div class="portal-layout">
-        <!-- Sidebar Navigation -->
-        <nav class="sidebar" role="navigation" aria-label="Main navigation">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
-                        <rect width="48" height="48" rx="8" fill="#58a6ff"/>
-                        <path d="M14 16h20v2H14zm0 6h16v2H14zm0 6h20v2H14zm0 6h12v2H14z" fill="#0d1117"/>
-                    </svg>
-                </div>
-                <div class="sidebar-title">
-                    <span class="sidebar-brand">ICDEV</span>
-                    <span class="sidebar-tenant">{{ tenant_name }}</span>
-                </div>
-            </div>
-
-            <ul class="sidebar-nav">
-                <li>
-                    <a href="{{ url_for('portal.dashboard') }}">
-                        <span class="nav-icon">&#9632;</span> Dashboard
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.projects') }}">
-                        <span class="nav-icon">&#9776;</span> Projects
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.compliance') }}">
-                        <span class="nav-icon">&#10003;</span> Compliance
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.team') }}">
-                        <span class="nav-icon">&#9734;</span> Team
-                    </a>
-                </li>
-                <li class="active">
-                    <a href="{{ url_for('portal.settings') }}">
-                        <span class="nav-icon">&#9881;</span> Settings
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.api_keys') }}">
-                        <span class="nav-icon">&#9919;</span> API Keys
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.usage') }}">
-                        <span class="nav-icon">&#9650;</span> Usage
-                    </a>
-                </li>
-                <li>
-                    <a href="{{ url_for('portal.audit') }}">
-                        <span class="nav-icon">&#9998;</span> Audit Trail
-                    </a>
-                </li>
-            </ul>
-
-            <div class="sidebar-footer">
-                <div class="sidebar-user">
-                    <span class="user-name">{{ user_name }}</span>
-                    <span class="user-role">{{ user_role }}</span>
-                </div>
-                <a href="{{ url_for('portal.logout') }}" class="btn btn-secondary btn-sm">Sign Out</a>
-            </div>
-        </nav>
-
-        <!-- Main Content -->
-        <main class="main-content" id="main-content" role="main">
-            <nav class="breadcrumbs" aria-label="Breadcrumb">
-                <a href="{{ url_for('portal.dashboard') }}">Home</a>
-                <span class="separator">/</span>
-                <span class="current">Settings</span>
-            </nav>
-            <div class="page-header">
-                <h1>Tenant Settings</h1>
-                <p>Configuration for {{ tenant_name }}</p>
-            </div>
-
-            <!-- General Settings -->
-            <div class="card">
-                <h2 class="card-title">General</h2>
-                <div class="settings-grid">
-                    <div class="settings-row">
-                        <span class="settings-label">Tenant Name</span>
-                        <span class="settings-value">{{ tenant.name }}</span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Slug</span>
-                        <span class="settings-value"><code>{{ tenant.slug }}</code></span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Tenant ID</span>
-                        <span class="settings-value"><code>{{ tenant.id }}</code></span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Status</span>
-                        <span class="settings-value">
-                            <span class="badge {% if tenant.status == 'active' %}badge-success{% elif tenant.status == 'suspended' %}badge-danger{% else %}badge-secondary{% endif %}" role="status">
-                                {{ tenant.status }}
-                            </span>
-                        </span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Impact Level</span>
-                        <span class="settings-value">
-                            <span class="badge badge-warning" role="status" data-glossary="{{ tenant.impact_level }}">{{ tenant.impact_level }}</span>
-                        </span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Created</span>
-                        <span class="settings-value">{{ tenant.created_at }}</span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Last Updated</span>
-                        <span class="settings-value">{{ tenant.updated_at }}</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Subscription -->
-            <div class="card">
-                <h2 class="card-title">Subscription</h2>
-                <div class="settings-grid">
-                    <div class="settings-row">
-                        <span class="settings-label">Tier</span>
-                        <span class="settings-value">
-                            <span class="badge badge-info" role="status">{{ subscription.tier or tenant.tier or 'starter' }}</span>
-                            <span class="help-icon" title="Your subscription tier determines project limits, user counts, and available impact levels.">?</span>
-                        </span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Max Projects</span>
-                        <span class="settings-value">{{ subscription.max_projects or 'N/A' }}{% if subscription.max_projects == -1 %} (Unlimited){% endif %}</span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Max Users</span>
-                        <span class="settings-value">{{ subscription.max_users or 'N/A' }}{% if subscription.max_users == -1 %} (Unlimited){% endif %}</span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Status</span>
-                        <span class="settings-value">
-                            <span class="badge {% if subscription.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
-                                {{ subscription.status or 'unknown' }}
-                            </span>
-                        </span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Started</span>
-                        <span class="settings-value">{{ subscription.started_at or 'N/A' }}</span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Expires</span>
-                        <span class="settings-value">{{ subscription.ends_at or 'No expiration' }}</span>
-                    </div>
-                </div>
-                <p class="settings-note">Contact your account manager to upgrade or modify your subscription.</p>
-            </div>
-
-            <!-- Artifact Delivery -->
-            <div class="card">
-                <h2 class="card-title">Artifact Delivery</h2>
-                <div class="settings-grid">
-                    {% if tenant.artifact_config %}
-                    <div class="settings-row">
-                        <span class="settings-label">Delivery Type</span>
-                        <span class="settings-value">{{ tenant.artifact_config.type or 'Not configured' }}</span>
-                    </div>
-                    {% if tenant.artifact_config.bucket %}
-                    <div class="settings-row">
-                        <span class="settings-label">S3 Bucket</span>
-                        <span class="settings-value"><code>{{ tenant.artifact_config.bucket }}</code></span>
-                    </div>
-                    {% endif %}
-                    {% if tenant.artifact_config.repo_url %}
-                    <div class="settings-row">
-                        <span class="settings-label">Git Repository</span>
-                        <span class="settings-value"><code>{{ tenant.artifact_config.repo_url }}</code></span>
-                    </div>
-                    {% endif %}
-                    {% if tenant.artifact_config.sftp_host %}
-                    <div class="settings-row">
-                        <span class="settings-label">SFTP Host</span>
-                        <span class="settings-value"><code>{{ tenant.artifact_config.sftp_host }}:{{ tenant.artifact_config.sftp_path }}</code></span>
-                    </div>
-                    {% endif %}
-                    {% else %}
-                    <div class="settings-row">
-                        <span class="settings-label">Status</span>
-                        <span class="settings-value text-muted">Not configured. Use the API to set artifact delivery.</span>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Bedrock Configuration -->
-            <div class="card">
-                <h2 class="card-title">Amazon Bedrock Configuration</h2>
-                <div class="settings-grid">
-                    {% if tenant.bedrock_config %}
-                    <div class="settings-row">
-                        <span class="settings-label">Mode</span>
-                        <span class="settings-value">{{ tenant.bedrock_config.mode or 'byok' }}</span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Region</span>
-                        <span class="settings-value"><code>{{ tenant.bedrock_config.region or 'us-gov-west-1' }}</code></span>
-                    </div>
-                    <div class="settings-row">
-                        <span class="settings-label">Credentials</span>
-                        <span class="settings-value">
-                            {% if tenant.bedrock_config.credentials_secret %}
-                            <code>{{ tenant.bedrock_config.credentials_secret[:20] }}...</code> (Secrets Manager)
-                            {% else %}
-                            Not configured
-                            {% endif %}
-                        </span>
-                    </div>
-                    {% else %}
-                    <div class="settings-row">
-                        <span class="settings-label">Status</span>
-                        <span class="settings-value text-muted">Not configured. Use the API to set Bedrock credentials.</span>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-
-            <!-- Identity Provider -->
-            <div class="card">
-                <h2 class="card-title">Identity Provider (IdP) Configuration</h2>
-                <div class="settings-grid">
-                    {% if tenant.idp_config %}
-                    <div class="settings-row">
-                        <span class="settings-label">Type</span>
-                        <span class="settings-value">{{ tenant.idp_config.type or 'Not configured' }}</span>
-                    </div>
-                    {% if tenant.idp_config.issuer_url %}
-                    <div class="settings-row">
-                        <span class="settings-label">OAuth Issuer URL</span>
-                        <span class="settings-value"><code>{{ tenant.idp_config.issuer_url }}</code></span>
-                    </div>
-                    {% endif %}
-                    {% if tenant.idp_config.client_id %}
-                    <div class="settings-row">
-                        <span class="settings-label">Client ID</span>
-                        <span class="settings-value"><code>{{ tenant.idp_config.client_id }}</code></span>
-                    </div>
-                    {% endif %}
-                    {% if tenant.idp_config.jwks_uri %}
-                    <div class="settings-row">
-                        <span class="settings-label">JWKS URI</span>
-                        <span class="settings-value"><code>{{ tenant.idp_config.jwks_uri }}</code></span>
-                    </div>
-                    {% endif %}
-                    {% else %}
-                    <div class="settings-row">
-                        <span class="settings-label">Status</span>
-                        <span class="settings-value text-muted">Not configured. Use the API to configure SSO/SAML.</span>
-                    </div>
-                    {% endif %}
-                </div>
-            </div>
-        </main>
+<!-- General Settings -->
+<div class="card">
+    <h2 class="card-title">General</h2>
+    <div class="settings-grid">
+        <div class="settings-row">
+            <span class="settings-label">Tenant Name</span>
+            <span class="settings-value">{{ tenant.name }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Slug</span>
+            <span class="settings-value"><code>{{ tenant.slug }}</code></span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Tenant ID</span>
+            <span class="settings-value"><code>{{ tenant.id }}</code></span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value">
+                <span class="badge {% if tenant.status == 'active' %}badge-success{% elif tenant.status == 'suspended' %}badge-danger{% else %}badge-secondary{% endif %}" role="status">
+                    {{ tenant.status }}
+                </span>
+            </span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Impact Level</span>
+            <span class="settings-value">
+                <span class="badge badge-warning" role="status" data-glossary="{{ tenant.impact_level }}">{{ tenant.impact_level }}</span>
+            </span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Created</span>
+            <span class="settings-value">{{ tenant.created_at }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Last Updated</span>
+            <span class="settings-value">{{ tenant.updated_at }}</span>
+        </div>
     </div>
+</div>
 
-    <!-- CUI Banner Bottom -->
-    <div class="cui-banner">CUI // SP-CTI</div>
+<!-- Subscription -->
+<div class="card">
+    <h2 class="card-title">Subscription</h2>
+    <div class="settings-grid">
+        <div class="settings-row">
+            <span class="settings-label">Tier</span>
+            <span class="settings-value">
+                <span class="badge badge-info" role="status">{{ subscription.tier or tenant.tier or 'starter' }}</span>
+                <span class="help-icon" title="Your subscription tier determines project limits, user counts, and available impact levels.">?</span>
+            </span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Max Projects</span>
+            <span class="settings-value">{{ subscription.max_projects or 'N/A' }}{% if subscription.max_projects == -1 %} (Unlimited){% endif %}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Max Users</span>
+            <span class="settings-value">{{ subscription.max_users or 'N/A' }}{% if subscription.max_users == -1 %} (Unlimited){% endif %}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value">
+                <span class="badge {% if subscription.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
+                    {{ subscription.status or 'unknown' }}
+                </span>
+            </span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Started</span>
+            <span class="settings-value">{{ subscription.starts_at or 'N/A' }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Expires</span>
+            <span class="settings-value">{{ subscription.ends_at or 'No expiration' }}</span>
+        </div>
+    </div>
+    <p class="settings-note">Contact your account manager to upgrade or modify your subscription.</p>
+</div>
 
-    <!-- Toast Container -->
-    <div id="toast-container" aria-live="polite"></div>
+<!-- Artifact Delivery -->
+<div class="card">
+    <h2 class="card-title">Artifact Delivery</h2>
+    <div class="settings-grid">
+        {% if tenant.artifact_config %}
+        <div class="settings-row">
+            <span class="settings-label">Delivery Type</span>
+            <span class="settings-value">{{ tenant.artifact_config.type or 'Not configured' }}</span>
+        </div>
+        {% if tenant.artifact_config.bucket %}
+        <div class="settings-row">
+            <span class="settings-label">S3 Bucket</span>
+            <span class="settings-value"><code>{{ tenant.artifact_config.bucket }}</code></span>
+        </div>
+        {% endif %}
+        {% if tenant.artifact_config.repo_url %}
+        <div class="settings-row">
+            <span class="settings-label">Git Repository</span>
+            <span class="settings-value"><code>{{ tenant.artifact_config.repo_url }}</code></span>
+        </div>
+        {% endif %}
+        {% if tenant.artifact_config.sftp_host %}
+        <div class="settings-row">
+            <span class="settings-label">SFTP Host</span>
+            <span class="settings-value"><code>{{ tenant.artifact_config.sftp_host }}:{{ tenant.artifact_config.sftp_path }}</code></span>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value text-muted">Not configured. Use the API to set artifact delivery.</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
 
-    <script src="{{ url_for('portal.static', filename='portal.js') }}"></script>
-</body>
-</html>
+<!-- Bedrock Configuration -->
+<div class="card">
+    <h2 class="card-title">Amazon Bedrock Configuration</h2>
+    <div class="settings-grid">
+        {% if tenant.bedrock_config %}
+        <div class="settings-row">
+            <span class="settings-label">Mode</span>
+            <span class="settings-value">{{ tenant.bedrock_config.mode or 'byok' }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Region</span>
+            <span class="settings-value"><code>{{ tenant.bedrock_config.region or 'us-gov-west-1' }}</code></span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Credentials</span>
+            <span class="settings-value">
+                {% if tenant.bedrock_config.credentials_secret %}
+                <code>{{ tenant.bedrock_config.credentials_secret[:20] }}...</code> (Secrets Manager)
+                {% else %}
+                Not configured
+                {% endif %}
+            </span>
+        </div>
+        {% else %}
+        <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value text-muted">Not configured. Use the API to set Bedrock credentials.</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- LLM Provider Keys (Phase 32) -->
+<div class="card">
+    <h2 class="card-title">LLM Provider Keys
+        <span class="help-icon" title="Configure API keys for LLM providers (Anthropic, OpenAI, Bedrock, Ollama, vLLM). Keys are encrypted at rest and never exposed in plaintext. The platform shared pool is the fallback when no tenant key is configured.">?</span>
+    </h2>
+
+    {% if not byok_allowed %}
+    <div class="settings-row">
+        <span class="settings-label">Status</span>
+        <span class="settings-value text-muted">
+            <strong>Upgrade Required</strong> &mdash; LLM provider key management requires a Professional or Enterprise subscription.
+        </span>
+    </div>
+    {% else %}
+
+    {% if user_role == 'tenant_admin' %}
+    <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--text-secondary, #aaa);">Add Provider Key</h3>
+        <form id="add-llm-key-form" onsubmit="addLlmKey(event)" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+            <div class="form-group" style="flex: 0 0 auto;">
+                <label for="llm-provider" style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--text-secondary, #aaa);">Provider</label>
+                <select id="llm-provider" name="provider" required style="padding: 0.5rem; background: var(--bg-input, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #333); border-radius: 4px;">
+                    <option value="">Select...</option>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI / Compatible</option>
+                    <option value="bedrock">AWS Bedrock (Access Key)</option>
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="vllm">vLLM (Local)</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex: 1 1 150px;">
+                <label for="llm-key-label" style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--text-secondary, #aaa);">Label</label>
+                <input type="text" id="llm-key-label" name="key_label"
+                       placeholder="e.g., Production Key"
+                       maxlength="128"
+                       style="width: 100%; padding: 0.5rem; background: var(--bg-input, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #333); border-radius: 4px;">
+            </div>
+            <div class="form-group" style="flex: 2 1 200px;">
+                <label for="llm-api-key" style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--text-secondary, #aaa);">API Key</label>
+                <input type="password" id="llm-api-key" name="api_key"
+                       placeholder="sk-ant-..." required autocomplete="off"
+                       style="width: 100%; padding: 0.5rem; background: var(--bg-input, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #333); border-radius: 4px;">
+            </div>
+            <div class="form-group" style="flex: 0 0 auto;">
+                <button type="submit" class="btn btn-primary">Add Key</button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--text-secondary, #aaa);">Configured Keys ({{ llm_keys|length }})</h3>
+    {% if llm_keys %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="LLM provider keys">
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Label</th>
+                    <th>Key Prefix</th>
+                    <th>Status</th>
+                    <th>Added</th>
+                    {% if user_role == 'tenant_admin' %}<th>Actions</th>{% endif %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for key in llm_keys %}
+                <tr{% if key.status != 'active' %} style="opacity: 0.5;"{% endif %}>
+                    <td><strong>{{ key.provider | upper }}</strong></td>
+                    <td>{{ key.key_label or '-' }}</td>
+                    <td class="td-mono"><code>{{ key.key_prefix }}...</code></td>
+                    <td>
+                        {% if key.status == 'active' %}
+                        <span class="badge badge-success" role="status">Active</span>
+                        {% else %}
+                        <span class="badge badge-danger" role="status">Revoked</span>
+                        {% endif %}
+                    </td>
+                    <td class="td-nowrap">{{ key.created_at }}</td>
+                    {% if user_role == 'tenant_admin' %}
+                    <td>
+                        {% if key.status == 'active' %}
+                        <button class="btn btn-danger btn-sm"
+                                onclick="confirmAction('Revoke this LLM key? Services will fall back to the platform shared pool.').then(function(ok) { if (ok) revokeLlmKey('{{ key.id }}'); })">
+                            Revoke
+                        </button>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No LLM provider keys configured. The platform shared pool will be used for all LLM operations.</p>
+    {% endif %}
+
+    {% endif %}
+</div>
+
+<!-- Identity Provider -->
+<div class="card">
+    <h2 class="card-title">Identity Provider (IdP) Configuration</h2>
+    <div class="settings-grid">
+        {% if tenant.idp_config %}
+        <div class="settings-row">
+            <span class="settings-label">Type</span>
+            <span class="settings-value">{{ tenant.idp_config.type or 'Not configured' }}</span>
+        </div>
+        {% if tenant.idp_config.issuer_url %}
+        <div class="settings-row">
+            <span class="settings-label">OAuth Issuer URL</span>
+            <span class="settings-value"><code>{{ tenant.idp_config.issuer_url }}</code></span>
+        </div>
+        {% endif %}
+        {% if tenant.idp_config.client_id %}
+        <div class="settings-row">
+            <span class="settings-label">Client ID</span>
+            <span class="settings-value"><code>{{ tenant.idp_config.client_id }}</code></span>
+        </div>
+        {% endif %}
+        {% if tenant.idp_config.jwks_uri %}
+        <div class="settings-row">
+            <span class="settings-label">JWKS URI</span>
+            <span class="settings-value"><code>{{ tenant.idp_config.jwks_uri }}</code></span>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value text-muted">Not configured. Use the API to configure SSO/SAML.</span>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

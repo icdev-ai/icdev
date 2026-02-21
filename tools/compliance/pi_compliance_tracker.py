@@ -48,7 +48,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -174,7 +174,7 @@ def _compute_compliance_score(conn, project_id):
     total_poam = sum(poam_counts.values())
     if total_poam > 0:
         active = poam_counts.get("open", 0) + poam_counts.get("in_progress", 0)
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         overdue_row = conn.execute(
             """SELECT COUNT(*) as cnt FROM poam_items
                WHERE project_id = ? AND status IN ('open', 'in_progress')
@@ -484,7 +484,7 @@ def record_pi_progress(project_id, pi_number, db_path=None):
         score_delta = current_score - pi_data["compliance_score_start"]
 
         # Update notes with progress snapshot
-        notes["last_progress_update"] = datetime.utcnow().isoformat()
+        notes["last_progress_update"] = datetime.now(timezone.utc).isoformat()
         notes["current_score"] = current_score
         notes["current_controls_implemented"] = implemented_now
         notes["current_controls_remaining"] = remaining_now
@@ -525,7 +525,7 @@ def record_pi_progress(project_id, pi_number, db_path=None):
             "open_poam_items": open_poam_now,
             "findings_remediated": findings_remediated_now,
             "findings_delta": findings_delta,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         _log_audit(conn, project_id, f"PI {pi_number} progress recorded", result)
@@ -608,7 +608,7 @@ def close_pi(project_id, pi_number, db_path=None):
 
         # Update notes with closure data
         notes["status"] = "closed"
-        notes["closed_at"] = datetime.utcnow().isoformat()
+        notes["closed_at"] = datetime.now(timezone.utc).isoformat()
         notes["velocity"] = {
             "controls_implemented": controls_delta,
             "findings_remediated": findings_delta,
@@ -987,7 +987,7 @@ def generate_pi_compliance_report(project_id, pi_number, output_path=None, db_pa
             (project_id,),
         ).fetchall()
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # CUI markings
         cui_header = (

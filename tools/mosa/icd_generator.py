@@ -25,7 +25,7 @@ import json
 import sqlite3
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -142,7 +142,7 @@ def _build_icd_content(interface, project, config):
     """Generate a CUI-marked markdown ICD document for one interface."""
     spec = interface.get("spec", {})
     info = spec.get("info", {})
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     name = info.get("title", interface.get("name", "Unknown Interface"))
     version = info.get("version", "1.0.0")
     description = info.get("description", "No description provided.")
@@ -261,7 +261,7 @@ def generate_icd(conn, project_id, interface, output_dir, config):
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(result["content"])
 
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """INSERT INTO icd_documents (id, project_id, interface_id, interface_name,
            version, source_system, target_system, protocol, data_format, content,

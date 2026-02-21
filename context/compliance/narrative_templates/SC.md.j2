@@ -1,0 +1,102 @@
+<!-- CUI // SP-CTI -->
+## {{ control_id }} — {{ control_title }}
+
+### Implementation Status
+
+**Status:** {{ status }}
+**Family:** {{ family }}
+
+### Implementation Narrative
+
+{% if implementation_detail %}
+{{ implementation_detail }}
+{% else %}
+This control has not yet been fully documented. Evidence gathering is in progress.
+{% endif %}
+
+### Boundary Protection Architecture
+
+{% if control_id == "SC-7" or control_id.startswith("SC-7(") %}
+The system implements boundary protection through the following architecture:
+
+- **External Boundaries:** All external system boundaries are protected by managed interfaces consisting of boundary protection devices (firewalls, gateways, proxies) arranged in accordance with organizational security architecture.
+- **DMZ Architecture:** Publicly accessible system components are isolated in a demilitarized zone (DMZ) with separate network segments. Traffic between the DMZ and internal networks is filtered and inspected.
+- **Deny-by-Default:** Boundary protection devices enforce a deny-by-default, allow-by-exception policy. Only explicitly authorized traffic is permitted through managed interfaces.
+- **Subnetwork Isolation:** Internal subnetworks for publicly accessible components are physically or logically separated from internal organizational networks.
+- **Traffic Flow Enforcement:** Inbound and outbound traffic flow policies are defined, documented, and enforced at each managed interface. Traffic that does not match an approved flow is blocked and logged.
+{% else %}
+Boundary protection architecture is documented under SC-7. This control ({{ control_id }}) supports the overall boundary protection strategy.
+{% endif %}
+
+### Encryption Standards (FIPS 140-2/3)
+
+{% if control_id == "SC-13" or control_id.startswith("SC-13(") or control_id == "SC-28" or control_id.startswith("SC-28(") or control_id == "SC-8" or control_id.startswith("SC-8(") %}
+Cryptographic protections are implemented in accordance with the following standards:
+
+- **FIPS 140 Validation:** All cryptographic modules used within the system are FIPS 140-2 validated (minimum) or FIPS 140-3 validated. Validation certificates are maintained and referenced in system documentation.
+- **Data in Transit:** All data transmitted across network boundaries is encrypted using FIPS-approved algorithms. TLS 1.2 is the minimum supported version; TLS 1.3 is preferred.
+- **Data at Rest:** CUI and sensitive data at rest is encrypted using AES-256 (or equivalent FIPS-approved algorithm). Encryption keys are managed through an approved key management system (e.g., AWS KMS with FIPS 140-2 Level 3 HSMs).
+- **Key Management:** Cryptographic keys are generated, distributed, stored, rotated, and destroyed in accordance with NIST SP 800-57 guidance. Key escrow and recovery procedures are documented.
+- **Algorithm Agility:** The system is designed for cryptographic algorithm agility to support migration to post-quantum cryptographic algorithms as directed by CNSA 2.0 guidance.
+{% else %}
+Encryption standards are documented under SC-13, SC-28, and SC-8. This control ({{ control_id }}) adheres to the organizationally defined cryptographic policies.
+{% endif %}
+
+### Network Segmentation
+
+The system implements network segmentation as follows:
+
+- **Segment Architecture:** The network is segmented into distinct security zones (management, application, data, user) with traffic controls between zones enforced by firewalls and/or software-defined networking (SDN) policies.
+- **Microsegmentation:** Within application tiers, microsegmentation is implemented using Kubernetes NetworkPolicies (default-deny ingress and egress) or equivalent host-based firewall rules to limit lateral movement.
+- **Zero Trust Zones:** Network segments align with the Zero Trust Architecture principle that no implicit trust is granted based on network location. All inter-segment communication requires authentication and authorization.
+- **Monitoring:** Inter-segment traffic is monitored for anomalous patterns. East-west traffic analysis supplements traditional north-south perimeter monitoring.
+- **Isolation by Impact Level:** Systems at different impact levels (IL4/IL5/IL6) are deployed in physically or logically separated network segments with controlled interconnections documented in the system security plan.
+
+### TLS/mTLS Configuration
+
+{% if control_id == "SC-8" or control_id.startswith("SC-8(") or control_id == "SC-23" or control_id.startswith("SC-23(") %}
+Transport Layer Security is configured as follows:
+
+- **TLS Version:** TLS 1.2 is the minimum supported version. TLS 1.3 is enabled where supported by system components. TLS 1.0 and 1.1 are disabled.
+- **Cipher Suites:** Only FIPS-approved cipher suites are enabled. Weak ciphers (RC4, DES, 3DES, NULL) and export-grade ciphers are disabled. Forward secrecy (ECDHE, DHE) is required.
+- **Certificate Management:** Server certificates are issued by an organizationally approved Certificate Authority (CA). Certificate validity, revocation status (OCSP stapling or CRL), and chain-of-trust are validated on every connection.
+- **Mutual TLS (mTLS):** For inter-service communication within the system boundary (e.g., agent-to-agent, microservice-to-microservice), mutual TLS is enforced. Both client and server present and validate certificates.
+- **Session Integrity:** TLS session resumption is configured to balance performance and security. Session tickets are rotated regularly and protected against replay.
+{% else %}
+TLS/mTLS configuration is documented under SC-8 and SC-23. This control ({{ control_id }}) operates within the established transport protection framework.
+{% endif %}
+
+### Evidence
+
+{% if evidence_items %}
+{% for item in evidence_items %}
+- **{{ item.source }}** ({{ item.date | default("N/A") }}): {{ item.description }}
+{% endfor %}
+{% else %}
+No formal evidence has been collected for this control.
+{% endif %}
+
+### Assessment History
+
+{% if audit_events %}
+| Date | Actor | Action |
+|------|-------|--------|
+{% for event in audit_events[:10] %}
+| {{ event.created_at | default("N/A") }} | {{ event.actor | default("system") }} | {{ event.action | default("") }} |
+{% endfor %}
+{% else %}
+No assessment history available.
+{% endif %}
+
+### Related Framework Mappings
+
+{% if crosswalk_mappings %}
+{% for mapping in crosswalk_mappings %}
+- **{{ mapping.framework }}**: {{ mapping.requirement_id }} ({{ mapping.status | default("not_assessed") }})
+{% endfor %}
+{% else %}
+No crosswalk mappings available for this control.
+{% endif %}
+
+---
+*CUI // SP-CTI — Generated by ICDEV Narrative Generator*

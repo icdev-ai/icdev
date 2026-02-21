@@ -27,7 +27,7 @@ import sqlite3
 import sys
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import os
 
@@ -107,7 +107,7 @@ def add_vendor(project_id, vendor_name, vendor_type, country_of_origin,
         raise ValueError(f"section_889_status must be one of {SECTION_889}, got '{section_889_status}'")
 
     vendor_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn = _get_connection(db_path)
     try:
         conn.execute(
@@ -165,7 +165,7 @@ def add_dependency(project_id, source_component, target_component,
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (project_id, source_type, source_component,
              target_type, target_component, dependency_type,
-             criticality, metadata, datetime.utcnow().isoformat()),
+             criticality, metadata, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
         dep_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]

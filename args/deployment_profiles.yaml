@@ -1,0 +1,185 @@
+# Deployment Profiles for ICDEV Modular Installation
+# Each profile pre-selects modules, compliance frameworks, and platform defaults
+# Profiles are starting points — all can be customized post-install via --add-module
+
+profiles:
+  # ── ISV Profiles ──────────────────────────────────────────────────
+
+  isv_startup:
+    name: "ISV Startup"
+    description: "Independent Software Vendor, small team building SaaS products"
+    team_size: "2-10"
+    modules: [core, llm, builder, security, testing, compliance_base, dashboard]
+    default_compliance: []
+    default_platform: docker
+    cui_enabled: false
+    recommended_addons: [cicd]
+    notes: "Minimal setup for rapid development. Add compliance frameworks as needed for FedRAMP/SOC 2."
+
+  isv_enterprise:
+    name: "ISV Enterprise"
+    description: "ISV with FedRAMP requirements and larger engineering team"
+    team_size: "10-50"
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, infrastructure, dashboard, agent_orchestration, monitoring]
+    default_compliance: [fedramp_moderate]
+    default_platform: k8s
+    cui_enabled: false
+    recommended_addons: [saas, marketplace, ricoas]
+    notes: "Production-ready setup with CI/CD and monitoring. FedRAMP Moderate pre-selected."
+
+  # ── System Integrator Profiles ────────────────────────────────────
+
+  si_consulting:
+    name: "System Integrator (Consulting)"
+    description: "SI team doing compliance consulting, assessments, and ATO packages"
+    team_size: "3-20"
+    modules: [core, llm, compliance_base, dashboard, ricoas]
+    default_compliance: [fedramp_moderate, cmmc]
+    default_platform: docker
+    cui_enabled: true
+    recommended_addons: [modernization, mbse]
+    notes: "Assessment-focused setup. RICOAS for intake, compliance frameworks for ATO artifact generation."
+
+  si_enterprise:
+    name: "System Integrator (Enterprise)"
+    description: "Large SI with multiple programs and full lifecycle management"
+    team_size: "20-200"
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, infrastructure, dashboard, agent_orchestration, ricoas, monitoring, modernization, mbse]
+    default_compliance: [fedramp_high, cmmc, cjis]
+    default_platform: k8s
+    cui_enabled: true
+    recommended_addons: [saas, marketplace, gateway, devsecops_zta, mosa]
+    notes: "Full lifecycle platform for large programs. Multi-agent orchestration with parallel CI/CD."
+
+  # ── Defense & Government Profiles ─────────────────────────────────
+
+  dod_team:
+    name: "DoD Project Team"
+    description: "Department of Defense contractor team building mission systems"
+    team_size: "5-50"
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, infrastructure, dashboard, agent_orchestration, devsecops_zta, mosa, ricoas, monitoring]
+    default_compliance: [fedramp_high, cmmc, fips_199_200, oscal, cato, sbd_ivv]
+    default_platform: k8s
+    cui_enabled: true
+    impact_level: IL5
+    recommended_addons: [mbse, gateway, agentic_generation]
+    notes: "DoD-optimized with MOSA, DevSecOps/ZTA, FIPS 199/200, and cATO monitoring pre-configured."
+
+  # ── Sector-Specific Profiles ──────────────────────────────────────
+
+  healthcare:
+    name: "Healthcare / Life Sciences"
+    description: "Organizations handling PHI data requiring HIPAA compliance"
+    team_size: "5-50"
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, dashboard, monitoring]
+    default_compliance: [hipaa, hitrust, soc2]
+    default_platform: k8s
+    cui_enabled: false
+    recommended_addons: [ricoas, infrastructure]
+    notes: "HIPAA + HITRUST + SOC 2 for healthcare data protection. No CUI markings needed."
+
+  financial:
+    name: "Financial Services"
+    description: "Organizations handling payment card data and financial records"
+    team_size: "5-50"
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, dashboard, monitoring]
+    default_compliance: [pci_dss, soc2, iso27001]
+    default_platform: k8s
+    cui_enabled: false
+    recommended_addons: [ricoas, infrastructure, devsecops_zta]
+    notes: "PCI DSS + SOC 2 + ISO 27001 for financial compliance. ZTA recommended for zero-trust architecture."
+
+  law_enforcement:
+    name: "Law Enforcement / Criminal Justice"
+    description: "Organizations handling criminal justice information"
+    team_size: "3-30"
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, dashboard, monitoring]
+    default_compliance: [cjis, fips_199_200]
+    default_platform: k8s
+    cui_enabled: true
+    recommended_addons: [devsecops_zta, ricoas]
+    notes: "CJIS Security Policy compliance with FIPS 199/200 categorization."
+
+  # ── Full Platform Profiles ────────────────────────────────────────
+
+  govcloud_full:
+    name: "GovCloud Full Platform"
+    description: "Complete ICDEV platform for AWS GovCloud deployment"
+    team_size: "10-100+"
+    modules: ALL
+    default_compliance: ALL
+    default_platform: k8s
+    cui_enabled: true
+    impact_level: IL5
+    recommended_addons: []
+    notes: "Everything installed. Use for reference installations or comprehensive GovCloud deployments."
+
+  custom:
+    name: "Custom Configuration"
+    description: "Pick individual modules and compliance frameworks"
+    modules: [core, llm, compliance_base]
+    default_compliance: []
+    default_platform: docker
+    cui_enabled: false
+    recommended_addons: []
+    notes: "Start with minimum core and add modules individually via --add-module."
+
+# ── Platform Definitions ────────────────────────────────────────────
+
+platforms:
+  docker:
+    name: "Docker Compose"
+    description: "Local development with Docker containers"
+    generates: [docker-compose.yml, .env.template]
+    requirements: [docker, docker-compose]
+
+  k8s:
+    name: "Kubernetes"
+    description: "Production Kubernetes cluster deployment"
+    generates: [k8s/namespace.yaml, k8s/deployments/, k8s/services/, k8s/rbac.yaml, k8s/network-policies/, k8s/hpa.yaml, k8s/pdb.yaml]
+    requirements: [kubectl, helm]
+
+  helm:
+    name: "Helm Chart"
+    description: "Helm-based deployment to any Kubernetes cluster"
+    generates: [deploy/helm/values-custom.yaml]
+    requirements: [helm]
+
+  aws_govcloud:
+    name: "AWS GovCloud"
+    description: "AWS GovCloud (us-gov-west-1) with EKS, RDS, and Bedrock"
+    generates: [terraform/, k8s/, .env.template]
+    requirements: [aws-cli, terraform, kubectl, helm]
+
+  azure_gov:
+    name: "Azure Government"
+    description: "Azure Government with AKS"
+    generates: [terraform/, k8s/, .env.template]
+    requirements: [az-cli, terraform, kubectl, helm]
+
+  on_prem:
+    name: "On-Premises (Air-Gapped)"
+    description: "Air-gapped deployment with no internet access"
+    generates: [deploy/offline/, docker-compose.yml, .env.template]
+    requirements: [docker]
+    air_gapped: true
+    notes: "Requires pre-downloaded container images and Ollama local models"
+
+# ── Team Size Recommendations ───────────────────────────────────────
+
+team_sizes:
+  "1-5":
+    recommended_profiles: [isv_startup, custom]
+    notes: "Small teams benefit from minimal setup and fast iteration"
+  "5-15":
+    recommended_profiles: [isv_startup, si_consulting, healthcare, financial, law_enforcement]
+    notes: "Medium teams can handle compliance overhead with dashboard support"
+  "15-50":
+    recommended_profiles: [isv_enterprise, si_enterprise, dod_team]
+    notes: "Larger teams benefit from CI/CD, multi-agent orchestration, and monitoring"
+  "50-200":
+    recommended_profiles: [si_enterprise, govcloud_full]
+    notes: "Enterprise teams need full platform with SaaS, marketplace, and gateway"
+  "200+":
+    recommended_profiles: [govcloud_full]
+    notes: "Large organizations should deploy the full platform"

@@ -1,0 +1,4 @@
+Control Number,Control Name,Implementation Status,Implementation Description,Responsible Role,Assessment Date
+{% for ctrl in controls %}
+"{{ ctrl.control_id }}","{{ ctrl.control_name }}","{{ ctrl.status }}","{{ ctrl.description }}","{{ ctrl.responsible_role }}","{{ ctrl.assessment_date }}"
+{% endfor %}

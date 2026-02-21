@@ -51,7 +51,7 @@ import json
 import sqlite3
 import textwrap
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ def create_strangler_plan(plan_id):
         ).fetchall()
 
         # Create a cutover migration_task for each component
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         tasks_created = 0
         for comp in components:
             task_id = f"mtask-{uuid.uuid4().hex[:12]}"
@@ -286,7 +286,7 @@ def register_facade(plan_id, legacy_endpoint, modern_endpoint, component_id=None
             raise ValueError(f"Migration plan '{plan_id}' not found.")
 
         task_id = f"mtask-{uuid.uuid4().hex[:12]}"
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         facade_props = {
             "legacy_path": legacy_endpoint,
@@ -369,7 +369,7 @@ def track_cutover(plan_id, component_id, status):
                 f"in plan '{plan_id}'."
             )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         task_status = CUTOVER_TO_TASK_STATUS[status]
         completed_at = now if status in ("modern", "decommissioned") else None
 
@@ -595,7 +595,7 @@ def generate_routing_config(plan_id):
         nginx_lines = [
             f"# {CUI_BANNER}",
             "# Strangler Fig Routing Configuration — Nginx",
-            f"# Generated: {datetime.utcnow().isoformat()}",
+            f"# Generated: {datetime.now(timezone.utc).isoformat()}",
             f"# Plan: {plan_id}",
             "",
         ]
@@ -657,7 +657,7 @@ def generate_routing_config(plan_id):
         k8s_lines = [
             f"# {CUI_BANNER}",
             "# Strangler Fig Routing — K8s Ingress",
-            f"# Generated: {datetime.utcnow().isoformat()}",
+            f"# Generated: {datetime.now(timezone.utc).isoformat()}",
             "apiVersion: networking.k8s.io/v1",
             "kind: Ingress",
             "metadata:",
@@ -686,7 +686,7 @@ def generate_routing_config(plan_id):
             "routes": routes,
             "nginx_config": nginx_snippet,
             "k8s_ingress": k8s_snippet,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         print(f"[INFO] Generated routing config: {len(routes)} routes")
@@ -748,7 +748,7 @@ def generate_acl_code(plan_id, boundary_name, language="python"):
 
         class_name = f"{_to_pascal_case(boundary_name)}AclAdapter"
         interface_name = f"I{class_name}"
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         if language == "python":
             code = _generate_python_acl(
@@ -1179,7 +1179,7 @@ def check_coexistence_health(plan_id):
             ],
             "parallel_count": len(parallel_components),
             "facade_count": len(facades),
-            "checked_at": datetime.utcnow().isoformat(),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
         }
 
         status_label = "HEALTHY" if healthy else "UNHEALTHY"
@@ -1340,7 +1340,7 @@ def generate_cutover_checklist(plan_id, component_id):
             "verified_count": sum(1 for i in checklist if i["verified"]),
             "total_checks": len(checklist),
             "checklist": checklist,
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         ready_label = "READY" if all_verified else "NOT READY"
@@ -1406,7 +1406,7 @@ def execute_cutover(plan_id, component_id):
                 f"in plan '{plan_id}'."
             )
 
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         project_id = _get_plan_project_id(conn, plan_id)
 
         # 1. Update cutover task to completed with modern status

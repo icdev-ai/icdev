@@ -140,6 +140,26 @@
         "ICDEV_DB_PATH": "data/icdev.db",
         "ICDEV_PROJECT_ROOT": "."
       }
+    },
+    "icdev-devsecops": {
+      "command": "python",
+      "args": [
+        "tools/mcp/devsecops_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-gateway": {
+      "command": "python",
+      "args": [
+        "tools/mcp/gateway_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
     }
   }
 }

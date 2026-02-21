@@ -8,7 +8,7 @@ import json
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -109,7 +109,7 @@ def execute_rollback(
     result = {
         "project_id": project_id,
         "environment": environment,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "dry_run": dry_run,
     }
 
@@ -220,7 +220,7 @@ def _record_rollback(
     result: dict,
 ) -> None:
     """Record rollback in deployments table and audit trail."""
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     target_version = target_info["rollback_target"]["version"]
 
     # Insert deployment record for the rollback
@@ -303,7 +303,7 @@ def auto_rollback_check(deployment_id: int, db_path: Path = None) -> dict:
         if deployment["status"] == "in_progress" and deployment["completed_at"] is None:
             try:
                 created = datetime.fromisoformat(deployment["created_at"])
-                elapsed = (datetime.utcnow() - created).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - created).total_seconds()
                 if elapsed > 600:  # 10 minutes
                     should_rollback = True
                     reasons.append(f"Deployment stuck for {int(elapsed)}s (> 600s threshold)")

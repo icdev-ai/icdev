@@ -5,7 +5,7 @@ Produces provider.tf, variables.tf, outputs.tf, main.tf, and optional modules
 for RDS, ECR, and VPC — all with CUI header comments."""
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -40,7 +40,7 @@ except ImportError:
 
 
 def _cui_header() -> str:
-    return CUI_HEADER.format(timestamp=datetime.utcnow().isoformat())
+    return CUI_HEADER.format(timestamp=datetime.now(timezone.utc).isoformat())
 
 
 def _write(path: Path, content: str) -> Path:

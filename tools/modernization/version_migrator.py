@@ -1157,7 +1157,7 @@ def generate_migration_summary(source_path, output_path):
         "files_changed": files_changed,
         "total_lines_changed": total_lines_changed,
         "per_file": per_file,
-        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
     }
 
 

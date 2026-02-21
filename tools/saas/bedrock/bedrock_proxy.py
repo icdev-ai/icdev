@@ -130,6 +130,21 @@ def _load_tenant_bedrock_config(tenant_id: str) -> dict:
         if "mode" not in config:
             config["mode"] = "shared"
 
+        # Phase 32: Check tenant_llm_keys for Bedrock BYOK credentials
+        if config.get("mode") == "shared":
+            try:
+                from tools.saas.tenant_llm_keys import get_active_key_for_provider
+                bedrock_key = get_active_key_for_provider(tenant_id, "bedrock")
+                if bedrock_key:
+                    config["mode"] = "byok"
+                    config["_tenant_byok_key"] = bedrock_key
+                    logger.debug(
+                        "Tenant %s has BYOK Bedrock key — switching to byok mode",
+                        tenant_id,
+                    )
+            except Exception as exc:
+                logger.debug("tenant_llm_keys check skipped: %s", exc)
+
         return config
     finally:
         conn.close()
@@ -175,12 +190,26 @@ def _build_byok_client(config: dict, region: str):
 
     The ``credentials_secret`` field in bedrock_config should contain
     the IAM role ARN to assume in the tenant's AWS account.
+
+    Phase 32: Also supports direct access key pairs stored as
+    ``ACCESS_KEY_ID:SECRET_ACCESS_KEY`` in tenant_llm_keys.
     """
+    # Phase 32: Support tenant BYOK via direct access key pair
+    tenant_key = config.get("_tenant_byok_key", "")
+    if tenant_key and ":" in tenant_key:
+        parts = tenant_key.split(":", 1)
+        return boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            aws_access_key_id=parts[0],
+            aws_secret_access_key=parts[1],
+        )
+
     role_arn = config.get("credentials_secret")
     if not role_arn:
         raise ValueError(
             "BYOK mode requires 'credentials_secret' (IAM role ARN) "
-            "in bedrock_config.")
+            "in bedrock_config or an access key pair in LLM Provider Keys.")
 
     sts = boto3.client("sts", region_name=region)
     assumed = sts.assume_role(

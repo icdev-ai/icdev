@@ -14,7 +14,7 @@ import json
 import math
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 import os
@@ -84,7 +84,7 @@ def _log_audit(conn, project_id, event_type, action, details):
 
 def _snapshot_project_state(conn, project_id):
     """Capture a lightweight JSON summary of current project state."""
-    state = {"project_id": project_id, "captured_at": datetime.utcnow().isoformat()}
+    state = {"project_id": project_id, "captured_at": datetime.now(timezone.utc).isoformat()}
 
     # Project metadata
     row = conn.execute(
@@ -627,7 +627,7 @@ def create_scenario(project_id, scenario_name, scenario_type, modifications,
     conn = _get_connection(db_path)
     try:
         scenario_id = str(uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         base_state = json.dumps(_snapshot_project_state(conn, project_id))
 
         # Map scenario_type to DB-compatible value
@@ -738,7 +738,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
                     delta_pct,
                     json.dumps({"baseline": baseline, "simulated": simulated, "delta": delta}),
                     json.dumps(chart_data),
-                    datetime.utcnow().isoformat(),
+                    datetime.now(timezone.utc).isoformat(),
                 ),
             )
 
@@ -757,7 +757,7 @@ def run_simulation(scenario_id, dimensions=None, db_path=None):
         # Update scenario to completed
         conn.execute(
             "UPDATE simulation_scenarios SET status = 'completed', completed_at = ? WHERE id = ?",
-            (datetime.utcnow().isoformat(), scenario_id),
+            (datetime.now(timezone.utc).isoformat(), scenario_id),
         )
         conn.commit()
 

@@ -19,7 +19,7 @@ import json
 import logging
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -574,7 +574,7 @@ class EMASSClient:
                 "expirationDate": a.get("expiration_date", a.get("expirationDate", "")),
                 "lastReviewedDate": a.get(
                     "last_reviewed_date",
-                    a.get("lastReviewedDate", datetime.utcnow().strftime("%Y-%m-%d")),
+                    a.get("lastReviewedDate", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                 ),
             }
             for a in artifacts
@@ -619,7 +619,7 @@ class EMASSClient:
                 "testedBy": t.get("testedBy", t.get("tested_by", "ICDEV Compliance Engine")),
                 "testDate": t.get(
                     "testDate",
-                    t.get("test_date", datetime.utcnow().strftime("%Y-%m-%d")),
+                    t.get("test_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
                 ),
                 "description": t.get("description", t.get("title", "")),
                 "complianceStatus": _map_compliance_status_to_emass(

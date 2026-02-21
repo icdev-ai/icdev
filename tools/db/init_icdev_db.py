@@ -214,6 +214,16 @@ CREATE TABLE IF NOT EXISTS project_controls (
     UNIQUE(project_id, control_id)
 );
 
+CREATE TABLE IF NOT EXISTS control_narratives (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL,
+    narrative_text TEXT NOT NULL,
+    generation_method TEXT DEFAULT 'template',
+    generated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, control_id)
+);
+
 CREATE TABLE IF NOT EXISTS ssp_documents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL REFERENCES projects(id),

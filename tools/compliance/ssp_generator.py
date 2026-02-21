@@ -10,7 +10,7 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -139,7 +139,7 @@ def _get_fips199_categorization(conn, project_id):
 def _build_system_info(project, system_name, system_info=None, conn=None):
     """Build the variable substitution dictionary from project data and overrides.
     Uses FIPS 199 categorization from DB for dynamic baseline selection."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Dynamic FIPS 199 categorization lookup
     cat = _get_fips199_categorization(conn, project.get("id"))
@@ -239,13 +239,44 @@ def _build_system_info(project, system_name, system_info=None, conn=None):
     return info
 
 
-def _build_control_section(implementations, nist_controls):
-    """Build the Section 15 control implementation narratives."""
+def _load_pre_generated_narratives(conn, project_id):
+    """Load pre-generated control narratives from the control_narratives table.
+
+    Returns a dict of {control_id: narrative_text} or empty dict if table
+    doesn't exist or no narratives are found.
+    """
+    narratives = {}
+    if not conn or not project_id:
+        return narratives
+    try:
+        rows = conn.execute(
+            "SELECT control_id, narrative_text FROM control_narratives "
+            "WHERE project_id = ? ORDER BY control_id",
+            (project_id,),
+        ).fetchall()
+        for row in rows:
+            narratives[row["control_id"] if hasattr(row, "keys") else row[0]] = (
+                row["narrative_text"] if hasattr(row, "keys") else row[1]
+            )
+    except Exception:
+        pass  # Table may not exist on older DBs
+    return narratives
+
+
+def _build_control_section(implementations, nist_controls, conn=None, project_id=None):
+    """Build the Section 15 control implementation narratives.
+
+    Checks the control_narratives table first for pre-generated narratives
+    (from narrative_generator.py). Falls back to implementation descriptions.
+    """
     if not implementations:
         return (
             "*No control implementations have been mapped for this project yet. "
             "Use `python tools/compliance/control_mapper.py` to create mappings.*"
         )
+
+    # Load pre-generated narratives (Phase 3 — Enhancement #10)
+    pre_narratives = _load_pre_generated_narratives(conn, project_id)
 
     lines = []
     # Group by family
@@ -269,10 +300,18 @@ def _build_control_section(implementations, nist_controls):
             lines.append("")
             lines.append(f"**Responsible Role:** {impl.get('responsible_role') or 'TBD'}")
             lines.append("")
-            lines.append("**Implementation Description:**")
-            lines.append("")
-            desc = impl.get("implementation_description") or "*To be documented.*"
-            lines.append(desc)
+
+            # Use pre-generated narrative if available, otherwise fall back
+            pre_narr = pre_narratives.get(impl["control_id"])
+            if pre_narr:
+                lines.append("**Implementation Narrative:**")
+                lines.append("")
+                lines.append(pre_narr)
+            else:
+                lines.append("**Implementation Description:**")
+                lines.append("")
+                desc = impl.get("implementation_description") or "*To be documented.*"
+                lines.append(desc)
             lines.append("")
 
             evidence = impl.get("evidence_path")
@@ -410,7 +449,10 @@ def generate_ssp(
         variables.update(family_counts)
 
         # Build Section 15 control implementation narratives
-        control_section = _build_control_section(implementations, nist_controls)
+        # Checks control_narratives table for pre-generated narratives first
+        control_section = _build_control_section(
+            implementations, nist_controls, conn=conn, project_id=project_id
+        )
         variables["control_implementations"] = control_section
 
         # Substitute all variables in template
@@ -426,7 +468,7 @@ def generate_ssp(
             else:
                 out_dir = BASE_DIR / ".tmp" / "compliance" / project_id
             out_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             out_file = out_dir / f"ssp_{project_id}_{timestamp}.md"
 
         out_file.parent.mkdir(parents=True, exist_ok=True)

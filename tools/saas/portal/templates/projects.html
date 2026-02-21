@@ -1,0 +1,53 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "projects" %}
+{% block title %}Projects - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Projects</span>
+</nav>
+<div class="page-header">
+    <h1>Projects</h1>
+    <p>All projects for {{ tenant_name }}</p>
+</div>
+
+{% if projects %}
+<div class="card">
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Projects list">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Compliance</th>
+                    <th>Created</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for proj in projects %}
+                <tr>
+                    <td><strong>{{ proj.name }}</strong></td>
+                    <td>
+                        <span class="badge {% if proj.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
+                            {{ proj.status }}
+                        </span>
+                    </td>
+                    <td>{{ proj.compliance_score or 0 }}%</td>
+                    <td class="td-nowrap">{{ proj.created_at }}</td>
+                    <td class="td-nowrap">{{ proj.updated_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p class="empty-state">No projects found. Create one using the ICDEV API.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -35,8 +35,7 @@ PUBLIC_ENDPOINTS = {
     "/api/v1/openapi.json",
     "/api/v1/docs",
     "/metrics",
-    "/portal/login",
-    "/portal/static",
+    "/portal",  # Portal uses its own session-based auth (_portal_auth_required)
 }
 
 
@@ -72,7 +71,9 @@ def _extract_credentials(request) -> Optional[dict]:
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         token = auth_header[7:].strip()
-        if token.startswith("icdev_"):
+        if token.startswith("psess_"):
+            return {"method": "portal_session", "token": token}
+        elif token.startswith("icdev_"):
             return {"method": "api_key", "token": token}
         elif token.startswith("eyJ"):
             return {"method": "oauth", "token": token}
@@ -96,6 +97,23 @@ def _extract_credentials(request) -> Optional[dict]:
 def _validate_credentials(creds: dict) -> Optional[dict]:
     """Validate credentials using the appropriate auth module."""
     method = creds.get("method")
+
+    if method == "portal_session":
+        # Validate opaque portal session token (Enhancement #1A)
+        try:
+            from tools.saas.portal.app import validate_portal_session_token
+            sess = validate_portal_session_token(creds["token"])
+            if sess:
+                return {
+                    "tenant_id": sess["tenant_id"],
+                    "user_id": sess["user_id"],
+                    "role": sess["role"],
+                    "email": "portal-session",
+                    "tenant_slug": "portal",
+                }
+        except ImportError:
+            logger.debug("Portal session validation not available")
+        return None
 
     if method == "api_key":
         from tools.saas.auth.api_key_auth import validate_api_key

@@ -26,7 +26,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -808,7 +808,7 @@ def validate_classification(
             "impact_level": proj_il,
             "valid": result["valid"],
             "issues": issues,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
         return result

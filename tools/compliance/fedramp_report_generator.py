@@ -14,7 +14,7 @@ import json
 import re
 import sqlite3
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -592,7 +592,7 @@ def _build_remediation_plan(assessments):
     if not needing_remediation:
         return "*No items require remediation at this time.*"
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     lines = [
         "| Control ID | Family | Status | Priority | Target Date | Action Required |",
         "|------------|--------|--------|----------|-------------|-----------------|",
@@ -873,7 +873,7 @@ def generate_fedramp_report(project_id, baseline="moderate", output_path=None, d
         report_count = report_count_row["cnt"] if report_count_row else 0
         new_version = f"{report_count + 1}.0"
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Determine assessor from most recent assessment
         assessor = "icdev-compliance-engine"

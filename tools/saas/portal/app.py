@@ -33,8 +33,10 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,6 +64,65 @@ if str(BASE_DIR) not in sys.path:
 logger = logging.getLogger("saas.portal")
 
 # ---------------------------------------------------------------------------
+# CUI Banner Configuration (matches Dashboard config.py pattern)
+# ---------------------------------------------------------------------------
+_CUI_YAML = BASE_DIR / "args" / "cui_markings.yaml"
+
+
+def _load_yaml(filepath: Path) -> dict:
+    """Load a YAML file. Uses PyYAML if available, otherwise minimal parser."""
+    try:
+        import yaml
+        with open(filepath, "r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except ImportError:
+        return _simple_yaml_parse(filepath)
+
+
+def _simple_yaml_parse(filepath: Path) -> dict:
+    """Minimal YAML-subset parser for flat and one-level nested mappings."""
+    data: dict = {}
+    if not filepath.exists():
+        return data
+    current_section = None
+    with open(filepath, "r", encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip()
+            if not line or line.lstrip().startswith("#"):
+                continue
+            stripped = line.lstrip()
+            indent = len(line) - len(stripped)
+            if ":" not in stripped:
+                continue
+            key, _, value = stripped.partition(":")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if indent == 0:
+                if value:
+                    data[key] = value
+                else:
+                    current_section = key
+                    data[current_section] = {}
+            elif current_section is not None:
+                data[current_section][key] = value
+    return data
+
+
+_CUI_CONFIG = _load_yaml(_CUI_YAML) if _CUI_YAML.exists() else {}
+
+CUI_BANNER_TOP = os.environ.get(
+    "ICDEV_CUI_BANNER_TOP",
+    _CUI_CONFIG.get("banner_top", "CUI // SP-CTI"),
+)
+CUI_BANNER_BOTTOM = os.environ.get(
+    "ICDEV_CUI_BANNER_BOTTOM",
+    _CUI_CONFIG.get("banner_bottom", "CUI // SP-CTI"),
+)
+CUI_BANNER_ENABLED = os.environ.get(
+    "ICDEV_CUI_BANNER_ENABLED", "true"
+).lower() in ("1", "true", "yes")
+
+# ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------
 portal_bp = Blueprint(
@@ -71,6 +132,69 @@ portal_bp = Blueprint(
     template_folder="templates",
     static_folder="static",
 )
+
+
+# ---------------------------------------------------------------------------
+# Portal Session Store (Enhancement #1A — opaque tokens, no raw API keys)
+# ---------------------------------------------------------------------------
+_PORTAL_SESSIONS = {}  # token -> {tenant_id, user_id, role, created_at}
+_PORTAL_SESSION_TTL = 24 * 3600  # 24 hours
+
+
+def _register_portal_session(token, tenant_id, user_id, role):
+    """Register a new portal session token."""
+    _PORTAL_SESSIONS[token] = {
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "role": role,
+        "created_at": time.time(),
+    }
+
+
+def validate_portal_session_token(token):
+    """Validate a portal session token and return session data or None."""
+    sess = _PORTAL_SESSIONS.get(token)
+    if not sess:
+        return None
+    if time.time() - sess["created_at"] > _PORTAL_SESSION_TTL:
+        _PORTAL_SESSIONS.pop(token, None)
+        return None
+    return sess
+
+
+def invalidate_portal_session(token):
+    """Remove a portal session token."""
+    _PORTAL_SESSIONS.pop(token, None)
+
+
+# ---------------------------------------------------------------------------
+# CSRF Protection (Enhancement #1B)
+# ---------------------------------------------------------------------------
+def _generate_csrf_token():
+    """Generate or retrieve a CSRF token for the current session."""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+
+def _validate_csrf_token():
+    """Validate the CSRF token from the submitted form."""
+    token = request.form.get("_csrf_token", "")
+    expected = session.get("_csrf_token", "")
+    if not expected or not token or token != expected:
+        return False
+    return True
+
+
+@portal_bp.context_processor
+def _inject_cui_banner():
+    """Inject CUI banner settings and CSRF token into all portal templates."""
+    return {
+        "cui_banner_top": CUI_BANNER_TOP,
+        "cui_banner_bottom": CUI_BANNER_BOTTOM,
+        "cui_banner_enabled": CUI_BANNER_ENABLED,
+        "csrf_token": _generate_csrf_token(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +301,7 @@ def _get_subscription(tenant_id):
     try:
         row = conn.execute(
             """SELECT id, tier, status, max_projects, max_users,
-                      started_at, ends_at, created_at
+                      starts_at, ends_at, created_at
                FROM subscriptions WHERE tenant_id = ? AND status = 'active'
                ORDER BY created_at DESC LIMIT 1""",
             (tenant_id,),
@@ -200,6 +324,10 @@ def login():
 @portal_bp.route("/login", methods=["POST"])
 def login_post():
     """Handle API key login via form submission."""
+    # Validate CSRF token (Enhancement #1B)
+    if not _validate_csrf_token():
+        return redirect(url_for("portal.login", error="Invalid form submission. Please try again."))
+
     api_key = request.form.get("api_key", "").strip()
     if not api_key:
         return redirect(url_for("portal.login", error="API key is required"))
@@ -230,14 +358,20 @@ def login_post():
         if row["tenant_status"] not in ("active",):
             return redirect(url_for("portal.login", error="Tenant is not active"))
 
-        # Set session
+        # Generate opaque portal session token (Enhancement #1A)
+        portal_token = "psess_" + secrets.token_hex(24)
+        _register_portal_session(
+            portal_token, row["tenant_id"], row["user_id"], row["role"],
+        )
+
+        # Set session — NO raw API key stored (Enhancement #1A)
         session["portal_tenant_id"] = row["tenant_id"]
         session["portal_user_id"] = row["user_id"]
         session["portal_user_role"] = row["role"]
         session["portal_user_email"] = row["email"]
         session["portal_user_name"] = row.get("display_name") or row["email"]
         session["portal_tenant_name"] = row["tenant_name"]
-        session["portal_api_key"] = api_key  # For JS API calls
+        session["portal_session_token"] = portal_token
 
         # Update last_used
         try:
@@ -257,6 +391,10 @@ def login_post():
 @portal_bp.route("/logout")
 def logout():
     """Clear session and redirect to login."""
+    # Invalidate portal session token (Enhancement #1A)
+    token = session.get("portal_session_token")
+    if token:
+        invalidate_portal_session(token)
     session.clear()
     return redirect(url_for("portal.login"))
 
@@ -365,15 +503,9 @@ def projects():
             tconn.close()
 
     return render_template(
-        "dashboard.html",
+        "projects.html",
         tenant_name=tenant_name,
-        project_count=len(project_list),
-        active_projects=sum(1 for p in project_list if p.get("status") == "active"),
-        compliance_score=0,
-        recent_activity=[],
-        alerts=0,
         projects=project_list,
-        page="projects",
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
     )
@@ -406,15 +538,9 @@ def compliance():
             tconn.close()
 
     return render_template(
-        "dashboard.html",
+        "compliance.html",
         tenant_name=tenant_name,
-        project_count=0,
-        active_projects=0,
-        compliance_score=0,
-        recent_activity=[],
-        alerts=0,
         compliance_data=compliance_data,
-        page="compliance",
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
     )
@@ -459,6 +585,71 @@ def team():
 # ---------------------------------------------------------------------------
 # Routes: Settings
 # ---------------------------------------------------------------------------
+@portal_bp.route("/profile")
+@_portal_auth_required
+def profile():
+    """User profile page with optional BYOK LLM key management."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    user_email = session.get("portal_user_email", "")
+    user_name = session.get("portal_user_name", "User")
+    user_role = session.get("portal_user_role", "viewer")
+    user_id = session.get("portal_user_id", "")
+
+    # Fetch user details from platform DB
+    user_info = {}
+    conn = _get_platform_conn()
+    try:
+        row = conn.execute(
+            """SELECT id, email, display_name, role, status,
+                      auth_method, last_login, created_at
+               FROM users WHERE id = ? AND tenant_id = ?""",
+            (user_id, tenant_id),
+        ).fetchone()
+        if row:
+            user_info = dict(row)
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    # BYOK LLM keys (only if enabled via env var)
+    byok_enabled = os.environ.get(
+        "ICDEV_BYOK_ENABLED", "false"
+    ).lower() in ("1", "true", "yes")
+    llm_keys = []
+    if byok_enabled:
+        tconn = _get_tenant_conn(tenant_id)
+        if tconn:
+            try:
+                rows = tconn.execute(
+                    """SELECT id, provider, key_label, status,
+                              department, is_department_key,
+                              created_at, updated_at
+                       FROM dashboard_user_llm_keys
+                       WHERE user_id = ?
+                       ORDER BY created_at DESC""",
+                    (user_id,),
+                ).fetchall()
+                llm_keys = [dict(r) for r in rows]
+            except Exception:
+                pass  # Table may not exist on older tenant DBs
+            finally:
+                tconn.close()
+
+    return render_template(
+        "profile.html",
+        tenant_name=tenant_name,
+        user_info=user_info,
+        byok_enabled=byok_enabled,
+        llm_keys=llm_keys,
+        user_name=user_name,
+        user_role=user_role,
+    )
+
+
 @portal_bp.route("/settings")
 @_portal_auth_required
 def settings():
@@ -470,11 +661,33 @@ def settings():
 
     subscription = _get_subscription(tenant_id)
 
+    # Load LLM provider keys (Phase 32)
+    llm_keys = []
+    try:
+        conn = _get_platform_conn()
+        rows = conn.execute(
+            "SELECT id, provider, key_label, key_prefix, status, "
+            "created_at, updated_at "
+            "FROM tenant_llm_keys WHERE tenant_id = ? "
+            "ORDER BY created_at DESC",
+            (tenant_id,),
+        ).fetchall()
+        llm_keys = [dict(r) for r in rows]
+        conn.close()
+    except Exception:
+        pass  # Table may not exist yet on older DBs
+
+    # Determine if tenant tier allows BYOK
+    tier = (subscription or {}).get("tier", tenant.get("tier", "starter"))
+    byok_allowed = tier in ("professional", "enterprise")
+
     return render_template(
         "settings.html",
         tenant_name=tenant.get("name", "Unknown"),
         tenant=tenant,
         subscription=subscription or {},
+        llm_keys=llm_keys,
+        byok_allowed=byok_allowed,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
     )
@@ -570,15 +783,9 @@ def usage():
         conn.close()
 
     return render_template(
-        "dashboard.html",
+        "usage.html",
         tenant_name=tenant_name,
-        project_count=0,
-        active_projects=0,
-        compliance_score=0,
-        recent_activity=[],
-        alerts=0,
         usage_data=usage_data,
-        page="usage",
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
     )
@@ -625,18 +832,47 @@ def audit():
     total_pages = max(1, (total_entries + per_page - 1) // per_page)
 
     return render_template(
-        "dashboard.html",
+        "audit.html",
         tenant_name=tenant_name,
-        project_count=0,
-        active_projects=0,
-        compliance_score=0,
-        recent_activity=[],
-        alerts=0,
         audit_entries=audit_entries,
-        page="audit",
         page_num=page_num,
         total_pages=total_pages,
         total_entries=total_entries,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: CMMC Self-Assessment (Phase 4 — Enhancement #8)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/cmmc")
+@_portal_auth_required
+def cmmc():
+    """CMMC self-assessment wizard."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    project_list = []
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            rows = tconn.execute(
+                """SELECT id, name, status, compliance_score,
+                          created_at, updated_at
+                   FROM projects ORDER BY updated_at DESC"""
+            ).fetchall()
+            project_list = [dict(r) for r in rows]
+        except Exception:
+            pass
+        finally:
+            tconn.close()
+
+    return render_template(
+        "cmmc.html",
+        tenant_name=tenant_name,
+        projects=project_list,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
     )

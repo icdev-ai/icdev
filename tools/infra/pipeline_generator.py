@@ -5,7 +5,7 @@ build, compliance-check, deploy-staging, deploy-prod.
 Includes security gates, manual approval for prod, and rollback job."""
 
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -22,7 +22,7 @@ CUI_HEADER = (
 
 
 def _cui_header() -> str:
-    return CUI_HEADER.format(timestamp=datetime.utcnow().isoformat())
+    return CUI_HEADER.format(timestamp=datetime.now(timezone.utc).isoformat())
 
 
 def _write(path: Path, content: str) -> Path:

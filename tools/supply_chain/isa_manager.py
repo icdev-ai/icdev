@@ -27,7 +27,7 @@ import os
 import sqlite3
 import sys
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -111,7 +111,7 @@ def create_isa(project_id, partner_system, data_types_shared,
         raise ValueError(f"agreement_type must be one of {AGREEMENT_TYPES}")
 
     isa_id = str(uuid.uuid4())
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Compute next review date from signing
     try:
@@ -123,7 +123,7 @@ def create_isa(project_id, partner_system, data_types_shared,
     # Determine initial status
     try:
         exp_dt = datetime.strptime(expiry_date, "%Y-%m-%d")
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         if exp_dt.date() < today:
             status = "expired"
         elif (exp_dt.date() - today).days <= 90:
@@ -174,8 +174,8 @@ def get_expiring(project_id, days_ahead=90, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        cutoff = (datetime.utcnow() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
-        datetime.utcnow().strftime("%Y-%m-%d")
+        cutoff = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
+        datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         rows = conn.execute(
             """SELECT * FROM isa_agreements
@@ -192,7 +192,7 @@ def get_expiring(project_id, days_ahead=90, db_path=None):
             d = _row_to_dict(r)
             try:
                 exp_dt = datetime.strptime(d["expiry_date"], "%Y-%m-%d").date()
-                today_dt = datetime.utcnow().date()
+                today_dt = datetime.now(timezone.utc).date()
                 days_left = (exp_dt - today_dt).days
             except (ValueError, TypeError):
                 days_left = -1
@@ -230,7 +230,7 @@ def get_review_due(project_id, db_path=None):
     """
     conn = _get_connection(db_path)
     try:
-        today = datetime.utcnow().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         rows = conn.execute(
             """SELECT * FROM isa_agreements
                WHERE project_id = ?
@@ -246,7 +246,7 @@ def get_review_due(project_id, db_path=None):
             d = _row_to_dict(r)
             try:
                 review_dt = datetime.strptime(d["next_review_date"], "%Y-%m-%d").date()
-                today_dt = datetime.utcnow().date()
+                today_dt = datetime.now(timezone.utc).date()
                 days_overdue = (today_dt - review_dt).days
             except (ValueError, TypeError):
                 days_overdue = 0
@@ -280,7 +280,7 @@ def renew_isa(isa_id, new_expiry_date, notes=None, db_path=None):
 
         d = _row_to_dict(row)
         cadence = d.get("review_cadence_days", 365) or 365
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         next_review = (now + timedelta(days=cadence)).strftime("%Y-%m-%d")
 
         conn.execute(
@@ -323,7 +323,7 @@ def revoke_isa(isa_id, reason, db_path=None):
             raise ValueError(f"ISA '{isa_id}' not found.")
 
         d = _row_to_dict(row)
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         conn.execute(
             """UPDATE isa_agreements

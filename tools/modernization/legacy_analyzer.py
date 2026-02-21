@@ -36,7 +36,7 @@ import os
 import re
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ def register_application(project_id, name, source_path, description=None):
         raise FileNotFoundError(f"Source path does not exist or is not a directory: {source_path}")
 
     app_id = f"lapp-{uuid.uuid4().hex[:12]}"
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
 
     # Walk source tree and aggregate stats
     ext_counts = collections.Counter()
@@ -1760,7 +1760,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
         conn.close()
 
     # Update the application record
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     conn = _get_db()
     try:
         conn.execute(

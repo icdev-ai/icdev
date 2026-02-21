@@ -1,0 +1,55 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "usage" %}
+{% block title %}Usage - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Usage</span>
+</nav>
+<div class="page-header">
+    <h1>Usage Metrics</h1>
+    <p>API usage and resource consumption</p>
+</div>
+
+<div class="summary-cards">
+    <div class="card summary-card">
+        <div class="card-label">Total API Calls</div>
+        <div class="card-value">{{ usage_data.total_api_calls }}</div>
+    </div>
+    <div class="card summary-card">
+        <div class="card-label">Total Tokens Used</div>
+        <div class="card-value">{{ usage_data.total_tokens }}</div>
+    </div>
+</div>
+
+{% if usage_data.top_endpoints %}
+<div class="card">
+    <h2 class="card-title">Top Endpoints</h2>
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Top API endpoints by usage">
+            <thead>
+                <tr>
+                    <th>Endpoint</th>
+                    <th>Calls</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ep in usage_data.top_endpoints %}
+                <tr>
+                    <td><code>{{ ep.endpoint }}</code></td>
+                    <td>{{ ep.cnt }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p class="empty-state">No usage data recorded yet.</p>
+</div>
+{% endif %}
+{% endblock %}

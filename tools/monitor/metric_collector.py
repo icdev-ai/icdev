@@ -9,7 +9,7 @@ import sqlite3
 import urllib.request
 import urllib.parse
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -95,7 +95,7 @@ def query_range(
     """
     url = prom_url or DEFAULT_PROMETHEUS_URL
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     if not start:
         start = (now - timedelta(hours=1)).isoformat() + "Z"
     if not end:
@@ -209,7 +209,7 @@ def get_application_metrics(
 
     return {
         "project_id": project_id,
-        "collected_at": datetime.utcnow().isoformat(),
+        "collected_at": datetime.now(timezone.utc).isoformat(),
         "metrics": metrics,
         "errors": errors,
         "prometheus_url": url,
@@ -336,7 +336,7 @@ def check_sla(
 
     return {
         "project_id": project_id,
-        "checked_at": datetime.utcnow().isoformat(),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
         "sla_met": sla_met,
         "total_checks": len(checks),
         "passed_checks": len(checks) - len(violations),
@@ -367,7 +367,7 @@ def store_snapshot(
         Number of rows inserted
     """
     conn = _get_db(db_path)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     count = 0
 
     try:

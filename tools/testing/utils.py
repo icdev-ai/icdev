@@ -14,7 +14,7 @@ import os
 import re
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TypeVar, Type, Union, Dict
 
@@ -219,7 +219,7 @@ def get_safe_subprocess_env() -> Dict[str, str]:
 
 def timestamp_iso() -> str:
     """Return current UTC timestamp in ISO 8601 format."""
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat() + "Z"
 
 
 def ensure_run_dir(run_id: str) -> Path:

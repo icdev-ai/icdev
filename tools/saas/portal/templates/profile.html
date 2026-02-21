@@ -1,0 +1,151 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "profile" %}
+{% block title %}Profile - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Profile</span>
+</nav>
+<div class="page-header">
+    <h1>User Profile</h1>
+    <p>Your account details for {{ tenant_name }}</p>
+</div>
+
+<!-- User Info Card -->
+<div class="card">
+    <h2 class="card-title">Account Information</h2>
+    <div class="settings-grid">
+        <div class="settings-row">
+            <span class="settings-label">Display Name</span>
+            <span class="settings-value">{{ user_info.display_name or user_name }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Email</span>
+            <span class="settings-value">{{ user_info.email or 'N/A' }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Role</span>
+            <span class="settings-value">
+                <span class="badge badge-info" role="status">{{ user_info.role or user_role }}</span>
+            </span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Status</span>
+            <span class="settings-value">
+                <span class="badge {% if user_info.status == 'active' %}badge-success{% elif user_info.status == 'suspended' %}badge-danger{% else %}badge-secondary{% endif %}" role="status">
+                    {{ user_info.status or 'unknown' }}
+                </span>
+            </span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Auth Method</span>
+            <span class="settings-value">{{ user_info.auth_method or 'api_key' }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Tenant</span>
+            <span class="settings-value">{{ tenant_name }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Last Login</span>
+            <span class="settings-value">{{ user_info.last_login or 'N/A' }}</span>
+        </div>
+        <div class="settings-row">
+            <span class="settings-label">Member Since</span>
+            <span class="settings-value">{{ user_info.created_at or 'N/A' }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- BYOK LLM Keys Section (only if BYOK is enabled) -->
+{% if byok_enabled %}
+<div class="card">
+    <h2 class="card-title">LLM Keys (BYOK)
+        <span class="help-icon" title="Bring Your Own Key: configure personal LLM provider API keys. Your keys take priority over department and system-level keys. Keys are encrypted at rest using AES-256 (Fernet).">?</span>
+    </h2>
+
+    <!-- Add Key Form -->
+    <div style="margin-bottom: 1.5rem;">
+        <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--text-secondary, #aaa);">Add LLM Key</h3>
+        <form id="add-byok-key-form" onsubmit="addByokKey(event)" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: flex-end;">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+            <div class="form-group" style="flex: 0 0 auto;">
+                <label for="byok-provider" style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--text-secondary, #aaa);">Provider</label>
+                <select id="byok-provider" name="provider" required style="padding: 0.5rem; background: var(--bg-input, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #333); border-radius: 4px;">
+                    <option value="">Select...</option>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI / Compatible</option>
+                    <option value="bedrock">AWS Bedrock (Access Key)</option>
+                    <option value="ollama">Ollama (Local)</option>
+                    <option value="vllm">vLLM (Local)</option>
+                </select>
+            </div>
+            <div class="form-group" style="flex: 1 1 150px;">
+                <label for="byok-key-label" style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--text-secondary, #aaa);">Label</label>
+                <input type="text" id="byok-key-label" name="key_label"
+                       placeholder="e.g., My Dev Key"
+                       maxlength="128"
+                       style="width: 100%; padding: 0.5rem; background: var(--bg-input, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #333); border-radius: 4px;">
+            </div>
+            <div class="form-group" style="flex: 2 1 200px;">
+                <label for="byok-api-key" style="display: block; font-size: 0.8rem; margin-bottom: 0.25rem; color: var(--text-secondary, #aaa);">API Key</label>
+                <input type="password" id="byok-api-key" name="api_key"
+                       placeholder="sk-..." required autocomplete="off"
+                       style="width: 100%; padding: 0.5rem; background: var(--bg-input, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #333); border-radius: 4px;">
+            </div>
+            <div class="form-group" style="flex: 0 0 auto;">
+                <button type="submit" class="btn btn-primary">Add Key</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Existing Keys Table -->
+    <h3 style="margin-bottom: 0.75rem; font-size: 0.95rem; color: var(--text-secondary, #aaa);">Your Keys ({{ llm_keys|length }})</h3>
+    {% if llm_keys %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Personal BYOK LLM keys">
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Label</th>
+                    <th>Status</th>
+                    <th>Added</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key in llm_keys %}
+                <tr{% if key.status != 'active' %} style="opacity: 0.5;"{% endif %}>
+                    <td><strong>{{ key.provider | upper }}</strong></td>
+                    <td>{{ key.key_label or '-' }}</td>
+                    <td>
+                        {% if key.status == 'active' %}
+                        <span class="badge badge-success" role="status">Active</span>
+                        {% else %}
+                        <span class="badge badge-danger" role="status">Revoked</span>
+                        {% endif %}
+                    </td>
+                    <td class="td-nowrap">{{ key.created_at }}</td>
+                    <td>
+                        {% if key.status == 'active' %}
+                        <button class="btn btn-danger btn-sm"
+                                onclick="confirmAction('Revoke this LLM key? Requests will fall back to department or system keys.').then(function(ok) { if (ok) revokeByokKey('{{ key.id }}'); })">
+                            Revoke
+                        </button>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No personal LLM keys configured. Department or system-level keys will be used.</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -12,7 +12,7 @@ import os
 import re
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -542,7 +542,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
                 scan_dir = None
 
         can_scan = scan_dir is not None and scan_dir.is_dir()
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # Scan project directory for evidence artifacts per category
         categories_result = {}

@@ -1,0 +1,55 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "compliance" %}
+{% block title %}Compliance - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Compliance</span>
+</nav>
+<div class="page-header">
+    <h1>Compliance Overview</h1>
+    <p><span data-glossary="NIST 800-53">NIST 800-53</span>, <span data-glossary="FedRAMP">FedRAMP</span>, <span data-glossary="CMMC">CMMC</span> status across all projects</p>
+</div>
+
+{% if compliance_data %}
+<div class="card">
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Compliance status by project">
+            <thead>
+                <tr>
+                    <th>Project</th>
+                    <th>Status</th>
+                    <th>Compliance Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in compliance_data %}
+                <tr>
+                    <td><strong>{{ item.project_name }}</strong></td>
+                    <td>
+                        <span class="badge {% if item.status == 'active' %}badge-success{% else %}badge-secondary{% endif %}" role="status">
+                            {{ item.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="progress-bar">
+                            <div class="progress-fill {% if (item.compliance_score or 0) >= 80 %}bg-green{% elif (item.compliance_score or 0) >= 50 %}bg-yellow{% else %}bg-red{% endif %}"
+                                 style="width: {{ item.compliance_score or 0 }}%"></div>
+                        </div>
+                        <span>{{ item.compliance_score or 0 }}%</span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p class="empty-state">No compliance data available. Generate ATO artifacts for your projects.</p>
+</div>
+{% endif %}
+{% endblock %}

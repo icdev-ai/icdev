@@ -8,7 +8,7 @@ import argparse
 import json
 import sqlite3
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -118,7 +118,7 @@ def get_poam_summary(conn, project_id):
         summary["by_severity"][sev][st] = summary["by_severity"][sev].get(st, 0) + cnt
 
     # Check for overdue items
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     overdue = conn.execute(
         """SELECT COUNT(*) as cnt FROM poam_items
            WHERE project_id = ? AND status IN ('open', 'in_progress')
@@ -629,7 +629,7 @@ def get_compliance_status(project_id, db_path=None):
             "project_id": project_id,
             "project_name": project.get("name", project_id),
             "classification": project.get("classification", "CUI"),
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "overall_status": overall_status,
             "overall_score": round(overall_score, 1),
             "component_scores": {name: score for name, score, _ in scores},

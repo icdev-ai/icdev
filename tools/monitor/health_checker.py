@@ -9,7 +9,7 @@ import subprocess
 import time
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -38,7 +38,7 @@ def check_health(
     """
     result = {
         "url": url,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "healthy": False,
         "status_code": None,
         "response_time_ms": None,
@@ -181,7 +181,7 @@ def check_with_retries(
 
     summary = {
         "url": url,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "healthy": last_result["healthy"] if last_result else False,
         "total_attempts": len(attempts),
         "successful_attempts": successful_attempts,
@@ -219,7 +219,7 @@ def check_k8s_pods(
     result = {
         "namespace": namespace,
         "deployment": deployment,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "healthy": False,
         "pods": [],
         "summary": {},
@@ -352,7 +352,7 @@ def check_all(
 ) -> dict:
     """Run both HTTP and K8s health checks and produce a combined report."""
     result = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "overall_healthy": True,
         "checks": {},
     }
@@ -426,7 +426,7 @@ def main():
     else:
         print(f"\n{'='*60}")
         print("  HEALTH CHECK REPORT")
-        print(f"  Timestamp: {datetime.utcnow().isoformat()}")
+        print(f"  Timestamp: {datetime.now(timezone.utc).isoformat()}")
         print(f"{'='*60}")
 
         if "http" in results:

@@ -596,7 +596,7 @@ def select_session_coa(session_id):
     from datetime import datetime
     conn = _get_db()
     try:
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         row = conn.execute(
             "SELECT id, session_id, coa_type, coa_name FROM coa_definitions WHERE id = ?",
             (coa_id,),
@@ -645,7 +645,7 @@ def unselect_session_coa(session_id):
             return jsonify({"error": "No selected COA found for this session"}), 404
 
         from datetime import datetime
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             "UPDATE coa_definitions SET status='presented', selected_by=NULL, "
             "selected_at=NULL, selection_rationale=NULL, updated_at=? "

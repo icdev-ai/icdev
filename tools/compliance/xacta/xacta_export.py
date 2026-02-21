@@ -22,7 +22,7 @@ import csv
 import json
 import sqlite3
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -93,10 +93,10 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
 
         oscal_doc = {
             "system-security-plan": {
-                "uuid": f"icdev-ssp-{project_id}-{datetime.utcnow().strftime('%Y%m%d')}",
+                "uuid": f"icdev-ssp-{project_id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
                 "metadata": {
                     "title": f"System Security Plan — {project.get('name', project_id)}",
-                    "last-modified": datetime.utcnow().isoformat() + "Z",
+                    "last-modified": datetime.now(timezone.utc).isoformat() + "Z",
                     "version": "1.0",
                     "oscal-version": "1.1.2",
                     "props": [
@@ -178,10 +178,10 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
 
         oscal_doc = {
             "assessment-results": {
-                "uuid": f"icdev-ar-{project_id}-{datetime.utcnow().strftime('%Y%m%d')}",
+                "uuid": f"icdev-ar-{project_id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
                 "metadata": {
                     "title": f"CSSP Assessment Results — {project.get('name', project_id)}",
-                    "last-modified": datetime.utcnow().isoformat() + "Z",
+                    "last-modified": datetime.now(timezone.utc).isoformat() + "Z",
                     "version": "1.0",
                     "oscal-version": "1.1.2",
                     "props": [
@@ -192,10 +192,10 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
                     ],
                 },
                 "results": [{
-                    "uuid": f"result-{project_id}-{datetime.utcnow().strftime('%Y%m%d')}",
+                    "uuid": f"result-{project_id}-{datetime.now(timezone.utc).strftime('%Y%m%d')}",
                     "title": "CSSP Assessment",
                     "description": "DoD Instruction 8530.01 CSSP functional area assessment",
-                    "start": datetime.utcnow().isoformat() + "Z",
+                    "start": datetime.now(timezone.utc).isoformat() + "Z",
                     "findings": [
                         {
                             "uuid": f"finding-{a['requirement_id']}-{project_id}",
@@ -467,7 +467,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
             # Add package metadata
             metadata = {
                 "project_id": project_id,
-                "export_date": datetime.utcnow().isoformat(),
+                "export_date": datetime.now(timezone.utc).isoformat(),
                 "classification": "CUI // SP-CTI",
                 "source": "ICDEV Compliance Engine",
                 "format": "Xacta 360 Evidence Package",

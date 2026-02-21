@@ -60,6 +60,13 @@ PERMISSIONS = {
         "auditor": "OWN",
         "viewer": "OWN",
     },
+    "llm_keys": {
+        "tenant_admin": "RW",
+        "developer": "R",
+        "compliance_officer": "-",
+        "auditor": "-",
+        "viewer": "-",
+    },
     "billing": {
         "tenant_admin": "R",
         "developer": "-",
@@ -96,6 +103,7 @@ ENDPOINT_CATEGORY_MAP = {
     "/api/v1/projects/{id}/artifacts": "compliance",
     "/api/v1/users": "team",
     "/api/v1/keys": "api_keys",
+    "/api/v1/llm-keys": "llm_keys",
     "/api/v1/usage": "billing",
     "/api/v1/tenants": "tenant_settings",
     "/mcp/v1": "compliance",  # MCP tools default to compliance category

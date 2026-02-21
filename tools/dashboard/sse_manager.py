@@ -8,7 +8,7 @@ Decision D29: SSE over WebSocket — Flask-native, simpler, unidirectional suffi
 import json
 import queue
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -53,7 +53,7 @@ class SSEManager:
 
     def heartbeat(self):
         """Send heartbeat to all clients."""
-        self.broadcast({"type": "heartbeat", "timestamp": datetime.utcnow().isoformat()}, "heartbeat")
+        self.broadcast({"type": "heartbeat", "timestamp": datetime.now(timezone.utc).isoformat()}, "heartbeat")
 
     @property
     def client_count(self) -> int:
@@ -69,7 +69,7 @@ class SSEManager:
                     yield data
                 except queue.Empty:
                     # Send heartbeat on timeout
-                    yield f"event: heartbeat\ndata: {json.dumps({'type': 'heartbeat', 'timestamp': datetime.utcnow().isoformat()})}\n\n"
+                    yield f"event: heartbeat\ndata: {json.dumps({'type': 'heartbeat', 'timestamp': datetime.now(timezone.utc).isoformat()})}\n\n"
         except GeneratorExit:
             self.remove_client(client_queue)
 
