@@ -217,8 +217,15 @@ def _bm25_score_corpus(query_terms, documents):
     if _HAS_BM25:
         tokenized_corpus = [_tokenize(doc) for doc in documents]
         bm25 = BM25Okapi(tokenized_corpus, k1=BM25_K1, b=BM25_B)
-        scores = bm25.get_scores(query_terms)
-        return [float(s) for s in scores]
+        scores = [float(s) for s in bm25.get_scores(query_terms)]
+        # BM25Okapi returns 0 for all docs when query terms appear in >= 50%
+        # of the corpus (negative IDF clamped to 0). Fall back to TF scoring.
+        if max(scores) <= 0:
+            for i, doc_tokens in enumerate(tokenized_corpus):
+                tf = sum(doc_tokens.count(t) for t in query_terms)
+                if tf > 0:
+                    scores[i] = tf / max(len(doc_tokens), 1)
+        return scores
 
     # Fallback: TF-IDF with proper IDF across the corpus
     n_docs = len(documents)

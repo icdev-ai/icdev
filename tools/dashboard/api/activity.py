@@ -46,7 +46,7 @@ SELECT * FROM (
         hook_type AS event_type,
         session_id AS actor_or_agent,
         tool_name AS summary,
-        NULL AS project_id,
+        project_id,
         classification,
         created_at
     FROM hook_events
@@ -152,14 +152,14 @@ def activity_filter_options():
 
         return jsonify({
             "event_types": sorted(set(
-                [r["event_type"] for r in audit_types] +
-                [r["event_type"] for r in hook_types]
+                [r["event_type"] for r in audit_types if r["event_type"]] +
+                [r["event_type"] for r in hook_types if r["event_type"]]
             )),
             "actors": sorted(set(
-                [r["actor"] for r in actors] +
-                [r["agent_id"] for r in agents]
+                [r["actor"] for r in actors if r["actor"]] +
+                [r["agent_id"] for r in agents if r["agent_id"]]
             )),
-            "projects": [r["project_id"] for r in projects],
+            "projects": [r["project_id"] for r in projects if r["project_id"]],
             "sources": ["audit", "hook"],
         })
     finally:

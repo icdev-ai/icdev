@@ -89,19 +89,25 @@ def _seed_data(db_path: Path) -> None:
     )
 
     # Hook events rows (4 events)
+    # The activity API reads hook_type and session_id (not event_type/agent_id),
+    # so populate both columns for compatibility.
     hook_rows = [
         ("post_tool_use", "builder-agent", "scaffold",
-         "proj-001", "CUI", (now - timedelta(hours=5)).isoformat()),
+         "proj-001", "CUI", (now - timedelta(hours=5)).isoformat(),
+         "post_tool_use", "builder-agent"),
         ("pre_tool_use", "security-agent", "sast_runner",
-         "proj-002", "CUI", (now - timedelta(hours=1)).isoformat()),
+         "proj-002", "CUI", (now - timedelta(hours=1)).isoformat(),
+         "pre_tool_use", "security-agent"),
         ("notification", "monitor-agent", "health_checker",
-         "proj-001", "CUI", (now - timedelta(minutes=20)).isoformat()),
+         "proj-001", "CUI", (now - timedelta(minutes=20)).isoformat(),
+         "notification", "monitor-agent"),
         ("post_tool_use", "compliance-agent", "sbom_generator",
-         "proj-003", "CUI", (now - timedelta(minutes=5)).isoformat()),
+         "proj-003", "CUI", (now - timedelta(minutes=5)).isoformat(),
+         "post_tool_use", "compliance-agent"),
     ]
     conn.executemany(
-        "INSERT INTO hook_events (event_type, agent_id, tool_name, project_id, classification, created_at)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO hook_events (event_type, agent_id, tool_name, project_id, classification, created_at, hook_type, session_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         hook_rows,
     )
 

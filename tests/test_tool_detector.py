@@ -36,8 +36,15 @@ class TestDetectTools:
         tool_ids = [t["tool_id"] for t in result["detected"]]
         assert "cursor" in tool_ids
 
-    def test_detect_nothing_empty_dir(self, tmp_path):
+    def test_detect_nothing_empty_dir(self, tmp_path, monkeypatch):
         """No tools detected in empty directory."""
+        # Clear env vars that could trigger false detection
+        for key in list(os.environ):
+            if any(tok in key.upper() for tok in (
+                "ANTHROPIC", "OPENAI", "CLAUDE", "CURSOR", "CODEX",
+                "COPILOT", "WINDSURF", "AIDER", "AMAZON_Q", "GEMINI",
+            )):
+                monkeypatch.delenv(key, raising=False)
         result = detect_tools(directory=str(tmp_path))
         assert result["detected"] == []
         assert result["primary"] is None
