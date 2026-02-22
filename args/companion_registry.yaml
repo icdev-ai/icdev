@@ -1,0 +1,202 @@
+# CUI // SP-CTI
+# Companion Registry — Declarative registry of supported AI coding tools (D194).
+# Add new tools here without code changes (D26 pattern).
+
+companions:
+  claude_code:
+    display_name: "Claude Code"
+    vendor: "Anthropic"
+    instruction_file: "CLAUDE.md"
+    mcp_support: true
+    mcp_config_file: ".mcp.json"
+    mcp_config_format: "claude"
+    skill_format: "claude_skill"
+    skill_directory: ".claude/skills"
+    command_directory: ".claude/commands"
+    env_detection:
+      env_vars: ["CLAUDE_CODE"]
+      config_dirs: [".claude"]
+      process_names: ["claude"]
+    capabilities:
+      custom_commands: true
+      hooks: true
+      mcp_tools: true
+      inline_completion: false
+    notes: "Primary platform. CLAUDE.md already maintained manually."
+
+  codex:
+    display_name: "OpenAI Codex CLI"
+    vendor: "OpenAI"
+    instruction_file: "AGENTS.md"
+    mcp_support: true
+    mcp_config_file: ".codex/config.toml"
+    mcp_config_format: "codex_toml"
+    skill_format: "codex_skill"
+    skill_directory: ".agents/skills"
+    env_detection:
+      env_vars: ["CODEX_CLI", "OPENAI_API_KEY"]
+      config_dirs: [".codex", ".agents"]
+      process_names: ["codex"]
+    capabilities:
+      custom_commands: true
+      hooks: false
+      mcp_tools: true
+      inline_completion: false
+
+  gemini:
+    display_name: "Google Gemini CLI"
+    vendor: "Google"
+    instruction_file: "GEMINI.md"
+    mcp_support: true
+    mcp_config_file: ".gemini/settings.json"
+    mcp_config_format: "json"
+    skill_format: "none"
+    env_detection:
+      env_vars: ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+      config_dirs: [".gemini"]
+      process_names: ["gemini"]
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: true
+      inline_completion: false
+
+  copilot:
+    display_name: "GitHub Copilot"
+    vendor: "GitHub / Microsoft"
+    instruction_file: ".github/copilot-instructions.md"
+    mcp_support: true
+    mcp_config_file: null
+    mcp_config_format: "ide_settings"
+    skill_format: "copilot_prompt"
+    skill_directory: ".github/prompts"
+    env_detection:
+      env_vars: ["GITHUB_COPILOT"]
+      config_dirs: [".github"]
+      process_names: []
+    capabilities:
+      custom_commands: true
+      hooks: false
+      mcp_tools: true
+      inline_completion: true
+
+  cursor:
+    display_name: "Cursor"
+    vendor: "Cursor Inc"
+    instruction_file: ".cursor/rules/icdev.mdc"
+    mcp_support: true
+    mcp_config_file: null
+    mcp_config_format: "ide_settings"
+    skill_format: "cursor_mdc"
+    skill_directory: ".cursor/rules"
+    env_detection:
+      env_vars: []
+      config_dirs: [".cursor"]
+      process_names: ["cursor"]
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: true
+      inline_completion: true
+
+  windsurf:
+    display_name: "Windsurf"
+    vendor: "Codeium"
+    instruction_file: ".windsurf/rules/icdev.md"
+    mcp_support: true
+    mcp_config_file: null
+    mcp_config_format: "ide_settings"
+    skill_format: "none"
+    env_detection:
+      env_vars: []
+      config_dirs: [".windsurf"]
+      process_names: ["windsurf"]
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: true
+      inline_completion: true
+
+  amazon_q:
+    display_name: "Amazon Q Developer"
+    vendor: "AWS"
+    instruction_file: ".amazonq/rules/icdev.md"
+    mcp_support: true
+    mcp_config_file: ".amazonq/mcp.json"
+    mcp_config_format: "json"
+    skill_format: "none"
+    env_detection:
+      env_vars: ["AWS_Q_DEVELOPER"]
+      config_dirs: [".amazonq"]
+      process_names: []
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: true
+      inline_completion: true
+
+  junie:
+    display_name: "JetBrains Junie"
+    vendor: "JetBrains"
+    instruction_file: ".junie/guidelines.md"
+    mcp_support: true
+    mcp_config_file: null
+    mcp_config_format: "ide_settings"
+    skill_format: "none"
+    env_detection:
+      env_vars: []
+      config_dirs: [".junie", ".idea"]
+      process_names: []
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: true
+      inline_completion: true
+
+  cline:
+    display_name: "Cline"
+    vendor: "Cline"
+    instruction_file: ".clinerules"
+    mcp_support: true
+    mcp_config_file: null
+    mcp_config_format: "json"
+    skill_format: "none"
+    env_detection:
+      env_vars: []
+      config_dirs: []
+      config_files: [".clinerules"]
+      process_names: []
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: true
+      inline_completion: false
+
+  aider:
+    display_name: "Aider"
+    vendor: "Aider-AI"
+    instruction_file: "CONVENTIONS.md"
+    mcp_support: false
+    mcp_config_file: null
+    mcp_config_format: null
+    skill_format: "none"
+    env_detection:
+      env_vars: []
+      config_dirs: []
+      config_files: [".aider.conf.yml"]
+      process_names: ["aider"]
+    capabilities:
+      custom_commands: false
+      hooks: false
+      mcp_tools: false
+      inline_completion: false
+
+# Default settings for instruction file generation
+defaults:
+  instruction_style: "full"
+  include_mcp_setup: true
+  include_workflows: true
+  include_guardrails: true
+  include_testing: true
+  skip_platforms:
+    - "claude_code"        # CLAUDE.md maintained manually, not generated

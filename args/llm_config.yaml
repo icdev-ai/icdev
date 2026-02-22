@@ -26,10 +26,20 @@ providers:
     type: ollama
     base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
 
+  gemini:
+    type: gemini
+    api_key_env: GOOGLE_API_KEY
+
   vllm:
     type: openai_compatible
     base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
     api_key_env: VLLM_API_KEY
+
+  ibm_watsonx:
+    type: ibm_watsonx
+    api_key_env: IBM_CLOUD_API_KEY
+    project_id: ${IBM_WATSONX_PROJECT_ID:-}
+    url: ${IBM_WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
 
 # -----------------------------------------------------------------------
 # Model Registry
@@ -113,6 +123,37 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.010, output_per_1k: 0.040 }
 
+  # -- Google Gemini --
+  gemini-2.5-pro:
+    provider: gemini
+    model_id: gemini-2.5-pro-preview-05-06
+    max_output_tokens: 65536
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.00125, output_per_1k: 0.010 }
+
+  gemini-2.5-flash:
+    provider: gemini
+    model_id: gemini-2.5-flash-preview-04-17
+    max_output_tokens: 65536
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+
+  gemini-2.0-flash:
+    provider: gemini
+    model_id: gemini-2.0-flash
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # -- Local Models (Ollama) --
   llama-local:
     provider: ollama
@@ -162,6 +203,28 @@ models:
     supports_vision: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # IBM watsonx.ai models (D238)
+  granite-code:
+    provider: ibm_watsonx
+    model_id: ibm/granite-34b-code-instruct
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    pricing:
+      input_per_1k: 0.0
+      output_per_1k: 0.0
+  granite-chat:
+    provider: ibm_watsonx
+    model_id: ibm/granite-3.1-8b-instruct
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: false
+    pricing:
+      input_per_1k: 0.0
+      output_per_1k: 0.0
+
 # -----------------------------------------------------------------------
 # Function -> Model Routing
 # -----------------------------------------------------------------------
@@ -169,103 +232,103 @@ models:
 # First available model in the chain is used.
 routing:
   agent_architect:
-    chain: [claude-opus, o3, gpt-4o, llama-local]
+    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, llama-local]
     effort: max
 
   agent_orchestrator:
-    chain: [claude-opus, gpt-4o, llama-local]
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
     effort: high
 
   agent_builder:
-    chain: [claude-opus, gpt-4o, codestral-local]
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: max
 
   agent_compliance:
-    chain: [claude-sonnet, gpt-4o, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   agent_security:
-    chain: [claude-sonnet, gpt-4o, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   agent_infra:
-    chain: [claude-sonnet, gpt-4o-mini, llama-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
   agent_knowledge:
-    chain: [claude-sonnet, gpt-4o-mini, llama-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
   agent_monitor:
-    chain: [claude-haiku, gpt-4o-mini, llama-local]
+    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
   task_decomposition:
-    chain: [claude-opus, o3, gpt-4o]
+    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
   collaboration:
-    chain: [claude-sonnet, gpt-4o, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
   nlq_sql:
-    chain: [gpt-4o-mini, claude-haiku, llama-local]
+    chain: [gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
     effort: low
 
   code_generation:
-    chain: [claude-sonnet, gpt-4o, codestral-local]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   saas_proxy:
-    chain: [claude-sonnet, gpt-4o]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash]
     effort: medium
 
   child_app:
-    chain: [claude-sonnet, gpt-4o]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o]
     effort: medium
 
   screenshot_validation:
-    chain: [claude-opus, claude-sonnet, gpt-4o, gemma3-local, llava-local]
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
     effort: medium
 
   document_vision:
-    chain: [claude-sonnet, gpt-4o, gemma3-local, llava-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
     effort: medium
 
   ui_analysis:
-    chain: [claude-opus, claude-sonnet, gpt-4o, gemma3-local, llava-local]
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemini-2.5-pro, gemma3-local, llava-local]
     effort: high
 
   diagram_extraction:
-    chain: [claude-opus, claude-sonnet, gpt-4o, gemma3-local, llava-local]
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemini-2.5-pro, gemma3-local, llava-local]
     effort: high
 
   compliance_diagram:
-    chain: [claude-sonnet, gpt-4o, gemma3-local, llava-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
     effort: medium
 
   attachment_analysis:
-    chain: [claude-sonnet, gpt-4o-mini, gemma3-local, llava-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.0-flash, gemma3-local, llava-local]
     effort: low
 
   intake_persona_response:
-    chain: [claude-sonnet, claude-opus, gpt-4o, llama-local]
+    chain: [claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
   bdd_preview:
-    chain: [claude-sonnet, gpt-4o, codestral-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, codestral-local]
     effort: low
 
   narrative_generation:
-    chain: [claude-sonnet, gpt-4o, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   compliance_export:
-    chain: [claude-sonnet, gpt-4o-mini, llama-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: medium
 
   default:
-    chain: [claude-sonnet, gpt-4o, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
 # -----------------------------------------------------------------------
@@ -291,7 +354,7 @@ agent_effort_defaults:
 # Embedding Configuration
 # -----------------------------------------------------------------------
 embeddings:
-  default_chain: [openai-embed, nomic-embed-local]
+  default_chain: [openai-embed, gemini-embed, nomic-embed-local]
 
   models:
     openai-embed:
@@ -299,6 +362,12 @@ embeddings:
       model_id: text-embedding-3-small
       dimensions: 1536
       pricing: { input_per_1k: 0.00002 }
+
+    gemini-embed:
+      provider: gemini
+      model_id: text-embedding-004
+      dimensions: 768
+      pricing: { input_per_1k: 0.0 }
 
     titan-embed:
       provider: bedrock
@@ -311,6 +380,28 @@ embeddings:
       model_id: nomic-embed-text
       dimensions: 768
       pricing: { input_per_1k: 0.0 }
+
+    # Azure OpenAI embedding (D238)
+    azure-embed:
+      provider: azure_openai
+      model_id: text-embedding-ada-002
+      dimensions: 1536
+      pricing:
+        input_per_1k: 0.0001
+    # OCI GenAI embedding (D238)
+    oci-embed:
+      provider: oci_genai
+      model_id: cohere.embed-english-v3.0
+      dimensions: 1024
+      pricing:
+        input_per_1k: 0.0001
+    # IBM watsonx.ai embedding (D238)
+    ibm-slate-embed:
+      provider: ibm_watsonx
+      model_id: ibm/slate-125m-english-rtrvr-v2
+      dimensions: 768
+      pricing:
+        input_per_1k: 0.0
 
 # -----------------------------------------------------------------------
 # Global Settings

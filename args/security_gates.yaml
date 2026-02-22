@@ -328,6 +328,39 @@ remote_command:
       - icdev-secure
       - icdev-build
 
+# Prompt Injection Detection Gates (Phase 37 — D217)
+prompt_injection:
+  blocking:
+    - high_confidence_injection_unresolved
+    - prompt_injection_defense_inactive
+  warning:
+    - flagged_injection_count_high
+    - base64_encoded_injection_detected
+  thresholds:
+    max_unresolved_block: 0
+    max_unresolved_flag: 5
+    detection_active_required: true
+    deep_base64_scan: true
+
+# AI Security Gates (Phase 37 — MITRE ATLAS, D216)
+atlas_ai:
+  blocking:
+    - critical_atlas_technique_unmitigated
+    - prompt_injection_defense_inactive
+    - ai_telemetry_not_active
+    - agent_permissions_not_configured
+    - ai_bom_missing
+  warning:
+    - atlas_coverage_below_threshold
+    - owasp_llm_gap_detected
+    - ai_bom_stale
+  thresholds:
+    min_atlas_coverage_pct: 80
+    ai_telemetry_required: true
+    ai_bom_required: true
+    ai_bom_max_age_days: 90
+    red_team_scan_required_for_il5_plus: true
+
 # CI/CD Self-Recovery Guard Rails (Phase 4 — D134)
 recovery:
   max_attempts: 3
@@ -358,6 +391,8 @@ marketplace_publish:
     - secrets_detected
     - critical_dependency_vulnerabilities
     - cui_markings_missing
+    - prompt_injection_in_asset
+    - behavioral_sandbox_critical_violation
     - sbom_generation_failed
     - digital_signature_failed
   warning:

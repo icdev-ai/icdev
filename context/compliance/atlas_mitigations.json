@@ -1,0 +1,293 @@
+{
+  "_cui_marking": "CUI // SP-CTI",
+  "metadata": {
+    "framework": "MITRE ATLAS",
+    "version": "5.4.0",
+    "source": "https://atlas.mitre.org",
+    "description": "Adversarial Threat Landscape for AI Systems - Mitigations Catalog",
+    "last_updated": "2026-02-21",
+    "total_mitigations": 35
+  },
+  "mitigations": [
+    {
+      "id": "AML.M0000",
+      "name": "Limit Model Artifact Release",
+      "description": "Restrict public release of AI/ML model artifacts including architecture details, training configurations, hyperparameters, and performance metrics that could aid adversaries in developing targeted attacks.",
+      "techniques_addressed": ["AML.T0024", "AML.T0024.001", "AML.T0024.002", "AML.T0056"],
+      "nist_controls": ["AC-3", "AC-4", "SC-7", "PM-11"],
+      "category": "access_control"
+    },
+    {
+      "id": "AML.M0001",
+      "name": "Limit Model Access",
+      "description": "Control and restrict access to ML model inference APIs, preventing unrestricted querying that could facilitate model extraction, membership inference, or training data reconstruction attacks.",
+      "techniques_addressed": ["AML.T0024", "AML.T0024.002", "AML.T0029", "AML.T0034"],
+      "nist_controls": ["AC-2", "AC-3", "AC-6", "AC-10"],
+      "category": "access_control"
+    },
+    {
+      "id": "AML.M0002",
+      "name": "Passive Monitoring",
+      "description": "Implement passive monitoring and output obfuscation techniques to reduce the fidelity of model outputs, hindering systematic model extraction and membership inference attacks without degrading legitimate use.",
+      "techniques_addressed": ["AML.T0024", "AML.T0024.002", "AML.T0057"],
+      "nist_controls": ["SI-4", "AU-6", "SC-7"],
+      "category": "monitoring"
+    },
+    {
+      "id": "AML.M0003",
+      "name": "Model Hardening",
+      "description": "Apply adversarial training, model distillation, input gradient regularization, and other robustness techniques to increase model resilience against adversarial perturbations and evasion attacks.",
+      "techniques_addressed": ["AML.T0043", "AML.T0044", "AML.T0047", "AML.T0048"],
+      "nist_controls": ["SA-11", "SA-15", "SI-7", "SA-17"],
+      "category": "model_security"
+    },
+    {
+      "id": "AML.M0004",
+      "name": "Restrict Number of ML Model Queries",
+      "description": "Implement rate limiting, query quotas, and anomaly detection on ML model API endpoints to prevent model extraction through systematic querying and mitigate denial-of-service and cost harvesting attacks.",
+      "techniques_addressed": ["AML.T0024.002", "AML.T0029", "AML.T0034"],
+      "nist_controls": ["SC-5", "SC-6", "AC-10", "SI-4"],
+      "category": "access_control"
+    },
+    {
+      "id": "AML.M0005",
+      "name": "Control Access to ML Models and Data at Rest",
+      "description": "Implement access controls, authentication, and authorization on model registries, training data stores, and ML artifact repositories to prevent unauthorized access to AI assets at rest.",
+      "techniques_addressed": ["AML.T0024", "AML.T0025", "AML.T0035", "AML.T0010"],
+      "nist_controls": ["AC-2", "AC-3", "AC-6", "SC-28", "MP-4"],
+      "category": "data_protection"
+    },
+    {
+      "id": "AML.M0006",
+      "name": "Use Ensemble Methods",
+      "description": "Deploy multiple diverse models in ensemble configurations to increase robustness against adversarial evasion attacks, as adversarial examples that fool one model are less likely to fool all models simultaneously.",
+      "techniques_addressed": ["AML.T0043", "AML.T0044", "AML.T0048"],
+      "nist_controls": ["SA-8", "SA-17", "SC-36"],
+      "category": "model_security"
+    },
+    {
+      "id": "AML.M0007",
+      "name": "Sanitize Training Data",
+      "description": "Detect, remove, and remediate poisoned, corrupted, or adversarial samples from training datasets using statistical analysis, outlier detection, and provenance verification to prevent data poisoning attacks.",
+      "techniques_addressed": ["AML.T0020", "AML.T0019", "AML.T0039", "AML.T0049"],
+      "nist_controls": ["SI-10", "SI-7", "SA-15", "CM-3"],
+      "category": "data_protection"
+    },
+    {
+      "id": "AML.M0008",
+      "name": "Validate ML Model",
+      "description": "Test models for backdoors, bias, concept drift, and adversarial vulnerabilities through comprehensive validation including robustness testing, fairness audits, and performance benchmarking on held-out datasets.",
+      "techniques_addressed": ["AML.T0019", "AML.T0020", "AML.T0043", "AML.T0047"],
+      "nist_controls": ["SA-11", "SA-15", "CA-8", "RA-5"],
+      "category": "model_security"
+    },
+    {
+      "id": "AML.M0009",
+      "name": "Use Multi-Modal Sensors",
+      "description": "Employ multiple sensor modalities and input channels to prevent single-point failure from adversarial attacks against one input source, increasing system resilience through redundant observation.",
+      "techniques_addressed": ["AML.T0043", "AML.T0044", "AML.T0047"],
+      "nist_controls": ["SA-8", "SA-17", "SC-36", "PE-20"],
+      "category": "operational"
+    },
+    {
+      "id": "AML.M0010",
+      "name": "Input Restoration",
+      "description": "Preprocess and restore inputs through denoising, compression, re-encoding, or other transformation techniques to neutralize adversarial perturbations before they reach the ML model.",
+      "techniques_addressed": ["AML.T0043", "AML.T0044", "AML.T0048", "AML.T0051"],
+      "nist_controls": ["SI-10", "SI-3", "SC-7"],
+      "category": "input_validation"
+    },
+    {
+      "id": "AML.M0011",
+      "name": "Restrict Library Loading",
+      "description": "Prevent loading of untrusted code, serialized objects, and pickle files in ML pipelines. Use safe serialization formats (SafeTensors, ONNX) and disable arbitrary code execution during model deserialization.",
+      "techniques_addressed": ["AML.T0010", "AML.T0010.001", "AML.T0053", "AML.T0058"],
+      "nist_controls": ["CM-7", "CM-11", "SI-7", "SA-12"],
+      "category": "supply_chain"
+    },
+    {
+      "id": "AML.M0012",
+      "name": "Encrypt Sensitive Information",
+      "description": "Apply encryption to ML models, training data, embeddings, and sensitive AI configuration at rest and in transit using FIPS 140-2/3 validated cryptographic modules.",
+      "techniques_addressed": ["AML.T0024", "AML.T0025", "AML.T0035", "AML.T0057"],
+      "nist_controls": ["SC-12", "SC-13", "SC-28", "SC-8"],
+      "category": "data_protection"
+    },
+    {
+      "id": "AML.M0013",
+      "name": "Code Signing",
+      "description": "Apply digital signature verification to ML model artifacts, training pipelines, agent skills, and AI system components to ensure supply chain integrity and detect tampering.",
+      "techniques_addressed": ["AML.T0010", "AML.T0010.001", "AML.T0010.003", "AML.T0058", "AML.T0104"],
+      "nist_controls": ["SI-7", "SI-7.6", "SA-12", "CM-14"],
+      "category": "supply_chain"
+    },
+    {
+      "id": "AML.M0014",
+      "name": "Verify ML Artifacts",
+      "description": "Perform cryptographic checksum verification on all ML model files, datasets, embeddings, and configuration artifacts before loading or deployment to detect unauthorized modification.",
+      "techniques_addressed": ["AML.T0010", "AML.T0010.003", "AML.T0058", "AML.T0081"],
+      "nist_controls": ["SI-7", "SI-7.1", "CM-3", "CM-5"],
+      "category": "supply_chain"
+    },
+    {
+      "id": "AML.M0015",
+      "name": "Adversarial Input Detection",
+      "description": "Detect and block adversarial and prompt injection inputs using pattern matching, statistical analysis, classifier-based detection, and structural analysis of inbound text before ML model processing.",
+      "techniques_addressed": ["AML.T0051", "AML.T0051.000", "AML.T0051.001", "AML.T0051.002", "AML.T0043", "AML.T0048"],
+      "nist_controls": ["SI-3", "SI-4", "SI-10", "SC-7"],
+      "category": "input_validation"
+    },
+    {
+      "id": "AML.M0016",
+      "name": "Vulnerability Scanning",
+      "description": "Scan ML model artifacts, serialized files, container images, and AI framework dependencies for known vulnerabilities, backdoors, and malicious payloads.",
+      "techniques_addressed": ["AML.T0010", "AML.T0053", "AML.T0058", "AML.T0016"],
+      "nist_controls": ["RA-5", "SI-2", "SA-11", "CM-8"],
+      "category": "supply_chain"
+    },
+    {
+      "id": "AML.M0017",
+      "name": "Model Distribution",
+      "description": "Prefer centralized cloud-based model deployment over edge deployment to maintain control over model access, updates, and monitoring. Limit distribution of model weights to authorized environments only.",
+      "techniques_addressed": ["AML.T0024", "AML.T0024.001", "AML.T0024.002"],
+      "nist_controls": ["CM-2", "CM-5", "SC-7", "SA-9"],
+      "category": "operational"
+    },
+    {
+      "id": "AML.M0018",
+      "name": "User Training",
+      "description": "Educate developers, operators, and end users on ML/AI-specific vulnerabilities, adversarial attack patterns, responsible AI practices, and secure AI development principles.",
+      "techniques_addressed": ["AML.T0051", "AML.T0056", "AML.T0080", "AML.T0100"],
+      "nist_controls": ["AT-2", "AT-3", "PM-13", "PM-14"],
+      "category": "governance"
+    },
+    {
+      "id": "AML.M0019",
+      "name": "Control Access to ML Models and Data in Production",
+      "description": "Implement authentication, authorization, monitoring, and audit logging for all production ML model API endpoints, inference services, and data pipelines to prevent unauthorized access.",
+      "techniques_addressed": ["AML.T0024", "AML.T0024.002", "AML.T0029", "AML.T0057", "AML.T0085"],
+      "nist_controls": ["AC-2", "AC-3", "AC-6", "AU-2", "AU-3"],
+      "category": "access_control"
+    },
+    {
+      "id": "AML.M0020",
+      "name": "Deception / Decoy Environment",
+      "description": "Deploy honeypots, decoy models, and canary tokens in AI systems to detect and analyze adversarial reconnaissance, model probing, and attack staging activities.",
+      "techniques_addressed": ["AML.T0024", "AML.T0029", "AML.T0084", "AML.T0084.001"],
+      "nist_controls": ["SC-26", "SC-30", "SI-4", "SC-7"],
+      "category": "monitoring"
+    },
+    {
+      "id": "AML.M0021",
+      "name": "Maintain Audit Trail",
+      "description": "Maintain comprehensive, append-only audit trails for all AI system interactions including model queries, training data modifications, configuration changes, and agent actions for forensic analysis.",
+      "techniques_addressed": ["AML.T0080", "AML.T0081", "AML.T0086", "AML.T0101"],
+      "nist_controls": ["AU-2", "AU-3", "AU-6", "AU-12"],
+      "category": "monitoring"
+    },
+    {
+      "id": "AML.M0022",
+      "name": "Pre-Deployment Testing",
+      "description": "Conduct comprehensive pre-deployment testing including adversarial robustness testing, red team exercises, bias evaluation, and safety benchmarking before deploying AI models to production.",
+      "techniques_addressed": ["AML.T0019", "AML.T0043", "AML.T0047", "AML.T0051"],
+      "nist_controls": ["SA-11", "CA-8", "RA-5", "SA-15"],
+      "category": "model_security"
+    },
+    {
+      "id": "AML.M0023",
+      "name": "Operational Monitoring",
+      "description": "Monitor AI systems in production for performance drift, anomalous query patterns, unexpected outputs, and behavioral changes that may indicate ongoing adversarial activity or model degradation.",
+      "techniques_addressed": ["AML.T0024.002", "AML.T0034", "AML.T0047", "AML.T0057"],
+      "nist_controls": ["SI-4", "SI-4.5", "AU-6", "IR-4"],
+      "category": "monitoring"
+    },
+    {
+      "id": "AML.M0024",
+      "name": "AI Telemetry",
+      "description": "Log all model inputs (hashed for CUI sensitivity), outputs (hashed), token counts, latency, model IDs, user IDs, and agent IDs for comprehensive AI interaction visibility, anomaly detection, and forensic analysis.",
+      "techniques_addressed": ["AML.T0024", "AML.T0034", "AML.T0051", "AML.T0057", "AML.T0086"],
+      "nist_controls": ["AU-2", "AU-3", "AU-6", "AU-12", "SI-4"],
+      "category": "monitoring"
+    },
+    {
+      "id": "AML.M0025",
+      "name": "Establish Responsible AI Practice",
+      "description": "Establish organizational responsible AI policies covering fairness, transparency, accountability, privacy, safety, and security aligned with NIST AI RMF, DoD Responsible AI principles, and EO 14110.",
+      "techniques_addressed": ["AML.T0047", "AML.T0048", "AML.T0060"],
+      "nist_controls": ["PM-1", "PM-9", "PM-11", "PL-1"],
+      "category": "governance"
+    },
+    {
+      "id": "AML.M0026",
+      "name": "Restrict Command/Query Input",
+      "description": "Implement command allowlists, query filtering, and input sanitization to restrict the commands and queries that can be submitted to AI agents, preventing unauthorized or dangerous operations.",
+      "techniques_addressed": ["AML.T0051", "AML.T0086", "AML.T0101", "AML.T0105"],
+      "nist_controls": ["AC-3", "AC-6", "CM-7", "SI-10"],
+      "category": "access_control"
+    },
+    {
+      "id": "AML.M0027",
+      "name": "AI Bill of Materials",
+      "description": "Maintain a comprehensive AI Bill of Materials documenting all model components, training datasets, embedding providers, AI framework versions, and data provenance for supply chain transparency.",
+      "techniques_addressed": ["AML.T0010", "AML.T0010.003", "AML.T0058", "AML.T0104"],
+      "nist_controls": ["CM-8", "SA-17", "SR-3", "SR-4"],
+      "category": "supply_chain"
+    },
+    {
+      "id": "AML.M0028",
+      "name": "Centralized ML Model Inventory",
+      "description": "Maintain a centralized registry of all deployed ML models including versions, owners, deployment locations, access permissions, and lifecycle status to enable governance and incident response.",
+      "techniques_addressed": ["AML.T0024", "AML.T0010.003", "AML.T0084"],
+      "nist_controls": ["CM-8", "CM-8.1", "PM-5", "SA-17"],
+      "category": "governance"
+    },
+    {
+      "id": "AML.M0029",
+      "name": "AI-Specific Incident Response",
+      "description": "Develop and maintain AI-specific incident response procedures covering model compromise, data poisoning, prompt injection campaigns, model theft, and adversarial attack response.",
+      "techniques_addressed": ["AML.T0020", "AML.T0024", "AML.T0051", "AML.T0080", "AML.T0101"],
+      "nist_controls": ["IR-1", "IR-4", "IR-5", "IR-6", "IR-8"],
+      "category": "operational"
+    },
+    {
+      "id": "AML.M0030",
+      "name": "Human Review of AI-Generated Content",
+      "description": "Require human-in-the-loop review for critical AI agent actions, destructive operations, deployment decisions, and high-impact content generation to prevent autonomous misuse.",
+      "techniques_addressed": ["AML.T0086", "AML.T0101", "AML.T0048", "AML.T0105"],
+      "nist_controls": ["AC-6.1", "CM-3", "CM-5", "SI-10"],
+      "category": "governance"
+    },
+    {
+      "id": "AML.M0031",
+      "name": "AI Red Teaming",
+      "description": "Conduct regular adversarial red team exercises specifically targeting AI/ML systems, testing prompt injection resistance, model extraction defenses, data leakage prevention, and agent abuse scenarios.",
+      "techniques_addressed": ["AML.T0051", "AML.T0024", "AML.T0056", "AML.T0057", "AML.T0080", "AML.T0086"],
+      "nist_controls": ["CA-8", "RA-5", "SA-11", "PM-14"],
+      "category": "operational"
+    },
+    {
+      "id": "AML.M0032",
+      "name": "Model Transparency",
+      "description": "Document and communicate model capabilities, limitations, intended use cases, known failure modes, bias assessments, and safety boundaries through model cards and system documentation.",
+      "techniques_addressed": ["AML.T0047", "AML.T0048", "AML.T0060"],
+      "nist_controls": ["PM-11", "PL-2", "SA-5", "SA-17"],
+      "category": "governance"
+    },
+    {
+      "id": "AML.M0033",
+      "name": "Limit Access to Generative AI Output",
+      "description": "Implement output filtering, content classification, and access controls on generative AI outputs to prevent data leakage, CUI spillage, and unauthorized dissemination of AI-generated content.",
+      "techniques_addressed": ["AML.T0057", "AML.T0086", "AML.T0048", "AML.T0051"],
+      "nist_controls": ["AC-3", "AC-4", "SC-7", "SI-12"],
+      "category": "data_protection"
+    },
+    {
+      "id": "AML.M0034",
+      "name": "Establish AI Supply Chain Security",
+      "description": "Implement comprehensive AI supply chain security practices including vendor assessment, model provenance verification, dependency scanning, SBOM generation, and Section 889/ITAR compliance for all AI components.",
+      "techniques_addressed": ["AML.T0010", "AML.T0010.001", "AML.T0010.003", "AML.T0010.004", "AML.T0058", "AML.T0104"],
+      "nist_controls": ["SA-12", "SR-3", "SR-4", "SR-5", "SR-11", "SA-9"],
+      "category": "supply_chain"
+    }
+  ]
+}

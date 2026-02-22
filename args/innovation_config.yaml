@@ -1,0 +1,418 @@
+# CUI // SP-CTI
+# ICDEV Innovation Engine Configuration — autonomous self-improvement pipeline
+# Phase 35: Continuous Innovation Engine
+
+# =========================================================================
+# Web Intelligence Sources
+# =========================================================================
+sources:
+  github:
+    enabled: true
+    scan_interval_hours: 6
+    targets:
+      - type: trending_repos
+        languages: [python, go, rust, java, typescript, csharp]
+        since: daily
+        max_results: 50
+      - type: issues
+        repos:
+          - kubernetes/kubernetes
+          - hashicorp/terraform
+          - open-policy-agent/opa
+          - istio/istio
+          - anchore/grype
+          - aquasecurity/trivy
+          - bridgecrewio/checkov
+          - prowler-cloud/prowler
+        labels: [bug, enhancement, security, compliance]
+        max_results: 100
+      - type: discussions
+        topics: [devsecops, compliance-as-code, sbom, zero-trust, govcloud]
+        max_results: 50
+    rate_limit:
+      requests_per_hour: 60
+      burst: 10
+
+  stackoverflow:
+    enabled: true
+    scan_interval_hours: 12
+    tags:
+      - devsecops
+      - compliance
+      - cicd-pipeline
+      - kubernetes-security
+      - nist
+      - fedramp
+      - sast
+      - sbom
+      - zero-trust
+      - infrastructure-as-code
+    min_score: 5
+    max_results: 50
+    sort: votes
+
+  cve_databases:
+    enabled: true
+    scan_interval_hours: 4
+    sources:
+      - name: nvd
+        api_url: https://services.nvd.nist.gov/rest/json/cves/2.0
+        severity_filter: [CRITICAL, HIGH]
+      - name: github_advisories
+        api_url: https://api.github.com/advisories
+        severity_filter: [critical, high]
+    ecosystems: [pip, npm, go, maven, nuget, cargo]
+    max_results: 100
+
+  nist_advisories:
+    enabled: true
+    scan_interval_hours: 24
+    feeds:
+      - name: csrc_publications
+        url: https://csrc.nist.gov/publications
+        types: [SP, IR, FIPS]
+      - name: cisa_advisories
+        url: https://www.cisa.gov/news-events/cybersecurity-advisories
+      - name: cisa_directives
+        url: https://www.cisa.gov/news-events/directives
+
+  cloud_changelogs:
+    enabled: true
+    scan_interval_hours: 12
+    providers:
+      - name: aws_govcloud
+        url: https://aws.amazon.com/about-aws/whats-new
+        filter: govcloud
+      - name: aws_security
+        url: https://aws.amazon.com/security/security-bulletins
+    max_results: 30
+
+  # CSP Service Monitor (Phase 38 — D239, D240)
+  # Delegates to tools/cloud/csp_monitor.py for multi-CSP scanning.
+  # Config: args/csp_monitor_config.yaml | Registry: context/cloud/csp_service_registry.json
+  csp_monitor:
+    enabled: true
+    scan_interval_hours: 12
+    delegate_to: tools/cloud/csp_monitor.py
+    csps: [aws, azure, gcp, oci, ibm]
+    signal_source: csp_monitor
+    categories: [infrastructure, modernization, compliance_gap, security_vulnerability, developer_experience]
+    notes: "Autonomous tracking of CSP service additions, deprecations, compliance scope changes, and breaking API changes across all five CSPs"
+
+  developer_surveys:
+    enabled: true
+    scan_interval_hours: 168  # weekly
+    sources:
+      - name: dora_report
+        url: https://dora.dev
+      - name: state_of_devops
+        url: https://puppet.com/resources/state-of-devops-report
+      - name: stack_overflow_survey
+        url: https://survey.stackoverflow.co
+
+  community_forums:
+    enabled: true
+    scan_interval_hours: 8
+    platforms:
+      - name: reddit
+        subreddits: [devops, netsec, sysadmin, kubernetes, golang, rust]
+        sort: hot
+        max_results: 30
+        min_upvotes: 50
+      - name: hackernews
+        url: https://hacker-news.firebaseio.com/v0
+        min_score: 100
+        max_results: 20
+
+  package_registries:
+    enabled: true
+    scan_interval_hours: 24
+    registries:
+      - name: pypi
+        trending_url: https://hugovk.github.io/top-pypi-packages/top-pypi-packages-30-days.json
+        categories: [security, compliance, devops, testing]
+      - name: npm
+        trending_url: https://api.npmjs.org/downloads/point/last-week
+        categories: [security, linting, testing]
+
+  compliance_updates:
+    enabled: true
+    scan_interval_hours: 24
+    sources:
+      - name: fedramp_marketplace
+        url: https://marketplace.fedramp.gov
+      - name: cmmc_ab
+        url: https://cyberab.org
+      - name: federal_register
+        url: https://www.federalregister.gov/api/v1/documents
+        agency_filter: [DOD, DHS, NIST, CISA]
+      - name: dod_cio
+        url: https://dodcio.defense.gov
+
+# =========================================================================
+# Signal Classification
+# =========================================================================
+signal_categories:
+  security_vulnerability:
+    keywords: [CVE, vulnerability, exploit, injection, XSS, CSRF, SSRF, RCE, privilege escalation]
+    priority_boost: 1.5
+    auto_triage: true
+  compliance_gap:
+    keywords: [NIST, FedRAMP, CMMC, STIG, ATO, compliance gap, control failure, audit finding]
+    priority_boost: 1.3
+    auto_triage: true
+  developer_experience:
+    keywords: [slow, frustrating, boilerplate, tedious, manual, workaround, pain point, UX, DX]
+    priority_boost: 1.0
+    auto_triage: false
+  performance:
+    keywords: [slow, timeout, memory leak, bottleneck, latency, throughput, scalability]
+    priority_boost: 1.1
+    auto_triage: false
+  modernization:
+    keywords: [legacy, migration, deprecated, end of life, upgrade, breaking change]
+    priority_boost: 1.2
+    auto_triage: true
+  supply_chain:
+    keywords: [dependency, SBOM, supply chain, unmaintained, abandoned, license]
+    priority_boost: 1.3
+    auto_triage: true
+  infrastructure:
+    keywords: [kubernetes, terraform, docker, container, helm, deployment, infrastructure]
+    priority_boost: 1.0
+    auto_triage: false
+  testing:
+    keywords: [test coverage, flaky test, integration test, E2E, BDD, TDD, mutation testing]
+    priority_boost: 1.0
+    auto_triage: false
+  ai_tooling:
+    keywords: [copilot, cursor, codex, claude, AI coding, agent, MCP, LLM integration]
+    priority_boost: 1.2
+    auto_triage: false
+
+# =========================================================================
+# Innovation Scoring (D21-style weighted average)
+# =========================================================================
+scoring:
+  weights:
+    community_demand: 0.30    # GitHub stars, SO votes, upvotes, issue frequency
+    impact_breadth: 0.25      # Number of ICDEV tenants/projects potentially affected
+    feasibility: 0.20         # Can ICDEV build this with existing tools?
+    compliance_alignment: 0.15 # Does it strengthen (not weaken) compliance posture?
+    novelty: 0.10             # Not already addressed by existing ICDEV capabilities
+  thresholds:
+    auto_queue: 0.80          # Score >= 0.80: auto-queue for solution generation
+    suggest: 0.50             # Score 0.50-0.79: suggest to human, require approval
+    log_only: 0.00            # Score < 0.50: log for trend analysis, no action
+  max_auto_solutions_per_pi: 10   # Budget: max auto-generated solutions per PI
+  max_signals_per_scan: 500       # Cap signals per scan cycle to prevent overload
+
+# =========================================================================
+# Triage Pipeline
+# =========================================================================
+triage:
+  # GOTCHA fit assessment
+  gotcha_fit:
+    required_layer: true         # Signal must map to at least one GOTCHA layer
+    layer_mapping:
+      goal: [workflow, process, procedure, methodology, best practice]
+      tool: [script, utility, generator, scanner, checker, validator, analyzer]
+      arg: [configuration, setting, threshold, parameter, tuning]
+      context: [reference, template, sample, example, guideline, standard]
+      hardprompt: [prompt template, instruction, LLM directive, system prompt]
+
+  # Boundary impact assessment (reuse existing boundary_analyzer.py)
+  boundary_check:
+    enabled: true
+    block_on_red: true           # RED boundary impact blocks auto-generation
+    require_coa_for_orange: true # ORANGE requires alternative COA
+
+  # Compliance pre-check
+  compliance_check:
+    enabled: true
+    frameworks_to_validate:
+      - nist_800_53
+      - fedramp
+      - cmmc
+    block_on_weakening: true     # Block if innovation weakens compliance posture
+
+  # Duplicate detection
+  dedup:
+    enabled: true
+    similarity_threshold: 0.85   # Cosine similarity for semantic dedup
+    time_window_days: 90         # Ignore signals similar to recent ones
+
+  # IP/License check
+  license_check:
+    enabled: true
+    allowed_licenses:
+      - MIT
+      - Apache-2.0
+      - BSD-2-Clause
+      - BSD-3-Clause
+      - ISC
+      - MPL-2.0
+      - LGPL-2.1
+      - LGPL-3.0
+    blocked_licenses:
+      - GPL-3.0          # Copyleft risk for Gov/DoD
+      - AGPL-3.0
+      - SSPL-1.0
+      - BSL-1.1
+
+# =========================================================================
+# Solution Generation Pipeline
+# =========================================================================
+solution_generation:
+  # Spec generation from signals
+  spec:
+    use_spec_quality_checker: true  # Run spec_quality_checker.py on generated specs
+    use_constitution: true           # Validate against project constitution
+    max_spec_length_lines: 500
+
+  # Build pipeline integration
+  build:
+    use_atlas_workflow: true         # Follow ATLAS/M-ATLAS for builds
+    tdd_required: true               # RED -> GREEN -> REFACTOR
+    min_test_coverage: 80            # Minimum coverage for generated solution
+
+  # Security scanning
+  security:
+    sast_required: true
+    dependency_audit_required: true
+    secret_detection_required: true
+    sbom_required: true
+
+  # Marketplace publishing
+  marketplace:
+    auto_publish_to_local: true      # Auto-publish to tenant-local catalog
+    cross_tenant_requires_review: true  # Cross-tenant requires ISSO review
+    asset_types_publishable:
+      - skill
+      - goal
+      - tool
+      - context
+      - hardprompt
+      - compliance_extension
+      - arg
+
+# =========================================================================
+# Introspective Analysis (Internal Telemetry)
+# =========================================================================
+introspection:
+  enabled: true
+  scan_interval_hours: 12
+  signals:
+    failed_self_heals:
+      enabled: true
+      min_confidence: 0.0           # Monitor all failures
+      max_confidence: 0.3           # Especially low-confidence ones
+    gate_failures:
+      enabled: true
+      min_frequency: 3              # Only flag gates that fail >= 3 times
+      time_window_days: 30
+    unused_tools:
+      enabled: true
+      usage_threshold: 0            # Tools with 0 invocations in period
+      time_window_days: 90
+    slow_pipelines:
+      enabled: true
+      latency_threshold_seconds: 300  # Flag stages taking > 5 min
+    nlq_gaps:
+      enabled: true                 # Questions that return no results
+      min_occurrences: 2
+    knowledge_gaps:
+      enabled: true                 # Self-heal patterns with no resolution
+
+# =========================================================================
+# Competitive Intelligence
+# =========================================================================
+competitive_intel:
+  enabled: true
+  scan_interval_hours: 168  # weekly
+  competitors:
+    - name: backstage
+      repo: backstage/backstage
+      changelog_url: https://backstage.io/docs/releases
+      category: platform_engineering
+    - name: drata
+      website: https://drata.com
+      category: compliance_automation
+    - name: vanta
+      website: https://www.vanta.com
+      category: compliance_automation
+    - name: snyk
+      repo: snyk/cli
+      category: devsecops
+    - name: trivy
+      repo: aquasecurity/trivy
+      category: security_scanning
+    - name: checkov
+      repo: bridgecrewio/checkov
+      category: iac_security
+    - name: iron_bank
+      website: https://ironbank.dso.mil
+      category: govtech
+
+# =========================================================================
+# Standards Body Monitoring
+# =========================================================================
+standards_monitoring:
+  enabled: true
+  scan_interval_hours: 48  # every 2 days
+  bodies:
+    - name: nist
+      publications_url: https://csrc.nist.gov/publications
+      rss_url: https://csrc.nist.gov/publications/rss
+      watch_series: [SP 800, FIPS, IR]
+    - name: cisa
+      alerts_url: https://www.cisa.gov/news-events/cybersecurity-advisories
+      directives_url: https://www.cisa.gov/news-events/directives
+    - name: dod
+      cio_url: https://dodcio.defense.gov
+      watch_topics: [zero trust, DevSecOps, CMMC, cATO, MOSA]
+    - name: fedramp
+      updates_url: https://www.fedramp.gov/blog
+      marketplace_url: https://marketplace.fedramp.gov
+    - name: iso
+      standards_url: https://www.iso.org
+      watch_standards: [27001, 27002, 27017, 27018]
+
+# =========================================================================
+# Feedback Loop Calibration
+# =========================================================================
+feedback:
+  enabled: true
+  calibration_interval_days: 30    # Re-calibrate weights monthly
+  metrics:
+    - marketplace_install_count     # High installs = good signal quality
+    - marketplace_rating            # High ratings = good solution quality
+    - self_heal_pattern_hits        # Patterns that prevent future failures
+    - gate_failure_reduction        # Solutions that reduce gate failures
+    - tenant_feature_requests       # Addressed vs total requests
+  weight_adjustment_step: 0.02     # Max weight change per calibration cycle
+  min_data_points: 10              # Minimum data points before calibrating
+
+# =========================================================================
+# Audit & Governance
+# =========================================================================
+audit:
+  log_scans: true                  # Log every scan cycle
+  log_signals: true                # Log every discovered signal
+  log_triage_decisions: true       # Log every triage decision with rationale
+  log_solutions: true              # Log every generated solution
+  log_sensitive: false             # Don't log raw web content (too noisy)
+  retention_days: 365              # Keep innovation audit trail for 1 year
+
+# =========================================================================
+# Scheduling
+# =========================================================================
+scheduling:
+  daemon_mode: true                # Run as background daemon
+  default_scan_interval_hours: 12  # Default if source doesn't specify
+  quiet_hours:                     # Don't generate solutions during these hours
+    start: "02:00"
+    end: "06:00"
+    timezone: UTC
+  max_concurrent_scans: 3          # Parallel source scanning limit
+  scan_timeout_seconds: 300        # Per-source scan timeout

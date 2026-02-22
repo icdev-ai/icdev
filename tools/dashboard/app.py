@@ -914,6 +914,73 @@ def create_app() -> Flask:
         """Dev profile management — list, create, view profiles."""
         return render_template("dev_profiles.html")
 
+    # ---- Child application routes (Phase 19 + Evolutionary Intelligence) ----
+
+    @app.route("/children")
+    def children_page():
+        """Child application registry — health, genome, capabilities, heartbeats."""
+        conn = _get_db()
+        try:
+            # Fetch all registered child applications
+            try:
+                children_rows = conn.execute(
+                    "SELECT * FROM child_app_registry ORDER BY created_at DESC"
+                ).fetchall()
+                children_rows = [dict(r) for r in children_rows]
+            except sqlite3.OperationalError:
+                children_rows = []
+
+            # Fetch latest heartbeat per child from telemetry
+            heartbeat_map = {}
+            try:
+                heartbeats = conn.execute(
+                    "SELECT child_id, MAX(reported_at) as last_heartbeat "
+                    "FROM child_telemetry GROUP BY child_id"
+                ).fetchall()
+                for hb in heartbeats:
+                    hb_dict = dict(hb)
+                    heartbeat_map[hb_dict["child_id"]] = hb_dict["last_heartbeat"]
+            except sqlite3.OperationalError:
+                pass
+
+            # Fetch capability count per child
+            capability_map = {}
+            try:
+                caps = conn.execute(
+                    "SELECT child_id, COUNT(*) as cnt FROM child_capabilities GROUP BY child_id"
+                ).fetchall()
+                for c in caps:
+                    c_dict = dict(c)
+                    capability_map[c_dict["child_id"]] = c_dict["cnt"]
+            except sqlite3.OperationalError:
+                pass
+
+            # Enrich children with heartbeat and capability data
+            children = []
+            for child in children_rows:
+                child["last_heartbeat"] = heartbeat_map.get(child.get("id"), child.get("last_heartbeat"))
+                child["capability_count"] = capability_map.get(child.get("id"), child.get("capability_count", 0))
+                child["pending_upgrades"] = child.get("pending_upgrades", 0)
+                child["genome_version"] = child.get("genome_version", None)
+                child["health_status"] = child.get("health_status", "unhealthy")
+                children.append(child)
+
+            # Compute summary counts
+            healthy_count = sum(1 for c in children if c["health_status"] == "healthy")
+            degraded_count = sum(1 for c in children if c["health_status"] == "degraded")
+            unhealthy_count = sum(1 for c in children if c["health_status"] not in ("healthy", "degraded"))
+
+            return render_template(
+                "children.html",
+                children=children,
+                total_count=len(children),
+                healthy_count=healthy_count,
+                degraded_count=degraded_count,
+                unhealthy_count=unhealthy_count,
+            )
+        finally:
+            conn.close()
+
     @app.route("/dev-profiles/api/list")
     def dev_profiles_api_list():
         """List all dev profiles (JSON)."""

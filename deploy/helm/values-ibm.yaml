@@ -1,0 +1,64 @@
+# CUI // SP-CTI
+# ICDEV Helm Values — IBM Cloud Override
+# Usage: helm install icdev ./helm -f values.yaml -f values-ibm.yaml
+
+global:
+  cloudProvider: ibm
+  cloudRegion: us-south
+  classification: CUI
+  impactLevel: IL5
+  govCloud: true
+
+# IBM Container Registry
+image:
+  registry: "us.icr.io/${IBM_CR_NAMESPACE}"
+  repository: icdev
+  pullPolicy: IfNotPresent
+
+# IBM Secrets Manager
+secrets:
+  provider: ibm_secrets_manager
+  instanceId: "${IBM_SECRETS_MANAGER_ID}"
+  region: us-south
+
+# IBM Databases for PostgreSQL
+database:
+  provider: ibm_databases_for_postgresql
+  plan: standard
+  memoryMb: 4096
+  diskMb: 10240
+  backupRetentionDays: 30
+
+# IBM Cloud Object Storage
+storage:
+  provider: ibm_cos
+  instanceId: "${IBM_COS_INSTANCE_ID}"
+  region: us-south
+  storageClass: smart
+  bucketPrefix: "icdev-"
+
+# IBM Key Protect
+kms:
+  provider: ibm_key_protect
+  instanceId: "${IBM_KEY_PROTECT_INSTANCE_ID}"
+  region: us-south
+
+# IBM watsonx.ai
+llm:
+  provider: ibm_watsonx
+  projectId: "${IBM_WATSONX_PROJECT_ID}"
+  url: "https://us-south.ml.cloud.ibm.com"
+  defaultModel: "ibm/granite-3.1-8b-instruct"
+
+# IBM Cloud Monitoring (Sysdig)
+monitoring:
+  provider: ibm_cloud_monitoring
+  sysdigApiKey: "${IBM_SYSDIG_API_KEY}"
+  region: us-south
+
+# IBM IKS cluster
+cluster:
+  provider: ibm_iks
+  workerCount: 3
+  flavor: bx2.4x16
+  kubeVersion: "1.29"

@@ -1,0 +1,79 @@
+# CUI // SP-CTI
+# ICDEV Helm Values — AWS GovCloud Override
+# Usage: helm install icdev ./helm -f values.yaml -f values-aws.yaml
+
+global:
+  cloudProvider: aws
+  cloudRegion: us-gov-west-1
+  classification: CUI
+  impactLevel: IL5
+  fipsEndpoints: true
+
+# AWS-specific container registry
+image:
+  registry: "${AWS_ACCOUNT_ID}.dkr.ecr.us-gov-west-1.amazonaws.com"
+  repository: icdev
+  pullPolicy: IfNotPresent
+
+# AWS Secrets Manager for secret injection
+secrets:
+  provider: aws
+  region: us-gov-west-1
+  secretPrefix: "icdev/"
+
+# AWS RDS for database
+database:
+  provider: aws_rds
+  engine: postgres
+  engineVersion: "15.4"
+  instanceClass: db.t3.medium
+  storageEncrypted: true
+  multiAz: true
+  backupRetentionPeriod: 35
+
+# AWS S3 for object storage
+storage:
+  provider: aws_s3
+  bucketPrefix: "icdev-"
+  encryptionType: "aws:kms"
+  versioningEnabled: true
+
+# AWS KMS for encryption
+kms:
+  provider: aws_kms
+  keyAlias: "alias/icdev-master"
+  keySpec: SYMMETRIC_DEFAULT
+
+# Bedrock LLM configuration
+llm:
+  provider: bedrock
+  region: us-gov-west-1
+  models:
+    default: "anthropic.claude-sonnet-4-20250514"
+    strong: "anthropic.claude-opus-4-20250514"
+    fast: "anthropic.claude-haiku-4-5-20251001"
+
+# AWS-specific networking
+networking:
+  vpcEndpoints:
+    - bedrock-runtime
+    - secretsmanager
+    - s3
+    - ecr.api
+    - ecr.dkr
+  fipsEndpointEnabled: true
+
+# EKS-specific settings
+kubernetes:
+  provider: eks
+  serviceAccountAnnotations:
+    eks.amazonaws.com/role-arn: "${ICDEV_IAM_ROLE_ARN}"
+  nodeSelector:
+    kubernetes.io/arch: amd64
+
+# CloudWatch monitoring
+monitoring:
+  provider: cloudwatch
+  logGroupPrefix: "/icdev/"
+  metricsNamespace: "ICDEV"
+  retentionDays: 365

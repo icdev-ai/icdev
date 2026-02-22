@@ -1,0 +1,63 @@
+# CUI // SP-CTI
+# Cloud Service Provider Configuration (Phase 38 — D223-D231)
+#
+# Configures which CSP to use for each service category.
+# Supports: aws, azure, gcp, oci, ibm, local
+# Per-service overrides via ICDEV_* env vars take precedence (D225).
+
+cloud:
+  # Global CSP setting — used when no per-service override is set
+  provider: local          # commercial | government | on_prem | air_gapped — controls endpoint selection (D232)
+  region: us-gov-west-1    # Default region (CSP-specific)
+  impact_level: IL5        # IL2 | IL4 | IL5 | IL6
+  air_gapped: false        # true = disable all internet-dependent services
+  cloud_mode: government     # commercial | government | on_prem | air_gapped (D232)
+
+  # AWS-specific configuration
+  aws:
+    account_type: govcloud   # govcloud | commercial
+    fips_endpoints: true     # Use FIPS 140-2 validated endpoints
+    kms_key_id: ${AWS_KMS_KEY_ID:-alias/icdev-master}
+
+  # Azure-specific configuration
+  azure:
+    cloud: AzureUSGovernment    # AzureUSGovernment | AzureCloud | AzureChinaCloud
+    vault_url: ${AZURE_VAULT_URL:-}
+    storage_account_url: ${AZURE_STORAGE_ACCOUNT_URL:-}
+    openai_endpoint: ${AZURE_OPENAI_ENDPOINT:-}
+
+  # GCP-specific configuration
+  gcp:
+    project_id: ${GCP_PROJECT_ID:-}
+    region: us-east4               # FedRAMP authorized region
+    assured_workloads: true        # Assured Workloads for government data
+
+  # OCI-specific configuration
+  oci:
+    tenancy_ocid: ${OCI_TENANCY_OCID:-}
+    compartment_ocid: ${OCI_COMPARTMENT_OCID:-}
+    vault_ocid: ${OCI_VAULT_OCID:-}
+    namespace: ${OCI_NAMESPACE:-}
+    region: us-langley-1           # OCI Government region
+
+  # IBM Cloud-specific configuration (D237)
+  ibm:
+    api_key: ${IBM_CLOUD_API_KEY:-}
+    region: us-south                     # us-south (Dallas), us-east (DC), eu-de (Frankfurt)
+    resource_group: ${IBM_RESOURCE_GROUP:-default}
+    cos_instance_id: ${IBM_COS_INSTANCE_ID:-}
+    watsonx_project_id: ${IBM_WATSONX_PROJECT_ID:-}
+    account_type: commercial             # commercial | government (IC4G)
+
+  # Per-service CSP overrides (D225)
+  # Set these env vars to override the global provider for specific services:
+  #   ICDEV_SECRETS_PROVIDER=azure  -> Use Azure Key Vault for secrets even if global is aws
+  #   ICDEV_STORAGE_PROVIDER=gcp    -> Use GCS for storage even if global is aws
+  #   ICDEV_KMS_PROVIDER=local      -> Use local Fernet for encryption
+  services:
+    secrets: ${ICDEV_SECRETS_PROVIDER:-}
+    storage: ${ICDEV_STORAGE_PROVIDER:-}
+    kms: ${ICDEV_KMS_PROVIDER:-}
+    monitoring: ${ICDEV_MONITORING_PROVIDER:-}
+    iam: ${ICDEV_IAM_PROVIDER:-}
+    registry: ${ICDEV_REGISTRY_PROVIDER:-}

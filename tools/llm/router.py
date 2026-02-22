@@ -125,6 +125,15 @@ class LLMRouter:
                 )
                 instance = OllamaProvider(base_url=base_url)
 
+            elif ptype == "gemini":
+                from tools.llm.gemini_provider import GeminiProvider
+                api_key = provider_cfg.get("api_key", "")
+                if not api_key:
+                    api_key_env = provider_cfg.get("api_key_env", "GOOGLE_API_KEY")
+                    if api_key_env:
+                        api_key = os.environ.get(api_key_env, "")
+                instance = GeminiProvider(api_key=api_key)
+
             elif ptype in ("openai", "openai_compatible"):
                 from tools.llm.openai_provider import OpenAICompatibleProvider
                 api_key = provider_cfg.get("api_key", "")
@@ -137,6 +146,53 @@ class LLMRouter:
                     api_key=api_key,
                     base_url=base_url,
                     provider_label=provider_name,
+                )
+
+            elif ptype == "azure_openai":
+                from tools.llm.azure_openai_provider import AzureOpenAIProvider
+                endpoint = _expand_env(provider_cfg.get("endpoint", ""))
+                api_key = _expand_env(provider_cfg.get("api_key", ""))
+                if not api_key:
+                    api_key_env = provider_cfg.get("api_key_env", "AZURE_OPENAI_API_KEY")
+                    api_key = os.environ.get(api_key_env, "")
+                api_version = provider_cfg.get("api_version", "2024-06-01")
+                instance = AzureOpenAIProvider(
+                    endpoint=endpoint, api_key=api_key,
+                    api_version=api_version,
+                )
+
+            elif ptype == "vertex_ai":
+                from tools.llm.vertex_ai_provider import VertexAIProvider
+                project_id = _expand_env(provider_cfg.get("project_id", ""))
+                location = provider_cfg.get("location", "us-east4")
+                instance = VertexAIProvider(
+                    project_id=project_id, location=location,
+                )
+
+            elif ptype == "oci_genai":
+                from tools.llm.oci_genai_provider import OCIGenAIProvider
+                compartment_id = _expand_env(provider_cfg.get("compartment_id", ""))
+                serving_mode = provider_cfg.get("serving_mode", "ON_DEMAND")
+                instance = OCIGenAIProvider(
+                    compartment_id=compartment_id,
+                    serving_mode=serving_mode,
+                )
+
+            elif ptype == "ibm_watsonx":
+                from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+                api_key = _expand_env(provider_cfg.get("api_key", ""))
+                if not api_key:
+                    api_key_env = provider_cfg.get("api_key_env", "IBM_CLOUD_API_KEY")
+                    api_key = os.environ.get(api_key_env, "")
+                project_id = _expand_env(provider_cfg.get("project_id", ""))
+                if not project_id:
+                    project_id = os.environ.get("IBM_WATSONX_PROJECT_ID", "")
+                url = _expand_env(provider_cfg.get("url", ""))
+                if not url:
+                    url = os.environ.get("IBM_WATSONX_URL",
+                                         "https://us-south.ml.cloud.ibm.com")
+                instance = IBMWatsonxProvider(
+                    api_key=api_key, project_id=project_id, url=url,
                 )
 
             else:
@@ -256,6 +312,47 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("chain", [])
 
+    def _scan_for_injection(self, request: LLMRequest) -> Optional[str]:
+        """Scan request messages for prompt injection patterns.
+
+        Returns action string ('block', 'flag', 'warn', 'allow') or None
+        if scanner is unavailable. Graceful import — does not fail if
+        prompt_injection_detector is not importable.
+        """
+        try:
+            from tools.security.prompt_injection_detector import PromptInjectionDetector
+        except ImportError:
+            return None
+
+        detector = PromptInjectionDetector()
+        # Scan all user messages in the request
+        texts = []
+        for msg in (request.messages or []):
+            if isinstance(msg, dict):
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    texts.append(content)
+
+        if not texts:
+            return "allow"
+
+        combined = "\n".join(texts)
+        result = detector.scan_text(combined, source="llm_router")
+
+        if result["detected"]:
+            logger.warning(
+                "Prompt injection detected in LLM request: confidence=%.2f action=%s findings=%d",
+                result["confidence"], result["action"], result["finding_count"],
+            )
+            # Log to DB (best-effort)
+            detector.log_detection(
+                result,
+                project_id=request.project_id,
+                user_id=None,
+            )
+
+        return result["action"]
+
     def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
 
@@ -273,6 +370,14 @@ class LLMRouter:
         Raises:
             RuntimeError: If no provider in the chain can serve the request.
         """
+        # Scan for prompt injection before invoking (D217)
+        injection_action = self._scan_for_injection(request)
+        if injection_action == "block":
+            raise RuntimeError(
+                "Prompt injection detected with high confidence — request blocked. "
+                "Review the input content for injection patterns."
+            )
+
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
@@ -391,6 +496,73 @@ class LLMRouter:
                         region=region,
                         model_id=mcfg.get("model_id", "amazon.titan-embed-text-v2:0"),
                         dims=mcfg.get("dimensions", 1024),
+                    )
+                elif ptype == "gemini":
+                    from tools.llm.embedding_provider import GeminiEmbeddingProvider
+                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    api_key = pcfg.get("api_key", "")
+                    if not api_key:
+                        api_key_env = pcfg.get("api_key_env", "GOOGLE_API_KEY")
+                        api_key = os.environ.get(api_key_env, "")
+                    emb = GeminiEmbeddingProvider(
+                        api_key=api_key,
+                        model_id=mcfg.get("model_id", "text-embedding-004"),
+                        dims=mcfg.get("dimensions", 768),
+                    )
+
+                elif ptype == "azure_openai":
+                    from tools.llm.embedding_provider import AzureEmbeddingProvider
+                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    api_key = _expand_env(pcfg.get("api_key", ""))
+                    if not api_key:
+                        api_key_env = pcfg.get("api_key_env", "AZURE_OPENAI_API_KEY")
+                        api_key = os.environ.get(api_key_env, "")
+                    endpoint = _expand_env(pcfg.get("endpoint", ""))
+                    if not endpoint:
+                        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+                    api_version = pcfg.get("api_version", "2024-02-01")
+                    emb = AzureEmbeddingProvider(
+                        api_key=api_key,
+                        endpoint=endpoint,
+                        api_version=api_version,
+                        deployment=mcfg.get("model_id", "text-embedding-ada-002"),
+                    )
+
+                elif ptype == "oci_genai":
+                    from tools.llm.embedding_provider import OCIEmbeddingProvider
+                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    compartment_id = _expand_env(pcfg.get("compartment_id", ""))
+                    if not compartment_id:
+                        compartment_id = os.environ.get("OCI_COMPARTMENT_OCID", "")
+                    service_endpoint = _expand_env(pcfg.get("service_endpoint", ""))
+                    if not service_endpoint:
+                        service_endpoint = os.environ.get(
+                            "OCI_GENAI_ENDPOINT",
+                            "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com",
+                        )
+                    emb = OCIEmbeddingProvider(
+                        compartment_id=compartment_id,
+                        model_id=mcfg.get("model_id", "cohere.embed-english-v3.0"),
+                        service_endpoint=service_endpoint,
+                    )
+
+                elif ptype == "ibm_watsonx":
+                    from tools.llm.embedding_provider import IBMWatsonxEmbeddingProvider
+                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    api_key = _expand_env(pcfg.get("api_key", ""))
+                    if not api_key:
+                        api_key = os.environ.get(
+                            pcfg.get("api_key_env", "IBM_CLOUD_API_KEY"), ""
+                        )
+                    project_id = _expand_env(pcfg.get("project_id", ""))
+                    if not project_id:
+                        project_id = os.environ.get("IBM_WATSONX_PROJECT_ID", "")
+                    url = _expand_env(pcfg.get("url", ""))
+                    if not url:
+                        url = os.environ.get("IBM_WATSONX_URL",
+                                             "https://us-south.ml.cloud.ibm.com")
+                    emb = IBMWatsonxEmbeddingProvider(
+                        api_key=api_key, project_id=project_id, url=url,
                     )
 
                 if emb and emb.check_availability():

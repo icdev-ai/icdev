@@ -1450,6 +1450,42 @@ def step_12_audit_and_registration(
     except Exception as e:
         logger.warning("Step 12: Failed to register in DB: %s", e)
 
+    # Phase 36 integration: write genome manifest to child directory
+    genome_version = None
+    try:
+        if db_path.exists():
+            gconn = sqlite3.connect(str(db_path))
+            gconn.row_factory = sqlite3.Row
+            row = gconn.execute(
+                "SELECT version, content_hash, genome_data "
+                "FROM genome_versions ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            if row:
+                genome_version = row["version"]
+                genome_manifest = {
+                    "parent_id": blueprint.get("fitness_scorecard", {}).get(
+                        "project_id", "icdev-parent"
+                    ),
+                    "genome_version": row["version"],
+                    "content_hash": row["content_hash"],
+                    "capabilities_baseline": json.loads(row["genome_data"])
+                        if row["genome_data"] else {},
+                    "generation_timestamp": datetime.now(tz=timezone.utc).isoformat(),
+                    "grandchild_prevention": True,
+                }
+                gm_path = child_root / "data" / "genome_manifest.json"
+                gm_path.parent.mkdir(parents=True, exist_ok=True)
+                gm_path.write_text(
+                    json.dumps(genome_manifest, indent=2), encoding="utf-8"
+                )
+                logger.info(
+                    "Step 12: Wrote genome manifest (v%s) to child",
+                    genome_version,
+                )
+            gconn.close()
+    except Exception as e:
+        logger.warning("Step 12: Genome manifest write failed: %s", e)
+
     # Generate summary report in child app
     summary = {
         "app_name": app_name,
@@ -1459,6 +1495,7 @@ def step_12_audit_and_registration(
         "capabilities": {k: v for k, v in blueprint.get("capabilities", {}).items() if v},
         "cloud_provider": blueprint.get("cloud_provider", {}).get("provider", "aws"),
         "classification": blueprint.get("classification", "CUI"),
+        "genome_version": genome_version,
         "generated_at": datetime.now(tz=timezone.utc).isoformat(),
         "generated_by": "icdev/child_app_generator",
     }

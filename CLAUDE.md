@@ -98,6 +98,9 @@ Dual storage: markdown files (human-readable) + SQLite databases (searchable).
 2. Read today's daily log (`memory/logs/YYYY-MM-DD.md`)
 3. Read yesterday's log for continuity
 4. Or run: `python tools/memory/memory_read.py --format markdown`
+5. Load project context: `python tools/project/session_context_builder.py --format markdown`
+   (If icdev.yaml exists or cwd is a known ICDEV project, outputs project config,
+   compliance posture, dev profile, and recommended workflows)
 
 ### First Run
 If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initialize` to set up all directories, manifests, memory files, and databases.
@@ -124,12 +127,13 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 ### Environment Constraints
 - **Classification:** CUI // SP-CTI (IL4/IL5), SECRET (IL6) — classification-aware markings via `classification_manager.py`
 - **Impact Levels:** IL2 (Public), IL4 (CUI/GovCloud), IL5 (CUI/Dedicated), IL6 (SECRET/SIPR)
-- **Cloud:** AWS GovCloud (us-gov-west-1), Amazon Bedrock for LLM
-- **Access:** PyPi + AWS dedicated regions only (no public internet)
-- **No local GPU** — all ML inference via Bedrock
-- **CI/CD:** GitLab, **Orchestration:** K8s/OpenShift, **IaC:** Terraform + Ansible
-- **Monitoring:** ELK + Splunk + Prometheus/Grafana
-- **Secrets:** AWS Secrets Manager
+- **Cloud:** Multi-cloud via CSP abstraction (D225) — 6 CSPs: AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government Cloud, IBM Cloud for Government (IC4G), Local (air-gapped). Default: AWS GovCloud (us-gov-west-1). Config: `args/cloud_config.yaml`
+- **LLM:** Multi-cloud via LLM router (D228) — Amazon Bedrock, Azure OpenAI, Vertex AI, OCI GenAI, IBM watsonx.ai (D238), Ollama (local). Config: `args/llm_config.yaml`
+- **Access:** PyPi + cloud dedicated regions only (no public internet)
+- **No local GPU** — all ML inference via cloud LLM providers or Ollama
+- **CI/CD:** GitLab, **Orchestration:** K8s/OpenShift/AKS/GKE/OKE, **IaC:** Terraform + Ansible (multi-cloud generators)
+- **Monitoring:** ELK + Splunk + Prometheus/Grafana + cloud-native (CloudWatch, Azure Monitor, Cloud Monitoring, OCI Monitoring)
+- **Secrets:** CSP-abstracted (AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, OCI Vault, Local .env)
 
 ### Multi-Agent Architecture (15 Agents, 3 Tiers)
 
@@ -172,6 +176,7 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | icdev-marketplace | `.mcp.json` | publish_asset, install_asset, uninstall_asset, search_assets, list_assets, get_asset, review_asset, list_pending, check_compat, sync_status, asset_scan |
 | icdev-devsecops | `.mcp.json` | devsecops_profile_create, devsecops_profile_get, devsecops_maturity_assess, zta_maturity_score, zta_assess, pipeline_security_generate, policy_generate, service_mesh_generate, network_segmentation_generate, attestation_verify, zta_posture_check, pdp_config_generate |
 | icdev-gateway | `.mcp.json` | bind_user, list_bindings, revoke_binding, send_command, gateway_status |
+| icdev-innovation | `.mcp.json` | scan_web, score_signals, triage_signals, detect_trends, generate_solution, run_pipeline, get_status, introspect, competitive_scan, standards_check |
 
 ### Compliance Frameworks Supported
 | Framework | Catalog | Assessor | Report |
@@ -196,6 +201,11 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | ISO/IEC 27001:2022 | `iso27001_2022_controls.json` | `iso27001_assessor.py` | via base_assessor |
 | NIST SP 800-207 (ZTA) | `nist_800_207_zta.json` | `nist_800_207_assessor.py` | via base_assessor |
 | DoD MOSA (10 U.S.C. §4401) | `mosa_framework.json` | `mosa_assessor.py` | via base_assessor |
+| MITRE ATLAS v5.4.0 | `atlas_mitigations.json` | `atlas_assessor.py` | `atlas_report_generator.py` |
+| OWASP LLM Top 10 | `owasp_llm_top10.json` | `owasp_llm_assessor.py` | via base_assessor |
+| NIST AI RMF 1.0 | `nist_ai_rmf.json` | `nist_ai_rmf_assessor.py` | via base_assessor |
+| ISO/IEC 42001:2023 | `iso42001_controls.json` | `iso42001_assessor.py` | via base_assessor |
+| SAFE-AI (NIST 800-53 AI) | `safeai_controls.json` | via crosswalk | AI-affected control overlay |
 
 ### Control Crosswalk
 The crosswalk engine (`tools/compliance/crosswalk_engine.py`) uses a dual-hub model (ADR D111):
@@ -251,6 +261,7 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/icdev-devsecops` | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), attestation |
 | `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
 | `/icdev-mosa` | DoD MOSA (10 U.S.C. §4401) — MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC |
+| `/icdev-innovate` | Innovation Engine — autonomous self-improvement: web scanning, signal scoring, compliance triage, trend detection, solution generation, introspective analysis, competitive intel, standards monitoring |
 
 ### Cross-Platform Compatibility (D145)
 ```bash
@@ -301,6 +312,29 @@ pytest tests/test_init_icdev_db.py -v                # DB init tests
 pytest tests/test_platform_db.py -v                  # Platform DB tests
 pytest tests/test_readiness_scorer.py -v             # Readiness scorer tests
 pytest tests/test_dev_profile_manager.py -v          # Dev profile manager tests (33 tests)
+pytest tests/test_manifest_loader.py -v              # Manifest loader tests (32 tests)
+pytest tests/test_session_context_builder.py -v      # Session context builder tests (26 tests)
+pytest tests/test_pipeline_config_generator.py -v    # Pipeline config generator tests (14 tests)
+pytest tests/test_icdev_client.py -v                 # SDK client tests (12 tests)
+pytest tests/test_tool_detector.py -v                # AI tool detector tests (10 tests)
+pytest tests/test_instruction_generator.py -v        # Instruction generator tests (14 tests)
+pytest tests/test_mcp_config_generator.py -v         # MCP config generator tests (8 tests)
+pytest tests/test_skill_translator.py -v             # Skill translator tests (10 tests)
+pytest tests/test_companion.py -v                    # Companion orchestrator tests (7 tests)
+pytest tests/test_prompt_injection_detector.py -v    # Prompt injection detector tests (47 tests)
+pytest tests/test_ai_telemetry.py -v                 # AI telemetry logger tests (12 tests)
+pytest tests/test_cloud_providers.py -v              # Cloud provider abstraction tests (20 tests)
+pytest tests/test_atlas_assessor.py -v               # ATLAS assessor tests (15 tests)
+pytest tests/test_multi_cloud_llm.py -v              # Multi-cloud LLM provider tests (12 tests)
+pytest tests/test_child_registry.py -v               # Child registry + telemetry tests (18 tests)
+pytest tests/test_evolutionary_intelligence.py -v    # Genome, evaluation, staging, propagation tests (25 tests)
+pytest tests/test_genome_evolution.py -v             # Absorption, learning, cross-pollination tests (20 tests)
+pytest tests/test_atlas_red_team.py -v               # ATLAS red teaming scanner tests (10 tests)
+pytest tests/test_ai_bom_generator.py -v             # AI BOM generator tests (14 tests)
+pytest tests/test_phase36_phase37_integration.py -v  # Phase 36↔37 security integration tests (17 tests)
+pytest tests/test_cloud_monitoring_iam.py -v         # Cloud monitoring/IAM/registry tests (15 tests)
+pytest tests/test_ibm_providers.py -v                # IBM Cloud provider tests (44 tests)
+pytest tests/test_region_validator.py -v             # CSP region validator tests (18 tests)
 
 # Health check
 python tools/testing/health_check.py                 # Full system health check
@@ -393,7 +427,7 @@ python tools/installer/platform_setup.py --generate helm-values --modules core,l
 ### ICDEV Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (146 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV database (163 tables)
 
 # Database Migrations (D150)
 python tools/db/migrate.py --status [--json]                      # Show migration status
@@ -532,6 +566,26 @@ python tools/project/project_create.py --name "my-app" --type microservice
 python tools/project/project_list.py
 python tools/project/project_status.py --project-id "proj-123"
 
+# Three-Tier DX (D189-D193)
+python tools/project/manifest_loader.py --dir /path --json                                          # Parse + validate icdev.yaml
+python tools/project/manifest_loader.py --file /path/icdev.yaml --validate                          # Validate manifest
+python tools/project/validate_manifest.py --file icdev.yaml --json                                  # Thin validate CLI
+python tools/project/session_context_builder.py --format markdown                                   # Build session context (Tier 2)
+python tools/project/session_context_builder.py --json                                              # JSON output
+python tools/project/session_context_builder.py --init --json                                       # Register project from icdev.yaml
+python tools/ci/pipeline_config_generator.py --dir /path --platform auto --dry-run --json           # Preview CI/CD config (Tier 1)
+python tools/ci/pipeline_config_generator.py --dir /path --platform github --write                  # Generate GitHub Actions
+python tools/ci/pipeline_config_generator.py --dir /path --platform gitlab --write                  # Generate GitLab CI
+
+# SDK (Tier 3 — Python client wrapping CLI tools, D191)
+# from tools.sdk.icdev_client import ICDEVClient
+# client = ICDEVClient(project_id="proj-123", project_dir="/path")
+# client.project_status()       # Calls project_status.py --json via subprocess
+# client.generate_ssp()         # Calls ssp_generator.py --json
+# client.check_stig()           # Calls stig_checker.py --json
+# client.build_context()        # Calls session_context_builder.py --json
+# client.generate_pipeline()    # Calls pipeline_config_generator.py --json
+
 # Compliance
 python tools/compliance/ssp_generator.py --project-id "proj-123"
 python tools/compliance/poam_generator.py --project-id "proj-123"
@@ -655,6 +709,19 @@ python tools/builder/profile_detector.py --text "We use Go, snake_case, 120-char
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --json     # Generate PROFILE.md
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --output /path/PROFILE.md --store  # Generate + store in DB
 
+# Universal AI Coding Companion (D194-D198)
+python tools/dx/companion.py --setup --write                              # Auto-detect tools + generate all configs
+python tools/dx/companion.py --setup --all --write                        # All 10 platforms
+python tools/dx/companion.py --setup --platforms codex,cursor --write     # Specific platforms
+python tools/dx/companion.py --detect --json                              # Detect installed AI tools
+python tools/dx/companion.py --sync --write                               # Regenerate after changes
+python tools/dx/companion.py --list --json                                # List all supported platforms
+python tools/dx/tool_detector.py --json                                   # Detect AI tools (env, config dirs, files)
+python tools/dx/instruction_generator.py --all --write --json             # Generate instruction files
+python tools/dx/mcp_config_generator.py --all --write --json              # Generate MCP configs from .mcp.json
+python tools/dx/skill_translator.py --all --write --json                  # Translate skills to all platforms
+python tools/dx/skill_translator.py --list                                # List available Claude Code skills
+
 # Maintenance Audit
 python tools/maintenance/dependency_scanner.py --project-id "proj-123"           # Scan all deps
 python tools/maintenance/vulnerability_checker.py --project-id "proj-123"        # Check CVEs
@@ -691,6 +758,80 @@ python tools/security/sast_runner.py --project-dir "/path"
 python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "my-image:latest"
+
+# AI Security (Phase 37)
+python tools/security/prompt_injection_detector.py --text "ignore previous instructions" --json      # Detect prompt injection
+python tools/security/prompt_injection_detector.py --file /path/to/file --json                       # Scan file for injections
+python tools/security/prompt_injection_detector.py --project-dir /path --gate --json                 # Gate evaluation
+python tools/security/ai_telemetry_logger.py --summary --json                                        # AI usage summary
+python tools/security/ai_telemetry_logger.py --anomalies --window-hours 24 --json                   # Anomaly detection
+python tools/security/atlas_red_team.py --project-id "proj-123" --json                              # Run all ATLAS red team tests (opt-in)
+python tools/security/atlas_red_team.py --project-id "proj-123" --technique AML.T0051 --json        # Test specific technique
+python tools/compliance/atlas_assessor.py --project-id "proj-123" --json                             # ATLAS compliance assessment
+python tools/compliance/atlas_report_generator.py --project-id "proj-123" --json                     # Generate ATLAS compliance report
+python tools/compliance/atlas_report_generator.py --project-id "proj-123" --output-path report.md    # Save ATLAS report to file
+python tools/security/ai_bom_generator.py --project-id "proj-123" --project-dir . --json             # Generate AI Bill of Materials
+python tools/security/ai_bom_generator.py --project-id "proj-123" --gate                             # AI BOM gate check
+python tools/compliance/owasp_llm_assessor.py --project-id "proj-123" --json                         # OWASP LLM Top 10 assessment
+python tools/compliance/nist_ai_rmf_assessor.py --project-id "proj-123" --json                       # NIST AI RMF assessment
+python tools/compliance/iso42001_assessor.py --project-id "proj-123" --json                          # ISO 42001 assessment
+
+# Evolutionary Intelligence (Phase 36)
+python tools/registry/child_registry.py --register --name "ChildApp" --type microservice --json      # Register child app
+python tools/registry/child_registry.py --list --json                                                 # List children
+python tools/registry/genome_manager.py --get --json                                                  # Get current genome version
+python tools/registry/genome_manager.py --history --json                                              # Genome version history
+python tools/registry/capability_evaluator.py --evaluate --data '{}' --json                           # Evaluate capability
+python tools/registry/staging_manager.py --list --json                                                # List staging environments
+python tools/registry/propagation_manager.py --list --json                                            # List propagations
+python tools/registry/absorption_engine.py --candidates --json                                        # Get absorption candidates
+python tools/registry/learning_collector.py --unevaluated --json                                      # Get unevaluated behaviors
+python tools/registry/cross_pollinator.py --candidates --json                                         # Find cross-pollination candidates
+
+# Cloud-Agnostic Architecture (Phase 38)
+# Cloud Mode Manager (D232)
+python tools/cloud/cloud_mode_manager.py --status --json                                               # Current cloud mode and config
+python tools/cloud/cloud_mode_manager.py --validate --json                                             # Validate mode against constraints
+python tools/cloud/cloud_mode_manager.py --eligible --json                                             # List eligible modes for config
+python tools/cloud/cloud_mode_manager.py --check-readiness --json                                      # Check cloud service readiness
+# CSP Provider Factory
+python -c "from tools.cloud.provider_factory import CSPProviderFactory; f = CSPProviderFactory(); print(f.health_check())"
+# CSP Health Check
+python tools/cloud/csp_health_checker.py --check --json                                               # Check all CSP services
+
+# CSP Service Monitor (Phase 38 — D239-D241)
+python tools/cloud/csp_monitor.py --scan --all --json                                                  # Scan all CSPs for service updates
+python tools/cloud/csp_monitor.py --scan --csp aws --json                                              # Scan specific CSP
+python tools/cloud/csp_monitor.py --diff --json                                                         # Diff registry vs recent signals (offline)
+python tools/cloud/csp_monitor.py --status --json                                                       # Monitor status
+python tools/cloud/csp_monitor.py --update-registry --signal-id "sig-xxx" --json                        # Apply signal to registry
+python tools/cloud/csp_monitor.py --changelog --days 30 --json                                          # Quick changelog
+python tools/cloud/csp_monitor.py --daemon --json                                                       # Continuous monitoring
+python tools/cloud/csp_changelog.py --generate --days 30 --json                                         # Full changelog with recommendations
+python tools/cloud/csp_changelog.py --generate --format markdown --output .tmp/csp_changelogs/           # Markdown report
+python tools/cloud/csp_changelog.py --summary --json                                                    # Summary statistics
+# Config: args/csp_monitor_config.yaml — CSP sources, signals, diff engine, scheduling
+# Registry: context/cloud/csp_service_registry.json — baseline CSP service catalog (45+ services)
+
+# Region Validation (D234)
+python tools/cloud/region_validator.py validate --csp aws --region us-gov-west-1 --frameworks fedramp_high,cjis --json
+python tools/cloud/region_validator.py eligible --csp azure --frameworks hipaa --json
+python tools/cloud/region_validator.py deployment-check --csp aws --region us-gov-west-1 --impact-level IL5 --frameworks hipaa --json
+python tools/cloud/region_validator.py list --json
+python tools/cloud/region_validator.py list --csp aws --json
+
+# Multi-Cloud Terraform (dispatches to CSP-specific generator)
+python tools/infra/terraform_generator.py --project-id "proj-123" --csp azure                         # Generate Azure IaC
+python tools/infra/terraform_generator.py --project-id "proj-123" --csp gcp                           # Generate GCP IaC
+python tools/infra/terraform_generator.py --project-id "proj-123" --csp oci                           # Generate OCI IaC
+# IBM Cloud Terraform (D237)
+python tools/infra/terraform_generator_ibm.py --project-id "proj-123" --region us-south --json
+# On-Premises Terraform (D236)
+python tools/infra/terraform_generator_onprem.py --project-id "proj-123" --target k8s --json
+python tools/infra/terraform_generator_onprem.py --project-id "proj-123" --target docker --json
+# Multi-Cloud LLM Providers
+# Config: args/llm_config.yaml — azure_openai, vertex_ai, oci_genai, ibm_watsonx provider entries
+# Config: args/cloud_config.yaml — CSP selection, cloud_mode, per-service overrides, impact level
 
 # Infrastructure
 python tools/infra/terraform_generator.py --project-id "proj-123"
@@ -754,6 +895,7 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /usage             — Usage tracking + cost dashboard (per-user, per-provider)
 #   /profile           — User profile + BYOK LLM key management
 #   /dev-profiles      — Dev profile management (create, resolve cascade, lock, version history)
+#   /children          — Child application registry (health, genome version, capabilities, heartbeat)
 #   /admin/users       — Admin user/key management (admin role only)
 # Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
 # RBAC: 5 roles (admin, pm, developer, isso, co) — D172
@@ -870,7 +1012,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 146 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188) |
+| `data/icdev.db` | 163 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -908,6 +1050,11 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/skill_injection_config.yaml` | Selective skill injection (D167): 9 category definitions with keywords→commands/goals/context_dirs, file_extension_map, path_pattern_map, always_include, confidence_threshold |
 | `args/memory_config.yaml` | Time-decay memory ranking (D168): per-type half-lives (fact=90d, preference=180d, event=7d, insight=30d, task=14d, relationship=120d), scoring weights (relevance=0.60, recency=0.25, importance=0.15), importance resistance threshold |
 | `args/dev_profile_config.yaml` | Dev profile dimensions (D184): 10 dimension categories (language, style, testing, architecture, security, compliance, operations, documentation, git, ai), cascade rules, detection keywords, intake signals, task-dimension mapping |
+| `args/companion_registry.yaml` | Universal AI Companion (D194): 10 tool definitions (Claude Code, Codex, Gemini, Copilot, Cursor, Windsurf, Amazon Q, JetBrains/Junie, Cline, Aider), instruction file paths, MCP support flags, skill formats, env detection signals, capabilities |
+| `args/innovation_config.yaml` | Innovation Engine (D199): web sources (GitHub, NVD, SO, HN, package registries, compliance feeds), signal categories, 5-dimension scoring weights/thresholds, 5-stage triage rules, solution generation config, introspective analysis, competitive intel, standards monitoring, feedback calibration, scheduling (daemon mode, quiet hours) |
+| `args/cloud_config.yaml` | Cloud-Agnostic Architecture (D225, D232): CSP selection (aws/azure/gcp/oci/ibm/local), cloud_mode (commercial/government/on_prem/air_gapped), region, impact level, per-CSP settings (GovCloud, Azure Government, Assured Workloads, OCI Government, IBM IC4G), per-service CSP overrides for secrets/storage/kms, region certification validation (D234) |
+| `args/csp_monitor_config.yaml` | CSP Service Monitor (D239): 5 CSP sources (AWS, Azure, GCP, OCI, IBM) with RSS/API/HTML endpoints, signal generation (8 change types with category/score/urgency mapping), diff engine, notification/escalation, changelog generation, Innovation Engine integration, scheduling (daemon mode, quiet hours) |
+| `args/security_gates.yaml` | (updated) Added `atlas_ai` gate with blocking conditions: critical_atlas_technique_unmitigated, prompt_injection_defense_inactive, ai_telemetry_not_active, agent_permissions_not_configured, ai_bom_missing; thresholds: min_atlas_coverage_pct=80, ai_telemetry_required=true |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1088,6 +1235,45 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **D186:** PROFILE.md generated from dev_profile via Jinja2 (consistent with D50 dynamic CLAUDE.md) — read-only narrative, not separately editable
 - **D187:** LLM injection uses selective dimension extraction per task context (consistent with D167 skill injection) — code gen gets language+style, review gets testing+security
 - **D188:** Starter templates in `context/profiles/*.yaml` (consistent with `context/requirements/default_constitutions.json`) — 6 sector-specific templates (DoD, FedRAMP, Healthcare, Financial, Law Enforcement, Startup)
+- **D189:** `icdev.yaml` is advisory — declares intent but DB remains source of truth; explicit `--init` required to sync manifest to DB
+- **D190:** Session context outputs as stdout markdown (like `memory_read.py`) — not dynamic CLAUDE.md injection; consumed by Claude at session start
+- **D191:** SDK wraps CLI subprocess calls (not REST API) — works offline, air-gap safe (D134), no server dependency; `stdin=DEVNULL`, timeout, safe env filtering
+- **D192:** Pipeline config generator uses declarative CHECK_REGISTRY (D26 pattern) — add new checks without code changes; generates GitHub Actions or GitLab CI from `icdev.yaml`
+- **D193:** Env var overrides use `ICDEV_` prefix; 3-level precedence: env > yaml > defaults; integer auto-parsing for gate thresholds
+- **D194:** Companion registry (`args/companion_registry.yaml`) is declarative YAML — add new AI tools without code changes (D26 pattern); 10 tools: Claude Code, Codex, Gemini, Copilot, Cursor, Windsurf, Amazon Q, JetBrains/Junie, Cline, Aider
+- **D195:** Instruction files generated from Jinja2 string constant templates (D186 pattern) — one template per tool format, each tailored to the tool's conventions
+- **D196:** MCP is the primary integration protocol — 9/10 supported tools have MCP support; `.mcp.json` (Claude Code format) is source of truth, translated to per-tool config formats
+- **D197:** Tool detection is advisory only (D110/D185 pattern) — auto-detect from env vars, config dirs, config files; explicit `--platform` override always available
+- **D198:** Skill translation preserves semantic intent — each tool gets equivalent capability in its native format, not a literal copy
+- **D209:** Capability genome uses semver + SHA-256 content hash for versioned, tamper-evident genome tracking (Phase 36)
+- **D210:** Telemetry collector uses pull-based model — parent polls child heartbeat endpoints (no child→parent push required)
+- **D211:** Staging manager uses git worktree isolation for capability testing before genome absorption
+- **D212:** 72-hour stability window before genome absorption — capability must demonstrate stability in staging for ≥72 hours
+- **D213:** Bidirectional learning: children report learned behaviors to parent via LearningCollector; parent evaluates and optionally absorbs into genome
+- **D214:** Cross-pollination requires HITL approval — no auto-execute for capability sharing between children (append-only propagation_log)
+- **D215:** Prompt injection detector uses 5 detection categories: role hijacking, delimiter attacks, instruction injection, data exfiltration, encoded payloads
+- **D216:** AI telemetry logger hashes prompts/responses with SHA-256 — stores hashes not plaintext (privacy-preserving audit)
+- **D217:** AI BOM (AI Bill of Materials) tracks all AI/ML components, models, training data lineage
+- **D218:** ATLAS assessor maps MITRE ATLAS mitigations to automated checks via BaseAssessor pattern (D116)
+- **D219:** ATLAS red teaming is opt-in only (`--atlas-red-team` flag) — never auto-executes adversarial tests
+- **D220:** OWASP LLM Top 10 assessor crosswalks through ATLAS to NIST 800-53 US hub
+- **D221:** NIST AI RMF assessor covers 4 functions (Govern, Map, Measure, Manage) with 12 subcategories
+- **D222:** ISO 42001 assessor bridges through ISO 27001 international hub for crosswalk integration
+- **D223:** SAFE-AI catalog maps 100 AI-affected NIST 800-53 controls with `ai_concern` narrative per control
+- **D224:** Capability evaluator uses 6-dimension weighted scoring: universality(0.25), compliance_safety(0.25), risk(0.20), evidence(0.15), novelty(0.10), cost(0.05)
+- **D225:** CSP abstraction uses ABC + 6 implementations (AWS, Azure, GCP, OCI, IBM, Local) per service — Secrets, Storage, KMS, Monitoring, IAM, Registry
+- **D226:** Multi-cloud Terraform generators produce CSP-specific IaC (Azure Gov VNet/AKS, GCP Assured Workloads VPC/GKE, OCI Gov VCN/OKE, IBM IC4G VPC/IKS, on-prem K8s/Docker)
+- **D227:** Terraform dispatcher auto-detects CSP from `cloud_config.yaml` or `ICDEV_CLOUD_PROVIDER` env var, delegates to CSP-specific generator
+- **D228:** LLM multi-cloud: Azure OpenAI (*.openai.azure.us), Vertex AI (Gemini + Claude-via-Vertex), OCI GenAI (Cohere + Llama), IBM watsonx.ai (Granite + Llama) — all via LLMProvider ABC
+- **D229:** Helm value overlays per CSP (`values-aws.yaml`, `values-azure.yaml`, `values-gcp.yaml`, `values-oci.yaml`, `values-ibm.yaml`, `values-on-prem.yaml`, `values-docker.yaml`) for CSP-specific K8s config
+- **D230:** CSP health checker probes all configured cloud services and stores status in `cloud_provider_status` table
+- **D231:** Marketplace Gates 8-9: prompt injection scan (blocking) + behavioral sandbox (warning) — scans all asset files for injection patterns and dangerous code patterns
+- **D232:** `cloud_mode` (commercial/government/on_prem/air_gapped) controls endpoint selection and feature availability per CSP — single config field, providers adapt behavior
+- **D233:** CSP region certifications stored as declarative JSON (`csp_certifications.json`); human-maintained, machine-validated at deployment time
+- **D234:** Region validator blocks deployment to regions lacking required compliance certifications before Terraform/Helm generation (REQ-38-080-082)
+- **D236:** On-prem Terraform targets Docker Compose and self-managed K8s; no cloud provider block required
+- **D237:** IBM Cloud providers follow D66 ABC pattern with `ibm-cloud-sdk-core` + `ibm-platform-services` SDKs; IBM COS uses S3-compatible `ibm_boto3`
+- **D238:** IBM watsonx.ai LLM provider uses `ibm-watsonx-ai` SDK; Granite and Llama model families; embedding via Slate model
 
 ### Self-Healing System
 - **Confidence ≥ 0.7** + auto_healable → auto-remediate
@@ -1119,6 +1305,10 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **MOSA Gate:** 0 external interfaces without ICD, 0 circular dependencies, modularity score ≥ 0.6, 0 direct coupling violations; warn on interface coverage < 80%, TSP expired/missing
 - **Acceptance Validation Gate:** 0 failed acceptance criteria, 0 pages with error patterns (500, tracebacks, JS errors), plan must contain `## Acceptance Criteria` section
 - **Remote Command Gate:** User binding required, signature verification on webhooks, replay window 300s, rate limit 30/user/min + 100/channel/min, icdev-deploy + icdev-init blocked on all remote channels, icdev-test/icdev-secure/icdev-build require confirmation
+- **AI Security Gate:** Prompt injection defense active, AI telemetry enabled, AI BOM present, ≥80% ATLAS coverage, agent permissions configured
+- **Genome Propagation Gate:** 72-hour stability window passed, capability evaluation score ≥0.65, HITL approval required for execution, compliance preservation verified in staging
+- **Marketplace Prompt Injection Gate (Gate 8):** 0 high-confidence prompt injection patterns in asset files — blocking gate
+- **Marketplace Behavioral Sandbox Gate (Gate 9):** 0 critical dangerous code patterns (eval, exec, os.system) — warning gate
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -1140,6 +1330,9 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - `k8s/gateway-agent.yaml` — STIG-hardened Remote Command Gateway agent (port 8458)
 - `k8s/saas/` — SaaS-specific K8s manifests: tenant-namespace-template, api-gateway-deployment, platform-db-deployment
 - `deploy/helm/` — Helm chart for on-prem deployment (Chart.yaml, values.yaml, templates/)
+- `deploy/helm/values-ibm.yaml` — IBM Cloud (IC4G) override
+- `deploy/helm/values-on-prem.yaml` — On-premises/air-gapped override
+- `deploy/helm/values-docker.yaml` — Docker Compose development override
 - `deploy/offline/` — Air-gapped installer (install.py, install.sh, README.md)
 - All containers: read-only rootfs, drop ALL capabilities, non-root (UID 1000), resource limits enforced
 
@@ -1188,6 +1381,90 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | Remote Command Gateway | `goals/remote_command_gateway.md` | Remote Command Gateway: messaging channel integration (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware response filtering, user binding ceremony, air-gapped/connected mode, command allowlist (Phase 28) |
 | Modular Installation | `goals/modular_installation.md` | Modular installer: interactive wizard, profile-based deployment (10 profiles), compliance posture configuration, platform artifact generation (Docker/K8s/Helm), module dependency resolution, add/upgrade existing installations (Phase 33) |
 | Dev Profiles | `goals/dev_profiles.md` | Tenant dev profiles & personalization: 5-layer cascade (Platform→Tenant→Program→Project→User), role-based lock governance, auto-detection from codebases, PROFILE.md generation, LLM prompt injection, 6 starter templates, version history with diff/rollback (Phase 34) |
+| Three-Tier DX | `docs/dx/README.md` | Developer experience: Tier 1 (icdev.yaml → CI/CD auto-generation), Tier 2 (session context auto-load for Claude Code), Tier 3 (Python SDK wrapping CLI tools). Manifest loader (D189), session context builder (D190), SDK client (D191), pipeline config generator (D192), env var overrides (D193) |
+| Universal AI Companion | `docs/dx/companion-guide.md` | Universal AI coding companion: 10 tools (Claude Code, Codex, Gemini, Copilot, Cursor, Windsurf, Amazon Q, JetBrains/Junie, Cline, Aider), instruction file generation (D195), MCP config translation (D196), skill translation (D198), auto-detection (D197), companion registry (D194) |
+| Innovation Engine | `goals/innovation_engine.md` | Autonomous self-improvement: web intelligence scanning (GitHub, NVD, SO, HN), 5-dimension scoring, 5-stage compliance triage, trend detection, solution generation, introspective analysis, competitive intel, standards monitoring, feedback calibration (Phase 35, D199-D208) |
+| Evolutionary Intelligence | `goals/evolutionary_intelligence.md` | Parent-child lifecycle: capability genome (semver+SHA-256), 7-dimension evaluation (incl. security_assessment), staging isolation, HITL propagation, 72-hour absorption window, bidirectional learning, cross-pollination, Phase 37 injection scanning (Phase 36, D209-D215) |
+| MITRE ATLAS Integration | `goals/atlas_integration.md` | AI-specific threat defense: prompt injection detection (5 categories), AI telemetry (SHA-256 hashing), ATLAS assessor, OWASP LLM Top 10, NIST AI RMF, ISO 42001, ATLAS red teaming (6 techniques), marketplace hardening (Gates 8-9) (Phase 37, D215-D223, D231) |
+| Cloud-Agnostic Architecture | `goals\cloud_agnostic.md` | Multi-cloud abstraction: CSP provider ABCs (Secrets, Storage, KMS, Monitoring, IAM, Registry × 6 clouds incl. IBM), Terraform generators (Azure/GCP/OCI/IBM Gov + on-prem), LLM multi-cloud (Azure OpenAI, Vertex AI, OCI GenAI, IBM watsonx.ai), Helm overlays, CSP health checker, region validator (Phase 38, D225-D238) |
+
+---
+
+## Innovation Engine — Autonomous Self-Improvement (Phase 35)
+
+### Overview
+ICDEV continuously improves itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps from the web and internal telemetry — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
+
+### Pipeline
+```
+DISCOVER (web + introspective + competitive + standards)
+    → SCORE (5-dimension weighted average)
+        → TRIAGE (5-stage compliance gate)
+            → GENERATE (template-based spec)
+                → BUILD (ATLAS/M-ATLAS TDD)
+                    → PUBLISH (marketplace 7-gate)
+                        → MEASURE → CALIBRATE
+```
+
+### Commands
+```bash
+# Full pipeline (one-shot)
+python tools/innovation/innovation_manager.py --run --json
+
+# Individual stages
+python tools/innovation/web_scanner.py --scan --all --json
+python tools/innovation/signal_ranker.py --score-all --json
+python tools/innovation/triage_engine.py --triage-all --json
+python tools/innovation/trend_detector.py --detect --json
+python tools/innovation/solution_generator.py --generate-all --json
+
+# Introspective analysis (air-gap safe)
+python tools/innovation/introspective_analyzer.py --analyze --all --json
+
+# Competitive intelligence
+python tools/innovation/competitive_intel.py --scan --all --json
+python tools/innovation/competitive_intel.py --gap-analysis --json
+
+# Standards body monitoring
+python tools/innovation/standards_monitor.py --check --all --json
+
+# Status and reporting
+python tools/innovation/innovation_manager.py --status --json
+python tools/innovation/innovation_manager.py --pipeline-report --json
+
+# Continuous daemon mode
+python tools/innovation/innovation_manager.py --daemon --json
+
+# Feedback calibration
+python tools/innovation/signal_ranker.py --calibrate --json
+```
+
+### Architecture Decisions
+- **D199:** Scan frequency configurable per source in `args/innovation_config.yaml`
+- **D200:** Human-in-the-loop: score >= 0.80 auto-queues, 0.50-0.79 suggests, < 0.50 logs only
+- **D201:** Budget: max 10 auto-generated solutions per PI
+- **D202:** IP/license scanning blocks GPL/AGPL/SSPL (copyleft risk for Gov/DoD)
+- **D203:** Introspective analysis is air-gap safe (reads internal DB only)
+- **D204:** Standards monitoring degrades gracefully when offline
+- **D205:** Competitive intel for GitHub-based competitors (website scraping requires additional setup)
+- **D206:** All signals append-only (D6 pattern), triage decisions audited
+- **D207:** Trend detection uses deterministic keyword co-occurrence (no LLM, air-gap safe)
+- **D208:** Solution specs are template-based (not LLM-generated)
+- **D239:** CSP monitoring integrated as Innovation Engine source (Phase 35) — reuses existing signal scoring, triage, and solution generation pipeline; CSP changes treated as innovation signals with category mapping and government/compliance boosts
+- **D240:** Declarative CSP service registry as JSON catalog (extends D26 pattern) — baseline of all CSP services, compliance programs, regions, and FIPS status; monitor diffs live data against registry to detect changes; human review required before registry updates
+- **D241:** CSP changelog generates actionable recommendations per change type — each change type (deprecation, compliance scope change, breaking API change, etc.) maps to specific files and actions
+
+### Innovation Security Gates
+| Gate | Condition |
+|------|-----------|
+| License Check | No GPL/AGPL/SSPL (copyleft risk) |
+| Boundary Impact | RED items blocked from auto-generation |
+| Compliance Alignment | Must not weaken existing compliance posture |
+| GOTCHA Fit | Must map to Goal/Tool/Arg/Context/HardPrompt |
+| Duplicate Detection | Content hash dedup (similarity > 0.85) |
+| Budget Cap | Max 10 auto-solutions per PI |
+| Build Gates | All existing security gates (SAST, deps, secrets, CUI) |
+| Marketplace Publish | 7-gate marketplace pipeline |
 
 ---
 

@@ -1,0 +1,79 @@
+# CUI // SP-CTI
+# ICDEV Helm Values — Oracle OCI Government Override
+# Usage: helm install icdev ./helm -f values.yaml -f values-oci.yaml
+
+global:
+  cloudProvider: oci
+  cloudRegion: us-langley-1
+  classification: CUI
+  impactLevel: IL5
+  govCloud: true
+
+# OCI Container Image Registry
+image:
+  registry: "${OCI_REGION}.ocir.io/${OCI_NAMESPACE}"
+  repository: icdev
+  pullPolicy: IfNotPresent
+
+# OCI Vault for secrets
+secrets:
+  provider: oci_vault
+  vaultOcid: "${OCI_VAULT_OCID}"
+  compartmentOcid: "${OCI_COMPARTMENT_OCID}"
+
+# OCI Autonomous Database
+database:
+  provider: oci_autonomous_db
+  dbWorkload: OLTP
+  cpuCoreCount: 2
+  dataStorageSizeInTbs: 1
+  isAutoScalingEnabled: true
+  isMtlsConnectionRequired: true
+  backupRetentionPeriodInDays: 60
+
+# OCI Object Storage
+storage:
+  provider: oci_object_storage
+  namespace: "${OCI_NAMESPACE}"
+  compartmentOcid: "${OCI_COMPARTMENT_OCID}"
+  bucketPrefix: "icdev-"
+  encryptionType: "oracle-managed"
+
+# OCI Vault for encryption
+kms:
+  provider: oci_key_management
+  vaultOcid: "${OCI_VAULT_OCID}"
+  managementEndpoint: "${OCI_KMS_MANAGEMENT_ENDPOINT}"
+  protectionMode: HSM
+
+# OCI Generative AI LLM configuration
+llm:
+  provider: oci_genai
+  compartmentOcid: "${OCI_COMPARTMENT_OCID}"
+  servingMode: ON_DEMAND
+  models:
+    default: "cohere.command-r-plus"
+    strong: "cohere.command-r-plus"
+    fast: "cohere.command-r"
+
+# OCI-specific networking
+networking:
+  serviceGateway: true
+  natGateway: false
+  securityListDefaultDeny: true
+  nsgEnabled: true
+
+# OKE-specific settings
+kubernetes:
+  provider: oke
+  nodeShape: VM.Standard.E4.Flex
+  nodeOcpus: 2
+  nodeMemoryInGbs: 16
+  nodeSelector: {}
+
+# OCI Monitoring
+monitoring:
+  provider: oci_monitoring
+  compartmentOcid: "${OCI_COMPARTMENT_OCID}"
+  logGroupOcid: "${OCI_LOG_GROUP_OCID}"
+  retentionDays: 365

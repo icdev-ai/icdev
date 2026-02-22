@@ -52,6 +52,21 @@
 | MCP MBSE Server | tools/mcp/mbse_server.py | MBSE MCP server (import, trace, generate, sync, assess, snapshot) | stdio | JSON-RPC responses |
 | MCP Modernization Server | tools/mcp/modernization_server.py | Modernization MCP server (10 tools: register, analyze, assess, plan, generate, track, migrate) | stdio | JSON-RPC responses |
 | MCP DevSecOps Server | tools/mcp/devsecops_server.py | DevSecOps/ZTA MCP server (12 tools: profile, maturity, pipeline, policy, mesh, segmentation, attestation, posture) | stdio | JSON-RPC responses |
+| MCP Innovation Server | tools/mcp/innovation_server.py | Innovation Engine MCP server (10 tools: scan, score, triage, trends, generate, pipeline, status, introspect, competitive, standards) | stdio | JSON-RPC responses |
+
+## Innovation Engine (Phase 35 — D199-D208)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Web Scanner | tools/innovation/web_scanner.py | Scan GitHub, NVD, Stack Overflow, HN for innovation signals | --scan, --source, --all, --list-sources, --history, --json | Signals + storage results |
+| Signal Ranker | tools/innovation/signal_ranker.py | 5-dimension weighted innovation scoring (D21 pattern) | --score, --score-all, --top, --calibrate, --json | Scores + breakdowns |
+| Trend Detector | tools/innovation/trend_detector.py | Cross-signal pattern detection via keyword co-occurrence (D207) | --detect, --report, --velocity, --json | Trends + velocity |
+| Triage Engine | tools/innovation/triage_engine.py | 5-stage compliance-first triage pipeline (classify, GOTCHA fit, boundary, compliance, dedup/license) | --triage, --triage-all, --summary, --json | Triage outcomes |
+| Solution Generator | tools/innovation/solution_generator.py | Auto-generate solution specs from approved signals (D208) | --generate, --generate-all, --list, --status, --json | Solution specs |
+| Innovation Manager | tools/innovation/innovation_manager.py | Main orchestrator + daemon mode for full pipeline | --run, --discover, --score, --triage, --generate, --daemon, --status, --json | Pipeline results |
+| Introspective Analyzer | tools/innovation/introspective_analyzer.py | Internal telemetry mining (D203) — gate failures, unused tools, slow pipelines, knowledge gaps | --analyze, --type, --all, --json | Analysis findings |
+| Competitive Intel | tools/innovation/competitive_intel.py | Competitor feature monitoring (D205) — gap analysis against ICDEV capabilities | --scan, --gap-analysis, --report, --json | Competitive gaps |
+| Standards Monitor | tools/innovation/standards_monitor.py | Standards body change tracking (D204) — NIST, CISA, DoD, FedRAMP, ISO | --check, --body, --report, --assess, --json | Standards updates |
+| Innovation Config | args/innovation_config.yaml | Configuration: sources, scoring weights, triage rules, scheduling, competitive intel, standards monitoring | (data) | YAML config |
 
 ## A2A Protocol
 | Tool | File | Description | Input | Output |
@@ -68,6 +83,29 @@
 | Project List | tools/project/project_list.py | List all projects | --format | Project table |
 | Project Status | tools/project/project_status.py | Project status report | --project, --format | Status report |
 | Project Scaffold | tools/project/project_scaffold.py | Generate project directory structure | --project-id, --type | Directory tree |
+| Manifest Loader | tools/project/manifest_loader.py | Parse/validate icdev.yaml, apply IL defaults, env overrides (D189, D193) | --dir, --file, --validate, --json | Normalized config + errors/warnings |
+| Validate Manifest | tools/project/validate_manifest.py | CLI validator for icdev.yaml (thin wrapper) | --file, --dir, --json | Valid/invalid + errors |
+| Session Context Builder | tools/project/session_context_builder.py | Build session context for Claude Code — project, compliance, profile, workflows (D190) | --dir, --db, --format, --init, --json | Markdown or JSON context |
+
+## DX Companion — Universal AI Coding Tool Support (D194-D198)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Companion CLI | tools/dx/companion.py | Single entry point: detect tools, generate instructions, MCP configs, translate skills (D194) | --setup, --detect, --list, --platforms, --write, --json | Summary + file paths |
+| Tool Detector | tools/dx/tool_detector.py | Detect installed AI coding tools from env, config dirs, config files (D197) | --dir, --json | Detected tools + confidence |
+| Instruction Generator | tools/dx/instruction_generator.py | Generate instruction files for 9 AI tools from Jinja2 templates (D195) | --platform, --all, --write, --json | Instruction file content + paths |
+| MCP Config Generator | tools/dx/mcp_config_generator.py | Translate .mcp.json to tool-specific MCP config formats (D196) | --platform, --all, --write, --json | Config file content + paths |
+| Skill Translator | tools/dx/skill_translator.py | Translate Claude Code skills to Codex/Copilot/Cursor formats (D198) | --platform, --all, --skills, --write, --json | Translated skill content + paths |
+| Companion Registry | args/companion_registry.yaml | Declarative registry of 10 supported AI coding tools (D194) | (data) | Tool definitions |
+
+## SDK
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| ICDEV Client | tools/sdk/icdev_client.py | Thin Python SDK wrapping CLI tools via subprocess (D191) | (library) | ICDEVClient class |
+
+## CI/CD Pipeline
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Pipeline Config Generator | tools/ci/pipeline_config_generator.py | Generate GitHub Actions/GitLab CI from icdev.yaml (D192) | --dir, --platform, --write, --dry-run, --json | YAML config + metadata |
 
 ## Compliance Engine
 | Tool | File | Description | Input | Output |
@@ -525,6 +563,66 @@
 | Module Registry | tools/installer/module_registry.py | Module definition registry: dependencies, DB table groups, validation | --validate, --list, --json | Module graph |
 | Compliance Configurator | tools/installer/compliance_configurator.py | Compliance posture selection and framework activation | --list-postures, --apply, --json | Compliance config |
 | Platform Setup | tools/installer/platform_setup.py | Platform artifact generation (Docker Compose, K8s RBAC, .env, Helm values) | --generate docker\|k8s-rbac\|env\|helm-values, --modules | Platform artifacts |
+
+## AI Security (Phase 37 — MITRE ATLAS, D209-D231)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Prompt Injection Detector | tools/security/prompt_injection_detector.py | 5-category prompt injection detection (role hijacking, delimiter, instruction injection, data exfil, encoded payloads) with confidence scoring and DB logging | --text, --file, --project-dir, --gate, --json | Detection results + action |
+| AI Telemetry Logger | tools/security/ai_telemetry_logger.py | Append-only AI interaction logging (SHA-256 hashes, tokens, latency), anomaly detection, usage summary (D218) | --summary, --anomalies, --project-id, --json | Telemetry stats |
+| ATLAS Assessor | tools/compliance/atlas_assessor.py | MITRE ATLAS v5.4.0 compliance assessment (34 mitigations, BaseAssessor pattern D116) | --project-id, --gate, --json | Assessment + gate |
+| OWASP LLM Assessor | tools/compliance/owasp_llm_assessor.py | OWASP LLM Top 10 v2025 assessment (10 risk categories, BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
+| NIST AI RMF Assessor | tools/compliance/nist_ai_rmf_assessor.py | NIST AI RMF 1.0 assessment (4 functions: Govern/Map/Measure/Manage, BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
+| ISO 42001 Assessor | tools/compliance/iso42001_assessor.py | ISO/IEC 42001:2023 AI Management System assessment (18 requirements, international hub bridge) | --project-id, --gate, --json | Assessment + gate |
+| ATLAS Red Team Scanner | tools/security/atlas_red_team.py | Opt-in adversarial testing (D219): 6 ATLAS techniques (T0051, T0056, T0080, T0086, T0057, T0034) | --project-id, --atlas-red-team, --json | Red team results |
+| AI BOM Generator | tools/security/ai_bom_generator.py | AI Bill of Materials: scan LLM providers, AI frameworks, MCP servers, store in ai_bom table with risk assessment | --project-id, --project-dir, --gate, --json | AI BOM + gate |
+| ATLAS Report Generator | tools/compliance/atlas_report_generator.py | MITRE ATLAS compliance report: mitigation coverage, technique exposure, OWASP crossref, gap analysis, remediation | --project-id, --output-path, --json | ATLAS report |
+| ATLAS Mitigations Catalog | context/compliance/atlas_mitigations.json | 34 MITRE ATLAS mitigations with NIST 800-53 crosswalk and technique mappings | (data) | JSON catalog |
+| ATLAS Techniques Catalog | context/compliance/atlas_techniques.json | 84+ ATLAS techniques by tactic with sub-techniques and mitigations | (data) | JSON catalog |
+| OWASP LLM Top 10 Catalog | context/compliance/owasp_llm_top10.json | 10 OWASP LLM risk categories with NIST crosswalk and ATLAS technique refs | (data) | JSON catalog |
+| SAFE-AI Controls Catalog | context/compliance/safeai_controls.json | 50 AI-affected NIST 800-53 controls across 13 families with AI concern narratives | (data) | JSON catalog |
+| NIST AI RMF Catalog | context/compliance/nist_ai_rmf.json | 12 NIST AI RMF requirements across 4 functions with NIST 800-53 crosswalk | (data) | JSON catalog |
+| ISO 42001 Catalog | context/compliance/iso42001_controls.json | 18 ISO 42001 requirements (10 clauses + 8 Annex A) with dual hub crosswalk | (data) | JSON catalog |
+
+## Evolutionary Intelligence (Phase 36 — D209-D214)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Child Registry | tools/registry/child_registry.py | Enhanced child app registry with capabilities CRUD, status tracking | --register, --list, --get, --add-capability, --json | Child record |
+| Telemetry Collector | tools/registry/telemetry_collector.py | Pull-based health telemetry from child heartbeat endpoints (D210) | --collect, --child-id, --summary, --json | Health data |
+| Genome Manager | tools/registry/genome_manager.py | Versioned capability genome with semver + SHA-256 content hash (D209) | --get, --create, --diff, --rollback, --history, --verify, --json | Genome version |
+| Capability Evaluator | tools/registry/capability_evaluator.py | 7-dimension scoring: universality, compliance_safety, risk, evidence, novelty, cost, security_assessment (REQ-36-020 + Phase 37) | --evaluate, --capability-data, --json | Score + outcome |
+| Staging Manager | tools/registry/staging_manager.py | Git worktree isolation for testing capabilities (D211, 72-hour expiry) | --create, --test, --check-compliance, --destroy, --list, --json | Staging env |
+| Propagation Manager | tools/registry/propagation_manager.py | Deploy capabilities to children with HITL approval (REQ-36-040, D214) | --prepare, --approve, --execute, --rollback, --status, --list, --json | Propagation log |
+| Absorption Engine | tools/registry/absorption_engine.py | 72-hour stability window before genome absorption (D212) | --check, --absorb, --candidates, --json | Absorption result |
+| Learning Collector | tools/registry/learning_collector.py | Process child-reported learned behaviors (D213) | --ingest, --evaluate, --unevaluated, --json | Behavior records |
+| Cross-Pollinator | tools/registry/cross_pollinator.py | Broker capabilities between children via parent (HITL required) | --find, --propose, --execute, --json | Pollination result |
+
+## Cloud-Agnostic Architecture (Phase 38 — D223-D231)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cloud Mode Manager | tools/cloud/cloud_mode_manager.py | Cloud mode orchestrator — status, validation, readiness checks for commercial/government/on_prem/air_gapped (D232) | --status, --validate, --eligible, --check-readiness, --json | Mode validation |
+| CSP Provider Factory | tools/cloud/provider_factory.py | Config-driven CSP factory from cloud_config.yaml — lazy instantiation, per-service override | service name | Provider instance |
+| Secrets Provider | tools/cloud/secrets_provider.py | ABC + 5 implementations (AWS, Azure, GCP, OCI, Local) for secret management | get/put/list/delete | Secret data |
+| Storage Provider | tools/cloud/storage_provider.py | ABC + 5 implementations (S3, Blob, GCS, OCI Object, Local) for object storage | upload/download/list/delete | Storage data |
+| KMS Provider | tools/cloud/kms_provider.py | ABC + 5 implementations (AWS KMS, Azure KV, GCP Cloud KMS, OCI Vault, Local Fernet) for encryption | encrypt/decrypt/generate_key | Encrypted data |
+| Monitoring Provider | tools/cloud/monitoring_provider.py | ABC + 5 implementations (CloudWatch, Azure Monitor, Cloud Monitoring, OCI, Local) for metrics/logs | send_metric/send_log | Metrics/logs |
+| IAM Provider | tools/cloud/iam_provider.py | ABC + 5 implementations (AWS IAM, Entra ID, Cloud IAM, OCI, Local) for identity | create_role/check_permission | IAM data |
+| Registry Provider | tools/cloud/registry_provider.py | ABC + 5 implementations (ECR, ACR, Artifact Registry, OCIR, Local) for container images | list/push/pull | Image data |
+| CSP Health Checker | tools/cloud/csp_health_checker.py | Health check all CSP services, integrates with heartbeat daemon (D230) | --check-all, --json | Service statuses |
+| CSP Region Validator | tools/cloud/region_validator.py | CSP Region Validator — compliance-driven deployment validation (D234). Validates CSP regions hold required certifications before deployment. | validate/eligible/deployment-check/list, --csp, --region, --frameworks, --impact-level, --json | Validation results |
+| CSP Monitor | tools/cloud/csp_monitor.py | Autonomous CSP service monitor — scans feeds, diffs registry, generates innovation signals (D239) | --scan --all, --diff, --status, --daemon, --json | Signals + changes |
+| CSP Changelog | tools/cloud/csp_changelog.py | Human-readable changelog with per-change-type recommendations (D241) | --generate, --summary, --days, --format, --json | Changelog report |
+| Cloud Config | args/cloud_config.yaml | Master config: provider, region, IL, per-service CSP overrides (D225) | (data) | YAML config |
+| CSP Monitor Config | args/csp_monitor_config.yaml | CSP monitoring config: sources, signals, diff engine, scheduling (D239) | (data) | YAML config |
+| CSP Service Registry | context/cloud/csp_service_registry.json | Baseline CSP service catalog: 45+ services, compliance programs, regions (D240) | (data) | JSON registry |
+| Azure OpenAI Provider | tools/llm/azure_openai_provider.py | Azure OpenAI Service LLM provider with government endpoints | LLMRequest | LLMResponse |
+| Vertex AI Provider | tools/llm/vertex_ai_provider.py | Google Vertex AI LLM provider with Assured Workloads | LLMRequest | LLMResponse |
+| OCI GenAI Provider | tools/llm/oci_genai_provider.py | Oracle OCI Generative AI LLM provider | LLMRequest | LLMResponse |
+| IBM watsonx.ai Provider | tools/llm/ibm_watsonx_provider.py | IBM watsonx.ai LLM provider — Granite, Llama models via watsonx.ai SDK (D238). | LLMRequest | LLMResponse |
+| Terraform Generator Azure | tools/infra/terraform_generator_azure.py | Azure Government Terraform (VNet, AKS, Azure PG, Blob, Key Vault) | --project-path, --json | .tf files |
+| Terraform Generator GCP | tools/infra/terraform_generator_gcp.py | GCP Government Terraform (VPC, GKE, Cloud SQL, GCS, Secret Manager) | --project-path, --json | .tf files |
+| Terraform Generator OCI | tools/infra/terraform_generator_oci.py | OCI Government Terraform (VCN, OKE, Autonomous DB, Object Storage, Vault) | --project-path, --json | .tf files |
+| Terraform Generator IBM | tools/infra/terraform_generator_ibm.py | IBM Cloud Terraform generator — VPC, IKS, PostgreSQL, COS, Key Protect with CUI headers. | --project-id, --region, --json | .tf files |
+| Terraform Generator On-Prem | tools/infra/terraform_generator_onprem.py | On-premises Terraform generator — self-managed K8s, Docker Compose, local PostgreSQL. | --project-id, --target k8s\|docker, --json | .tf / docker-compose files |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

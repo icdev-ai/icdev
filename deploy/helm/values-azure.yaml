@@ -1,0 +1,78 @@
+# CUI // SP-CTI
+# ICDEV Helm Values — Azure Government Override
+# Usage: helm install icdev ./helm -f values.yaml -f values-azure.yaml
+
+global:
+  cloudProvider: azure
+  cloudRegion: usgovvirginia
+  classification: CUI
+  impactLevel: IL5
+  azureCloud: AzureUSGovernment
+
+# Azure Container Registry
+image:
+  registry: "${ACR_LOGIN_SERVER}"
+  repository: icdev
+  pullPolicy: IfNotPresent
+
+# Azure Key Vault for secrets
+secrets:
+  provider: azure_key_vault
+  vaultUrl: "${AZURE_VAULT_URL}"
+  useManagedIdentity: true
+
+# Azure Database for PostgreSQL
+database:
+  provider: azure_postgres_flexible
+  skuName: GP_Standard_D2s_v3
+  storageSizeGb: 128
+  highAvailability: true
+  geoRedundantBackup: true
+  sslEnforcement: true
+
+# Azure Blob Storage
+storage:
+  provider: azure_blob
+  accountUrl: "${AZURE_STORAGE_ACCOUNT_URL}"
+  containerPrefix: "icdev-"
+  encryptionScope: "icdev-encryption"
+
+# Azure Key Vault for encryption
+kms:
+  provider: azure_key_vault
+  vaultUrl: "${AZURE_VAULT_URL}"
+  keyName: "icdev-master"
+
+# Azure OpenAI LLM configuration
+llm:
+  provider: azure_openai
+  endpoint: "${AZURE_OPENAI_ENDPOINT}"
+  apiVersion: "2024-06-01"
+  models:
+    default: "gpt-4o"
+    strong: "gpt-4o"
+    fast: "gpt-4o-mini"
+
+# Azure-specific networking
+networking:
+  privateEndpoints:
+    - Microsoft.KeyVault
+    - Microsoft.Storage
+    - Microsoft.DBforPostgreSQL
+    - Microsoft.ContainerRegistry
+  nsgDefaultDeny: true
+
+# AKS-specific settings
+kubernetes:
+  provider: aks
+  workloadIdentityEnabled: true
+  azurePolicyEnabled: true
+  nodeSelector:
+    kubernetes.io/os: linux
+
+# Azure Monitor
+monitoring:
+  provider: azure_monitor
+  logAnalyticsWorkspace: "${LOG_ANALYTICS_WORKSPACE_ID}"
+  applicationInsights: true
+  retentionDays: 365

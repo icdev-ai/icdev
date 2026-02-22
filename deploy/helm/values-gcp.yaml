@@ -1,0 +1,82 @@
+# CUI // SP-CTI
+# ICDEV Helm Values — GCP Government Override
+# Usage: helm install icdev ./helm -f values.yaml -f values-gcp.yaml
+
+global:
+  cloudProvider: gcp
+  cloudRegion: us-east4
+  classification: CUI
+  impactLevel: IL5
+  assuredWorkloads: true
+
+# Google Artifact Registry
+image:
+  registry: "us-east4-docker.pkg.dev/${GCP_PROJECT_ID}/icdev"
+  repository: icdev
+  pullPolicy: IfNotPresent
+
+# Google Secret Manager
+secrets:
+  provider: gcp_secret_manager
+  projectId: "${GCP_PROJECT_ID}"
+  replication: automatic
+
+# Cloud SQL for PostgreSQL
+database:
+  provider: cloud_sql
+  databaseVersion: POSTGRES_15
+  tier: db-custom-2-8192
+  highAvailability: true
+  backupEnabled: true
+  pointInTimeRecovery: true
+  sslMode: ENCRYPTED_ONLY
+
+# Google Cloud Storage
+storage:
+  provider: gcs
+  bucketPrefix: "icdev-"
+  location: US
+  storageClass: STANDARD
+  uniformBucketLevelAccess: true
+
+# Google Cloud KMS
+kms:
+  provider: gcp_cloud_kms
+  projectId: "${GCP_PROJECT_ID}"
+  location: us-east4
+  keyRing: icdev
+  keyName: master
+
+# Vertex AI LLM configuration
+llm:
+  provider: vertex_ai
+  projectId: "${GCP_PROJECT_ID}"
+  location: us-east4
+  models:
+    default: "gemini-2.0-flash"
+    strong: "gemini-2.5-pro"
+    fast: "gemini-2.0-flash"
+
+# GCP-specific networking
+networking:
+  privateServiceConnect:
+    - secretmanager.googleapis.com
+    - sqladmin.googleapis.com
+    - storage.googleapis.com
+    - artifactregistry.googleapis.com
+  firewallDefaultDeny: true
+
+# GKE-specific settings
+kubernetes:
+  provider: gke
+  workloadIdentityEnabled: true
+  shieldedNodes: true
+  nodeSelector:
+    cloud.google.com/gke-os-distribution: cos_containerd
+
+# Cloud Monitoring
+monitoring:
+  provider: cloud_monitoring
+  projectId: "${GCP_PROJECT_ID}"
+  logRouter: true
+  retentionDays: 365

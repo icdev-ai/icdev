@@ -1,0 +1,53 @@
+# CUI // SP-CTI
+# ICDEV Helm Values — Docker Compose Development Override
+# Usage: For local development only (not production)
+
+global:
+  cloudProvider: local
+  cloudRegion: localhost
+  classification: CUI
+  impactLevel: IL2
+  govCloud: false
+  airGapped: false
+
+# Local Docker images
+image:
+  registry: ""
+  repository: icdev
+  tag: dev
+  pullPolicy: Never
+
+# Local secrets
+secrets:
+  provider: local
+  envFile: ".env"
+
+# Local SQLite (development)
+database:
+  provider: local_sqlite
+  path: "data/icdev.db"
+
+# Local filesystem storage
+storage:
+  provider: local
+  basePath: "./data/storage"
+
+# Local Fernet encryption
+kms:
+  provider: local
+
+# Ollama for local LLM (optional)
+llm:
+  provider: ollama
+  baseUrl: "http://localhost:11434/v1"
+  defaultModel: "llama3.1"
+
+# Console logging (no external monitoring)
+monitoring:
+  provider: local
+  logLevel: DEBUG
+
+# Docker Compose mode
+cluster:
+  provider: docker
+  composeFile: "docker-compose.yml"

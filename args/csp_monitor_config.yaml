@@ -1,0 +1,268 @@
+# CUI // SP-CTI
+# CSP Service Monitoring Configuration — Phase 38 + Phase 35 Integration
+# Tracks cloud service provider service additions, deprecations, and compliance changes.
+# Integrates with Innovation Engine pipeline for signal scoring and triage (D239).
+#
+# ADRs: D239 (CSP monitoring as Innovation Engine source), D240 (declarative registry)
+
+# =========================================================================
+# CSP Service Catalog Sources
+# =========================================================================
+# Each CSP publishes service updates via APIs, RSS feeds, or changelog pages.
+# The monitor fetches these, diffs against the local registry, and generates
+# innovation signals for new/changed/deprecated services.
+
+sources:
+  aws:
+    enabled: true
+    scan_interval_hours: 12
+    endpoints:
+      - name: whats_new
+        url: https://aws.amazon.com/about-aws/whats-new
+        type: rss
+        filter_keywords: [govcloud, fedramp, fips, compliance, security, new service, launch]
+      - name: govcloud_updates
+        url: https://aws.amazon.com/about-aws/whats-new/?whats-new-content-all.sort-by=item.additionalFields.postDateTime&whats-new-content-all.sort-order=desc&awsf.whats-new-categories=general-products%23security-identity-compliance
+        type: rss
+        filter_keywords: [govcloud]
+      - name: service_health
+        url: https://health.aws.amazon.com/health/status
+        type: api
+      - name: compliance_programs
+        url: https://aws.amazon.com/compliance/services-in-scope
+        type: html
+        description: "Services in scope for each compliance program (FedRAMP, HIPAA, PCI, etc.)"
+    regions:
+      government: [us-gov-west-1, us-gov-east-1]
+      commercial: [us-east-1, us-west-2, eu-west-1, ap-southeast-1]
+
+  azure:
+    enabled: true
+    scan_interval_hours: 12
+    endpoints:
+      - name: updates_feed
+        url: https://azure.microsoft.com/en-us/updates/
+        type: rss
+        filter_keywords: [government, compliance, fedramp, dod, security, new service]
+      - name: gov_updates
+        url: https://azure.microsoft.com/en-us/updates/?query=government
+        type: rss
+      - name: compliance_offerings
+        url: https://learn.microsoft.com/en-us/azure/compliance/offerings/
+        type: html
+        description: "Azure compliance offerings by service and framework"
+      - name: service_health
+        url: https://status.azure.com/en-us/status
+        type: api
+    regions:
+      government: [usgovvirginia, usgovarizona, usgovtexas, usdodcentral, usdodeast]
+      commercial: [eastus, westus2, northeurope, southeastasia]
+
+  gcp:
+    enabled: true
+    scan_interval_hours: 12
+    endpoints:
+      - name: release_notes
+        url: https://cloud.google.com/release-notes
+        type: rss
+        filter_keywords: [fedramp, compliance, assured workloads, government, security]
+      - name: compliance_offerings
+        url: https://cloud.google.com/security/compliance/offerings
+        type: html
+        description: "GCP compliance offerings by service and framework"
+      - name: service_health
+        url: https://status.cloud.google.com/
+        type: api
+    regions:
+      government: [us-east4, us-central1]
+      commercial: [us-east1, us-west1, europe-west1, asia-southeast1]
+
+  oci:
+    enabled: true
+    scan_interval_hours: 24
+    endpoints:
+      - name: release_notes
+        url: https://docs.oracle.com/en-us/iaas/releasenotes/
+        type: rss
+        filter_keywords: [government, fedramp, dod, compliance, security, new service]
+      - name: compliance_listings
+        url: https://www.oracle.com/cloud/compliance/
+        type: html
+        description: "OCI compliance certifications and attestations"
+      - name: service_health
+        url: https://ocistatus.oraclecloud.com/
+        type: api
+    regions:
+      government: [us-langley-1, us-luke-1, us-gov-ashburn-1, us-gov-chicago-1, us-gov-phoenix-1]
+      commercial: [us-ashburn-1, us-phoenix-1, eu-frankfurt-1, ap-tokyo-1]
+
+  ibm:
+    enabled: true
+    scan_interval_hours: 24
+    endpoints:
+      - name: announcements
+        url: https://cloud.ibm.com/status/announcement
+        type: api
+        filter_keywords: [government, fedramp, compliance, security, new service, ic4g]
+      - name: release_notes
+        url: https://cloud.ibm.com/docs/overview?topic=overview-whatsnew
+        type: html
+      - name: compliance_programs
+        url: https://cloud.ibm.com/docs/overview?topic=overview-compliance
+        type: html
+        description: "IBM Cloud compliance programs and certifications"
+      - name: service_health
+        url: https://cloud.ibm.com/status
+        type: api
+    regions:
+      government: [us-south, us-east]  # IC4G regions
+      commercial: [us-south, us-east, eu-de, eu-gb, jp-tok, au-syd]
+
+# =========================================================================
+# Service Registry
+# =========================================================================
+# The local registry (context/cloud/csp_service_registry.json) is the
+# baseline. The monitor diffs CSP announcements against this registry
+# to detect new services, deprecations, and compliance scope changes.
+
+registry:
+  path: context/cloud/csp_service_registry.json
+  auto_update: false                      # true = auto-update registry on detection
+  require_review: true                    # Require human review before registry update
+  backup_before_update: true              # Create timestamped backup before updates
+
+# =========================================================================
+# Signal Generation
+# =========================================================================
+# Detected changes are stored as innovation_signals (reuses Phase 35 DB schema).
+# source: 'csp_monitor', source_type per change type.
+
+signals:
+  source_name: csp_monitor                # Source identifier in innovation_signals table
+
+  # Map change types to signal categories (reuses Phase 35 categories)
+  category_mapping:
+    new_service: infrastructure            # New CSP service launched
+    service_deprecation: modernization     # Service deprecated or end-of-life
+    compliance_scope_change: compliance_gap # Service added/removed from compliance program
+    region_expansion: infrastructure        # New region available
+    api_breaking_change: modernization      # Breaking API change
+    security_update: security_vulnerability # Security-related service update
+    pricing_change: developer_experience    # Pricing change affecting cost models
+    certification_change: compliance_gap    # CSP gains/loses compliance certification
+
+  # Community score mapping (normalized 0-1)
+  community_score_mapping:
+    new_service: 0.6
+    service_deprecation: 0.8              # High — may require migration
+    compliance_scope_change: 0.9          # Critical — affects ATO posture
+    region_expansion: 0.4
+    api_breaking_change: 0.9              # Critical — may break integrations
+    security_update: 0.7
+    pricing_change: 0.3
+    certification_change: 0.9            # Critical — affects deployment eligibility
+
+  # Priority boost for government-specific changes
+  government_boost: 1.3                   # Multiply score for gov cloud changes
+  compliance_boost: 1.5                   # Multiply score for compliance program changes
+
+# =========================================================================
+# Diff Engine
+# =========================================================================
+# How the monitor detects changes between scans.
+
+diff:
+  # Service matching strategy
+  match_by: [service_name, csp]           # Unique key for service identity
+  track_fields:                            # Fields to monitor for changes
+    - compliance_programs                   # Which compliance programs cover this service
+    - regions                               # Which regions offer this service
+    - status                                # active, deprecated, preview, end_of_life
+    - api_version                           # Latest API version
+    - fips_validated                        # FIPS 140-2 validation status
+    - fedramp_authorized                    # FedRAMP authorization status
+    - govcloud_available                    # Available in government cloud
+
+  # Change detection thresholds
+  min_confidence: 0.7                      # Minimum confidence to generate a signal
+  dedup_window_days: 30                    # Suppress duplicate signals within window
+  content_hash_fields: [csp, service_name, change_type, description]
+
+# =========================================================================
+# Notification & Escalation
+# =========================================================================
+notifications:
+  # Which change types trigger immediate notification (vs batch)
+  immediate:
+    - service_deprecation
+    - api_breaking_change
+    - compliance_scope_change
+    - certification_change
+
+  # Batch notification for less critical changes
+  batch:
+    interval_hours: 24
+    change_types:
+      - new_service
+      - region_expansion
+      - pricing_change
+      - security_update
+
+  # Notification sinks (reuses Phase 29 heartbeat pattern D163)
+  sinks:
+    audit_trail: true                      # Always log to audit trail
+    dashboard_sse: true                    # Push to dashboard via SSE
+    gateway_channels: false                # Push to remote gateway (if configured)
+
+# =========================================================================
+# Changelog Generation
+# =========================================================================
+# Generates human-readable changelogs for CSP service updates.
+
+changelog:
+  output_dir: .tmp/csp_changelogs
+  format: markdown                         # markdown | json | both
+  group_by: csp                            # csp | change_type | date
+  include_recommendations: true            # Include action recommendations
+  max_entries: 100                          # Max entries per changelog
+
+# =========================================================================
+# Integration with Innovation Engine (Phase 35)
+# =========================================================================
+innovation_integration:
+  enabled: true
+  # CSP signals feed into the standard Innovation Engine pipeline:
+  #   DISCOVER (csp_monitor) → SCORE (signal_ranker) → TRIAGE → GENERATE → BUILD → PUBLISH
+  feed_to_pipeline: true
+  auto_score: true                         # Auto-score CSP signals via signal_ranker
+  auto_triage: true                        # Auto-triage compliance_scope_change and certification_change
+
+  # Solution generation triggers
+  auto_generate_solutions:
+    service_deprecation: true              # Generate migration guide
+    api_breaking_change: true              # Generate compatibility adapter
+    compliance_scope_change: false         # Requires human review
+    certification_change: false            # Requires human review
+
+# =========================================================================
+# Scheduling
+# =========================================================================
+scheduling:
+  daemon_mode: false                       # true = continuous background scanning
+  default_scan_interval_hours: 12          # Fallback if per-source not set
+  quiet_hours: "02:00-06:00"              # UTC — no scanning during this window
+  max_concurrent_scans: 2                  # Max parallel CSP scans
+  scan_timeout_seconds: 120                # Per-source timeout
+  retry_on_failure: true
+  max_retries: 3
+  retry_delay_seconds: 60
+
+# =========================================================================
+# Audit
+# =========================================================================
+audit:
+  log_scans: true
+  log_signals: true
+  log_registry_updates: true
+  log_changelogs: true
+  retention_days: 365

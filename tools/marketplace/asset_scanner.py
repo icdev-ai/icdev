@@ -70,11 +70,13 @@ ALL_GATES = [
     "sast_scan", "secret_detection", "dependency_audit",
     "cui_marking_validation", "sbom_generation",
     "supply_chain_provenance", "digital_signature",
+    "prompt_injection_scan", "behavioral_sandbox",
 ]
 
 BLOCKING_GATES = {
     "sast_scan", "secret_detection", "dependency_audit",
     "cui_marking_validation", "sbom_generation", "digital_signature",
+    "prompt_injection_scan",
 }
 
 # Secret patterns to scan for (air-gapped, no external tools required)
@@ -534,6 +536,218 @@ def scan_signature(asset_path, asset_id, version_id, db_path=None):
 
 
 # ---------------------------------------------------------------------------
+# Gate 8: Prompt Injection Scan (P3-2 — Phase 37)
+# ---------------------------------------------------------------------------
+
+def scan_prompt_injection(asset_path, asset_id, version_id, db_path=None):
+    """Gate 8: Prompt injection scanning.
+
+    Scans all .md, .yaml, .yml, .json, .txt files for prompt injection
+    patterns using the PromptInjectionDetector (Phase 37).
+    """
+    asset_path = Path(asset_path)
+    scannable_exts = {".md", ".yaml", ".yml", ".json", ".txt", ".py", ".js", ".ts"}
+
+    try:
+        from tools.security.prompt_injection_detector import PromptInjectionDetector
+        detector = PromptInjectionDetector()
+    except ImportError:
+        return _record_scan(
+            asset_id, version_id, "prompt_injection_scan", "skipped",
+            details={"reason": "prompt_injection_detector not available"},
+            db_path=db_path,
+        ), {"status": "skipped", "reason": "Detector not available"}
+
+    findings = {"block": [], "flag": [], "warn": [], "allow": 0}
+    files_scanned = 0
+
+    for fpath in asset_path.rglob("*"):
+        if not fpath.is_file() or fpath.suffix.lower() not in scannable_exts:
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        files_scanned += 1
+        result = detector.scan_text(content, source=f"marketplace:{str(fpath.relative_to(asset_path))}")
+
+        if result["detected"]:
+            action = result["action"]
+            entry = {
+                "file": str(fpath.relative_to(asset_path)),
+                "action": action,
+                "confidence": result["confidence"],
+                "findings_count": len(result["findings"]),
+                "categories": list({f["category"] for f in result["findings"]}),
+            }
+            if action == "block":
+                findings["block"].append(entry)
+            elif action == "flag":
+                findings["flag"].append(entry)
+            elif action == "warn":
+                findings["warn"].append(entry)
+        else:
+            findings["allow"] += 1
+
+    critical = len(findings["block"])
+    high = len(findings["flag"])
+    medium = len(findings["warn"])
+    status = "fail" if critical > 0 else ("warning" if high > 0 else "pass")
+
+    scan_id = _record_scan(
+        asset_id, version_id, "prompt_injection_scan", status,
+        findings_count=critical + high + medium,
+        critical=critical, high=high, medium=medium,
+        details={
+            "files_scanned": files_scanned,
+            "blocked": findings["block"][:10],
+            "flagged": findings["flag"][:10],
+            "warned": findings["warn"][:10],
+        },
+        db_path=db_path,
+    )
+    return scan_id, {
+        "status": status,
+        "files_scanned": files_scanned,
+        "block_count": critical,
+        "flag_count": high,
+        "warn_count": medium,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Gate 9: Behavioral Sandbox (P3-2 — Phase 37)
+# ---------------------------------------------------------------------------
+
+def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
+    """Gate 9: Behavioral sandbox analysis.
+
+    Static analysis to detect potential malicious behaviors in marketplace
+    assets: data exfiltration, unauthorized tool usage, config manipulation,
+    filesystem abuse, and network access attempts.
+    Non-blocking (warning gate) — flags suspicious patterns for human review.
+    """
+    asset_path = Path(asset_path)
+    import ast
+
+    BEHAVIOR_PATTERNS = [
+        # (pattern_regex, category, severity, description)
+        (r'(?i)requests\.(get|post|put|delete|patch)\s*\(', "network_access", "high",
+         "HTTP request to external service"),
+        (r'(?i)urllib\.request\.(urlopen|urlretrieve)', "network_access", "high",
+         "URL access via urllib"),
+        (r'(?i)socket\.(socket|connect|bind|listen)', "network_access", "critical",
+         "Raw socket operation"),
+        (r'(?i)subprocess\.(run|call|Popen|check_output)', "tool_abuse", "medium",
+         "Subprocess execution"),
+        (r'(?i)os\.(system|popen|exec[lv]p?e?)', "tool_abuse", "high",
+         "OS command execution"),
+        (r'(?i)shutil\.(rmtree|move|copytree)', "filesystem_abuse", "medium",
+         "Filesystem bulk operation"),
+        (r'(?i)open\s*\([^)]*["\']/(etc|var|tmp|proc|sys)', "filesystem_abuse", "high",
+         "Access to system directories"),
+        (r'(?i)(ICDEV_|AWS_|AZURE_|GCP_).*(KEY|SECRET|TOKEN|PASSWORD)', "config_manipulation", "high",
+         "Access to sensitive environment variables"),
+        (r'(?i)sqlite3\.connect\s*\([^)]*icdev\.db', "config_manipulation", "critical",
+         "Direct access to ICDEV database"),
+        (r'(?i)(base64\.(b64encode|b64decode)|codecs\.(encode|decode))', "obfuscation", "medium",
+         "Encoding/decoding that may hide payloads"),
+    ]
+
+    findings = {"critical": [], "high": [], "medium": [], "low": []}
+    files_scanned = 0
+    code_exts = {".py", ".js", ".ts", ".sh", ".bash"}
+
+    for fpath in asset_path.rglob("*"):
+        if not fpath.is_file() or fpath.suffix.lower() not in code_exts:
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        files_scanned += 1
+        rel_path = str(fpath.relative_to(asset_path))
+
+        # Regex-based behavioral pattern detection
+        for pattern, category, severity, description in BEHAVIOR_PATTERNS:
+            for match in re.finditer(pattern, content):
+                line_no = content[:match.start()].count("\n") + 1
+                entry = {
+                    "file": rel_path,
+                    "line": line_no,
+                    "category": category,
+                    "severity": severity,
+                    "description": description,
+                    "match": match.group()[:60],
+                }
+                findings[severity].append(entry)
+
+        # AST-based checks for Python files
+        if fpath.suffix == ".py":
+            try:
+                tree = ast.parse(content, filename=rel_path)
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            if alias.name in ("ctypes", "multiprocessing", "signal"):
+                                findings["medium"].append({
+                                    "file": rel_path,
+                                    "line": node.lineno,
+                                    "category": "tool_abuse",
+                                    "severity": "medium",
+                                    "description": f"Import of sensitive module: {alias.name}",
+                                })
+                    elif isinstance(node, ast.Call):
+                        func_name = ""
+                        if isinstance(node.func, ast.Name):
+                            func_name = node.func.id
+                        if func_name in ("eval", "exec", "compile", "__import__"):
+                            findings["critical"].append({
+                                "file": rel_path,
+                                "line": node.lineno,
+                                "category": "tool_abuse",
+                                "severity": "critical",
+                                "description": f"Dynamic code execution: {func_name}()",
+                            })
+            except SyntaxError:
+                pass
+
+    total_critical = len(findings["critical"])
+    total_high = len(findings["high"])
+    total_medium = len(findings["medium"])
+    total_low = len(findings["low"])
+    total = total_critical + total_high + total_medium + total_low
+
+    # Behavioral sandbox is a warning gate (not blocking) — human reviews flagged items
+    status = "warning" if total > 0 else "pass"
+
+    scan_id = _record_scan(
+        asset_id, version_id, "behavioral_sandbox", status,
+        findings_count=total,
+        critical=total_critical, high=total_high,
+        medium=total_medium, low=total_low,
+        details={
+            "files_scanned": files_scanned,
+            "critical_behaviors": findings["critical"][:10],
+            "high_behaviors": findings["high"][:10],
+            "medium_behaviors": findings["medium"][:5],
+        },
+        db_path=db_path,
+    )
+    return scan_id, {
+        "status": status,
+        "files_scanned": files_scanned,
+        "total_findings": total,
+        "critical": total_critical,
+        "high": total_high,
+        "medium": total_medium,
+        "low": total_low,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Full scan orchestrator
 # ---------------------------------------------------------------------------
 
@@ -557,6 +771,8 @@ def run_full_scan(asset_id, version_id, asset_path, gates=None,
         "sbom_generation": lambda: scan_sbom(asset_path, asset_id, version_id, db_path),
         "supply_chain_provenance": lambda: scan_provenance(asset_path, asset_id, version_id, db_path),
         "digital_signature": lambda: scan_signature(asset_path, asset_id, version_id, db_path),
+        "prompt_injection_scan": lambda: scan_prompt_injection(asset_path, asset_id, version_id, db_path),
+        "behavioral_sandbox": lambda: scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path),
     }
 
     for gate in gates:

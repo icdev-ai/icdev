@@ -89,7 +89,12 @@ FRAMEWORK_KEYS = {
     "nist_800_207": "NIST SP 800-207 (ZTA)",
     # ── Phase 26: DoD MOSA ──
     "mosa": "DoD MOSA (10 U.S.C. §4401)",
-    # ── International Hub: ISO 27001 ──
+    # ── Phase 37: AI Security Frameworks ──
+    "atlas": "MITRE ATLAS v5.4.0",
+    "owasp_llm": "OWASP LLM Top 10",
+    "nist_ai_rmf": "NIST AI RMF 1.0",
+    # ── International Hub: ISO 27001 + ISO 42001 ──
+    "iso_42001": "ISO/IEC 42001:2023",
     "iso_27001": "ISO/IEC 27001:2022",
 }
 

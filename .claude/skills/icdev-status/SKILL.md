@@ -24,6 +24,20 @@ Shows a comprehensive status overview:
 
 ## Steps
 
+### 0. Load Session Context (Auto-Detect)
+```bash
+python tools/project/session_context_builder.py --format markdown
+```
+If the current directory contains `icdev.yaml` or is a registered ICDEV project, this outputs:
+- Project metadata (name, type, language, impact level, classification, ATO status)
+- Compliance posture (frameworks, SSP, POAMs, STIG findings, controls, cATO readiness)
+- Dev profile summary (language, style, testing, crypto standards)
+- Recent activity (last 5 audit trail entries)
+- Active intake sessions
+- Suggested next actions
+
+Display this context to the user. If `setup_needed` is true, suggest `/icdev-init`.
+
 ### 1. List or Select Project
 If no project-id given and `--all` flag:
 Use the `project_list` MCP tool from icdev-core to list all projects.

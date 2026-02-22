@@ -1010,10 +1010,79 @@ def generate_zta_security(project_path: str, project_config: dict = None) -> lis
 
 
 # ---------------------------------------------------------------------------
+# CSP Dispatcher (Phase 38 — D225)
+# ---------------------------------------------------------------------------
+
+def _detect_csp() -> str:
+    """Detect cloud service provider from cloud_config.yaml or env var."""
+    import os
+    csp = os.environ.get("ICDEV_CLOUD_PROVIDER", "").lower()
+    if csp:
+        return csp
+    try:
+        import yaml
+        config_path = BASE_DIR / "args" / "cloud_config.yaml"
+        if config_path.exists():
+            with open(config_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            return cfg.get("cloud", {}).get("provider", "aws").lower()
+    except Exception:
+        pass
+    return "aws"
+
+
+def generate_for_csp(project_path: str, project_config: dict = None,
+                     csp: str = None) -> list:
+    """CSP dispatcher — delegates to CSP-specific generator.
+
+    Detects CSP from cloud_config.yaml or ICDEV_CLOUD_PROVIDER env var,
+    then delegates to the appropriate Terraform generator module.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Project configuration dict.
+        csp: Explicit CSP override (aws, azure, gcp, oci).
+
+    Returns:
+        List of generated file paths.
+    """
+    provider = csp or _detect_csp()
+
+    if provider == "aws":
+        # Use this module's existing generators (default)
+        config = project_config or {}
+        files = []
+        files.extend(generate_base(project_path, config))
+        files.extend(generate_vpc(project_path))
+        files.extend(generate_rds(project_path, config))
+        files.extend(generate_ecr(project_path))
+        return files
+
+    generator_map = {
+        "azure": "tools.infra.terraform_generator_azure",
+        "gcp": "tools.infra.terraform_generator_gcp",
+        "oci": "tools.infra.terraform_generator_oci",
+    }
+
+    module_name = generator_map.get(provider)
+    if not module_name:
+        print(f"[terraform] Unknown CSP: {provider}. Falling back to AWS.")
+        return generate_for_csp(project_path, project_config, csp="aws")
+
+    try:
+        import importlib
+        mod = importlib.import_module(module_name)
+        return mod.generate(project_path, project_config)
+    except (ImportError, ModuleNotFoundError) as e:
+        print(f"[terraform] CSP module {module_name} not available: {e}. Falling back to AWS.")
+        return generate_for_csp(project_path, project_config, csp="aws")
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Generate Terraform for AWS GovCloud")
+    parser = argparse.ArgumentParser(description="Generate Terraform for Government Cloud")
     parser.add_argument("--project-path", required=True, help="Target project directory")
     parser.add_argument(
         "--components",
@@ -1023,6 +1092,8 @@ def main():
     parser.add_argument("--project-name", default="icdev-project", help="Project name for resource naming")
     parser.add_argument("--environment", default="dev", choices=["dev", "staging", "prod"], help="Target environment")
     parser.add_argument("--db-name", default="appdb", help="Database name for RDS module")
+    parser.add_argument("--csp", default=None, choices=["aws", "azure", "gcp", "oci"],
+                        help="Cloud service provider (auto-detected from cloud_config.yaml if omitted)")
     args = parser.parse_args()
 
     config = {
@@ -1030,6 +1101,14 @@ def main():
         "environment": args.environment,
         "db_name": args.db_name,
     }
+
+    # If --csp is specified, use the CSP dispatcher for full generation
+    if args.csp and args.csp != "aws":
+        all_files = generate_for_csp(args.project_path, config, csp=args.csp)
+        print(f"\n[terraform] Generated {args.csp.upper()} Terraform: {len(all_files)} files")
+        for f in all_files:
+            print(f"  -> {f}")
+        return
 
     components = [c.strip() for c in args.components.split(",")]
     all_files = []

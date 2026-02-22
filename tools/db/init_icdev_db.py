@@ -3071,6 +3071,482 @@ CREATE TABLE IF NOT EXISTS dashboard_user_llm_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_dash_llm_keys_user ON dashboard_user_llm_keys(user_id);
 CREATE INDEX IF NOT EXISTS idx_dash_llm_keys_provider ON dashboard_user_llm_keys(provider);
+
+-- ============================================================
+-- INNOVATION ENGINE (Phase 35 — D199-D208)
+-- ============================================================
+
+-- Innovation signals — discovered opportunities (append-only, D206)
+CREATE TABLE IF NOT EXISTS innovation_signals (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    url TEXT,
+    metadata TEXT,
+    community_score REAL DEFAULT 0.0,
+    content_hash TEXT NOT NULL,
+    discovered_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'new'
+        CHECK(status IN ('new', 'scored', 'triaged', 'approved', 'suggested',
+                         'blocked', 'logged', 'solution_generated', 'published')),
+    category TEXT,
+    innovation_score REAL,
+    score_breakdown TEXT,
+    triage_result TEXT
+        CHECK(triage_result IS NULL OR triage_result IN ('approved', 'suggested', 'blocked', 'logged')),
+    gotcha_layer TEXT
+        CHECK(gotcha_layer IS NULL OR gotcha_layer IN ('goal', 'tool', 'arg', 'context', 'hardprompt')),
+    boundary_tier TEXT
+        CHECK(boundary_tier IS NULL OR boundary_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_status ON innovation_signals(status);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_source ON innovation_signals(source);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_score ON innovation_signals(innovation_score);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_hash ON innovation_signals(content_hash);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_discovered ON innovation_signals(discovered_at);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_category ON innovation_signals(category);
+
+-- Innovation triage log — triage decisions per signal (append-only, D206)
+CREATE TABLE IF NOT EXISTS innovation_triage_log (
+    id TEXT PRIMARY KEY,
+    signal_id TEXT NOT NULL REFERENCES innovation_signals(id),
+    stage INTEGER NOT NULL CHECK(stage BETWEEN 1 AND 5),
+    stage_name TEXT NOT NULL
+        CHECK(stage_name IN ('classify', 'gotcha_fit', 'boundary_impact',
+                              'compliance_check', 'dedup_license')),
+    result TEXT NOT NULL CHECK(result IN ('pass', 'block', 'warn')),
+    details TEXT,
+    triaged_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_triage_signal ON innovation_triage_log(signal_id);
+CREATE INDEX IF NOT EXISTS idx_innovation_triage_result ON innovation_triage_log(result);
+
+-- Innovation solutions — generated solution specs
+CREATE TABLE IF NOT EXISTS innovation_solutions (
+    id TEXT PRIMARY KEY,
+    signal_id TEXT NOT NULL REFERENCES innovation_signals(id),
+    spec_content TEXT NOT NULL,
+    gotcha_layer TEXT NOT NULL
+        CHECK(gotcha_layer IN ('goal', 'tool', 'arg', 'context', 'hardprompt')),
+    asset_type TEXT NOT NULL
+        CHECK(asset_type IN ('skill', 'goal', 'tool', 'context', 'hardprompt',
+                              'arg', 'compliance_extension')),
+    estimated_effort TEXT NOT NULL CHECK(estimated_effort IN ('S', 'M', 'L', 'XL')),
+    status TEXT NOT NULL DEFAULT 'generated'
+        CHECK(status IN ('generated', 'building', 'built', 'published', 'failed', 'rejected')),
+    spec_quality_score REAL,
+    build_output TEXT,
+    marketplace_asset_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_solutions_signal ON innovation_solutions(signal_id);
+CREATE INDEX IF NOT EXISTS idx_innovation_solutions_status ON innovation_solutions(status);
+CREATE INDEX IF NOT EXISTS idx_innovation_solutions_layer ON innovation_solutions(gotcha_layer);
+
+-- Innovation trends — detected cross-signal patterns (D207)
+CREATE TABLE IF NOT EXISTS innovation_trends (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT,
+    signal_ids TEXT NOT NULL,
+    signal_count INTEGER NOT NULL DEFAULT 0,
+    keyword_fingerprint TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    velocity REAL DEFAULT 0.0,
+    acceleration REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'emerging'
+        CHECK(status IN ('emerging', 'active', 'declining', 'stale')),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_trends_status ON innovation_trends(status);
+CREATE INDEX IF NOT EXISTS idx_innovation_trends_category ON innovation_trends(category);
+CREATE INDEX IF NOT EXISTS idx_innovation_trends_velocity ON innovation_trends(velocity);
+
+-- Innovation competitor scans — competitive intelligence results
+CREATE TABLE IF NOT EXISTS innovation_competitor_scans (
+    id TEXT PRIMARY KEY,
+    competitor_name TEXT NOT NULL,
+    scan_date TEXT NOT NULL,
+    releases_found INTEGER DEFAULT 0,
+    features_found INTEGER DEFAULT 0,
+    gaps_identified INTEGER DEFAULT 0,
+    metadata TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_competitor_name ON innovation_competitor_scans(competitor_name);
+CREATE INDEX IF NOT EXISTS idx_innovation_competitor_date ON innovation_competitor_scans(scan_date);
+
+-- Innovation standards updates — standards body change tracking
+CREATE TABLE IF NOT EXISTS innovation_standards_updates (
+    id TEXT PRIMARY KEY,
+    body TEXT NOT NULL
+        CHECK(body IN ('nist', 'cisa', 'dod', 'fedramp', 'iso')),
+    title TEXT NOT NULL,
+    publication_type TEXT,
+    url TEXT,
+    abstract TEXT,
+    published_date TEXT,
+    impact_assessment TEXT,
+    status TEXT NOT NULL DEFAULT 'new'
+        CHECK(status IN ('new', 'assessed', 'applied', 'not_applicable')),
+    content_hash TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_standards_body ON innovation_standards_updates(body);
+CREATE INDEX IF NOT EXISTS idx_innovation_standards_status ON innovation_standards_updates(status);
+CREATE INDEX IF NOT EXISTS idx_innovation_standards_hash ON innovation_standards_updates(content_hash);
+
+-- Innovation feedback — feedback loop metrics for calibration
+CREATE TABLE IF NOT EXISTS innovation_feedback (
+    id TEXT PRIMARY KEY,
+    signal_id TEXT REFERENCES innovation_signals(id),
+    solution_id TEXT REFERENCES innovation_solutions(id),
+    feedback_type TEXT NOT NULL
+        CHECK(feedback_type IN ('marketplace_install', 'marketplace_rating',
+                                 'self_heal_hit', 'gate_failure_reduction',
+                                 'feature_request_addressed', 'manual_review')),
+    feedback_value REAL,
+    feedback_details TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_feedback_signal ON innovation_feedback(signal_id);
+CREATE INDEX IF NOT EXISTS idx_innovation_feedback_type ON innovation_feedback(feedback_type);
+
+-- ============================================================
+-- PHASE 37: AI SECURITY (MITRE ATLAS, OWASP LLM, NIST AI RMF, ISO 42001)
+-- ============================================================
+
+-- Prompt injection detection log (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS prompt_injection_log (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    text_hash TEXT NOT NULL,
+    detected INTEGER NOT NULL DEFAULT 0,
+    confidence REAL DEFAULT 0.0,
+    action TEXT CHECK(action IN ('allow', 'warn', 'flag', 'block')),
+    findings TEXT,
+    project_id TEXT,
+    user_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pi_log_source ON prompt_injection_log(source);
+CREATE INDEX IF NOT EXISTS idx_pi_log_action ON prompt_injection_log(action);
+CREATE INDEX IF NOT EXISTS idx_pi_log_project ON prompt_injection_log(project_id);
+
+-- AI telemetry — LLM interaction tracking (append-only, D218)
+CREATE TABLE IF NOT EXISTS ai_telemetry (
+    id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    prompt_hash TEXT NOT NULL,
+    response_hash TEXT,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    latency_ms INTEGER DEFAULT 0,
+    agent_id TEXT,
+    user_id TEXT,
+    project_id TEXT,
+    function TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_telemetry_model ON ai_telemetry(model_id);
+CREATE INDEX IF NOT EXISTS idx_ai_telemetry_project ON ai_telemetry(project_id);
+CREATE INDEX IF NOT EXISTS idx_ai_telemetry_created ON ai_telemetry(created_at);
+
+-- AI Bill of Materials
+CREATE TABLE IF NOT EXISTS ai_bom (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    version TEXT,
+    purpose TEXT,
+    risk_classification TEXT,
+    data_categories TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_bom_project ON ai_bom(project_id);
+
+-- ATLAS assessments (BaseAssessor pattern, D116)
+CREATE TABLE IF NOT EXISTS atlas_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    framework_version TEXT DEFAULT 'v5.4.0',
+    overall_score REAL,
+    total_requirements INTEGER DEFAULT 0,
+    satisfied INTEGER DEFAULT 0,
+    partial INTEGER DEFAULT 0,
+    not_satisfied INTEGER DEFAULT 0,
+    not_applicable INTEGER DEFAULT 0,
+    results_json TEXT,
+    assessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assessed_by TEXT DEFAULT 'automated',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_atlas_assessments_project ON atlas_assessments(project_id);
+
+-- ATLAS red team results (D219 — opt-in adversarial testing)
+CREATE TABLE IF NOT EXISTS atlas_red_team_results (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    technique_id TEXT NOT NULL,
+    technique_name TEXT,
+    test_name TEXT NOT NULL,
+    result TEXT CHECK(result IN ('pass', 'fail', 'partial', 'error')),
+    severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low', 'info')),
+    details TEXT,
+    evidence TEXT,
+    remediation TEXT,
+    tested_at TEXT NOT NULL DEFAULT (datetime('now')),
+    tested_by TEXT DEFAULT 'automated'
+);
+CREATE INDEX IF NOT EXISTS idx_atlas_rt_project ON atlas_red_team_results(project_id);
+CREATE INDEX IF NOT EXISTS idx_atlas_rt_technique ON atlas_red_team_results(technique_id);
+
+-- OWASP LLM Top 10 assessments
+CREATE TABLE IF NOT EXISTS owasp_llm_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    framework_version TEXT DEFAULT 'v2025',
+    overall_score REAL,
+    total_requirements INTEGER DEFAULT 0,
+    satisfied INTEGER DEFAULT 0,
+    partial INTEGER DEFAULT 0,
+    not_satisfied INTEGER DEFAULT 0,
+    not_applicable INTEGER DEFAULT 0,
+    results_json TEXT,
+    assessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assessed_by TEXT DEFAULT 'automated',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_owasp_llm_project ON owasp_llm_assessments(project_id);
+
+-- NIST AI RMF assessments
+CREATE TABLE IF NOT EXISTS nist_ai_rmf_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    framework_version TEXT DEFAULT '1.0',
+    overall_score REAL,
+    total_requirements INTEGER DEFAULT 0,
+    satisfied INTEGER DEFAULT 0,
+    partial INTEGER DEFAULT 0,
+    not_satisfied INTEGER DEFAULT 0,
+    not_applicable INTEGER DEFAULT 0,
+    results_json TEXT,
+    assessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assessed_by TEXT DEFAULT 'automated',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_nist_ai_rmf_project ON nist_ai_rmf_assessments(project_id);
+
+-- ISO/IEC 42001 assessments
+CREATE TABLE IF NOT EXISTS iso42001_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    framework_version TEXT DEFAULT '2023',
+    overall_score REAL,
+    total_requirements INTEGER DEFAULT 0,
+    satisfied INTEGER DEFAULT 0,
+    partial INTEGER DEFAULT 0,
+    not_satisfied INTEGER DEFAULT 0,
+    not_applicable INTEGER DEFAULT 0,
+    results_json TEXT,
+    assessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assessed_by TEXT DEFAULT 'automated',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_iso42001_project ON iso42001_assessments(project_id);
+
+-- ============================================================
+-- PHASE 36: EVOLUTIONARY INTELLIGENCE (Parent-Child Lifecycle)
+-- ============================================================
+
+-- Child capabilities registry
+CREATE TABLE IF NOT EXISTS child_capabilities (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL,
+    capability_name TEXT NOT NULL,
+    version TEXT DEFAULT '1.0.0',
+    status TEXT CHECK(status IN ('active', 'deprecated', 'testing', 'pending')) DEFAULT 'active',
+    source TEXT CHECK(source IN ('inherited', 'learned', 'propagated', 'manual')) DEFAULT 'inherited',
+    learned_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(child_id, capability_name)
+);
+CREATE INDEX IF NOT EXISTS idx_child_caps_child ON child_capabilities(child_id);
+
+-- Child telemetry (pull-based health data, D210)
+CREATE TABLE IF NOT EXISTS child_telemetry (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL,
+    health_status TEXT CHECK(health_status IN ('healthy', 'degraded', 'unhealthy', 'offline')) DEFAULT 'healthy',
+    genome_version TEXT,
+    uptime_hours REAL DEFAULT 0.0,
+    error_rate REAL DEFAULT 0.0,
+    compliance_scores_json TEXT,
+    learned_behaviors_json TEXT,
+    collected_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_child_telemetry_child ON child_telemetry(child_id);
+
+-- Child learned behaviors (D213)
+CREATE TABLE IF NOT EXISTS child_learned_behaviors (
+    id TEXT PRIMARY KEY,
+    child_id TEXT NOT NULL,
+    behavior_type TEXT NOT NULL,
+    description TEXT NOT NULL,
+    evidence_json TEXT,
+    confidence REAL DEFAULT 0.0,
+    evaluated INTEGER DEFAULT 0,
+    absorbed INTEGER DEFAULT 0,
+    trust_level TEXT DEFAULT 'child'
+        CHECK(trust_level IN ('system', 'user', 'external', 'child')),
+    injection_scan_result TEXT DEFAULT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_child_behaviors_child ON child_learned_behaviors(child_id);
+CREATE INDEX IF NOT EXISTS idx_child_behaviors_eval ON child_learned_behaviors(evaluated);
+
+-- Capability genome versions (D209 — semver + SHA-256)
+CREATE TABLE IF NOT EXISTS genome_versions (
+    id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    genome_data TEXT NOT NULL,
+    change_type TEXT CHECK(change_type IN ('major', 'minor', 'patch', 'rollback')) DEFAULT 'minor',
+    change_summary TEXT,
+    parent_version TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_genome_versions_version ON genome_versions(version);
+CREATE INDEX IF NOT EXISTS idx_genome_versions_hash ON genome_versions(content_hash);
+
+-- Capability evaluations (6-dimension scoring, REQ-36-020)
+CREATE TABLE IF NOT EXISTS capability_evaluations (
+    id TEXT PRIMARY KEY,
+    capability_id TEXT,
+    capability_name TEXT NOT NULL,
+    score REAL NOT NULL,
+    dimensions_json TEXT NOT NULL,
+    outcome TEXT CHECK(outcome IN ('auto_queue', 'recommend', 'log', 'archive')) NOT NULL,
+    rationale TEXT,
+    evaluator TEXT,
+    source_type TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cap_evals_outcome ON capability_evaluations(outcome);
+
+-- Staging environments (D211 — git worktree isolation)
+CREATE TABLE IF NOT EXISTS staging_environments (
+    id TEXT PRIMARY KEY,
+    capability_id TEXT NOT NULL,
+    genome_version TEXT,
+    worktree_path TEXT,
+    branch_name TEXT,
+    status TEXT CHECK(status IN ('created', 'testing', 'passed', 'failed', 'destroyed')) DEFAULT 'created',
+    test_results_json TEXT,
+    compliance_before_json TEXT,
+    compliance_after_json TEXT,
+    compliance_preserved INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT,
+    destroyed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_staging_status ON staging_environments(status);
+
+-- Propagation log (D214 — append-only HITL deployment)
+CREATE TABLE IF NOT EXISTS propagation_log (
+    id TEXT PRIMARY KEY,
+    capability_id TEXT NOT NULL,
+    capability_name TEXT,
+    source_type TEXT,
+    target_children_json TEXT,
+    status TEXT CHECK(status IN ('prepared', 'approved', 'executing', 'completed', 'failed', 'rolled_back')) DEFAULT 'prepared',
+    genome_version_before TEXT,
+    genome_version_after TEXT,
+    rollback_plan TEXT,
+    prepared_by TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    executed_by TEXT,
+    executed_at TEXT,
+    completed_at TEXT,
+    rollback_reason TEXT,
+    rolled_back_at TEXT,
+    rolled_back_by TEXT,
+    execution_results_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_propagation_status ON propagation_log(status);
+CREATE INDEX IF NOT EXISTS idx_propagation_cap ON propagation_log(capability_id);
+
+-- ============================================================
+-- PHASE 38: CLOUD-AGNOSTIC (Multi-Cloud Provider Status)
+-- ============================================================
+
+-- Cloud provider health status
+CREATE TABLE IF NOT EXISTS cloud_provider_status (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    service TEXT NOT NULL,
+    status TEXT CHECK(status IN ('healthy', 'degraded', 'unhealthy', 'unavailable')) DEFAULT 'healthy',
+    latency_ms INTEGER,
+    details TEXT,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cloud_status_provider ON cloud_provider_status(provider);
+CREATE INDEX IF NOT EXISTS idx_cloud_status_service ON cloud_provider_status(service);
+
+-- ============================================================
+-- CLOUD TENANT CSP CONFIG — per-tenant CSP overrides (D225, D60)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cloud_tenant_csp_config (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    service TEXT NOT NULL
+        CHECK(service IN ('secrets', 'storage', 'kms', 'monitoring', 'iam', 'registry', 'global')),
+    provider TEXT NOT NULL
+        CHECK(provider IN ('aws', 'azure', 'gcp', 'oci', 'ibm', 'local')),
+    config_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, service)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cloud_tenant_config_tenant ON cloud_tenant_csp_config(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cloud_tenant_config_service ON cloud_tenant_csp_config(service);
+
+-- ============================================================
+-- CSP REGION CERTIFICATIONS — compliance certification registry (D233)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS csp_region_certifications (
+    id TEXT PRIMARY KEY,
+    csp TEXT NOT NULL CHECK(csp IN ('aws', 'azure', 'gcp', 'oci', 'ibm')),
+    region TEXT NOT NULL,
+    certification TEXT NOT NULL,
+    certification_level TEXT DEFAULT '',
+    impact_levels TEXT DEFAULT '[]',
+    verified_at TEXT,
+    expires_at TEXT,
+    source_url TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(csp, region, certification)
+);
+
+CREATE INDEX IF NOT EXISTS idx_csp_certs_csp ON csp_region_certifications(csp);
+CREATE INDEX IF NOT EXISTS idx_csp_certs_region ON csp_region_certifications(region);
+CREATE INDEX IF NOT EXISTS idx_csp_certs_cert ON csp_region_certifications(certification);
 """
 
 
@@ -3123,6 +3599,31 @@ COMPLIANCE_PLATFORM_ALTER_SQL = [
 MOSA_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN mosa_enabled INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN mosa_modularity_score REAL",
+]
+
+INNOVATION_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN innovation_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN innovation_signal_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN innovation_solution_count INTEGER DEFAULT 0",
+]
+
+# Phase 36: Evolutionary Intelligence columns
+EVOLUTION_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN genome_version TEXT",
+    "ALTER TABLE projects ADD COLUMN child_capability_count INTEGER DEFAULT 0",
+]
+
+# Phase 37: AI Security columns
+AI_SECURITY_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN atlas_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN ai_telemetry_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN prompt_injection_defense_active INTEGER DEFAULT 0",
+]
+
+# Phase 38: Cloud-Agnostic columns
+CLOUD_AGNOSTIC_ALTER_SQL = [
+    "ALTER TABLE tenants ADD COLUMN cloud_provider TEXT DEFAULT 'aws'",
+    "ALTER TABLE tenants ADD COLUMN cloud_region TEXT DEFAULT 'us-gov-west-1'",
 ]
 
 # Spec-kit Pattern 7: Parallel task markers (D161)
@@ -3225,6 +3726,30 @@ def init_db(db_path=None):
             pass
     # Phase 30: Dashboard auth — extend agent_token_usage (D177)
     for sql in DASHBOARD_AUTH_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 35: Innovation Engine columns (D199-D208)
+    for sql in INNOVATION_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 36: Evolutionary Intelligence columns
+    for sql in EVOLUTION_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 37: AI Security columns
+    for sql in AI_SECURITY_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 38: Cloud-Agnostic columns (tenants table may not exist in all envs)
+    for sql in CLOUD_AGNOSTIC_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

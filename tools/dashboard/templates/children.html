@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Child Applications - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <span class="current">Child Applications</span>
+    </div>
+    <h1>Child Application Registry</h1>
+    <p class="subtitle">Agentic child applications generated via <span data-glossary="GOTCHA">GOTCHA</span> framework (Phase 19)</p>
+</div>
+
+<!-- Health Summary -->
+<div class="stat-grid mb-3">
+    <div class="stat-card">
+        <div class="stat-value text-blue">{{ total_count }}</div>
+        <div class="stat-label">Total Children</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-green">{{ healthy_count }}</div>
+        <div class="stat-label">Healthy</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value {% if degraded_count > 0 %}text-yellow{% else %}text-green{% endif %}">{{ degraded_count }}</div>
+        <div class="stat-label">Degraded</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value {% if unhealthy_count > 0 %}text-red{% else %}text-green{% endif %}">{{ unhealthy_count }}</div>
+        <div class="stat-label">Unhealthy</div>
+    </div>
+</div>
+
+<!-- Children Table -->
+{% if children %}
+<div class="card">
+    <div class="card-label">Registered Child Applications</div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Child ID</th>
+                    <th>Name</th>
+                    <th>Health Status</th>
+                    <th>Genome Version</th>
+                    <th>Capabilities</th>
+                    <th>Last Heartbeat</th>
+                    <th>Pending Upgrades</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for child in children %}
+                <tr>
+                    <td>
+                        <code>{{ child.id[:12] }}...</code>
+                    </td>
+                    <td>
+                        <strong>{{ child.name }}</strong>
+                        {% if child.description %}
+                        <br><span class="text-muted" style="font-size: 0.85rem;">{{ child.description }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if child.health_status == 'healthy' %}
+                        <span class="status-dot green"></span>
+                        <span class="badge badge-active">healthy</span>
+                        {% elif child.health_status == 'degraded' %}
+                        <span class="status-dot yellow"></span>
+                        <span class="badge badge-warning">degraded</span>
+                        {% else %}
+                        <span class="status-dot red"></span>
+                        <span class="badge badge-inactive">unhealthy</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if child.genome_version %}
+                        <code>{{ child.genome_version }}</code>
+                        {% else %}
+                        <span class="text-muted">N/A</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if child.capability_count is not none %}
+                        <span class="text-blue">{{ child.capability_count }}</span>
+                        {% else %}
+                        <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if child.last_heartbeat %}
+                        <span data-timestamp="{{ child.last_heartbeat }}" data-timestamp-format="ago">{{ child.last_heartbeat | friendly_time }}</span>
+                        {% else %}
+                        <span class="text-muted">No heartbeat recorded</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if child.pending_upgrades and child.pending_upgrades > 0 %}
+                        <span class="badge badge-warning">{{ child.pending_upgrades }}</span>
+                        {% else %}
+                        <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-label">No Child Applications</div>
+    <div class="card-body" style="padding: 2rem; text-align: center;">
+        <p style="font-size: 1.1rem; margin-bottom: 1rem;">No child applications have been generated yet.</p>
+        <p class="text-muted">
+            Use <code>/icdev-agentic</code> or
+            <code>python tools/builder/scaffolder.py --agentic</code>
+            to generate a new child application with the full
+            <span data-glossary="GOTCHA">GOTCHA</span> framework and
+            <span data-glossary="ATLAS">ATLAS</span> workflow.
+        </p>
+        <p class="text-muted" style="margin-top: 1rem;">
+            See <a href="/quick-paths">Quick Paths</a> for guided workflows.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+<!-- Legend -->
+<div class="card" style="margin-top: 1rem;">
+    <div class="card-label">Health Status Legend</div>
+    <div class="card-body" style="padding: 1rem;">
+        <div style="display: flex; gap: 2rem; flex-wrap: wrap;">
+            <div>
+                <span class="status-dot green"></span>
+                <strong>Healthy</strong> — Child is responding to heartbeats and all agents are operational.
+            </div>
+            <div>
+                <span class="status-dot yellow"></span>
+                <strong>Degraded</strong> — Child is responding but one or more agents are inactive or heartbeat is stale.
+            </div>
+            <div>
+                <span class="status-dot red"></span>
+                <strong>Unhealthy</strong> — Child has not responded to heartbeats within the expected window.
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

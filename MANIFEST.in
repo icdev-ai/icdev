@@ -1,0 +1,34 @@
+include pyproject.toml README.md CHANGELOG.md CONTRIBUTING.md requirements.txt
+include CLAUDE.md .mcp.json ruff.toml .gitlab-ci.yml docker-compose.yml
+
+recursive-include tools *.py *.html *.css *.js *.json *.yaml *.sql *.md *.txt *.LICENSE
+recursive-include args *.yaml *.json
+recursive-include context *.json *.yaml *.md *.j2 *.txt
+recursive-include goals *.md
+recursive-include hardprompts *.md
+recursive-include features *.feature *.py
+recursive-include docs *.md
+recursive-include memory *.md
+recursive-include tests *.py *.json *.yaml
+
+recursive-exclude * __pycache__ *.py[cod] *.so *.egg-info
+
+prune .git
+prune .github
+prune .tmp
+prune .claude
+prune agents
+prune audit
+prune data
+prune deploy
+prune docker
+prune k8s
+prune node_modules
+prune playwright
+prune projects
+prune specs
+prune videos
+
+exclude .env .env.local .secrets.baseline
+exclude package.json package-lock.json playwright-mcp-config.json playwright.config.ts
+exclude _pdb_b64_1.txt
