@@ -1,0 +1,162 @@
+<!-- [TEMPLATE: CUI // SP-CTI] -->
+{% extends "portal_base.html" %}
+{% set active_page = "oscal" %}
+{% block title %}OSCAL Ecosystem - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('portal.compliance') }}">Compliance</a>
+    <span class="separator">/</span>
+    <span class="current">OSCAL</span>
+</nav>
+<div class="page-header">
+    <h1>OSCAL Ecosystem</h1>
+    <p>Machine-readable compliance artifacts — 3-layer validation, format conversion, catalog browser (D302-D306)</p>
+</div>
+
+<!-- Tool Status -->
+<div class="card">
+    <h2>Tool Availability</h2>
+    <div class="stat-row" style="display:flex;gap:2rem;flex-wrap:wrap;margin:1rem 0;">
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:1.5rem;font-weight:bold;" id="st-java">--</div>
+            <div style="color:#666;font-size:0.85rem;">Java</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:1.5rem;font-weight:bold;" id="st-cli">--</div>
+            <div style="color:#666;font-size:0.85rem;">oscal-cli</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:1.5rem;font-weight:bold;" id="st-pydantic">--</div>
+            <div style="color:#666;font-size:0.85rem;">Pydantic</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:1.5rem;font-weight:bold;" id="st-catalog">--</div>
+            <div style="color:#666;font-size:0.85rem;">NIST Catalog</div>
+        </div>
+    </div>
+</div>
+
+<!-- Catalog Stats -->
+<div class="card">
+    <h2>Catalog Statistics</h2>
+    <div id="catalog-info" style="margin:1rem 0;">
+        <p class="empty-state">Loading catalog information...</p>
+    </div>
+</div>
+
+<!-- Validation Log -->
+<div class="card">
+    <h2>Validation Log</h2>
+    {% if validations %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="OSCAL validation log">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>File</th>
+                    <th>Validator</th>
+                    <th>Result</th>
+                    <th>Errors</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in validations %}
+                <tr>
+                    <td class="td-nowrap">{{ v.created_at }}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="{{ v.file_path }}">{{ v.file_path }}</td>
+                    <td>{{ v.validator }}</td>
+                    <td>
+                        <span class="badge {% if v.valid %}badge-success{% else %}badge-danger{% endif %}">
+                            {{ 'PASS' if v.valid else 'FAIL' }}
+                        </span>
+                    </td>
+                    <td>{{ v.error_count or 0 }}</td>
+                    <td>{{ v.duration_ms or 0 }}ms</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No OSCAL validations recorded yet.</p>
+    {% endif %}
+</div>
+
+<!-- Artifacts -->
+<div class="card">
+    <h2>OSCAL Artifacts</h2>
+    {% if artifacts %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="OSCAL artifacts">
+            <thead>
+                <tr>
+                    <th>Project</th>
+                    <th>Type</th>
+                    <th>Format</th>
+                    <th>Version</th>
+                    <th>Valid</th>
+                    <th>Generated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in artifacts %}
+                <tr>
+                    <td>{{ a.project_id }}</td>
+                    <td>{{ a.artifact_type }}</td>
+                    <td>{{ a.format or 'json' }}</td>
+                    <td>{{ a.oscal_version or '' }}</td>
+                    <td>
+                        <span class="badge {% if a.schema_valid %}badge-success{% else %}badge-danger{% endif %}">
+                            {{ 'Valid' if a.schema_valid else 'Invalid' }}
+                        </span>
+                    </td>
+                    <td class="td-nowrap">{{ a.generated_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No OSCAL artifacts generated. Use <code>/icdev-comply</code> to generate SSP, POAM, or other OSCAL artifacts.</p>
+    {% endif %}
+</div>
+
+<script>
+(function() {
+    function badge(ok) {
+        return ok ? '<span class="badge badge-success">Available</span>'
+                  : '<span class="badge badge-secondary">Not installed</span>';
+    }
+    fetch('/api/v1/oscal/detect')
+        .then(r => r.json())
+        .then(d => {
+            document.getElementById('st-java').innerHTML = badge(d.java_available);
+            document.getElementById('st-cli').innerHTML = badge(d.oscal_cli_available);
+            document.getElementById('st-pydantic').innerHTML = badge(d.oscal_pydantic_available);
+            document.getElementById('st-catalog').innerHTML = badge(d.nist_catalog_available);
+        }).catch(() => {});
+
+    fetch('/api/v1/oscal/catalog/stats')
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                document.getElementById('catalog-info').innerHTML = '<p class="empty-state">' + d.error + '</p>';
+                return;
+            }
+            let html = '<div style="display:flex;gap:2rem;flex-wrap:wrap;">';
+            html += '<div><strong>Source:</strong> ' + (d.source || 'unknown') + '</div>';
+            html += '<div><strong>Total Controls:</strong> ' + (d.total_controls || 0) + '</div>';
+            html += '<div><strong>Families:</strong> ' + (d.total_families || 0) + '</div>';
+            if (d.catalog_version) html += '<div><strong>Version:</strong> ' + d.catalog_version + '</div>';
+            html += '</div>';
+            document.getElementById('catalog-info').innerHTML = html;
+        }).catch(() => {
+            document.getElementById('catalog-info').innerHTML = '<p class="empty-state">Could not load catalog stats.</p>';
+        });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+
+{% block title %}OSCAL Ecosystem - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>OSCAL Ecosystem</h1>
+    <p class="text-muted">Tool detection, deep validation, catalog browser, and artifact management (D302-D306).</p>
+
+    <!-- Tool Status -->
+    <h2>Tool Availability</h2>
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-java" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Java</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-cli" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">oscal-cli</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-pydantic" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Pydantic</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-catalog" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">NIST Catalog</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-validations" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Validations</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-artifacts" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Artifacts</div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <h2>Quick Actions</h2>
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <button onclick="detectTools()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Detect Tools</button>
+        <label for="oscal-file">Validate File:</label>
+        <input type="text" id="oscal-file" placeholder="/path/to/ssp.oscal.json" style="padding:0.4rem;border:1px solid #ccc;border-radius:4px;width:300px;">
+        <button onclick="validateFile()" style="padding:0.4rem 1rem;background:#388e3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Validate</button>
+    </div>
+    <div id="action-result" style="margin:0.5rem 0;"></div>
+
+    <!-- Catalog Stats -->
+    <h2>Catalog Statistics</h2>
+    <div id="catalog-stats" style="margin:1rem 0;padding:1rem;border:1px solid #ddd;border-radius:8px;">
+        <p style="color:#999;">Loading catalog stats...</p>
+    </div>
+
+    <!-- Control Lookup -->
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;">
+        <label for="ctrl-id">Control Lookup:</label>
+        <input type="text" id="ctrl-id" placeholder="AC-2" style="padding:0.4rem;border:1px solid #ccc;border-radius:4px;width:120px;">
+        <button onclick="lookupControl()" style="padding:0.4rem 1rem;background:#7b1fa2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Lookup</button>
+    </div>
+    <div id="ctrl-result" style="margin:0.5rem 0;"></div>
+
+    <!-- Validation Log -->
+    <h2 style="margin-top:2rem;">Validation Log</h2>
+    <div class="table-container">
+        <table id="val-table" aria-label="OSCAL validation log">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>File</th>
+                    <th>Validator</th>
+                    <th>Valid</th>
+                    <th>Errors</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody id="val-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Artifacts -->
+    <h2 style="margin-top:2rem;">OSCAL Artifacts</h2>
+    <div class="table-container">
+        <table id="art-table" aria-label="OSCAL artifacts">
+            <thead>
+                <tr>
+                    <th>Project</th>
+                    <th>Type</th>
+                    <th>Format</th>
+                    <th>Version</th>
+                    <th>Valid</th>
+                    <th>Generated</th>
+                </tr>
+            </thead>
+            <tbody id="art-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const GREEN = '#4caf50', RED = '#f44336', GRAY = '#9e9e9e';
+
+    function badge(ok) {
+        return ok ? `<span style="color:${GREEN};font-weight:bold;">Yes</span>`
+                  : `<span style="color:${RED};font-weight:bold;">No</span>`;
+    }
+
+    // Load tool status
+    function loadStatus() {
+        fetch('/api/oscal/status')
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('st-java').innerHTML = badge(data.java_available);
+                document.getElementById('st-cli').innerHTML = badge(data.oscal_cli_available);
+                document.getElementById('st-pydantic').innerHTML = badge(data.oscal_pydantic_available);
+                document.getElementById('st-catalog').innerHTML = badge(data.nist_catalog_available);
+            }).catch(() => {});
+    }
+
+    // Load validation count + artifacts count
+    function loadCounts() {
+        fetch('/api/oscal/validations?limit=1')
+            .then(r => r.json())
+            .then(data => { document.getElementById('st-validations').textContent = data.total || 0; })
+            .catch(() => {});
+        fetch('/api/oscal/artifacts?limit=1')
+            .then(r => r.json())
+            .then(data => { document.getElementById('st-artifacts').textContent = data.total || 0; })
+            .catch(() => {});
+    }
+
+    // Load catalog stats
+    function loadCatalogStats() {
+        fetch('/api/oscal/catalog/stats')
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('catalog-stats').innerHTML = `<p style="color:${RED};">${data.error}</p>`;
+                    return;
+                }
+                let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;">';
+                html += `<div><strong>Source:</strong> ${data.source || 'unknown'}</div>`;
+                html += `<div><strong>Total Controls:</strong> ${data.total_controls || 0}</div>`;
+                html += `<div><strong>Families:</strong> ${data.total_families || 0}</div>`;
+                if (data.catalog_version) html += `<div><strong>Version:</strong> ${data.catalog_version}</div>`;
+                html += '</div>';
+                document.getElementById('catalog-stats').innerHTML = html;
+            }).catch(() => {
+                document.getElementById('catalog-stats').innerHTML = '<p style="color:#999;">Catalog not available</p>';
+            });
+    }
+
+    // Load validation log
+    function loadValidations() {
+        fetch('/api/oscal/validations?limit=50')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('val-body');
+                if (!data.validations || data.validations.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No validations recorded.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.validations.map(v => `<tr>
+                    <td class="td-nowrap">${v.created_at || ''}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;" title="${v.file_path || ''}">${v.file_path || ''}</td>
+                    <td>${v.validator || ''}</td>
+                    <td><span style="color:${v.valid ? GREEN : RED};font-weight:bold;">${v.valid ? 'PASS' : 'FAIL'}</span></td>
+                    <td>${v.error_count || 0}</td>
+                    <td>${v.duration_ms || 0}ms</td>
+                </tr>`).join('');
+            }).catch(() => {});
+    }
+
+    // Load artifacts
+    function loadArtifacts() {
+        fetch('/api/oscal/artifacts?limit=50')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('art-body');
+                if (!data.artifacts || data.artifacts.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No artifacts generated.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.artifacts.map(a => `<tr>
+                    <td>${a.project_id || ''}</td>
+                    <td>${a.artifact_type || ''}</td>
+                    <td>${a.format || 'json'}</td>
+                    <td>${a.oscal_version || ''}</td>
+                    <td><span style="color:${a.schema_valid ? GREEN : RED};font-weight:bold;">${a.schema_valid ? 'Valid' : 'Invalid'}</span></td>
+                    <td class="td-nowrap">${a.generated_at || ''}</td>
+                </tr>`).join('');
+            }).catch(() => {});
+    }
+
+    // Detect tools action
+    window.detectTools = function() {
+        fetch('/api/oscal/detect', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('action-result').innerHTML =
+                    `<pre style="background:#f5f5f5;padding:0.5rem;border-radius:4px;font-size:0.85rem;">${JSON.stringify(data, null, 2)}</pre>`;
+                loadStatus();
+            }).catch(() => {});
+    };
+
+    // Validate file action
+    window.validateFile = function() {
+        const fp = document.getElementById('oscal-file').value.trim();
+        if (!fp) return;
+        document.getElementById('action-result').innerHTML = '<p>Validating...</p>';
+        fetch('/api/oscal/validate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({file_path: fp}),
+        })
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('action-result').innerHTML =
+                `<pre style="background:#f5f5f5;padding:0.5rem;border-radius:4px;font-size:0.85rem;">${JSON.stringify(data, null, 2)}</pre>`;
+            loadValidations();
+            loadCounts();
+        }).catch(() => {});
+    };
+
+    // Control lookup
+    window.lookupControl = function() {
+        const cid = document.getElementById('ctrl-id').value.trim().toUpperCase();
+        if (!cid) return;
+        fetch(`/api/oscal/catalog/${cid}`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('ctrl-result').innerHTML = `<p style="color:${RED};">${data.error}</p>`;
+                    return;
+                }
+                const c = data.control || {};
+                let html = `<div style="padding:0.75rem;border:1px solid #ddd;border-radius:8px;margin:0.5rem 0;">`;
+                html += `<h3 style="margin:0 0 0.5rem;">${c.id || cid}: ${c.title || ''}</h3>`;
+                if (c.family) html += `<div><strong>Family:</strong> ${c.family}</div>`;
+                if (c.class_) html += `<div><strong>Class:</strong> ${c.class_}</div>`;
+                if (c.baseline) html += `<div><strong>Baseline:</strong> ${c.baseline}</div>`;
+                if (c.description) html += `<div style="margin-top:0.5rem;">${c.description}</div>`;
+                html += '</div>';
+                document.getElementById('ctrl-result').innerHTML = html;
+            }).catch(() => {});
+    };
+
+    // Init
+    loadStatus();
+    loadCounts();
+    loadCatalogStats();
+    loadValidations();
+    loadArtifacts();
+})();
+</script>
+{% endblock %}

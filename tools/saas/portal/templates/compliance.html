@@ -52,4 +52,53 @@
     <p class="empty-state">No compliance data available. Generate ATO artifacts for your projects.</p>
 </div>
 {% endif %}
+
+<!-- OSCAL Ecosystem (D302-D306) -->
+<div class="page-header" style="margin-top:2rem;">
+    <h2>OSCAL Ecosystem</h2>
+    <p>Machine-readable compliance artifacts — validation, catalog, format conversion.
+       <a href="{{ url_for('portal.oscal') }}">View full OSCAL page &rarr;</a></p>
+</div>
+<div class="card">
+    <div class="stat-row" style="display:flex;gap:1.5rem;flex-wrap:wrap;margin-bottom:1rem;">
+        <div><strong>oscal-cli:</strong> <span id="oscal-cli-status">checking...</span></div>
+        <div><strong>Pydantic:</strong> <span id="oscal-pydantic-status">checking...</span></div>
+        <div><strong>NIST Catalog:</strong> <span id="oscal-catalog-status">checking...</span></div>
+    </div>
+    {% if oscal_validations %}
+    <h3>Recent Validations</h3>
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Recent OSCAL validations">
+            <thead>
+                <tr><th>File</th><th>Validator</th><th>Result</th><th>Date</th></tr>
+            </thead>
+            <tbody>
+                {% for v in oscal_validations[:5] %}
+                <tr>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;">{{ v.file_path }}</td>
+                    <td>{{ v.validator }}</td>
+                    <td><span class="badge {% if v.valid %}badge-success{% else %}badge-danger{% endif %}">{{ 'PASS' if v.valid else 'FAIL' }}</span></td>
+                    <td>{{ v.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No OSCAL validations recorded. Use <code>/icdev-comply</code> or the OSCAL tools CLI to generate and validate artifacts.</p>
+    {% endif %}
+</div>
+<script>
+fetch('/api/v1/oscal/detect')
+    .then(r => r.json())
+    .then(d => {
+        document.getElementById('oscal-cli-status').innerHTML = d.oscal_cli_available ? '<span class="badge badge-success">Available</span>' : '<span class="badge badge-secondary">Not installed</span>';
+        document.getElementById('oscal-pydantic-status').innerHTML = d.oscal_pydantic_available ? '<span class="badge badge-success">Available</span>' : '<span class="badge badge-secondary">Not installed</span>';
+        document.getElementById('oscal-catalog-status').innerHTML = d.nist_catalog_available ? '<span class="badge badge-success">Available</span>' : '<span class="badge badge-secondary">Not installed</span>';
+    }).catch(() => {
+        ['oscal-cli-status','oscal-pydantic-status','oscal-catalog-status'].forEach(id => {
+            document.getElementById(id).innerHTML = '<span class="badge badge-secondary">Unknown</span>';
+        });
+    });
+</script>
 {% endblock %}

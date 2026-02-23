@@ -106,7 +106,11 @@
       "WebFetch(domain:repo1.maven.org)",
       "Bash(unzip:*)",
       "Bash(export JAVA_HOME:*)",
-      "Bash(export JAVA_HOME=\"C:\\\\Program Files\\\\Eclipse Adoptium\\\\jdk-21.0.10.7-hotspot\")"
+      "Bash(export JAVA_HOME=\"C:\\\\Program Files\\\\Eclipse Adoptium\\\\jdk-21.0.10.7-hotspot\")",
+      "Bash(do python tools/db/migrate.py --mark-applied $v)",
+      "WebFetch(domain:www.gnu.org)",
+      "Bash(git remote set-url:*)",
+      "Bash(git fetch:*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",

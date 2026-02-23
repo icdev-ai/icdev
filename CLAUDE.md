@@ -1024,6 +1024,8 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /traces            — Trace explorer: stat grid, trace list, span waterfall SVG (Phase 46)
 #   /provenance        — Provenance viewer: entity/activity tables, lineage query, PROV-JSON export (Phase 46)
 #   /xai               — XAI dashboard: assessment runner, coverage gauge, SHAP bar chart (Phase 46)
+#   /oscal             — OSCAL ecosystem: tool detection, validation log, catalog browser, artifacts (D302-D306)
+#   /prod-audit        — Production readiness audit: 30 checks, 6 categories, remediation log (D291-D300)
 #   /admin/users       — Admin user/key management (admin role only)
 # Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
 # RBAC: 5 roles (admin, pm, developer, isso, co) — D172

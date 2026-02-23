@@ -59,7 +59,7 @@ PORTAL_PORT: 8443
 
 8. Report to the user:
    - **Dashboard**: `http://localhost:DASHBOARD_PORT`
-     - Pages: `/`, `/projects`, `/projects/<id>`, `/agents`, `/monitoring`, `/events`, `/activity`, `/usage`, `/wizard`, `/query`, `/chat`, `/chat/<id>`, `/chat-streams`, `/quick-paths`, `/batch`, `/diagrams`, `/cicd`, `/gateway`, `/phases`, `/dev-profiles`, `/children`, `/profile`, `/translations`, `/translations/<id>`, `/traces`, `/provenance`, `/xai`, `/login`, `/logout`
+     - Pages: `/`, `/projects`, `/projects/<id>`, `/agents`, `/monitoring`, `/events`, `/activity`, `/usage`, `/wizard`, `/query`, `/chat`, `/chat/<id>`, `/chat-streams`, `/quick-paths`, `/batch`, `/diagrams`, `/cicd`, `/gateway`, `/phases`, `/dev-profiles`, `/children`, `/profile`, `/translations`, `/translations/<id>`, `/traces`, `/provenance`, `/xai`, `/oscal`, `/prod-audit`, `/login`, `/logout`
      - Log: `.tmp/dashboard.log`
    - **SaaS Portal**: `http://localhost:PORTAL_PORT/portal/`
      - API docs: `http://localhost:PORTAL_PORT/api/v1/docs`

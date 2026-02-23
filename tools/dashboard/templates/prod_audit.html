@@ -1,0 +1,280 @@
+{% extends "base.html" %}
+
+{% block title %}Production Audit - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Production Readiness Audit</h1>
+    <p class="text-muted">30 checks across 6 categories with 3-tier remediation (D291-D300).</p>
+
+    <!-- Summary Stats -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-status" style="font-size:1.5rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Status</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-pass" style="font-size:2rem;font-weight:bold;color:#4caf50;">--</div>
+            <div class="stat-label" style="color:#666;">Passed</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-fail" style="font-size:2rem;font-weight:bold;color:#f44336;">--</div>
+            <div class="stat-label" style="color:#666;">Failed</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-warn" style="font-size:2rem;font-weight:bold;color:#ff9800;">--</div>
+            <div class="stat-label" style="color:#666;">Warnings</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-skip" style="font-size:2rem;font-weight:bold;color:#9e9e9e;">--</div>
+            <div class="stat-label" style="color:#666;">Skipped</div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <h2>Actions</h2>
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <button onclick="runAudit()" id="btn-audit" style="padding:0.5rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Run Audit</button>
+        <button onclick="runRemediation(false)" id="btn-remediate" style="padding:0.5rem 1.2rem;background:#388e3c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Remediate</button>
+        <button onclick="runRemediation(true)" style="padding:0.5rem 1.2rem;background:#ff9800;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Dry Run</button>
+    </div>
+    <div id="action-status" style="margin:0.5rem 0;"></div>
+
+    <!-- Category Breakdown -->
+    <h2 style="margin-top:2rem;">Check Results</h2>
+    <div id="check-results" style="margin:1rem 0;">
+        <p style="color:#999;">Run an audit or view the latest results below.</p>
+    </div>
+
+    <!-- Audit History -->
+    <h2 style="margin-top:2rem;">Audit History</h2>
+    <div class="table-container">
+        <table id="history-table" aria-label="Production audit history">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Status</th>
+                    <th>Pass</th>
+                    <th>Fail</th>
+                    <th>Warn</th>
+                    <th>Skip</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody id="history-body">
+                <tr><td colspan="7" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Remediation Log -->
+    <h2 style="margin-top:2rem;">Remediation Log</h2>
+    <div class="table-container">
+        <table id="remed-table" aria-label="Remediation audit log">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Check</th>
+                    <th>Category</th>
+                    <th>Tier</th>
+                    <th>Status</th>
+                    <th>Strategy</th>
+                    <th>Verification</th>
+                </tr>
+            </thead>
+            <tbody id="remed-body">
+                <tr><td colspan="7" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const GREEN = '#4caf50', RED = '#f44336', ORANGE = '#ff9800', GRAY = '#9e9e9e';
+
+    const STATUS_COLORS = {
+        pass: GREEN, fail: RED, warn: ORANGE, skip: GRAY,
+        auto_fixed: GREEN, suggested: ORANGE, escalated: RED, skipped: GRAY, failed: RED,
+        verified_pass: GREEN, verified_fail: RED,
+    };
+
+    const TIER_COLORS = {
+        auto_fix: GREEN, suggest: ORANGE, escalate: RED,
+    };
+
+    // Load latest audit
+    function loadLatest() {
+        fetch('/api/prod-audit/latest')
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('st-status').textContent = 'N/A';
+                    document.getElementById('st-status').style.color = GRAY;
+                    return;
+                }
+
+                const ready = data.overall_pass;
+                document.getElementById('st-status').textContent = ready ? 'READY' : 'BLOCKED';
+                document.getElementById('st-status').style.color = ready ? GREEN : RED;
+                document.getElementById('st-pass').textContent = data.passed || 0;
+                document.getElementById('st-fail').textContent = data.failed || 0;
+                document.getElementById('st-warn').textContent = data.warned || 0;
+                document.getElementById('st-skip').textContent = data.skipped || 0;
+
+                // Render check results from report_json
+                renderCheckResults(data.report_json);
+            }).catch(() => {
+                document.getElementById('st-status').textContent = 'N/A';
+                document.getElementById('st-status').style.color = GRAY;
+            });
+    }
+
+    function renderCheckResults(report) {
+        const container = document.getElementById('check-results');
+        if (!report || typeof report !== 'object') {
+            container.innerHTML = '<p style="color:#999;">No detailed results available. Run an audit to see check-level detail.</p>';
+            return;
+        }
+
+        const checks = report.checks || report.results || [];
+        if (!Array.isArray(checks) || checks.length === 0) {
+            container.innerHTML = '<p style="color:#999;">No check data in latest audit.</p>';
+            return;
+        }
+
+        // Group by category
+        const categories = {};
+        checks.forEach(c => {
+            const cat = c.category || 'unknown';
+            if (!categories[cat]) categories[cat] = [];
+            categories[cat].push(c);
+        });
+
+        let html = '';
+        Object.entries(categories).sort().forEach(([cat, items]) => {
+            html += `<div style="margin-bottom:1.5rem;">`;
+            html += `<h3 style="text-transform:capitalize;margin-bottom:0.5rem;">${cat}</h3>`;
+            html += '<div class="table-container"><table><thead><tr><th>Check</th><th>Name</th><th>Status</th><th>Message</th></tr></thead><tbody>';
+            items.forEach(c => {
+                const color = STATUS_COLORS[c.status] || GRAY;
+                html += `<tr>
+                    <td><code>${c.check_id || ''}</code></td>
+                    <td>${c.name || ''}</td>
+                    <td><span style="color:${color};font-weight:bold;">${(c.status || '').toUpperCase()}</span></td>
+                    <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;">${c.message || ''}</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div></div>';
+        });
+        container.innerHTML = html;
+    }
+
+    // Load audit history
+    function loadHistory() {
+        fetch('/api/prod-audit/history?limit=20')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('history-body');
+                if (!data.audits || data.audits.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">No audits recorded.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.audits.map(a => {
+                    const ready = a.overall_pass;
+                    return `<tr>
+                        <td class="td-nowrap">${a.created_at || ''}</td>
+                        <td><span style="color:${ready ? GREEN : RED};font-weight:bold;">${ready ? 'READY' : 'BLOCKED'}</span></td>
+                        <td style="color:${GREEN};">${a.passed || 0}</td>
+                        <td style="color:${RED};">${a.failed || 0}</td>
+                        <td style="color:${ORANGE};">${a.warned || 0}</td>
+                        <td style="color:${GRAY};">${a.skipped || 0}</td>
+                        <td>${a.duration_ms ? (a.duration_ms / 1000).toFixed(1) + 's' : '--'}</td>
+                    </tr>`;
+                }).join('');
+            }).catch(() => {});
+    }
+
+    // Load remediation log
+    function loadRemediations() {
+        fetch('/api/prod-audit/remediation-log?limit=30')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('remed-body');
+                if (!data.remediations || data.remediations.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">No remediations recorded.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.remediations.map(r => {
+                    const tierColor = TIER_COLORS[r.tier] || GRAY;
+                    const statusColor = STATUS_COLORS[r.status] || GRAY;
+                    const verColor = r.verification_status === 'pass' ? GREEN : r.verification_status === 'fail' ? RED : GRAY;
+                    return `<tr>
+                        <td class="td-nowrap">${r.created_at || ''}</td>
+                        <td><code>${r.check_id || ''}</code> ${r.check_name || ''}</td>
+                        <td>${r.category || ''}</td>
+                        <td><span style="color:${tierColor};font-weight:bold;">${(r.tier || '').replace('_', ' ')}</span></td>
+                        <td><span style="color:${statusColor};font-weight:bold;">${(r.status || '').replace('_', ' ')}</span></td>
+                        <td>${r.fix_strategy || ''}</td>
+                        <td><span style="color:${verColor};">${r.verification_status || '--'}</span></td>
+                    </tr>`;
+                }).join('');
+            }).catch(() => {});
+    }
+
+    // Run audit action
+    window.runAudit = function() {
+        const btn = document.getElementById('btn-audit');
+        btn.disabled = true;
+        btn.textContent = 'Running...';
+        document.getElementById('action-status').innerHTML = '<p>Running production audit (may take up to 5 minutes)...</p>';
+
+        fetch('/api/prod-audit/run', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}' })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.textContent = 'Run Audit';
+                document.getElementById('action-status').innerHTML =
+                    `<pre style="background:#f5f5f5;padding:0.5rem;border-radius:4px;font-size:0.85rem;max-height:300px;overflow:auto;">${JSON.stringify(data, null, 2)}</pre>`;
+                loadLatest();
+                loadHistory();
+            }).catch(() => {
+                btn.disabled = false;
+                btn.textContent = 'Run Audit';
+                document.getElementById('action-status').innerHTML = '<p style="color:red;">Audit request failed.</p>';
+            });
+    };
+
+    // Run remediation action
+    window.runRemediation = function(dryRun) {
+        const btn = document.getElementById('btn-remediate');
+        btn.disabled = true;
+        document.getElementById('action-status').innerHTML = `<p>${dryRun ? 'Dry-run' : 'Running'} remediation...</p>`;
+
+        fetch('/api/prod-audit/remediate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ dry_run: dryRun }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            document.getElementById('action-status').innerHTML =
+                `<pre style="background:#f5f5f5;padding:0.5rem;border-radius:4px;font-size:0.85rem;max-height:300px;overflow:auto;">${JSON.stringify(data, null, 2)}</pre>`;
+            loadRemediations();
+            loadLatest();
+        }).catch(() => {
+            btn.disabled = false;
+            document.getElementById('action-status').innerHTML = '<p style="color:red;">Remediation request failed.</p>';
+        });
+    };
+
+    // Init
+    loadLatest();
+    loadHistory();
+    loadRemediations();
+})();
+</script>
+{% endblock %}

@@ -51,6 +51,8 @@ from tools.dashboard.api.admin import admin_api
 from tools.dashboard.api.activity import activity_api
 from tools.dashboard.api.usage import usage_api
 from tools.dashboard.api.traces import traces_api, provenance_api, xai_api
+from tools.dashboard.api.oscal import oscal_api
+from tools.dashboard.api.prod_audit import prod_audit_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -180,6 +182,8 @@ def create_app() -> Flask:
     app.register_blueprint(traces_api)
     app.register_blueprint(provenance_api)
     app.register_blueprint(xai_api)
+    app.register_blueprint(oscal_api)
+    app.register_blueprint(prod_audit_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -1295,6 +1299,18 @@ def create_app() -> Flask:
     def xai_page():
         """XAI dashboard — explainability, SHAP attribution, compliance."""
         return render_template("xai.html")
+
+    # ---- OSCAL & Production Audit pages ----
+
+    @app.route("/oscal")
+    def oscal_page():
+        """OSCAL ecosystem — validation, catalog, format conversion (D302-D306)."""
+        return render_template("oscal.html")
+
+    @app.route("/prod-audit")
+    def prod_audit_page():
+        """Production readiness audit — 30 checks, 6 categories (D291-D300)."""
+        return render_template("prod_audit.html")
 
     @app.errorhandler(401)
     def unauthorized(e):

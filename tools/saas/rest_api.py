@@ -22,6 +22,9 @@ Endpoint groups:
     /api/v1/projects/<id>/mosa - MOSA assessment
     /api/v1/projects/<id>/supply-chain/graph - Supply chain dependency graph
     /api/v1/marketplace/search - Marketplace asset search
+    /api/v1/oscal/...         - OSCAL tool detection & catalog (D302-D306)
+    /api/v1/projects/<id>/oscal - OSCAL validation & conversion
+    /api/v1/audit/...         - Production readiness audit & remediation (D291-D300)
     /api/v1/events            - SSE platform audit event stream
     /api/v1/usage             - Usage & billing data
 
@@ -721,6 +724,237 @@ def run_cmmc_assessment(project_id):
         return _error(str(exc), status=400)
     except Exception as exc:
         logger.error("run_cmmc_assessment error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# OSCAL ECOSYSTEM (D302-D306)
+# ============================================================================
+
+@api_bp.route("/oscal/detect", methods=["GET"])
+def oscal_detect_tools():
+    """GET /api/v1/oscal/detect -- Detect available OSCAL ecosystem tools."""
+    try:
+        from tools.compliance.oscal_tools import detect_oscal_tools
+        result = detect_oscal_tools()
+        return jsonify(result)
+    except ImportError as exc:
+        return _error(
+            "OSCAL tools not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except Exception as exc:
+        logger.error("oscal_detect error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/oscal/catalog/stats", methods=["GET"])
+def oscal_catalog_stats():
+    """GET /api/v1/oscal/catalog/stats -- Get OSCAL catalog statistics."""
+    try:
+        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        adapter = OscalCatalogAdapter()
+        stats = adapter.get_catalog_stats()
+        return jsonify(stats)
+    except ImportError as exc:
+        return _error(
+            "OSCAL catalog adapter not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except Exception as exc:
+        logger.error("oscal_catalog_stats error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/oscal/catalog/<control_id>", methods=["GET"])
+def oscal_catalog_lookup(control_id):
+    """GET /api/v1/oscal/catalog/<id> -- Look up a control from OSCAL catalog."""
+    try:
+        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        adapter = OscalCatalogAdapter()
+        control = adapter.get_control(control_id)
+        if not control:
+            return _error("Control {} not found".format(control_id), code="NOT_FOUND", status=404)
+        return jsonify({"control": control})
+    except ImportError as exc:
+        return _error(
+            "OSCAL catalog adapter not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except Exception as exc:
+        logger.error("oscal_catalog_lookup error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/oscal/validate", methods=["POST"])
+def oscal_validate(project_id):
+    """POST /api/v1/projects/<id>/oscal/validate -- Deep-validate OSCAL file."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        data = request.get_json(force=True, silent=True) or {}
+        file_path = data.get("file_path")
+        if not file_path:
+            return _error("file_path required", status=400)
+
+        from tools.compliance.oscal_tools import validate_oscal_deep
+        result = call_tool(
+            validate_oscal_deep, g.tenant_id,
+            file_path=file_path,
+        )
+        return jsonify({"oscal_validation": result}), 200
+    except ImportError as exc:
+        return _error(
+            "OSCAL tools not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("oscal_validate error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/projects/<project_id>/oscal/convert", methods=["POST"])
+def oscal_convert(project_id):
+    """POST /api/v1/projects/<id>/oscal/convert -- Convert OSCAL format."""
+    try:
+        call_tool, _, verify = _import_tenant_db()
+        if not verify(g.tenant_id, project_id):
+            return _error("Project not found", code="NOT_FOUND", status=404)
+
+        data = request.get_json(force=True, silent=True) or {}
+        input_path = data.get("input_path")
+        output_format = data.get("output_format", "xml")
+        if not input_path:
+            return _error("input_path required", status=400)
+
+        from tools.compliance.oscal_tools import convert_oscal_format
+        result = call_tool(
+            convert_oscal_format, g.tenant_id,
+            input_path=input_path,
+            output_format=output_format,
+        )
+        return jsonify({"oscal_conversion": result}), 200
+    except ImportError as exc:
+        return _error(
+            "OSCAL tools not available: {}".format(exc),
+            code="SERVICE_UNAVAILABLE", status=503,
+        )
+    except ValueError as exc:
+        return _error(str(exc), status=400)
+    except Exception as exc:
+        logger.error("oscal_convert error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# PRODUCTION AUDIT & REMEDIATION (D291-D300)
+# ============================================================================
+
+@api_bp.route("/audit/latest", methods=["GET"])
+def audit_latest():
+    """GET /api/v1/audit/latest -- Get most recent production audit."""
+    try:
+        import json as _json
+        call_tool, get_conn, _ = _import_tenant_db()
+        conn = get_conn(g.tenant_id)
+        row = conn.execute(
+            "SELECT * FROM production_audits ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        if not row:
+            return _error("No audits found", code="NOT_FOUND", status=404)
+        result = dict(row)
+        for field in ("blockers", "warnings", "report_json"):
+            if result.get(field) and isinstance(result[field], str):
+                try:
+                    result[field] = _json.loads(result[field])
+                except (_json.JSONDecodeError, TypeError):
+                    pass
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("audit_latest error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/audit/history", methods=["GET"])
+def audit_history():
+    """GET /api/v1/audit/history -- Get production audit history."""
+    try:
+        call_tool, get_conn, _ = _import_tenant_db()
+        conn = get_conn(g.tenant_id)
+        limit = min(int(request.args.get("limit", 20)), 100)
+        offset = int(request.args.get("offset", 0))
+        rows = conn.execute(
+            "SELECT id, overall_pass, total_checks, passed, failed, warned, skipped, "
+            "categories_run, duration_ms, created_at FROM production_audits "
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM production_audits").fetchone()[0]
+        conn.close()
+        return jsonify({"audits": [dict(r) for r in rows], "total": total})
+    except Exception as exc:
+        logger.error("audit_history error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/audit/run", methods=["POST"])
+def audit_run():
+    """POST /api/v1/audit/run -- Trigger production audit."""
+    import subprocess as _sp
+    import sys as _sys
+    data = request.get_json(force=True, silent=True) or {}
+    categories = data.get("categories")
+
+    _base = Path(__file__).resolve().parent.parent.parent
+    cmd = [_sys.executable, str(_base / "tools" / "testing" / "production_audit.py"), "--json"]
+    if categories:
+        cmd.extend(["--category", categories])
+    try:
+        proc = _sp.run(cmd, capture_output=True, text=True, timeout=300, stdin=_sp.DEVNULL, cwd=str(_base))
+        import json as _json
+        try:
+            result = _json.loads(proc.stdout)
+        except (_json.JSONDecodeError, TypeError):
+            result = {"stdout": proc.stdout, "stderr": proc.stderr, "returncode": proc.returncode}
+        return jsonify(result)
+    except _sp.TimeoutExpired:
+        return _error("Audit timed out (300s)", code="TIMEOUT", status=504)
+    except Exception as exc:
+        logger.error("audit_run error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/audit/remediate", methods=["POST"])
+def audit_remediate():
+    """POST /api/v1/audit/remediate -- Trigger production remediation."""
+    import subprocess as _sp
+    import sys as _sys
+    data = request.get_json(force=True, silent=True) or {}
+    dry_run = data.get("dry_run", False)
+
+    _base = Path(__file__).resolve().parent.parent.parent
+    cmd = [_sys.executable, str(_base / "tools" / "testing" / "production_remediate.py"), "--json"]
+    if dry_run:
+        cmd.append("--dry-run")
+    else:
+        cmd.append("--auto")
+    try:
+        proc = _sp.run(cmd, capture_output=True, text=True, timeout=300, stdin=_sp.DEVNULL, cwd=str(_base))
+        import json as _json
+        try:
+            result = _json.loads(proc.stdout)
+        except (_json.JSONDecodeError, TypeError):
+            result = {"stdout": proc.stdout, "stderr": proc.stderr, "returncode": proc.returncode}
+        return jsonify(result)
+    except _sp.TimeoutExpired:
+        return _error("Remediation timed out (300s)", code="TIMEOUT", status=504)
+    except Exception as exc:
+        logger.error("audit_remediate error: %s", exc)
         return _error(str(exc), code="INTERNAL_ERROR", status=500)
 
 

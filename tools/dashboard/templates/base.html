@@ -36,6 +36,8 @@
             <li><a href="/dev-profiles" class="{% if '/dev-profiles' in request.path %}active{% endif %}">Profiles</a></li>
             <li><a href="/phases" class="{% if '/phases' in request.path %}active{% endif %}">Phases</a></li>
             <li><a href="/translations" class="{% if '/translations' in request.path %}active{% endif %}">Translations</a></li>
+            <li><a href="/oscal" class="{% if '/oscal' in request.path %}active{% endif %}">OSCAL</a></li>
+            <li><a href="/prod-audit" class="{% if '/prod-audit' in request.path %}active{% endif %}">Audit</a></li>
             {% if current_user and current_user.role == 'admin' %}
             <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
             {% endif %}

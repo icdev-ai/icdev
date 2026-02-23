@@ -941,6 +941,47 @@ def cmmc():
 
 
 # ---------------------------------------------------------------------------
+# Routes: OSCAL Ecosystem (D302-D306)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/oscal")
+@_portal_auth_required
+def oscal():
+    """OSCAL ecosystem — validation log, artifacts, catalog (tenant-scoped)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    validations = []
+    artifacts = []
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            val_rows = tconn.execute(
+                "SELECT * FROM oscal_validation_log ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+            validations = [dict(r) for r in val_rows]
+        except Exception:
+            pass
+        try:
+            art_rows = tconn.execute(
+                "SELECT * FROM oscal_artifacts ORDER BY generated_at DESC LIMIT 50"
+            ).fetchall()
+            artifacts = [dict(r) for r in art_rows]
+        except Exception:
+            pass
+        tconn.close()
+
+    return render_template(
+        "oscal.html",
+        tenant_name=tenant_name,
+        validations=validations,
+        artifacts=artifacts,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Routes: Cross-Language Translation (Phase 43)
 # ---------------------------------------------------------------------------
 @portal_bp.route("/translations")
