@@ -1,133 +1,343 @@
+<p align="center">
+  <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License">
+  <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/compliance%20frameworks-25%2B-orange" alt="Compliance Frameworks">
+  <img src="https://img.shields.io/badge/tools-230%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
+</p>
+
 # ICDEV — Intelligent Coding Development Platform
 
-> **DISCLAIMER: This repository does NOT contain classified or Controlled Unclassified Information (CUI).**
->
-> ICDEV is a software development framework that *automates the generation* of
-> classification markings, compliance artifacts, and security controls for
-> applications it builds. The terms "CUI", "SECRET", "Top Secret", "IL4", "IL5",
-> "IL6", and similar classification labels appear throughout the codebase as
-> **configuration values, template strings, and automation logic** — not as
-> indicators that this repository itself is classified or contains controlled
-> information.
->
-> All classification terminology references publicly available U.S. government
-> standards including [Executive Order 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html),
-> [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002) (CUI Program),
-> [NIST SP 800-53 Rev 5](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final),
-> and [CNSSI 1253](https://www.cnss.gov/CNSS/issuances/Instructions.cfm).
->
-> File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers**
-> that demonstrate the marking format ICDEV applies to generated artifacts.
-> They do not indicate the file itself is CUI.
->
-> **If you are a government security reviewer:** This is an unclassified,
-> open-source Apache 2.0 licensed project. No special handling is required.
+**Build government-grade software without becoming a compliance expert.**
 
-ICDEV is an AI-powered meta-builder that autonomously builds Gov/DoD applications using the GOTCHA (Goals, Orchestration, Tools, Args, Context, Hard Prompts) framework and the ATLAS workflow. It handles the full SDLC with TDD/BDD, NIST 800-53 RMF compliance, multi-agent architecture across 15 specialized agents, and self-healing capabilities for classification levels up to SECRET (IL6).
+ICDEV is an AI-powered development platform that automates the entire software lifecycle — from requirements intake to ATO (Authority to Operate) — for teams building in regulated environments. It handles NIST, FedRAMP, CMMC, HIPAA, PCI DSS, and 20+ other compliance frameworks so developers can focus on writing code.
+
+One developer built this. Imagine what your team could do with it.
+
+> **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV applies to generated artifacts.
+
+---
+
+## The Problem
+
+Building software for the U.S. government or regulated industries means:
+
+- **Months** generating compliance artifacts (SSPs, POAMs, STIGs, SBOMs) by hand
+- **Millions** in consultant fees assembling ATO packages
+- Every framework (FedRAMP, CMMC, HIPAA, PCI DSS) assessed separately — massive duplication
+- Security scanning, CUI markings, audit trails — all manual
+- Developers writing documentation instead of code
+
+## The Solution
+
+ICDEV treats compliance as code. Write your application — ICDEV generates the artifacts, runs security scans, maps controls across 25+ frameworks, and maintains your ATO posture automatically.
+
+```
+Developer writes code
+        │
+        ▼
+ICDEV auto-generates:
+  SSP, POAM, STIG checklist, SBOM, CUI markings,
+  FedRAMP package, CMMC assessment, OSCAL artifacts,
+  eMASS sync, cATO evidence, control crosswalks
+        │
+        ▼
+ATO-ready application
+```
+
+---
 
 ## Quick Start
 
-### Option 1: Interactive Setup (Recommended)
 ```bash
+# Clone and install
+git clone https://github.com/icdev-ai/icdev.git
+cd icdev
+pip install -r requirements.txt
+
+# Initialize databases (193 tables)
+python tools/db/init_icdev_db.py
+
+# Start the dashboard
+python tools/dashboard/app.py
+# → http://localhost:5000
+```
+
+### Or use modular installation:
+
+```bash
+# Interactive wizard
 python tools/installer/installer.py --interactive
-```
 
-### Option 2: Profile-Based Setup
-```bash
-# DoD Team (FedRAMP High + CMMC + MOSA + ZTA)
-python tools/installer/installer.py --profile dod_team --platform k8s
-
-# ISV Startup (minimal, no compliance)
+# Profile-based (pick your mission)
+python tools/installer/installer.py --profile dod_team --compliance fedramp_high,cmmc
+python tools/installer/installer.py --profile healthcare --compliance hipaa,hitrust
 python tools/installer/installer.py --profile isv_startup --platform docker
-
-# Healthcare (HIPAA + HITRUST + SOC 2)
-python tools/installer/installer.py --profile healthcare
 ```
 
-### Option 3: Docker Compose
+### Your first compliance scan:
+
 ```bash
-docker-compose up -d
+# Create a project
+python tools/project/project_create.py --name "my-app" --type microservice
+
+# Generate NIST 800-53 SSP
+python tools/compliance/ssp_generator.py --project-id "proj-001"
+
+# Run security scanning (SAST + deps + secrets)
+python tools/security/sast_runner.py --project-dir ./my-app
+python tools/security/dependency_auditor.py --project-dir ./my-app
+python tools/security/secret_detector.py --project-dir ./my-app
+
+# See how one control maps across ALL frameworks
+python tools/compliance/crosswalk_engine.py --control AC-2
 ```
 
-### Manual Setup
+---
 
-1. **Clone and install dependencies:**
-   ```bash
-   git clone <repository-url>
-   cd ICDev
-   pip install -r requirements.txt
-   ```
+## Key Capabilities
 
-2. **Initialize the framework** (first run):
-   Run `/initialize` in Claude Code to set up all directories, manifests, memory files, and databases.
+### Compliance Automation (25+ Frameworks)
 
-3. **Start the dashboard:**
-   ```bash
-   python tools/dashboard/app.py
-   ```
-   Navigate to `http://localhost:5000` for the web UI.
+| Category | Frameworks |
+|----------|------------|
+| **Federal** | NIST 800-53 Rev 5, FedRAMP (Moderate/High), CMMC Level 2/3, FIPS 199/200, CNSSI 1253 |
+| **DoD** | DoDI 5000.87 DES, MOSA (10 U.S.C. §4401), CSSP (DI 8530.01), cATO Monitoring |
+| **Healthcare** | HIPAA Security Rule, HITRUST CSF v11 |
+| **Financial** | PCI DSS v4.0, SOC 2 Type II |
+| **Law Enforcement** | CJIS Security Policy |
+| **International** | ISO/IEC 27001:2022, ISO/IEC 42001:2023 |
+| **AI/ML Security** | NIST AI RMF 1.0, MITRE ATLAS, OWASP LLM Top 10, OWASP Agentic AI |
+| **Architecture** | NIST 800-207 Zero Trust, CISA Secure by Design, IEEE 1012 IV&V |
 
-4. **Run the test suite:**
-   ```bash
-   pytest tests/ -v --tb=short
-   ```
+### Dual-Hub Crosswalk Engine
 
-5. **Read `CLAUDE.md`** for the full architecture documentation, all available commands, and operational instructions.
+Implement one control — satisfy dozens across frameworks. Never assess the same requirement twice.
+
+```
+                    ┌─────────────────┐
+                    │  NIST 800-53    │  ← US Hub
+                    │    Rev 5        │
+                    └────────┬────────┘
+            ┌────────────────┼────────────────┐
+            │                │                │
+       ┌────┴────┐     ┌────┴────┐     ┌────┴────┐
+       │FedRAMP  │     │  CMMC   │     │800-171  │
+       │Mod/High │     │  L2/L3  │     │  Rev 2  │
+       └─────────┘     └─────────┘     └─────────┘
+            │                │
+       ┌────┴────┐     ┌────┴────┐
+       │  CJIS   │     │ HIPAA   │     ...and 15+ more
+       │ HITRUST │     │ PCI DSS │
+       │  SOC 2  │     │ISO27001 │  ← Bridge to Int'l Hub
+       └─────────┘     └─────────┘
+```
+
+**Example:** Implementing AC-2 (Account Management) automatically satisfies FedRAMP AC-2, NIST 800-171 3.1.1, CMMC AC.L2-3.1.1, CJIS 5.4, HIPAA 164.312(a)(1), PCI DSS 7.1, and ISO 27001 A.5.15.
+
+### Multi-Agent Architecture (15 Agents)
+
+| Tier | Agents | Role |
+|------|--------|------|
+| **Core** | Orchestrator, Architect | Task routing, system design |
+| **Domain** | Builder, Compliance, Security, Infrastructure, MBSE, Modernization, Requirements Analyst, Supply Chain, Simulation, DevSecOps/ZTA, Gateway | Specialized domain work |
+| **Support** | Knowledge, Monitor | Self-healing, observability |
+
+Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publishes an Agent Card at `/.well-known/agent.json`. Workflows use DAG-based parallel execution with domain authority vetoes.
+
+### 6 First-Class Languages
+
+| Language | Scaffold | TDD | Lint | SAST | BDD | Code Gen |
+|----------|:--------:|:---:|:----:|:----:|:---:|:--------:|
+| Python | Flask/FastAPI | pytest | ruff | bandit | behave | yes |
+| Java | Spring Boot | JUnit | checkstyle | SpotBugs | Cucumber | yes |
+| Go | net/http, Gin | go test | golangci-lint | gosec | godog | yes |
+| Rust | Actix-web | cargo test | clippy | cargo-audit | cucumber-rs | yes |
+| C# | ASP.NET Core | xUnit | analyzers | SecurityCodeScan | SpecFlow | yes |
+| TypeScript | Express | Jest | eslint | eslint-security | cucumber-js | yes |
+
+### 6 Cloud Providers
+
+| Provider | Environment | LLM Integration |
+|----------|-------------|-----------------|
+| **AWS GovCloud** | us-gov-west-1 | Amazon Bedrock (Claude, Titan) |
+| **Azure Government** | USGov Virginia | Azure OpenAI |
+| **GCP** | Assured Workloads | Vertex AI (Gemini, Claude) |
+| **OCI** | Government Cloud | OCI GenAI (Cohere, Llama) |
+| **IBM** | Cloud for Government | watsonx.ai (Granite, Llama) |
+| **Local** | Air-Gapped | Ollama (Llama, Mistral, CodeGemma) |
+
+---
+
+## GOTCHA Framework
+
+ICDEV's core architecture separates deterministic tools from probabilistic AI:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Goals         →  What to achieve (46 workflows)     │
+│  Orchestration →  AI decides tool order (LLM layer)  │
+│  Tools         →  Deterministic scripts (230+ tools) │
+│  Context       →  Static reference (35 catalogs)     │
+│  Hard Prompts  →  Reusable LLM templates             │
+│  Args          →  YAML/JSON config (30+ files)       │
+└──────────────────────────────────────────────────────┘
+```
+
+**Why?** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step = ~59% over 5 steps. GOTCHA fixes this by keeping AI in the orchestration layer and critical logic in deterministic Python scripts.
+
+### ATLAS Workflow
+
+Every feature follows a structured build methodology:
+
+```
+[Model] → Architect → Trace → Link → Assemble → Stress-test
+```
+
+The optional Model phase integrates SysML/DOORS NG for MBSE-driven development.
+
+---
+
+## What Can ICDEV Do?
+
+### For Developers
+- **Scaffold** projects in 6 languages with compliance baked in from day one
+- **TDD workflow** — RED (failing test) → GREEN (minimal code) → REFACTOR
+- **Security scanning** — SAST, dependency audit, secret detection, container scanning
+- **Cross-language translation** — migrate codebases between Python, Java, Go, Rust, C#, TypeScript with a 5-phase hybrid pipeline
+
+### For Compliance Teams
+- **Auto-generate** SSPs, POAMs, STIG checklists, SBOMs, OSCAL artifacts
+- **Crosswalk engine** — implement once, satisfy 25+ frameworks simultaneously
+- **FedRAMP, CMMC, HIPAA, PCI DSS** assessments with gap analysis
+- **cATO monitoring** — continuous compliance with evidence freshness tracking
+- **FIPS 199/200** security categorization with CNSSI 1253 overlays
+
+### For Program Managers
+- **AI-driven requirements intake** — conversational requirements gathering (RICOAS)
+- **Digital Program Twin** — 6-dimension what-if simulation with Monte Carlo analysis
+- **COA generation** — Speed, Balanced, and Comprehensive courses of action
+- **ATO boundary impact** — 4-tier assessment (GREEN / YELLOW / ORANGE / RED)
+- **Bidirectional sync** with Jira, ServiceNow, GitLab, DOORS NG
+
+### For DevSecOps
+- **Zero Trust Architecture** — 7-pillar maturity scoring (DoD ZTA Strategy)
+- **Policy-as-code** — Kyverno and OPA policy generation
+- **Pipeline security** — integrated SAST, DAST, SCA, secret scanning, SBOM
+- **OWASP Agentic AI** — behavioral drift detection, tool chain validation, trust scoring
+- **MITRE ATLAS** red teaming with 6 adversarial test techniques
+
+### For Modernization
+- **7R assessment** — Rehost, Replatform, Refactor, Rearchitect, Rebuild, Replace, Retire
+- **Legacy analysis** — architecture extraction, dependency mapping, complexity scoring
+- **Strangler fig** pattern tracking with ATO compliance bridge
+- **Framework migration** — Struts → Spring Boot, Django 2 → 4, and more
+
+---
 
 ## Architecture
 
-### GOTCHA Framework — 6-Layer Agentic System
+```
+┌──────────────────────────────────────────────────────────┐
+│                  Claude Code / AI IDE                      │
+│            (37 slash commands, 230 MCP tools)              │
+├──────────────────────────────────────────────────────────┤
+│                 Unified MCP Gateway                        │
+│          (single server, all 230 tools, lazy-loaded)       │
+├──────────┬──────────┬───────────┬───────────┬────────────┤
+│   Core   │  Domain  │  Domain   │  Domain   │  Support   │
+│          │          │           │           │            │
+│ Orchestr │ Builder  │ MBSE      │ DevSecOps │ Knowledge  │
+│ Architect│ Complnce │ Modernize │ Gateway   │ Monitor    │
+│          │ Security │ Req.Anlst │           │            │
+│          │ Infra    │ SupplyChn │           │            │
+│          │          │ Simulatn  │           │            │
+├──────────┴──────────┴───────────┴───────────┴────────────┤
+│                   GOTCHA Framework                         │
+│       Goals │ Tools │ Args │ Context │ Hard Prompts        │
+├──────────────────────────────────────────────────────────┤
+│  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │
+│  193 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
+│  Per-tenant DB isolation           │  IBM │Local/Air-Gap   │
+└──────────────────────────────────────────────────────────┘
+```
 
-| Layer | Directory | Role |
-|-------|-----------|------|
-| **Goals** | `goals/` | Process definitions — what to achieve, which tools to use, expected outputs |
-| **Orchestration** | *(AI agent)* | Read goal, decide tool order, apply args, reference context, handle errors |
-| **Tools** | `tools/` | Deterministic Python scripts, one job each |
-| **Args** | `args/` | YAML/JSON behavior settings — change behavior without editing goals or tools |
-| **Context** | `context/` | Static reference material (tone rules, writing samples, case studies) |
-| **Hard Prompts** | `hardprompts/` | Reusable LLM instruction templates |
+---
 
-### Multi-Agent Architecture (15 Agents, 3 Tiers)
+## Dashboard
 
-- **Core Tier:** Orchestrator (8443), Architect (8444)
-- **Domain Tier:** Builder (8445), Compliance (8446), Security (8447), Infrastructure (8448), MBSE (8451), Modernization (8452), Requirements Analyst (8453), Supply Chain (8454), Simulation (8455), DevSecOps & ZTA (8457), Gateway (8458)
-- **Support Tier:** Knowledge (8449), Monitor (8450)
+Start the web dashboard at `http://localhost:5000`:
 
-Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS within K8s).
+```bash
+python tools/dashboard/app.py
+```
 
-### Compliance Frameworks (25+)
+| Page | Purpose |
+|------|---------|
+| `/` | Home with auto-notifications and pipeline status |
+| `/projects` | Project listing with compliance posture |
+| `/agents` | Agent registry with heartbeat monitoring |
+| `/monitoring` | System health with status icons |
+| `/wizard` | Getting Started wizard (3 questions → workflow) |
+| `/query` | Natural language compliance queries |
+| `/chat` | Multi-agent chat interface |
+| `/activity` | Real-time audit + event feed |
+| `/traces` | Distributed trace explorer with span waterfall |
+| `/provenance` | W3C PROV lineage viewer |
+| `/xai` | Explainable AI dashboard with SHAP analysis |
+| `/usage` | Usage tracking and cost dashboard |
+| `/dev-profiles` | Developer profile management |
+| `/children` | Child application registry |
 
-NIST 800-53 Rev 5, FedRAMP (Moderate/High), NIST 800-171, CMMC Level 2/3, DoD CSSP (DI 8530.01), CISA Secure by Design, IEEE 1012 IV&V, DoDI 5000.87 DES, FIPS 199/200, CNSSI 1253, CJIS, HIPAA, HITRUST CSF v11, SOC 2 Type II, PCI DSS v4.0, ISO/IEC 27001:2022, NIST SP 800-207 (ZTA), DoD MOSA (10 U.S.C. section 4401), MITRE ATLAS, OWASP LLM Top 10, NIST AI RMF, ISO/IEC 42001, OWASP Agentic AI.
+Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, isso, co). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
-Unified via a dual-hub crosswalk engine: NIST 800-53 (US hub) + ISO 27001 (international hub) with bidirectional bridge.
+---
 
-### AI Security (MITRE ATLAS Integration)
+## MCP Server Integration
 
-- **Prompt Injection Detection** — 5 detection categories with confidence-based action thresholds
-- **AI Telemetry** — Privacy-preserving audit logging with SHA-256 hashing
-- **AI BOM (Bill of Materials)** — Catalogs all AI/ML components for supply chain visibility
-- **ATLAS Red Teaming** — Opt-in adversarial testing against 6 ATLAS techniques
-- **4-Framework AI Assessment** — MITRE ATLAS, OWASP LLM Top 10, NIST AI RMF, ISO/IEC 42001
-- **Marketplace Hardening** — Gates 8-9: prompt injection scan + behavioral sandbox
+ICDEV exposes all 230 tools through a unified MCP (Model Context Protocol) gateway. Works with any AI coding assistant:
 
-### Cloud-Agnostic Architecture
+```json
+{
+  "mcpServers": {
+    "icdev-unified": {
+      "command": "python",
+      "args": ["tools/mcp/unified_server.py"]
+    }
+  }
+}
+```
 
-- **6 Cloud Service Providers:** AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government Cloud, IBM Cloud for Government (IC4G), Local (air-gapped)
-- **4 Cloud Modes:** Commercial, Government, On-Premises, Air-Gapped
-- **Multi-Cloud LLM:** Amazon Bedrock, Azure OpenAI, Vertex AI, OCI GenAI, IBM watsonx.ai, Ollama (local)
-- **CSP-Specific IaC:** Terraform generators for all 6 CSPs
-- **Region Validation:** Compliance certification checks before deployment
+Compatible with: **Claude Code**, **OpenAI Codex**, **Google Gemini**, **GitHub Copilot**, **Cursor**, **Windsurf**, **Amazon Q**, **JetBrains/Junie**, **Cline**, **Aider**.
 
-### Supported Languages (6 First-Class)
+One server. 230 tools. Any AI assistant.
 
-Python, Java, JavaScript/TypeScript, Go, Rust, C#
+---
 
-Each language has full support for scaffolding, linting, formatting, SAST, dependency auditing, BDD steps, and code generation.
+## Claude Code Integration
+
+ICDEV includes 37 custom slash commands for Claude Code:
+
+```bash
+/icdev-init          # Initialize project with compliance scaffolding
+/icdev-build         # TDD build (RED → GREEN → REFACTOR)
+/icdev-comply        # Generate ATO artifacts (SSP, POAM, STIG, SBOM)
+/icdev-secure        # Full security scan (SAST, deps, secrets, containers)
+/icdev-test          # Run test suite (pytest + BDD)
+/icdev-deploy        # Generate IaC and CI/CD pipeline
+/icdev-intake        # AI-driven requirements intake
+/icdev-translate     # Cross-language code translation
+/icdev-zta           # Zero Trust Architecture assessment
+/audit               # 30-check production readiness audit
+/remediate           # Auto-fix audit blockers
+```
+
+---
 
 ## Testing
 
 ```bash
-# Unit and integration tests (2100+ tests across 60+ test files)
+# All tests (124 test files, 1500+ tests)
 pytest tests/ -v --tb=short
 
 # BDD scenario tests
@@ -136,127 +346,151 @@ behave features/
 # E2E browser tests (Playwright)
 python tools/testing/e2e_runner.py --run-all
 
-# Full health check
-python tools/testing/health_check.py
+# Production readiness audit (30 checks, 6 categories)
+python tools/testing/production_audit.py --human --stream
 
-# Security scanning
-python tools/security/sast_runner.py --project-dir .
-python tools/security/secret_detector.py --project-dir .
+# Platform compatibility
+python tools/testing/platform_check.py
+
+# .claude directory governance validation
+python tools/testing/claude_dir_validator.py --human
 ```
 
-The testing pipeline follows a 9-step process: py_compile, Ruff, pytest, behave/Gherkin, Bandit SAST, Playwright E2E, vision validation, acceptance validation, and security/compliance gates.
+**9-step testing pipeline:** py_compile → Ruff linting → pytest → behave/Gherkin BDD → Bandit SAST → Playwright E2E → vision validation → acceptance validation → security/compliance gates.
 
-## Dashboard
+---
 
-The web dashboard (`http://localhost:5000`) provides:
+## Security
 
-| Page | Purpose |
-|------|---------|
-| `/` | Home with auto-notifications |
-| `/projects` | Project listing with friendly timestamps |
-| `/agents` | Agent registry with heartbeat age |
-| `/monitoring` | System monitoring with status icons |
-| `/wizard` | Getting Started wizard |
-| `/query` | Natural language compliance queries |
-| `/activity` | Merged activity feed (audit + hook events) |
-| `/usage` | Usage tracking + cost dashboard |
-| `/traces` | Distributed trace explorer |
-| `/provenance` | Provenance lineage viewer |
-| `/xai` | Explainable AI dashboard |
+Defense-in-depth by default:
 
-Auth: per-user API keys (SHA-256 hashed), Flask signed sessions, 5 RBAC roles (admin, pm, developer, isso, co).
+- **STIG-hardened containers** — non-root, read-only rootfs, all capabilities dropped
+- **Append-only audit trail** — no UPDATE/DELETE, NIST AU compliant
+- **CUI markings** — applied at generation time per impact level (IL4/IL5/IL6)
+- **Mutual TLS** — all inter-agent communication within K8s
+- **Prompt injection detection** — 5-category scanner for AI-specific threats
+- **MITRE ATLAS red teaming** — adversarial testing against 6 techniques
+- **Behavioral drift detection** — z-score baseline monitoring for all agents
+- **Tool chain validation** — blocks dangerous execution sequences
+- **MCP RBAC** — per-tool, per-role deny-first authorization
+- **Self-healing** — confidence-based automated remediation (≥0.7 auto, 0.3–0.7 suggest, <0.3 escalate)
+
+---
+
+## Deployment
+
+### Desktop (Development)
+
+```bash
+pip install -r requirements.txt
+python tools/dashboard/app.py
+```
+
+### Docker
+
+```bash
+docker build -f docker/Dockerfile.dashboard -t icdev-dashboard .
+docker run -p 5000:5000 icdev-dashboard
+```
+
+### Kubernetes (Production)
+
+```bash
+kubectl apply -f k8s/
+# Includes: namespace, network policies (default deny), 15 agent deployments,
+# dashboard, API gateway, HPA auto-scaling, pod disruption budgets
+```
+
+### Helm (On-Premises / Air-Gapped)
+
+```bash
+helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
+```
+
+### Installation Profiles
+
+| Profile | Compliance | Best For |
+|---------|------------|----------|
+| **ISV Startup** | None | SaaS products, rapid prototyping |
+| **DoD Team** | FedRAMP + CMMC + FIPS + cATO | Defense software |
+| **Healthcare** | HIPAA + HITRUST + SOC 2 | Health IT / EHR |
+| **Financial** | PCI DSS + SOC 2 + ISO 27001 | FinTech / Banking |
+| **Law Enforcement** | CJIS + FIPS 199/200 | Criminal justice systems |
+| **GovCloud Full** | All 25+ frameworks | Maximum compliance |
+
+---
 
 ## Project Structure
 
 ```
-goals/          -- Workflow process definitions (40+ goals)
-tools/          -- Deterministic Python scripts (organized by domain)
-  builder/      -- TDD code gen, scaffolding, dev profiles, agentic generation
-  cloud/        -- CSP provider ABCs, factory, health checker, region validator
-  compliance/   -- 25+ framework assessors, crosswalk engine, report generators
-  dashboard/    -- Flask web UI with auth, RBAC, batch ops
-  db/           -- Database init, migrations, backup/restore
-  devsecops/    -- DevSecOps profiles, ZTA maturity, policy-as-code
-  dx/           -- Universal AI companion (10 tools), session context
-  infra/        -- Terraform generators (6 CSPs), Ansible, K8s, pipelines
-  innovation/   -- Innovation Engine (web scanning, signal scoring, triage)
-  llm/          -- Multi-cloud LLM router (6 providers), embeddings
-  marketplace/  -- Federated GOTCHA asset marketplace
-  mcp/          -- MCP servers (unified gateway + 18 individual)
-  observability/-- Distributed tracing, provenance, AgentSHAP
-  registry/     -- Capability genome, evaluator, propagation, telemetry
-  requirements/ -- RICOAS intake, gap detection, SAFe decomposition
-  security/     -- SAST, prompt injection, AI telemetry, ATLAS red team, AI BOM
-  simulation/   -- Digital Program Twin, Monte Carlo, COA generation
-args/           -- YAML/JSON configuration files (30+ config files)
-context/        -- Static reference material, compliance catalogs, language profiles
-hardprompts/    -- Reusable LLM instruction templates
-memory/         -- Session logs and long-term memory
-data/           -- SQLite databases (icdev.db, platform.db, memory.db, activity.db)
-tests/          -- pytest test suite (2100+ tests)
-features/       -- BDD/Gherkin scenario tests
-specs/          -- Feature specifications (per-issue directories)
-k8s/            -- Kubernetes manifests (deployments, HPA, PDB, network policies)
-docker/         -- STIG-hardened Dockerfiles (11 agent images)
-deploy/         -- Helm chart and air-gapped installer
-docs/           -- Feature specs, DX guide, companion guide
+icdev/
+├── goals/                # 46 workflow definitions
+├── tools/                # 230+ tools across 44 categories
+│   ├── compliance/       # 25+ framework assessors, crosswalk, OSCAL
+│   ├── security/         # SAST, AI security, ATLAS, prompt injection
+│   ├── builder/          # TDD, scaffolding, 6 languages, dev profiles
+│   ├── dashboard/        # Flask web UI, auth, RBAC, real-time events
+│   ├── agent/            # Multi-agent orchestration, DAG workflows
+│   ├── cloud/            # 6 CSP abstractions, region validation
+│   ├── saas/             # Multi-tenant platform layer
+│   ├── mcp/              # Unified MCP gateway (230 tools)
+│   ├── requirements/     # RICOAS intake, gap detection, decomposition
+│   ├── simulation/       # Digital Program Twin, Monte Carlo, COAs
+│   ├── modernization/    # 7R assessment, legacy migration
+│   ├── observability/    # Tracing, provenance, AgentSHAP, XAI
+│   ├── innovation/       # Self-improvement engine
+│   └── ...               # 30+ more specialized categories
+├── args/                 # 30+ YAML/JSON configuration files
+├── context/              # 35 compliance catalogs, language profiles
+├── hardprompts/          # Reusable LLM instruction templates
+├── tests/                # 124 test files
+├── k8s/                  # Production Kubernetes manifests
+├── docker/               # STIG-hardened Dockerfiles
+├── deploy/helm/          # Helm chart for on-prem deployment
+├── .claude/commands/     # 37 Claude Code slash commands
+└── CLAUDE.md             # Comprehensive architecture documentation
 ```
 
-## Deployment
-
-### Kubernetes (Production)
-```bash
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/
-helm install icdev deploy/helm/ --set autoscaling.enabled=true
-```
-
-### Air-Gapped / On-Premises
-```bash
-python deploy/offline/install.py
-```
-
-### Docker (Development)
-```bash
-docker-compose up -d
-```
+---
 
 ## Dependency License Notice
 
-Most dependencies use permissive licenses (MIT, BSD, Apache 2.0). The following
-have copyleft or dual licenses that users should be aware of:
+Most dependencies use permissive licenses (MIT, BSD, Apache 2.0). Notable exceptions:
 
 | Package | License | Notes |
 |---------|---------|-------|
-| psycopg2-binary | LGPL | LGPL permits use in proprietary software when dynamically linked (standard pip install). No source disclosure required for your application code. |
-| docutils | BSD / GPL / Public Domain | Triple-licensed. ICDEV uses it under the **BSD license**. |
+| psycopg2-binary | LGPL | Permits use in proprietary software via dynamic linking (standard pip install) |
+| docutils | BSD / GPL / Public Domain | Triple-licensed; used under BSD |
 
-Run `pip-licenses -f markdown` to audit all dependency licenses in your environment.
+Run `pip-licenses -f markdown` to audit all dependency licenses.
+
+---
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing patterns, and contribution guidelines including the Developer Certificate of Origin (DCO) requirement.
+We welcome contributions. ICDEV uses a Contributor License Agreement (CLA) to support dual licensing. The CLA does **not** transfer your copyright — you retain full ownership of your work.
 
 ## Attribution
 
-See [NOTICE](NOTICE) for third-party acknowledgments and project inspirations.
+See [NOTICE](NOTICE) for third-party acknowledgments, standards references, and architectural inspirations.
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for the full text.
+ICDEV is dual-licensed:
 
-```
-Copyright 2024-2026 ICDEV Contributors
+- **Open Source** — [GNU Affero General Public License v3.0 or later](LICENSE)
+  Free for internal use, academic research, open-source projects, and evaluation.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+- **Commercial** — [Commercial License](COMMERCIAL.md)
+  Removes AGPL copyleft obligations for SaaS, embedded, or proprietary use.
 
-    http://www.apache.org/licenses/LICENSE-2.0
+## Contact
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+- **Commercial licensing:** agi@icdev.ai
+- **Issues:** [github.com/icdev-ai/icdev/issues](https://github.com/icdev-ai/icdev/issues)
+
+---
+
+<p align="center">
+  <i>Built by one developer. Ready for your entire team.</i>
+</p>
