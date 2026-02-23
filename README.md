@@ -293,7 +293,13 @@ Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publish
 
 ---
 
-## 6 First-Class Languages
+## 6 First-Class Languages — Build New or Modernize Legacy
+
+Government agencies and defense contractors sit on millions of lines of legacy code — COBOL, Fortran, Struts, .NET Framework, Python 2 — with the original developers long gone and zero institutional knowledge left. Hiring is impossible: nobody wants to maintain a 20-year-old Java 6 monolith on WebLogic. The code works, but it's a ticking time bomb of tech debt, unpatched CVEs, and expired ATOs.
+
+ICDEV solves this from both directions:
+
+**Build new** — scaffold, TDD, lint, scan, and generate code in any of 6 languages with compliance baked in from line one:
 
 | Language | Scaffold | TDD | Lint | SAST | BDD | Code Gen |
 |----------|:--------:|:---:|:----:|:----:|:---:|:--------:|
@@ -304,7 +310,16 @@ Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publish
 | C# | ASP.NET Core | xUnit | analyzers | SecurityCodeScan | SpecFlow | yes |
 | TypeScript | Express | Jest | eslint | eslint-security | cucumber-js | yes |
 
-Cross-language translation between any pair via a 5-phase hybrid pipeline (Extract → Type-Check → Translate → Assemble → Validate+Repair).
+**Modernize legacy** — when the original team is gone, ICDEV becomes the team:
+
+- **7R Assessment** — automated analysis scores each application across Rehost, Replatform, Refactor, Rearchitect, Rebuild, Replace, and Retire using a weighted multi-criteria decision matrix. No tribal knowledge required — ICDEV reads the code.
+- **Architecture Extraction** — static analysis maps the dependency graph, identifies coupling hotspots, measures complexity, and generates documentation that never existed. Works on codebases with zero comments and zero docs.
+- **Cross-Language Translation** — 5-phase hybrid pipeline translates between any of the 30 language pairs (Extract → Type-Check → Translate → Assemble → Validate+Repair). Migrating a Python 2 Flask app to Go? A legacy Java 8 monolith to modern Spring Boot? A .NET Framework service to ASP.NET Core? ICDEV generates pass@k candidate translations, validates with compiler feedback, and auto-repairs failures — up to 3 repair cycles per unit.
+- **Strangler Fig Tracking** — for large monoliths that can't be rewritten overnight, ICDEV manages the gradual migration: dual-system traceability, feature-by-feature cutover tracking, and a compliance bridge that maintains ≥95% ATO control coverage throughout the entire transition.
+- **Framework Migration** — declarative JSON mapping rules handle Struts → Spring Boot, Django 2 → Django 4, Rails 5 → Rails 7, Express → Fastify, and more. Add new migration paths without writing code.
+- **ATO Compliance Bridge** — this is the killer feature for modernization. Legacy apps often have existing ATOs. ICDEV ensures the modernized application inherits the original control mappings through the crosswalk engine, so you don't lose years of compliance work. The bridge validates coverage every PI and blocks deployment if it drops below 95%.
+
+The bottom line: **you don't need the original developers**. You don't need a team that knows the legacy stack. ICDEV analyzes the codebase, scores the migration strategy, translates the code, and maintains ATO coverage — with an append-only audit trail documenting every decision for your ISSO.
 
 ---
 
