@@ -67,7 +67,7 @@ contributions.
 
 For commercial licensing inquiries:
 
-- Email: [TO BE ADDED]
+- Email: agi@icdev.ai
 - GitHub: https://github.com/icdev-ai/icdev/issues
 
 ## FAQ
