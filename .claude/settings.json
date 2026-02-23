@@ -23,7 +23,11 @@
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(rm -rf:*)",
-      "Bash(git reset --hard:*)"
+      "Bash(git reset --hard:*)",
+      "Bash(DROP TABLE:*)",
+      "Bash(TRUNCATE:*)",
+      "Bash(drop table:*)",
+      "Bash(truncate:*)"
     ]
   },
   "hooks": {

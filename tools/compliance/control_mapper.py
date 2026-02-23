@@ -13,6 +13,11 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
 CONTROLS_PATH = BASE_DIR / "context" / "compliance" / "nist_800_53.json"
 
 # All 17 FIPS 200 minimum security requirement families
@@ -29,6 +34,8 @@ VALID_STATUSES = (
 
 def _get_connection(db_path=None):
     """Get a database connection."""
+    if get_db_connection:
+        return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -407,7 +414,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Map project activities to NIST 800-53 controls"
     )
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--db", type=str, default=None, help="Database path")
 
     subparsers = parser.add_subparsers(dest="command")
@@ -446,7 +453,7 @@ def main():
     try:
         # Handle top-level flags
         if args.verify or args.command == "verify":
-            report = verify_mappings(args.project, db_path=db_path)
+            report = verify_mappings(args.project_id, db_path=db_path)
             if args.json:
                 print(json.dumps(report, indent=2))
             else:
@@ -455,12 +462,12 @@ def main():
 
         elif args.matrix or args.command == "matrix":
             output = getattr(args, "output", None)
-            path = generate_matrix(args.project, output_path=output, db_path=db_path)
+            path = generate_matrix(args.project_id, output_path=output, db_path=db_path)
             print(f"Matrix generated: {path}")
 
         elif args.command == "create":
             row_id = create_mapping(
-                project_id=args.project,
+                project_id=args.project_id,
                 control_id=args.control_id,
                 implementation_status=args.status,
                 description=args.description,
@@ -472,13 +479,13 @@ def main():
 
         elif args.command == "list":
             mappings = get_mappings(
-                args.project, family=args.family, status=args.status, db_path=db_path
+                args.project_id, family=args.family, status=args.status, db_path=db_path
             )
             if args.json:
                 print(json.dumps(mappings, indent=2, default=str))
             else:
                 if not mappings:
-                    print(f"No mappings found for project '{args.project}'.")
+                    print(f"No mappings found for project '{args.project_id}'.")
                 else:
                     print(f"{'ID':<5} {'Control':<10} {'Status':<25} {'Description':<40}")
                     print("-" * 80)

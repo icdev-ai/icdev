@@ -1,0 +1,79 @@
+# CUI // SP-CTI
+# Active Extension Hook Configuration (Phase 44 — D261-D264)
+# Adapted from Agent Zero's extension point architecture
+---
+
+extensions:
+  enabled: true
+
+  # Directories scanned for extension files
+  scan_directories:
+    - extensions/                    # Project root extensions
+    - tools/extensions/builtins/     # Built-in extensions
+
+  # Per-hook-point configuration
+  hook_points:
+    tool_execute_before:
+      enabled: true
+      allow_modification: true       # Pre-hooks can modify tool input
+      max_handlers: 20
+      timeout_ms: 5000
+    tool_execute_after:
+      enabled: true
+      allow_modification: false      # Post-hooks observe only by default
+      max_handlers: 20
+      timeout_ms: 5000
+    chat_message_before:
+      enabled: true
+      allow_modification: true
+      max_handlers: 20
+      timeout_ms: 5000
+    chat_message_after:
+      enabled: true
+      allow_modification: true       # Can add CUI markings to responses
+      max_handlers: 20
+      timeout_ms: 5000
+    agent_start:
+      enabled: true
+      allow_modification: false
+      max_handlers: 10
+      timeout_ms: 3000
+    agent_end:
+      enabled: true
+      allow_modification: false
+      max_handlers: 10
+      timeout_ms: 3000
+    memory_save_before:
+      enabled: true
+      allow_modification: true       # Can filter/transform before save
+      max_handlers: 10
+      timeout_ms: 3000
+    memory_save_after:
+      enabled: true
+      allow_modification: false
+      max_handlers: 10
+      timeout_ms: 3000
+    compliance_check_before:
+      enabled: true
+      allow_modification: false
+      max_handlers: 10
+      timeout_ms: 3000
+    compliance_check_after:
+      enabled: true
+      allow_modification: false
+      max_handlers: 10
+      timeout_ms: 3000
+
+  # Layered override resolution (D184 cascade pattern)
+  layered_override:
+    resolution_order:
+      - default     # Built-in extensions
+      - tenant      # Tenant-level overrides
+      - project     # Project-level overrides
+
+  # Safety limits
+  safety:
+    max_total_handler_time_ms: 30000   # All handlers for one dispatch
+    catch_handler_exceptions: true     # Never let extension crash core
+    log_handler_errors: true           # Log errors to stderr
+    max_handlers_per_point: 20         # Prevent runaway registration

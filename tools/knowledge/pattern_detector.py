@@ -462,7 +462,7 @@ def analyze_project(project_id: str, db_path: Path = None) -> dict:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Detect patterns in failures")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--analyze", action="store_true", help="Run full analysis")
     parser.add_argument("--frequency", action="store_true", help="Check frequency anomalies only")
     parser.add_argument("--correlation", action="store_true", help="Check deployment correlation only")
@@ -472,6 +472,7 @@ def main():
     parser.add_argument("--outcome", choices=["success", "failure"], help="Outcome for confidence update")
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
@@ -482,15 +483,15 @@ def main():
         return
 
     if args.analyze or (not args.frequency and not args.correlation):
-        result = analyze_project(args.project, db_path)
+        result = analyze_project(args.project_id, db_path)
     elif args.frequency:
         result = detect_frequency_anomaly(
-            args.project, args.window_hours, args.threshold, db_path
+            args.project_id, args.window_hours, args.threshold, db_path
         )
     elif args.correlation:
-        result = detect_deployment_correlation(args.project, db_path=db_path)
+        result = detect_deployment_correlation(args.project_id, db_path=db_path)
     else:
-        result = analyze_project(args.project, db_path)
+        result = analyze_project(args.project_id, db_path)
 
     if args.format == "json":
         print(json.dumps(result, indent=2))

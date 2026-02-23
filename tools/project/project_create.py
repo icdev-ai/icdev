@@ -296,6 +296,7 @@ def main():
         "--format", choices=["text", "json"], default="text",
         help="Output format"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:

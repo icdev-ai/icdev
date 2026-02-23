@@ -656,6 +656,7 @@ if __name__ == "__main__":
                         help="Only validate existing config, do not generate")
     parser.add_argument("--db-path", type=Path, default=DB_PATH,
                         help="Database path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     if args.validate_only:

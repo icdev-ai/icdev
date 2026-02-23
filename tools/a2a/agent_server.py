@@ -200,6 +200,16 @@ class A2AAgentServer:
                 set_correlation_id(cid)
         except ImportError:
             pass
+        # D285: Extract W3C traceparent and restore trace context
+        try:
+            from tools.observability.trace_context import parse_traceparent, set_current_context
+            tp = metadata.get("traceparent")
+            if tp:
+                ctx = parse_traceparent(tp)
+                if ctx:
+                    set_current_context(ctx)
+        except ImportError:
+            pass
 
         if not skill_id:
             return self._jsonrpc_error(rpc_id, -32602, "Missing required param: skill_id")
@@ -534,6 +544,7 @@ def main():
     parser.add_argument("--tls-key", help="TLS private key path")
     parser.add_argument("--tls-ca", help="TLS CA cert for mutual TLS")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     server = A2AAgentServer(

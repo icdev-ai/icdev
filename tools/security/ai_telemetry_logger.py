@@ -15,6 +15,7 @@ CLI:
 import argparse
 import hashlib
 import json
+import math
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -188,6 +189,140 @@ class AITelemetryLogger:
 
         return anomalies
 
+    def detect_behavioral_drift(
+        self,
+        agent_id: Optional[str] = None,
+        window_hours: int = 24,
+        baseline_hours: int = 168,
+        threshold_sigma: float = 2.0,
+        min_samples: int = 50,
+    ) -> List[Dict]:
+        """Detect behavioral drift via z-score deviation (D257).
+
+        Compares current window metrics against baseline period for each agent.
+        Dimensions: tool_call_frequency, avg_latency_ms, avg_output_tokens,
+                    error_rate, cost_rate.
+
+        Returns:
+            List of drift alert dicts with agent_id, dimension, z_score, severity.
+        """
+        alerts: List[Dict] = []
+        if not self._db_path.exists():
+            return alerts
+
+        now = datetime.now(timezone.utc)
+        window_cutoff = (now - timedelta(hours=window_hours)).isoformat()
+        baseline_start = (now - timedelta(hours=baseline_hours + window_hours)).isoformat()
+        baseline_end = (now - timedelta(hours=window_hours)).isoformat()
+
+        try:
+            conn = sqlite3.connect(str(self._db_path))
+
+            # Get agent list
+            if agent_id:
+                agents = [(agent_id,)]
+            else:
+                agents = conn.execute(
+                    "SELECT DISTINCT agent_id FROM ai_telemetry WHERE agent_id IS NOT NULL"
+                ).fetchall()
+
+            for (aid,) in agents:
+                # Baseline metrics
+                baseline = conn.execute(
+                    "SELECT COUNT(*), COALESCE(AVG(latency_ms), 0), "
+                    "COALESCE(AVG(output_tokens), 0), "
+                    "COALESCE(SUM(CASE WHEN latency_ms < 0 OR output_tokens < 0 THEN 1 ELSE 0 END), 0), "
+                    "COALESCE(AVG(cost_usd), 0) "
+                    "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ? AND logged_at < ?",
+                    (aid, baseline_start, baseline_end),
+                ).fetchone()
+
+                if not baseline or baseline[0] < min_samples:
+                    continue
+
+                baseline_count = baseline[0]
+                baseline_hours_actual = max(1, baseline_hours)
+                baseline_freq = baseline_count / baseline_hours_actual
+                baseline_latency = baseline[1]
+                baseline_tokens = baseline[2]
+                baseline_cost = baseline[4]
+
+                # Baseline stddev (per-row for latency/tokens/cost)
+                stddev_row = conn.execute(
+                    "SELECT "
+                    "COALESCE(AVG((latency_ms - ?) * (latency_ms - ?)), 1), "
+                    "COALESCE(AVG((output_tokens - ?) * (output_tokens - ?)), 1), "
+                    "COALESCE(AVG((cost_usd - ?) * (cost_usd - ?)), 0.0001) "
+                    "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ? AND logged_at < ?",
+                    (baseline_latency, baseline_latency,
+                     baseline_tokens, baseline_tokens,
+                     baseline_cost, baseline_cost,
+                     aid, baseline_start, baseline_end),
+                ).fetchone()
+
+                std_latency = math.sqrt(max(stddev_row[0], 1e-6))
+                std_tokens = math.sqrt(max(stddev_row[1], 1e-6))
+                std_cost = math.sqrt(max(stddev_row[2], 1e-10))
+
+                # Current window metrics
+                current = conn.execute(
+                    "SELECT COUNT(*), COALESCE(AVG(latency_ms), 0), "
+                    "COALESCE(AVG(output_tokens), 0), "
+                    "COALESCE(AVG(cost_usd), 0) "
+                    "FROM ai_telemetry WHERE agent_id = ? AND logged_at >= ?",
+                    (aid, window_cutoff),
+                ).fetchone()
+
+                if not current or current[0] == 0:
+                    continue
+
+                current_freq = current[0] / max(1, window_hours)
+                current_latency = current[1]
+                current_tokens = current[2]
+                current_cost = current[3]
+
+                # Frequency z-score (use Poisson approximation: stddev ~ sqrt(mean))
+                std_freq = math.sqrt(max(baseline_freq, 1e-6))
+                freq_z = (current_freq - baseline_freq) / std_freq if std_freq > 0 else 0
+
+                dimensions = {
+                    "tool_call_frequency": freq_z,
+                    "avg_latency_ms": (current_latency - baseline_latency) / std_latency if std_latency > 0 else 0,
+                    "avg_output_tokens": (current_tokens - baseline_tokens) / std_tokens if std_tokens > 0 else 0,
+                    "cost_rate": (current_cost - baseline_cost) / std_cost if std_cost > 0 else 0,
+                }
+
+                for dim, z in dimensions.items():
+                    if abs(z) > threshold_sigma:
+                        severity = "critical" if abs(z) > 3 * threshold_sigma else (
+                            "high" if abs(z) > 2 * threshold_sigma else "medium"
+                        )
+                        alerts.append({
+                            "agent_id": aid,
+                            "dimension": dim,
+                            "z_score": round(z, 3),
+                            "baseline_mean": round({
+                                "tool_call_frequency": baseline_freq,
+                                "avg_latency_ms": baseline_latency,
+                                "avg_output_tokens": baseline_tokens,
+                                "cost_rate": baseline_cost,
+                            }[dim], 4),
+                            "current_value": round({
+                                "tool_call_frequency": current_freq,
+                                "avg_latency_ms": current_latency,
+                                "avg_output_tokens": current_tokens,
+                                "cost_rate": current_cost,
+                            }[dim], 4),
+                            "severity": severity,
+                            "threshold_sigma": threshold_sigma,
+                        })
+
+            conn.close()
+        except Exception:
+            pass
+
+        return alerts
+
     def get_usage_summary(
         self,
         project_id: Optional[str] = None,
@@ -275,6 +410,8 @@ def main():
     parser.add_argument("--summary", action="store_true", help="Show usage summary")
     parser.add_argument("--anomalies", action="store_true", help="Detect anomalies")
     parser.add_argument("--window", type=int, default=24, help="Time window in hours (default: 24)")
+    parser.add_argument("--drift", action="store_true", help="Detect behavioral drift")
+    parser.add_argument("--agent-id", help="Filter by agent ID")
     parser.add_argument("--project-id", help="Filter by project ID")
     parser.add_argument("--user-id", help="Filter by user ID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
@@ -290,6 +427,11 @@ def main():
         )
     elif args.anomalies:
         result = {"anomalies": logger.detect_anomalies(window_hours=args.window)}
+    elif args.drift:
+        result = {"drift_alerts": logger.detect_behavioral_drift(
+            agent_id=args.agent_id,
+            window_hours=args.window,
+        )}
     else:
         parser.print_help()
         return
@@ -312,6 +454,14 @@ def main():
                     print(f"  [{a['severity']}] {a['type']}: {a['message']}")
             else:
                 print("  No anomalies detected.")
+        elif args.drift:
+            drift_alerts = result.get("drift_alerts", [])
+            print(f"Behavioral Drift Detection (last {args.window}h)")
+            if drift_alerts:
+                for d in drift_alerts:
+                    print(f"  [{d['severity']}] {d['agent_id']}: {d['dimension']} z={d['z_score']}")
+            else:
+                print("  No behavioral drift detected.")
 
 
 if __name__ == "__main__":

@@ -409,15 +409,16 @@ def get_recommendations(project_id: str, context: dict = None, db_path: Path = N
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Generate recommendations for a project")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
     parser.add_argument("--severity", choices=["critical", "high", "medium", "low"], help="Filter by severity")
     parser.add_argument("--limit", type=int, default=20, help="Max recommendations to show")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
-    result = get_recommendations(args.project, db_path=db_path)
+    result = get_recommendations(args.project_id, db_path=db_path)
 
     # Filter
     recs = result["recommendations"]

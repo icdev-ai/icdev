@@ -30,7 +30,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Use centralized DB path resolution (D152 pattern)
+try:
+    from tools.compat.db_utils import get_icdev_db_path
+    DB_PATH = get_icdev_db_path()
+except ImportError:
+    DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 logger = logging.getLogger("icdev.child_app_generator")
 

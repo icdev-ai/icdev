@@ -24,6 +24,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
+
 
 def get_project_status(project_id: str) -> dict:
     """Get comprehensive project status from the database.
@@ -37,8 +42,11 @@ def get_project_status(project_id: str) -> dict:
     Raises:
         ValueError: If project_id is not found.
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    if get_db_connection:
+        conn = get_db_connection(DB_PATH)
+    else:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
     try:
         return _query_status(conn, project_id)
     finally:
@@ -445,17 +453,17 @@ def main():
         description="Get detailed status for an ICDEV-managed project"
     )
     parser.add_argument(
-        "--project", required=True,
-        help="Project UUID"
-    )
+        "--project-id", "--project", required=True,
+        help="Project UUID", dest="project_id")
     parser.add_argument(
         "--format", choices=["brief", "detailed", "json"], default="brief",
         help="Output format (brief=summary, detailed/json=full JSON)"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
-        data = get_project_status(args.project)
+        data = get_project_status(args.project_id)
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

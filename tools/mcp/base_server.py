@@ -303,7 +303,10 @@ class MCPServer:
         return {"tools": tools_list}
 
     def _handle_tools_call(self, params: dict) -> dict:
-        """Dispatch a tool call to the registered handler."""
+        """Dispatch a tool call to the registered handler.
+
+        D284: Auto-instruments all 15 MCP servers via trace span.
+        """
         tool_name = params.get("name", "")
         arguments = params.get("arguments", {})
 
@@ -311,10 +314,39 @@ class MCPServer:
             raise _MethodNotFound(f"Unknown tool: {tool_name}")
 
         handler = self._tools[tool_name]["handler"]
+
+        # D284: Create trace span wrapping tool execution
+        try:
+            from tools.observability import get_tracer
+            from tools.observability.tracer import set_content_tag
+            import hashlib as _hl
+            tracer = get_tracer()
+        except ImportError:
+            tracer = None
+
+        span = None
+        if tracer:
+            _args_hash = _hl.sha256(
+                json.dumps(arguments, default=str, sort_keys=True).encode()
+            ).hexdigest()[:16]
+            span = tracer.start_span("mcp.tool_call", kind="SERVER", attributes={
+                "gen_ai.operation.name": "execute_tool",
+                "mcp.tool.name": tool_name,
+                "mcp.server.name": getattr(self, "server_name", self.__class__.__name__),
+                "mcp.tool.args_hash": _args_hash,
+            })
+
         try:
             result = handler(arguments)
         except Exception as exc:
             logger.error("Tool %s raised: %s", tool_name, exc)
+            if span:
+                span.set_status("ERROR", str(exc))
+                span.add_event("exception", {
+                    "exception.type": type(exc).__name__,
+                    "exception.message": str(exc),
+                })
+                span.end()
             return {
                 "content": [
                     {
@@ -334,6 +366,12 @@ class MCPServer:
             text = result
         else:
             text = json.dumps(result, indent=2, default=str)
+
+        if span:
+            _result_hash = _hl.sha256(text.encode()).hexdigest()[:16]
+            span.set_attribute("mcp.tool.result_hash", _result_hash)
+            span.set_status("OK")
+            span.end()
 
         return {
             "content": [{"type": "text", "text": text}],

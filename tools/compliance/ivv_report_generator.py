@@ -1642,6 +1642,7 @@ if __name__ == "__main__":
         help="Output format for CLI summary (default: text)",
     )
 
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:

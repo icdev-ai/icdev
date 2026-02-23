@@ -1,0 +1,618 @@
+# CUI // SP-CTI
+# ICDEV Phase Registry — Centralized phase definitions (D26 declarative pattern)
+# Used by Dashboard /phases and SaaS Portal /portal/phases
+#
+# Categories:
+#   foundation  — Core infrastructure, agents, MCP, DB, K8s
+#   compliance  — Compliance frameworks, crosswalk, categorization
+#   platform    — MBSE, agentic generation, SaaS, marketplace, installer
+#   advanced    — DevSecOps, ZTA, MOSA, CLI, gateway, AI security, cloud
+#   integration — Monitoring, auth, BYOK, observability
+#   ricoas      — Requirements Intake, COA & Approval System
+#   operations  — Operations & Automation (observability, NLQ, CI/CD, framework planning)
+
+phases:
+  # ===== Foundation (Phases 1-16) =====
+  - id: phase-01
+    number: 1
+    name: "Project Scaffolding & Database"
+    description: "Core project creation, SQLite database (icdev.db), directory structure, and init scripts."
+    status: completed
+    category: foundation
+    agents: [orchestrator]
+    goal_file: "goals/init_project.md"
+    dependencies: []
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-02
+    number: 2
+    name: "MCP Server Infrastructure"
+    description: "14 stdio MCP servers for Claude Code integration — core, compliance, builder, infra, knowledge, maintenance, MBSE, requirements, supply chain, simulation, integration, marketplace, devsecops, gateway."
+    status: completed
+    category: foundation
+    agents: [orchestrator]
+    goal_file: ""
+    dependencies: [phase-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-03
+    number: 3
+    name: "Compliance Engine (NIST 800-53)"
+    description: "SSP generation, POA&M tracking, STIG checker, SBOM generator, CUI marking engine, NIST control mapper."
+    status: completed
+    category: compliance
+    agents: [compliance]
+    goal_file: "goals/compliance_workflow.md"
+    dependencies: [phase-01]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-04
+    number: 4
+    name: "Builder & TDD Workflow"
+    description: "Test-driven development (RED-GREEN-REFACTOR) with code generation, test writing, linting, formatting across 6 languages."
+    status: completed
+    category: foundation
+    agents: [builder]
+    goal_file: "goals/tdd_workflow.md"
+    dependencies: [phase-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-05
+    number: 5
+    name: "Security Scanning"
+    description: "SAST (Bandit), dependency audit (pip-audit), secret detection, container scanning."
+    status: completed
+    category: foundation
+    agents: [security]
+    goal_file: "goals/security_scan.md"
+    dependencies: [phase-04]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-06
+    number: 6
+    name: "Infrastructure as Code"
+    description: "Terraform generation, Ansible playbooks, K8s manifests, GitLab CI/CD pipeline generation, rollback support."
+    status: completed
+    category: foundation
+    agents: [infrastructure]
+    goal_file: "goals/deploy_workflow.md"
+    dependencies: [phase-01]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-07
+    number: 7
+    name: "Knowledge & Self-Healing"
+    description: "Pattern detection, root cause analysis, auto-remediation with confidence thresholds (0.7 auto, 0.3-0.7 suggest, <0.3 escalate)."
+    status: completed
+    category: foundation
+    agents: [knowledge]
+    goal_file: "goals/self_healing.md"
+    dependencies: [phase-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-08
+    number: 8
+    name: "Monitoring & Alerting"
+    description: "Log analysis (ELK/Splunk), metric collection (Prometheus/Grafana), alerting, health checks."
+    status: completed
+    category: foundation
+    agents: [monitor]
+    goal_file: "goals/monitoring.md"
+    dependencies: [phase-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-09
+    number: 9
+    name: "Web Dashboard"
+    description: "Flask web UI — Kanban board, project detail, agent registry, compliance charts, role-based views, dark theme."
+    status: completed
+    category: foundation
+    agents: []
+    goal_file: "goals/dashboard.md"
+    dependencies: [phase-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-10
+    number: 10
+    name: "A2A Agent Communication"
+    description: "15-agent multi-tier architecture with JSON-RPC 2.0 over mutual TLS, agent cards, health monitoring."
+    status: completed
+    category: foundation
+    agents: [orchestrator, architect, builder, compliance, security, infrastructure, knowledge, monitor]
+    goal_file: "goals/agent_management.md"
+    dependencies: [phase-01]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-11
+    number: 11
+    name: "Code Review Gates"
+    description: "Enforced review gates — approval tracking, comment resolution, SAST clean, secret detection, CUI marking validation."
+    status: completed
+    category: foundation
+    agents: [security, compliance]
+    goal_file: "goals/code_review.md"
+    dependencies: [phase-04, phase-05]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-12
+    number: 12
+    name: "Integration Testing"
+    description: "9-step test pipeline — py_compile, ruff, pytest, behave/Gherkin, bandit, Playwright E2E, vision validation, acceptance, security gates."
+    status: completed
+    category: foundation
+    agents: [builder]
+    goal_file: "goals/integration_testing.md"
+    dependencies: [phase-04, phase-05]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-13
+    number: 13
+    name: "CI/CD Integration (GitHub + GitLab)"
+    description: "Dual-platform webhook server, poll trigger, SDLC workflow automation, bot loop prevention."
+    status: completed
+    category: foundation
+    agents: []
+    goal_file: "goals/cicd_integration.md"
+    dependencies: [phase-04, phase-06, phase-12]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-14
+    number: 14
+    name: "CSSP Compliance (DI 8530.01)"
+    description: "DoD CSSP assessment, incident response planning, SIEM config generation, evidence collection."
+    status: completed
+    category: compliance
+    agents: [compliance]
+    goal_file: ""
+    dependencies: [phase-03]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-15
+    number: 15
+    name: "Secure by Design & IV&V"
+    description: "CISA Secure by Design assessment, IEEE 1012 IV&V certification, DoDI 5000.87 DES compliance, traceability matrix."
+    status: completed
+    category: compliance
+    agents: [compliance]
+    goal_file: "goals/sbd_ivv_workflow.md"
+    dependencies: [phase-03]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-16
+    number: 16
+    name: "Kubernetes Deployment"
+    description: "Full K8s manifests — namespace, configmap, secrets, network policies (default deny), ingress, 16+ deployments, STIG-hardened containers."
+    status: completed
+    category: foundation
+    agents: [infrastructure]
+    goal_file: "goals/deploy_workflow.md"
+    dependencies: [phase-06]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  # ===== Phase 17-38: Named Phases =====
+
+  - id: phase-17
+    number: 17
+    name: "Multi-Framework Compliance Crosswalk"
+    description: "Dual-hub crosswalk engine (NIST 800-53 US hub + ISO 27001 international hub), unified control mapping across 20+ frameworks."
+    status: completed
+    category: compliance
+    agents: [compliance]
+    goal_file: "goals/ato_acceleration.md"
+    dependencies: [phase-03]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-18
+    number: 18
+    name: "MBSE Integration"
+    description: "Model-Based Systems Engineering — SysML XMI import, DOORS NG ReqIF, digital thread, model-code sync, DES compliance, diagram extraction."
+    status: completed
+    category: platform
+    agents: [mbse]
+    goal_file: "goals/mbse_integration.md"
+    dependencies: [phase-01, phase-03]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-19
+    number: 19
+    name: "Agentic Application Generation"
+    description: "Generate mini-ICDEV clone child apps with full GOTCHA/ATLAS workflow, 5-7 agents, memory system, compliance frameworks."
+    status: completed
+    category: platform
+    agents: [orchestrator, architect, builder]
+    goal_file: "goals/agentic_generation.md"
+    dependencies: [phase-04, phase-10]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-20
+    number: 20
+    name: "FIPS 199/200 Security Categorization"
+    description: "SP 800-60 information type cataloging, high watermark categorization, CNSSI 1253 overlay for IL6, dynamic baseline selection."
+    status: completed
+    category: compliance
+    agents: [compliance]
+    goal_file: "goals/security_categorization.md"
+    dependencies: [phase-03, phase-17]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-21
+    number: 21
+    name: "SaaS Multi-Tenancy"
+    description: "Multi-tenant platform — API gateway (REST + MCP Streamable HTTP), per-tenant DB isolation, 3 auth methods, subscription tiers, Helm on-prem."
+    status: completed
+    category: platform
+    agents: []
+    goal_file: "goals/saas_multi_tenancy.md"
+    dependencies: [phase-01, phase-09]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-22
+    number: 22
+    name: "Federated GOTCHA Marketplace"
+    description: "Asset marketplace — publish, install, search, review skills/goals/hardprompts/context/args/compliance across tenant orgs with 9-gate security."
+    status: completed
+    category: platform
+    agents: []
+    goal_file: "goals/marketplace.md"
+    dependencies: [phase-21]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-23
+    number: 23
+    name: "Universal Compliance Platform"
+    description: "10 data categories, composable markings (CUI+PHI+PCI), auto-detection, multi-regime assessment — CJIS, HIPAA, HITRUST, SOC 2, PCI DSS, ISO 27001."
+    status: completed
+    category: compliance
+    agents: [compliance]
+    goal_file: "goals/universal_compliance.md"
+    dependencies: [phase-17]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-24
+    number: 24
+    name: "DevSecOps Profile & Pipeline Security"
+    description: "DevSecOps maturity assessment (5 levels), pipeline security generation, policy-as-code (Kyverno/OPA), image signing & attestation."
+    status: completed
+    category: advanced
+    agents: [devsecops]
+    goal_file: "goals/devsecops_workflow.md"
+    dependencies: [phase-05, phase-13]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-25
+    number: 25
+    name: "Zero Trust Architecture (ZTA)"
+    description: "7-pillar maturity scoring (DoD ZTA Strategy), NIST 800-207 compliance, service mesh (Istio/Linkerd), network segmentation, PDP/PEP config."
+    status: completed
+    category: advanced
+    agents: [devsecops]
+    goal_file: "goals/zero_trust_architecture.md"
+    dependencies: [phase-24]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-26
+    number: 26
+    name: "DoD MOSA (Modular Open Systems)"
+    description: "10 U.S.C. section 4401 compliance — modularity analysis, ICD/TSP generation, code enforcement, coupling/cohesion metrics."
+    status: completed
+    category: advanced
+    agents: [compliance]
+    goal_file: "goals/mosa_workflow.md"
+    dependencies: [phase-03, phase-23]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-27
+    number: 27
+    name: "CLI Capabilities"
+    description: "Optional Claude CLI features — CI/CD automation, parallel agents, container execution, scripted intake. 4 independent toggles with tenant ceiling."
+    status: completed
+    category: advanced
+    agents: []
+    goal_file: "goals/cli_capabilities.md"
+    dependencies: [phase-13]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-28
+    number: 28
+    name: "Remote Command Gateway"
+    description: "Messaging channel integration (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware filtering, air-gapped mode."
+    status: completed
+    category: advanced
+    agents: [gateway]
+    goal_file: "goals/remote_command_gateway.md"
+    dependencies: [phase-10, phase-21]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-29
+    number: 29
+    name: "Proactive Monitoring & Auto-Resolution"
+    description: "Heartbeat daemon (7 checks), webhook-triggered auto-resolution, selective skill injection, time-decay memory ranking."
+    status: completed
+    category: integration
+    agents: [monitor, knowledge]
+    goal_file: ""
+    dependencies: [phase-07, phase-08]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-30
+    number: 30
+    name: "Dashboard Auth & BYOK"
+    description: "Dashboard user management, API key auth (SHA-256), RBAC (5 roles), per-user BYOK LLM keys (AES-256 Fernet), CUI banner toggle."
+    status: completed
+    category: integration
+    agents: []
+    goal_file: ""
+    dependencies: [phase-09, phase-21]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-31
+    number: 31
+    name: "Dashboard UX Enhancements"
+    description: "Glossary tooltips, friendly timestamps, breadcrumbs, ARIA accessibility, onboarding tour, SVG charts, table interactivity, keyboard shortcuts."
+    status: completed
+    category: integration
+    agents: []
+    goal_file: ""
+    dependencies: [phase-09, phase-30]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-32
+    number: 32
+    name: "Multi-Agent Orchestration"
+    description: "Opus 4 multi-agent — Bedrock client, DAG workflows, parallel execution, collaboration patterns, domain authority vetoes, agent mailbox, agent memory."
+    status: completed
+    category: integration
+    agents: [orchestrator, architect, builder, security, compliance]
+    goal_file: "goals/multi_agent_orchestration.md"
+    dependencies: [phase-10]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-33
+    number: 33
+    name: "Modular Installation"
+    description: "Interactive wizard, profile-based deployment (10 profiles), module dependency resolution, platform artifacts (Docker/K8s/Helm), add/upgrade."
+    status: completed
+    category: platform
+    agents: []
+    goal_file: "goals/modular_installation.md"
+    dependencies: [phase-01, phase-16]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-34
+    number: 34
+    name: "Dev Profiles & Personalization"
+    description: "5-layer cascade (Platform-Tenant-Program-Project-User), lock governance, auto-detection, PROFILE.md generation, LLM injection, 6 templates."
+    status: completed
+    category: platform
+    agents: [builder]
+    goal_file: "goals/dev_profiles.md"
+    dependencies: [phase-04, phase-21]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-35
+    number: 35
+    name: "Innovation Engine"
+    description: "Autonomous self-improvement — web scanning (GitHub, NVD, SO, HN), 5-dimension scoring, compliance triage, trend detection, competitive intel, standards monitoring."
+    status: completed
+    category: advanced
+    agents: []
+    goal_file: "goals/innovation_engine.md"
+    dependencies: [phase-07, phase-22]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-36
+    number: 36
+    name: "Evolutionary Intelligence"
+    description: "Parent-child lifecycle — capability genome (semver+SHA-256), 7-dimension evaluation, staging isolation, HITL propagation, 72-hour absorption, cross-pollination."
+    status: completed
+    category: advanced
+    agents: [orchestrator]
+    goal_file: "goals/evolutionary_intelligence.md"
+    dependencies: [phase-19, phase-35]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: enterprise
+
+  - id: phase-37
+    number: 37
+    name: "MITRE ATLAS AI Security"
+    description: "Prompt injection detection (5 categories), AI telemetry, AI BOM, ATLAS red teaming, OWASP LLM Top 10, NIST AI RMF, ISO 42001, marketplace Gates 8-9."
+    status: completed
+    category: advanced
+    agents: [security]
+    goal_file: "goals/atlas_integration.md"
+    dependencies: [phase-05, phase-36]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-38
+    number: 38
+    name: "Cloud-Agnostic Architecture"
+    description: "6 CSPs (AWS, Azure, GCP, OCI, IBM, Local), 6 service ABCs x 6 clouds, multi-cloud Terraform, LLM multi-cloud, Helm overlays, region validator."
+    status: completed
+    category: advanced
+    agents: [infrastructure]
+    goal_file: "goals/cloud_agnostic.md"
+    dependencies: [phase-06, phase-16]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  # ===== RICOAS (Requirements Intake, COA & Approval System) =====
+
+  - id: ricoas-01
+    number: "R1"
+    name: "Requirements Analyst Agent"
+    description: "Conversational AI-driven intake, gap detection (5 dimensions), SAFe decomposition (Epic-Capability-Feature-Story), readiness scoring, document extraction."
+    status: completed
+    category: ricoas
+    agents: [requirements-analyst]
+    goal_file: "goals/requirements_intake.md"
+    dependencies: [phase-01, phase-03]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: ricoas-02
+    number: "R2"
+    name: "ATO Boundary & Supply Chain"
+    description: "4-tier boundary impact assessment (GREEN/YELLOW/ORANGE/RED), supply chain dependency graph, ISA lifecycle, SCRM assessment, CVE triage."
+    status: completed
+    category: ricoas
+    agents: [supply-chain]
+    goal_file: "goals/boundary_supply_chain.md"
+    dependencies: [ricoas-01, phase-03]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: ricoas-03
+    number: "R3"
+    name: "Digital Program Twin Simulation"
+    description: "6-dimension what-if simulation (schedule, cost, risk, compliance, staffing, technical), Monte Carlo estimation, COA generation and comparison."
+    status: completed
+    category: ricoas
+    agents: [simulation]
+    goal_file: "goals/simulation_engine.md"
+    dependencies: [ricoas-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: ricoas-04
+    number: "R4"
+    name: "External Integration"
+    description: "Bidirectional Jira/ServiceNow/GitLab sync, DOORS NG ReqIF export, approval workflows, RTM traceability."
+    status: completed
+    category: ricoas
+    agents: [integration]
+    goal_file: "goals/external_integration.md"
+    dependencies: [ricoas-01]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  # ===== Operations & Automation (Phases 39-42) =====
+
+  - id: phase-39
+    number: "39"
+    name: "Observability & Hook Events"
+    description: "Hook-based agent monitoring, HMAC-SHA256 signed events, agent execution framework (JSONL output), SIEM forwarding."
+    status: completed
+    category: operations
+    agents: [monitor]
+    goal_file: "goals/observability.md"
+    dependencies: [phase-08, phase-13]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+  - id: phase-40
+    number: "40"
+    name: "NLQ Compliance Queries"
+    description: "Natural language to SQL via Bedrock, read-only enforcement, SSE dashboard events, recent query history."
+    status: completed
+    category: operations
+    agents: []
+    goal_file: "goals/nlq_compliance.md"
+    dependencies: [phase-09, phase-32]
+    impact_levels: [IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-41
+    number: "41"
+    name: "Parallel CI/CD (Git Worktree)"
+    description: "Git worktree task isolation, sparse checkout, GitLab tag routing, parallel workflow execution."
+    status: completed
+    category: operations
+    agents: []
+    goal_file: "goals/parallel_cicd.md"
+    dependencies: [phase-13]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: professional
+
+  - id: phase-42
+    number: "42"
+    name: "Framework Planning (6 Languages)"
+    description: "Language-specific build plans (Python, Java, Go, Rust, C#, TypeScript), 12 Leverage Points framework."
+    status: completed
+    category: operations
+    agents: [builder]
+    goal_file: "goals/framework_planning.md"
+    dependencies: [phase-04]
+    impact_levels: [IL2, IL4, IL5, IL6]
+    tier_minimum: starter
+
+# Category display configuration
+categories:
+  foundation:
+    label: "Foundation"
+    description: "Core infrastructure, agents, MCP, databases, K8s"
+    color: "#58a6ff"
+  compliance:
+    label: "Compliance"
+    description: "Compliance frameworks, crosswalk, categorization"
+    color: "#3fb950"
+  platform:
+    label: "Platform"
+    description: "MBSE, agentic generation, SaaS, marketplace, installer"
+    color: "#d2a8ff"
+  advanced:
+    label: "Advanced"
+    description: "DevSecOps, ZTA, MOSA, AI security, cloud-agnostic"
+    color: "#f0883e"
+  integration:
+    label: "Integration"
+    description: "Monitoring, auth, BYOK, multi-agent orchestration"
+    color: "#79c0ff"
+  ricoas:
+    label: "RICOAS"
+    description: "Requirements Intake, COA & Approval System"
+    color: "#f778ba"
+  operations:
+    label: "Operations"
+    description: "Observability, NLQ queries, CI/CD automation, framework planning"
+    color: "#ffa657"
+
+# Status display configuration
+statuses:
+  completed:
+    label: "Completed"
+    color: "#3fb950"
+    icon: "&#10003;"
+  active:
+    label: "Active"
+    color: "#58a6ff"
+    icon: "&#9654;"
+  planned:
+    label: "Planned"
+    color: "#8b949e"
+    icon: "&#9675;"

@@ -1,0 +1,151 @@
+# CUI // SP-CTI
+# Code Pattern Scanner Configuration (Phase 44 — D278)
+# Declarative dangerous code patterns across 6 languages.
+---
+
+patterns:
+  universal:
+    - pattern: '\beval\s*\('
+      severity: critical
+      name: eval_usage
+      description: "Dynamic code evaluation — potential code injection"
+    - pattern: '\bexec\s*\('
+      severity: critical
+      name: exec_usage
+      description: "Dynamic code execution — potential code injection"
+    - pattern: 'subprocess\.(call|run|Popen|check_output)\s*\('
+      severity: high
+      name: subprocess_spawn
+      description: "Process spawning — potential command injection"
+
+  python:
+    - pattern: '\bos\.system\s*\('
+      severity: critical
+      name: os_system
+      description: "Shell command execution via os.system"
+    - pattern: '\bpickle\.(loads?|dumps?)\s*\('
+      severity: high
+      name: pickle_usage
+      description: "Pickle deserialization — potential arbitrary code execution"
+    - pattern: '\b__import__\s*\('
+      severity: high
+      name: dunder_import
+      description: "Dynamic import — potential code injection"
+    - pattern: '\bimportlib\.import_module\s*\('
+      severity: medium
+      name: importlib_usage
+      description: "Dynamic module import via importlib"
+    - pattern: '\bos\.popen\s*\('
+      severity: critical
+      name: os_popen
+      description: "Shell command via os.popen"
+    - pattern: '\bcompile\s*\('
+      severity: medium
+      name: compile_usage
+      description: "Dynamic code compilation"
+
+  java:
+    - pattern: 'Runtime\.getRuntime\(\)\.exec\s*\('
+      severity: critical
+      name: runtime_exec
+      description: "Shell execution via Runtime.exec"
+    - pattern: 'ObjectInputStream'
+      severity: high
+      name: deserialization
+      description: "Java deserialization — potential RCE"
+    - pattern: '(InitialContext|lookup)\s*\(.*["\x27]ldap'
+      severity: critical
+      name: jndi_injection
+      description: "JNDI lookup — potential Log4Shell"
+    - pattern: 'ProcessBuilder\s*\('
+      severity: high
+      name: process_builder
+      description: "Process execution via ProcessBuilder"
+
+  go:
+    - pattern: 'os/exec'
+      severity: high
+      name: os_exec_import
+      description: "Process execution package import"
+    - pattern: 'exec\.Command\s*\('
+      severity: high
+      name: exec_command
+      description: "Shell command execution via exec.Command"
+    - pattern: '\bunsafe\.'
+      severity: medium
+      name: unsafe_usage
+      description: "Unsafe pointer operations"
+
+  rust:
+    - pattern: '\bunsafe\s*\{'
+      severity: medium
+      name: unsafe_block
+      description: "Unsafe code block — bypasses borrow checker"
+    - pattern: 'std::process::Command'
+      severity: high
+      name: process_command
+      description: "Shell command execution via std::process::Command"
+    - pattern: 'std::mem::transmute'
+      severity: high
+      name: mem_transmute
+      description: "Unsafe memory transmutation"
+
+  csharp:
+    - pattern: 'Process\.Start\s*\('
+      severity: high
+      name: process_start
+      description: "Process execution via Process.Start"
+    - pattern: 'Assembly\.Load'
+      severity: high
+      name: assembly_load
+      description: "Dynamic assembly loading — potential code injection"
+    - pattern: 'SqlCommand\s*\(.*\+'
+      severity: high
+      name: sql_concat
+      description: "SQL string concatenation — potential SQL injection"
+
+  typescript:
+    - pattern: 'child_process'
+      severity: high
+      name: child_process
+      description: "Child process module — command execution"
+    - pattern: 'Deno\.run\s*\('
+      severity: high
+      name: deno_run
+      description: "Deno process execution"
+    - pattern: '\beval\s*\('
+      severity: critical
+      name: eval_usage
+      description: "Dynamic code evaluation"
+    - pattern: 'process\.exit\s*\('
+      severity: medium
+      name: process_exit
+      description: "Process termination"
+    - pattern: 'Function\s*\('
+      severity: high
+      name: function_constructor
+      description: "Dynamic function creation via Function constructor"
+
+scan:
+  skip_dirs:
+    - node_modules
+    - .git
+    - __pycache__
+    - .tox
+    - .venv
+    - venv
+    - target
+    - build
+    - dist
+    - .tmp
+    - vendor
+
+  file_extensions:
+    python: [".py"]
+    java: [".java"]
+    go: [".go"]
+    rust: [".rs"]
+    csharp: [".cs"]
+    typescript: [".ts", ".tsx", ".js", ".jsx"]
+
+  max_file_size_kb: 500

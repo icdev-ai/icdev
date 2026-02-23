@@ -361,6 +361,7 @@ def main():
     # find-skill
     p_skill = sub.add_parser("find-skill", help="Find agent for a skill")
     p_skill.add_argument("--skill-id", required=True, help="Skill ID")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     # register-all
     sub.add_parser("register-all", help="Register all agents from card files")

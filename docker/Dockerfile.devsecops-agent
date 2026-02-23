@@ -3,13 +3,13 @@
 # Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
 # ADR D117: DevSecOps/ZTA Agent on port 8457
 
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 LABEL classification="CUI" \
       dissemination_control="SP-CTI" \
@@ -18,10 +18,11 @@ LABEL classification="CUI" \
       port="8457" \
       agent="devsecops-agent"
 
-# STIG: Create non-root user
-RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /usr/sbin/nologin icdev
+# STIG: Create non-root user with explicit UID/GID
+RUN groupadd -g 1000 icdev && \
+    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin icdev
 
-# STIG: Remove unnecessary packages and shells
+# STIG: Install only required runtime packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -38,14 +39,17 @@ COPY --chown=icdev:icdev . .
 RUN chmod -R 750 /app && \
     find /app -type f -name "*.py" -exec chmod 640 {} +
 
+# Data directory for SQLite (mounted as volume in production)
+RUN mkdir -p /app/data && chown icdev:icdev /app/data
+
+ENV PYTHONUNBUFFERED=1
+
 # STIG: Run as non-root
 USER icdev
 
-# Health check endpoint
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8457/health || exit 1
 
-# Expose DevSecOps agent port
 EXPOSE 8457
 
 # Read-only root filesystem enforced at runtime via:

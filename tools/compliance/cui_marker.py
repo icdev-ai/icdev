@@ -349,6 +349,7 @@ def main():
         "--dry-run", action="store_true",
         help="Show what would be done without making changes"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     config_path = Path(args.config) if args.config else None

@@ -1,0 +1,131 @@
+{% extends "portal_base.html" %}
+{% block title %}Translation {{ job.id[:8] }}… — {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{{ url_for('portal.portal_home') }}">Home</a> &gt;
+    <a href="{{ url_for('portal.translations') }}">Translations</a> &gt;
+    <span>{{ job.id[:8] }}…</span>
+</div>
+
+<h1>{{ job.source_language }} → {{ job.target_language }}
+    {% if job.status == 'completed' %}
+    <span class="badge badge-success">Completed</span>
+    {% elif job.status == 'failed' %}
+    <span class="badge badge-danger">Failed</span>
+    {% elif job.status == 'partial' %}
+    <span class="badge badge-warning">Partial</span>
+    {% else %}
+    <span class="badge badge-info">{{ job.status|capitalize }}</span>
+    {% endif %}
+</h1>
+
+<!-- Summary Stats -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ job.total_units or 0 }}</div>
+        <div class="stat-label">Total Units</div>
+    </div>
+    <div class="stat-card stat-card--success">
+        <div class="stat-value">{{ job.translated_units or 0 }}</div>
+        <div class="stat-label">Translated</div>
+    </div>
+    <div class="stat-card stat-card--warning">
+        <div class="stat-value">{{ job.mocked_units or 0 }}</div>
+        <div class="stat-label">Mocked</div>
+    </div>
+    <div class="stat-card stat-card--danger">
+        <div class="stat-value">{{ job.failed_units or 0 }}</div>
+        <div class="stat-label">Failed</div>
+    </div>
+</div>
+
+<!-- Job Metadata -->
+<div class="card" style="margin-bottom: 1.5rem;">
+    <h3>Job Details</h3>
+    <table class="data-table">
+        <tbody>
+            <tr><td><strong>Job ID</strong></td><td><code>{{ job.id }}</code></td></tr>
+            <tr><td><strong>Project</strong></td><td>{{ job.project_id or '—' }}</td></tr>
+            <tr><td><strong>Gate</strong></td><td>
+                {% if job.gate_result == 'pass' %}<span class="badge badge-success">Pass</span>
+                {% elif job.gate_result == 'warn' %}<span class="badge badge-warning">Warn</span>
+                {% elif job.gate_result == 'fail' %}<span class="badge badge-danger">Fail</span>
+                {% else %}—{% endif %}
+            </td></tr>
+            <tr><td><strong>Duration</strong></td><td>{% if job.elapsed_seconds %}{{ "%.1f"|format(job.elapsed_seconds) }}s{% else %}—{% endif %}</td></tr>
+            <tr><td><strong>Created</strong></td><td>{{ job.created_at or '—' }}</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Validation Results -->
+{% if validations %}
+<div class="table-container" style="margin-bottom: 1.5rem;">
+    <h3>Validation Results</h3>
+    <table class="data-table">
+        <thead>
+            <tr><th>Check</th><th>Status</th><th>Score</th></tr>
+        </thead>
+        <tbody>
+            {% for v in validations %}
+            <tr>
+                <td>{{ v.check_type|replace('_', ' ')|title }}</td>
+                <td>{% if v.passed %}<span class="badge badge-success">Pass</span>{% else %}<span class="badge badge-danger">Fail</span>{% endif %}</td>
+                <td>{{ "%.0f"|format((v.score or 0) * 100) }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Translation Units -->
+{% if units %}
+<div class="table-container" style="margin-bottom: 1.5rem;">
+    <h3>Translation Units ({{ units|length }})</h3>
+    <table class="data-table">
+        <thead>
+            <tr><th>Name</th><th>Kind</th><th>Status</th><th>Repairs</th></tr>
+        </thead>
+        <tbody>
+            {% for u in units %}
+            <tr>
+                <td><strong>{{ u.unit_name }}</strong></td>
+                <td>{{ u.unit_kind }}</td>
+                <td>
+                    {% if u.status == 'translated' %}<span class="badge badge-success">Translated</span>
+                    {% elif u.status == 'mocked' %}<span class="badge badge-warning">Mocked</span>
+                    {% elif u.status == 'failed' %}<span class="badge badge-danger">Failed</span>
+                    {% else %}<span class="badge">{{ u.status }}</span>{% endif %}
+                </td>
+                <td>{{ u.repair_count or 0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<!-- Dependency Mappings -->
+{% if deps %}
+<div class="table-container">
+    <h3>Dependency Mappings ({{ deps|length }})</h3>
+    <table class="data-table">
+        <thead>
+            <tr><th>Source</th><th>Target</th><th>Source</th><th>Confidence</th></tr>
+        </thead>
+        <tbody>
+            {% for d in deps %}
+            <tr>
+                <td><code>{{ d.source_import }}</code></td>
+                <td><code>{{ d.target_import or '—' }}</code></td>
+                <td>{{ d.mapping_source }}</td>
+                <td>{{ "%.0f"|format((d.confidence or 0) * 100) }}%</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

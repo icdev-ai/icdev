@@ -49,17 +49,18 @@ def record_decision(
 
 def main():
     parser = argparse.ArgumentParser(description="Record a decision")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--decision", required=True, help="What was decided")
     parser.add_argument("--rationale", required=True, help="Why this choice")
     parser.add_argument("--alternatives", help="Comma-separated alternatives considered")
     parser.add_argument("--actor", default="icdev-system", help="Who made the decision")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     alternatives = args.alternatives.split(",") if args.alternatives else []
 
     entry_id = record_decision(
-        project_id=args.project,
+        project_id=args.project_id,
         decision=args.decision,
         rationale=args.rationale,
         alternatives=alternatives,

@@ -1,0 +1,153 @@
+<!-- CUI // SP-CTI -->
+{% extends "portal_base.html" %}
+{% set active_page = "phases" %}
+{% block title %}Phase Roadmap - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <span class="current">Phase Roadmap</span>
+</nav>
+<div class="page-header">
+    <h1>Phase Roadmap</h1>
+    <p>ICDEV capability phases available for <strong>{{ tenant_name }}</strong> ({{ tenant_tier | capitalize }} tier, {{ tenant_il }})</p>
+</div>
+
+<!-- Stat Cards -->
+<div class="stats-row" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <div class="card" style="text-align: center; padding: 1rem;">
+        <div style="font-size: 1.8rem; font-weight: 700;">{{ summary.total }}</div>
+        <div style="font-size: 0.8rem; color: #8b949e;">Available Phases</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 1rem;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: #3fb950;">{{ summary.completed }}</div>
+        <div style="font-size: 0.8rem; color: #8b949e;">Completed</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 1rem;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: #58a6ff;">{{ summary.active }}</div>
+        <div style="font-size: 0.8rem; color: #8b949e;">Active</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 1rem;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: #8b949e;">{{ summary.planned }}</div>
+        <div style="font-size: 0.8rem; color: #8b949e;">Planned</div>
+    </div>
+    <div class="card" style="text-align: center; padding: 1rem;">
+        <div style="font-size: 1.8rem; font-weight: 700; color: #58a6ff;">{{ summary.progress_pct }}%</div>
+        <div style="font-size: 0.8rem; color: #8b949e;">Progress</div>
+    </div>
+</div>
+
+<!-- Progress Bar -->
+<div class="card" style="padding: 1rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+        <span style="font-weight: 600;">Overall Phase Progress</span>
+        <span style="font-size: 0.8rem; color: #8b949e;">{{ summary.completed }} of {{ summary.total }} phases completed</span>
+    </div>
+    <div class="progress-bar" style="height: 10px;">
+        <div class="progress-fill bg-green" style="width: {{ summary.progress_pct }}%;" role="progressbar" aria-valuenow="{{ summary.progress_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Phase completion progress"></div>
+    </div>
+</div>
+
+<!-- Category Filter -->
+<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem;" role="group" aria-label="Filter by category">
+    <a href="{{ url_for('portal.phases') }}" class="badge {% if not category_filter %}badge-primary{% else %}badge-secondary{% endif %}" style="text-decoration: none; padding: 4px 12px;">
+        All ({{ summary.total }})
+    </a>
+    {% for cat_id, cat_info in categories.items() %}
+    {% set cat_count = summary.by_category.get(cat_id, {}).get('total', 0) %}
+    {% if cat_count > 0 %}
+    <a href="{{ url_for('portal.phases', category=cat_id) }}" class="badge {% if category_filter == cat_id %}badge-primary{% else %}badge-secondary{% endif %}" style="text-decoration: none; padding: 4px 12px; border-color: {{ cat_info.color }};">
+        {{ cat_info.label }} ({{ cat_count }})
+    </a>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- Phase Table -->
+{% if phases %}
+<div class="card">
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Phase Registry for {{ tenant_name }}">
+            <thead>
+                <tr>
+                    <th style="width: 50px;">#</th>
+                    <th>Phase</th>
+                    <th style="width: 110px;">Category</th>
+                    <th style="width: 90px;">Status</th>
+                    <th>Agents</th>
+                    <th style="width: 100px;">Min Tier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for phase in phases %}
+                <tr>
+                    <td style="font-weight: 600; color: #8b949e;">{{ phase.number }}</td>
+                    <td>
+                        <strong>{{ phase.name }}</strong>
+                        <div style="font-size: 0.8rem; color: #8b949e; margin-top: 2px;">{{ phase.description }}</div>
+                        {% if phase.dependencies %}
+                        <div style="font-size: 0.75rem; margin-top: 4px; color: #8b949e;">
+                            Depends on:
+                            {% for dep in phase.dependencies %}
+                            <code style="font-size: 0.7rem; padding: 1px 4px; border-radius: 3px; background: #21262d;">{{ dep }}</code>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set cat = categories.get(phase.category, {}) %}
+                        <span class="badge" style="background: {{ cat.get('color', '#8b949e') }}20; color: {{ cat.get('color', '#8b949e') }}; border: 1px solid {{ cat.get('color', '#8b949e') }}40; font-size: 0.75rem;">
+                            {{ cat.get('label', phase.category) }}
+                        </span>
+                    </td>
+                    <td>
+                        {% set st = statuses.get(phase.status, {}) %}
+                        <span class="badge {% if phase.status == 'completed' %}badge-success{% elif phase.status == 'active' %}badge-primary{% else %}badge-secondary{% endif %}" role="status">
+                            {{ st.get('label', phase.status) }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if phase.agents %}
+                        {% for agent in phase.agents %}
+                        <span style="font-size: 0.7rem; display: inline-block; padding: 1px 6px; border-radius: 10px; background: #21262d; border: 1px solid #30363d; margin: 1px;">{{ agent }}</span>
+                        {% endfor %}
+                        {% else %}
+                        <span style="color: #8b949e; font-size: 0.75rem;">&mdash;</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-transform: capitalize; font-size: 0.8rem;">{{ phase.tier_minimum }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <p class="empty-state">No phases available. Contact your ICDEV administrator.</p>
+</div>
+{% endif %}
+
+<!-- Category Breakdown -->
+<h2 style="margin-top: 2rem; margin-bottom: 1rem; font-size: 1.1rem;">Category Breakdown</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    {% for cat_id, cat_info in categories.items() %}
+    {% set cat_stats = summary.by_category.get(cat_id, {'total': 0, 'completed': 0}) %}
+    {% if cat_stats.total > 0 %}
+    {% set cat_pct = ((cat_stats.completed / cat_stats.total) * 100) | round | int if cat_stats.total > 0 else 0 %}
+    <div class="card" style="padding: 1rem; border-left: 4px solid {{ cat_info.color }};">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-weight: 600; color: {{ cat_info.color }};">{{ cat_info.label }}</span>
+            <span style="font-size: 0.8rem; color: #8b949e;">{{ cat_stats.completed }}/{{ cat_stats.total }}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: #8b949e; margin-bottom: 0.5rem;">{{ cat_info.description }}</div>
+        <div class="progress-bar" style="height: 6px;">
+            <div class="progress-fill" style="width: {{ cat_pct }}%; background: {{ cat_info.color }};"></div>
+        </div>
+        <div style="font-size: 0.7rem; color: #8b949e; margin-top: 4px; text-align: right;">{{ cat_pct }}%</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}

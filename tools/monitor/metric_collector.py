@@ -398,7 +398,7 @@ def store_snapshot(
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Prometheus metric collector")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--prom-url", default=DEFAULT_PROMETHEUS_URL, help="Prometheus URL")
     parser.add_argument("--namespace", help="Kubernetes namespace")
     parser.add_argument("--check-sla", action="store_true", help="Check metrics against SLA")
@@ -410,6 +410,7 @@ def main():
     parser.add_argument("--store", action="store_true", help="Store snapshot to database")
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
@@ -428,7 +429,7 @@ def main():
 
     # SLA check
     if args.check_sla:
-        result = check_sla(args.project, prom_url=args.prom_url, namespace=args.namespace)
+        result = check_sla(args.project_id, prom_url=args.prom_url, namespace=args.namespace)
 
         if args.format == "json":
             print(json.dumps(result, indent=2))
@@ -451,10 +452,10 @@ def main():
         return
 
     # Standard metrics collection
-    result = get_application_metrics(args.project, args.prom_url, args.namespace)
+    result = get_application_metrics(args.project_id, args.prom_url, args.namespace)
 
     if args.store:
-        stored = store_snapshot(args.project, result.get("metrics", {}), db_path=db_path)
+        stored = store_snapshot(args.project_id, result.get("metrics", {}), db_path=db_path)
         result["stored_metrics"] = stored
         print(f"[metrics] Stored {stored} metric values to database")
 

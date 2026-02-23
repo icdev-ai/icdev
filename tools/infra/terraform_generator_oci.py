@@ -880,6 +880,7 @@ def main():
         default=None,
         help="OCI Object Storage namespace (defaults to project-name)",
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     config = {

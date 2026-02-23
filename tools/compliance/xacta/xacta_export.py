@@ -543,6 +543,7 @@ def main():
                         help="Export format (default: all)")
     parser.add_argument("--output-dir", type=Path, help="Output directory")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     result = export_all(args.project_id, args.format, args.output_dir, args.db_path)

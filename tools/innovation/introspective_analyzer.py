@@ -11,13 +11,14 @@ knowledge base, pipeline events) to discover self-improvement opportunities. Loo
 INWARD rather than outward — produces innovation signals with source='introspective'
 that flow through the same scoring -> triage -> solution pipeline as web signals.
 
-6 Introspective analyses:
+7 Introspective analyses:
     1. Failed Self-Heals    — Problems ICDEV can't solve yet (confidence < 0.3)
     2. Gate Failure Frequency — Gates that fail >= N times in last 30 days
     3. Unused Tools          — Tools with 0 invocations in last 90 days
     4. Slow Pipeline Stages  — Build/test/deploy stages exceeding time threshold
     5. NLQ Gaps              — Questions that returned 0 results (knowledge gaps)
     6. Knowledge Gaps        — Self-heal patterns with no resolution
+    7. CLI Harmonization     — CLI pattern drift (--json, --project-id, db_utils)
 
 Usage:
     python tools/innovation/introspective_analyzer.py --analyze --all --json
@@ -64,7 +65,7 @@ except ImportError:
 # ---- CONSTANTS ----
 ANALYSIS_TYPES = [
     "failed_self_heals", "gate_failures", "unused_tools",
-    "slow_pipelines", "nlq_gaps", "knowledge_gaps",
+    "slow_pipelines", "nlq_gaps", "knowledge_gaps", "cli_harmonization",
 ]
 DEFAULT_GATE_FAILURE_MIN = 3
 DEFAULT_GATE_FAILURE_DAYS = 30
@@ -409,6 +410,57 @@ def analyze_knowledge_gaps(db_path=None):
     return r
 
 
+# ---- ANALYSIS #7: CLI Harmonization Drift ----
+def analyze_cli_harmonization(db_path=None):
+    """Detect CLI pattern drift using governance validator checks.
+
+    Runs the 3 CLI harmonization checks from claude_dir_validator.py:
+    - cli_json_flag: tools missing --json support
+    - cli_project_naming: tools using --project instead of --project-id
+    - db_path_centralization: tools hardcoding DB paths
+    """
+    r = _make_result("cli_harmonization")
+    try:
+        from tools.testing.claude_dir_validator import (
+            check_cli_json_flag, check_cli_project_naming, check_db_path_centralization,
+        )
+    except ImportError:
+        return _skip(r, "claude_dir_validator not importable")
+
+    checks = {
+        "cli_json_flag": check_cli_json_flag,
+        "cli_project_naming": check_cli_project_naming,
+        "db_path_centralization": check_db_path_centralization,
+    }
+    for check_name, check_fn in checks.items():
+        try:
+            result = check_fn()
+            if result.missing:
+                for item in result.missing:
+                    r["findings"].append({
+                        "check": check_name,
+                        "file": item,
+                        "message": result.message,
+                        "status": result.status,
+                    })
+        except Exception as e:
+            r["findings"].append({"check": check_name, "error": str(e)})
+
+    if r["findings"]:
+        json_missing = [f for f in r["findings"] if f.get("check") == "cli_json_flag"]
+        naming_issues = [f for f in r["findings"] if f.get("check") == "cli_project_naming"]
+        db_issues = [f for f in r["findings"] if f.get("check") == "db_path_centralization"]
+        if json_missing:
+            r["recommendations"].append(f"{len(json_missing)} tool(s) missing --json flag.")
+        if naming_issues:
+            r["recommendations"].append(f"{len(naming_issues)} tool(s) use --project instead of --project-id.")
+        if db_issues:
+            r["recommendations"].append(f"{len(db_issues)} tool(s) hardcode DB paths.")
+    else:
+        r["recommendations"].append("CLI harmonization is fully compliant.")
+    return r
+
+
 # ---- SIGNAL GENERATION ----
 def _signal_title(atype, f):
     """Build human-readable signal title."""
@@ -419,6 +471,7 @@ def _signal_title(atype, f):
         "slow_pipelines": lambda: f"[Slow Pipeline] {f.get('stage','?')} stage took {f.get('duration_seconds',0)}s",
         "nlq_gaps": lambda: f"[NLQ Gap] '{f.get('query','?')[:50]}' — {f.get('occurrence_count',0)} unanswered",
         "knowledge_gaps": lambda: f"[Knowledge Gap] {f.get('description','?')[:50]} ({f.get('gap_type','?')})",
+        "cli_harmonization": lambda: f"[CLI Drift] {f.get('check','?')}: {f.get('file','?')}",
     }
     return titles.get(atype, lambda: f"[Introspective] {atype}")()
 
@@ -437,6 +490,16 @@ def _signal_score(atype, f):
         return min(f.get("occurrence_count", 0) / 10.0, 1.0)
     if atype == "knowledge_gaps":
         return min(f.get("occurrence_count", 0) * 0.1 + (0.3 if not f.get("has_remediation") else 0.0), 1.0)
+    if atype == "cli_harmonization":
+        # Score by check type: missing --json is medium, naming/DB is higher
+        check = f.get("check", "")
+        if check == "cli_json_flag":
+            return 0.6
+        if check == "cli_project_naming":
+            return 0.7
+        if check == "db_path_centralization":
+            return 0.7
+        return 0.5
     return 0.5
 
 
@@ -509,7 +572,7 @@ def generate_introspective_signals(analysis_results, db_path=None):
 
 # ---- ORCHESTRATOR ----
 def analyze_all(db_path=None, **kw):
-    """Run all 6 introspective analyses and generate signals.
+    """Run all 7 introspective analyses and generate signals.
 
     Args:
         db_path: Optional database path override.
@@ -525,6 +588,7 @@ def analyze_all(db_path=None, **kw):
         "slow_pipelines": analyze_slow_pipelines(db_path, kw.get("threshold_seconds")),
         "nlq_gaps": analyze_nlq_gaps(db_path, kw.get("min_occurrences")),
         "knowledge_gaps": analyze_knowledge_gaps(db_path),
+        "cli_harmonization": analyze_cli_harmonization(db_path),
     }
     sig_result = generate_introspective_signals(analyses, db_path)
     for a in analyses.values():
@@ -570,6 +634,7 @@ def main():
                     "slow_pipelines": lambda: analyze_slow_pipelines(args.db_path, args.threshold_seconds),
                     "nlq_gaps": lambda: analyze_nlq_gaps(args.db_path, args.min_occurrences),
                     "knowledge_gaps": lambda: analyze_knowledge_gaps(args.db_path),
+                    "cli_harmonization": lambda: analyze_cli_harmonization(args.db_path),
                 }
                 result = dispatch[args.type]()
                 result["signal_generation"] = generate_introspective_signals(

@@ -19,9 +19,9 @@ LABEL classification="CUI" \
       description="ICDEV SaaS API Gateway" \
       version="0.7.0"
 
-# STIG: Create non-root user and group
+# STIG: Create non-root user with explicit UID/GID
 RUN groupadd -g 1000 icdev && \
-    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin -m icdev
+    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin icdev
 
 # STIG: Install only required runtime packages, remove apt afterwards
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -43,14 +43,19 @@ COPY --chown=icdev:icdev context/ /app/context/
 RUN chmod -R 750 /app && \
     find /app -type f -name "*.py" -exec chmod 640 {} +
 
+# Data directory for SQLite (mounted as volume in production)
+RUN mkdir -p /app/data && chown icdev:icdev /app/data
+
+ENV PYTHONUNBUFFERED=1
+
 # STIG: Run as non-root user
-USER 1000
+USER icdev
 
 EXPOSE 8443
 
 # Health check for K8s liveness/readiness probes
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health')" || exit 1
+    CMD curl -sf http://localhost:8443/health || exit 1
 
 ENTRYPOINT ["gunicorn", \
     "--bind", "0.0.0.0:8443", \

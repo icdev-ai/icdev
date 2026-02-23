@@ -385,6 +385,13 @@ class LLMRouter:
         chain = self._get_chain_for_function(function)
         last_error = None
 
+        # D286: Create trace span for LLM invocation
+        try:
+            from tools.observability import get_tracer
+            tracer = get_tracer()
+        except ImportError:
+            tracer = None
+
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
             if not model_cfg:
@@ -394,14 +401,48 @@ class LLMRouter:
             if provider is None:
                 continue
             model_id = model_cfg.get("model_id", "")
+
+            # D286: Span with GenAI semantic conventions
+            span = None
+            if tracer:
+                span = tracer.start_span("gen_ai.invoke", kind="CLIENT", attributes={
+                    "gen_ai.operation.name": "chat",
+                    "gen_ai.system": provider_name,
+                    "gen_ai.request.model": model_id,
+                    "gen_ai.effort": request.effort or "medium",
+                    "icdev.llm_function": function,
+                })
+
             try:
+                import time as _time
+                _start = _time.time()
                 response = provider.invoke(request, model_id, model_cfg)
+                _latency = int((_time.time() - _start) * 1000)
+
+                if span:
+                    span.set_attribute("gen_ai.response.model", getattr(response, "model_id", model_id))
+                    span.set_attribute("gen_ai.usage.input_tokens", getattr(response, "input_tokens", 0))
+                    span.set_attribute("gen_ai.usage.output_tokens", getattr(response, "output_tokens", 0))
+                    span.set_attribute("gen_ai.latency_ms", _latency)
+                    if hasattr(response, "cost_usd"):
+                        span.set_attribute("gen_ai.usage.cost_usd", response.cost_usd)
+                    span.set_status("OK")
+                    span.end()
+
                 return response
             except Exception as exc:
                 logger.warning(
                     "Provider %s (%s) failed for %s: %s — trying next in chain",
                     provider_name, model_id, function, exc,
                 )
+                if span:
+                    span.set_status("ERROR", str(exc))
+                    span.add_event("provider_fallback", {
+                        "failed_provider": provider_name,
+                        "failed_model": model_id,
+                        "error": str(exc),
+                    })
+                    span.end()
                 last_error = exc
                 # Mark model as unavailable in cache so next call skips it
                 self._availability_cache[model_name] = False

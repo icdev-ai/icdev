@@ -8,7 +8,8 @@ Pre-tool-use hook that validates tool calls before execution.
 Blocks:
     - Dangerous rm -rf commands
     - Access to .env files containing secrets
-    - Modifications to audit trail (append-only)
+    - UPDATE/DELETE/DROP/TRUNCATE on all 19 append-only tables (D6, NIST AU)
+      See APPEND_ONLY_TABLES list in is_append_only_table_modification()
     - Deletion of CUI-marked artifacts without explicit approval
 
 Exit codes:
@@ -69,16 +70,77 @@ def is_env_file_access(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
-def is_audit_trail_modification(tool_name: str, tool_input: dict) -> bool:
-    """Block UPDATE/DELETE on audit trail tables (NIST AU compliance)."""
+def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
+    """Block UPDATE/DELETE/DROP/TRUNCATE on all append-only tables (NIST 800-53 AU, D6).
+
+    This list must stay in sync with init_icdev_db.py. Run the governance
+    validator to detect drift: python tools/testing/claude_dir_validator.py --json
+    """
+    APPEND_ONLY_TABLES = [
+        # Core audit
+        "audit_trail",
+        "hook_events",
+        # Phase 44 — Innovation Adaptation
+        "extension_execution_log",
+        "memory_consolidation_log",
+        # Phase 29 — Proactive Monitoring
+        "auto_resolution_log",
+        # Phase 36 — Evolutionary Intelligence
+        "propagation_log",
+        # Phase 37 — AI Security
+        "prompt_injection_log",
+        "ai_telemetry",
+        # Phase 22 — Marketplace
+        "marketplace_reviews",
+        "marketplace_scan_results",
+        # Multi-Agent Orchestration
+        "agent_vetoes",
+        # Dashboard Auth (D169-D172)
+        "dashboard_auth_log",
+        # Phase 24 — DevSecOps
+        "devsecops_pipeline_audit",
+        # Phase 28 — Remote Gateway
+        "remote_command_log",
+        # Phase 35 — Innovation Engine (D206)
+        "innovation_signals",
+        "innovation_triage_log",
+        # Phase 39 — Observability
+        "agent_executions",
+        # Phase 40 — NLQ
+        "nlq_queries",
+        # Phase 22 — Marketplace (immutable published versions)
+        "marketplace_versions",
+        # Phase 34 — Dev Profiles (immutable rows, D183)
+        "dev_profiles",
+        # Phase 45 — OWASP Agentic AI Security (D258, D259, D260)
+        "tool_chain_events",
+        "agent_trust_scores",
+        "agent_output_violations",
+        # Phase 46 — Observability, Traceability & XAI (D280-D290)
+        "otel_spans",
+        "prov_entities",
+        "prov_activities",
+        "prov_relations",
+        "shap_attributions",
+        "xai_assessments",
+        # Phase 47 — Production Readiness Audit (D292)
+        "production_audits",
+        # Phase 47 — Production Remediation (D296-D300)
+        "remediation_audit_log",
+    ]
+
     if tool_name == "Bash":
         command = tool_input.get("command", "").lower()
-        # Block SQL UPDATE/DELETE on audit_trail table
-        if re.search(r"(update|delete)\s+.*audit_trail", command):
-            return True
-        # Block direct modification of audit DB
-        if re.search(r"(sqlite3|python).*audit.*(-c|--command).*(update|delete)", command):
-            return True
+        for table in APPEND_ONLY_TABLES:
+            # Block SQL UPDATE/DELETE on protected table
+            if re.search(rf"(update|delete)\s+(from\s+)?{table}", command):
+                return True
+            # Block DROP TABLE on protected table
+            if re.search(rf"drop\s+table\s+.*{table}", command):
+                return True
+            # Block TRUNCATE on protected table
+            if re.search(rf"truncate\s+.*{table}", command):
+                return True
 
     return False
 
@@ -101,9 +163,9 @@ def main():
                 print("BLOCKED: Dangerous rm command detected and prevented", file=sys.stderr)
                 sys.exit(2)
 
-        # Block audit trail modification (NIST AU compliance)
-        if is_audit_trail_modification(tool_name, tool_input):
-            print("BLOCKED: Audit trail is append-only (NIST 800-53 AU). No UPDATE/DELETE allowed.", file=sys.stderr)
+        # Block modification of all append-only tables (NIST 800-53 AU, D6)
+        if is_append_only_table_modification(tool_name, tool_input):
+            print("BLOCKED: Append-only table (D6, NIST 800-53 AU). No UPDATE/DELETE/DROP/TRUNCATE allowed.", file=sys.stderr)
             sys.exit(2)
 
         sys.exit(0)

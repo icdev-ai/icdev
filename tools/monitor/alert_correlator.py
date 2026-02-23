@@ -405,13 +405,14 @@ def _load_alerts_from_db(
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Alert correlation engine")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--time-window", default="5m", help="Correlation time window (e.g., 5m, 1h)")
     parser.add_argument("--deduplicate", action="store_true", help="Run deduplication")
     parser.add_argument("--escalate-critical", action="store_true", help="Auto-escalate critical incidents")
     parser.add_argument("--alerts-json", help="Path to JSON file with alerts (instead of DB)")
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
@@ -422,13 +423,13 @@ def main():
         with open(args.alerts_json, "r", encoding="utf-8") as f:
             alerts = json.load(f)
     else:
-        alerts = _load_alerts_from_db(args.project, time_window, db_path)
+        alerts = _load_alerts_from_db(args.project_id, time_window, db_path)
 
     if not alerts:
-        print(f"[alert-correlator] No alerts found for {args.project} in the last {args.time_window}")
+        print(f"[alert-correlator] No alerts found for {args.project_id} in the last {args.time_window}")
         return
 
-    print(f"[alert-correlator] Loaded {len(alerts)} alerts for {args.project}")
+    print(f"[alert-correlator] Loaded {len(alerts)} alerts for {args.project_id}")
 
     # Deduplicate
     if args.deduplicate:
@@ -450,7 +451,7 @@ def main():
                 print(f"[alert-correlator] ESCALATED: {inc['incident_id']} — {inc['title']}")
 
     result = {
-        "project_id": args.project,
+        "project_id": args.project_id,
         "time_window": args.time_window,
         "analyzed_at": datetime.now(timezone.utc).isoformat(),
         "total_alerts": len(alerts),
@@ -463,7 +464,7 @@ def main():
         print(json.dumps(result, indent=2))
     else:
         print(f"\n{'='*60}")
-        print(f"  ALERT CORRELATION — {args.project}")
+        print(f"  ALERT CORRELATION — {args.project_id}")
         print(f"  Window: {args.time_window} | Alerts: {len(alerts)} | Incidents: {len(incidents)}")
         print(f"{'='*60}")
 

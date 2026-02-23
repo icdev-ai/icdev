@@ -14,6 +14,11 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
 POAM_TEMPLATE_PATH = BASE_DIR / "context" / "compliance" / "poam_template.md"
 
 # Remediation timelines by severity (days)
@@ -30,6 +35,8 @@ REMEDIATION_TIMELINES = {
 
 def _get_connection(db_path=None):
     """Get a database connection."""
+    if get_db_connection:
+        return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -375,14 +382,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate Plan of Action & Milestones (POA&M)"
     )
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
         path = generate_poam(
-            project_id=args.project,
+            project_id=args.project_id,
             output_path=args.output,
             db_path=Path(args.db) if args.db else None,
         )

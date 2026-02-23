@@ -1,0 +1,108 @@
+{
+  "framework_id": "xai",
+  "framework_name": "Observability & Explainable AI (Phase 46)",
+  "version": "1.0",
+  "description": "Requirements for observability, traceability, and explainable AI in ICDEV. Maps to NIST AI RMF MEASURE 2.5/2.7/2.8, DoD RAI Traceable principle, and ISO 42001.",
+  "requirements": [
+    {
+      "id": "XAI-001",
+      "title": "Tracing Active",
+      "description": "Distributed tracing must be active with OTel or SQLite backend. All agent operations must produce trace spans.",
+      "category": "tracing",
+      "severity": "critical",
+      "nist_800_53_controls": ["AU-2", "AU-3", "AU-12"],
+      "nist_ai_rmf": "MEASURE 4.1",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-002",
+      "title": "MCP Instrumentation Enabled",
+      "description": "All MCP server tool calls must produce trace spans with tool name, duration, and status attributes.",
+      "category": "tracing",
+      "severity": "high",
+      "nist_800_53_controls": ["AU-2", "AU-3"],
+      "nist_ai_rmf": "MEASURE 4.1",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-003",
+      "title": "A2A Distributed Tracing Active",
+      "description": "Cross-agent spans must be linked via W3C traceparent propagation in A2A JSON-RPC metadata.",
+      "category": "tracing",
+      "severity": "high",
+      "nist_800_53_controls": ["AU-2", "AU-14"],
+      "nist_ai_rmf": "MEASURE 2.5",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-004",
+      "title": "Provenance Graph Populated",
+      "description": "W3C PROV-AGENT provenance graph must contain entities and activities for project artifacts and operations.",
+      "category": "provenance",
+      "severity": "critical",
+      "nist_800_53_controls": ["AU-3", "AU-10", "SA-12"],
+      "nist_ai_rmf": "MEASURE 2.5",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-005",
+      "title": "Content Tracing Policy Documented",
+      "description": "Content tracing policy must be documented in observability_tracing_config.yaml specifying whether plaintext or hash-only recording is used.",
+      "category": "policy",
+      "severity": "medium",
+      "nist_800_53_controls": ["AU-11", "PL-4"],
+      "nist_ai_rmf": "MEASURE 2.8",
+      "dod_rai_principle": "Transparent"
+    },
+    {
+      "id": "XAI-006",
+      "title": "SHAP Analysis Recent",
+      "description": "AgentSHAP tool attribution analysis must have been run within the last 30 days for the project.",
+      "category": "explainability",
+      "severity": "high",
+      "nist_800_53_controls": ["AU-6", "CA-7"],
+      "nist_ai_rmf": "MEASURE 2.7",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-007",
+      "title": "Decision Rationale Recorded",
+      "description": "Architectural and operational decisions must have recorded rationale via decision_recorder.",
+      "category": "explainability",
+      "severity": "medium",
+      "nist_800_53_controls": ["AU-3", "AU-12"],
+      "nist_ai_rmf": "MEASURE 2.7",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-008",
+      "title": "Trace Retention Configured",
+      "description": "Trace retention policy must be configured (SQLite and/or MLflow retention days) in observability_tracing_config.yaml.",
+      "category": "policy",
+      "severity": "medium",
+      "nist_800_53_controls": ["AU-11", "SI-12"],
+      "nist_ai_rmf": "MEASURE 4.1",
+      "dod_rai_principle": "Responsible"
+    },
+    {
+      "id": "XAI-009",
+      "title": "AI Telemetry Active",
+      "description": "AI telemetry logging must be active with recent entries (within 7 days) for the project.",
+      "category": "monitoring",
+      "severity": "high",
+      "nist_800_53_controls": ["AU-2", "AU-6", "SI-4"],
+      "nist_ai_rmf": "MEASURE 4.1",
+      "dod_rai_principle": "Traceable"
+    },
+    {
+      "id": "XAI-010",
+      "title": "Agent Trust Scoring Active",
+      "description": "Agent trust scores must be computed and tracked for the project.",
+      "category": "trust",
+      "severity": "medium",
+      "nist_800_53_controls": ["CA-7", "IA-1"],
+      "nist_ai_rmf": "MEASURE 2.5",
+      "dod_rai_principle": "Governable"
+    }
+  ]
+}

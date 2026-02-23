@@ -122,6 +122,7 @@ def main():
     parser.add_argument("--limit", type=int, default=10, help="Max results")
     parser.add_argument("--user-id", help="Filter by user ID (D180)")
     parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     results = search(args.query, args.limit, user_id=args.user_id, tenant_id=args.tenant_id)

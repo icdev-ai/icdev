@@ -361,6 +361,27 @@ atlas_ai:
     ai_bom_max_age_days: 90
     red_team_scan_required_for_il5_plus: true
 
+# OWASP Agentic AI Security Gates (Phase 45 — D257-D264)
+owasp_agentic:
+  blocking:
+    - agent_trust_below_untrusted_threshold
+    - tool_chain_critical_violation_unresolved
+    - output_classification_leak_detected
+    - behavioral_drift_critical_unresolved
+    - mcp_authorization_not_configured
+  warning:
+    - agent_trust_below_degraded_threshold
+    - tool_chain_high_violations_above_threshold
+    - output_violations_above_threshold
+    - behavioral_red_team_not_run
+    - threat_model_not_current
+  thresholds:
+    min_agent_trust_score: 0.30
+    max_unresolved_critical_chain_violations: 0
+    max_unresolved_critical_output_violations: 0
+    behavioral_drift_detection_required: true
+    mcp_authorization_required: true
+
 # CI/CD Self-Recovery Guard Rails (Phase 4 — D134)
 recovery:
   max_attempts: 3
@@ -384,6 +405,100 @@ recovery:
     - compliance_gate_failure
     - high_vulnerability
     - bandit_high_severity
+
+# Cross-Language Translation Gates (Phase 43)
+translation:
+  blocking:
+    - translation_syntax_errors_in_output
+    - translation_api_surface_below_threshold
+    - translation_compliance_coverage_below_threshold
+    - secrets_detected_in_translation
+    - cui_markings_missing_in_translation
+  warning:
+    - translation_round_trip_similarity_low
+    - translation_type_coverage_low
+    - translation_complexity_increase_high
+    - translation_unmapped_dependencies
+    - translation_stub_functions_present
+    - translation_lint_issues
+  thresholds:
+    min_api_surface_match: 0.90
+    min_type_coverage: 0.85
+    min_round_trip_similarity: 0.80
+    max_complexity_increase_pct: 30
+    min_compliance_coverage_pct: 95.0
+    max_mocked_unit_pct: 20
+
+# .claude Directory Governance Gates (Auto-Validation)
+claude_config_alignment:
+  blocking:
+    - append_only_table_unprotected
+    - hook_syntax_error
+    - hook_reference_missing
+  warning:
+    - dashboard_route_undocumented
+    - e2e_coverage_gap
+    - settings_deny_rule_missing
+  thresholds:
+    max_unprotected_append_only: 0
+    require_hook_syntax_valid: true
+    require_hook_refs_valid: true
+
+# Code Pattern Detection Gates (Phase 44 — D278)
+code_patterns:
+  blocking:
+    - critical_code_pattern_detected
+    - high_code_pattern_detected
+  warning:
+    - medium_code_pattern_detected
+  thresholds:
+    max_critical: 0
+    max_high: 0
+    max_medium: 10
+
+# Production Readiness Audit Gates (D293)
+production_readiness:
+  blocking:
+    - sast_critical_findings
+    - secrets_detected
+    - critical_dependency_vulnerabilities
+    - mcp_server_import_failure
+    - db_schema_mismatch
+    - python_version_incompatible
+    - test_collection_failure
+    - governance_check_failure
+  warning:
+    - cui_markings_incomplete
+    - sbom_generation_skipped
+    - documentation_drift
+    - backup_config_missing
+    - dockerfile_issues
+    - cross_import_errors
+    - dashboard_page_errors
+  thresholds:
+    max_sast_critical: 0
+    max_sast_high: 0
+    max_dep_critical: 0
+    max_dep_high: 5
+    min_cui_coverage_pct: 90
+    min_python_version: "3.9"
+
+observability_xai:
+  blocking:
+    - tracing_not_active
+    - provenance_graph_empty
+    - xai_assessment_not_completed
+    - content_tracing_active_in_cui_without_approval
+  warning:
+    - shap_analysis_stale
+    - provenance_gaps_detected
+    - mlflow_connectivity_degraded
+    - xai_coverage_below_threshold
+  thresholds:
+    tracing_required: true
+    provenance_required: true
+    shap_max_age_days: 30
+    min_xai_coverage_pct: 80
 
 marketplace_publish:
   blocking:

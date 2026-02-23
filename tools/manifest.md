@@ -18,7 +18,7 @@
 ## Database
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Init ICDEV DB | tools/db/init_icdev_db.py | Initialize ICDEV operational database (124 tables) — detects migration system (D150) | --db-path, --reset | Confirmation + table list |
+| Init ICDEV DB | tools/db/init_icdev_db.py | Initialize ICDEV operational database (176 tables) — detects migration system (D150) | --db-path, --reset | Confirmation + table list |
 | Migration Runner | tools/db/migration_runner.py | Lightweight DB migration framework (D150) — schema versioning, checksums, dual-engine | (library) | MigrationRunner class |
 | Migrate CLI | tools/db/migrate.py | CLI wrapper for migration runner | --status, --up, --down, --create, --validate, --mark-applied, --all-tenants | Status / results |
 | Backup Manager | tools/db/backup_manager.py | Database backup/restore with WAL-safe sqlite3.backup() API (D152) | (library) | BackupManager class |
@@ -31,6 +31,13 @@
 | Retry | tools/resilience/retry.py | Exponential backoff + full jitter decorator (D147) | (library) | @retry decorator |
 | Errors | tools/resilience/errors.py | Structured exception hierarchy (D148) | (library) | ICDevError hierarchy |
 | Correlation | tools/resilience/correlation.py | Request-scoped correlation ID middleware (D149) | (library) | Flask middleware + get_correlation_id |
+
+## Compatibility Utilities (D145)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Platform Utils | tools/compat/platform_utils.py | OS detection, temp/home/data dirs, UTF-8 console (D145) | (library) | IS_WINDOWS, IS_LINUX, etc. |
+| Datetime Utils | tools/compat/datetime_utils.py | Cross-platform datetime helpers | (library) | UTC-safe datetime funcs |
+| DB Utils | tools/compat/db_utils.py | Centralized DB path resolution with env var > explicit > default fallback chain | (library) | get_icdev_db_path(), get_memory_db_path(), get_platform_db_path() |
 
 ## Audit Trail
 | Tool | File | Description | Input | Output |
@@ -53,6 +60,8 @@
 | MCP Modernization Server | tools/mcp/modernization_server.py | Modernization MCP server (10 tools: register, analyze, assess, plan, generate, track, migrate) | stdio | JSON-RPC responses |
 | MCP DevSecOps Server | tools/mcp/devsecops_server.py | DevSecOps/ZTA MCP server (12 tools: profile, maturity, pipeline, policy, mesh, segmentation, attestation, posture) | stdio | JSON-RPC responses |
 | MCP Innovation Server | tools/mcp/innovation_server.py | Innovation Engine MCP server (10 tools: scan, score, triage, trends, generate, pipeline, status, introspect, competitive, standards) | stdio | JSON-RPC responses |
+| MCP Context Server | tools/mcp/context_server.py | Semantic Layer MCP server (D277): CLAUDE.md section indexer, keyword search, role-tailored context, project/agent metadata | stdio | JSON-RPC responses |
+| MCP Gateway Server | tools/mcp/gateway_server.py | Remote Command Gateway MCP server (5 tools: bind_user, list_bindings, revoke, send_command, status) | stdio | JSON-RPC responses |
 
 ## Innovation Engine (Phase 35 — D199-D208)
 | Tool | File | Description | Input | Output |
@@ -207,6 +216,9 @@
 | Claude MD Generator | tools/builder/claude_md_generator.py | Generate dynamic CLAUDE.md for child apps (Jinja2) | --blueprint, --output, --json | CLAUDE.md path |
 | Goal Adapter | tools/builder/goal_adapter.py | Copy and adapt ICDEV goals for child applications | --source-goals, --output, --app-name, --json | Adapted goal paths |
 | DB Init Generator | tools/builder/db_init_generator.py | Generate standalone DB init scripts for child apps | --blueprint, --output, --app-name, --json | DB init script path |
+| Dev Profile Manager | tools/builder/dev_profile_manager.py | 5-layer cascade dev profiles (Platform→Tenant→Program→Project→User) with version immutability, role-based locks, LLM injection (D183-D188) | --scope, --scope-id, --create, --get, --update, --resolve, --lock, --inject, --diff, --rollback, --json | Profile + cascade |
+| Profile Detector | tools/builder/profile_detector.py | Auto-detect dev profile from repo analysis or natural language text (D185 advisory-only) | --repo-path, --text, --json | Detected dimensions |
+| Profile MD Generator | tools/builder/profile_md_generator.py | Generate PROFILE.md from resolved dev profile via Jinja2 (D186) | --scope, --scope-id, --output, --store, --json | PROFILE.md path |
 
 ## Security Scanning
 | Tool | File | Description | Input | Output |
@@ -284,6 +296,8 @@
 | UI Analyzer | tools/modernization/ui_analyzer.py | Legacy UI screenshot analysis for 7R migration scoring | --image, --image-dir, --app-id, --store, --score-only | UI complexity score + analysis |
 | Diagram Extractor | tools/mbse/diagram_extractor.py | Vision-based SysML diagram extraction from screenshots | --image, --diagram-type, --project-id, --store, --validate | Elements + relationships |
 | Diagram Validator | tools/compliance/diagram_validator.py | Compliance diagram validation (SSP, network zone, ATO boundary) | --image, --type, --expected-components, --expected-zones | Pass/fail per check |
+| Production Audit | tools/testing/production_audit.py | 30-check pre-production readiness audit across 6 categories (platform, security, compliance, integration, performance, documentation) | --json, --human, --stream, --gate, --category | AuditReport JSON + exit code |
+| Production Remediate | tools/testing/production_remediate.py | Auto-fix audit blockers using 3-tier confidence model (auto-fix >= 0.7, suggest 0.3-0.7, escalate < 0.3) | --auto, --dry-run, --check-id, --category, --skip-audit, --json, --human, --stream | RemediationReport JSON + exit code |
 | Playwright Config | playwright.config.ts | Playwright test runner config (Chromium/Firefox/WebKit, video, screenshots) | — | — |
 | E2E Test: Dashboard | tests/e2e/dashboard_health.spec.ts | Native Playwright test: dashboard CUI banners + navigation | npx playwright test | Pass/fail + screenshots |
 | E2E Test: Compliance | tests/e2e/compliance_artifacts.spec.ts | Native Playwright test: compliance artifact display | npx playwright test | Pass/fail + screenshots |
@@ -401,7 +415,7 @@
 | Traceability Builder | tools/requirements/traceability_builder.py | Full RTM: requirement > SysML > code > test > control > UAT with coverage analysis | --project-id, --build-rtm, --gap-analysis, --json | RTM + coverage % |
 | MCP Integration Server | tools/mcp/integration_server.py | MCP server for integration tools (10 tools: Jira, ServiceNow, GitLab, DOORS, approval, RTM) | stdio | JSON-RPC responses |
 
-## Agent Execution Framework (TAC-8 Phase A)
+## Agent Execution Framework (Phase 39)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Agent Executor | tools/agent/agent_executor.py | Subprocess-based Claude Code CLI invocation with JSONL parsing, retry, audit | --prompt, --model, --max-retries, --timeout, --json | AgentPromptResponse |
@@ -440,7 +454,7 @@
 | Mailbox | tools/agent/mailbox.py | HMAC-SHA256 signed inter-agent messaging: send, broadcast, receive, verify | --send, --inbox, --verify, --json | Messages |
 | Agent Memory | tools/agent/agent_memory.py | Project-scoped per-agent + team memory: store, recall, inject context, prune | --store, --recall, --inject, --prune, --json | Memory entries |
 
-## Observability Hooks (TAC-8 Phase A)
+## Observability Hooks (Phase 39)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Send Event | .claude/hooks/send_event.py | Shared utility: HMAC-signed event storage + SSE forwarding | session_id, hook_type, payload | Event ID |
@@ -449,7 +463,7 @@
 | Stop Hook | .claude/hooks/stop.py | Capture session completion event (always exits 0) | session_id, reason | — |
 | Subagent Stop Hook | .claude/hooks/subagent_stop.py | Log subagent task completion (always exits 0) | subagent_id, result | — |
 
-## NLQ Compliance Queries (TAC-8 Phase B)
+## NLQ Compliance Queries (Phase 40)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | NLQ Processor | tools/dashboard/nlq_processor.py | NLQ→SQL engine: schema extraction, Bedrock prompt, SQL validation, execution | query_text, actor | SQL results |
@@ -457,13 +471,13 @@
 | Events API | tools/dashboard/api/events.py | Blueprint: recent events, SSE stream, event ingest | GET/POST /api/events/* | Events |
 | NLQ API | tools/dashboard/api/nlq.py | Blueprint: NLQ query, schema, history | POST /api/nlq/query | Query results |
 
-## Git Worktree Parallel CI/CD (TAC-8 Phase C)
+## Git Worktree Parallel CI/CD (Phase 41)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Worktree Manager | tools/ci/modules/worktree.py | Git worktree lifecycle: create (sparse checkout), list, cleanup, status | --create, --list, --cleanup, --status | WorktreeInfo |
 | GitLab Task Monitor | tools/ci/triggers/gitlab_task_monitor.py | Poll GitLab issues for {{icdev: workflow}} tags, auto-trigger workflows | --interval, --dry-run, --once | Workflow launch |
 
-## Framework Planning Commands (TAC-8 Phase D)
+## Framework Planning Commands (Phase 42)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Plan Python | .claude/commands/plan_python.md | Python build plan: Flask/FastAPI, pytest, behave, bandit, pip-audit | $ARGUMENTS | Build plan |
@@ -568,14 +582,20 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Prompt Injection Detector | tools/security/prompt_injection_detector.py | 5-category prompt injection detection (role hijacking, delimiter, instruction injection, data exfil, encoded payloads) with confidence scoring and DB logging | --text, --file, --project-dir, --gate, --json | Detection results + action |
-| AI Telemetry Logger | tools/security/ai_telemetry_logger.py | Append-only AI interaction logging (SHA-256 hashes, tokens, latency), anomaly detection, usage summary (D218) | --summary, --anomalies, --project-id, --json | Telemetry stats |
+| AI Telemetry Logger | tools/security/ai_telemetry_logger.py | Append-only AI interaction logging (SHA-256 hashes, tokens, latency), anomaly detection, behavioral drift detection (D218, D257) | --summary, --anomalies, --drift, --agent-id, --project-id, --json | Telemetry stats + drift alerts |
 | ATLAS Assessor | tools/compliance/atlas_assessor.py | MITRE ATLAS v5.4.0 compliance assessment (34 mitigations, BaseAssessor pattern D116) | --project-id, --gate, --json | Assessment + gate |
 | OWASP LLM Assessor | tools/compliance/owasp_llm_assessor.py | OWASP LLM Top 10 v2025 assessment (10 risk categories, BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
 | NIST AI RMF Assessor | tools/compliance/nist_ai_rmf_assessor.py | NIST AI RMF 1.0 assessment (4 functions: Govern/Map/Measure/Manage, BaseAssessor pattern) | --project-id, --gate, --json | Assessment + gate |
 | ISO 42001 Assessor | tools/compliance/iso42001_assessor.py | ISO/IEC 42001:2023 AI Management System assessment (18 requirements, international hub bridge) | --project-id, --gate, --json | Assessment + gate |
-| ATLAS Red Team Scanner | tools/security/atlas_red_team.py | Opt-in adversarial testing (D219): 6 ATLAS techniques (T0051, T0056, T0080, T0086, T0057, T0034) | --project-id, --atlas-red-team, --json | Red team results |
+| ATLAS Red Team Scanner | tools/security/atlas_red_team.py | Opt-in adversarial testing (D219): 6 ATLAS techniques + 6 behavioral techniques (BRT-001 to BRT-006) | --project-id, --atlas-red-team, --behavioral, --brt-technique, --json | Red team results |
 | AI BOM Generator | tools/security/ai_bom_generator.py | AI Bill of Materials: scan LLM providers, AI frameworks, MCP servers, store in ai_bom table with risk assessment | --project-id, --project-dir, --gate, --json | AI BOM + gate |
 | ATLAS Report Generator | tools/compliance/atlas_report_generator.py | MITRE ATLAS compliance report: mitigation coverage, technique exposure, OWASP crossref, gap analysis, remediation | --project-id, --output-path, --json | ATLAS report |
+| Tool Chain Validator | tools/security/tool_chain_validator.py | Sliding-window tool-call-sequence validator with fnmatch pattern matching, burst detection, append-only logging (D258) | --check, --rules, --gate, --json | Violations + gate |
+| Agent Output Validator | tools/security/agent_output_validator.py | Post-tool output content safety checker — classification leaks, sensitive data, oversized responses (D259) | --text, --file, --gate, --json | Violations + action |
+| Agent Trust Scorer | tools/security/agent_trust_scorer.py | Dynamic inter-agent trust scoring with decay/recovery from 5 signal sources (D260) | --score, --check, --history, --all, --gate, --json | Trust level + gate |
+| MCP Tool Authorizer | tools/security/mcp_tool_authorizer.py | Per-tool RBAC for MCP servers — deny-first with fnmatch wildcards, 5 roles (D261) | --check --role --tool, --list --role, --validate, --json | Allow/deny + validation |
+| OWASP Agentic Assessor | tools/compliance/owasp_agentic_assessor.py | OWASP Agentic AI security assessment (17 checks across 8 gaps, BaseAssessor pattern D264) | --project-id, --gate, --json | Assessment + gate |
+| OWASP Agentic Threats Catalog | context/compliance/owasp_agentic_threats.json | T01-T17 agentic AI threat catalog with NIST 800-53 crosswalk and ATLAS technique mappings | (data) | JSON catalog |
 | ATLAS Mitigations Catalog | context/compliance/atlas_mitigations.json | 34 MITRE ATLAS mitigations with NIST 800-53 crosswalk and technique mappings | (data) | JSON catalog |
 | ATLAS Techniques Catalog | context/compliance/atlas_techniques.json | 84+ ATLAS techniques by tactic with sub-techniques and mitigations | (data) | JSON catalog |
 | OWASP LLM Top 10 Catalog | context/compliance/owasp_llm_top10.json | 10 OWASP LLM risk categories with NIST crosswalk and ATLAS technique refs | (data) | JSON catalog |
@@ -623,6 +643,65 @@
 | Terraform Generator OCI | tools/infra/terraform_generator_oci.py | OCI Government Terraform (VCN, OKE, Autonomous DB, Object Storage, Vault) | --project-path, --json | .tf files |
 | Terraform Generator IBM | tools/infra/terraform_generator_ibm.py | IBM Cloud Terraform generator — VPC, IKS, PostgreSQL, COS, Key Protect with CUI headers. | --project-id, --region, --json | .tf files |
 | Terraform Generator On-Prem | tools/infra/terraform_generator_onprem.py | On-premises Terraform generator — self-managed K8s, Docker Compose, local PostgreSQL. | --project-id, --target k8s\|docker, --json | .tf / docker-compose files |
+
+## Cross-Language Translation (Phase 43 — D242-D256)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Source Extractor | tools/translation/source_extractor.py | Phase 1: AST/regex → language-agnostic IR (JSON). Per-language extractors (Python AST, Java/Go/Rust/C#/TS regex). Detects concurrency, error handling, idioms, framework annotations | --source-path, --language, --output-ir, --project-id, --json | IR JSON |
+| Type Checker | tools/translation/type_checker.py | Phase 2: Validate type-compatibility of function signatures between source/target type systems (D253, Amazon Oxidizer) | --ir-file, --source-language, --target-language, --json | Compatibility report |
+| Code Translator | tools/translation/code_translator.py | Phase 3: LLM-assisted chunk translation with feature mapping rules (D247), pass@k candidates (D254). Post-order dependency traversal (D244). Mock-and-continue on failure (D256) | --ir-file, --source-language, --target-language, --output-dir, --candidates, --json | Translated units JSON |
+| Project Assembler | tools/translation/project_assembler.py | Phase 4: Scaffold target project (pom.xml/go.mod/Cargo.toml/etc.), write translated files, apply CUI headers, generate build file | --translated-file, --source-language, --target-language, --output-dir, --json | Project files |
+| Translation Validator | tools/translation/translation_validator.py | Phase 5: 8-check validation (syntax, lint, round-trip IR, API surface, type coverage, complexity, compliance, feature mapping). Compiler-feedback repair loop (D255) | --ir-file, --translated-file, --source-language, --target-language, --json | Validation report |
+| Translation Manager | tools/translation/translation_manager.py | Full pipeline orchestrator. Supports --extract-only, --translate-only, --validate-only, --dry-run, --compliance-bridge, --candidates k | --source-path, --source-language, --target-language, --output-dir, --project-id, --json | Pipeline result |
+| Test Translator | tools/translation/test_translator.py | Translate test files between frameworks (pytest↔JUnit↔testing↔cargo_test↔xUnit↔Jest). BDD .feature files preserved; step definitions translated (D250) | --source-test-dir, --source-language, --target-language, --output-dir, --ir-file, --json | Translated tests |
+| Dependency Mapper | tools/translation/dependency_mapper.py | Map cross-language package equivalents from declarative JSON table (D246). LLM suggestion for unknowns (advisory only) | --source-language, --target-language, --imports, --json | Mapped dependencies |
+| Feature Map Loader | tools/translation/feature_map.py | Load and apply 3-part feature mapping rules (D247): syntactic pattern → NL description → static validation | (library) | Feature rules |
+
+## Remote Command Gateway (Phase 28 — D133-D140)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Gateway Agent | tools/gateway/gateway_agent.py | Remote command reception from 5 channels (Telegram, Slack, Teams, Mattermost, internal chat), 8-gate security chain, IL-aware response filtering | --port 8458 | Flask server |
+| User Binder | tools/gateway/user_binder.py | Pre-provision user bindings (air-gapped mode), binding ceremony, revocation | --provision, --list, --revoke, --json | Binding records |
+
+## Innovation Adaptation (Phase 44 — D257-D279)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Chat Manager | tools/dashboard/chat_manager.py | Multi-stream parallel chat: thread-per-context, max 5/user, message queue, mid-stream intervention (D257-D260, D265-D267) | (library) | ChatManager class |
+| Chat API | tools/dashboard/api/chat.py | Flask Blueprint: create/list/send/intervene/resume/delete chat contexts | /api/chat/* | JSON chat data |
+| Chat Streams JS | tools/dashboard/static/js/chat_streams.js | Multi-pane chat UI with intervention controls and real-time updates | (browser) | Chat UI |
+| State Tracker | tools/dashboard/state_tracker.py | Dirty-tracking state push: per-client version counters, debounced SSE, incremental updates (D268-D270) | (library) | StateTracker class |
+| Phase Loader | tools/dashboard/phase_loader.py | Load and render phase registry data for dashboard phases page | (library) | Phase data |
+| Extension Manager | tools/extensions/extension_manager.py | Active extension hook system: 10 hook points, behavioral/observational tiers, layered override (project > tenant > default) (D261-D264) | (library) | ExtensionManager class |
+| History Compressor | tools/memory/history_compressor.py | 3-tier history compression: current topic 50%, historical 30%, bulk 20%, topic boundary detection, LLM/truncation fallback (D271-D274) | --context-id, --budget, --json | Compressed history |
+| Memory Consolidation | tools/memory/memory_consolidation.py | AI-driven memory consolidation: hybrid search → LLM decision (MERGE/REPLACE/KEEP_SEPARATE/UPDATE/SKIP), Jaccard fallback (D276) | --consolidate, --dry-run, --json | Consolidation log |
+| Code Pattern Scanner | tools/security/code_pattern_scanner.py | Dangerous pattern detection across 6 languages (Python, Java, Go, Rust, C#, TypeScript), declarative YAML patterns (D278) | --scan, --project-dir, --language, --gate, --json | Pattern findings + gate |
+| Register External Patterns | tools/innovation/register_external_patterns.py | Register Agent Zero + InsForge patterns as innovation signals with 5-dimension scoring (D279) | --register-all, --status, --score-all, --json | Registration results |
+| Shared Schemas | tools/schemas/ | stdlib dataclass models (ProjectStatus, AgentHealth, AuditEvent, etc.) with validate_output() and wrap_mcp_response() (D275) | (library) | Schema classes |
+| Context Indexer | tools/mcp/context_indexer.py | CLAUDE.md section indexer by ## headers for semantic layer MCP delivery (D277) | (library) | Section index |
+
+## Observability, Traceability & Explainable AI (Phase 46)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Tracer ABC | tools/observability/tracer.py | Span/Tracer ABCs, NullTracer, NullSpan, ProxyTracer, set_content_tag() (D280) | (library) | Tracer classes |
+| SQLite Tracer | tools/observability/sqlite_tracer.py | Writes spans to otel_spans table — air-gapped default backend (D280) | (library) | SQLiteTracer class |
+| OTel Tracer | tools/observability/otel_tracer.py | Wraps opentelemetry-api/sdk with OTLP exporter — production backend (D280) | (library) | OTelTracer class |
+| Trace Context | tools/observability/trace_context.py | W3C traceparent parse/generate, contextvars propagation (D281) | (library) | TraceparentContext class |
+| GenAI Attributes | tools/observability/genai_attributes.py | OTel GenAI semantic convention constants for LLM spans (D286) | (library) | Attribute constants |
+| Instrumentation | tools/observability/instrumentation.py | @traced() decorator for auto-span creation on functions (D284) | (library) | Decorator |
+| MLflow Exporter | tools/observability/mlflow_exporter.py | Batch export SQLite spans to MLflow REST API (D283) | --export, --status, --json | Export results |
+| Prov Recorder | tools/observability/provenance/prov_recorder.py | W3C PROV entity/activity/relation recording, span callbacks (D287) | (library) | ProvRecorder class |
+| Prov Query | tools/observability/provenance/prov_query.py | Lineage queries — backward ("what produced this?") and forward (D287) | --entity-id, --direction, --json | Lineage graph |
+| Prov Export | tools/observability/provenance/prov_export.py | Export provenance graph as W3C PROV-JSON for interoperability (D287) | --project-id, --json | PROV-JSON |
+| AgentSHAP | tools/observability/shap/agent_shap.py | Monte Carlo Shapley value tool attribution analysis (D288) | --trace-id, --iterations, --json | Shapley values |
+| SHAP Reporter | tools/observability/shap/shap_reporter.py | JSON/markdown/dashboard report generation for SHAP results (D288) | (library) | Reports |
+| XAI Assessor | tools/compliance/xai_assessor.py | Explainable AI compliance assessor — 10 automated checks (D289) | --project-id, --gate, --json | Assessment results |
+| XAI Requirements | context/compliance/xai_requirements.json | XAI requirements catalog (NIST AI RMF + DoD RAI + ISO 42001) | (data) | Requirements JSON |
+| Observability Config | args/observability_tracing_config.yaml | Tracer backend, sampling, retention, content policy, PROV/SHAP settings (D290) | (config) | YAML config |
+| Observability MCP | tools/mcp/observability_server.py | MCP server: trace_query, trace_summary, prov_lineage, prov_export, shap_analyze, xai_assess | (server) | 6 tools, 2 resources |
+| Traces API | tools/dashboard/api/traces.py | Flask API Blueprint for trace, provenance, and XAI endpoints | (api) | REST endpoints |
+| Traces Page | tools/dashboard/templates/traces.html | Trace explorer: stat grid, trace list, span waterfall SVG | (template) | HTML page |
+| Provenance Page | tools/dashboard/templates/provenance.html | Provenance viewer: entity/activity tables, lineage query | (template) | HTML page |
+| XAI Page | tools/dashboard/templates/xai.html | XAI dashboard: assessment runner, coverage gauge, SHAP chart | (template) | HTML page |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

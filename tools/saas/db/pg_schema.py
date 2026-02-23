@@ -1717,7 +1717,7 @@ CREATE TABLE IF NOT EXISTS review_traceability (
 );
 
 -- ============================================================
--- HOOK-BASED OBSERVABILITY (TAC-8 Phase A)
+-- HOOK-BASED OBSERVABILITY (Phase 39)
 -- ============================================================
 
 -- Hook event storage (append-only)
@@ -1754,7 +1754,7 @@ CREATE TABLE IF NOT EXISTS agent_executions (
 );
 
 -- ============================================================
--- NLQ COMPLIANCE QUERIES (TAC-8 Phase B)
+-- NLQ COMPLIANCE QUERIES (Phase 40)
 -- ============================================================
 
 -- NLQ query history (append-only, for audit)
@@ -1772,7 +1772,7 @@ CREATE TABLE IF NOT EXISTS nlq_queries (
 );
 
 -- ============================================================
--- GIT WORKTREE PARALLEL CI/CD (TAC-8 Phase C)
+-- GIT WORKTREE PARALLEL CI/CD (Phase 41)
 -- ============================================================
 
 -- Worktree tracking
@@ -2071,6 +2071,104 @@ CREATE TABLE IF NOT EXISTS fips200_assessments (
     UNIQUE(project_id, requirement_area_id)
 );
 
+-- ============================================================
+-- Phase 44: Multi-Stream Parallel Chat (D257-D260)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_contexts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    tenant_id TEXT,
+    title TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','completed','error','archived')),
+    intake_session_id TEXT,
+    project_id TEXT,
+    agent_model TEXT DEFAULT 'sonnet',
+    system_prompt TEXT,
+    context_config TEXT,
+    dirty_version INTEGER DEFAULT 0,
+    message_count INTEGER DEFAULT 0,
+    last_activity_at TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id SERIAL PRIMARY KEY,
+    context_id TEXT NOT NULL REFERENCES chat_contexts(id),
+    turn_number INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('user','assistant','system','intervention')),
+    content TEXT NOT NULL,
+    content_type TEXT DEFAULT 'text' CHECK(content_type IN ('text','tool_result','error','intervention','summary')),
+    metadata JSONB,
+    is_compressed INTEGER DEFAULT 0,
+    compression_tier TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS chat_tasks (
+    id TEXT PRIMARY KEY,
+    context_id TEXT NOT NULL REFERENCES chat_contexts(id),
+    task_type TEXT NOT NULL CHECK(task_type IN ('message','intervention','tool_call','summary')),
+    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','processing','completed','failed','cancelled')),
+    input_text TEXT,
+    output_text TEXT,
+    error_message TEXT,
+    checkpoint TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- ============================================================
+-- Phase 44: Active Extension Hooks (D261-D264)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS extension_registry (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    hook_point TEXT NOT NULL,
+    priority INTEGER DEFAULT 500,
+    file_path TEXT,
+    scope TEXT DEFAULT 'default' CHECK(scope IN ('default','tenant','project')),
+    scope_id TEXT,
+    allow_modification INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    description TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS extension_execution_log (
+    id SERIAL PRIMARY KEY,
+    extension_id TEXT REFERENCES extension_registry(id),
+    hook_point TEXT NOT NULL,
+    context_id TEXT,
+    status TEXT NOT NULL CHECK(status IN ('success','error','skipped','timeout')),
+    duration_ms INTEGER,
+    error_message TEXT,
+    modified_data INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================================
+-- Phase 44: AI-Driven Memory Consolidation (D276)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_consolidation_log (
+    id SERIAL PRIMARY KEY,
+    source_entry_id INTEGER,
+    target_entry_id INTEGER,
+    action TEXT NOT NULL CHECK(action IN ('MERGE','REPLACE','KEEP_SEPARATE','UPDATE','SKIP')),
+    method TEXT CHECK(method IN ('llm','keyword')),
+    similarity_score REAL,
+    reasoning TEXT,
+    merged_content TEXT,
+    dry_run INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 """
 
@@ -2235,6 +2333,20 @@ PG_INDEX_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_proj_infotype_cat ON project_information_types(categorization_id)",
     "CREATE INDEX IF NOT EXISTS idx_fips200_project ON fips200_assessments(project_id)",
     "CREATE INDEX IF NOT EXISTS idx_fips200_status ON fips200_assessments(status)",
+    # Phase 44: Multi-Stream Chat + Extensions + Memory Consolidation
+    "CREATE INDEX IF NOT EXISTS idx_chat_ctx_user ON chat_contexts(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_ctx_tenant ON chat_contexts(tenant_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_ctx_status ON chat_contexts(status)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_msg_ctx ON chat_messages(context_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_msg_turn ON chat_messages(context_id, turn_number)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_task_ctx ON chat_tasks(context_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chat_task_status ON chat_tasks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_ext_reg_hook ON extension_registry(hook_point)",
+    "CREATE INDEX IF NOT EXISTS idx_ext_reg_scope ON extension_registry(scope, scope_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ext_exec_ext ON extension_execution_log(extension_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ext_exec_hook ON extension_execution_log(hook_point)",
+    "CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action)",
+    "CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id)",
 ]
 
 PG_ALTER_SQL = [

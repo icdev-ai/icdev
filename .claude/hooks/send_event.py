@@ -7,7 +7,7 @@ import json
 import os
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -28,23 +28,29 @@ def compute_hmac(payload: str, secret: str) -> str:
 
 def store_event(session_id: str, hook_type: str, tool_name: str = None,
                 payload: dict = None, classification: str = "CUI") -> int:
-    """Store hook event in SQLite. Returns event ID."""
+    """Store hook event in SQLite. Returns event ID or -1 on failure."""
     payload_str = json.dumps(payload) if payload else None
     # HMAC signing for tamper detection
     secret = os.environ.get("ICDEV_HOOK_HMAC_SECRET", "icdev-default-hmac-key")
     signature = compute_hmac(payload_str or "", secret)
 
-    conn = sqlite3.connect(str(DB_PATH))
-    c = conn.cursor()
-    c.execute(
-        """INSERT INTO hook_events
-           (session_id, hook_type, tool_name, payload, classification, signature)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (session_id, hook_type, tool_name, payload_str, classification, signature)
-    )
-    conn.commit()
-    event_id = c.lastrowid
-    conn.close()
+    event_id = -1
+    try:
+        if not DB_PATH.exists():
+            return -1  # DB not initialized yet — graceful skip
+        conn = sqlite3.connect(str(DB_PATH))
+        c = conn.cursor()
+        c.execute(
+            """INSERT INTO hook_events
+               (session_id, hook_type, tool_name, payload, classification, signature)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, hook_type, tool_name, payload_str, classification, signature)
+        )
+        conn.commit()
+        event_id = c.lastrowid
+        conn.close()
+    except sqlite3.OperationalError:
+        return -1  # Table missing or DB locked — graceful skip
 
     # Best-effort forward to dashboard SSE
     forward_to_dashboard({
@@ -54,7 +60,7 @@ def store_event(session_id: str, hook_type: str, tool_name: str = None,
         "tool_name": tool_name,
         "payload": payload,
         "classification": classification,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
     return event_id

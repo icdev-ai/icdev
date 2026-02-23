@@ -738,6 +738,7 @@ def main():
         "--db-path", type=Path, default=DB_PATH,
         help="Database path (default: data/icdev.db)",
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     export_type = args.type

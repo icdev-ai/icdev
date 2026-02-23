@@ -26,6 +26,11 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
+
 logger = logging.getLogger("icdev.mailbox")
 
 # HMAC secret from environment or default (override in production)
@@ -51,6 +56,8 @@ except ImportError:
 
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
+    if get_db_connection:
+        return get_db_connection(db_path or DB_PATH)
     path = db_path or DB_PATH
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
@@ -392,6 +399,7 @@ def main():
     p_broadcast.add_argument("--subject", required=True, help="Message subject")
     p_broadcast.add_argument("--body", required=True, help="Message body")
     p_broadcast.add_argument("--priority", type=int, default=5, help="Priority 1-10")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     args = parser.parse_args()
 

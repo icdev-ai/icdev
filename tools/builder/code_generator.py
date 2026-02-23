@@ -576,6 +576,7 @@ def main() -> None:
     p_del = sub.add_parser("delete", help="Delete a {entity}")
     p_del.add_argument("--id", required=True, help="ID")
 
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     if not args.command:

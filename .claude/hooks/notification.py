@@ -5,8 +5,12 @@ import json
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+HOOKS_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = HOOKS_DIR.parent.parent
+if str(HOOKS_DIR) not in sys.path:
+    sys.path.insert(0, str(HOOKS_DIR))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def main():

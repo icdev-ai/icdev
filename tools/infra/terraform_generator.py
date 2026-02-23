@@ -1094,6 +1094,7 @@ def main():
     parser.add_argument("--db-name", default="appdb", help="Database name for RDS module")
     parser.add_argument("--csp", default=None, choices=["aws", "azure", "gcp", "oci"],
                         help="Cloud service provider (auto-detected from cloud_config.yaml if omitted)")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     config = {

@@ -1,8 +1,9 @@
-# Start — Launch ICDEV Dashboard
+# Start — Launch ICDEV Dashboard, SaaS Portal, and Poll Trigger
 
 ## Variables
 
 DASHBOARD_PORT: 5000
+PORTAL_PORT: 8443
 
 ## Workflow
 
@@ -30,15 +31,41 @@ DASHBOARD_PORT: 5000
    python -m webbrowser "http://localhost:5000"
    ```
 
-4. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV-BOT automation):
+4. Check if the SaaS API Gateway / Portal is already running on port `PORTAL_PORT`:
+   ```bash
+   python -c "import urllib.request; urllib.request.urlopen('http://localhost:8443/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
+   ```
+
+5. If **NOT_RUNNING**: Initialize the platform database if needed, start the API gateway, and open the portal:
+   ```bash
+   python tools/saas/platform_db.py --init 2>/dev/null
+   ```
+   ```bash
+   nohup python tools/saas/api_gateway.py --port 8443 --debug > .tmp/api_gateway.log 2>&1 &
+   ```
+   ```bash
+   sleep 2
+   ```
+
+6. Open the portal in the browser:
+   ```bash
+   python -m webbrowser "http://localhost:8443/portal/"
+   ```
+
+7. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV-BOT automation):
    ```bash
    nohup python tools/ci/triggers/poll_trigger.py > .tmp/poll_trigger.log 2>&1 &
    ```
 
-5. Report to the user:
-   - Dashboard URL: `http://localhost:DASHBOARD_PORT`
-   - Available pages: `/`, `/projects`, `/agents`, `/monitoring`, `/wizard`, `/query`, `/chat`, `/activity`, `/usage`
-   - Log file: `.tmp/dashboard.log`
-   - Poll trigger log: `.tmp/poll_trigger.log`
+8. Report to the user:
+   - **Dashboard**: `http://localhost:DASHBOARD_PORT`
+     - Pages: `/`, `/projects`, `/projects/<id>`, `/agents`, `/monitoring`, `/events`, `/activity`, `/usage`, `/wizard`, `/query`, `/chat`, `/chat/<id>`, `/chat-streams`, `/quick-paths`, `/batch`, `/diagrams`, `/cicd`, `/gateway`, `/phases`, `/dev-profiles`, `/children`, `/profile`, `/translations`, `/translations/<id>`, `/traces`, `/provenance`, `/xai`, `/login`, `/logout`
+     - Log: `.tmp/dashboard.log`
+   - **SaaS Portal**: `http://localhost:PORTAL_PORT/portal/`
+     - API docs: `http://localhost:PORTAL_PORT/api/v1/docs`
+     - Health: `http://localhost:PORTAL_PORT/health`
+     - Log: `.tmp/api_gateway.log`
+   - **Poll Trigger**: `.tmp/poll_trigger.log`
    - To stop dashboard: `kill $(lsof -ti:5000)` or `pkill -f "tools/dashboard/app.py"`
+   - To stop portal: `kill $(lsof -ti:8443)` or `pkill -f "tools/saas/api_gateway.py"`
    - To stop poll trigger: `pkill -f "tools/ci/triggers/poll_trigger.py"`

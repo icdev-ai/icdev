@@ -50,6 +50,12 @@ from tools.dashboard.api.intake import intake_api
 from tools.dashboard.api.admin import admin_api
 from tools.dashboard.api.activity import activity_api
 from tools.dashboard.api.usage import usage_api
+from tools.dashboard.api.traces import traces_api, provenance_api, xai_api
+try:
+    from tools.dashboard.api.chat import chat_api
+    _HAS_CHAT_API = True
+except ImportError:
+    _HAS_CHAT_API = False
 from tools.dashboard.ux_helpers import register_ux_filters
 
 # ---------------------------------------------------------------------------
@@ -171,6 +177,11 @@ def create_app() -> Flask:
     app.register_blueprint(admin_api)
     app.register_blueprint(activity_api)
     app.register_blueprint(usage_api)
+    app.register_blueprint(traces_api)
+    app.register_blueprint(provenance_api)
+    app.register_blueprint(xai_api)
+    if _HAS_CHAT_API:
+        app.register_blueprint(chat_api)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -676,6 +687,11 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/chat-streams")
+    def chat_streams_page():
+        """Multi-stream parallel chat — Phase 44 (D257-D260)."""
+        return render_template("chat_streams.html")
+
     @app.route("/quick-paths")
     def quick_paths_page():
         """Quick Path workflow templates — pre-built shortcuts for common tasks."""
@@ -907,6 +923,33 @@ def create_app() -> Flask:
         revoke_llm_key(key_id)
         return jsonify({"status": "revoked"})
 
+    # ---- Phase roadmap route ----
+
+    @app.route("/phases")
+    def phases_page():
+        """Phase roadmap — all ICDEV phases with status, categories, and progress."""
+        from tools.dashboard.phase_loader import (
+            load_phases, load_categories, load_statuses, get_phase_summary,
+        )
+        phases = load_phases()
+        categories = load_categories()
+        statuses = load_statuses()
+        summary = get_phase_summary(phases)
+
+        # Optional category filter from query param
+        cat_filter = flask_request.args.get("category", "")
+        if cat_filter:
+            phases = [p for p in phases if p.get("category") == cat_filter]
+
+        return render_template(
+            "phases.html",
+            phases=phases,
+            categories=categories,
+            statuses=statuses,
+            summary=summary,
+            category_filter=cat_filter,
+        )
+
     # ---- Dev profile routes (Phase 34, D183-D188) ----
 
     @app.route("/dev-profiles")
@@ -1085,6 +1128,173 @@ def create_app() -> Flask:
         return redirect(url_for("login_page"))
 
     # ---- Error handlers ----
+
+    # ---- Cross-Language Translation routes (Phase 43) ----
+
+    @app.route("/translations")
+    def translations_page():
+        """Translation jobs — list, status, validation scores."""
+        conn = _get_db()
+        try:
+            try:
+                jobs = conn.execute(
+                    """SELECT id, project_id, source_language, target_language,
+                              status, total_units, translated_units, mocked_units,
+                              failed_units, gate_result, llm_model, llm_tokens_input,
+                              llm_tokens_output, elapsed_seconds, created_at
+                       FROM translation_jobs ORDER BY created_at DESC LIMIT 100"""
+                ).fetchall()
+                jobs = [dict(r) for r in jobs]
+            except sqlite3.OperationalError:
+                jobs = []
+
+            # Summary stats
+            total = len(jobs)
+            completed = sum(1 for j in jobs if j.get("status") == "completed")
+            in_progress = sum(1 for j in jobs if j.get("status") in ("pending", "extracting", "translating", "assembling", "validating"))
+            failed = sum(1 for j in jobs if j.get("status") in ("failed", "partial"))
+
+            # Average API surface score from validations
+            avg_api_score = None
+            try:
+                row = conn.execute(
+                    """SELECT AVG(score) as avg_score FROM translation_validations
+                       WHERE check_type = 'api_surface' AND passed = 1"""
+                ).fetchone()
+                if row and row["avg_score"]:
+                    avg_api_score = round(row["avg_score"] * 100, 1)
+            except sqlite3.OperationalError:
+                pass
+
+            return render_template(
+                "translations.html",
+                jobs=jobs,
+                total=total,
+                completed=completed,
+                in_progress=in_progress,
+                failed=failed,
+                avg_api_score=avg_api_score,
+            )
+        finally:
+            conn.close()
+
+    @app.route("/translations/<job_id>")
+    def translation_detail_page(job_id):
+        """Translation job detail — units, validations, dependencies."""
+        conn = _get_db()
+        try:
+            # Fetch job
+            try:
+                job = conn.execute(
+                    "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
+                ).fetchone()
+                job = dict(job) if job else None
+            except sqlite3.OperationalError:
+                job = None
+
+            if not job:
+                return render_template("404.html", message="Translation job not found"), 404
+
+            # Fetch units
+            try:
+                units = conn.execute(
+                    """SELECT unit_name, unit_kind, source_file, status,
+                              source_complexity, target_complexity,
+                              repair_count, candidate_selected, created_at
+                       FROM translation_units WHERE job_id = ?
+                       ORDER BY created_at""", (job_id,)
+                ).fetchall()
+                units = [dict(u) for u in units]
+            except sqlite3.OperationalError:
+                units = []
+
+            # Fetch validations
+            try:
+                validations = conn.execute(
+                    """SELECT check_type, passed, score, findings, created_at
+                       FROM translation_validations WHERE job_id = ?
+                       ORDER BY created_at""", (job_id,)
+                ).fetchall()
+                validations = [dict(v) for v in validations]
+            except sqlite3.OperationalError:
+                validations = []
+
+            # Fetch dependency mappings
+            try:
+                deps = conn.execute(
+                    """SELECT source_import, target_import, mapping_source,
+                              confidence, domain
+                       FROM translation_dependency_mappings WHERE job_id = ?
+                       ORDER BY domain, source_import""", (job_id,)
+                ).fetchall()
+                deps = [dict(d) for d in deps]
+            except sqlite3.OperationalError:
+                deps = []
+
+            return render_template(
+                "translation_detail.html",
+                job=job,
+                units=units,
+                validations=validations,
+                deps=deps,
+            )
+        finally:
+            conn.close()
+
+    @app.route("/api/charts/translations")
+    def api_charts_translations():
+        """Chart data for translations page."""
+        conn = _get_db()
+        try:
+            # Status distribution
+            status_dist = {}
+            try:
+                rows = conn.execute(
+                    "SELECT status, COUNT(*) as cnt FROM translation_jobs GROUP BY status"
+                ).fetchall()
+                for r in rows:
+                    r_dict = dict(r)
+                    status_dist[r_dict["status"]] = r_dict["cnt"]
+            except sqlite3.OperationalError:
+                pass
+
+            # Language pair frequency
+            lang_pairs = {}
+            try:
+                rows = conn.execute(
+                    """SELECT source_language || ' → ' || target_language as pair,
+                              COUNT(*) as cnt
+                       FROM translation_jobs GROUP BY pair ORDER BY cnt DESC LIMIT 10"""
+                ).fetchall()
+                for r in rows:
+                    r_dict = dict(r)
+                    lang_pairs[r_dict["pair"]] = r_dict["cnt"]
+            except sqlite3.OperationalError:
+                pass
+
+            return jsonify({
+                "status_distribution": status_dist,
+                "language_pair_frequency": lang_pairs,
+            })
+        finally:
+            conn.close()
+
+    # ---- Phase 46: Observability pages ----
+
+    @app.route("/traces")
+    def traces_page():
+        """Trace explorer — distributed tracing across MCP, A2A, LLM."""
+        return render_template("traces.html")
+
+    @app.route("/provenance")
+    def provenance_page():
+        """Provenance graph — W3C PROV-AGENT artifact lineage."""
+        return render_template("provenance.html")
+
+    @app.route("/xai")
+    def xai_page():
+        """XAI dashboard — explainability, SHAP attribution, compliance."""
+        return render_template("xai.html")
 
     @app.errorhandler(401)
     def unauthorized(e):

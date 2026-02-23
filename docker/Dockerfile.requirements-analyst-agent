@@ -1,24 +1,28 @@
 # CUI // SP-CTI
 # ICDEV Requirements Analyst Agent — STIG-Hardened
 # Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+# Port: 8453 | Tier: Domain
 
-FROM python:3.11-slim AS builder
+FROM python:3.12-slim AS builder
 
 WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 LABEL classification="CUI" \
       dissemination_control="SP-CTI" \
       originator="ICDEV" \
-      description="ICDEV Requirements Analyst Agent — Conversational Intake, Gap Detection, SAFe Decomposition"
+      description="ICDEV Requirements Analyst Agent — Conversational Intake, Gap Detection, SAFe Decomposition" \
+      port="8453" \
+      agent="requirements-analyst-agent"
 
-# STIG: Create non-root user
-RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /usr/sbin/nologin icdev
+# STIG: Create non-root user with explicit UID/GID
+RUN groupadd -g 1000 icdev && \
+    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin icdev
 
-# STIG: Remove unnecessary packages
+# STIG: Install only required runtime packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -35,12 +39,16 @@ COPY --chown=icdev:icdev . .
 RUN chmod -R 750 /app && \
     find /app -type f -name "*.py" -exec chmod 640 {} +
 
+# Data directory for SQLite (mounted as volume in production)
+RUN mkdir -p /app/data && chown icdev:icdev /app/data
+
+ENV PYTHONUNBUFFERED=1
+
 # STIG: Run as non-root
 USER icdev
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8453/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:8453/health || exit 1
 
 EXPOSE 8453
 

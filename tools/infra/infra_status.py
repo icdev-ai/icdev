@@ -373,13 +373,14 @@ def _format_report(status: dict) -> str:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Infrastructure status report")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
-    status = get_status(args.project, db_path)
+    status = get_status(args.project_id, db_path)
 
     if args.format == "json":
         print(json.dumps(status, indent=2))

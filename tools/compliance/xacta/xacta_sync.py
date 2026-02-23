@@ -316,6 +316,7 @@ def main():
     )
     parser.add_argument("--output-dir", type=Path, help="Output directory for exports")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     result = sync_to_xacta(args.project_id, args.mode, args.output_dir, args.db_path)

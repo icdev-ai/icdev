@@ -1,0 +1,186 @@
+{
+  "_comment": "CUI // SP-CTI — Cross-language package equivalents (D246). Add mappings without code changes.",
+  "version": "1.0.0",
+  "domains": {
+    "http_client": {
+      "notes": "HTTP client libraries",
+      "packages": {
+        "python": ["requests", "httpx", "urllib3", "aiohttp"],
+        "java": ["okhttp3", "java.net.http", "apache-httpclient"],
+        "go": ["net/http"],
+        "rust": ["reqwest", "hyper"],
+        "csharp": ["System.Net.Http", "RestSharp"],
+        "javascript": ["axios", "node-fetch", "got"],
+        "typescript": ["axios", "node-fetch", "got"]
+      }
+    },
+    "web_framework": {
+      "notes": "Web application frameworks",
+      "packages": {
+        "python": ["flask", "fastapi", "django"],
+        "java": ["spring-boot", "spring-web", "jakarta.servlet"],
+        "go": ["gin", "echo", "chi", "net/http"],
+        "rust": ["actix-web", "axum", "rocket"],
+        "csharp": ["Microsoft.AspNetCore", "ASP.NET"],
+        "javascript": ["express", "koa", "fastify"],
+        "typescript": ["express", "nestjs", "fastify"]
+      }
+    },
+    "orm_database": {
+      "notes": "ORM and database access libraries",
+      "packages": {
+        "python": ["sqlalchemy", "django.db", "peewee", "tortoise-orm"],
+        "java": ["hibernate", "jpa", "spring-data", "mybatis"],
+        "go": ["gorm", "sqlx", "ent"],
+        "rust": ["diesel", "sqlx", "sea-orm"],
+        "csharp": ["EntityFramework", "Dapper", "NHibernate"],
+        "javascript": ["sequelize", "typeorm", "knex", "prisma"],
+        "typescript": ["typeorm", "prisma", "drizzle-orm"]
+      }
+    },
+    "json": {
+      "notes": "JSON serialization/deserialization",
+      "packages": {
+        "python": ["json"],
+        "java": ["com.fasterxml.jackson", "com.google.gson", "org.json"],
+        "go": ["encoding/json"],
+        "rust": ["serde_json", "serde"],
+        "csharp": ["System.Text.Json", "Newtonsoft.Json"],
+        "javascript": ["JSON"],
+        "typescript": ["JSON"]
+      }
+    },
+    "testing": {
+      "notes": "Unit testing frameworks",
+      "packages": {
+        "python": ["pytest", "unittest"],
+        "java": ["junit", "org.junit.jupiter", "testng"],
+        "go": ["testing"],
+        "rust": ["cargo_test"],
+        "csharp": ["xunit", "nunit", "mstest"],
+        "javascript": ["jest", "mocha", "vitest"],
+        "typescript": ["jest", "vitest", "mocha"]
+      }
+    },
+    "logging": {
+      "notes": "Logging libraries",
+      "packages": {
+        "python": ["logging"],
+        "java": ["org.slf4j", "log4j", "java.util.logging"],
+        "go": ["log", "zap", "logrus"],
+        "rust": ["log", "tracing", "env_logger"],
+        "csharp": ["Microsoft.Extensions.Logging", "Serilog", "NLog"],
+        "javascript": ["winston", "pino", "bunyan"],
+        "typescript": ["winston", "pino"]
+      }
+    },
+    "crypto": {
+      "notes": "Cryptography libraries",
+      "packages": {
+        "python": ["hashlib", "cryptography", "hmac"],
+        "java": ["java.security", "javax.crypto", "bouncycastle"],
+        "go": ["crypto", "crypto/sha256", "crypto/aes"],
+        "rust": ["ring", "sha2", "aes"],
+        "csharp": ["System.Security.Cryptography"],
+        "javascript": ["crypto"],
+        "typescript": ["crypto"]
+      }
+    },
+    "uuid": {
+      "notes": "UUID generation",
+      "packages": {
+        "python": ["uuid"],
+        "java": ["java.util.UUID"],
+        "go": ["github.com/google/uuid"],
+        "rust": ["uuid"],
+        "csharp": ["System.Guid"],
+        "javascript": ["uuid", "crypto.randomUUID"],
+        "typescript": ["uuid", "crypto.randomUUID"]
+      }
+    },
+    "datetime": {
+      "notes": "Date and time handling",
+      "packages": {
+        "python": ["datetime", "dateutil"],
+        "java": ["java.time", "java.util.Date"],
+        "go": ["time"],
+        "rust": ["chrono", "time"],
+        "csharp": ["System.DateTime", "NodaTime"],
+        "javascript": ["Date", "dayjs", "luxon"],
+        "typescript": ["Date", "dayjs", "luxon"]
+      }
+    },
+    "regex": {
+      "notes": "Regular expressions",
+      "packages": {
+        "python": ["re"],
+        "java": ["java.util.regex"],
+        "go": ["regexp"],
+        "rust": ["regex"],
+        "csharp": ["System.Text.RegularExpressions"],
+        "javascript": ["RegExp"],
+        "typescript": ["RegExp"]
+      }
+    },
+    "cli_args": {
+      "notes": "Command-line argument parsing",
+      "packages": {
+        "python": ["argparse", "click", "typer"],
+        "java": ["picocli", "commons-cli"],
+        "go": ["flag", "cobra", "pflag"],
+        "rust": ["clap", "structopt"],
+        "csharp": ["System.CommandLine", "CommandLineParser"],
+        "javascript": ["commander", "yargs", "minimist"],
+        "typescript": ["commander", "yargs"]
+      }
+    },
+    "yaml": {
+      "notes": "YAML parsing",
+      "packages": {
+        "python": ["pyyaml", "yaml", "ruamel.yaml"],
+        "java": ["snakeyaml", "jackson-dataformat-yaml"],
+        "go": ["gopkg.in/yaml.v3"],
+        "rust": ["serde_yaml"],
+        "csharp": ["YamlDotNet"],
+        "javascript": ["js-yaml"],
+        "typescript": ["js-yaml"]
+      }
+    },
+    "environment": {
+      "notes": "Environment variable handling",
+      "packages": {
+        "python": ["os.environ", "python-dotenv", "dotenv"],
+        "java": ["System.getenv", "dotenv-java"],
+        "go": ["os.Getenv", "godotenv"],
+        "rust": ["std::env", "dotenv"],
+        "csharp": ["Environment.GetEnvironmentVariable", "DotNetEnv"],
+        "javascript": ["process.env", "dotenv"],
+        "typescript": ["process.env", "dotenv"]
+      }
+    },
+    "concurrency": {
+      "notes": "Concurrency and parallelism",
+      "packages": {
+        "python": ["asyncio", "threading", "concurrent.futures", "multiprocessing"],
+        "java": ["java.util.concurrent", "CompletableFuture", "ExecutorService"],
+        "go": ["sync", "sync.WaitGroup", "goroutine", "channel"],
+        "rust": ["tokio", "rayon", "std::thread", "async-std"],
+        "csharp": ["System.Threading.Tasks", "Task", "Parallel"],
+        "javascript": ["Promise", "async/await", "worker_threads"],
+        "typescript": ["Promise", "async/await", "worker_threads"]
+      }
+    },
+    "file_io": {
+      "notes": "File system operations",
+      "packages": {
+        "python": ["pathlib", "os.path", "shutil", "io"],
+        "java": ["java.nio.file", "java.io"],
+        "go": ["os", "io", "path/filepath", "bufio"],
+        "rust": ["std::fs", "std::io", "std::path"],
+        "csharp": ["System.IO"],
+        "javascript": ["fs", "path"],
+        "typescript": ["fs", "path"]
+      }
+    }
+  }
+}

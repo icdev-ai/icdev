@@ -546,10 +546,29 @@ class BedrockClient:
         """Invoke Bedrock synchronously with retry and model fallback.
 
         Returns BedrockResponse with content, token counts, and timing.
+        D286: Wraps invocation in GenAI trace span.
         """
         model_id = self._resolve_model_id(request.model_preference)
         body = self._build_request_body(request, model_id)
         client = self._get_client()
+
+        # D286: Create trace span for Bedrock invocation
+        try:
+            from tools.observability import get_tracer
+            tracer = get_tracer()
+        except ImportError:
+            tracer = None
+
+        span = None
+        if tracer:
+            span = tracer.start_span("gen_ai.bedrock.invoke", kind="CLIENT", attributes={
+                "gen_ai.operation.name": "chat",
+                "gen_ai.system": "aws.bedrock",
+                "gen_ai.request.model": model_id,
+                "gen_ai.effort": getattr(request, "effort", "medium") or "medium",
+                "icdev.agent_id": getattr(request, "agent_id", None) or "",
+                "icdev.project_id": getattr(request, "project_id", None) or "",
+            })
 
         start_time = time.time()
         last_exc: Optional[Exception] = None
@@ -569,6 +588,17 @@ class BedrockClient:
                 # Token tracking (best-effort)
                 _track_tokens(resp, request.agent_id, request.project_id)
 
+                # D286: Record GenAI attributes on span
+                if span:
+                    span.set_attribute("gen_ai.response.model", model_id)
+                    span.set_attribute("gen_ai.usage.input_tokens", getattr(resp, "input_tokens", 0))
+                    span.set_attribute("gen_ai.usage.output_tokens", getattr(resp, "output_tokens", 0))
+                    span.set_attribute("gen_ai.usage.thinking_tokens", getattr(resp, "thinking_tokens", 0))
+                    span.set_attribute("gen_ai.latency_ms", resp.duration_ms)
+                    span.set_attribute("gen_ai.retry_count", attempt)
+                    span.set_status("OK")
+                    span.end()
+
                 return resp
 
             except Exception as exc:
@@ -582,12 +612,25 @@ class BedrockClient:
                         "Retryable error on attempt %d/%d (%s): %s — retrying in %.1fs",
                         attempt + 1, MAX_RETRIES, error_code, exc, delay,
                     )
+                    if span:
+                        span.add_event("retry", {
+                            "attempt": attempt + 1,
+                            "error_code": error_code,
+                            "error": str(exc),
+                        })
                     time.sleep(delay)
                     continue
                 else:
+                    if span:
+                        span.set_status("ERROR", str(exc))
+                        span.set_attribute("gen_ai.retry_count", attempt)
+                        span.end()
                     raise
 
         # Should not reach here, but just in case
+        if span:
+            span.set_status("ERROR", str(last_exc))
+            span.end()
         raise last_exc  # type: ignore[misc]
 
     # -----------------------------------------------------------------------

@@ -340,7 +340,7 @@ def auto_rollback_check(deployment_id: int, db_path: Path = None) -> dict:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Deployment rollback manager")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument(
         "--environment",
         required=True,
@@ -353,6 +353,7 @@ def main():
     parser.add_argument("--namespace", help="Kubernetes namespace override")
     parser.add_argument("--deployment-name", help="Kubernetes deployment name override")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None
@@ -369,12 +370,12 @@ def main():
         return
 
     if args.target_only:
-        target = get_rollback_target(args.project, args.environment, db_path)
+        target = get_rollback_target(args.project_id, args.environment, db_path)
         print(json.dumps(target, indent=2))
         return
 
     result = execute_rollback(
-        project_id=args.project,
+        project_id=args.project_id,
         environment=args.environment,
         dry_run=args.dry_run,
         db_path=db_path,

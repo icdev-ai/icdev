@@ -158,6 +158,7 @@ def main():
         "--status", choices=["active", "archived", "suspended"],
         help="Filter by project status"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     data = list_projects(status_filter=args.status)

@@ -1,45 +1,59 @@
 # CUI // SP-CTI
-# STIG-hardened base for ICDEV Modernization Agent
-FROM python:3.11-slim AS base
+# ICDEV Modernization Agent — STIG-Hardened
+# Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+# Port: 8452 | Tier: Domain
 
-# STIG V-230264: Set ownership and permissions
-RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /sbin/nologin icdev
+FROM python:3.12-slim AS builder
 
-WORKDIR /app
+WORKDIR /build
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# STIG V-230505: Minimize installed packages
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends tini && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+FROM python:3.12-slim
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="ICDEV Modernization Agent — Legacy Analysis, 7R Assessment, Migration Planning" \
+      port="8452" \
+      agent="modernization-agent"
+
+# STIG V-230264: Create non-root user with explicit UID/GID
+RUN groupadd -g 1000 icdev && \
+    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin icdev
+
+# STIG V-230505: Install only required runtime packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/apt-get
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
 # Copy application code
-COPY tools/ /app/tools/
-COPY context/modernization/ /app/context/modernization/
-COPY args/ /app/args/
-COPY requirements.txt /app/
+WORKDIR /app
+COPY --chown=icdev:icdev tools/ tools/
+COPY --chown=icdev:icdev args/ args/
+COPY --chown=icdev:icdev context/ context/
+COPY --chown=icdev:icdev goals/ goals/
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir pyyaml boto3
+# STIG V-230313: Set restrictive permissions (750, not 550 — agents need write to data/)
+RUN chmod -R 750 /app && \
+    find /app -type f -name "*.py" -exec chmod 640 {} +
 
-# STIG V-230313: Set file permissions
-RUN chown -R icdev:icdev /app && \
-    chmod -R 550 /app && \
-    mkdir -p /app/data /app/.tmp && \
-    chown icdev:icdev /app/data /app/.tmp && \
-    chmod 770 /app/data /app/.tmp
+# Data directory for SQLite (mounted as volume in production)
+RUN mkdir -p /app/data /app/.tmp && \
+    chown icdev:icdev /app/data /app/.tmp
+
+ENV PYTHONUNBUFFERED=1
 
 # STIG V-230269: Run as non-root
 USER icdev
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8452/health')" || exit 1
-
-# STIG V-230268: Read-only root filesystem compatible
 EXPOSE 8452
 
-ENTRYPOINT ["tini", "--"]
-CMD ["python", "-m", "tools.agents.modernization_agent", "--host", "0.0.0.0", "--port", "8452"]
-# CUI // SP-CTI
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:8452/health || exit 1
+
+ENTRYPOINT ["python", "tools/a2a/agent_server.py", "--agent-id", "modernization-agent", "--port", "8452"]

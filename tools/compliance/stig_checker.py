@@ -661,7 +661,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="STIG checklist auto-generation and assessment"
     )
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument(
         "--stig-id", default="webapp",
         help="STIG template ID (default: webapp)"
@@ -698,7 +698,7 @@ def main():
 
     try:
         result = run_stig_check(
-            project_id=args.project,
+            project_id=args.project_id,
             stig_id=args.stig_id,
             target_type=args.target_type,
             gate=args.gate,

@@ -952,7 +952,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate CycloneDX Software Bill of Materials (SBOM)"
     )
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument(
         "--format", dest="sbom_format", default="cyclonedx",
         choices=["cyclonedx"],
@@ -960,11 +960,12 @@ def main():
     )
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:
         path = generate_sbom(
-            project_id=args.project,
+            project_id=args.project_id,
             sbom_format=args.sbom_format,
             output_path=args.output,
             db_path=Path(args.db) if args.db else None,

@@ -1,0 +1,72 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.pytest_cache
+.coverage
+htmlcov
+dist
+build
+*.egg
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ICDEV temp/scratch
+.tmp
+.claude
+
+# Tests (not needed in production images)
+tests/
+features/
+
+# Documentation (not needed in production images)
+docs/
+*.md
+!requirements.txt
+
+# Docker/K8s/Deploy (avoid recursive builds)
+docker-compose.yml
+k8s/
+deploy/
+
+# CI/CD config
+.github/
+.gitlab-ci.yml
+.pre-commit-config.yaml
+.editorconfig
+
+# Environment files (secrets — never bake into images)
+.env
+.env.*
+!.env.template
+
+# Data files (mounted as volumes, not baked)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Project outputs
+projects/
+agents/
+specs/
+backups/

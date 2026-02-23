@@ -833,6 +833,7 @@ def main():
     parser.add_argument("--app-name", default="icdev-app", help="Application name")
     parser.add_argument("--port", type=int, default=8080, help="Application port")
     parser.add_argument("--image", default="registry.example.com/app:latest", help="Container image")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     app_config = {

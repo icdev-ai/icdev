@@ -15,6 +15,11 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
 SSP_TEMPLATE_PATH = BASE_DIR / "context" / "compliance" / "ssp_template.md"
 CONTROLS_PATH = BASE_DIR / "context" / "compliance" / "nist_800_53.json"
 
@@ -45,6 +50,8 @@ _IL_BASELINE_MAP = {"IL2": "Low", "IL4": "Moderate", "IL5": "High", "IL6": "High
 
 def _get_connection(db_path=None):
     """Get a database connection."""
+    if get_db_connection:
+        return get_db_connection(db_path or DB_PATH, validate=True)
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(
@@ -527,7 +534,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate a System Security Plan (SSP)"
     )
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--system-name", help="System name (overrides project name)")
     parser.add_argument("--template", help="Path to SSP template")
     parser.add_argument("--output", help="Output file path")
@@ -535,6 +542,7 @@ def main():
     parser.add_argument(
         "--system-info", help="JSON string of additional variable overrides"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     system_info = None
@@ -547,7 +555,7 @@ def main():
 
     try:
         path = generate_ssp(
-            project_id=args.project,
+            project_id=args.project_id,
             system_name=args.system_name,
             system_info=system_info,
             template_path=Path(args.template) if args.template else None,

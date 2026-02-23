@@ -800,6 +800,7 @@ def main():
     p_escalate.add_argument("--context", required=True, help="JSON task context")
     p_escalate.add_argument("--reason", required=True, help="Escalation reason")
     p_escalate.add_argument("--project-id", required=True, help="Project ID")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     args = parser.parse_args()
 

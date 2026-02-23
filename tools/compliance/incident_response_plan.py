@@ -704,6 +704,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--db-path", type=Path, default=DB_PATH, help="Database path"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:

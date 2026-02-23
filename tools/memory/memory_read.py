@@ -82,6 +82,7 @@ def main():
     parser.add_argument("--db-limit", type=int, default=10, help="Number of recent DB entries")
     parser.add_argument("--user-id", help="Filter by user ID (D180)")
     parser.add_argument("--tenant-id", help="Filter by tenant ID (D180)")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     memory_text = read_memory_file()

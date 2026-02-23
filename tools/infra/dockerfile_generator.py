@@ -333,6 +333,7 @@ def main():
     )
     parser.add_argument("--port", type=int, default=None, help="Application port")
     parser.add_argument("--project-name", default="icdev-app", help="Project name for labels")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     config = {"project_name": args.project_name}

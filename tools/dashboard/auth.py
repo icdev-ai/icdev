@@ -471,6 +471,7 @@ def _cli_main():
     create_cmd = sub.add_parser("create-admin", help="Create admin user + API key")
     create_cmd.add_argument("--email", required=True, help="Admin email")
     create_cmd.add_argument("--name", default="Admin", help="Display name")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     # List users
     sub.add_parser("list-users", help="List all dashboard users")

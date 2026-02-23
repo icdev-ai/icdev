@@ -1219,6 +1219,7 @@ if __name__ == "__main__":
         "--format", choices=["text", "json"], default="text",
         help="Output format: text (default) or json"
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:

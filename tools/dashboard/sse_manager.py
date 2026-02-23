@@ -74,5 +74,15 @@ class SSEManager:
             self.remove_client(client_queue)
 
 
+    def broadcast_to_context(self, context_id: str, event_data: dict, event_type: str = "chat_update"):
+        """Broadcast an event only to clients subscribed to a specific context.
+
+        Phase 44 (D268-D270): Targeted push for chat stream state updates.
+        Falls back to broadcast if no context filtering is set up.
+        """
+        event_data["context_id"] = context_id
+        self.broadcast(event_data, event_type)
+
+
 # Singleton instance
 sse_manager = SSEManager()

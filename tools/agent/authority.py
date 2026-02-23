@@ -29,6 +29,11 @@ try:
 except ImportError:
     yaml = None
 
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -36,6 +41,8 @@ except ImportError:
 
 def _get_db(db_path=None) -> sqlite3.Connection:
     """Open a DB connection with row factory."""
+    if get_db_connection:
+        return get_db_connection(db_path or DB_PATH)
     path = db_path or DB_PATH
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
@@ -372,6 +379,7 @@ def main():
     p_history = sub.add_parser("history", help="Get veto history")
     p_history.add_argument("--project-id", help="Filter by project")
     p_history.add_argument("--agent-id", help="Filter by agent")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     # Load matrix
     sub.add_parser("matrix", help="Display the authority matrix")

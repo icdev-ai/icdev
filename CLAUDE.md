@@ -115,6 +115,8 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - When a workflow fails mid-execution, preserve intermediate outputs before retrying
 - Read the full goal before starting a task — don't skim
 - **NEVER DELETE YOUTUBE VIDEOS** — Irreversible. MCP server blocks this intentionally. If truly needed, ask 3 times for 3 confirmations. Direct user to YouTube Studio instead.
+- When adding an append-only/immutable DB table, ALWAYS add it to `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`
+- When adding a new dashboard page route, ALWAYS add it to the `Pages:` line in `.claude/commands/start.md`
 
 *(Add new guardrails as mistakes happen. Keep under 15 items.)*
 
@@ -157,7 +159,7 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 
 Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s). Each publishes an Agent Card at `/.well-known/agent.json`.
 
-### MCP Servers (14 stdio servers for Claude Code)
+### MCP Servers (15 stdio servers for Claude Code)
 
 | Server | Config Key | Tools |
 |--------|-----------|-------|
@@ -177,6 +179,8 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | icdev-devsecops | `.mcp.json` | devsecops_profile_create, devsecops_profile_get, devsecops_maturity_assess, zta_maturity_score, zta_assess, pipeline_security_generate, policy_generate, service_mesh_generate, network_segmentation_generate, attestation_verify, zta_posture_check, pdp_config_generate |
 | icdev-gateway | `.mcp.json` | bind_user, list_bindings, revoke_binding, send_command, gateway_status |
 | icdev-innovation | `.mcp.json` | scan_web, score_signals, triage_signals, detect_trends, generate_solution, run_pipeline, get_status, introspect, competitive_scan, standards_check |
+| icdev-context | `.mcp.json` | fetch_docs, list_sections, get_icdev_metadata, get_project_context, get_agent_context |
+| icdev-observability | `.mcp.json` | trace_query, trace_summary, prov_lineage, prov_export, shap_analyze, xai_assess |
 
 ### Compliance Frameworks Supported
 | Framework | Catalog | Assessor | Report |
@@ -206,6 +210,8 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | NIST AI RMF 1.0 | `nist_ai_rmf.json` | `nist_ai_rmf_assessor.py` | via base_assessor |
 | ISO/IEC 42001:2023 | `iso42001_controls.json` | `iso42001_assessor.py` | via base_assessor |
 | SAFE-AI (NIST 800-53 AI) | `safeai_controls.json` | via crosswalk | AI-affected control overlay |
+| OWASP Agentic AI | `owasp_agentic_threats.json` | `owasp_agentic_assessor.py` | via base_assessor |
+| XAI (Observability) | `xai_requirements.json` | `xai_assessor.py` | via base_assessor |
 
 ### Control Crosswalk
 The crosswalk engine (`tools/compliance/crosswalk_engine.py`) uses a dual-hub model (ADR D111):
@@ -227,7 +233,7 @@ Implementing AC-2 satisfies FedRAMP AC-2, 800-171 3.1.1, CMMC AC.L2-3.1.1, and c
 
 Language profiles stored in `context/languages/language_registry.json`. Detection via `tools/builder/language_support.py`.
 
-### Claude Code Skills (22 Custom Commands)
+### Claude Code Skills (24 Custom Commands)
 
 | Skill | Purpose |
 |-------|---------|
@@ -248,20 +254,24 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/icdev-boundary` | Boundary & supply chain — ATO boundary impact assessment, supply chain dependency graph, ISA lifecycle, SCRM, CVE triage |
 | `/icdev-simulate` | Digital Program Twin — 6-dimension what-if simulation, Monte Carlo estimation, COA generation & comparison |
 | `/icdev-integrate` | External integration — bidirectional Jira/ServiceNow/GitLab sync, DOORS NG ReqIF export, approval workflows, RTM traceability |
-| `/icdev-query` | NLQ compliance query — natural language to SQL for compliance database queries (TAC-8) |
-| `/icdev-worktree` | Git worktree task isolation — create, list, cleanup, status for parallel CI/CD (TAC-8) |
-| `/plan_python` | Python build plan — Flask/FastAPI, pytest, behave, bandit, pip-audit, STIG Dockerfile (TAC-8) |
-| `/plan_java` | Java build plan — Spring Boot, Cucumber-JVM, checkstyle, SpotBugs, OWASP DC (TAC-8) |
-| `/plan_go` | Go build plan — net/http/Gin, godog, golangci-lint, gosec, govulncheck (TAC-8) |
-| `/plan_rust` | Rust build plan — Actix-web, cucumber-rs, clippy, cargo-audit, rustfmt (TAC-8) |
-| `/plan_csharp` | C# build plan — ASP.NET Core, SpecFlow, SecurityCodeScan, dotnet analyzers (TAC-8) |
-| `/plan_typescript` | TypeScript build plan — Express, cucumber-js, eslint-security, npm audit (TAC-8) |
+| `/icdev-query` | NLQ compliance query — natural language to SQL for compliance database queries (Phase 40) |
+| `/icdev-worktree` | Git worktree task isolation — create, list, cleanup, status for parallel CI/CD (Phase 41) |
+| `/plan_python` | Python build plan — Flask/FastAPI, pytest, behave, bandit, pip-audit, STIG Dockerfile (Phase 42) |
+| `/plan_java` | Java build plan — Spring Boot, Cucumber-JVM, checkstyle, SpotBugs, OWASP DC (Phase 42) |
+| `/plan_go` | Go build plan — net/http/Gin, godog, golangci-lint, gosec, govulncheck (Phase 42) |
+| `/plan_rust` | Rust build plan — Actix-web, cucumber-rs, clippy, cargo-audit, rustfmt (Phase 42) |
+| `/plan_csharp` | C# build plan — ASP.NET Core, SpecFlow, SecurityCodeScan, dotnet analyzers (Phase 42) |
+| `/plan_typescript` | TypeScript build plan — Express, cucumber-js, eslint-security, npm audit (Phase 42) |
 | `/icdev-agentic` | Generate agentic child application (mini-ICDEV clone with GOTCHA/ATLAS) |
 | `/icdev-market` | Federated GOTCHA marketplace — publish, install, search, review, sync assets across tenant orgs |
 | `/icdev-devsecops` | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), attestation |
 | `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
 | `/icdev-mosa` | DoD MOSA (10 U.S.C. §4401) — MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC |
 | `/icdev-innovate` | Innovation Engine — autonomous self-improvement: web scanning, signal scoring, compliance triage, trend detection, solution generation, introspective analysis, competitive intel, standards monitoring |
+| `/icdev-translate` | Cross-language translation — 5-phase hybrid pipeline (Extract→Type-Check→Translate→Assemble→Validate+Repair), 30 language pairs, pass@k candidates, mock-and-continue, compliance bridge |
+| `/icdev-trace` | Observability & XAI — distributed tracing queries, provenance lineage, AgentSHAP tool attribution, XAI compliance assessment (Phase 46) |
+| `/audit` | Production readiness audit — 30 checks across 6 categories (platform, security, compliance, integration, performance, documentation), streaming results, consolidated report, trend tracking |
+| `/remediate` | Auto-fix audit blockers — 3-tier confidence model (auto-fix >= 0.7, suggest 0.3-0.7, escalate < 0.3), verification re-runs, append-only audit trail, chains from `/audit` |
 
 ### Cross-Platform Compatibility (D145)
 ```bash
@@ -335,10 +345,59 @@ pytest tests/test_phase36_phase37_integration.py -v  # Phase 36↔37 security in
 pytest tests/test_cloud_monitoring_iam.py -v         # Cloud monitoring/IAM/registry tests (15 tests)
 pytest tests/test_ibm_providers.py -v                # IBM Cloud provider tests (44 tests)
 pytest tests/test_region_validator.py -v             # CSP region validator tests (18 tests)
+pytest tests/test_translation_manager.py -v          # Translation pipeline tests (35 tests)
+pytest tests/test_dependency_mapper.py -v            # Dependency mapper tests (16 tests)
+pytest tests/test_source_extractor.py -v             # Source extractor tests (22 tests)
+pytest tests/test_behavioral_drift.py -v             # Behavioral drift detection tests (14 tests)
+pytest tests/test_tool_chain_validator.py -v          # Tool chain validator tests (22 tests)
+pytest tests/test_agent_output_validator.py -v        # Agent output validator tests (22 tests)
+pytest tests/test_agent_trust_scorer.py -v            # Agent trust scorer tests (22 tests)
+pytest tests/test_mcp_tool_authorizer.py -v           # MCP tool authorizer tests (28 tests)
+pytest tests/test_behavioral_red_team.py -v           # Behavioral red teaming tests (13 tests)
+pytest tests/test_owasp_agentic_assessor.py -v        # OWASP Agentic assessor tests (16 tests)
+pytest tests/test_schemas.py -v                      # Shared schema enforcement tests (29 tests)
+pytest tests/test_state_tracker.py -v                # Dirty-tracking state push tests (16 tests)
+pytest tests/test_extension_manager.py -v            # Active extension hooks tests (18 tests)
+pytest tests/test_chat_manager.py -v                 # Multi-stream chat + intervention tests (22 tests)
+pytest tests/test_history_compressor.py -v           # 3-tier history compression tests (25 tests)
+pytest tests/test_memory_consolidation.py -v         # AI-driven memory consolidation tests (22 tests)
+pytest tests/test_context_server.py -v               # Semantic layer MCP tools tests (20 tests)
+pytest tests/test_code_pattern_scanner.py -v         # Dangerous pattern detection tests (30 tests)
+pytest tests/test_register_external_patterns.py -v   # Innovation signal registration tests (15 tests)
+pytest tests/test_claude_dir_validator.py -v         # .claude directory governance validator tests (50 tests)
+pytest tests/test_tracer.py -v                        # Tracer ABC + SQLiteTracer tests (43 tests)
+pytest tests/test_trace_context.py -v                 # W3C traceparent + context propagation tests (30 tests)
+pytest tests/test_mcp_instrumentation.py -v           # MCP auto-instrumentation tests (8 tests)
+pytest tests/test_a2a_trace_propagation.py -v         # A2A distributed tracing tests (10 tests)
+pytest tests/test_otel_tracer.py -v                   # OTelTracer + OTelSpan mock tests (17 tests)
+pytest tests/test_prov_recorder.py -v                 # Provenance recorder tests (30 tests)
+pytest tests/test_agent_shap.py -v                    # AgentSHAP Shapley value tests (20 tests)
+pytest tests/test_xai_assessor.py -v                  # XAI compliance assessor tests (34 tests)
+
+# .claude directory governance
+python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
+python tools/testing/claude_dir_validator.py --human   # Human-readable terminal output
+python tools/testing/claude_dir_validator.py --check append-only --json  # Single check
 
 # Health check
 python tools/testing/health_check.py                 # Full system health check
 python tools/testing/health_check.py --json           # JSON output
+
+# Production readiness audit (30 checks, 6 categories)
+python tools/testing/production_audit.py --human --stream              # Full audit with streaming
+python tools/testing/production_audit.py --json                        # JSON output
+python tools/testing/production_audit.py --category security --json    # Single category
+python tools/testing/production_audit.py --category security,compliance --json  # Multiple categories
+python tools/testing/production_audit.py --gate --json                 # Gate evaluation (exit code 0=pass, 1=fail)
+pytest tests/test_production_audit.py -v             # Production audit tests (25 tests)
+
+# Production remediation (auto-fix audit blockers)
+python tools/testing/production_remediate.py --human --stream              # Auto-fix + stream
+python tools/testing/production_remediate.py --auto --json                 # Auto-fix all (JSON)
+python tools/testing/production_remediate.py --dry-run --human --stream    # Preview fixes
+python tools/testing/production_remediate.py --check-id SEC-002 --auto     # Single check
+python tools/testing/production_remediate.py --skip-audit --auto --json    # Reuse latest audit
+pytest tests/test_production_remediate.py -v          # Remediation tests (25 tests)
 
 # Test orchestrator (full pipeline: unit + BDD + E2E + gates)
 python tools/testing/test_orchestrator.py --project-dir /path/to/project
@@ -427,7 +486,7 @@ python tools/installer/platform_setup.py --generate helm-values --modules core,l
 ### ICDEV Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (163 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV database (170 tables)
 
 # Database Migrations (D150)
 python tools/db/migrate.py --status [--json]                      # Show migration status
@@ -541,22 +600,22 @@ python tools/integration/approval_manager.py --session-id "<id>" --submit requir
 python tools/integration/approval_manager.py --workflow-id "<id>" --review --decision approved --json                                       # Review approval
 python tools/requirements/traceability_builder.py --project-id "proj-123" --build-rtm --gap-analysis --json                                 # Build full RTM
 
-# Observability & Agent Execution (TAC-8)
+# Observability & Agent Execution (Phase 39)
 python tools/agent/agent_executor.py --prompt "echo hello" --model sonnet --json           # Execute agent via CLI
 python tools/agent/agent_executor.py --prompt "fix tests" --model opus --max-retries 3     # With retry logic
 
-# NLQ Compliance Queries (TAC-8)
+# NLQ Compliance Queries (Phase 40)
 # Start dashboard first: python tools/dashboard/app.py
 # Navigate to /query for natural language compliance queries
 # Navigate to /events for real-time event timeline (SSE)
 
-# Git Worktree Parallel CI/CD (TAC-8)
+# Git Worktree Parallel CI/CD (Phase 41)
 python tools/ci/modules/worktree.py --create --task-id test-123 --target-dir src/ --json    # Create worktree
 python tools/ci/modules/worktree.py --list --json                                            # List worktrees
 python tools/ci/modules/worktree.py --cleanup --worktree-name icdev-test-123                # Cleanup worktree
 python tools/ci/modules/worktree.py --status --worktree-name icdev-test-123                 # Worktree status
 
-# GitLab Task Board Monitor (TAC-8)
+# GitLab Task Board Monitor (Phase 41)
 python tools/ci/triggers/gitlab_task_monitor.py                    # Start monitor (polls every 20s)
 python tools/ci/triggers/gitlab_task_monitor.py --dry-run          # Preview without spawning
 python tools/ci/triggers/gitlab_task_monitor.py --once             # Single poll and exit
@@ -833,6 +892,52 @@ python tools/infra/terraform_generator_onprem.py --project-id "proj-123" --targe
 # Config: args/llm_config.yaml — azure_openai, vertex_ai, oci_genai, ibm_watsonx provider entries
 # Config: args/cloud_config.yaml — CSP selection, cloud_mode, per-service overrides, impact level
 
+# Cross-Language Translation (Phase 43)
+python tools/translation/translation_manager.py \
+  --source-path /path/to/source --source-language python --target-language java \
+  --output-dir /path/to/output --project-id "proj-123" --validate --json       # Full pipeline
+python tools/translation/translation_manager.py \
+  --source-path /path --source-language python --target-language java \
+  --output-dir /path --project-id "proj-123" --dry-run --json                   # Dry run (no LLM)
+python tools/translation/source_extractor.py \
+  --source-path /path --language python --output-ir ir.json --project-id "proj-123" --json  # Extract IR only
+python tools/translation/code_translator.py \
+  --ir-file ir.json --source-language python --target-language go \
+  --output-dir /path --candidates 3 --json                                      # Translate with pass@k
+python tools/translation/dependency_mapper.py \
+  --source-language python --target-language go --imports "flask,requests" --json # Dependency lookup
+python tools/translation/test_translator.py \
+  --source-test-dir /path/tests --source-language python --target-language java \
+  --output-dir /path/output/tests --ir-file ir.json --json                      # Translate tests
+
+# OWASP Agentic AI Security (Phase 45)
+python tools/security/ai_telemetry_logger.py --drift --json                                          # Behavioral drift detection
+python tools/security/ai_telemetry_logger.py --drift --agent-id "builder-agent" --json               # Drift for specific agent
+python tools/security/tool_chain_validator.py --rules --json                                          # List tool chain rules
+python tools/security/tool_chain_validator.py --gate --project-id "proj-123" --json                   # Tool chain gate check
+python tools/security/agent_output_validator.py --text "some output" --json                           # Validate output text
+python tools/security/agent_output_validator.py --gate --project-id "proj-123" --json                 # Output validation gate
+python tools/security/agent_trust_scorer.py --score --agent-id "builder-agent" --json                 # Compute trust score
+python tools/security/agent_trust_scorer.py --check --agent-id "builder-agent" --json                 # Check agent access
+python tools/security/agent_trust_scorer.py --all --json                                              # All agent trust scores
+python tools/security/agent_trust_scorer.py --gate --project-id "proj-123" --json                     # Trust scoring gate
+python tools/security/mcp_tool_authorizer.py --check --role developer --tool scaffold --json          # Check tool authorization
+python tools/security/mcp_tool_authorizer.py --list --role pm --json                                  # List role permissions
+python tools/security/mcp_tool_authorizer.py --validate --json                                        # Validate RBAC config
+python tools/security/atlas_red_team.py --behavioral --json                                           # Run behavioral red team tests
+python tools/security/atlas_red_team.py --behavioral --brt-technique BRT-001 --json                   # Test specific technique
+python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json                      # OWASP Agentic assessment
+python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --gate                      # OWASP Agentic gate
+
+# Observability, Traceability & Explainable AI (Phase 46)
+python -c "from tools.observability import get_tracer; print(type(get_tracer()).__name__)"           # Check active tracer
+python tools/observability/shap/agent_shap.py --trace-id "<trace-id>" --iterations 1000 --json       # SHAP analysis on trace
+python tools/observability/shap/agent_shap.py --project-id "proj-123" --last-n 10 --json             # SHAP last N traces
+python tools/observability/provenance/prov_query.py --entity-id "<id>" --direction backward --json    # Provenance lineage
+python tools/observability/provenance/prov_export.py --project-id "proj-123" --json                   # PROV-JSON export
+python tools/compliance/xai_assessor.py --project-id "proj-123" --json                                # XAI assessment (10 checks)
+python tools/compliance/xai_assessor.py --project-id "proj-123" --gate                                # XAI gate evaluation
+
 # Infrastructure
 python tools/infra/terraform_generator.py --project-id "proj-123"
 python tools/infra/ansible_generator.py --project-id "proj-123"
@@ -896,6 +1001,9 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /profile           — User profile + BYOK LLM key management
 #   /dev-profiles      — Dev profile management (create, resolve cascade, lock, version history)
 #   /children          — Child application registry (health, genome version, capabilities, heartbeat)
+#   /traces            — Trace explorer: stat grid, trace list, span waterfall SVG (Phase 46)
+#   /provenance        — Provenance viewer: entity/activity tables, lineage query, PROV-JSON export (Phase 46)
+#   /xai               — XAI dashboard: assessment runner, coverage gauge, SHAP bar chart (Phase 46)
 #   /admin/users       — Admin user/key management (admin role only)
 # Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
 # RBAC: 5 roles (admin, pm, developer, isso, co) — D172
@@ -1012,7 +1120,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 163 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), TAC-8 (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233) |
+| `data/icdev.db` | 183 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1055,6 +1163,15 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/cloud_config.yaml` | Cloud-Agnostic Architecture (D225, D232): CSP selection (aws/azure/gcp/oci/ibm/local), cloud_mode (commercial/government/on_prem/air_gapped), region, impact level, per-CSP settings (GovCloud, Azure Government, Assured Workloads, OCI Government, IBM IC4G), per-service CSP overrides for secrets/storage/kms, region certification validation (D234) |
 | `args/csp_monitor_config.yaml` | CSP Service Monitor (D239): 5 CSP sources (AWS, Azure, GCP, OCI, IBM) with RSS/API/HTML endpoints, signal generation (8 change types with category/score/urgency mapping), diff engine, notification/escalation, changelog generation, Innovation Engine integration, scheduling (daemon mode, quiet hours) |
 | `args/security_gates.yaml` | (updated) Added `atlas_ai` gate with blocking conditions: critical_atlas_technique_unmitigated, prompt_injection_defense_inactive, ai_telemetry_not_active, agent_permissions_not_configured, ai_bom_missing; thresholds: min_atlas_coverage_pct=80, ai_telemetry_required=true |
+| `args/translation_config.yaml` | Cross-Language Translation (D242-D256): 30 language pairs, extraction parsers, translation settings (max_chunk_lines=500, temperature=0.2, candidates=3), repair (max_attempts=3, compiler_feedback), type_checking, assembly (per-language project conventions), validation thresholds (api_surface≥0.90, type_coverage≥0.85, round_trip≥0.80, complexity≤30%), test translation framework mappings, compliance (95% control coverage) |
+| `args/extension_config.yaml` | Active Extension Hooks (D261-D264): hook point configs (10 extension points), layered override rules (project > tenant > default), safety limits (max 30s total handler time, exception isolation), behavioral vs observational tiers |
+| `args/context_config.yaml` | Semantic Layer MCP Tools (D277): CLAUDE.md indexing, cache TTL, agent-role→section mapping (10 agent roles), section refresh on mtime change |
+| `args/code_pattern_config.yaml` | Dangerous Pattern Detection (D278): per-language patterns (Python, Java, Go, Rust, C#, TypeScript + universal), scan settings (skip_dirs, file_extensions, max_file_size), severity classification (critical/high/medium/low) |
+| `args/security_gates.yaml` | (updated) Added `code_patterns` gate with max_critical=0, max_high=0, max_medium=10 |
+| `args/owasp_agentic_config.yaml` | OWASP Agentic AI Security (Phase 45): behavioral drift thresholds (z-score, 7-day baseline), tool chain rules (4 default: secrets→external, read→exfil, privesc→deploy, rapid burst), output validation (classification leak, SSN, credentials, private keys), trust scoring (decay/recovery factors, 3 trust levels), MCP per-tool RBAC (5 roles: admin, pm, developer, isso, co) |
+| `args/security_gates.yaml` | (updated) Added `owasp_agentic` gate with blocking: agent_trust_below_untrusted, tool_chain_critical_violation, output_classification_leak, behavioral_drift_critical, mcp_authorization_not_configured; thresholds: min_trust_score=0.30, max_critical_chain_violations=0, max_critical_output_violations=0 |
+| `args/observability_tracing_config.yaml` | Observability & XAI (Phase 46, D290): dual-mode tracer config (otel/sqlite auto-detect via ICDEV_MLFLOW_TRACKING_URI), sampling rate, retention (sqlite_retention_days, mlflow_retention_days), content tracing policy (hash-only vs plaintext, ICDEV_CONTENT_TRACING_ENABLED), PROV-AGENT settings, AgentSHAP defaults (iterations, seed), XAI assessment thresholds |
+| `args/security_gates.yaml` | (updated) Added `observability_xai` gate with blocking: tracing_not_active, provenance_graph_empty, xai_assessment_not_completed, content_tracing_active_in_cui_without_approval; thresholds: tracing_required=true, provenance_required=true, shap_max_age_days=30, min_xai_coverage_pct=80 |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1089,9 +1206,9 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **D30:** Bedrock for NLQ→SQL (not OpenAI) — air-gap safe, consistent with D23, GovCloud available
 - **D31:** HMAC-SHA256 event signing for hooks (tamper detection without PKI overhead, secret via AWS Secrets Manager)
 - **D32:** Git worktrees with sparse checkout for task isolation (zero-conflict parallelism, per-task branches, classification markers)
-- **D33:** GitLab tags `{{icdev: workflow}}` for task routing (mirrors TAC-8 Notion pattern, uses existing VCS abstraction)
+- **D33:** GitLab tags `{{icdev: workflow}}` for task routing (mirrors Phase 41 Notion pattern, uses existing VCS abstraction)
 - **D34:** Read-only SQL enforcement for NLQ (append-only audit trail must not be compromised by NLQ queries)
-- **D35:** Agent executor stores JSONL output in `agents/` dir (auditable, replayable, consistent with TAC-8 pattern)
+- **D35:** Agent executor stores JSONL output in `agents/` dir (auditable, replayable, consistent with Phase 39 observability pattern)
 - **D36:** `boto3 invoke_model()` + `invoke_model_with_response_stream()` for Bedrock, `ThreadPoolExecutor` for parallelism — matches existing subprocess/sqlite3 patterns, no asyncio
 - **D37:** Model fallback chain: Opus 4.6 → Sonnet 4.5 → Sonnet 3.5 with cached health probing (30min TTL)
 - **D38:** Effort parameter mapped per agent role (Orchestrator=high, Builder=max, Monitor=low) — optimize cost/quality per agent
@@ -1309,6 +1426,8 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **Genome Propagation Gate:** 72-hour stability window passed, capability evaluation score ≥0.65, HITL approval required for execution, compliance preservation verified in staging
 - **Marketplace Prompt Injection Gate (Gate 8):** 0 high-confidence prompt injection patterns in asset files — blocking gate
 - **Marketplace Behavioral Sandbox Gate (Gate 9):** 0 critical dangerous code patterns (eval, exec, os.system) — warning gate
+- **Translation Gate:** Blocking: syntax errors in output, API surface < 90%, compliance coverage < 95%, secrets detected, CUI markings missing. Warning: round-trip similarity < 80%, type coverage < 85%, complexity increase > 30%, unmapped deps, stub functions, lint issues
+- **Claude Config Alignment Gate:** Blocking: append-only table unprotected in pre_tool_use.py, hook syntax error, hook reference missing. Warning: dashboard route undocumented, E2E coverage gap, settings deny rule missing
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -1364,10 +1483,10 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | Boundary & Supply Chain | `goals/boundary_supply_chain.md` | ATO boundary impact (4-tier), supply chain dependency graph, ISA lifecycle, SCRM, CVE triage (RICOAS) |
 | Simulation Engine | `goals/simulation_engine.md` | Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA generation & comparison (RICOAS) |
 | External Integration | `goals/external_integration.md` | Bidirectional Jira/ServiceNow/GitLab sync, DOORS NG ReqIF export, approval workflows, RTM traceability (RICOAS) |
-| Observability | `goals/observability.md` | Hook-based agent monitoring: tool usage tracking, HMAC-signed events, agent execution framework, SIEM forwarding (TAC-8) |
-| NLQ Compliance | `goals/nlq_compliance.md` | Natural language compliance queries via Bedrock, read-only SQL enforcement, SSE dashboard events (TAC-8) |
-| Parallel CI/CD | `goals/parallel_cicd.md` | Git worktree task isolation, GitLab `{{icdev: workflow}}` tag routing, parallel workflow execution (TAC-8) |
-| Framework Planning | `goals/framework_planning.md` | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (TAC-8) |
+| Observability | `goals/observability.md` | Hook-based agent monitoring: tool usage tracking, HMAC-signed events, agent execution framework, SIEM forwarding (Phase 39) |
+| NLQ Compliance | `goals/nlq_compliance.md` | Natural language compliance queries via Bedrock, read-only SQL enforcement, SSE dashboard events (Phase 40) |
+| Parallel CI/CD | `goals/parallel_cicd.md` | Git worktree task isolation, GitLab `{{icdev: workflow}}` tag routing, parallel workflow execution (Phase 41) |
+| Framework Planning | `goals/framework_planning.md` | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (Phase 42) |
 | Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Opus 4.6 multi-agent: Bedrock client, DAG workflows, parallel execution, collaboration patterns, domain authority vetoes, agent mailbox, agent memory |
 | Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV clone apps with GOTCHA/ATLAS |
 | Security Categorization | `goals/security_categorization.md` | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
@@ -1387,6 +1506,12 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | Evolutionary Intelligence | `goals/evolutionary_intelligence.md` | Parent-child lifecycle: capability genome (semver+SHA-256), 7-dimension evaluation (incl. security_assessment), staging isolation, HITL propagation, 72-hour absorption window, bidirectional learning, cross-pollination, Phase 37 injection scanning (Phase 36, D209-D215) |
 | MITRE ATLAS Integration | `goals/atlas_integration.md` | AI-specific threat defense: prompt injection detection (5 categories), AI telemetry (SHA-256 hashing), ATLAS assessor, OWASP LLM Top 10, NIST AI RMF, ISO 42001, ATLAS red teaming (6 techniques), marketplace hardening (Gates 8-9) (Phase 37, D215-D223, D231) |
 | Cloud-Agnostic Architecture | `goals\cloud_agnostic.md` | Multi-cloud abstraction: CSP provider ABCs (Secrets, Storage, KMS, Monitoring, IAM, Registry × 6 clouds incl. IBM), Terraform generators (Azure/GCP/OCI/IBM Gov + on-prem), LLM multi-cloud (Azure OpenAI, Vertex AI, OCI GenAI, IBM watsonx.ai), Helm overlays, CSP health checker, region validator (Phase 38, D225-D238) |
+| Cross-Language Translation | `goals/cross_language_translation.md` | LLM-assisted cross-language code translation: 5-phase hybrid pipeline (Extract→Type-Check→Translate→Assemble→Validate+Repair), 30 directional pairs, pass@k candidates, mock-and-continue, feature mapping rules, type-compatibility pre-check, compiler-feedback repair, compliance bridge, Dashboard+Portal visibility (Phase 43, D242-D256) |
+| .claude Directory Maintenance | `goals/claude_dir_maintenance.md` | Per-phase governance checklist: append-only table protection, route documentation, E2E spec coverage, hook integrity, deny rules. Automated 6-check validator (`tools/testing/claude_dir_validator.py`), `claude_config_alignment` security gate (NIST AU-2, CM-3, SA-11) |
+| Innovation Adaptation | *(Phase 44 plan)* | Agent Zero + InsForge pattern adaptation: multi-stream parallel chat (thread-per-context, max 5/user), active extension hooks (10 hook points, behavioral/observational tiers), mid-stream intervention (atomic 3-checkpoint system), dirty-tracking state push (debounced SSE), 3-tier history compression (50/30/20 budget), semantic layer MCP tools (CLAUDE.md indexer, role-based context), shared schema enforcement (dataclasses), AI-driven memory consolidation (Jaccard+LLM), dangerous pattern detection (6 languages), innovation signal registration (Phase 44, D257-D279) |
+| OWASP Agentic Security | `goals/owasp_agentic_security.md` | OWASP Agentic AI 8-gap implementation: behavioral drift detection (z-score baseline), tool chain validation (sliding-window sequence matching), output content safety (classification leak + PII), formal agentic threat model (STRIDE + T1-T17), dynamic trust scoring (decay/recovery), MCP per-tool RBAC (deny-first, 5 roles), behavioral red teaming (6 BRT techniques), OWASP agentic assessor (17 automated checks). Config: `args/owasp_agentic_config.yaml` (Phase 45) |
+| Agentic Threat Model | `goals/agentic_threat_model.md` | Formal STRIDE + OWASP T1-T17 agentic threat model: trust boundaries, MCP server threat surface, 17 threat entries with NIST 800-53 crosswalk, residual risk analysis (Phase 45) |
+| Observability & XAI | `goals/observability_traceability_xai.md` | Distributed tracing (OTel+SQLite), W3C PROV-AGENT provenance, AgentSHAP tool attribution, XAI compliance assessor (10 checks), dashboard pages (/traces, /provenance, /xai), MCP server (Phase 46, D280-D290) |
 
 ---
 
@@ -1453,6 +1578,42 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D239:** CSP monitoring integrated as Innovation Engine source (Phase 35) — reuses existing signal scoring, triage, and solution generation pipeline; CSP changes treated as innovation signals with category mapping and government/compliance boosts
 - **D240:** Declarative CSP service registry as JSON catalog (extends D26 pattern) — baseline of all CSP services, compliance programs, regions, and FIPS status; monitor diffs live data against registry to detect changes; human review required before registry updates
 - **D241:** CSP changelog generates actionable recommendations per change type — each change type (deprecation, compliance scope change, breaking API change, etc.) maps to specific files and actions
+- **D242:** Hybrid 5-phase translation pipeline — deterministic extraction + type-checking + LLM translation + deterministic assembly + validate-repair loop. Consistent with GOTCHA principle (LLMs probabilistic, business logic deterministic)
+- **D243:** IR pivot — source code extracted into language-agnostic JSON IR before translation. Enables chunk-based translation, round-trip validation, progress tracking per unit
+- **D244:** Post-order dependency graph traversal at function/class granularity — translate leaf nodes first, then dependents (Amazon Oxidizer)
+- **D245:** Non-destructive output (extends D18) — translation output to separate directory, source never modified
+- **D246:** Declarative dependency mapping tables (D26 pattern) — cross-language package equivalents in `context/translation/dependency_mappings.json`
+- **D247:** 3-part feature mapping rules (Amazon Oxidizer) — syntactic pattern + NL description + static validation check per language pair
+- **D248:** Round-trip IR consistency check — re-parse translated output into IR, compare structurally to source IR
+- **D249:** Translation compliance bridge — reuses `compliance_bridge.py` for NIST 800-53 control inheritance (95% threshold)
+- **D250:** Test translation as separate tool — `test_translator.py` with framework-specific assertion mapping; BDD `.feature` files preserved
+- **D251:** Translation DB tables follow existing `migration_plans`/`migration_tasks` pattern for traceability
+- **D252:** Dashboard/Portal translation pages follow existing page patterns (stat-grid, table-container, charts.js)
+- **D253:** Type-compatibility pre-check (Amazon Oxidizer) — validate function signatures map correctly between source/target type systems BEFORE LLM translation
+- **D254:** Pass@k candidate generation (Google) — generate k translation candidates with varied prompts, select best. Default k=3 cloud, k=1 air-gapped
+- **D255:** Compiler-feedback repair loop (Google/CoTran) — on validation failure, feed compiler errors back to LLM for targeted repair (max 3 attempts)
+- **D256:** Mock-and-continue (Amazon Oxidizer) — on persistent failure, generate type-compatible mock/stub and continue translating dependent units
+- **D257-D260:** Multi-Stream Parallel Chat — thread-per-context execution, contexts scoped to `(user_id, tenant_id)`, max 5 concurrent per user, message queue via `collections.deque`, independent of intake sessions
+- **D261-D264:** Active Extension Hooks — extensions loaded from numbered Python files (Agent Zero pattern), two tiers: behavioral (modify data) and observational (log only), layered override (project > tenant > default), exception isolation
+- **D265-D267:** Mid-Stream Intervention — atomic intervention field on ChatContext, checked at 3 points per loop iteration (pre-LLM, post-LLM, pre-queue-pop), checkpoint preservation, intervention messages stored as `role='intervention'`
+- **D268-D270:** Dirty-Tracking State Push — per-client dirty/pushed version counters, SSE debounced at 25ms, HTTP polling at 3s, clients send `?since_version=N` for incremental updates
+- **D271-D274:** 3-Tier History Compression — opt-in per context, budget: current topic 50%, historical 30%, bulk 20%, topic boundary: time gap >30min OR keyword shift >60%, LLM/truncation fallback
+- **D275:** Shared Schema Enforcement — stdlib `dataclasses` (air-gap safe), optional Pydantic, backward compatible via `to_dict()`, `validate_output()` with strict/non-strict modes
+- **D276:** AI-Driven Memory Consolidation — optional `--consolidate` flag, hybrid search finds similar entries, LLM decides MERGE/REPLACE/KEEP_SEPARATE/UPDATE/SKIP, Jaccard keyword fallback, append-only consolidation log
+- **D277:** Semantic Layer MCP Tools — CLAUDE.md section indexing via `##` header parsing, metadata from DB with cache TTL, agent-role→section mapping, air-gap safe (stdlib only)
+- **D278:** Dangerous Pattern Detection — unified scanner across 6 languages (Python, Java, Go, Rust, C#, TypeScript), callable from marketplace/translation/child app generation/security scanning, declarative YAML patterns
+- **D279:** Innovation Signal Registration — external patterns registered as innovation signals, source type `external_framework_analysis`, 5-dimension weighted scoring (novelty, feasibility, compliance_alignment, user_impact, effort)
+- **D280:** Pluggable Tracer ABC: `OTelTracer` (production), `SQLiteTracer` (air-gapped), `NullTracer` (fallback). Haystack ProxyTracer pattern. `opentelemetry-sdk` stays optional
+- **D281:** Extend correlation ID (D149) to W3C `traceparent` format — additive, backward compatible
+- **D282:** Content tracing opt-in via `ICDEV_CONTENT_TRACING_ENABLED` env var — CUI environments must never leak content to telemetry; SHA-256 hashes always recorded, plaintext only when opted in
+- **D283:** MLflow as unified trace backend (Apache 2.0, self-hosted) — DoD-safe license, accepts OTLP natively (3.6+), built-in trace UI, SQLite/PG backend matches D1
+- **D284:** MCP auto-instrumentation at `base_server.py._handle_tools_call()` — single change instruments all 15 MCP servers
+- **D285:** A2A distributed tracing via traceparent in JSON-RPC metadata — 3-line additions to `agent_client.py` and `agent_server.py`
+- **D286:** LLM instrumentation at router level with GenAI semantic conventions — `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.response.*`
+- **D287:** PROV-AGENT provenance in 3 append-only SQLite tables — W3C PROV standard (DOE-funded), Entity/Activity/Relation model
+- **D288:** AgentSHAP post-hoc tool attribution via Monte Carlo Shapley values — 0.945 consistency (arXiv:2512.12597), stdlib `random` for sampling (D22 air-gap safe)
+- **D289:** XAI assessor via BaseAssessor pattern (D116) — ~200 LOC, crosswalk to NIST 800-53 US hub cascades to FedRAMP/CMMC
+- **D290:** Dual-mode config in `args/observability_tracing_config.yaml` — auto-detect: `ICDEV_MLFLOW_TRACKING_URI` set → `otel` mode, else → `sqlite` mode
 
 ### Innovation Security Gates
 | Gate | Condition |
@@ -1541,7 +1702,7 @@ All bot comments include `[ICDEV-BOT]`. Webhooks ignore comments with this ident
 
 ## 12 Leverage Points of Agentic Development
 
-Adapted from TAC-8 for the ICDEV GOTCHA framework. These are the 12 dimensions you can tune to improve agent behavior.
+These are the 12 dimensions you can tune to improve agent behavior.
 
 ### In Agent (Core Four)
 1. **Context** — What agents know (CLAUDE.md, goals/, context/ files)

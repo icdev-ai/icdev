@@ -86,16 +86,51 @@ def register_correlation_middleware(app):
         # Also set thread-local for libraries that don't have Flask context
         _thread_local.correlation_id = cid
 
+        # D281: Extract or generate W3C traceparent alongside correlation ID
+        try:
+            from tools.observability.trace_context import (
+                parse_traceparent, generate_traceparent,
+                set_current_context, context_from_correlation_id,
+            )
+            tp_header = request.headers.get("traceparent")
+            if tp_header:
+                ctx = parse_traceparent(tp_header)
+                if ctx:
+                    set_current_context(ctx)
+                    g.traceparent = tp_header
+                else:
+                    # Invalid traceparent — generate from correlation ID
+                    ctx = context_from_correlation_id(cid)
+                    set_current_context(ctx)
+                    g.traceparent = ctx.to_traceparent()
+            else:
+                # No traceparent — generate from correlation ID
+                ctx = context_from_correlation_id(cid)
+                set_current_context(ctx)
+                g.traceparent = ctx.to_traceparent()
+        except ImportError:
+            pass
+
     @app.after_request
     def _add_correlation_header(response):
         cid = getattr(g, "correlation_id", None)
         if cid:
             response.headers[CORRELATION_HEADER] = cid
+        # D281: Add traceparent to response
+        tp = getattr(g, "traceparent", None)
+        if tp:
+            response.headers["traceparent"] = tp
         return response
 
     @app.teardown_request
     def _clear_correlation(exc=None):
         _thread_local.correlation_id = None
+        # D281: Clear trace context
+        try:
+            from tools.observability.trace_context import clear_current_context
+            clear_current_context()
+        except ImportError:
+            pass
 
 
 class CorrelationLogFilter(logging.Filter):

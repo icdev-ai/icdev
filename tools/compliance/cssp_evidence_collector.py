@@ -712,6 +712,7 @@ if __name__ == "__main__":
     parser.add_argument("--project-dir", type=Path, help="Project directory to scan (overrides DB)")
     parser.add_argument("--output-dir", type=Path, help="Output directory for evidence manifest and report")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:

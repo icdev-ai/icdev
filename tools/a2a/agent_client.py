@@ -123,6 +123,16 @@ class A2AAgentClient:
                 meta["correlation_id"] = cid
         except ImportError:
             pass
+        # D285: Propagate W3C traceparent for distributed span linking
+        try:
+            from tools.observability.trace_context import get_current_context
+            ctx = get_current_context()
+            if ctx:
+                meta["traceparent"] = ctx.to_traceparent()
+                if ctx.tracestate:
+                    meta["tracestate"] = ctx.tracestate
+        except ImportError:
+            pass
 
         payload = {
             "jsonrpc": "2.0",
@@ -272,7 +282,7 @@ def main():
     p_send.add_argument("--url", required=True, help="Agent base URL")
     p_send.add_argument("--skill", required=True, help="Skill ID to invoke")
     p_send.add_argument("--input", required=True, help="JSON input data string")
-    p_send.add_argument("--project", help="Project ID")
+    p_send.add_argument("--project-id", "--project", help="Project ID", dest="project_id")
     p_send.add_argument("--wait", action="store_true", help="Wait for completion")
     p_send.add_argument("--timeout", type=int, default=300, help="Wait timeout (seconds)")
 
@@ -291,6 +301,7 @@ def main():
     parser.add_argument("--api-key", help="API key for authentication")
     parser.add_argument("--client-cert", help="Client TLS certificate path")
     parser.add_argument("--client-key", help="Client TLS key path")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     args = parser.parse_args()
 

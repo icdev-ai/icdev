@@ -26,10 +26,10 @@
 | Boundary & Supply Chain | goals/boundary_supply_chain.md | ATO boundary impact (4-tier), supply chain dependency graph, ISA lifecycle, SCRM, CVE triage (RICOAS Phase 2) |
 | Simulation Engine | goals/simulation_engine.md | Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA generation & comparison (RICOAS Phase 3) |
 | External Integration | goals/external_integration.md | Bidirectional Jira/ServiceNow/GitLab sync, DOORS NG ReqIF export, approval workflows, RTM traceability (RICOAS Phase 4) |
-| Observability | goals/observability.md | Hook-based agent monitoring: tool usage tracking, HMAC-signed events, agent execution framework, SIEM forwarding (TAC-8 Phase A) |
-| NLQ Compliance | goals/nlq_compliance.md | Natural language compliance queries via Bedrock, read-only SQL enforcement, SSE dashboard events (TAC-8 Phase B) |
-| Parallel CI/CD | goals/parallel_cicd.md | Git worktree task isolation, GitLab {{icdev: workflow}} tag routing, parallel workflow execution (TAC-8 Phase C) |
-| Framework Planning | goals/framework_planning.md | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (TAC-8 Phase D) |
+| Observability | goals/observability.md | Hook-based agent monitoring: tool usage tracking, HMAC-signed events, agent execution framework, SIEM forwarding (Phase 39) |
+| NLQ Compliance | goals/nlq_compliance.md | Natural language compliance queries via Bedrock, read-only SQL enforcement, SSE dashboard events (Phase 40) |
+| Parallel CI/CD | goals/parallel_cicd.md | Git worktree task isolation, GitLab {{icdev: workflow}} tag routing, parallel workflow execution (Phase 41) |
+| Framework Planning | goals/framework_planning.md | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (Phase 42) |
 | Multi-Agent Orchestration | goals/multi_agent_orchestration.md | Opus 4.6 multi-agent: DAG workflow, parallel execution, collaboration patterns, domain authority vetoes, agent memory |
 | Security Categorization | goals/security_categorization.md | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
 | Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV clone apps with GOTCHA/ATLAS |
@@ -41,3 +41,7 @@
 | MOSA Workflow | goals/mosa_workflow.md | DoD MOSA (10 U.S.C. §4401): MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection, cATO evidence (Phase 26) |
 | CLI Capabilities | goals/cli_capabilities.md | Optional Claude CLI features: CI/CD automation, parallel agents, container execution, scripted intake — 4 independent toggles with tenant ceiling and cost controls (Phase 27) |
 | Remote Command Gateway | goals/remote_command_gateway.md | Remote Command Gateway: messaging channel integration, 8-gate security chain, IL-aware response filtering, user binding, air-gapped/connected mode (Phase 28) |
+| Cross-Language Translation | goals/cross_language_translation.md | LLM-assisted cross-language code translation: 5-phase hybrid pipeline (Extract→Type-Check→Translate→Assemble→Validate+Repair), 30 directional pairs, pass@k candidates, mock-and-continue, compliance bridge, Dashboard+Portal visibility (Phase 43, D242-D256) |
+| OWASP Agentic Security | goals/owasp_agentic_security.md | OWASP Agentic AI security: 8-gap implementation — behavioral drift detection, tool chain validation, output content safety, formal threat model, dynamic trust scoring, MCP per-tool RBAC, behavioral red teaming, compliance assessor (Phase 45, D257-D264) |
+| Agentic Threat Model | goals/agentic_threat_model.md | Formal STRIDE + OWASP T1-T17 agentic threat model with trust boundaries, MCP server threat surface, residual risk analysis (Phase 45, D263) |
+| Observability & XAI | goals/observability_traceability_xai.md | Distributed tracing (OTel+SQLite), W3C PROV-AGENT provenance, AgentSHAP tool attribution, XAI compliance assessor (10 checks), dashboard pages (/traces, /provenance, /xai), MCP server (Phase 46, D280-D290) |

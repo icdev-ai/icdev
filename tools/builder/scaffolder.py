@@ -1180,6 +1180,7 @@ def main() -> int:
     parser.add_argument("--source", help="Data source path or URL")
     parser.add_argument("--resume-from", help="Step name to resume from")
     parser.add_argument("--dry-run", action="store_true", help="Dry run mode")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     pipeline = create_default_pipeline()

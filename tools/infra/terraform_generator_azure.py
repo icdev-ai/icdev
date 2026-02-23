@@ -1216,6 +1216,7 @@ def main():
         choices=["dev", "staging", "prod"],
         help="Target environment",
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     config = {

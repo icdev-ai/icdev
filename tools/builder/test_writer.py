@@ -883,6 +883,7 @@ def main():
         "--no-pytest", action="store_true",
         help="Skip pytest file generation (with --agentic)",
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     if args.agentic:

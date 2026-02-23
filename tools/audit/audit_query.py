@@ -113,19 +113,20 @@ def format_entries(entries: list) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Query audit trail")
-    parser.add_argument("--project", help="Filter by project ID")
+    parser.add_argument("--project-id", "--project", help="Filter by project ID", dest="project_id")
     parser.add_argument("--type", help="Filter by event type")
     parser.add_argument("--actor", help="Filter by actor")
     parser.add_argument("--limit", type=int, default=50, help="Max results")
     parser.add_argument("--verify-completeness", action="store_true", help="Verify audit completeness for project")
     parser.add_argument("--format", choices=["text", "json"], default="text")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     if args.verify_completeness:
-        if not args.project:
+        if not args.project_id:
             print("Error: --project required with --verify-completeness")
             return
-        result = verify_completeness(args.project)
+        result = verify_completeness(args.project_id)
         if args.format == "json":
             print(json.dumps(result, indent=2))
         else:
@@ -136,8 +137,8 @@ def main():
                 print(f"  [{mark}] {event}: {info['count']} entries")
         return
 
-    if args.project:
-        entries = query_by_project(args.project, args.limit)
+    if args.project_id:
+        entries = query_by_project(args.project_id, args.limit)
     elif args.type:
         entries = query_by_type(args.type, args.limit)
     elif args.actor:

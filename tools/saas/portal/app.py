@@ -844,6 +844,68 @@ def audit():
 
 
 # ---------------------------------------------------------------------------
+# Routes: Phase Roadmap
+# ---------------------------------------------------------------------------
+@portal_bp.route("/phases")
+@_portal_auth_required
+def phases():
+    """Phase roadmap — ICDEV phases filtered by tenant tier and impact level."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    # Determine tenant's tier and impact level for filtering
+    subscription = _get_subscription(tenant_id)
+    tier = (subscription or {}).get("tier", (tenant or {}).get("tier", "starter"))
+    impact_level = (tenant or {}).get("impact_level", "IL4")
+
+    # Load phases from registry
+    try:
+        from tools.dashboard.phase_loader import (
+            load_phases, load_categories, load_statuses,
+            get_phase_summary, filter_phases,
+        )
+        all_phases = load_phases()
+        categories = load_categories()
+        statuses = load_statuses()
+
+        # Filter to phases available for this tenant's tier
+        phases_list = filter_phases(all_phases, tier=tier)
+        summary = get_phase_summary(phases_list)
+
+        # Also compute all-phases summary for comparison
+        all_summary = get_phase_summary(all_phases)
+    except (ImportError, Exception):
+        phases_list = []
+        categories = {}
+        statuses = {}
+        summary = {"total": 0, "completed": 0, "active": 0, "planned": 0,
+                   "progress_pct": 0, "by_category": {}}
+        all_summary = summary
+
+    # Optional category filter
+    cat_filter = request.args.get("category", "")
+    if cat_filter:
+        phases_list = [p for p in phases_list if p.get("category") == cat_filter]
+
+    return render_template(
+        "phases.html",
+        tenant_name=tenant_name,
+        phases=phases_list,
+        categories=categories,
+        statuses=statuses,
+        summary=summary,
+        all_summary=all_summary,
+        category_filter=cat_filter,
+        tenant_tier=tier,
+        tenant_il=impact_level,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="phases",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Routes: CMMC Self-Assessment (Phase 4 — Enhancement #8)
 # ---------------------------------------------------------------------------
 @portal_bp.route("/cmmc")
@@ -875,4 +937,160 @@ def cmmc():
         projects=project_list,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Cross-Language Translation (Phase 43)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/translations")
+@_portal_auth_required
+def translations():
+    """Translation jobs — list, status, validation scores (tenant-scoped)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    jobs = []
+    total = completed = in_progress = failed = 0
+    avg_api_score = None
+
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            try:
+                rows = tconn.execute(
+                    """SELECT id, project_id, source_language, target_language,
+                              status, total_units, translated_units, mocked_units,
+                              failed_units, gate_result, llm_model,
+                              elapsed_seconds, created_at
+                       FROM translation_jobs ORDER BY created_at DESC LIMIT 100"""
+                ).fetchall()
+                jobs = [dict(r) for r in rows]
+            except Exception:
+                pass
+
+            total = len(jobs)
+            completed = sum(1 for j in jobs if j.get("status") == "completed")
+            in_progress = sum(1 for j in jobs if j.get("status") in
+                              ("pending", "extracting", "translating", "assembling", "validating"))
+            failed = sum(1 for j in jobs if j.get("status") in ("failed", "partial"))
+
+            try:
+                row = tconn.execute(
+                    """SELECT AVG(score) as avg_score FROM translation_validations
+                       WHERE check_type = 'api_surface' AND passed = 1"""
+                ).fetchone()
+                if row and row["avg_score"]:
+                    avg_api_score = round(row["avg_score"] * 100, 1)
+            except Exception:
+                pass
+        finally:
+            tconn.close()
+
+    return render_template(
+        "translations.html",
+        tenant_name=tenant_name,
+        jobs=jobs,
+        total=total,
+        completed=completed,
+        in_progress=in_progress,
+        failed=failed,
+        avg_api_score=avg_api_score,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="translations",
+    )
+
+
+@portal_bp.route("/translations/<job_id>")
+@_portal_auth_required
+def translation_detail(job_id):
+    """Translation job detail (tenant-scoped)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    job = None
+    units = []
+    validations = []
+    deps = []
+
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            try:
+                row = tconn.execute(
+                    "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
+                ).fetchone()
+                job = dict(row) if row else None
+            except Exception:
+                pass
+
+            if job:
+                try:
+                    rows = tconn.execute(
+                        """SELECT unit_name, unit_kind, source_file, status,
+                                  source_complexity, target_complexity,
+                                  repair_count, candidate_selected
+                           FROM translation_units WHERE job_id = ?
+                           ORDER BY created_at""", (job_id,)
+                    ).fetchall()
+                    units = [dict(u) for u in rows]
+                except Exception:
+                    pass
+
+                try:
+                    rows = tconn.execute(
+                        """SELECT check_type, passed, score, findings
+                           FROM translation_validations WHERE job_id = ?""",
+                        (job_id,)
+                    ).fetchall()
+                    validations = [dict(v) for v in rows]
+                except Exception:
+                    pass
+
+                try:
+                    rows = tconn.execute(
+                        """SELECT source_import, target_import, mapping_source,
+                                  confidence, domain
+                           FROM translation_dependency_mappings WHERE job_id = ?""",
+                        (job_id,)
+                    ).fetchall()
+                    deps = [dict(d) for d in rows]
+                except Exception:
+                    pass
+        finally:
+            tconn.close()
+
+    if not job:
+        return render_template("404.html", message="Translation job not found"), 404
+
+    return render_template(
+        "translation_detail.html",
+        tenant_name=tenant_name,
+        job=job,
+        units=units,
+        validations=validations,
+        deps=deps,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="translations",
+    )
+
+
+@portal_bp.route("/chat-streams")
+@_portal_auth_required
+def chat_streams():
+    """Multi-stream parallel chat — Phase 44 (D257-D260). Tenant-scoped."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    return render_template(
+        "chat_streams.html",
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+        active_page="chat-streams",
     )

@@ -1,16 +1,58 @@
 # CUI // SP-CTI
-FROM python:3.11-slim AS base
-RUN groupadd -r icdev && useradd -r -g icdev -d /app -s /sbin/nologin icdev
-WORKDIR /app
+# ICDEV Integration Agent — STIG-Hardened
+# Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
+# Port: 8456 | Tier: Domain
+
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY tools/ tools/
-COPY args/ args/
-COPY context/ context/
-COPY hardprompts/ hardprompts/
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+FROM python:3.12-slim
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="ICDEV Integration Agent — Jira, ServiceNow, GitLab Sync, DOORS NG ReqIF" \
+      port="8456" \
+      agent="integration-agent"
+
+# STIG: Create non-root user with explicit UID/GID
+RUN groupadd -g 1000 icdev && \
+    useradd -u 1000 -g icdev -d /app -s /usr/sbin/nologin icdev
+
+# STIG: Install only required runtime packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -f /usr/bin/apt-get
+
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy application
+WORKDIR /app
+COPY --chown=icdev:icdev tools/ tools/
+COPY --chown=icdev:icdev args/ args/
+COPY --chown=icdev:icdev context/ context/
+COPY --chown=icdev:icdev hardprompts/ hardprompts/
+
+# STIG: Set restrictive permissions
+RUN chmod -R 750 /app && \
+    find /app -type f -name "*.py" -exec chmod 640 {} +
+
+# Data directory for SQLite (mounted as volume in production)
+RUN mkdir -p /app/data && chown icdev:icdev /app/data
+
+ENV PYTHONUNBUFFERED=1
+
+# STIG: Run as non-root
 USER icdev
+
 EXPOSE 8456
-HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD python -c "import socket; s=socket.socket(); s.connect(('localhost',8456)); s.close()"
-CMD ["python", "tools/mcp/integration_server.py"]
-# CUI // SP-CTI
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:8456/health || exit 1
+
+ENTRYPOINT ["python", "tools/a2a/agent_server.py", "--agent-id", "integration-agent", "--port", "8456"]

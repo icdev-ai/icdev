@@ -87,7 +87,7 @@ def create_worktree(task_id: str, target_dir: str, classification: str = "CUI",
                     issue_number: int = None, agent_id: str = None) -> WorktreeInfo:
     """Create an isolated git worktree with sparse checkout.
 
-    Pattern (from TAC-8, adapted for ICDEV):
+    Pattern (Phase 41 — Parallel CI/CD):
         git worktree add --no-checkout trees/<task_id> -b icdev-<task_id>
         git -C trees/<task_id> sparse-checkout init --cone
         git -C trees/<task_id> sparse-checkout set <target_directory>

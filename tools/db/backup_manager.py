@@ -24,6 +24,22 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Centralized DB path resolution
+try:
+    from tools.compat.db_utils import (
+        get_icdev_db_path,
+        get_memory_db_path,
+        get_platform_db_path,
+    )
+
+    _ICDEV_DB = str(get_icdev_db_path())
+    _PLATFORM_DB = str(get_platform_db_path())
+    _MEMORY_DB = str(get_memory_db_path())
+except ImportError:
+    _ICDEV_DB = str(BASE_DIR / "data" / "icdev.db")
+    _PLATFORM_DB = str(BASE_DIR / "data" / "platform.db")
+    _MEMORY_DB = str(BASE_DIR / "data" / "memory.db")
+
 
 def _load_config() -> dict:
     """Load backup configuration from args/db_config.yaml with fallback defaults."""
@@ -41,10 +57,10 @@ def _load_config() -> dict:
                 "pbkdf2_iterations": 600000,
             },
             "databases": {
-                "icdev": {"path": "data/icdev.db", "schedule": "daily"},
-                "platform": {"path": "data/platform.db", "schedule": "daily"},
-                "memory": {"path": "data/memory.db", "schedule": "weekly"},
-                "activity": {"path": "data/activity.db", "schedule": "weekly"},
+                "icdev": {"path": _ICDEV_DB, "schedule": "daily"},
+                "platform": {"path": _PLATFORM_DB, "schedule": "daily"},
+                "memory": {"path": _MEMORY_DB, "schedule": "weekly"},
+                "activity": {"path": str(BASE_DIR / "data" / "activity.db"), "schedule": "weekly"},
             },
             "tenants": {
                 "backup_on_provision": True,

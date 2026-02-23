@@ -31,8 +31,11 @@
             <li><a href="/batch" class="{% if '/batch' in request.path %}active{% endif %}">Batch</a></li>
             <li><a href="/diagrams" class="{% if '/diagrams' in request.path %}active{% endif %}">Diagrams</a></li>
             <li><a href="/cicd" class="{% if '/cicd' in request.path %}active{% endif %}">CI/CD</a></li>
-            <li><a href="/chat" class="{% if '/chat' in request.path %}active{% endif %}">Chat</a></li>
+            <li><a href="/chat" class="{% if request.path == '/chat' or request.path.startswith('/chat/') %}active{% endif %}">Chat</a></li>
+            <li><a href="/chat-streams" class="{% if '/chat-streams' in request.path %}active{% endif %}">Chat Streams</a></li>
             <li><a href="/dev-profiles" class="{% if '/dev-profiles' in request.path %}active{% endif %}">Profiles</a></li>
+            <li><a href="/phases" class="{% if '/phases' in request.path %}active{% endif %}">Phases</a></li>
+            <li><a href="/translations" class="{% if '/translations' in request.path %}active{% endif %}">Translations</a></li>
             {% if current_user and current_user.role == 'admin' %}
             <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
             {% endif %}

@@ -1371,6 +1371,7 @@ def main():
         action="store_true",
         help="Output compact (non-indented) JSON.",
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     spec = generate_openapi_spec()

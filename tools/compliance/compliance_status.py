@@ -786,7 +786,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Compliance status dashboard"
     )
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     parser.add_argument("--db", help="Database path")
     parser.add_argument(
         "--json", action="store_true",
@@ -800,7 +800,7 @@ def main():
 
     try:
         status = get_compliance_status(
-            project_id=args.project,
+            project_id=args.project_id,
             db_path=Path(args.db) if args.db else None,
         )
 

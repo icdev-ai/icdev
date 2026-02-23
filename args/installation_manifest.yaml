@@ -1017,7 +1017,7 @@ db_table_groups:
       - spec_registry
 
   cicd_observability:
-    description: "TAC-8 observability: hook events, agent executions, NLQ queries, worktrees, GitLab task claims"
+    description: "Operations & Automation: hook events, agent executions, NLQ queries, worktrees, GitLab task claims"
     tables:
       - hook_events
       - agent_executions

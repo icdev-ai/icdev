@@ -53,3 +53,31 @@ maintenance:
     - thinking
   embed_batch_size: 20          # Batch size for embedding generation
   backup_before_prune: true     # Backup memory.db before pruning
+
+# History compression (Phase 44 — D271-D274)
+history_compression:
+  enabled: true                   # Opt-in per context
+  budget_allocation:
+    current_topic: 0.50           # 50% of budget for current topic
+    historical_topics: 0.30       # 30% for historical summaries
+    bulk: 0.20                    # 20% for bulk merged content
+  topic_detection:
+    time_gap_minutes: 30          # Gap > 30min = new topic boundary
+    keyword_shift_threshold: 0.60 # Keyword overlap < 40% = new topic
+  summarization:
+    llm_function: "history_summarize"
+    fallback: "truncation"        # Use truncation when LLM unavailable
+    max_summary_tokens: 200       # Max tokens per topic summary
+
+# Memory consolidation (Phase 44 — D276)
+consolidation:
+  enabled: true
+  similarity_threshold: 0.75     # Minimum similarity to trigger consolidation
+  use_llm: true                  # Use LLM for merge/replace decisions
+  llm_function: "memory_consolidation"
+  max_candidates: 5              # Max similar entries to consider
+  batch_size: 50                 # Batch size for consolidate_all()
+  actions:
+    jaccard_skip: 0.90            # Jaccard >= 0.90 → SKIP (near-duplicate)
+    jaccard_replace: 0.80         # Jaccard >= 0.80 → REPLACE
+    jaccard_keep: 0.75            # Jaccard >= 0.75 → KEEP_SEPARATE

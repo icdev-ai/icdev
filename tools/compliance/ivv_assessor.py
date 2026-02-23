@@ -2297,6 +2297,7 @@ if __name__ == "__main__":
         default=DB_PATH,
         help="Override database path",
     )
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     try:

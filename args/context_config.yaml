@@ -1,0 +1,82 @@
+# CUI // SP-CTI
+# Semantic Layer Context Configuration (Phase 44 — D277)
+# Configures CLAUDE.md indexing, metadata caching, and agent-role section mapping.
+---
+
+indexing:
+  claude_md_path: "CLAUDE.md"  # Relative to BASE_DIR
+
+cache:
+  metadata_ttl_seconds: 60      # How often to refresh live metadata
+  section_ttl_seconds: 300      # How often to re-parse CLAUDE.md sections
+
+# Agent role → CLAUDE.md section keyword mapping
+# Used by get_agent_context to deliver role-tailored context
+agent_sections:
+  builder-agent:
+    - "Languages"
+    - "Testing"
+    - "Builder"
+    - "TDD"
+    - "Code Gen"
+  compliance-agent:
+    - "Compliance"
+    - "Crosswalk"
+    - "Gates"
+    - "Security Gates"
+    - "NIST"
+    - "FedRAMP"
+    - "CMMC"
+    - "OSCAL"
+  security-agent:
+    - "Security"
+    - "SAST"
+    - "Vulnerability"
+    - "Secret"
+    - "ATLAS"
+    - "Prompt Injection"
+  architect-agent:
+    - "Architecture"
+    - "GOTCHA"
+    - "ATLAS"
+    - "MCP"
+    - "Agent"
+    - "Key Architecture Decisions"
+  infrastructure-agent:
+    - "Infrastructure"
+    - "Terraform"
+    - "K8s"
+    - "Docker"
+    - "Cloud"
+    - "Deploy"
+    - "Helm"
+  orchestrator-agent:
+    - "Architecture"
+    - "Agent"
+    - "Workflow"
+    - "MCP"
+    - "GOTCHA"
+    - "Multi-Agent"
+  modernization-agent:
+    - "Modernization"
+    - "Migration"
+    - "Legacy"
+    - "7R"
+  requirements-agent:
+    - "RICOAS"
+    - "Requirements"
+    - "Intake"
+    - "Readiness"
+    - "COA"
+  mbse-agent:
+    - "MBSE"
+    - "SysML"
+    - "DOORS"
+    - "Digital Thread"
+    - "DES"
+  devsecops-agent:
+    - "DevSecOps"
+    - "ZTA"
+    - "Pipeline"
+    - "Policy"
+    - "Service Mesh"

@@ -1,0 +1,228 @@
+# CUI // SP-CTI
+# ICDEV Cross-Language Translation Configuration (Phase 43)
+# Controls translation pipeline behavior, thresholds, and per-language settings.
+
+# -----------------------------------------------------------------------
+# Language Pairs — All 30 directional pairs
+# -----------------------------------------------------------------------
+language_pairs:
+  - { source: python, target: java }
+  - { source: python, target: go }
+  - { source: python, target: rust }
+  - { source: python, target: csharp }
+  - { source: python, target: typescript }
+  - { source: java, target: python }
+  - { source: java, target: go }
+  - { source: java, target: rust }
+  - { source: java, target: csharp }
+  - { source: java, target: typescript }
+  - { source: go, target: python }
+  - { source: go, target: java }
+  - { source: go, target: rust }
+  - { source: go, target: csharp }
+  - { source: go, target: typescript }
+  - { source: rust, target: python }
+  - { source: rust, target: java }
+  - { source: rust, target: go }
+  - { source: rust, target: csharp }
+  - { source: rust, target: typescript }
+  - { source: csharp, target: python }
+  - { source: csharp, target: java }
+  - { source: csharp, target: go }
+  - { source: csharp, target: rust }
+  - { source: csharp, target: typescript }
+  - { source: typescript, target: python }
+  - { source: typescript, target: java }
+  - { source: typescript, target: go }
+  - { source: typescript, target: rust }
+  - { source: typescript, target: csharp }
+
+# -----------------------------------------------------------------------
+# Extraction (Phase 1 — source_extractor.py)
+# -----------------------------------------------------------------------
+extraction:
+  parsers:
+    python: ast          # Python ast module (stdlib)
+    java: regex          # Regex-based (D13 — air-gap safe)
+    go: regex
+    rust: regex
+    csharp: regex
+    typescript: regex
+    javascript: regex
+  exclude_dirs:
+    - __pycache__
+    - .git
+    - node_modules
+    - target
+    - bin
+    - obj
+    - .venv
+    - venv
+    - vendor
+    - dist
+    - build
+    - .tmp
+  exclude_patterns:
+    - "*_test.go"
+    - "test_*.py"
+    - "*.spec.ts"
+    - "*.test.js"
+  max_file_size_bytes: 500000
+
+# -----------------------------------------------------------------------
+# Type Checking (Phase 2 — type_checker.py, D253)
+# -----------------------------------------------------------------------
+type_checking:
+  enabled: true
+  strict_mode: false      # When true, incompatible types block translation
+  warn_on_untyped: true   # Warn when source has no type annotations
+
+# -----------------------------------------------------------------------
+# Translation (Phase 3 — code_translator.py)
+# -----------------------------------------------------------------------
+translation:
+  max_chunk_lines: 500    # Max lines per translation chunk (D244)
+  temperature: 0.2        # Low temperature for deterministic output
+  provenance_comments: true  # Add "// Translated from {source_lang} by ICDEV" comments
+  candidates: 3           # pass@k candidates (D254, Google research). Set 1 for air-gapped
+  mock_on_failure: true   # Mock-and-continue strategy (D256, Amazon Oxidizer)
+  max_mock_pct: 20        # Max % of units that can be mocked before pipeline fails
+  preserve_comments: true # Attempt to preserve comments during translation
+  naming_conventions:
+    python: snake_case
+    java: camelCase
+    go: camelCase
+    rust: snake_case
+    csharp: PascalCase
+    typescript: camelCase
+
+# -----------------------------------------------------------------------
+# Repair (Phase 5 — translation_validator.py, D255)
+# -----------------------------------------------------------------------
+repair:
+  max_repair_attempts: 3  # Max LLM repair attempts per unit (Google/CoTran research)
+  include_compiler_errors: true  # Feed compiler errors in repair prompts
+  repair_timeout_seconds: 120    # Timeout per repair attempt
+
+# -----------------------------------------------------------------------
+# Assembly (Phase 4 — project_assembler.py)
+# -----------------------------------------------------------------------
+assembly:
+  project_conventions:
+    python:
+      build_file: pyproject.toml
+      src_dir: src
+      test_dir: tests
+      package_manager: pip
+    java:
+      build_file: pom.xml
+      src_dir: src/main/java
+      test_dir: src/test/java
+      package_manager: maven
+    go:
+      build_file: go.mod
+      src_dir: "."
+      test_dir: "."
+      package_manager: go
+    rust:
+      build_file: Cargo.toml
+      src_dir: src
+      test_dir: tests
+      package_manager: cargo
+    csharp:
+      build_file: "*.csproj"
+      src_dir: src
+      test_dir: tests
+      package_manager: dotnet
+    typescript:
+      build_file: package.json
+      src_dir: src
+      test_dir: tests
+      package_manager: npm
+
+# -----------------------------------------------------------------------
+# Validation (Phase 5 — translation_validator.py)
+# -----------------------------------------------------------------------
+validation:
+  checks:
+    - syntax           # Target language syntax valid
+    - lint             # Linter passes (language-specific)
+    - round_trip       # Re-extract IR, compare to source IR
+    - api_surface      # Public API signatures preserved
+    - type_coverage    # Types correctly mapped
+    - complexity       # Complexity not excessively increased
+    - compliance       # CUI markings, control coverage
+    - feature_mapping  # Feature map validation checks pass
+  thresholds:
+    min_api_surface_match: 0.90
+    min_type_coverage: 0.85
+    min_round_trip_similarity: 0.80
+    max_complexity_increase_pct: 30
+  gate_evaluation: true   # Run security gate after validation
+
+# -----------------------------------------------------------------------
+# Test Translation (test_translator.py, D250)
+# -----------------------------------------------------------------------
+test_translation:
+  framework_mappings:
+    python: pytest
+    java: junit5
+    go: testing
+    rust: cargo_test
+    csharp: xunit
+    typescript: jest
+    javascript: jest
+  bdd_mappings:
+    python: behave
+    java: cucumber
+    go: godog
+    rust: cucumber-rs
+    csharp: specflow
+    typescript: cucumber-js
+    javascript: cucumber-js
+  preserve_feature_files: true  # BDD .feature files copied unchanged
+  translate_step_defs: true     # Step definitions translated
+
+# -----------------------------------------------------------------------
+# Compliance (D249)
+# -----------------------------------------------------------------------
+compliance:
+  min_control_coverage_pct: 95.0  # ATO preservation threshold
+  inherit_controls: true           # Inherit source project NIST controls
+  generate_report: true            # Generate compliance bridge report
+  apply_cui_headers: true          # CUI markings on all translated files
+
+# -----------------------------------------------------------------------
+# Framework Recommendations
+# -----------------------------------------------------------------------
+framework_recommendations:
+  flask:
+    java: spring-boot
+    go: gin
+    rust: actix-web
+    csharp: aspnetcore
+    typescript: express
+  fastapi:
+    java: spring-boot
+    go: gin
+    rust: actix-web
+    csharp: aspnetcore
+    typescript: fastify
+  django:
+    java: spring-boot
+    go: echo
+    rust: rocket
+    csharp: aspnetcore
+    typescript: nestjs
+  spring-boot:
+    python: fastapi
+    go: gin
+    rust: actix-web
+    csharp: aspnetcore
+    typescript: nestjs
+  express:
+    python: flask
+    java: spring-boot
+    go: gin
+    rust: actix-web
+    csharp: aspnetcore

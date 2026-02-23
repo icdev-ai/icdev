@@ -160,6 +160,36 @@
         "ICDEV_DB_PATH": "data/icdev.db",
         "ICDEV_PROJECT_ROOT": "."
       }
+    },
+    "icdev-context": {
+      "command": "python",
+      "args": [
+        "tools/mcp/context_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-innovation": {
+      "command": "python",
+      "args": [
+        "tools/mcp/innovation_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-observability": {
+      "command": "python",
+      "args": [
+        "tools/mcp/observability_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
     }
   }
 }

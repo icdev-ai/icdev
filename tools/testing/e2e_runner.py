@@ -648,7 +648,7 @@ def main():
 
     if args.run_all:
         if mode == "native":
-            results = run_playwright_native(run_id, logger, project=args.project)
+            results = run_playwright_native(run_id, logger, project=args.project_id)
         else:
             # MCP mode: run all .md specs
             tests = discover_mcp_tests()
@@ -679,7 +679,7 @@ def main():
 
     elif args.test_file:
         if mode == "native" or args.test_file.endswith(".spec.ts"):
-            results = run_playwright_native(run_id, logger, test_file=args.test_file, project=args.project)
+            results = run_playwright_native(run_id, logger, test_file=args.test_file, project=args.project_id)
             result = results[0] if results else E2ETestResult(
                 test_name="unknown", status="failed", test_path=args.test_file,
                 error="No results from Playwright",

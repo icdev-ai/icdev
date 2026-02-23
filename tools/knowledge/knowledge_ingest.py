@@ -206,7 +206,7 @@ def main():
 
     # Failure subcommand
     fail = sub.add_parser("failure", help="Ingest a failure event")
-    fail.add_argument("--project", required=True, help="Project ID")
+    fail.add_argument("--project-id", "--project", required=True, help="Project ID", dest="project_id")
     fail.add_argument("--source", required=True, help="Failure source (monitoring, deployment, etc.)")
     fail.add_argument("--error-type", required=True, help="Error type")
     fail.add_argument("--error-message", required=True, help="Error message")
@@ -223,6 +223,7 @@ def main():
     parser.add_argument("--root-cause", dest="legacy_rc", help="(legacy) Root cause")
     parser.add_argument("--remediation", dest="legacy_rem", help="(legacy) Remediation JSON")
     parser.add_argument("--db-path", help="Database path override")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     args = parser.parse_args()
     db_path = Path(args.db_path) if args.db_path else None
@@ -250,7 +251,7 @@ def main():
     elif args.command == "failure":
         context = json.loads(args.context) if args.context else None
         fid = ingest_failure(
-            project_id=args.project,
+            project_id=args.project_id,
             source=args.source,
             error_type=args.error_type,
             error_message=args.error_message,

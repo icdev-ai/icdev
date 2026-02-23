@@ -447,6 +447,7 @@ def main():
     parser.add_argument("--db-path", help="Override database path")
     parser.add_argument("--format", choices=["json", "text"], default="text",
                         help="Output format (default: text)")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     db_path = Path(args.db_path) if args.db_path else None

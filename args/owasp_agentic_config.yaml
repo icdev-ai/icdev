@@ -1,0 +1,171 @@
+# CUI // SP-CTI
+# OWASP Agentic AI Security Configuration (Phase 45)
+# ADRs: D257 (behavioral drift), D258 (tool chain), D259 (output safety),
+#        D260 (trust scoring), D261 (MCP per-tool RBAC)
+
+# Gap 1: Behavioral Drift Detection (D257)
+behavioral_drift:
+  enabled: true
+  baseline_window_hours: 168           # 7 days for baseline
+  deviation_threshold_sigma: 2.0       # Z-score threshold
+  min_baseline_samples: 50             # Min data points before activation
+  check_dimensions:
+    - tool_call_frequency              # Calls per hour per agent
+    - avg_latency_ms                   # Latency deviation
+    - avg_output_tokens                # Response size deviation
+    - error_rate                       # Error frequency spike
+    - cost_rate                        # Cost per hour deviation
+
+# Gap 2: Tool Chain Validation (D258)
+tool_chain:
+  enabled: true
+  window_size: 10                      # Sliding window of recent tool calls
+  rules:
+    - id: "TC-001"
+      name: "secrets_then_external"
+      description: "Reading secrets followed by external communication"
+      sequence_pattern:
+        - "*secret*|*credential*|*key_vault*|*password*"
+        - "*send*|*post*|*external*|*gateway*|*webhook*"
+      max_gap: 3
+      severity: "critical"
+      action: "block"
+    - id: "TC-002"
+      name: "read_data_then_exfil"
+      description: "DB read followed by export or upload"
+      sequence_pattern:
+        - "*query*|*read*|*select*|*fetch*"
+        - "*upload*|*export*|*transfer*|*email*"
+      max_gap: 5
+      severity: "high"
+      action: "flag"
+    - id: "TC-003"
+      name: "privilege_escalation_chain"
+      description: "User/role creation followed by deployment"
+      sequence_pattern:
+        - "*create_user*|*add_role*|*grant*|*elevate*"
+        - "*deploy*|*terraform*|*k8s*|*kubectl*"
+      max_gap: 3
+      severity: "high"
+      action: "flag"
+    - id: "TC-004"
+      name: "rapid_tool_burst"
+      description: "More than 20 tool calls in 60 seconds"
+      burst_threshold: 20
+      burst_window_seconds: 60
+      severity: "medium"
+      action: "warn"
+
+# Gap 3: Output Content Safety (D259)
+output_validation:
+  enabled: true
+  max_output_size_bytes: 1048576       # 1 MB
+  classification_patterns:
+    - pattern: "(?i)(SECRET|TOP SECRET|TS//SCI|NOFORN)"
+      severity: "critical"
+      action: "block"
+      description: "Classification marking above CUI in output"
+    - pattern: "(?i)\\b(\\d{3}-\\d{2}-\\d{4})\\b"
+      severity: "high"
+      action: "flag"
+      description: "Potential SSN pattern in output"
+    - pattern: "(?i)(password|api_key|secret_key|private_key)\\s*[=:]\\s*['\"][^'\"]{8,}"
+      severity: "critical"
+      action: "block"
+      description: "Credential/secret value in agent output"
+    - pattern: "(?i)(BEGIN RSA PRIVATE KEY|BEGIN EC PRIVATE KEY|BEGIN OPENSSH PRIVATE KEY)"
+      severity: "critical"
+      action: "block"
+      description: "Private key material in agent output"
+    - pattern: "(?i)\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
+      severity: "medium"
+      action: "warn"
+      description: "Email address in agent output"
+
+# Gap 5: Trust Scoring (D260)
+trust_scoring:
+  enabled: true
+  initial_score: 0.85
+  min_score: 0.0
+  max_score: 1.0
+  decay_factors:
+    veto_hard: -0.15
+    veto_soft: -0.05
+    anomaly_detection: -0.10
+    tool_chain_violation: -0.12
+    output_violation_critical: -0.15
+    output_violation_high: -0.08
+    output_violation_medium: -0.03
+  recovery:
+    clean_check_bonus: 0.02
+    max_recovery_per_day: 0.10
+    recovery_check_interval_hours: 1
+  thresholds:
+    untrusted: 0.30                    # Block autonomous actions
+    degraded: 0.50                     # Require HITL confirmation
+    normal: 0.70                       # Normal operation
+
+# Gap 6: MCP Per-Tool Authorization (D261)
+mcp_authorization:
+  enabled: true
+  default_policy: "deny"
+  role_tool_matrix:
+    admin:
+      allow: ["*"]
+    pm:
+      allow:
+        - "project_*"
+        - "task_*"
+        - "agent_status"
+        - "ssp_generate"
+        - "poam_generate"
+        - "search_*"
+      deny:
+        - "terraform_apply"
+        - "k8s_deploy"
+        - "rollback"
+    developer:
+      allow:
+        - "scaffold"
+        - "generate_code"
+        - "write_tests"
+        - "run_tests"
+        - "lint"
+        - "format"
+        - "search_knowledge"
+        - "add_pattern"
+      deny:
+        - "terraform_apply"
+        - "k8s_deploy"
+        - "ssp_generate"
+        - "stig_check"
+    isso:
+      allow:
+        - "ssp_generate"
+        - "poam_generate"
+        - "stig_check"
+        - "sbom_generate"
+        - "cui_mark"
+        - "control_map"
+        - "nist_lookup"
+        - "fedramp_*"
+        - "cmmc_*"
+        - "zta_*"
+        - "mosa_*"
+        - "search_*"
+      deny:
+        - "generate_code"
+        - "scaffold"
+        - "terraform_apply"
+    co:
+      allow:
+        - "project_status"
+        - "project_list"
+        - "agent_status"
+        - "ssp_generate"
+        - "poam_generate"
+      deny:
+        - "generate_code"
+        - "terraform_apply"
+        - "k8s_deploy"
+        - "rollback"

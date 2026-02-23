@@ -387,6 +387,7 @@ def main():
     parser.add_argument("--deployment", help="Kubernetes deployment name")
     parser.add_argument("--label-selector", help="Kubernetes label selector")
     parser.add_argument("--format", choices=["json", "text"], default="text", help="Output format")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     if not args.url and not args.namespace:

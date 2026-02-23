@@ -225,6 +225,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # --- generate-keys ---
     keys = sub.add_parser("generate-keys", help="Generate RSA 4096-bit key pair")
     keys.add_argument("--output-dir", required=True, help="Output directory for PEM files")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     return parser
 

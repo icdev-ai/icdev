@@ -1,0 +1,170 @@
+# CUI // SP-CTI
+# ICDEV Phase 46: Observability & Tracing Configuration (D290)
+#
+# Controls tracer backend, sampling, retention, content policy, and integrations.
+# Auto-detect: ICDEV_MLFLOW_TRACKING_URI set → "otel" mode, else → "sqlite" mode.
+#
+# Env var overrides (D193 ICDEV_ prefix):
+#   ICDEV_TRACER_BACKEND       — override backend (otel|sqlite|null)
+#   ICDEV_CONTENT_TRACING_ENABLED — enable plaintext content in spans (default: false)
+#   ICDEV_MLFLOW_TRACKING_URI  — MLflow tracking URI (triggers otel backend)
+#   ICDEV_OTEL_ENDPOINT        — OTel collector endpoint
+
+# --- Tracer Backend (D280) ---
+tracer:
+  # Backend selection: "auto" | "otel" | "sqlite" | "null"
+  # "auto" checks ICDEV_MLFLOW_TRACKING_URI → otel, else sqlite
+  backend: auto
+
+  # Sampling rate (0.0 to 1.0). 1.0 = trace everything.
+  # For high-volume production, reduce to 0.1-0.5.
+  sampling_rate: 1.0
+
+  # Buffer size before flush (sqlite backend)
+  buffer_size: 10
+
+  # Default span attributes applied to all spans
+  default_attributes:
+    icdev.version: "phase-46"
+    icdev.classification: "CUI"
+
+# --- Content Tracing Policy (D282) ---
+content_tracing:
+  # CRITICAL: Must be false in CUI environments unless explicitly approved.
+  # When false, only SHA-256 hashes of content are recorded.
+  # When true, plaintext prompts/responses are stored in span attributes.
+  enabled: false
+
+  # Even when enabled, these fields are NEVER recorded in plaintext
+  never_record_fields:
+    - "api_key"
+    - "password"
+    - "secret"
+    - "token"
+    - "credential"
+    - "private_key"
+
+# --- Span Retention (D290) ---
+retention:
+  # Days to keep spans in SQLite before pruning
+  sqlite_retention_days: 90
+
+  # Days to keep spans in MLflow
+  mlflow_retention_days: 365
+
+  # Max spans per trace before warning
+  max_spans_per_trace: 500
+
+# --- OpenTelemetry (D280, D283) ---
+otel:
+  # OTel collector endpoint (gRPC)
+  endpoint: "http://localhost:4317"
+
+  # OTLP export protocol: "grpc" or "http/protobuf"
+  protocol: "grpc"
+
+  # Export timeout in milliseconds
+  export_timeout_ms: 30000
+
+  # Batch export settings
+  batch:
+    max_queue_size: 2048
+    max_export_batch_size: 512
+    schedule_delay_ms: 5000
+
+# --- MLflow Integration (D283) ---
+mlflow:
+  # MLflow tracking server URI
+  # Set via ICDEV_MLFLOW_TRACKING_URI env var for auto-detection
+  tracking_uri: ""
+
+  # Experiment name for ICDEV traces
+  experiment_name: "icdev-traces"
+
+  # Export interval (seconds) for batch SQLite→MLflow upload
+  batch_export_interval: 60
+
+  # Registry URI for model artifacts (optional)
+  registry_uri: ""
+
+# --- MCP Instrumentation (D284) ---
+mcp:
+  # Auto-instrument all MCP tool calls at base_server.py level
+  enabled: true
+
+  # Record tool arguments hash
+  record_args_hash: true
+
+  # Record tool result hash
+  record_result_hash: true
+
+# --- A2A Distributed Tracing (D285) ---
+a2a:
+  # Propagate traceparent in A2A JSON-RPC metadata
+  enabled: true
+
+  # Also propagate tracestate header
+  propagate_tracestate: true
+
+# --- LLM Instrumentation (D286) ---
+llm:
+  # Auto-instrument LLM calls at router level
+  enabled: true
+
+  # Record token counts
+  record_tokens: true
+
+  # Record model ID
+  record_model: true
+
+  # Record latency
+  record_latency: true
+
+  # Record cost (when available)
+  record_cost: true
+
+# --- PROV-AGENT Provenance (D287) ---
+provenance:
+  # Auto-populate provenance graph from span callbacks
+  enabled: true
+
+  # Record entity content hashes (always true for CUI)
+  content_hashing: true
+
+  # Record entity plaintext (follows content_tracing.enabled)
+  content_recording: false
+
+  # Max lineage depth for queries
+  max_lineage_depth: 50
+
+# --- AgentSHAP (D288) ---
+shap:
+  # Default number of Monte Carlo iterations
+  default_iterations: 1000
+
+  # Confidence interval (95%)
+  confidence_level: 0.95
+
+  # Max age before SHAP analysis is considered stale (days)
+  max_age_days: 30
+
+  # Outcome metric for scoring
+  default_outcome_metric: "success"
+
+# --- XAI Assessor (D289) ---
+xai:
+  # Auto-checks enabled by default
+  enabled: true
+
+  # Minimum coverage percentage for XAI gate
+  min_coverage_pct: 80
+
+  # Crosswalk through NIST 800-53 US hub
+  crosswalk_hub: "nist_800_53"
+
+  # NIST AI RMF mapping
+  nist_ai_rmf_measures:
+    - "MEASURE 2.5"  # Provenance
+    - "MEASURE 2.7"  # Explainability
+    - "MEASURE 2.8"  # Transparency
+    - "MEASURE 4.1"  # Post-deployment monitoring

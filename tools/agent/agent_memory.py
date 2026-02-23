@@ -478,6 +478,7 @@ def main():
     p_collab.add_argument("--project-id", help="Filter by project")
     p_collab.add_argument("--agent-id", help="Filter by agent")
     p_collab.add_argument("--limit", type=int, default=50, help="Max results")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
 
     args = parser.parse_args()
 

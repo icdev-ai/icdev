@@ -11,6 +11,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
+try:
+    from tools.compat.db_utils import get_db_connection
+except ImportError:
+    get_db_connection = None
+
 VALID_EVENT_TYPES = (
     "project_created", "project_updated",
     "code_generated", "code_reviewed", "code_approved", "code_rejected",
@@ -44,12 +49,12 @@ VALID_EVENT_TYPES = (
     "approval_submitted", "approval_reviewed", "approval_approved",
     "approval_rejected", "approval_escalated",
     "rtm_generated", "rtm_gap_detected",
-    # Observability events (TAC-8 Phase A)
+    # Observability events (Phase 39)
     "hook_event_logged", "agent_execution_started", "agent_execution_completed",
     "agent_execution_failed", "agent_execution_retried",
-    # NLQ events (TAC-8 Phase B)
+    # NLQ events (Phase 40)
     "nlq_query_executed", "nlq_query_blocked",
-    # Worktree & GitLab events (TAC-8 Phase C)
+    # Worktree & GitLab events (Phase 41)
     "worktree_created", "worktree_cleaned",
     "gitlab_task_claimed", "gitlab_task_completed", "gitlab_task_failed",
     # Agent Orchestration events (Opus 4.6 Multi-Agent)
@@ -74,6 +79,30 @@ VALID_EVENT_TYPES = (
     "heartbeat_check_warning", "heartbeat_check_critical",
     "auto_resolution_started", "auto_resolution_completed",
     "auto_resolution_failed", "auto_resolution_escalated",
+    # Cross-Language Translation events (Phase 43)
+    "translation.job_created", "translation.job_completed", "translation.job_failed",
+    "translation.extract", "translation.type_check",
+    "translation.unit_translated", "translation.unit_mocked", "translation.unit_failed",
+    "translation.repair_attempted", "translation.repair_succeeded",
+    "translation.validation_passed", "translation.validation_failed",
+    "translation.compliance_checked", "translation.assembly_completed",
+    # Multi-Stream Chat events (Phase 44 — D257-D260)
+    "chat.context_created", "chat.context_closed", "chat.context_archived",
+    "chat.message_sent", "chat.message_received",
+    "chat.intervention_requested", "chat.intervention_applied",
+    "chat.agent_loop_started", "chat.agent_loop_completed", "chat.agent_loop_error",
+    # Extension Hook events (Phase 44 — D261-D264)
+    "extension.registered", "extension.unregistered",
+    "extension.dispatched", "extension.completed",
+    "extension.error", "extension.timeout",
+    # Memory Consolidation events (Phase 44 — D276)
+    "memory.consolidation_checked", "memory.consolidation_executed",
+    "memory.consolidation_skipped",
+    # Observability & Explainability events (Phase 46 — D280-D289)
+    "trace.span_exported", "trace.batch_exported",
+    "prov.entity_created", "prov.activity_recorded", "prov.relation_established",
+    "shap.analysis_completed", "shap.analysis_failed",
+    "xai.assessment_completed", "xai.gate_evaluated",
 )
 
 
@@ -102,7 +131,10 @@ def log_event(
             pass
 
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    if get_db_connection:
+        conn = get_db_connection(path, row_factory=False)
+    else:
+        conn = sqlite3.connect(str(path))
     c = conn.cursor()
     c.execute(
         """INSERT INTO audit_trail
@@ -132,10 +164,11 @@ def main():
     parser.add_argument("--event", required=True, choices=VALID_EVENT_TYPES, help="Event type")
     parser.add_argument("--actor", required=True, help="Who performed the action")
     parser.add_argument("--action", required=True, help="Human-readable description")
-    parser.add_argument("--project", help="Project ID")
+    parser.add_argument("--project-id", "--project", help="Project ID", dest="project_id")
     parser.add_argument("--details", help="JSON details string")
     parser.add_argument("--files", help="Comma-separated affected file paths")
     parser.add_argument("--classification", default="CUI", help="Classification marking")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     details = json.loads(args.details) if args.details else None
@@ -145,7 +178,7 @@ def main():
         event_type=args.event,
         actor=args.actor,
         action=args.action,
-        project_id=args.project,
+        project_id=args.project_id,
         details=details,
         affected_files=affected_files,
         classification=args.classification,

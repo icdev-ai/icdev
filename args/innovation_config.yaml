@@ -189,6 +189,15 @@ signal_categories:
     keywords: [copilot, cursor, codex, claude, AI coding, agent, MCP, LLM integration]
     priority_boost: 1.2
     auto_triage: false
+  external_framework_analysis:
+    keywords: [agent-zero, insforge, framework adaptation, pattern transfer, architecture innovation]
+    priority_boost: 1.3
+    auto_triage: true
+  cli_harmonization:
+    keywords: [--json flag, --project-id, --project naming, db_utils, hardcoded path, CLI drift, argparse, output format]
+    priority_boost: 1.1
+    auto_triage: true
+    notes: "Detected by introspective analyzer every 12 hours. Auto-fixable via tools/compat/cli_harmonizer.py"
 
 # =========================================================================
 # Innovation Scoring (D21-style weighted average)
@@ -323,6 +332,10 @@ introspection:
       min_occurrences: 2
     knowledge_gaps:
       enabled: true                 # Self-heal patterns with no resolution
+    cli_harmonization:
+      enabled: true                 # CLI pattern drift (--json, --project-id, db_utils)
+      auto_fix_tool: tools/compat/cli_harmonizer.py
+      checks: [cli_json_flag, cli_project_naming, db_path_centralization]
 
 # =========================================================================
 # Competitive Intelligence

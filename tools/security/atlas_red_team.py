@@ -37,6 +37,16 @@ ATLAS_TECHNIQUES = {
     "AML.T0034": {"name": "Cost Harvesting", "method": "test_cost_harvesting"},
 }
 
+# Phase 45: Behavioral Red Teaming Techniques (D262)
+BEHAVIORAL_TECHNIQUES = {
+    "BRT-001": {"name": "Goal Hijacking", "method": "test_goal_hijacking"},
+    "BRT-002": {"name": "Authority Escalation", "method": "test_authority_escalation"},
+    "BRT-003": {"name": "HITL Fatigue", "method": "test_hitl_fatigue"},
+    "BRT-004": {"name": "Multi-Agent Collusion", "method": "test_multi_agent_collusion"},
+    "BRT-005": {"name": "Tool Chain Exploitation", "method": "test_tool_chain_exploitation"},
+    "BRT-006": {"name": "Memory Poisoning via Output", "method": "test_memory_poisoning_via_output"},
+}
+
 
 class ATLASRedTeamScanner:
     """Static red team scanner for MITRE ATLAS AI/LLM techniques.
@@ -244,6 +254,138 @@ class ATLASRedTeamScanner:
                    "Cost anomaly detection not found in telemetry logger")
         return self._result("AML.T0034", "Cost Harvesting", t[0], t[1], f)
 
+    # -- Phase 45: Behavioral Red Teaming (D262) ----------------------------
+
+    def run_behavioral_tests(self, project_id: Optional[str] = None,
+                             technique: Optional[str] = None) -> dict:
+        """Run behavioral red team tests (opt-in via --behavioral, D262)."""
+        techniques = BEHAVIORAL_TECHNIQUES
+        if technique:
+            if technique not in techniques:
+                return {"error": f"Unknown behavioral technique: {technique}",
+                        "valid_techniques": list(techniques.keys())}
+            techniques = {technique: techniques[technique]}
+
+        results, total_run, total_passed, all_ok = [], 0, 0, True
+        for tid, info in techniques.items():
+            r = getattr(self, info["method"])(project_id=project_id)
+            results.append(r)
+            total_run += r["tests_run"]
+            total_passed += r["tests_passed"]
+            if not r["passed"]:
+                all_ok = False
+            self._store_result(r, project_id=project_id)
+        return {
+            "passed": all_ok, "techniques_tested": len(results),
+            "techniques_passed": sum(1 for r in results if r["passed"]),
+            "total_tests_run": total_run, "total_tests_passed": total_passed,
+            "results": results, "scanned_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # BRT-001: Goal Hijacking
+    def test_goal_hijacking(self, project_id: Optional[str] = None) -> dict:
+        f, t = [], [0, 0]
+        goals_dir = BASE_DIR / "goals"
+        self._check(f, t, goals_dir.exists() and any(goals_dir.glob("*.md")),
+                   "goals_directory_exists", "critical",
+                   "goals/ directory missing or empty — no workflow definitions")
+        hook = self._read(BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py")
+        self._check(f, t, "BLOCKED" in hook, "pre_tool_hook_active", "high",
+                   "Pre-tool-use hook not found or inactive")
+        guardrails_content = self._read(BASE_DIR / "CLAUDE.md")
+        self._check(f, t, "Guardrails" in guardrails_content, "guardrails_defined", "high",
+                   "CLAUDE.md missing Guardrails section")
+        return self._result("BRT-001", "Goal Hijacking", t[0], t[1], f)
+
+    # BRT-002: Authority Escalation
+    def test_authority_escalation(self, project_id: Optional[str] = None) -> dict:
+        f, t = [], [0, 0]
+        auth_yaml = BASE_DIR / "args" / "agent_authority.yaml"
+        auth_content = self._read(auth_yaml)
+        self._check(f, t, auth_yaml.exists(), "agent_authority_exists", "critical",
+                   "agent_authority.yaml not found — no domain authority matrix")
+        self._check(f, t, "hard_veto" in auth_content or "hard" in auth_content,
+                   "hard_veto_defined", "high",
+                   "Hard veto rules not found in agent authority config")
+        mcp_auth = self._read(BASE_DIR / "args" / "owasp_agentic_config.yaml")
+        self._check(f, t, "mcp_authorization" in mcp_auth, "mcp_rbac_configured", "high",
+                   "MCP per-tool RBAC not configured in owasp_agentic_config.yaml")
+        vetoes_hook = self._read(BASE_DIR / ".claude" / "hooks" / "pre_tool_use.py")
+        self._check(f, t, "agent_vetoes" in vetoes_hook, "veto_tracking_protected", "medium",
+                   "agent_vetoes table not protected in pre_tool_use.py")
+        return self._result("BRT-002", "Authority Escalation", t[0], t[1], f)
+
+    # BRT-003: HITL Fatigue
+    def test_hitl_fatigue(self, project_id: Optional[str] = None) -> dict:
+        f, t = [], [0, 0]
+        sh_goal = self._read(BASE_DIR / "goals" / "self_healing.md")
+        self._check(f, t, "0.7" in sh_goal or "confidence" in sh_goal.lower(),
+                   "confidence_threshold_defined", "high",
+                   "Self-healing confidence threshold (0.7) not found in goal")
+        self._check(f, t, "0.3" in sh_goal or "escalat" in sh_goal.lower(),
+                   "escalation_threshold_defined", "high",
+                   "Escalation threshold (0.3) not found in self_healing.md")
+        self._check(f, t, "5" in sh_goal and ("hour" in sh_goal.lower() or "max" in sh_goal.lower()),
+                   "rate_limit_defined", "medium",
+                   "Auto-heal rate limit (5/hour) not found in self_healing.md")
+        trust_config = self._read(BASE_DIR / "args" / "owasp_agentic_config.yaml")
+        self._check(f, t, "trust_scoring" in trust_config, "trust_scoring_configured", "high",
+                   "Trust scoring not configured — no dynamic HITL escalation")
+        return self._result("BRT-003", "HITL Fatigue", t[0], t[1], f)
+
+    # BRT-004: Multi-Agent Collusion
+    def test_multi_agent_collusion(self, project_id: Optional[str] = None) -> dict:
+        f, t = [], [0, 0]
+        mailbox = BASE_DIR / "tools" / "agent" / "mailbox.py"
+        mb_content = self._read(mailbox)
+        self._check(f, t, mailbox.exists(), "mailbox_exists", "high",
+                   "Agent mailbox (tools/agent/mailbox.py) not found")
+        self._check(f, t, "hmac" in mb_content.lower() or "signature" in mb_content.lower(),
+                   "mailbox_hmac", "high",
+                   "HMAC signing not found in agent mailbox — D41 at risk")
+        corr = self._read(BASE_DIR / "tools" / "saas" / "correlation.py")
+        self._check(f, t, "correlation" in corr.lower() or (BASE_DIR / "tools" / "saas" / "correlation.py").exists(),
+                   "correlation_ids", "medium",
+                   "Correlation ID tracking not found")
+        chain_val = (BASE_DIR / "tools" / "security" / "tool_chain_validator.py").exists()
+        self._check(f, t, chain_val, "chain_validator_exists", "high",
+                   "Tool chain validator not found — cannot detect multi-step collusion")
+        return self._result("BRT-004", "Multi-Agent Collusion", t[0], t[1], f)
+
+    # BRT-005: Tool Chain Exploitation
+    def test_tool_chain_exploitation(self, project_id: Optional[str] = None) -> dict:
+        f, t = [], [0, 0]
+        tcv = BASE_DIR / "tools" / "security" / "tool_chain_validator.py"
+        tcv_content = self._read(tcv)
+        self._check(f, t, tcv.exists(), "chain_validator_exists", "critical",
+                   "tool_chain_validator.py not found")
+        self._check(f, t, "sequence_pattern" in tcv_content, "sequence_rules_defined", "high",
+                   "No sequence pattern rules found in tool chain validator")
+        self._check(f, t, "burst_threshold" in tcv_content, "burst_detection_defined", "medium",
+                   "Burst detection not found in tool chain validator")
+        owasp_cfg = self._read(BASE_DIR / "args" / "owasp_agentic_config.yaml")
+        self._check(f, t, "TC-001" in owasp_cfg, "tc001_rule_configured", "high",
+                   "TC-001 (secrets_then_external) rule not configured")
+        return self._result("BRT-005", "Tool Chain Exploitation", t[0], t[1], f)
+
+    # BRT-006: Memory Poisoning via Output
+    def test_memory_poisoning_via_output(self, project_id: Optional[str] = None) -> dict:
+        f, t = [], [0, 0]
+        ov = BASE_DIR / "tools" / "security" / "agent_output_validator.py"
+        ov_content = self._read(ov)
+        self._check(f, t, ov.exists(), "output_validator_exists", "critical",
+                   "agent_output_validator.py not found")
+        self._check(f, t, "classification" in ov_content.lower(), "classification_check", "high",
+                   "Classification leak detection not found in output validator")
+        mw = self._read(BASE_DIR / "tools" / "memory" / "memory_write.py")
+        self._check(f, t, "sha256" in mw.lower() or "content_hash" in mw,
+                   "memory_hash_dedup", "high",
+                   "Memory content-hash deduplication not found")
+        trust = (BASE_DIR / "tools" / "security" / "agent_trust_scorer.py").exists()
+        self._check(f, t, trust, "trust_scoring_exists", "medium",
+                   "Agent trust scorer not found — no dynamic response to output violations")
+        return self._result("BRT-006", "Memory Poisoning via Output", t[0], t[1], f)
+
     # -- DB storage (append-only per D6) -----------------------------------
     def _store_result(self, result: dict, project_id: Optional[str] = None):
         if not self._db_path.exists():
@@ -337,6 +479,10 @@ def main():
     ap.add_argument("--all", action="store_true", help="Run all ATLAS red team tests")
     ap.add_argument("--technique", help="Run specific ATLAS technique (e.g. AML.T0051)")
     ap.add_argument("--summary", action="store_true", help="Show summary of stored results")
+    ap.add_argument("--behavioral", action="store_true",
+                    help="Run behavioral red team tests (Phase 45, D262)")
+    ap.add_argument("--brt-technique",
+                    help="Run specific behavioral technique (e.g. BRT-001)")
     ap.add_argument("--project-id", help="Project ID for scoping and storage")
     ap.add_argument("--json", action="store_true", help="Output as JSON")
     args = ap.parse_args()
@@ -346,6 +492,11 @@ def main():
         result = scanner.run_all_tests(project_id=args.project_id)
     elif args.technique:
         result = scanner.run_technique(args.technique, project_id=args.project_id)
+    elif args.behavioral:
+        result = scanner.run_behavioral_tests(
+            project_id=args.project_id,
+            technique=args.brt_technique,
+        )
     elif args.summary:
         result = scanner.get_summary(project_id=args.project_id)
     else:

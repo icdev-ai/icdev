@@ -1848,7 +1848,7 @@ CREATE INDEX IF NOT EXISTS idx_review_trace_project ON review_traceability(proje
 CREATE INDEX IF NOT EXISTS idx_review_trace_req ON review_traceability(requirement_id);
 
 -- ============================================================
--- HOOK-BASED OBSERVABILITY (TAC-8 Phase A)
+-- HOOK-BASED OBSERVABILITY (Phase 39)
 -- ============================================================
 
 -- Hook event storage (append-only)
@@ -1890,7 +1890,7 @@ CREATE INDEX IF NOT EXISTS idx_agent_exec_id ON agent_executions(execution_id);
 CREATE INDEX IF NOT EXISTS idx_agent_exec_status ON agent_executions(status);
 
 -- ============================================================
--- NLQ COMPLIANCE QUERIES (TAC-8 Phase B)
+-- NLQ COMPLIANCE QUERIES (Phase 40)
 -- ============================================================
 
 -- NLQ query history (append-only, for audit)
@@ -1910,7 +1910,7 @@ CREATE INDEX IF NOT EXISTS idx_nlq_queries_status ON nlq_queries(status);
 CREATE INDEX IF NOT EXISTS idx_nlq_queries_created ON nlq_queries(created_at);
 
 -- ============================================================
--- GIT WORKTREE PARALLEL CI/CD (TAC-8 Phase C)
+-- GIT WORKTREE PARALLEL CI/CD (Phase 41)
 -- ============================================================
 
 -- Worktree tracking
@@ -2975,7 +2975,7 @@ CREATE INDEX IF NOT EXISTS idx_hb_check_type ON heartbeat_checks(check_type);
 CREATE INDEX IF NOT EXISTS idx_hb_status ON heartbeat_checks(status);
 CREATE INDEX IF NOT EXISTS idx_hb_next_run ON heartbeat_checks(next_run);
 
--- Phase 29: Auto-resolution alert processing log (D143-D145)
+-- Phase 29: Auto-resolution alert processing log (D143-D145, append-only)
 CREATE TABLE IF NOT EXISTS auto_resolution_log (
     id TEXT PRIMARY KEY,
     alert_source TEXT NOT NULL,
@@ -3547,6 +3547,468 @@ CREATE TABLE IF NOT EXISTS csp_region_certifications (
 CREATE INDEX IF NOT EXISTS idx_csp_certs_csp ON csp_region_certifications(csp);
 CREATE INDEX IF NOT EXISTS idx_csp_certs_region ON csp_region_certifications(region);
 CREATE INDEX IF NOT EXISTS idx_csp_certs_cert ON csp_region_certifications(certification);
+
+-- ============================================================
+-- CROSS-LANGUAGE TRANSLATION (Phase 43)
+-- ============================================================
+
+-- Translation jobs — one row per pipeline invocation (D251)
+CREATE TABLE IF NOT EXISTS translation_jobs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    source_language TEXT NOT NULL,
+    target_language TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    output_path TEXT NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN (
+        'pending','extracting','type_checking','translating',
+        'assembling','validating','repairing','completed','failed','partial'
+    )),
+    total_units INTEGER DEFAULT 0,
+    translated_units INTEGER DEFAULT 0,
+    mocked_units INTEGER DEFAULT 0,
+    failed_units INTEGER DEFAULT 0,
+    source_loc INTEGER DEFAULT 0,
+    target_loc INTEGER DEFAULT 0,
+    llm_model TEXT,
+    llm_provider TEXT,
+    total_input_tokens INTEGER DEFAULT 0,
+    total_output_tokens INTEGER DEFAULT 0,
+    estimated_cost_usd REAL DEFAULT 0.0,
+    candidates_per_unit INTEGER DEFAULT 3,
+    api_surface_match REAL,
+    type_coverage REAL,
+    round_trip_similarity REAL,
+    complexity_increase_pct REAL,
+    compliance_coverage_pct REAL,
+    validation_passed INTEGER DEFAULT 0,
+    gate_result TEXT CHECK(gate_result IN ('passed','failed','warning',NULL)),
+    error_message TEXT,
+    dry_run INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT,
+    created_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_translation_job_project ON translation_jobs(project_id);
+CREATE INDEX IF NOT EXISTS idx_translation_job_status ON translation_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_translation_job_langs ON translation_jobs(source_language, target_language);
+
+-- Translation units — individual code units (function/class/interface/enum)
+CREATE TABLE IF NOT EXISTS translation_units (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES translation_jobs(id),
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('function','class','interface','enum','struct','trait','module')),
+    file_path TEXT,
+    line_start INTEGER,
+    line_end INTEGER,
+    source_code TEXT,
+    translated_code TEXT,
+    source_hash TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN (
+        'pending','translating','translated','mocked','failed','skipped'
+    )),
+    idioms TEXT,
+    source_complexity INTEGER DEFAULT 1,
+    target_complexity INTEGER,
+    retry_count INTEGER DEFAULT 0,
+    repair_attempts INTEGER DEFAULT 0,
+    candidate_count INTEGER DEFAULT 0,
+    selected_candidate INTEGER,
+    error_message TEXT,
+    translation_order INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    translated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_translation_unit_job ON translation_units(job_id);
+CREATE INDEX IF NOT EXISTS idx_translation_unit_status ON translation_units(status);
+
+-- Translation dependency mappings — per-job dependency resolutions
+CREATE TABLE IF NOT EXISTS translation_dependency_mappings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES translation_jobs(id),
+    source_import TEXT NOT NULL,
+    target_import TEXT,
+    mapping_source TEXT DEFAULT 'unmapped' CHECK(mapping_source IN (
+        'table','llm_suggested','manual','unmapped','stdlib'
+    )),
+    confidence REAL DEFAULT 0.0,
+    domain TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_translation_dep_job ON translation_dependency_mappings(job_id);
+CREATE INDEX IF NOT EXISTS idx_translation_dep_source ON translation_dependency_mappings(mapping_source);
+
+-- Translation validations — per-job validation results by check type
+CREATE TABLE IF NOT EXISTS translation_validations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES translation_jobs(id),
+    check_type TEXT NOT NULL CHECK(check_type IN (
+        'syntax','lint','round_trip','api_surface',
+        'type_coverage','complexity','compliance','feature_mapping'
+    )),
+    passed INTEGER DEFAULT 0,
+    score REAL,
+    issue_count INTEGER DEFAULT 0,
+    findings TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_translation_val_job ON translation_validations(job_id);
+CREATE INDEX IF NOT EXISTS idx_translation_val_check ON translation_validations(check_type);
+
+-- ============================================================
+-- Phase 44: Multi-Stream Parallel Chat (D257-D260)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS chat_contexts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    tenant_id TEXT,
+    title TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','paused','completed','error','archived')),
+    intake_session_id TEXT,
+    project_id TEXT,
+    agent_model TEXT DEFAULT 'sonnet',
+    system_prompt TEXT,
+    context_config TEXT,
+    dirty_version INTEGER DEFAULT 0,
+    message_count INTEGER DEFAULT 0,
+    last_activity_at TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_ctx_user ON chat_contexts(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_ctx_tenant ON chat_contexts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_chat_ctx_status ON chat_contexts(status);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    context_id TEXT NOT NULL REFERENCES chat_contexts(id),
+    turn_number INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('user','assistant','system','intervention')),
+    content TEXT NOT NULL,
+    content_type TEXT DEFAULT 'text' CHECK(content_type IN ('text','tool_result','error','intervention','summary')),
+    metadata TEXT,
+    is_compressed INTEGER DEFAULT 0,
+    compression_tier TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_msg_ctx ON chat_messages(context_id);
+CREATE INDEX IF NOT EXISTS idx_chat_msg_turn ON chat_messages(context_id, turn_number);
+
+CREATE TABLE IF NOT EXISTS chat_tasks (
+    id TEXT PRIMARY KEY,
+    context_id TEXT NOT NULL REFERENCES chat_contexts(id),
+    task_type TEXT NOT NULL CHECK(task_type IN ('message','intervention','tool_call','summary')),
+    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','processing','completed','failed','cancelled')),
+    input_text TEXT,
+    output_text TEXT,
+    error_message TEXT,
+    checkpoint TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_chat_task_ctx ON chat_tasks(context_id);
+CREATE INDEX IF NOT EXISTS idx_chat_task_status ON chat_tasks(status);
+
+-- ============================================================
+-- Phase 44: Active Extension Hooks (D261-D264)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS extension_registry (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    hook_point TEXT NOT NULL,
+    priority INTEGER DEFAULT 500,
+    file_path TEXT,
+    scope TEXT DEFAULT 'default' CHECK(scope IN ('default','tenant','project')),
+    scope_id TEXT,
+    allow_modification INTEGER DEFAULT 0,
+    enabled INTEGER DEFAULT 1,
+    description TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ext_reg_hook ON extension_registry(hook_point);
+CREATE INDEX IF NOT EXISTS idx_ext_reg_scope ON extension_registry(scope, scope_id);
+
+-- Phase 44: Extension execution log (D261-D264, append-only)
+CREATE TABLE IF NOT EXISTS extension_execution_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    extension_id TEXT REFERENCES extension_registry(id),
+    hook_point TEXT NOT NULL,
+    context_id TEXT,
+    status TEXT NOT NULL CHECK(status IN ('success','error','skipped','timeout')),
+    duration_ms INTEGER,
+    error_message TEXT,
+    modified_data INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ext_exec_ext ON extension_execution_log(extension_id);
+CREATE INDEX IF NOT EXISTS idx_ext_exec_hook ON extension_execution_log(hook_point);
+
+-- ============================================================
+-- Phase 44: AI-Driven Memory Consolidation (D276, append-only)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS memory_consolidation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_entry_id INTEGER,
+    target_entry_id INTEGER,
+    action TEXT NOT NULL CHECK(action IN ('MERGE','REPLACE','KEEP_SEPARATE','UPDATE','SKIP')),
+    method TEXT CHECK(method IN ('llm','keyword')),
+    similarity_score REAL,
+    reasoning TEXT,
+    merged_content TEXT,
+    dry_run INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mem_consol_action ON memory_consolidation_log(action);
+CREATE INDEX IF NOT EXISTS idx_mem_consol_source ON memory_consolidation_log(source_entry_id);
+
+-- ============================================================
+-- Phase 45: OWASP Agentic AI Security (D257-D264)
+-- ============================================================
+
+-- Gap 2: Tool Chain Validation — append-only event log (D258)
+CREATE TABLE IF NOT EXISTS tool_chain_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    agent_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    tool_sequence_json TEXT NOT NULL,
+    rule_matched TEXT,
+    severity TEXT DEFAULT 'info' CHECK(severity IN ('info','low','medium','high','critical')),
+    action TEXT DEFAULT 'allow' CHECK(action IN ('allow','warn','flag','block')),
+    context_json TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tce_agent ON tool_chain_events(agent_id);
+CREATE INDEX IF NOT EXISTS idx_tce_session ON tool_chain_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_tce_severity ON tool_chain_events(severity);
+CREATE INDEX IF NOT EXISTS idx_tce_created ON tool_chain_events(created_at);
+
+-- Gap 5: Agent Trust Scoring — append-only score history (D260)
+CREATE TABLE IF NOT EXISTS agent_trust_scores (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    project_id TEXT,
+    trust_score REAL NOT NULL,
+    previous_score REAL,
+    score_delta REAL,
+    factor_json TEXT NOT NULL,
+    trigger_event TEXT NOT NULL,
+    trigger_event_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ats_agent ON agent_trust_scores(agent_id);
+CREATE INDEX IF NOT EXISTS idx_ats_project ON agent_trust_scores(project_id);
+CREATE INDEX IF NOT EXISTS idx_ats_created ON agent_trust_scores(created_at);
+
+-- Gap 3: Agent Output Violations — append-only violation log (D259)
+CREATE TABLE IF NOT EXISTS agent_output_violations (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    agent_id TEXT NOT NULL,
+    tool_name TEXT,
+    violation_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'medium' CHECK(severity IN ('low','medium','high','critical')),
+    details_json TEXT,
+    output_hash TEXT,
+    action_taken TEXT DEFAULT 'logged' CHECK(action_taken IN ('logged','warned','flagged','blocked')),
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_aov_agent ON agent_output_violations(agent_id);
+CREATE INDEX IF NOT EXISTS idx_aov_project ON agent_output_violations(project_id);
+CREATE INDEX IF NOT EXISTS idx_aov_severity ON agent_output_violations(severity);
+CREATE INDEX IF NOT EXISTS idx_aov_created ON agent_output_violations(created_at);
+
+-- ============================================================
+-- Phase 46: Observability, Traceability & Explainable AI (D280-D290)
+-- ============================================================
+
+-- D280: OTel-compatible span storage (append-only, D6)
+CREATE TABLE IF NOT EXISTS otel_spans (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    parent_span_id TEXT,
+    name TEXT NOT NULL,
+    kind TEXT DEFAULT 'INTERNAL',
+    start_time TEXT NOT NULL,
+    end_time TEXT,
+    duration_ms INTEGER DEFAULT 0,
+    status_code TEXT DEFAULT 'UNSET',
+    status_message TEXT,
+    attributes TEXT,
+    events TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_otel_trace ON otel_spans(trace_id);
+CREATE INDEX IF NOT EXISTS idx_otel_parent ON otel_spans(parent_span_id);
+CREATE INDEX IF NOT EXISTS idx_otel_name ON otel_spans(name);
+CREATE INDEX IF NOT EXISTS idx_otel_agent ON otel_spans(agent_id);
+CREATE INDEX IF NOT EXISTS idx_otel_project ON otel_spans(project_id);
+CREATE INDEX IF NOT EXISTS idx_otel_start ON otel_spans(start_time);
+CREATE INDEX IF NOT EXISTS idx_otel_created ON otel_spans(created_at);
+
+-- D287: PROV-AGENT provenance — entities (append-only, D6)
+CREATE TABLE IF NOT EXISTS prov_entities (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    label TEXT,
+    content_hash TEXT,
+    content TEXT,
+    attributes TEXT,
+    trace_id TEXT,
+    span_id TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_prov_ent_type ON prov_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_prov_ent_trace ON prov_entities(trace_id);
+CREATE INDEX IF NOT EXISTS idx_prov_ent_project ON prov_entities(project_id);
+CREATE INDEX IF NOT EXISTS idx_prov_ent_created ON prov_entities(created_at);
+
+-- D287: PROV-AGENT provenance — activities (append-only, D6)
+CREATE TABLE IF NOT EXISTS prov_activities (
+    id TEXT PRIMARY KEY,
+    activity_type TEXT NOT NULL,
+    label TEXT,
+    start_time TEXT,
+    end_time TEXT,
+    attributes TEXT,
+    trace_id TEXT,
+    span_id TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_prov_act_type ON prov_activities(activity_type);
+CREATE INDEX IF NOT EXISTS idx_prov_act_trace ON prov_activities(trace_id);
+CREATE INDEX IF NOT EXISTS idx_prov_act_project ON prov_activities(project_id);
+CREATE INDEX IF NOT EXISTS idx_prov_act_created ON prov_activities(created_at);
+
+-- D287: PROV-AGENT provenance — relations (append-only, D6)
+CREATE TABLE IF NOT EXISTS prov_relations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    relation_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    object_id TEXT NOT NULL,
+    attributes TEXT,
+    trace_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_prov_rel_type ON prov_relations(relation_type);
+CREATE INDEX IF NOT EXISTS idx_prov_rel_subject ON prov_relations(subject_id);
+CREATE INDEX IF NOT EXISTS idx_prov_rel_object ON prov_relations(object_id);
+CREATE INDEX IF NOT EXISTS idx_prov_rel_trace ON prov_relations(trace_id);
+CREATE INDEX IF NOT EXISTS idx_prov_rel_project ON prov_relations(project_id);
+
+-- D288: AgentSHAP tool attribution (append-only, D6)
+CREATE TABLE IF NOT EXISTS shap_attributions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trace_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    shapley_value REAL NOT NULL,
+    coalition_size INTEGER,
+    confidence_low REAL,
+    confidence_high REAL,
+    outcome_metric TEXT DEFAULT 'success',
+    outcome_value REAL,
+    analysis_params TEXT,
+    agent_id TEXT,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_shap_trace ON shap_attributions(trace_id);
+CREATE INDEX IF NOT EXISTS idx_shap_tool ON shap_attributions(tool_name);
+CREATE INDEX IF NOT EXISTS idx_shap_project ON shap_attributions(project_id);
+CREATE INDEX IF NOT EXISTS idx_shap_analyzed ON shap_attributions(analyzed_at);
+
+-- D289: XAI compliance assessments (append-only, D6)
+CREATE TABLE IF NOT EXISTS xai_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT NOT NULL,
+    overall_status TEXT NOT NULL DEFAULT 'not_assessed',
+    overall_score REAL DEFAULT 0.0,
+    checks_json TEXT,
+    findings_json TEXT,
+    recommendations_json TEXT,
+    framework_crosswalk TEXT,
+    assessor_version TEXT,
+    agent_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_xai_project ON xai_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_xai_date ON xai_assessments(assessment_date);
+CREATE INDEX IF NOT EXISTS idx_xai_status ON xai_assessments(overall_status);
+CREATE INDEX IF NOT EXISTS idx_xai_created ON xai_assessments(created_at);
+
+-- ── Production Readiness Audit (D291-D295) ──────────────────────────────
+-- Append-only audit trail for production readiness checks.
+CREATE TABLE IF NOT EXISTS production_audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    overall_pass INTEGER NOT NULL,
+    total_checks INTEGER NOT NULL,
+    passed INTEGER NOT NULL,
+    failed INTEGER NOT NULL,
+    warned INTEGER NOT NULL,
+    skipped INTEGER NOT NULL,
+    blockers TEXT,
+    warnings TEXT,
+    categories_run TEXT,
+    report_json TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_prod_audit_created ON production_audits(created_at);
+
+-- Phase 47 — Production Remediation (D296-D300, append-only)
+CREATE TABLE IF NOT EXISTS remediation_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_audit_id INTEGER,
+    check_id TEXT NOT NULL,
+    check_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    tier TEXT NOT NULL,
+    status TEXT NOT NULL,
+    fix_strategy TEXT NOT NULL,
+    fix_command TEXT,
+    message TEXT,
+    details TEXT,
+    duration_ms INTEGER DEFAULT 0,
+    verification_check_id TEXT,
+    verification_status TEXT,
+    verification_message TEXT,
+    dry_run INTEGER DEFAULT 0,
+    report_json TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_remediation_check ON remediation_audit_log(check_id);
+CREATE INDEX IF NOT EXISTS idx_remediation_status ON remediation_audit_log(status);
+CREATE INDEX IF NOT EXISTS idx_remediation_tier ON remediation_audit_log(tier);
+CREATE INDEX IF NOT EXISTS idx_remediation_created ON remediation_audit_log(created_at);
 """
 
 
@@ -3624,6 +4086,28 @@ AI_SECURITY_ALTER_SQL = [
 CLOUD_AGNOSTIC_ALTER_SQL = [
     "ALTER TABLE tenants ADD COLUMN cloud_provider TEXT DEFAULT 'aws'",
     "ALTER TABLE tenants ADD COLUMN cloud_region TEXT DEFAULT 'us-gov-west-1'",
+]
+
+# Phase 43: Cross-Language Translation columns
+TRANSLATION_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN translation_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN translation_job_count INTEGER DEFAULT 0",
+]
+
+# Phase 45: OWASP Agentic AI Security columns (D257-D264)
+OWASP_AGENTIC_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN owasp_agentic_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN agent_trust_scoring_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN tool_chain_validation_enabled INTEGER DEFAULT 0",
+]
+
+# Phase 46: Observability, Traceability & XAI columns (D280-D290)
+OBSERVABILITY_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN observability_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN tracing_backend TEXT DEFAULT 'sqlite'",
+    "ALTER TABLE projects ADD COLUMN provenance_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN shap_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN xai_assessment_status TEXT DEFAULT 'not_assessed'",
 ]
 
 # Spec-kit Pattern 7: Parallel task markers (D161)
@@ -3750,6 +4234,24 @@ def init_db(db_path=None):
             pass
     # Phase 38: Cloud-Agnostic columns (tenants table may not exist in all envs)
     for sql in CLOUD_AGNOSTIC_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 43: Cross-Language Translation columns
+    for sql in TRANSLATION_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 45: OWASP Agentic AI Security columns (D257-D264)
+    for sql in OWASP_AGENTIC_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 46: Observability, Traceability & XAI columns (D280-D290)
+    for sql in OBSERVABILITY_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

@@ -956,6 +956,7 @@ def main():
     )
     parser.add_argument("--mesh-type", default="istio", choices=["istio", "linkerd"],
                         help="Service mesh type for service-mesh manifest")
+    parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
     app_config = {
