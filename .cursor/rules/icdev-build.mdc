@@ -1,0 +1,33 @@
+---
+description: "ICDEV workflow: Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-build
+
+When the user asks to build code using true tdd (red → green → refactor) with automatic test generation and compliance tracking, follow these steps:
+
+1. **Load Project Context**
+   ```bash
+   !cat args/project_defaults.yaml
+   ```
+
+2. **RED Phase — Write Failing Tests**
+   Run: - Feature description: `$ARGUMENTS`
+
+3. **GREEN Phase — Generate Implementation Code**
+   Run: - Analyzes failing test files to determine required code
+
+4. **REFACTOR Phase — Clean Up**
+   Run: - Run black + isort (Python) or prettier (JS)
+
+5. **Compliance Mapping**
+   Run: - Map `code.commit` activity to NIST controls (SA-11, CM-3)
+
+6. **Output Summary**
+   Display:
+
+7. **Output Summary**
+   Display:

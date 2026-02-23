@@ -836,4 +836,4 @@ def _map_compliance_status_to_emass(status):
     return mapping.get(status.lower().strip(), status)
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

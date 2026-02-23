@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Worktree Setup Prompt — Task Isolation Instructions
 
 You are setting up an isolated git worktree for an ICDEV task.

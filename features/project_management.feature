@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: ICDEV Project Management
   As a developer or project manager
   I want to create and manage ICDEV projects

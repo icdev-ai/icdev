@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: MBSE integration — import SysML/DOORS, build digital thread, generate code, sync, assess DES compliance"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-mbse
+
+When the user asks to mbse integration — import sysml/doors, build digital thread, generate code, sync, assess des compliance, follow these steps:

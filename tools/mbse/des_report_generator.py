@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """DES compliance report generator.
 
@@ -796,4 +796,4 @@ if __name__ == "__main__":
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

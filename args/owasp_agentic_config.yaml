@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # OWASP Agentic AI Security Configuration (Phase 45)
 # ADRs: D257 (behavioral drift), D258 (tool chain), D259 (output safety),
 #        D260 (trust scoring), D261 (MCP per-tool RBAC)

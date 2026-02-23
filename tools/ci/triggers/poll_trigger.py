@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Poll Trigger — Cron-based issue polling for GitHub + GitLab
 # Refactored to use EventEnvelope + EventRouter (D132, D133)
 

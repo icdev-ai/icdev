@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Dashboard authentication middleware (Phase 30 — D169-D172).
 

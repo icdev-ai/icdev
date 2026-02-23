@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Resolve classification marking for a project.
 
 Central resolver that determines the correct classification banner, code header,
@@ -279,4 +279,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

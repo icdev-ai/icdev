@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Plan C# Application — ICDEV Framework-Specific Build Command
 
 Generate a comprehensive build plan for a C# application with ICDEV compliance scaffolding.

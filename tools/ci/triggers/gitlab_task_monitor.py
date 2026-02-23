@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """GitLab Task Board Monitor — polls issues for {{icdev: workflow}} tags.
 
 Decision D33: GitLab tags replace Notion's {{prototype: type}} pattern.

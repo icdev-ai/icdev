@@ -1506,7 +1506,7 @@ def main():
         help="URL for parent ICDEV A2A callback")
     agentic_group.add_argument(
         "--cloud-provider", type=str, default="aws",
-        choices=["aws", "gcp", "azure", "oracle"],
+        choices=["aws", "gcp", "azure", "oracle", "ibm"],
         help="Target cloud provider (default: aws)")
     agentic_group.add_argument(
         "--cloud-region", type=str, default="us-gov-west-1",

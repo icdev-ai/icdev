@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Initialize Git Worktree for Task Isolation
 
 Create an isolated git worktree with sparse checkout for parallel task execution.

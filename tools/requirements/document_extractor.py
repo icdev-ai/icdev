@@ -248,26 +248,13 @@ def _extract_pdf_pages_via_vision(file_path):
             logger.debug("pdf2image failed for page %d: %s", page_num, exc)
 
         if page_image_b64 is None:
-            try:
-                # Try PyMuPDF (fitz)
-                import fitz
-                pdf_doc = fitz.open(str(p))
-                pix = pdf_doc[i].get_pixmap(dpi=200)
-                page_image_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
-                pdf_doc.close()
-            except ImportError:
-                pass
-            except Exception as exc:
-                logger.debug("PyMuPDF failed for page %d: %s", page_num, exc)
-
-        if page_image_b64 is None:
             # No rendering library available — use whatever text we got
             if text.strip():
                 all_pages.append(f"--- Page {page_num} ---\n{text.strip()}")
             else:
                 all_pages.append(
                     f"--- Page {page_num} ---\n"
-                    f"[No text extractable; pdf2image or PyMuPDF required for vision fallback]"
+                    f"[No text extractable; pdf2image required for vision fallback]"
                 )
             continue
 
@@ -1025,4 +1012,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

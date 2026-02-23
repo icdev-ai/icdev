@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Patch — Quick fix workflow for single-issue patches
 # Adapted from ADW adw_patch.py with dual platform support
 

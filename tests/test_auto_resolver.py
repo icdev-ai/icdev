@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools/monitor/auto_resolver.py — webhook-triggered auto-resolution pipeline."""
 
 import sys

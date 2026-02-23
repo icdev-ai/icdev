@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Token usage and cost tracking per agent/project/task.
 
 Logs Bedrock API token consumption to data/icdev.db and provides

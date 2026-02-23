@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Flask Blueprint for audit API.
 Queries the audit_trail table in icdev.db.

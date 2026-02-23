@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: ICDEV SaaS Multi-Tenancy Platform
   As a SaaS platform administrator
   I want multi-tenant isolation and management

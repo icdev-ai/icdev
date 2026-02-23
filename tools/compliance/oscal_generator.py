@@ -2063,11 +2063,21 @@ def main():
         "--format",
         choices=["json"],
         default="json",
-        help="Output format (currently only JSON supported)",
+        help="Output format (JSON; XML/YAML available with oscal-cli via oscal_tools.py --convert)",
     )
     parser.add_argument(
         "--validate",
         help="Validate an existing OSCAL JSON file (no project-id required)",
+    )
+    parser.add_argument(
+        "--deep-validate",
+        help="Deep validate an OSCAL file (structural + pydantic + Metaschema via oscal_tools.py)",
+    )
+    parser.add_argument(
+        "--catalog-source",
+        choices=["official", "icdev", "auto"],
+        default="auto",
+        help="Catalog source: official (NIST OSCAL), icdev (custom 39-control), auto (try official first)",
     )
     parser.add_argument(
         "--json",
@@ -2082,7 +2092,7 @@ def main():
 
     args = parser.parse_args()
 
-    # Validation-only mode
+    # Validation-only mode (structural)
     if args.validate:
         result = validate_oscal(args.validate)
         if args.json:
@@ -2095,6 +2105,28 @@ def main():
                 for err in result["errors"]:
                     print(f"  - {err}")
         sys.exit(0 if result["valid"] else 1)
+
+    # Deep validation mode (structural + pydantic + Metaschema, D302-D305)
+    if args.deep_validate:
+        try:
+            from tools.compliance.oscal_tools import validate_oscal_deep
+            result = validate_oscal_deep(
+                args.deep_validate,
+                project_id=args.project_id,
+                db_path=str(args.db_path) if args.db_path else None,
+            )
+        except ImportError:
+            result = validate_oscal(args.deep_validate)
+            result["note"] = "oscal_tools not available; ran structural validation only"
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            valid = result.get("overall_valid", result.get("valid", False))
+            print(f"{'VALID' if valid else 'INVALID'}: {args.deep_validate}")
+            for layer_name, layer_result in result.get("layers", {}).items():
+                status = "PASS" if layer_result.get("valid") else ("SKIP" if layer_result.get("skipped") else "FAIL")
+                print(f"  [{status}] {layer_name}")
+        sys.exit(0 if result.get("overall_valid", result.get("valid", False)) else 1)
 
     # Generation mode requires project-id
     if not args.project_id:

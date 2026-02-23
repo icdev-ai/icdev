@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Plan+Build+Test+Review — Combined workflow
 
 """

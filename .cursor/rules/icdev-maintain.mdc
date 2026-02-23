@@ -1,0 +1,36 @@
+---
+description: "ICDEV workflow: Run maintenance audit — scan dependencies, check CVEs, compute score, remediate, track SLAs"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-maintain
+
+When the user asks to run maintenance audit — scan dependencies, check cves, compute score, remediate, track slas, follow these steps:
+
+1. **Scan Dependencies**
+   ```bash
+   python tools/maintenance/dependency_scanner.py --project-id <id> [--offline]
+   ```
+
+2. **Check Vulnerabilities**
+   ```bash
+   python tools/maintenance/vulnerability_checker.py --project-id <id>
+   ```
+
+3. **Run Maintenance Audit**
+   ```bash
+   python tools/maintenance/maintenance_auditor.py --project-id <id> [--offline]
+   ```
+
+4. **Remediate (if --auto or --dry-run)**
+   ```bash
+   python tools/maintenance/remediation_engine.py --project-id <id> [--auto] [--dry-run]
+   ```
+
+5. **Output Summary**
+   Display:
+
+6. **Output Summary**
+   Display:

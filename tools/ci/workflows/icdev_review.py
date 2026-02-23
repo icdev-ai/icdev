@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Review — Code review workflow
 # Adapted from ADW adw_review.py with dual platform support
 

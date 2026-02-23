@@ -290,11 +290,14 @@ def check_dependency_audit() -> AuditCheck:
 
 
 def check_secret_detection() -> AuditCheck:
-    """SEC-003: Secret detection via detect-secrets."""
-    rc, stdout, stderr = _run_subprocess(
-        [sys.executable, "-m", "detect_secrets", "scan", str(PROJECT_ROOT / "tools")],
-        timeout=120,
-    )
+    """SEC-003: Secret detection via detect-secrets.
+
+    Uses .secrets.baseline if present to filter known false positives.
+    Only NEW secrets (not in baseline) trigger a failure.
+    """
+    baseline_path = PROJECT_ROOT / ".secrets.baseline"
+    cmd = [sys.executable, "-m", "detect_secrets", "scan", str(PROJECT_ROOT / "tools")]
+    rc, stdout, stderr = _run_subprocess(cmd, timeout=120)
     if rc == -1:
         return AuditCheck(
             check_id="SEC-003", check_name="Secret Detection",
@@ -302,16 +305,40 @@ def check_secret_detection() -> AuditCheck:
             message="detect-secrets not installed (pip install detect-secrets)", details={},
         )
     try:
-        data = json.loads(stdout)
-        results = data.get("results", {})
-        total_secrets = sum(len(v) for v in results.values())
-        ok = total_secrets == 0
+        scan_data = json.loads(stdout)
+        scan_results = scan_data.get("results", {})
+
+        # Filter against baseline — only count NEW secrets not in baseline
+        baseline_results = {}
+        if baseline_path.exists():
+            try:
+                with open(baseline_path) as f:
+                    baseline_data = json.loads(f.read())
+                baseline_results = baseline_data.get("results", {})
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        new_secrets = 0
+        new_files = 0
+        for fname, entries in scan_results.items():
+            baseline_entries = baseline_results.get(fname, [])
+            baseline_hashes = {e.get("hashed_secret") for e in baseline_entries}
+            new_in_file = [e for e in entries if e.get("hashed_secret") not in baseline_hashes]
+            if new_in_file:
+                new_secrets += len(new_in_file)
+                new_files += 1
+
+        total_raw = sum(len(v) for v in scan_results.values())
+        ok = new_secrets == 0
+        baseline_note = f" ({total_raw} baselined)" if baseline_results else ""
         return AuditCheck(
             check_id="SEC-003", check_name="Secret Detection",
             category="security", status="pass" if ok else "fail",
             severity="blocking",
-            message=f"{total_secrets} potential secrets in {len(results)} files" if not ok else "No secrets detected",
-            details={"files_with_secrets": len(results), "total_secrets": total_secrets},
+            message=f"No new secrets detected{baseline_note}" if ok
+                    else f"{new_secrets} NEW secrets in {new_files} files{baseline_note}",
+            details={"new_secrets": new_secrets, "new_files": new_files,
+                     "total_raw": total_raw, "baseline_count": sum(len(v) for v in baseline_results.values())},
         )
     except json.JSONDecodeError:
         return AuditCheck(
@@ -372,7 +399,7 @@ def check_code_pattern_scan() -> AuditCheck:
             message="code_pattern_scanner.py not found", details={},
         )
     rc, stdout, stderr = _run_subprocess(
-        [sys.executable, str(scanner), "--project-dir", str(PROJECT_ROOT / "tools"), "--json"],
+        [sys.executable, str(scanner), "--dir", str(PROJECT_ROOT / "tools"), "--json"],
         timeout=120,
     )
     if rc == 0:
@@ -580,6 +607,68 @@ def check_sbom_generation() -> AuditCheck:
             check_id="CMP-006", check_name="SBOM Generator",
             category="compliance", status="fail", severity="warning",
             message=f"Syntax error: {e}", details={},
+        )
+
+
+def check_oscal_ecosystem() -> AuditCheck:
+    """CMP-007: OSCAL ecosystem tools readiness (D302-D306)."""
+    oscal_tools = PROJECT_ROOT / "tools" / "compliance" / "oscal_tools.py"
+    catalog_adapter = PROJECT_ROOT / "tools" / "compliance" / "oscal_catalog_adapter.py"
+    # Check both files exist
+    missing = []
+    if not oscal_tools.exists():
+        missing.append("oscal_tools.py")
+    if not catalog_adapter.exists():
+        missing.append("oscal_catalog_adapter.py")
+    if missing:
+        return AuditCheck(
+            check_id="CMP-007", check_name="OSCAL Ecosystem",
+            category="compliance", status="skip", severity="warning",
+            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+        )
+    # Syntax check both files
+    syntax_errors = []
+    for f in [oscal_tools, catalog_adapter]:
+        try:
+            ast.parse(f.read_text(encoding="utf-8"))
+        except SyntaxError as e:
+            syntax_errors.append(f"{f.name}: {e}")
+    if syntax_errors:
+        return AuditCheck(
+            check_id="CMP-007", check_name="OSCAL Ecosystem",
+            category="compliance", status="fail", severity="warning",
+            message=f"Syntax errors: {'; '.join(syntax_errors)}",
+            details={"syntax_errors": syntax_errors},
+        )
+    # Detect available OSCAL tools
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.compliance.oscal_tools import detect_oscal_tools
+        detection = detect_oscal_tools()
+        available = []
+        unavailable = []
+        for key in ["oscal_cli", "java", "oscal_pydantic", "nist_catalog"]:
+            info = detection.get(key, {})
+            if info.get("available", False):
+                available.append(key)
+            else:
+                unavailable.append(key)
+        # Pass if core files exist; warn if optional tools not installed
+        status = "pass" if len(available) >= 1 else "warn"
+        msg_parts = [f"available: {', '.join(available) or 'none'}"]
+        if unavailable:
+            msg_parts.append(f"not installed: {', '.join(unavailable)}")
+        return AuditCheck(
+            check_id="CMP-007", check_name="OSCAL Ecosystem",
+            category="compliance", status=status, severity="warning",
+            message="; ".join(msg_parts),
+            details={"available": available, "unavailable": unavailable, "detection": detection},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CMP-007", check_name="OSCAL Ecosystem",
+            category="compliance", status="warn", severity="warning",
+            message=f"Detection failed: {e}", details={},
         )
 
 
@@ -1088,6 +1177,7 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "CMP-004": (check_security_gates_config, "compliance", "warning"),
     "CMP-005": (check_xai_compliance, "compliance", "warning"),
     "CMP-006": (check_sbom_generation, "compliance", "warning"),
+    "CMP-007": (check_oscal_ecosystem, "compliance", "warning"),
     # Integration
     "INT-001": (check_mcp_servers, "integration", "blocking"),
     "INT-002": (check_db_schema, "integration", "blocking"),

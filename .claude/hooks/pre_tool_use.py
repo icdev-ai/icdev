@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Pre-Tool-Use Hook — Safety validation before tool execution
 # Adapted from ADW pre_tool_use.py
 
@@ -8,7 +8,7 @@ Pre-tool-use hook that validates tool calls before execution.
 Blocks:
     - Dangerous rm -rf commands
     - Access to .env files containing secrets
-    - UPDATE/DELETE/DROP/TRUNCATE on all 19 append-only tables (D6, NIST AU)
+    - UPDATE/DELETE/DROP/TRUNCATE on all 32 append-only tables (D6, NIST AU)
       See APPEND_ONLY_TABLES list in is_append_only_table_modification()
     - Deletion of CUI-marked artifacts without explicit approval
 
@@ -127,6 +127,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "production_audits",
         # Phase 47 — Production Remediation (D296-D300)
         "remediation_audit_log",
+        # OSCAL Ecosystem (D306 — validation audit trail)
+        "oscal_validation_log",
     ]
 
     if tool_name == "Bash":

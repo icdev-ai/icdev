@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Example custom LLM provider template.
 
 Copy this file and implement the three required methods to create a

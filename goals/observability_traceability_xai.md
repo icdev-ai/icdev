@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Observability, Traceability & Explainable AI Goal (Phase 46)
 
 ## Purpose

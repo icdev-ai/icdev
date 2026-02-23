@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Node Auto-Scaling — Cloud-Agnostic Configuration
 # D142 (revised): Cloud-agnostic Cluster Autoscaler as baseline;
 #   provider-specific optimizations in k8s/overlays/

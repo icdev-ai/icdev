@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Mattermost Connector — built-in Mattermost integration (D136, D137)
 
 """

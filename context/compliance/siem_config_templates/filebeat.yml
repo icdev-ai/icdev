@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV SIEM Configuration — Filebeat (ELK Stack)
 # Per DoD Instruction 8530.01 — CSSP Log Forwarding Requirements
 #
@@ -210,4 +210,4 @@ logging.files:
   keepfiles: 7
   permissions: 0644
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

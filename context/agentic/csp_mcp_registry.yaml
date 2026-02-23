@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # CSP MCP Server Registry - maps cloud providers to their MCP servers
 # Used by: tools/builder/app_blueprint.py (resolve_csp_mcp_servers function)
 # Purpose: When generating cloud-native child apps, select relevant CSP MCP servers
@@ -174,6 +174,45 @@ providers:
           description: "OCI Data Science"
           transport: "stdio"
 
+  ibm:
+    display_name: "IBM Cloud for Government (IC4G)"
+    default_region: "us-south"
+    gov_region: "us-south"
+    mcp_servers:
+      core:
+        - name: "@ibm/cloud-core-mcp-server"
+          description: "IBM Cloud core operations (VPC, IAM, Resource Controller)"
+          transport: "stdio"
+      data:
+        - name: "@ibm/cloud-object-storage-mcp-server"
+          description: "IBM Cloud Object Storage (S3-compatible)"
+          transport: "stdio"
+        - name: "@ibm/db2-mcp-server"
+          description: "IBM Db2 database operations"
+          transport: "stdio"
+      ai_ml:
+        - name: "@ibm/watsonx-ai-mcp-server"
+          description: "IBM watsonx.ai (Granite, Llama)"
+          transport: "stdio"
+      security:
+        - name: "@ibm/key-protect-mcp-server"
+          description: "IBM Key Protect (FIPS 140-2 Level 3)"
+          transport: "stdio"
+        - name: "@ibm/security-compliance-mcp-server"
+          description: "IBM Security and Compliance Center"
+          transport: "stdio"
+      containers:
+        - name: "@ibm/iks-mcp-server"
+          description: "IBM Kubernetes Service / Red Hat OpenShift on IBM Cloud"
+          transport: "stdio"
+      monitoring:
+        - name: "@ibm/cloud-monitoring-mcp-server"
+          description: "IBM Cloud Monitoring with Sysdig"
+          transport: "stdio"
+        - name: "@ibm/log-analysis-mcp-server"
+          description: "IBM Log Analysis"
+          transport: "stdio"
+
 # Capability-to-CSP-category mapping
 # Maps child app capabilities to which CSP MCP server categories to include.
 # The blueprint engine iterates the app's declared capabilities and unions the
@@ -184,48 +223,58 @@ capability_mapping:
     gcp: ["core"]
     azure: ["core"]
     oracle: ["core"]
+    ibm: ["core"]
   compliance:
     aws: ["security", "monitoring"]
     gcp: []
     azure: ["security"]
     oracle: []
+    ibm: ["security"]
   data:
     aws: ["data"]
     gcp: ["data"]
     azure: []
     oracle: ["data"]
+    ibm: ["data"]
   cicd:
     aws: []
     gcp: []
     azure: ["devops"]
     oracle: []
+    ibm: []
   monitoring:
     aws: ["monitoring"]
     gcp: ["monitoring"]
     azure: []
     oracle: []
+    ibm: ["monitoring"]
   containers:
     aws: ["containers"]
     gcp: ["core"]  # GKE is in GCP core category
     azure: []
     oracle: []
+    ibm: ["containers"]
   infrastructure:
     aws: ["iac"]
     gcp: []
     azure: []
     oracle: []
+    ibm: []
   ai_ml:
     aws: ["ai_ml"]
     gcp: ["ai_ml"]
     azure: ["ai_ml"]
     oracle: ["ai_ml"]
+    ibm: ["ai_ml"]
   serverless:
     aws: ["serverless"]
     gcp: []
     azure: []
     oracle: []
+    ibm: []
   messaging:
     aws: ["messaging"]
     gcp: []
     azure: []
     oracle: []
+    ibm: []

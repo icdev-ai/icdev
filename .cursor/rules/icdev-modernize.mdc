@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: "
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-modernize
+
+When the user asks to , follow these steps:

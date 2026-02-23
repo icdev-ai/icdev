@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI -->
+<!-- [TEMPLATE: CUI // SP-CTI] -->
 
 # 7R Migration Strategy Assessment — Hard Prompt Template
 
@@ -104,4 +104,4 @@ Return a single JSON object:
 - Cost estimates should use GSA rates or agency-specific labor categories where available.
 - All output artifacts must carry CUI // SP-CTI markings.
 
-<!-- CUI // SP-CTI -->
+<!-- [TEMPLATE: CUI // SP-CTI] -->

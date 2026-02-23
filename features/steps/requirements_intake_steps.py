@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Step definitions for ICDEV Requirements Intake (RICOAS) BDD scenarios."""
 
 import json
@@ -676,4 +676,4 @@ def step_stories_have_acceptance_criteria(context):
             f"Expected stories with acceptance criteria. "
             f"Total stories: {len(stories)}, with criteria: {len(stories_with_criteria)}"
         )
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

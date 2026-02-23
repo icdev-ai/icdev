@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Plan — Agentic planning workflow
 # Adapted from ADW adw_plan.py with dual platform support
 

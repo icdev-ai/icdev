@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 WebSocket integration via Flask-SocketIO (Phase 30 — D170).
 

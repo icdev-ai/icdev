@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """NLQ (Natural Language Query) API blueprint — compliance database queries.
 
 Endpoints:

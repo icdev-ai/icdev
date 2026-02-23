@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Tests for ICDEV Event Envelope — edge cases for all factory methods
 
 """

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: A2A Task Lifecycle
   As an agent orchestrator
   I want to verify the A2A task lifecycle works correctly

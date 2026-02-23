@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -115,4 +115,4 @@ spec:
       targetPort: 8452
       protocol: TCP
   type: ClusterIP
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

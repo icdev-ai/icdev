@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: "Run the ICDEV Innovation Engine — autonomous self-improvement through web intelligence, introspective analysis, competitive monitoring, and standards tracking.""
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-innovate
+
+When the user asks to "run the icdev innovation engine — autonomous self-improvement through web intelligence, introspective analysis, competitive monitoring, and standards tracking.", follow these steps:

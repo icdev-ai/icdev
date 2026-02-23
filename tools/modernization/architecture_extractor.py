@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """ICDEV Architecture Extractor — reverse-engineering extraction tool.
 
 Extracts call graphs, component diagrams, data flows, service boundaries,
@@ -730,4 +730,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

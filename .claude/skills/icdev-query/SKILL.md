@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Skill: icdev-query
 # Natural Language Compliance Query
 

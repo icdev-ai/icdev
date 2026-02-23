@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for the usage tracking API blueprint (tools/dashboard/api/usage.py)."""
 
 import json

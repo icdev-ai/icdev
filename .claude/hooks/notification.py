@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Notification hook — logs user notifications/interactions. Always exits 0."""
 
 import json

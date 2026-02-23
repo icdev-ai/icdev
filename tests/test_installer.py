@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for ICDEV Installer — module registry, compliance configurator, installer.
 
 Validates ModuleRegistry dependency tracking, ComplianceConfigurator framework
@@ -476,4 +476,4 @@ class TestInstaller:
         assert "Unknown framework" in result["error"]
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

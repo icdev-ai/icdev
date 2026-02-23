@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 ICDEV SaaS Prometheus Metrics Collector (ADR D154).
 

@@ -1,0 +1,33 @@
+---
+description: "ICDEV workflow: Run the full test suite (pytest unit + behave BDD) with coverage reporting and compliance tracking"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-test
+
+When the user asks to run the full test suite (pytest unit + behave bdd) with coverage reporting and compliance tracking, follow these steps:
+
+1. **Detect Project Directory**
+   If `--project-dir` not specified, look for nearest project directory with tests/ folder.
+
+2. **Run Tests**
+   Run: - project_dir: resolved project path
+
+3. **Analyze Results**
+   Parse test output for:
+
+4. **Coverage Gate Check**
+   ```bash
+   !cat args/project_defaults.yaml
+   ```
+
+5. **Compliance Mapping**
+   Run: - Map `test.execute` activity to NIST controls
+
+6. **Output Summary**
+   Display:
+
+7. **Output Summary**
+   Display:

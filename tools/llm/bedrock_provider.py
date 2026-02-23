@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """AWS Bedrock LLM Provider.
 
 Implements the LLMProvider interface for Amazon Bedrock.

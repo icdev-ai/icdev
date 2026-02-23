@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Goal: Federated GOTCHA Asset Marketplace (Phase 22)
 
 ## Purpose

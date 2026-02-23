@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Document — Documentation generation workflow
 # Adapted from ADW adw_document.py with dual platform support
 

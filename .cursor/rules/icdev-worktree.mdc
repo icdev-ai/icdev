@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: "
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-worktree
+
+When the user asks to , follow these steps:

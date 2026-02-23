@@ -1,0 +1,55 @@
+---
+description: "ICDEV workflow: Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan)"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-secure
+
+When the user asks to run comprehensive security scanning (sast, dependency audit, secret detection, container scan), follow these steps:
+
+1. **Load Security Configuration**
+   ```bash
+   !cat args/security_gates.yaml
+   ```
+
+2. **Resolve Project Directory**
+   If `--project-dir` not specified, detect from current context.
+
+3. **Run SAST**
+   ```bash
+   python tools/security/sast_runner.py --project-dir <path>
+   ```
+
+4. **Run Dependency Audit**
+   ```bash
+   python tools/security/dependency_auditor.py --project-dir <path>
+   ```
+
+5. **Run Secret Detection**
+   ```bash
+   python tools/security/secret_detector.py --project-dir <path>
+   ```
+
+6. **Run Container Scan**
+   ```bash
+   python tools/security/container_scanner.py --project-dir <path>
+   ```
+
+7. **Evaluate Security Gates**
+   ```bash
+   python tools/security/vuln_scanner.py --project-dir <path>
+   ```
+
+8. **Auto-Fix (if --fix)**
+   If `--fix` flag provided:
+
+9. **Compliance Mapping**
+   Run: - Map `security.scan` to NIST controls (RA-5, SA-11, SI-2)
+
+10. **Output Summary**
+   Display:
+
+11. **Output Summary**
+   Display:

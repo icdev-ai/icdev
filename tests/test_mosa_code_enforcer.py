@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -145,4 +145,4 @@ class TestProjectScan:
         assert "MEDIUM" in result["violations_by_severity"]
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

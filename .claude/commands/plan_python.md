@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Plan Python Application — ICDEV Framework-Specific Build Command
 
 Generate a comprehensive build plan for a Python application with ICDEV compliance scaffolding.

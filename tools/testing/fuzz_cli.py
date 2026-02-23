@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV CLI Argument Fuzzer — feed malformed inputs to CLI tools
 # Ensures tools fail gracefully (clean argparse errors, no crashes/tracebacks)
 

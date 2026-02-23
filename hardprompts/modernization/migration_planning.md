@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI -->
+<!-- [TEMPLATE: CUI // SP-CTI] -->
 
 # Migration Plan Generation — Hard Prompt Template
 
@@ -147,4 +147,4 @@ Return a single JSON object:
 - If `{{service_boundaries}}` is empty, derive boundaries from coupling analysis in the legacy analysis output.
 - Store all plan data in the ICDEV database for traceability and audit compliance.
 
-<!-- CUI // SP-CTI -->
+<!-- [TEMPLATE: CUI // SP-CTI] -->

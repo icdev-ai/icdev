@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for REST API v1 expansion endpoints.
 
 Covers the 8 new endpoint groups added to tools.saas.rest_api:

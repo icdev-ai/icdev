@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Builder Agent — STIG-Hardened Container
 # Controlled by: Department of Defense | CUI Category: CTI | Distribution: D
 # Port: 8445 | Tier: Domain

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Subagent stop hook — logs delegated task completion and captures subagent transcript.
 

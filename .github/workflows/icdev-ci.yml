@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 name: ICDEV CI
 
 on:
@@ -84,4 +84,4 @@ jobs:
         run: helm lint deploy/helm/
       - name: Template validation
         run: helm template icdev deploy/helm/ > /dev/null
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

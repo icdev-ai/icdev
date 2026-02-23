@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -330,4 +330,4 @@ class TestHelpers:
         assert set(TSHIRT_HOURS.keys()) == {"XS", "S", "M", "L", "XL", "XXL"}
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

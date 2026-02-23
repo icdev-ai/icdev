@@ -1,0 +1,160 @@
+---
+description: "ICDEV workflow: Display comprehensive project status including compliance, security, deployment, and agent health"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-status
+
+When the user asks to display comprehensive project status including compliance, security, deployment, and agent health, follow these steps:
+
+1. **Load Session Context (Auto-Detect)**
+   ```bash
+   python tools/project/session_context_builder.py --format markdown
+   ```
+
+2. **List or Select Project**
+   If no project-id given and `--all` flag:
+
+3. **Display Project Overview**
+   ```bash
+   ╔══════════════════════════════════════╗
+   ```
+   ```bash
+   ║  ICDEV Project Status                ║
+   ```
+   ```bash
+   ║  CUI // SP-CTI                       ║
+   ```
+   ```bash
+   ╠══════════════════════════════════════╣
+   ```
+   ```bash
+   ║  Project:  <name>                    ║
+   ```
+   ```bash
+   ║  ID:       <uuid>                    ║
+   ```
+   ```bash
+   ║  Type:     <webapp|microservice|...> ║
+   ```
+   ```bash
+   ║  Status:   <active|completed|...>    ║
+   ```
+   ```bash
+   ║  Created:  <date>                    ║
+   ```
+   ```bash
+   ╚══════════════════════════════════════╝
+   ```
+
+4. **Compliance Status**
+   ```bash
+   Compliance Score: XX%
+   ```
+   ```bash
+   SSP:      Generated ✓ / Missing ✗
+   ```
+   ```bash
+   POAM:     X open items
+   ```
+   ```bash
+   STIG:     X CAT1 / Y CAT2 / Z CAT3
+   ```
+   ```bash
+   SBOM:     Current ✓ / Stale ✗
+   ```
+   ```bash
+   Controls: X/Y mapped
+   ```
+
+5. **Security Status**
+   ```bash
+   Security Gate: PASS / FAIL
+   ```
+   ```bash
+   SAST:       X findings (H/M/L)
+   ```
+   ```bash
+   Dependencies: X CVEs
+   ```
+   ```bash
+   Secrets:    X detected
+   ```
+   ```bash
+   Container:  X issues
+   ```
+
+6. **Test Status**
+   ```bash
+   Tests: PASS / FAIL
+   ```
+   ```bash
+   Unit:     X passed, Y failed
+   ```
+   ```bash
+   BDD:      X scenarios passed
+   ```
+   ```bash
+   Coverage: XX%
+   ```
+
+7. **Deployment Status**
+   ```bash
+   Deployments:
+   ```
+   ```bash
+   Staging:    v1.2.3 (deployed 2024-01-15)
+   ```
+   ```bash
+   Production: v1.2.2 (deployed 2024-01-10)
+   ```
+   ```bash
+   Pipeline:   #456 running...
+   ```
+
+8. **Agent Health**
+   ```bash
+   Agents: X/8 healthy
+   ```
+   ```bash
+   Orchestrator: ● healthy
+   ```
+   ```bash
+   Builder:      ● healthy
+   ```
+   ```bash
+   Compliance:   ○ offline
+   ```
+   ```bash
+   ...
+   ```
+
+9. **Recent Audit Trail**
+   ```bash
+   Recent Activity:
+   ```
+   ```bash
+   2024-01-15 10:30 - security.scan completed
+   ```
+   ```bash
+   2024-01-15 10:25 - test.execute passed
+   ```
+   ```bash
+   2024-01-15 10:20 - code.commit by developer
+   ```
+
+10. **Recent Audit Trail**
+   ```bash
+   Recent Activity:
+   ```
+   ```bash
+   2024-01-15 10:30 - security.scan completed
+   ```
+   ```bash
+   2024-01-15 10:25 - test.execute passed
+   ```
+   ```bash
+   2024-01-15 10:20 - code.commit by developer
+   ```

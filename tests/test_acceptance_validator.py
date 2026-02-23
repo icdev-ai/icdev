@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for the ICDEV Acceptance Criteria Validator (V&V gate)."""
 
 import json

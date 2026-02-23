@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Session stop hook — captures session completion event and saves chat transcript.
 

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Comply — Compliance artifact generation workflow
 # Runs SSP, POAM, STIG, SBOM, CUI marker and evaluates compliance gate
 

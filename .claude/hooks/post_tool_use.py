@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Post-tool-use hook — logs tool results + dispatches extension hooks. Always exits 0."""
 
 import json

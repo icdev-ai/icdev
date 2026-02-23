@@ -1,0 +1,195 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--isolated",
+        "--config",
+        "./playwright-mcp-config.json",
+        "--output-dir",
+        "playwright"
+      ]
+    },
+    "icdev-core": {
+      "command": "python",
+      "args": [
+        "tools/mcp/core_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-compliance": {
+      "command": "python",
+      "args": [
+        "tools/mcp/compliance_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-builder": {
+      "command": "python",
+      "args": [
+        "tools/mcp/builder_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-infra": {
+      "command": "python",
+      "args": [
+        "tools/mcp/infra_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-knowledge": {
+      "command": "python",
+      "args": [
+        "tools/mcp/knowledge_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-maintenance": {
+      "command": "python",
+      "args": [
+        "tools/mcp/maintenance_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-mbse": {
+      "command": "python",
+      "args": [
+        "tools/mcp/mbse_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-modernization": {
+      "command": "python",
+      "args": [
+        "tools/mcp/modernization_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-requirements": {
+      "command": "python",
+      "args": [
+        "tools/mcp/requirements_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-supply-chain": {
+      "command": "python",
+      "args": [
+        "tools/mcp/supply_chain_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-simulation": {
+      "command": "python",
+      "args": [
+        "tools/mcp/simulation_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-integration": {
+      "command": "python",
+      "args": [
+        "tools/mcp/integration_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-marketplace": {
+      "command": "python",
+      "args": [
+        "tools/mcp/marketplace_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-devsecops": {
+      "command": "python",
+      "args": [
+        "tools/mcp/devsecops_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-gateway": {
+      "command": "python",
+      "args": [
+        "tools/mcp/gateway_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-context": {
+      "command": "python",
+      "args": [
+        "tools/mcp/context_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-innovation": {
+      "command": "python",
+      "args": [
+        "tools/mcp/innovation_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    },
+    "icdev-observability": {
+      "command": "python",
+      "args": [
+        "tools/mcp/observability_server.py"
+      ],
+      "env": {
+        "ICDEV_DB_PATH": "data/icdev.db",
+        "ICDEV_PROJECT_ROOT": "."
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Tests for SaaS Tenant Portal (Phase 31).
 
@@ -596,4 +596,4 @@ class TestCSRFProtection:
         assert "Invalid" in html or "error" in html.lower() or "login" in html.lower()
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

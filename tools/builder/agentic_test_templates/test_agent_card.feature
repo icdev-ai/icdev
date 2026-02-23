@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: Agent Card Discovery and Validation
   As a system administrator
   I want to verify all agent cards are valid

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Tasks: Dashboard Kanban Board
 
 ## Status
@@ -53,4 +53,4 @@
 - [ ] Run `python -m pytest tests/test_dashboard_kanban.py -v` to verify the new test passes
 - [ ] Run `python -m pytest tests/ -v` to verify no regressions
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

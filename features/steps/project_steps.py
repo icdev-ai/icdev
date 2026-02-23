@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Step definitions for ICDEV project management BDD scenarios."""
 
 import os

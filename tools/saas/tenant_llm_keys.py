@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """SaaS Tenant LLM Key Management (Phase 32 -- D141).
 
 CRUD operations for tenant-scoped LLM provider API keys.
@@ -289,4 +289,4 @@ def resolve_tenant_llm_key(tenant_id, provider):
     return ("", "shared_pool")
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

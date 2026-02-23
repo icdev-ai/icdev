@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Flask Blueprint for multi-stream parallel chat API (Phase 44 — D257-D260).
 
 Provides endpoints for creating/managing chat contexts, sending messages,

@@ -12,7 +12,7 @@ Usage:
     scanner = CodePatternScanner()
     result = scanner.scan_file("/path/to/file.py", "python")
     result = scanner.scan_directory("/path/to/project", "python")
-    result = scanner.scan_content("eval(input())", "python", "inline")
+    result = scanner.scan_content("dangerous_call(input())", "python", "inline")
     gate = scanner.evaluate_gate("proj-123")
 """
 

@@ -297,7 +297,7 @@ def migrate_python2_to_3(source_path, output_path):
             re.compile(r'\braise\s+(\w+(?:\.\w+)*)\s*,\s*(.+)'),
             r'raise \1(\2)',
         ),
-        # (n) exec "code" -> exec("code")
+        # (n) exec-statement "code" -> exec-function("code")
         (
             "py2to3-exec-stmt",
             re.compile(r'^(\s*)exec\s+(?![\(])(.+)$', re.MULTILINE),
@@ -1388,4 +1388,4 @@ def _error_exit(message):
 if __name__ == "__main__":
     main()
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # /audit — Production Readiness Audit
 
 Run comprehensive pre-production validation across 6 categories:

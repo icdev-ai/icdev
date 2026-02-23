@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Framework Planning Goal — Language-Specific Build Commands
 
 ## Purpose

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Step definitions for ICDEV SaaS Multi-Tenancy Platform BDD scenarios.
 
 Covers: platform DB init, tenant CRUD, provisioning, API key auth,
@@ -521,4 +521,4 @@ def step_tenant_requires_approval(context):
         )
     finally:
         conn.close()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

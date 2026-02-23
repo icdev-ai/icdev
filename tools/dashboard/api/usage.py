@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Usage tracking + cost dashboard API blueprint (Phase 30 — D177).
 

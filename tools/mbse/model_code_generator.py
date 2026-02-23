@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Model Code Generator -- generate code scaffolding from SysML model elements.
 
 Reads sysml_elements and sysml_relationships from the ICDEV database,
@@ -1118,4 +1118,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

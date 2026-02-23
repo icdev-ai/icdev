@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Failure Parser — structured failure extraction from tool output (D134)
 
 """

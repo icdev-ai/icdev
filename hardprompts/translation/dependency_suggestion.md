@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Dependency Suggestion Prompt — ICDEV Phase 43 (D246)
 
 You are a software package expert. Given a source language import that has no known mapping, suggest the best equivalent package in the target language.

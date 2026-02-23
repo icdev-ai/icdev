@@ -44,7 +44,7 @@ Fix a specific failing E2E test using the provided failure details.
 6. **User Perspective Verification**
    - After the E2E test passes, open the affected page with Playwright MCP (`browser_navigate`)
    - Interact with the feature as the user would — click buttons, observe state transitions, check real-time updates
-   - Take a screenshot (`browser_take_screenshot`) as evidence of the working state
+   - Take a screenshot (`browser_take_screenshot`, filename: `playwright/screenshots/<descriptive-name>.png`) as evidence of the working state
    - Do NOT declare the fix complete until you have visually confirmed the user experience works
    - This step is mandatory for E2E fixes — a passing test script does not guarantee the user sees correct behavior
 

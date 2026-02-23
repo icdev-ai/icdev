@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Behave environment configuration for ICDEV BDD tests."""
 
 import os

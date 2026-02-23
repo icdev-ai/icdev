@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Conversation Manager — conversational CI/CD sessions (D135)
 
 """

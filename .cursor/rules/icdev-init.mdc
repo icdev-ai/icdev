@@ -1,0 +1,46 @@
+---
+description: "ICDEV workflow: Initialize a new ICDEV project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-init
+
+When the user asks to initialize a new icdev project with compliance scaffolding, cui markings, and nist 800-53 control baseline, follow these steps:
+
+1. **Check for icdev.yaml (Manifest-First Path)**
+   ```bash
+   ls icdev.yaml 2>/dev/null
+   ```
+
+2. **Load Configuration**
+   ```bash
+   !cat args/project_defaults.yaml
+   ```
+   ```bash
+   !cat args/cui_markings.yaml
+   ```
+
+3. **Create Project**
+   Run: - Name: `$ARGUMENTS` (first positional arg)
+
+4. **Scaffold Directory Structure**
+   Run: - Creates: src/, tests/, features/, compliance/, docs/, .gitlab-ci.yml
+
+5. **Initialize Compliance Baseline**
+   Run: - Map `project.create` activity to NIST 800-53 controls
+
+6. **Generate Initial Test Stubs**
+   Run: - Create initial health check test (unit + BDD)
+
+7. **Record in Audit Trail**
+   ```bash
+   python tools/audit/audit_query.py --project-id <UUID> --recent 5
+   ```
+
+8. **Output Summary**
+   Display:
+
+9. **Output Summary**
+   Display:

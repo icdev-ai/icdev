@@ -1,0 +1,30 @@
+# ICDEV Project Rules
+
+Project: ICDEV Project (IL4, CUI)
+Type: python webapp
+
+## Architecture
+
+GOTCHA framework — deterministic Python tools in `tools/` with `--json` output.
+Goals: `goals/manifest.md` | Tools: `tools/manifest.md` | Config: `args/`
+
+## Rules
+
+- All Python files: `# CUI // SP-CTI` header required
+- snake_case naming, 100-char lines
+- Tests: pytest + behave, >= 80% coverage
+- Security: 0 CAT1 STIG, 0 critical vulns, 0 secrets
+
+## Commands
+
+- Context: `python tools/project/session_context_builder.py --format markdown`
+- Tests: `pytest tests/ -v`
+- SAST: `python tools/security/sast_runner.py --project-dir . --json`
+- STIG: `python tools/compliance/stig_checker.py --project-id "" --json`
+
+## MCP Categories
+
+@security: sast_runner, dependency_auditor, secret_detector
+@compliance: ssp_generator, stig_checker, sbom_generator, control_mapper
+@build: test_writer, code_generator, scaffolder, formatter, linter
+@project: project_status, project_create, session_context_builder

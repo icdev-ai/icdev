@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Config-driven LLM router.
 
 Reads args/llm_config.yaml and resolves each ICDEV function to a

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """ICDEV Remote Command Gateway (Phase 28).
 
 Receives commands from messaging channels (Telegram, Slack, Teams,

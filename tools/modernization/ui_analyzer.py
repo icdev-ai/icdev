@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
@@ -767,4 +767,4 @@ def _print_batch_human_readable(batch: Dict[str, Any]) -> None:
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

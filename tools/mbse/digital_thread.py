@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """ICDEV Digital Thread Engine — end-to-end traceability across the MBSE lifecycle.
 
@@ -1661,4 +1661,4 @@ def _print_links(links: list, indent: int = 0, direction: str = "forward"):
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

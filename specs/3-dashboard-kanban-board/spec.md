@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Feature: Dashboard Kanban Board
 
 ## Metadata
@@ -159,4 +159,4 @@ IMPORTANT: Execute every step in order, top to bottom.
 - Project status values from the DB: `planning`, `active`, `completed`, `inactive`
 - The chart-grid, Recent Alerts table, and Recent Activity table are preserved unchanged below the Kanban board
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

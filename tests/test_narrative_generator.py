@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for the ICDEV Narrative Generator (tools/compliance/narrative_generator.py).
 
 Validates template rendering with evidence data, evidence gathering from DB,

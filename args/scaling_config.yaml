@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Auto-Scaling Configuration
 # Controls HPA, PDB, topology spread, and node provisioning
 # Change scaling behavior without editing K8s manifests or tools

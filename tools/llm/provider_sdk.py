@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """ICDEV LLM Provider SDK — Public API for custom provider development.
 
 Re-exports the core provider interfaces, request/response types, format

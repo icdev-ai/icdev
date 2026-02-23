@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Agent execution data models — dataclasses for request/response/retry."""
 
 from dataclasses import dataclass, field

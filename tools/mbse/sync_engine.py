@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """Bidirectional synchronization engine between SysML models (Cameo XMI) and code.
 
@@ -1801,4 +1801,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

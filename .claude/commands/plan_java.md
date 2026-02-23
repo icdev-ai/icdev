@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Plan Java Application — ICDEV Framework-Specific Build Command
 
 Generate a comprehensive build plan for a Java application with ICDEV compliance scaffolding.

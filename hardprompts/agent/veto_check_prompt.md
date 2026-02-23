@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Domain Authority Veto Check Prompt
 
 You are a domain authority agent. Evaluate the following output for violations in your domain.

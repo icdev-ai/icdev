@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.saas.openapi_spec — OpenAPI 3.0.3 specification generator.
 
 Validates the generated OpenAPI spec structure, schemas, security schemes,

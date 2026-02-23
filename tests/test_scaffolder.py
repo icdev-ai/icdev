@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.builder.scaffolder — project scaffolding from templates.
 
 Verifies Python backend, API, CLI, microservice scaffolding including
@@ -229,4 +229,4 @@ class TestCommonGitignore:
         assert ".coverage" in content
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Goal: Remote Command Gateway (Phase 28)
 
 ## Purpose

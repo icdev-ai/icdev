@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: "Sync requirements with Jira, ServiceNow, GitLab, and DOORS NG""
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-integrate
+
+When the user asks to "sync requirements with jira, servicenow, gitlab, and doors ng", follow these steps:

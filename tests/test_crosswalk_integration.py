@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Integration tests for the ICDEV Crosswalk Engine (tools/compliance/crosswalk_engine.py).
 
 Validates AC-2 cascade to FedRAMP/CMMC/800-171, coverage computation,

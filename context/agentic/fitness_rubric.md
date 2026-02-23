@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Agentic Fitness Scoring Rubric
 
 ## Purpose

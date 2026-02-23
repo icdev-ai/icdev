@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Workflow Operations — classify, branch, commit, PR helpers
 # Adapted from ADW workflow_ops.py with dual platform support
 

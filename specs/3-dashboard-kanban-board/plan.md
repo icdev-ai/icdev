@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Plan: Dashboard Kanban Board
 
 ## Phases
@@ -16,4 +16,4 @@
 - Verify the dashboard loads correctly with 0 projects (empty state) and with multiple projects across statuses
 - Add unit test for the updated index route
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

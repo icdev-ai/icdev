@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.saas.metrics — Prometheus-compatible metrics collector.
 
 Validates fallback metric types (_FallbackCounter, _FallbackGauge,

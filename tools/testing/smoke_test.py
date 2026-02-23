@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Smoke Test — verify all CLI tools are importable and --help works
 # Catches import errors after bulk refactors (renames, ruff cleanup, etc.)
 

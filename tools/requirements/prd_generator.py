@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """PRD (Product Requirements Document) generator.
 
 Assembles all intake pipeline data (session, requirements, readiness,

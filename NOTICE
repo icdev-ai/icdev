@@ -1,0 +1,266 @@
+ICDEV — Intelligent Coding Development Platform
+Copyright 2024-2026 ICDEV Contributors
+
+Licensed under the Apache License, Version 2.0.
+
+================================================================================
+THIRD-PARTY NOTICES AND ATTRIBUTIONS
+================================================================================
+
+This project uses or draws inspiration from the following open-source projects,
+standards, and research. All code in ICDEV is original unless otherwise noted.
+Where code was adapted from external sources, it is identified inline.
+
+--------------------------------------------------------------------------------
+DIRECT DEPENDENCIES (selected — see requirements.txt for full list)
+--------------------------------------------------------------------------------
+
+Flask (BSD-3-Clause)
+  Copyright Pallets Projects
+  https://flask.palletsprojects.com/
+
+Jinja2 (BSD-3-Clause)
+  Copyright Pallets Projects
+  https://jinja.palletsprojects.com/
+
+PyYAML (MIT)
+  Copyright Kirill Simonov
+  https://pyyaml.org/
+
+boto3 / botocore (Apache-2.0)
+  Copyright Amazon.com, Inc.
+  https://github.com/boto/boto3
+
+anthropic (MIT)
+  Copyright Anthropic, PBC
+  https://github.com/anthropics/anthropic-sdk-python
+
+openai (Apache-2.0)
+  Copyright OpenAI
+  https://github.com/openai/openai-python
+
+cryptography (Apache-2.0 OR BSD-3-Clause)
+  Copyright The cryptography developers
+  https://github.com/pyca/cryptography
+
+cyclonedx-python-lib (Apache-2.0)
+  Copyright OWASP Foundation
+  https://github.com/CycloneDX/cyclonedx-python-lib
+
+bandit (Apache-2.0)
+  Copyright PyCQA
+  https://github.com/PyCQA/bandit
+
+detect-secrets (Apache-2.0)
+  Copyright Yelp, Inc.
+  https://github.com/Yelp/detect-secrets
+
+behave (BSD-2-Clause)
+  Copyright Jens Engel, Benno Rice
+  https://github.com/behave/behave
+
+opentelemetry-sdk (Apache-2.0)
+  Copyright The OpenTelemetry Authors
+  https://github.com/open-telemetry/opentelemetry-python
+
+psycopg2-binary (LGPL)
+  Copyright Federico Di Gregorio, Daniele Varrazzo
+  https://github.com/psycopg/psycopg2
+
+oscal-pydantic (MIT)
+  Copyright EasyDynamics
+  https://github.com/EasyDynamics/oscal-pydantic
+  Optional dependency for type-safe OSCAL model validation (D303).
+
+--------------------------------------------------------------------------------
+OSCAL ECOSYSTEM TOOLS (D302-D306)
+--------------------------------------------------------------------------------
+
+oscal-cli (Public Domain / NIST)
+  National Institute of Standards and Technology (NIST)
+  https://github.com/usnistgov/oscal-cli
+  Java-based CLI for OSCAL Metaschema validation, profile resolution,
+  and format conversion (JSON/XML/YAML). Public domain per NIST policy.
+  Used via subprocess wrapper (D302). Requires Java 11+.
+
+NIST OSCAL Content (Public Domain / NIST)
+  National Institute of Standards and Technology (NIST)
+  https://github.com/usnistgov/oscal-content
+  Authoritative NIST SP 800-53 Rev 5 catalog and baseline profiles in
+  OSCAL JSON format. Public domain per NIST policy. Contains 1000+ controls
+  vs ICDEV's 39-control custom catalog (D304).
+
+NIST OSCAL Specification (Public Domain / NIST)
+  National Institute of Standards and Technology (NIST)
+  https://pages.nist.gov/OSCAL/
+  Open Security Controls Assessment Language (OSCAL) — machine-readable
+  format for security assessment artifacts. ICDEV generates OSCAL 1.1.2
+  artifacts conforming to this specification.
+
+--------------------------------------------------------------------------------
+STANDARDS AND SPECIFICATIONS (publicly available)
+--------------------------------------------------------------------------------
+
+The following government and industry standards are referenced throughout the
+codebase for compliance automation purposes. ICDEV implements tooling that
+automates assessment against these standards but does not reproduce their
+full text:
+
+  - NIST SP 800-53 Rev 5 — Security and Privacy Controls
+    https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final
+
+  - NIST SP 800-171 Rev 2 — Protecting CUI in Nonfederal Systems
+    https://csrc.nist.gov/publications/detail/sp/800-171/rev-2/final
+
+  - NIST SP 800-207 — Zero Trust Architecture
+    https://csrc.nist.gov/publications/detail/sp/800-207/final
+
+  - NIST SP 800-60 Vol 1/2 — Information Types and Security Categories
+    https://csrc.nist.gov/publications/detail/sp/800-60/vol-1-rev-1/final
+
+  - NIST AI RMF 1.0 — Artificial Intelligence Risk Management Framework
+    https://www.nist.gov/artificial-intelligence/ai-risk-management-framework
+
+  - FIPS 199 — Standards for Security Categorization
+    https://csrc.nist.gov/publications/detail/fips/199/final
+
+  - FIPS 200 — Minimum Security Requirements
+    https://csrc.nist.gov/publications/detail/fips/200/final
+
+  - FedRAMP — Federal Risk and Authorization Management Program
+    https://www.fedramp.gov/
+
+  - CMMC — Cybersecurity Maturity Model Certification
+    https://dodcio.defense.gov/CMMC/
+
+  - CNSSI 1253 — Security Categorization and Control Selection
+    https://www.cnss.gov/CNSS/issuances/Instructions.cfm
+
+  - MITRE ATLAS — Adversarial Threat Landscape for AI Systems
+    https://atlas.mitre.org/
+
+  - OWASP LLM Top 10 — Top 10 for Large Language Model Applications
+    https://owasp.org/www-project-top-10-for-large-language-model-applications/
+
+  - ISO/IEC 27001:2022 — Information Security Management
+    https://www.iso.org/standard/27001
+
+  - ISO/IEC 42001:2023 — AI Management System
+    https://www.iso.org/standard/81230.html
+
+  - Executive Order 13526 — Classified National Security Information
+    https://www.archives.gov/isoo/policy-documents/cnsi-eo.html
+
+  - 32 CFR Part 2002 — CUI Program
+    https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002
+
+  - DoDI 5000.87 — Operation of the Software Acquisition Pathway
+    https://www.esd.whs.mil/Portals/54/Documents/DD/issuances/dodi/500087p.pdf
+
+  - 10 U.S.C. section 4401 — Modular Open Systems Approach (MOSA)
+
+  - CJIS Security Policy
+    https://www.fbi.gov/services/cjis/cjis-security-policy-resource-center
+
+  - HIPAA Security Rule (45 CFR Parts 160, 162, 164)
+
+  - PCI DSS v4.0
+    https://www.pcisecuritystandards.org/
+
+  - IEEE 1012 — Standard for System, Software, and Hardware V&V
+
+  - W3C PROV — Provenance Data Model
+    https://www.w3.org/TR/prov-dm/
+
+  - SAFe (Scaled Agile Framework) — used for decomposition terminology
+    https://scaledagileframework.com/
+
+--------------------------------------------------------------------------------
+FOUNDATIONAL FRAMEWORKS
+--------------------------------------------------------------------------------
+
+The GOTCHA and ATLAS frameworks that form ICDEV's core architecture originate
+from the following source:
+
+  GOTCHA Framework & ATLAS Workflow — Mansel Scheffel / atomicOps
+  YouTube: https://www.youtube.com/watch?v=kPLFINpFwvQ
+  Starter template: https://drive.google.com/drive/folders/1PHw8DMk0q4rt0czxYqF3G4AoVZukzcnc
+  No explicit license was provided with the starter template.
+
+  GOTCHA (Goals, Orchestration, Tools, Context, Hard prompts, Args) is a
+  6-layer agentic architecture separating deterministic tools from
+  probabilistic LLM orchestration.
+
+  ATLAS (Architect, Trace, Assemble, Validate, Stress-test) is a structured
+  methodology for full-stack application development.
+
+  ICDEV significantly extended both frameworks with 47 phases of additional
+  capabilities (compliance automation, multi-agent architecture, multi-cloud
+  support, etc.), but the foundational concepts originated from this source.
+
+  Get Shit Done (GSD) — Lex Christopherson
+  https://github.com/gsd-build/get-shit-done
+  License: MIT
+  Copyright 2025 Lex Christopherson
+  A meta-prompting and context engineering system for Claude Code that also
+  implements the GOTCHA framework pattern. MIT licensed.
+
+--------------------------------------------------------------------------------
+ARCHITECTURAL INSPIRATIONS
+--------------------------------------------------------------------------------
+
+The following projects and research influenced ICDEV's architecture. No code
+was copied from these sources; they informed design patterns and approaches:
+
+  Agent Zero — Multi-agent communication patterns, extension hook architecture
+  https://github.com/frdel/agent-zero
+  License: GPL-3.0 (no code used — architectural inspiration only)
+
+  Amazon CodeCatalyst / Oxidizer — Cross-language translation pipeline patterns
+  (post-order dependency traversal, mock-and-continue, feature mapping rules)
+  Reference: Amazon internal research on automated code translation
+
+  Google CoTran — Pass@k candidate generation, compiler-feedback repair loops
+  Reference: Google research on LLM-assisted code translation
+
+  ArXiv:2512.12597 — AgentSHAP: Monte Carlo Shapley value attribution for
+  tool-using agents. Informed the AgentSHAP implementation in
+  tools/observability/shap/agent_shap.py
+
+  OpenTelemetry — Distributed tracing instrumentation patterns
+  https://opentelemetry.io/
+  License: Apache-2.0
+
+  Haystack ProxyTracer — Pluggable tracer abstraction pattern
+  https://github.com/deepset-ai/haystack
+  License: Apache-2.0
+
+  W3C PROV-AGENT — Provenance recording model for AI agents
+  https://www.w3.org/TR/prov-dm/
+
+  InsForge — Active extension hook patterns, behavioral/observational tiers
+  Reference: Community pattern for agentic plugin architecture
+
+  CycloneDX — Software Bill of Materials (SBOM) specification
+  https://cyclonedx.org/
+  License: Apache-2.0
+
+  OWASP Agentic AI — Threat modeling patterns for agentic systems
+  https://owasp.org/www-project-top-10-for-large-language-model-applications/
+
+--------------------------------------------------------------------------------
+NODE.JS DEPENDENCIES (see package.json)
+--------------------------------------------------------------------------------
+
+Mermaid (MIT) — Diagram rendering in dashboard
+  https://github.com/mermaid-js/mermaid
+
+Playwright (Apache-2.0) — E2E browser testing
+  https://github.com/microsoft/playwright
+
+D3.js (ISC) — Data visualization components
+  https://github.com/d3/d3
+
+================================================================================
+END OF NOTICE
+================================================================================

@@ -1,0 +1,72 @@
+---
+description: "ICDEV workflow: Enforce code review gates with security checks, compliance validation, and merge readiness assessment"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-review
+
+When the user asks to enforce code review gates with security checks, compliance validation, and merge readiness assessment, follow these steps:
+
+1. **Load Gate Configuration**
+   ```bash
+   !cat args/security_gates.yaml
+   ```
+
+2. **Run Test Suite**
+   Run: - Gate: All tests must pass
+
+3. **Run Security Scan**
+   ```bash
+   python tools/security/vuln_scanner.py --project-dir <path>
+   ```
+
+4. **Run STIG Check**
+   Run: - Gate: 0 CAT1 findings
+
+5. **Verify CUI Markings**
+   ```bash
+   python tools/compliance/cui_marker.py --verify --directory <path>
+   ```
+
+6. **Verify SBOM Currency**
+   Run: - Gate: SBOM must match current dependencies
+
+7. **Run Linter**
+   Run: - Gate: 0 critical lint errors (warnings acceptable)
+
+8. **Gate Decision**
+   ```bash
+   Tests:      PASS/FAIL
+   ```
+   ```bash
+   Security:   PASS/FAIL
+   ```
+   ```bash
+   STIG:       PASS/FAIL
+   ```
+   ```bash
+   CUI:        PASS/FAIL
+   ```
+   ```bash
+   SBOM:       PASS/FAIL
+   ```
+   ```bash
+   Lint:       PASS/FAIL
+   ```
+   ```bash
+   ─────────────────────
+   ```
+   ```bash
+   Overall:    PASS/FAIL
+   ```
+
+9. **Record Decision**
+   Log review decision in audit trail with:
+
+10. **Output Summary**
+   Display:
+
+11. **Output Summary**
+   Display:

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: ICDEV Compliance Gates
   As a compliance officer (ISSO)
   I want security gates enforced in the SDLC pipeline

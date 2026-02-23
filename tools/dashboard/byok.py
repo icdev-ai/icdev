@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 BYOK — Bring Your Own Key management (Phase 30 — D175-D178).
 

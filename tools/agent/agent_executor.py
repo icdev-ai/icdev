@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Agent Executor — subprocess-based Claude Code CLI invocation with retry/audit."""
 
 import argparse

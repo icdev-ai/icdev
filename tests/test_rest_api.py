@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.saas.rest_api — SaaS REST API v1 Blueprint.
 
 Uses a Flask test client with mock auth middleware (before_request hook)

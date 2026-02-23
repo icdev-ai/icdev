@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: ICDEV Requirements Intake (RICOAS)
   As a requirements analyst
   I want AI-driven conversational intake

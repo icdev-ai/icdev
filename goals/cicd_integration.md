@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Goal: CI/CD Integration (GitHub + GitLab)
 
 ## Purpose
@@ -83,4 +83,4 @@ Core fields: `run_id`, `issue_number`, `branch_name`, `plan_file`, `issue_class`
 - Always return 200 to webhooks to prevent retries
 - Graceful shutdown via SIGINT/SIGTERM handlers in poll trigger
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

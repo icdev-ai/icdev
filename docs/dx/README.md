@@ -31,7 +31,9 @@ Most teams use **Tier 1 + Tier 2**: the pipeline runs automatically, and develop
 | [CI/CD Integration](ci-cd-integration.md) | Pipeline auto-attach for GitHub Actions and GitLab CI |
 | [Dev Profiles](dev-profiles.md) | Tenant coding standards, style enforcement, and personalization |
 | [AI Companion Guide](companion-guide.md) | Multi-tool setup — Claude Code, Codex, Gemini, Copilot, Cursor, and 5 more |
+| [LLM Routing Guide](llm-routing-guide.md) | Per-task LLM provider selection — assign Claude, GPT, Gemini, or local models to specific functions |
 | [SDK Reference](sdk-reference.md) | Programmatic API for custom tooling |
+| [Unified MCP Setup](unified-mcp-setup.md) | Single MCP server setup for VS Code, Cursor, Codex, Gemini, JetBrains, and 5 more IDEs |
 
 ---
 

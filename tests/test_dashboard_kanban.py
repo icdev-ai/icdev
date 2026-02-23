@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Tests for Dashboard Kanban Board (Issue #3).
 Verifies the index route returns project list and stat bar context variables.
@@ -322,4 +322,4 @@ class TestIndexEmptyState:
         assert "kanban-board" in html
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -579,7 +579,7 @@ def generate_profile_md(resolved_profile):
         return f"# PROFILE.md\n\n> Error: {resolved_profile.get('error', 'No profile data')}\n"
 
     if _HAS_JINJA2:
-        env = Environment(loader=BaseLoader())
+        env = Environment(loader=BaseLoader())  # nosec B701 — generates Markdown, not HTML
         template = env.from_string(PROFILE_MD_TEMPLATE)
         rendered = template.render(
             generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Step definitions for ICDEV CI/CD integration BDD scenarios."""
 
 import json
@@ -462,4 +462,4 @@ def step_mr_workflow_triggered(context):
     assert context.envelope is not None, "Envelope should not be None"
     assert context.envelope.event_type == "mr_opened"
     assert context.envelope.platform == "gitlab"
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

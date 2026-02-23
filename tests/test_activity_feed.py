@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Tests for the Activity Feed API blueprint (tools/dashboard/api/activity.py).
 
@@ -517,4 +517,4 @@ class TestFeedOrdering:
         assert first["summary"] == "sbom_generator" or first["summary"] == "SAST clean"
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

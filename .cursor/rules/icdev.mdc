@@ -1,0 +1,38 @@
+---
+description: ICDEV project rules — IL4 CUI compliance-aware development
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+  - "**/*.md"
+  - "**/*.json"
+alwaysApply: true
+---
+
+# ICDEV Project: ICDEV Project
+
+**IL4** | **CUI** | **python** webapp
+
+## Architecture
+
+GOTCHA framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
+
+## Rules
+
+1. All Python files start with `# CUI // SP-CTI`
+2. snake_case naming, 100-char lines
+3. Tests: `pytest tests/` + `behave features/`, >= 80% coverage
+4. Security: 0 CAT1 STIG, 0 critical vulns, 0 secrets
+5. Load context: `python tools/project/session_context_builder.py --format markdown`
+
+## Key Commands
+
+```bash
+pytest tests/ -v --tb=short                                    # Unit tests
+python tools/security/sast_runner.py --project-dir . --json    # SAST
+python tools/compliance/stig_checker.py --project-id "" --json
+python tools/project/project_status.py --project-id "" --json
+```
+
+## MCP
+
+19 servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.

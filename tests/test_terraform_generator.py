@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.infra.terraform_generator — Terraform config generation.
 
 Verifies provider.tf, variables.tf, outputs.tf, main.tf base generation,
@@ -321,4 +321,4 @@ class TestEdgeCases:
         assert len(files) == 4
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

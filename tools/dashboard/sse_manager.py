@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """SSE (Server-Sent Events) connection manager for ICDEV dashboard.
 
 Manages client connections, event broadcasting, and heartbeat.

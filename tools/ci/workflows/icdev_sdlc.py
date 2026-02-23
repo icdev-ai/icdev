@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV SDLC — Complete Software Development Life Cycle orchestrator
 # Adapted from ADW adw_sdlc.py with dual platform support
 

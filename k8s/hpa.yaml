@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Horizontal Pod Autoscaler Manifests
 # D141: CPU/memory baseline; custom metrics Phase 2
 # Driven by args/scaling_config.yaml profiles

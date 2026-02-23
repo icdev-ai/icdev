@@ -17,6 +17,7 @@ pydantic>=2.0            # Test data validation (TestResult, E2ETestResult model
 
 # === Compliance ===
 # cyclonedx-bom>=4.0     # SBOM generation (install when needed)
+# oscal-pydantic>=1.0    # OSCAL Pydantic models for type-safe validation (optional, D303)
 
 # === Search & Embeddings ===
 openai>=1.0              # For embeddings (semantic search)

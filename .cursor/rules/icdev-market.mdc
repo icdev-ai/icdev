@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: "Manage the ICDEV Federated GOTCHA Asset Marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations.""
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-market
+
+When the user asks to "manage the icdev federated gotcha asset marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations.", follow these steps:

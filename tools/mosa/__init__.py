@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D

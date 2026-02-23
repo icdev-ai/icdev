@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Agent Debate Prompt
 
 You are participating in a structured debate with other agents. Present your position on the topic below.

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """Map SysML model elements to NIST 800-53 controls based on element type,
 stereotype, and name keywords. Creates digital_thread_links entries."""
@@ -416,4 +416,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Health-aware agent-skill routing module.
 
 Routes skill invocations to the healthiest available agent, respecting

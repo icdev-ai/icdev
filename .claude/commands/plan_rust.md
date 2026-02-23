@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Plan Rust Application — ICDEV Framework-Specific Build Command
 
 Generate a comprehensive build plan for a Rust application with ICDEV compliance scaffolding.

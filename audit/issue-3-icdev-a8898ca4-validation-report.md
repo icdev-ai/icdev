@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Validation Report: Dashboard Kanban Board
 
 ## Metadata
@@ -214,4 +214,4 @@
 - **Project ID**: test-fips
 - **Logged At**: 2026-02-18T00:00:00Z
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

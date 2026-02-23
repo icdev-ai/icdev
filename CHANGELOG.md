@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 
 # Changelog
 
@@ -176,4 +176,4 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Kubernetes manifests with network policies (default deny)
 - Audit trail: append-only, immutable, NIST AU compliant
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

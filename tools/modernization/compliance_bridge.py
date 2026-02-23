@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """ATO-Aware Compliance Bridge for ICDEV DoD Modernization.
 
@@ -1495,4 +1495,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Domain Authority — enforces agent veto rights per topic.
 
 Loads the authority matrix from args/agent_authority.yaml, checks whether

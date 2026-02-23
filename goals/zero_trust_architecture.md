@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Goal: Zero Trust Architecture (NIST SP 800-207)
 
 ## Purpose

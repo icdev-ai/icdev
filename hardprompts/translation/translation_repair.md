@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Translation Repair Prompt — ICDEV Phase 43 (D255)
 # Compiler-feedback repair loop (adopted from Google ICSE 2025 + CoTran ECAI 2024)
 

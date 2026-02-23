@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Flask Blueprint for project API endpoints.
 Queries icdev.db for project data, compliance status, and audit trail entries.

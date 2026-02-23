@@ -1,0 +1,102 @@
+---
+description: "ICDEV workflow: Production monitoring with log analysis, metric collection, alerting, and self-healing trigger"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-monitor
+
+When the user asks to production monitoring with log analysis, metric collection, alerting, and self-healing trigger, follow these steps:
+
+1. **Load Monitoring Configuration**
+   ```bash
+   !cat args/monitoring_config.yaml
+   ```
+
+2. **Health Checks**
+   ```bash
+   python tools/monitor/health_checker.py --project-id <id>
+   ```
+
+3. **Log Analysis**
+   ```bash
+   python tools/monitor/log_analyzer.py --project-id <id> --since <timeframe>
+   ```
+
+4. **Metric Collection**
+   ```bash
+   python tools/monitor/metric_collector.py --project-id <id>
+   ```
+
+5. **Alert Correlation**
+   ```bash
+   python tools/monitor/alert_correlator.py --project-id <id>
+   ```
+
+6. **Pattern Matching**
+   Run: - Match detected issues against knowledge base patterns
+
+7. **Self-Healing (if --self-heal)**
+   Run: - Confidence >= 0.7 + auto_healable: execute fix automatically
+
+8. **Record Events**
+   All monitoring events and self-healing actions are logged to:
+
+9. **Output Summary**
+   ```bash
+   Monitoring Report — <project-name>
+   ```
+   ```bash
+   Since: <timeframe>
+   ```
+   ```bash
+   ───────────────────────────────
+   ```
+   ```bash
+   Health:  ● All checks passing / ○ X failing
+   ```
+   ```bash
+   Logs:    X errors, Y warnings detected
+   ```
+   ```bash
+   Metrics: CPU XX%, Memory XX%, Latency p95 XXms
+   ```
+   ```bash
+   Alerts:  X active (Y critical)
+   ```
+   ```bash
+   Patterns Detected: X
+   ```
+   ```bash
+   Self-Heal Actions: X executed, Y suggested, Z escalated
+   ```
+
+10. **Output Summary**
+   ```bash
+   Monitoring Report — <project-name>
+   ```
+   ```bash
+   Since: <timeframe>
+   ```
+   ```bash
+   ───────────────────────────────
+   ```
+   ```bash
+   Health:  ● All checks passing / ○ X failing
+   ```
+   ```bash
+   Logs:    X errors, Y warnings detected
+   ```
+   ```bash
+   Metrics: CPU XX%, Memory XX%, Latency p95 XXms
+   ```
+   ```bash
+   Alerts:  X active (Y critical)
+   ```
+   ```bash
+   Patterns Detected: X
+   ```
+   ```bash
+   Self-Heal Actions: X executed, Y suggested, Z escalated
+   ```

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """NLQ-to-SQL processor — converts natural language to safe SQL queries.
 
 Uses Amazon Bedrock (Claude) for SQL generation, with strict read-only enforcement.

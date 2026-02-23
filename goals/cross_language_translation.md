@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Cross-Language Translation — Phase 43
 
 > LLM-assisted cross-language code translation across all 30 directional pairs of 6 first-class languages, with configurable model selection (including local/air-gapped), full ATO compliance preservation, and Dashboard + SaaS Portal visibility.

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Centralized Amazon Bedrock API wrapper for ICDEV multi-agent system.
 
 Bedrock-specific client used by agents (team_orchestrator, collaboration,

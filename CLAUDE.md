@@ -117,6 +117,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - **NEVER DELETE YOUTUBE VIDEOS** — Irreversible. MCP server blocks this intentionally. If truly needed, ask 3 times for 3 confirmations. Direct user to YouTube Studio instead.
 - When adding an append-only/immutable DB table, ALWAYS add it to `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`
 - When adding a new dashboard page route, ALWAYS add it to the `Pages:` line in `.claude/commands/start.md`
+- When taking screenshots with `browser_take_screenshot`, ALWAYS use `playwright/screenshots/<name>.png` as the filename — `--output-dir` only applies to default filenames, explicit filenames are relative to CWD
 
 *(Add new guardrails as mistakes happen. Keep under 15 items.)*
 
@@ -159,12 +160,15 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 
 Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s). Each publishes an Agent Card at `/.well-known/agent.json`.
 
-### MCP Servers (15 stdio servers for Claude Code)
+### MCP Servers (Unified Gateway + 18 individual servers)
+
+**Recommended: Use `icdev-unified` — single server with all 230 tools (D301).**
 
 | Server | Config Key | Tools |
 |--------|-----------|-------|
+| **icdev-unified** | `.mcp.json` | **All 225 tools from 18 servers + 55 new tools** (lazy-loaded, D301) |
 | icdev-core | `.mcp.json` | project_create, project_list, project_status, task_dispatch, agent_status |
-| icdev-compliance | `.mcp.json` | ssp_generate, poam_generate, stig_check, sbom_generate, cui_mark, control_map, nist_lookup, cssp_assess, cssp_report, cssp_ir_plan, cssp_evidence, xacta_sync, xacta_export, sbd_assess, sbd_report, ivv_assess, ivv_report, rtm_generate, **crosswalk_query, fedramp_assess, fedramp_report, cmmc_assess, cmmc_report, oscal_generate, emass_sync, cato_monitor, pi_compliance, classification_check, fips199_categorize, fips200_validate, security_categorize** |
+| icdev-compliance | `.mcp.json` | ssp_generate, poam_generate, stig_check, sbom_generate, cui_mark, control_map, nist_lookup, cssp_assess, cssp_report, cssp_ir_plan, cssp_evidence, xacta_sync, xacta_export, sbd_assess, sbd_report, ivv_assess, ivv_report, rtm_generate, **crosswalk_query, fedramp_assess, fedramp_report, cmmc_assess, cmmc_report, oscal_generate, emass_sync, cato_monitor, pi_compliance, classification_check, fips199_categorize, fips200_validate, security_categorize, oscal_validate_deep, oscal_convert, oscal_resolve_profile, oscal_catalog_lookup, oscal_detect_tools** |
 | icdev-builder | `.mcp.json` | scaffold, generate_code, write_tests, run_tests, lint, format, dev_profile_create, dev_profile_get, dev_profile_resolve, dev_profile_detect |
 | icdev-infra | `.mcp.json` | terraform_plan, terraform_apply, ansible_run, k8s_deploy, pipeline_generate, rollback |
 | icdev-knowledge | `.mcp.json` | search_knowledge, add_pattern, get_recommendations, analyze_failure, self_heal |
@@ -373,6 +377,8 @@ pytest tests/test_otel_tracer.py -v                   # OTelTracer + OTelSpan mo
 pytest tests/test_prov_recorder.py -v                 # Provenance recorder tests (30 tests)
 pytest tests/test_agent_shap.py -v                    # AgentSHAP Shapley value tests (20 tests)
 pytest tests/test_xai_assessor.py -v                  # XAI compliance assessor tests (34 tests)
+pytest tests/test_unified_server.py -v                 # Unified MCP gateway tests (42 tests)
+pytest tests/test_oscal_tools.py -v                    # OSCAL ecosystem tools tests (40 tests)
 
 # .claude directory governance
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
@@ -486,7 +492,7 @@ python tools/installer/platform_setup.py --generate helm-values --modules core,l
 ### ICDEV Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (170 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV database (184 tables)
 
 # Database Migrations (D150)
 python tools/db/migrate.py --status [--json]                      # Show migration status
@@ -512,6 +518,7 @@ python tools/audit/audit_query.py --project "proj-123" --format json
 python tools/audit/decision_recorder.py --project-id "proj-123" --decision "Use PostgreSQL" --rationale "RDS requirement" --actor "architect-agent"
 
 # MCP servers (stdio transport)
+python tools/mcp/unified_server.py                   # Start unified MCP gateway (230 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
 python tools/mcp/compliance_server.py               # Start compliance MCP server
 python tools/mcp/builder_server.py                  # Start builder MCP server
@@ -684,6 +691,19 @@ python tools/compliance/fedramp_report_generator.py --project-id "proj-123"     
 python tools/compliance/cmmc_assessor.py --project-id "proj-123" --level 2              # CMMC assessment
 python tools/compliance/cmmc_report_generator.py --project-id "proj-123"                # CMMC report
 python tools/compliance/oscal_generator.py --project-id "proj-123" --artifact ssp       # OSCAL generation
+python tools/compliance/oscal_generator.py --project-id "proj-123" --deep-validate /path/to/ssp.oscal.json --json  # Deep validation (D302-D305)
+
+# OSCAL Ecosystem Tools (D302-D306)
+python tools/compliance/oscal_tools.py --detect --json                                  # Check oscal-cli, oscal-pydantic, NIST catalog availability
+python tools/compliance/oscal_tools.py --validate /path/to/ssp.oscal.json --json        # 3-layer deep validation
+python tools/compliance/oscal_tools.py --convert /path/to/ssp.json --output-format xml  # Format conversion (requires oscal-cli)
+python tools/compliance/oscal_tools.py --resolve-profile /path/to/profile.json --json   # Profile resolution (requires oscal-cli)
+python tools/compliance/oscal_tools.py --catalog-lookup AC-2 --json                     # Look up control from NIST catalog
+python tools/compliance/oscal_tools.py --catalog-list --family AC --json                # List controls by family
+python tools/compliance/oscal_tools.py --catalog-stats --json                           # Catalog statistics
+python tools/compliance/oscal_catalog_adapter.py --lookup AC-2 --json                   # Direct catalog adapter CLI
+python tools/compliance/oscal_catalog_adapter.py --stats --json                         # Catalog source info
+
 python tools/compliance/emass/emass_sync.py --project-id "proj-123" --mode hybrid       # eMASS sync
 python tools/compliance/emass/emass_export.py --project-id "proj-123" --type controls   # eMASS export
 python tools/compliance/cato_monitor.py --project-id "proj-123" --check-freshness       # cATO monitoring
@@ -1120,7 +1140,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 183 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300) |
+| `data/icdev.db` | 184 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1172,6 +1192,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/security_gates.yaml` | (updated) Added `owasp_agentic` gate with blocking: agent_trust_below_untrusted, tool_chain_critical_violation, output_classification_leak, behavioral_drift_critical, mcp_authorization_not_configured; thresholds: min_trust_score=0.30, max_critical_chain_violations=0, max_critical_output_violations=0 |
 | `args/observability_tracing_config.yaml` | Observability & XAI (Phase 46, D290): dual-mode tracer config (otel/sqlite auto-detect via ICDEV_MLFLOW_TRACKING_URI), sampling rate, retention (sqlite_retention_days, mlflow_retention_days), content tracing policy (hash-only vs plaintext, ICDEV_CONTENT_TRACING_ENABLED), PROV-AGENT settings, AgentSHAP defaults (iterations, seed), XAI assessment thresholds |
 | `args/security_gates.yaml` | (updated) Added `observability_xai` gate with blocking: tracing_not_active, provenance_graph_empty, xai_assessment_not_completed, content_tracing_active_in_cui_without_approval; thresholds: tracing_required=true, provenance_required=true, shap_max_age_days=30, min_xai_coverage_pct=80 |
+| `args/oscal_tools_config.yaml` | OSCAL Ecosystem Tools (D302-D306): oscal-cli paths/timeout/JVM args, oscal-pydantic validation toggles, catalog source priority (official NIST → ICDEV fallback), validation pipeline order (structural → pydantic → Metaschema), max errors per validator |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1614,6 +1635,12 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D288:** AgentSHAP post-hoc tool attribution via Monte Carlo Shapley values — 0.945 consistency (arXiv:2512.12597), stdlib `random` for sampling (D22 air-gap safe)
 - **D289:** XAI assessor via BaseAssessor pattern (D116) — ~200 LOC, crosswalk to NIST 800-53 US hub cascades to FedRAMP/CMMC
 - **D290:** Dual-mode config in `args/observability_tracing_config.yaml` — auto-detect: `ICDEV_MLFLOW_TRACKING_URI` set → `otel` mode, else → `sqlite` mode
+- **D301:** Unified MCP gateway (`unified_server.py`) uses declarative tool registry (`tool_registry.py`) with lazy module loading. Existing 18 servers remain independently runnable (backward compat). Registry maps tool name → (module, handler, schema). Handlers imported via `importlib.import_module()` on first call, cached thereafter. 55 new tools for CLI gaps use direct Python import with subprocess fallback (`gap_handlers.py`). All 230 tools inherit D284 auto-instrumentation from `base_server.py`. Reduces `.mcp.json` from 18 entries to 1.
+- **D302:** oscal-cli invoked via subprocess (`_run_cli()` pattern). Java detected at load time, cached. Degrades to built-in validation when absent. Config: `args/oscal_tools_config.yaml`
+- **D303:** oscal-pydantic is a post-generation validation layer. Does NOT replace dict construction. Skipped via `ImportError` when not installed. MIT license.
+- **D304:** Official NIST OSCAL catalog stored in `context/oscal/` (downloaded, not committed — 14MB). ICDEV custom catalog (`context/compliance/nist_800_53.json`) preserved as fallback. `OscalCatalogAdapter` normalizes both formats. Priority: official → ICDEV.
+- **D305:** Single orchestrator module (`oscal_tools.py`) composes all three integrations. Each independently optional. 3-layer validation pipeline: structural → pydantic → Metaschema.
+- **D306:** `oscal_validation_log` append-only table records every validation attempt (D6 pattern). Validator name, pass/fail, error count, duration tracked per layer.
 
 ### Innovation Security Gates
 | Gate | Condition |
@@ -1748,7 +1775,7 @@ ICDEV generates mini-ICDEV clone child applications. Each child app includes:
 - Full memory system (MEMORY.md, logs, SQLite, semantic search)
 - 9 compliance frameworks (when ATO required)
 - CI/CD integration (GitHub + GitLab)
-- CSP MCP server integration (AWS, GCP, Azure, Oracle)
+- CSP MCP server integration (AWS, GCP, Azure, Oracle, IBM)
 
 Child apps CANNOT generate their own child apps (grandchild prevention D52).
 
@@ -1771,6 +1798,7 @@ Child apps connect to cloud provider MCP servers based on target cloud:
 - GCP: Managed endpoints (`https://{service}.googleapis.com/mcp`)
 - Azure: Azure MCP server catalog
 - Oracle: OCI MCP servers
+- IBM: IC4G MCP servers (IKS, watsonx.ai, Cloud Object Storage, Key Protect)
 
 Registry: `context/agentic/csp_mcp_registry.yaml`
 

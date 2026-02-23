@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Direct Anthropic API LLM Provider.
 
 Uses the anthropic Python SDK for direct API access (not via Bedrock).

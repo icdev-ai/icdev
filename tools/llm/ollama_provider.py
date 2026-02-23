@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Native Ollama LLM Provider using the Ollama REST API directly.
 
 Uses requests.post() against the Ollama native API endpoints:

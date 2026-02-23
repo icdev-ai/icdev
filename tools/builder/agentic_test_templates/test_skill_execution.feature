@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: Agent Skill Execution
   Test that each agent's registered skills execute correctly
 

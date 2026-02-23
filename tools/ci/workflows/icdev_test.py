@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Test — Testing workflow
 # Adapted from ADW adw_test.py with dual platform support
 

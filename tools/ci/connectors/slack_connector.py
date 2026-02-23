@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Slack Connector — built-in Slack integration (D136, D137)
 
 """

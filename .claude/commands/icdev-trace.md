@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # /icdev-trace — Observability, Tracing & Explainable AI
 
 Query distributed traces, provenance lineage, run AgentSHAP analysis, and assess

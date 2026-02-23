@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Platform CI/CD Pipeline
 # Classification: CUI // SP-CTI
 
@@ -76,4 +76,4 @@ helm:lint:
   script:
     - helm lint deploy/helm/
     - helm template icdev deploy/helm/ > /dev/null
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

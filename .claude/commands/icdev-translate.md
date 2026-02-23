@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Cross-Language Translation — `/icdev-translate`
 
 You are an ICDEV orchestrator performing cross-language code translation using the Phase 43 translation pipeline.

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 UserPromptSubmit hook — logs user prompts and runs prompt injection detection.
 

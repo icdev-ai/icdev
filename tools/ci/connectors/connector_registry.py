@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Connector Registry — plugin registry + route registration (D66, D136)
 
 """

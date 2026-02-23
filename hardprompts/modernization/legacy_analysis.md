@@ -1,4 +1,4 @@
-<!-- CUI // SP-CTI -->
+<!-- [TEMPLATE: CUI // SP-CTI] -->
 
 # Legacy Code Analysis — Hard Prompt Template
 
@@ -90,4 +90,4 @@ Return a single JSON object with the following top-level keys:
 - Do not speculate about runtime behavior — report only what is statically observable.
 - Analysis must complete without network access (air-gapped environment).
 
-<!-- CUI // SP-CTI -->
+<!-- [TEMPLATE: CUI // SP-CTI] -->

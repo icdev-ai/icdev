@@ -4009,6 +4009,26 @@ CREATE INDEX IF NOT EXISTS idx_remediation_check ON remediation_audit_log(check_
 CREATE INDEX IF NOT EXISTS idx_remediation_status ON remediation_audit_log(status);
 CREATE INDEX IF NOT EXISTS idx_remediation_tier ON remediation_audit_log(tier);
 CREATE INDEX IF NOT EXISTS idx_remediation_created ON remediation_audit_log(created_at);
+
+-- ── OSCAL Ecosystem Validation Log (D306) ────────────────────────────────
+-- Append-only log of all OSCAL validation attempts (structural, pydantic, Metaschema).
+CREATE TABLE IF NOT EXISTS oscal_validation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_path TEXT NOT NULL,
+    artifact_type TEXT,
+    validator TEXT NOT NULL,
+    valid INTEGER NOT NULL,
+    error_count INTEGER DEFAULT 0,
+    errors TEXT,
+    duration_ms INTEGER DEFAULT 0,
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_oscal_val_file ON oscal_validation_log(file_path);
+CREATE INDEX IF NOT EXISTS idx_oscal_val_validator ON oscal_validation_log(validator);
+CREATE INDEX IF NOT EXISTS idx_oscal_val_project ON oscal_validation_log(project_id);
+CREATE INDEX IF NOT EXISTS idx_oscal_val_created ON oscal_validation_log(created_at);
 """
 
 

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Git worktree manager — task-isolated parallel development with sparse checkout.
 
 Decision D32: Git worktrees with sparse checkout for task isolation.

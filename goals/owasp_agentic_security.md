@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 
 # Goal: OWASP Agentic AI Security (Phase 45)
 

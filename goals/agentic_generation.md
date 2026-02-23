@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 
 # Goal: Agentic Application Generation
 
@@ -40,7 +40,7 @@ Collect the application specification from the user. This is an interactive step
 
 **Information to collect:**
 - Application name and description (kebab-case, max 32 chars)
-- Cloud provider: AWS GovCloud / GCP / Azure / Oracle Cloud
+- Cloud provider: AWS GovCloud / GCP / Azure / Oracle Cloud / IBM Cloud (IC4G)
 - Cloud region (default: `us-gov-west-1` for AWS GovCloud)
 - Compliance requirements: ATO (FedRAMP, CMMC), NIST 800-53 baseline
 - Impact level: IL2 (Public), IL4 (CUI/GovCloud), IL5 (CUI/Dedicated), IL6 (SECRET/SIPR)

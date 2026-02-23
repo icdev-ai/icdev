@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Validation Report: V&V Enforcement in ICDEV SDLC Pipeline
 
 ## Metadata
@@ -76,4 +76,4 @@
 | `tools/manifest.md` | MODIFIED | +Acceptance Validator row |
 | `CLAUDE.md` | MODIFIED | 8→9 step pipeline, Acceptance Validation Gate |
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Cloud Service Provider (CSP) abstraction layer.
 
 Provides vendor-agnostic interfaces for cloud services:

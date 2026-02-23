@@ -59,6 +59,9 @@ _pdb_b64_*.txt
 playwright/
 .playwright-mcp/
 
+# Vendored binaries (downloaded via setup, not committed)
+vendor/
+
 # Generated projects (created by project_create.py)
 # projects/  # Uncomment to ignore generated projects
 videos/

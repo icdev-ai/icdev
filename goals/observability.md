@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Observability Goal — Hook-Based Agent Monitoring
 
 ## Purpose

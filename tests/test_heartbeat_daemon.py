@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools/monitor/heartbeat_daemon.py — proactive heartbeat daemon."""
 
 import sys

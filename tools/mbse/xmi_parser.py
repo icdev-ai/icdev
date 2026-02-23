@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """SysML v1.6 XMI Parser for Cameo Systems Modeler exports.
 
@@ -1569,4 +1569,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

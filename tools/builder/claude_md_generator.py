@@ -797,7 +797,7 @@ def _generate_with_jinja2(blueprint: Dict[str, Any]) -> str:
 
     context = _build_template_context(blueprint)
 
-    env = Environment(
+    env = Environment(  # nosec B701 — generates Markdown, not HTML
         loader=BaseLoader(),
         keep_trailing_newline=True,
         trim_blocks=True,

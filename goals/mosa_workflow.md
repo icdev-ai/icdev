@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 
 # Goal: MOSA Workflow — Modular Open Systems Approach
 

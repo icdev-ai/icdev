@@ -157,9 +157,9 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "command": None,
         "suggestion": (
             "Replace dangerous patterns with safe alternatives: "
-            "eval()→ast.literal_eval(), exec()→importlib, "
-            "os.system()→subprocess.run(), pickle.loads()→json.loads(), "
-            "yaml.load()→yaml.safe_load()."
+            "use ast.literal_eval instead of eval, importlib instead of exec, "
+            "subprocess.run instead of os.system, json.loads instead of pickle.loads, "
+            "yaml.safe_load instead of yaml.load."
         ),
     },
     "CMP-002": {
@@ -192,6 +192,20 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "suggestion": (
             "Review args/security_gates.yaml for missing gate definitions. "
             "Each new feature with blocking conditions needs a gate entry."
+        ),
+    },
+    "CMP-007": {
+        "confidence": 0.50,
+        "tier": "suggest",
+        "strategy": "oscal_ecosystem_setup",
+        "command": None,
+        "suggestion": (
+            "OSCAL ecosystem tools enhance compliance validation (D302-D306). "
+            "Optional installs: 1) `pip install oscal-pydantic` for type-safe "
+            "model validation, 2) Download NIST OSCAL Content catalog to "
+            "context/oscal/ (see context/oscal/README.md), 3) Install oscal-cli "
+            "JAR + Java 11+ for Metaschema validation. All are optional — "
+            "oscal_tools.py degrades gracefully without them."
         ),
     },
     "INT-003": {
@@ -750,4 +764,9 @@ def main():
 
 
 if __name__ == "__main__":
+    # Ensure UTF-8 output on Windows (avoid cp1252 encoding errors)
+    if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if sys.stderr.encoding and sys.stderr.encoding.lower() not in ("utf-8", "utf8"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     main()

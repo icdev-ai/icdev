@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Event Envelope — unified event format for all CI/CD triggers (D132)
 
 """

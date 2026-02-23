@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # NLQ Compliance Query Goal — Natural Language Database Queries
 
 ## Purpose

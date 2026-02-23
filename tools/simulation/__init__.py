@@ -1,2 +1,2 @@
-# CUI // SP-CTI
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
+# [TEMPLATE: CUI // SP-CTI]

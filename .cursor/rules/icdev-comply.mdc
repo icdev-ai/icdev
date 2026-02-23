@@ -1,0 +1,77 @@
+---
+description: "ICDEV workflow: Generate ATO compliance artifacts (SSP, POAM, STIG checklist, SBOM) with CUI markings"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-comply
+
+When the user asks to generate ato compliance artifacts (ssp, poam, stig checklist, sbom) with cui markings, follow these steps:
+
+1. **Load CUI Configuration**
+   ```bash
+   !cat args/cui_markings.yaml
+   ```
+
+2. **Determine Artifacts to Generate**
+   Parse `--artifacts` flag. Default is "all".
+
+3. **Generate SSP**
+   Run: - project_id: `$ARGUMENTS` (first positional)
+
+4. **Run STIG Checks**
+   Run: - project_id: from arguments
+
+5. **Generate POAM**
+   Run: - project_id: from arguments
+
+6. **Generate SBOM**
+   Run: - project_dir: project's source directory
+
+7. **Apply CUI Markings**
+   Run: - Apply CUI // SP-CTI banners to all generated documents
+
+8. **CSSP Assessment (DI 8530.01)**
+   Run: - project_id: from arguments
+
+9. **Generate SIEM Configurations**
+   ```bash
+   python tools/compliance/siem_config_generator.py --project-dir <project_dir> --targets splunk elk
+   ```
+
+10. **Generate Incident Response Plan**
+   Run: - project_id: from arguments
+
+11. **Collect Evidence Package**
+   Run: - project_id: from arguments
+
+12. **Generate CSSP Certification Report**
+   Run: - project_id: from arguments
+
+13. **Sync to Xacta 360**
+   Run: - project_id: from arguments
+
+14. **SbD Assessment (CISA Secure by Design)**
+   Run: - project_id: from arguments
+
+15. **Generate SbD Report**
+   Run: - project_id: from arguments
+
+16. **Generate Requirements Traceability Matrix (RTM)**
+   Run: - project_id: from arguments
+
+17. **IV&V Assessment (IEEE 1012)**
+   Run: - project_id: from arguments
+
+18. **Generate IV&V Report**
+   Run: - project_id: from arguments
+
+19. **Compliance Score**
+   Report weighted compliance score (8 components):
+
+20. **Output Summary**
+   Display:
+
+21. **Output Summary**
+   Display:

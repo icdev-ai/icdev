@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.resilience.errors — Structured exception hierarchy.
 
 Validates ICDevError base class, transient/permanent subclasses,

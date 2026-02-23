@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 
 # /icdev-devsecops — DevSecOps Profile & Pipeline Security
 

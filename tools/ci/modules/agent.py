@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Agent Executor — Claude Code CLI subprocess invocation
 # Wrapper around tools/agent/agent_executor.py for retry, audit, Bedrock fallback
 

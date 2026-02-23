@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Agent Memory — scoped knowledge storage per agent and project.
 
 Provides project-scoped memory for individual agents and team-shared knowledge.

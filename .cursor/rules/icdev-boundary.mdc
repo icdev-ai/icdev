@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: Assess ATO boundary impact and manage supply chain risk for requirements"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-boundary
+
+When the user asks to assess ato boundary impact and manage supply chain risk for requirements, follow these steps:

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Goal: Continuous Harmonization — CLI Consistency & Code Quality
 
 > Ensure all ICDEV tools follow consistent CLI patterns, naming conventions,

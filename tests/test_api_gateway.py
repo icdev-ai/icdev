@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for the ICDEV SaaS API Gateway (tools/saas/api_gateway.py).
 
 Validates health endpoint, auth middleware, rate limiting, CORS configuration,
@@ -361,4 +361,4 @@ class TestFormatUptime:
         assert "1d" in result
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Google Gemini LLM Provider.
 
 Uses the google-generativeai Python SDK for Gemini API access.

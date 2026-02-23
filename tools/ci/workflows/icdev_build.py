@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Build — Implementation workflow
 # Adapted from ADW adw_build.py with dual platform support
 

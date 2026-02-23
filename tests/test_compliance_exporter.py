@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for the ICDEV Compliance Exporter (tools/compliance/compliance_exporter.py).
 
 Validates CSV control matrix export, executive summary Markdown generation,

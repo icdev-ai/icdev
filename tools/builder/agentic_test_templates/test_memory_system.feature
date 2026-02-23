@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: Memory System Operations
   Verify the memory system stores and retrieves data correctly
 

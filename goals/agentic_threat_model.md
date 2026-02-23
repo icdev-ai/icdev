@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 
 # Goal: OWASP Agentic AI Threat Model
 
@@ -306,4 +306,4 @@ All threats rated **High** or **Medium** residual risk, with remediation path.
 
 - 2026-02-22: Initial creation -- OWASP Agentic AI Threat Model (T1-T17) with STRIDE analysis across 3 tiers, trust boundary diagram, residual risk assessment, 6 Phase 45 gaps identified, review cadence defined
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

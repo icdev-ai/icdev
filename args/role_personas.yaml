@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Role Persona Definitions for ICDEV Requirements Intake
 #
 # Each persona defines how the intake agent behaves when roleplaying
@@ -359,4 +359,4 @@ available_frameworks:
     display_name: "HITRUST CSF v11"
     description: "Health Information Trust Alliance Common Security Framework"
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

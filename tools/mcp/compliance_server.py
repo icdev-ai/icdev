@@ -700,6 +700,80 @@ def handle_security_categorize(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# OSCAL Ecosystem handlers (D302-D306)
+# ---------------------------------------------------------------------------
+
+def handle_oscal_validate_deep(args: dict) -> dict:
+    """Run 3-layer deep OSCAL validation (structural → pydantic → Metaschema)."""
+    fn = _import_tool("tools.compliance.oscal_tools", "validate_oscal_deep")
+    if not fn:
+        return {"error": "oscal_tools module not available", "status": "pending"}
+    file_path = args.get("file_path")
+    if not file_path:
+        raise ValueError("'file_path' is required")
+    return fn(file_path, project_id=args.get("project_id"),
+              db_path=str(DB_PATH))
+
+
+def handle_oscal_convert(args: dict) -> dict:
+    """Convert OSCAL artifact between JSON, XML, and YAML formats."""
+    fn = _import_tool("tools.compliance.oscal_tools", "convert_oscal_format")
+    if not fn:
+        return {"error": "oscal_tools module not available", "status": "pending"}
+    input_path = args.get("input_path")
+    output_format = args.get("output_format", "xml")
+    if not input_path:
+        raise ValueError("'input_path' is required")
+    return fn(input_path, output_format, output_path=args.get("output_path"))
+
+
+def handle_oscal_resolve_profile(args: dict) -> dict:
+    """Flatten an OSCAL Profile into a resolved Catalog via oscal-cli."""
+    fn = _import_tool("tools.compliance.oscal_tools", "resolve_oscal_profile")
+    if not fn:
+        return {"error": "oscal_tools module not available", "status": "pending"}
+    profile_path = args.get("profile_path")
+    if not profile_path:
+        raise ValueError("'profile_path' is required")
+    return fn(profile_path, output_path=args.get("output_path"))
+
+
+def handle_oscal_catalog_lookup(args: dict) -> dict:
+    """Look up controls in the OSCAL catalog (official NIST or ICDEV fallback)."""
+    control_id = args.get("control_id")
+    family = args.get("family")
+
+    if control_id:
+        fn = _import_tool("tools.compliance.oscal_tools", "catalog_lookup")
+        if not fn:
+            return {"error": "oscal_tools module not available", "status": "pending"}
+        result = fn(control_id)
+        if result:
+            return {"control": result}
+        return {"error": f"Control '{control_id}' not found"}
+
+    if family:
+        fn = _import_tool("tools.compliance.oscal_tools", "catalog_list")
+        if not fn:
+            return {"error": "oscal_tools module not available", "status": "pending"}
+        controls = fn(family=family)
+        return {"family": family, "controls": controls, "count": len(controls)}
+
+    fn = _import_tool("tools.compliance.oscal_tools", "catalog_stats")
+    if not fn:
+        return {"error": "oscal_tools module not available", "status": "pending"}
+    return fn()
+
+
+def handle_oscal_detect_tools(args: dict) -> dict:
+    """Detect available OSCAL ecosystem tools (oscal-cli, oscal-pydantic, NIST catalog)."""
+    fn = _import_tool("tools.compliance.oscal_tools", "detect_oscal_tools")
+    if not fn:
+        return {"error": "oscal_tools module not available", "status": "pending"}
+    return fn()
+
+
+# ---------------------------------------------------------------------------
 # Server setup
 # ---------------------------------------------------------------------------
 
@@ -1255,6 +1329,73 @@ def create_server() -> MCPServer:
             "required": ["project_id"],
         },
         handler=handle_security_categorize,
+    )
+
+    # OSCAL Ecosystem tools (D302-D306)
+    server.register_tool(
+        name="oscal_validate_deep",
+        description="Run 3-layer deep OSCAL validation: structural (built-in) → pydantic (if installed) → Metaschema (if oscal-cli + Java available). Each layer independently optional.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "Path to OSCAL JSON file to validate"},
+                "project_id": {"type": "string", "description": "Project UUID (optional, for logging)"},
+            },
+            "required": ["file_path"],
+        },
+        handler=handle_oscal_validate_deep,
+    )
+
+    server.register_tool(
+        name="oscal_convert",
+        description="Convert OSCAL artifact between JSON, XML, and YAML formats using oscal-cli. Requires Java 11+ and oscal-cli JAR.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "input_path": {"type": "string", "description": "Path to input OSCAL file"},
+                "output_format": {"type": "string", "enum": ["json", "xml", "yaml"], "default": "xml", "description": "Target output format"},
+                "output_path": {"type": "string", "description": "Output file path (optional, auto-generated if omitted)"},
+            },
+            "required": ["input_path"],
+        },
+        handler=handle_oscal_convert,
+    )
+
+    server.register_tool(
+        name="oscal_resolve_profile",
+        description="Flatten an OSCAL Profile into a resolved Catalog using oscal-cli profile resolution. Produces a full catalog of selected controls.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "profile_path": {"type": "string", "description": "Path to OSCAL Profile JSON file"},
+                "output_path": {"type": "string", "description": "Output path for resolved catalog (optional)"},
+            },
+            "required": ["profile_path"],
+        },
+        handler=handle_oscal_resolve_profile,
+    )
+
+    server.register_tool(
+        name="oscal_catalog_lookup",
+        description="Look up NIST 800-53 controls from the OSCAL catalog. Uses official NIST OSCAL catalog (1000+ controls) with ICDEV fallback (39 controls).",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "control_id": {"type": "string", "description": "Control ID to look up (e.g., AC-2, AC-2(1))"},
+                "family": {"type": "string", "description": "Family code to list controls (e.g., AC, AU, SC)"},
+            },
+        },
+        handler=handle_oscal_catalog_lookup,
+    )
+
+    server.register_tool(
+        name="oscal_detect_tools",
+        description="Detect available OSCAL ecosystem tools: oscal-cli (Java, Metaschema validation), oscal-pydantic (Python, type-safe models), NIST OSCAL catalog (1000+ controls).",
+        input_schema={
+            "type": "object",
+            "properties": {},
+        },
+        handler=handle_oscal_detect_tools,
     )
 
     return server

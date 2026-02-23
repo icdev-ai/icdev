@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """DAG-based workflow engine for multi-agent task orchestration.
 
 Decomposes high-level tasks into subtask DAGs using Bedrock LLM, then

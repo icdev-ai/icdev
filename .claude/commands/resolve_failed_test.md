@@ -33,7 +33,7 @@ Fix a specific failing test using the provided failure details.
 6. **User Perspective Verification** (if fix touches UI/dashboard code)
    - Open the affected page in the browser using Playwright MCP (`browser_navigate`)
    - Interact with the feature as the user would — click buttons, submit forms, observe real-time updates
-   - Take a screenshot (`browser_take_screenshot`) as evidence
+   - Take a screenshot (`browser_take_screenshot`, filename: `playwright/screenshots/<descriptive-name>.png`) as evidence
    - Confirm the fix works from the user's perspective, not just from CLI/API
    - API passing does NOT guarantee the user experience works — always verify the deliverable
 

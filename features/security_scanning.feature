@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: ICDEV Security Scanning
   As a security engineer
   I want automated security scanning in the pipeline

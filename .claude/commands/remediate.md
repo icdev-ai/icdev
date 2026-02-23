@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # /remediate — Auto-fix Production Audit Blockers
 
 Auto-fix blockers found by `/audit` using a 3-tier confidence model.

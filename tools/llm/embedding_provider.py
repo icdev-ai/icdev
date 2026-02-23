@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Embedding provider implementations.
 
 Supports OpenAI (including Ollama/vLLM via base_url), AWS Bedrock Titan,

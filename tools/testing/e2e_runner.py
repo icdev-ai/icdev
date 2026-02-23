@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV E2E Test Runner — Playwright Native + MCP Integration
 # Adapted from ADW E2E test execution patterns
 
@@ -712,4 +712,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

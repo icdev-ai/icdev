@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """PRD Validator — automated quality checks adapted from BMAD Method.
 
 Runs 6 validation passes on intake requirements:

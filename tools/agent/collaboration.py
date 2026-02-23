@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Collaboration patterns for multi-agent orchestration.
 
 Implements five structured collaboration patterns used by the ICDEV

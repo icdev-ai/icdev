@@ -59,7 +59,7 @@ Each AI tool gets a project-aware instruction file in its native format:
 
 ### 2. MCP Configurations
 
-Tools with MCP support get config files pointing to ICDEV's 14 MCP servers:
+Tools with MCP support get config files pointing to ICDEV's **unified MCP server** (`icdev-unified`) — a single server exposing all 225 tools. See the [Unified MCP Setup Guide](unified-mcp-setup.md) for IDE-specific instructions.
 
 | Tool | Config Format | Output Path |
 |------|--------------|-------------|
@@ -80,6 +80,66 @@ Claude Code skills (`.claude/skills/`) are translated to equivalent formats:
 | `/skill-name` | `$skill-name` (Codex) | `.agents/skills/*/SKILL.md` |
 | `/skill-name` | `#prompt:skill-name` (Copilot) | `.github/prompts/*.prompt.md` |
 | `/skill-name` | Agent-requested rule (Cursor) | `.cursor/rules/*.mdc` |
+
+---
+
+## Multi-Vendor Coexistence
+
+All vendor instruction files and MCP configs coexist in the project root with zero conflict. Each AI tool reads **only its own** files and ignores everything else — the same way `.gitignore`, `.eslintrc`, and `.prettierrc` coexist today.
+
+### Project Root After Setup
+
+```
+ICDev/
+├── CLAUDE.md                          # Claude Code (source of truth)
+├── AGENTS.md                          # OpenAI Codex
+├── GEMINI.md                          # Google Gemini CLI
+├── CONVENTIONS.md                     # Aider
+├── .mcp.json                          # Claude Code MCP config
+├── .clinerules                        # Cline
+├── .claude/                           # Claude Code commands, hooks, settings
+│   ├── commands/
+│   ├── hooks/
+│   └── settings.json
+├── .codex/                            # Codex MCP config
+│   └── mcp-config.toml
+├── .gemini/                           # Gemini MCP config
+│   └── mcp-settings.json
+├── .amazonq/                          # Amazon Q rules + MCP config
+│   ├── rules/icdev.md
+│   └── mcp.json
+├── .github/                           # Copilot instructions + prompt skills
+│   ├── copilot-instructions.md
+│   └── prompts/
+├── .cursor/                           # Cursor rules + MCP setup guide
+│   └── rules/icdev.mdc
+├── .windsurf/                         # Windsurf rules + MCP setup guide
+│   └── rules/icdev.md
+├── .junie/                            # JetBrains Junie guidelines
+│   └── guidelines.md
+└── ...
+```
+
+### Why This Works
+
+- **No cross-tool interference** — Claude Code never reads `.cursor/`, Codex never reads `.claude/`, Gemini ignores both
+- **Single source of truth** — `CLAUDE.md` is maintained manually; all other files are generated from it
+- **Team flexibility** — Any developer can open the repo with their preferred tool and get full ICDEV context
+- **Git-friendly** — All files commit to the repo, so teammates get configs automatically on `git pull`
+
+### Keeping Files in Sync
+
+After modifying `CLAUDE.md`, `.mcp.json`, or `.claude/commands/`, regenerate all companion files:
+
+```bash
+# Resync all generated files from current CLAUDE.md
+python tools/dx/companion.py --sync --write
+
+# Preview what would change without writing
+python tools/dx/companion.py --sync --dry-run --json
+```
+
+The companion system reads the current state of `CLAUDE.md` and `.mcp.json` on every run — generated files always reflect the latest project configuration.
 
 ---
 

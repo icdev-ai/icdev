@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Flask Blueprint for agent API endpoints.
 Queries the agents table in icdev.db.

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Parallel CI/CD Goal — Git Worktree Isolation + GitLab Task Board
 
 ## Purpose

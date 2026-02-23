@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """OpenAI-compatible LLM Provider.
 
 Supports any server that implements the OpenAI Chat Completions API:

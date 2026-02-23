@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """
 Comprehensive tests for dashboard auth module (tools/dashboard/auth.py).
 

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -472,4 +472,4 @@ class TestBlockDownstream:
         assert wf.subtasks["s3"].status == "completed"  # independent, unchanged
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

@@ -1,8 +1,32 @@
-# CUI // SP-CTI
-
 # Contributing to ICDEV
 
-Thank you for contributing to ICDEV. This document covers the development setup, coding standards, testing patterns, and contribution workflow.
+Thank you for contributing to ICDEV. This document covers the development setup,
+coding standards, testing patterns, and contribution workflow.
+
+## Developer Certificate of Origin (DCO)
+
+All contributions to this project **must** be signed off under the
+[Developer Certificate of Origin (DCO) v1.1](https://developercertificate.org/).
+
+By making a contribution, you certify that you have the right to submit it
+under the Apache 2.0 license and that you have not incorporated code from
+incompatible licenses (GPL, AGPL, SSPL — see [Dependency Guidelines](#dependency-guidelines)).
+
+### How to Sign Off
+
+Add a `Signed-off-by` line to every commit message:
+
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+You can do this automatically with `git commit -s`:
+
+```bash
+git commit -s -m "feat: add new compliance framework assessor"
+```
+
+**Commits without a DCO sign-off will not be accepted.**
 
 ## Development Setup
 
@@ -10,7 +34,7 @@ Thank you for contributing to ICDEV. This document covers the development setup,
 
 - Python 3.9 or later
 - Git
-- Claude Code CLI (for slash commands and MCP server access)
+- (Optional) Node.js 18+ for Playwright E2E tests
 
 ### Installation
 
@@ -41,10 +65,13 @@ python tools/testing/health_check.py
 
 1. **Check the manifest first.** Read `tools/manifest.md` to confirm a similar tool does not already exist.
 2. **Create the tool** in the appropriate domain directory under `tools/<domain>/`.
-3. **Add a CUI header** as the first line of the file:
+3. **Add a template classification header** as the first line of the file:
    ```python
-   # CUI // SP-CTI
+   # [TEMPLATE: CUI // SP-CTI]
    ```
+   This is a template marker showing the format ICDEV applies to generated
+   artifacts. It does NOT indicate the file itself is CUI. See
+   [Classification Markers](#classification-markers) below.
 4. **Add the tool to `tools/manifest.md`** with its name, path, purpose, and CLI usage.
 5. **Write tests** in `tests/test_<name>.py`.
 6. **Update `CLAUDE.md`** — add the tool's CLI commands to the appropriate section.
@@ -56,7 +83,7 @@ python tools/testing/health_check.py
 - **No side effects.** Tools should not modify state outside their declared scope.
 - **Audit trail.** Any state-changing operation must log to the append-only audit trail.
 - **Air-gap safe.** Use only Python stdlib or approved dependencies. No internet-dependent features in core logic.
-- **CUI markings.** All generated artifacts must include classification markings via `classification_manager.py`.
+- **Classification markings for generated output.** Use `classification_manager.py` for all marking generation in artifacts ICDEV produces — do not hard-code CUI banners.
 
 ## Test Patterns
 
@@ -70,12 +97,12 @@ ICDEV uses a 9-step testing pipeline:
 6. **Playwright MCP** (`.claude/commands/e2e/*.md`) — Browser automation E2E tests
 7. **Vision validation** (optional) — LLM-based screenshot analysis
 8. **Acceptance validation** (V&V) — Deterministic acceptance criteria verification
-9. **Security + Compliance gates** — CUI markings, STIG (0 CAT1), secret detection
+9. **Security + Compliance gates** — CUI markings on generated artifacts, STIG (0 CAT1), secret detection
 
 ### Writing a Test File
 
 ```python
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for <module_name>."""
 
 import os
@@ -102,14 +129,11 @@ class TestSomeFeature:
         result = SomeClass().do_something_invalid(tmp_path)
         assert result["status"] == "error"
         assert "message" in result
-
-
-# CUI // SP-CTI
 ```
 
 **Key conventions:**
 
-- **Header:** `# CUI // SP-CTI` as first and last line.
+- **Header:** `# [TEMPLATE: CUI // SP-CTI]` as the first line.
 - **Import guard:** Use `try/except ImportError` with `pytestmark = pytest.mark.skip()` for optional dependencies.
 - **One class per behavior group.** Group related tests in a class.
 - **Plain assert statements.** Do not use `unittest`-style `self.assert*` methods.
@@ -142,13 +166,11 @@ python tools/testing/e2e_runner.py --run-all
 
 1. **Add a scenario** to `features/<name>.feature` using Gherkin syntax:
    ```gherkin
-   # CUI // SP-CTI
    Feature: User authentication
      Scenario: Valid API key grants access
        Given a valid API key exists
        When the user authenticates with the key
        Then the response status is 200
-   # CUI // SP-CTI
    ```
 
 2. **Create or update step definitions** in `features/steps/<name>_steps.py`.
@@ -177,9 +199,9 @@ The `BaseAssessor` pattern (D116) provides crosswalk integration, gate evaluatio
 
 ```
 <agent>: <type>: <message>
-```
 
-**Agents:** `icdev_builder`, `icdev_compliance`, `icdev_security`, `icdev_infra`, or your name for manual commits.
+Signed-off-by: Your Name <your.email@example.com>
+```
 
 **Types:**
 - `feat` — A new feature
@@ -188,19 +210,35 @@ The `BaseAssessor` pattern (D116) provides crosswalk integration, gate evaluatio
 
 **Examples:**
 ```
-icdev_builder: feat: Phase 29-30 — Dashboard auth, activity feed, BYOK
-icdev_builder: fix: Fix wizard buttons + add V&V auto-issue workflow
-icdev_builder: chore: Add CUI markings to all Python files
+icdev_builder: feat: Add CJIS assessor framework
+
+Signed-off-by: Jane Doe <jane@example.com>
 ```
 
-## CUI Requirements
+## Classification Markers
 
-- **All `.py` files** must have `# CUI // SP-CTI` as the first and last line (as a comment).
-- **All `.html` files** must have `<!-- CUI // SP-CTI -->` as the first and last line (as an HTML comment).
-- **All `.feature` files** must have `# CUI // SP-CTI` as the first and last line.
-- **All `.md` files** must have `# CUI // SP-CTI` as the first and last line.
-- Classification markings are auto-applied via `tools/compliance/classification_manager.py`.
-- Never hard-code CUI banners directly; always use the classification manager.
+ICDEV source files use **template markers** in their headers:
+
+```python
+# [TEMPLATE: CUI // SP-CTI]
+```
+
+These template markers demonstrate the classification format that ICDEV applies
+to artifacts it generates for its users. **They do NOT indicate that the source
+file itself is CUI or classified.** See the [README.md](README.md) disclaimer.
+
+When ICDEV generates artifacts for a project (SSPs, POAMs, code files, etc.),
+it applies actual classification markings appropriate to the project's impact
+level using `tools/compliance/classification_manager.py`. The template markers
+in the ICDEV source code itself serve as documentation of this format.
+
+## Dependency Guidelines
+
+- Prefer Python stdlib where possible (air-gap safe)
+- **Do not add GPL, AGPL, or SSPL licensed dependencies** without explicit
+  discussion and approval. ICDEV blocks copyleft licenses (see D202 in CLAUDE.md).
+- New dependencies must be added to `requirements.txt` with version pins.
+- Run `pip-licenses -f markdown` to verify license compatibility before submitting.
 
 ## Security Guidelines
 
@@ -208,11 +246,11 @@ icdev_builder: chore: Add CUI markings to all Python files
 - **Audit trail is append-only.** Never add UPDATE or DELETE operations to audit tables.
 - **All containers** must run as non-root with read-only root filesystem.
 - **SBOM** must be regenerated on every build.
-- **Security gates block on:** CAT1 STIG findings, critical/high vulnerabilities, failed tests, missing CUI markings, detected secrets.
+- **Security gates block on:** CAT1 STIG findings, critical/high vulnerabilities, failed tests, detected secrets.
 
 ## Architecture Decision Records
 
-Key decisions are documented as numbered records (D1, D2, ..., D178) in `CLAUDE.md`. When making architectural choices, reference existing ADRs or propose new ones. Important patterns to follow:
+Key decisions are documented as numbered records (D1, D2, ...) in `CLAUDE.md`. When making architectural choices, reference existing ADRs or propose new ones. Important patterns:
 
 - **D6:** Audit trail is append-only/immutable (no UPDATE/DELETE)
 - **D26:** Declarative JSON/YAML for configuration (add rules without code changes)
@@ -225,6 +263,9 @@ Key decisions are documented as numbered records (D1, D2, ..., D178) in `CLAUDE.
 - Read `CLAUDE.md` for the complete architecture documentation and command reference.
 - Read `goals/manifest.md` for the index of all workflow goals.
 - Read `tools/manifest.md` for the master list of all tools.
-- Check `memory/MEMORY.md` for session context and long-term facts.
+- Open an issue for questions or proposals.
 
-# CUI // SP-CTI
+## License
+
+By contributing, you agree that your contributions will be licensed under the
+Apache License, Version 2.0. See [LICENSE](LICENSE).

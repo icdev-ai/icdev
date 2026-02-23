@@ -49,7 +49,7 @@ REGISTRY_PATH = BASE_DIR / "args" / "companion_registry.yaml"
 def _render(template_str, data):
     """Render a Jinja2 template string, fallback to str.format for basics."""
     if _HAS_JINJA2:
-        env = Environment(loader=BaseLoader(), keep_trailing_newline=True)
+        env = Environment(loader=BaseLoader(), keep_trailing_newline=True)  # nosec B701 — generates Markdown, not HTML
         env.filters["default"] = lambda v, d="": v if v else d
         tmpl = env.from_string(template_str)
         return tmpl.render(**data)

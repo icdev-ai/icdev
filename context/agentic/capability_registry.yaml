@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # Capability Registry - maps fitness scorecard dimensions to child app capabilities
 # Used by: tools/builder/app_blueprint.py
 capabilities:

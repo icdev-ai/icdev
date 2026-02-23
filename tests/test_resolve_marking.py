@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools/compliance/resolve_marking.py."""
 
 import sqlite3
@@ -194,4 +194,4 @@ class TestResolveProjectMarking:
         result = resolve_project_marking("proj-fouo", db_path)
         assert result["marking_required"] is True
         assert "CUI" in result["categories"]
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

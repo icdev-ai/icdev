@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -211,4 +211,4 @@ class TestModuleFunctions:
         assert after_reset["allowed"] is True
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

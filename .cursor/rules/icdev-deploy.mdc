@@ -1,0 +1,42 @@
+---
+description: "ICDEV workflow: Generate IaC (Terraform, Ansible, K8s) and GitLab CI/CD pipeline for AWS GovCloud deployment"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-deploy
+
+When the user asks to generate iac (terraform, ansible, k8s) and gitlab ci/cd pipeline for aws govcloud deployment, follow these steps:
+
+1. **Load Infrastructure Configuration**
+   ```bash
+   !cat args/project_defaults.yaml
+   ```
+   ```bash
+   !cat args/security_gates.yaml
+   ```
+
+2. **Pre-Deployment Checks**
+   Verify before generating IaC:
+
+3. **Generate Terraform**
+   Run: - project_id: from arguments
+
+4. **Generate Ansible Playbooks**
+   Run: - project_id: from arguments
+
+5. **Generate Kubernetes Manifests**
+   Run: - project_id: from arguments
+
+6. **Generate CI/CD Pipeline**
+   Run: - project_id: from arguments
+
+7. **Compliance Mapping**
+   Run: - Map `deploy.staging` or `deploy.production` to NIST controls (CM-3, CM-5, SA-10)
+
+8. **Output Summary**
+   Display:
+
+9. **Output Summary**
+   Display:

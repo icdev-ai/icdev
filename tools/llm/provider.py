@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Vendor-agnostic LLM provider base classes and data types.
 
 Defines the universal request/response format and abstract interfaces

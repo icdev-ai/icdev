@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for tools.resilience.circuit_breaker."""
 import sys
 from pathlib import Path

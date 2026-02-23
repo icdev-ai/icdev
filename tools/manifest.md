@@ -188,7 +188,9 @@
 | FedRAMP Report Generator | tools/compliance/fedramp_report_generator.py | FedRAMP assessment report with control family scores | --project-id, --baseline | Report path |
 | CMMC Assessor | tools/compliance/cmmc_assessor.py | CMMC Level 2/3 assessment (14 domains) | --project-id, --level | Assessment results + gate |
 | CMMC Report Generator | tools/compliance/cmmc_report_generator.py | CMMC report with domain scores and 800-171 cross-ref | --project-id, --level | Report path |
-| OSCAL Generator | tools/compliance/oscal_generator.py | NIST OSCAL 1.1.2 artifact generator (SSP, POA&M, AR, CD) | --project-id, --artifact, --format | OSCAL JSON/XML path |
+| OSCAL Generator | tools/compliance/oscal_generator.py | NIST OSCAL 1.1.2 artifact generator (SSP, POA&M, AR, CD) | --project-id, --artifact, --format, --deep-validate | OSCAL JSON/XML path |
+| OSCAL Tools | tools/compliance/oscal_tools.py | OSCAL ecosystem orchestrator: deep validation, format conversion, profile resolution, catalog operations (D302-D305) | --detect, --validate, --convert, --resolve-profile, --catalog-lookup | Detection/validation/conversion results |
+| OSCAL Catalog Adapter | tools/compliance/oscal_catalog_adapter.py | Unified NIST OSCAL + ICDEV catalog reader with fallback chain (D304) | --lookup, --list, --stats, --family | Control data, catalog stats |
 | cATO Monitor | tools/compliance/cato_monitor.py | Continuous ATO evidence freshness and readiness monitoring | --project-id, --check-freshness, --readiness | Evidence status |
 | cATO Scheduler | tools/compliance/cato_scheduler.py | Schedule-based evidence collection manager | --project-id, --run-due, --upcoming | Collection schedule |
 | PI Compliance Tracker | tools/compliance/pi_compliance_tracker.py | SAFe PI-cadenced compliance tracking and velocity | --project-id, --pi, --velocity, --burndown | PI metrics |
@@ -698,6 +700,10 @@
 | XAI Requirements | context/compliance/xai_requirements.json | XAI requirements catalog (NIST AI RMF + DoD RAI + ISO 42001) | (data) | Requirements JSON |
 | Observability Config | args/observability_tracing_config.yaml | Tracer backend, sampling, retention, content policy, PROV/SHAP settings (D290) | (config) | YAML config |
 | Observability MCP | tools/mcp/observability_server.py | MCP server: trace_query, trace_summary, prov_lineage, prov_export, shap_analyze, xai_assess | (server) | 6 tools, 2 resources |
+| Unified MCP Gateway | tools/mcp/unified_server.py | Unified MCP gateway (D301): aggregates all 225 tools from 18 servers + 55 new tools into one process with lazy module loading | (server) | 225 tools, 6 resources |
+| Tool Registry | tools/mcp/tool_registry.py | Declarative registry mapping tool name to (module, handler, schema) for unified gateway | (data) | Python dict |
+| Gap Handlers | tools/mcp/gap_handlers.py | 55 handler functions for CLI tools not previously exposed via MCP (translation, dx, cloud, registry, security, testing, installer) | (handlers) | Python functions |
+| Registry Generator | tools/mcp/generate_registry.py | Utility to auto-generate tool_registry.py by introspecting all 18 MCP server modules | (utility) | Python script |
 | Traces API | tools/dashboard/api/traces.py | Flask API Blueprint for trace, provenance, and XAI endpoints | (api) | REST endpoints |
 | Traces Page | tools/dashboard/templates/traces.html | Trace explorer: stat grid, trace list, span waterfall SVG | (template) | HTML page |
 | Provenance Page | tools/dashboard/templates/provenance.html | Provenance viewer: entity/activity tables, lineage query | (template) | HTML page |

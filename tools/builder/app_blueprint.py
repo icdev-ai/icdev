@@ -276,6 +276,41 @@ DEFAULT_CSP_REGISTRY: Dict[str, Any] = {
                 {"id": "kb-oci-patterns", "name": "OCI Gov Architecture Patterns"},
             ],
         },
+        "ibm": {
+            "display_name": "IBM Cloud for Government (IC4G)",
+            "govcloud_regions": ["us-south", "us-east"],
+            "commercial_regions": ["us-south", "us-east", "eu-de", "eu-gb"],
+            "mcp_servers": {
+                "core": {
+                    "name": "ibm-cloud-core",
+                    "description": "IBM Cloud Object Storage, Event Streams, Logging",
+                    "always_on": True,
+                },
+                "ai": {
+                    "name": "ibm-watsonx-ai",
+                    "description": "IBM watsonx.ai (Granite, Llama)",
+                    "always_on": True,
+                },
+                "secrets": {
+                    "name": "ibm-key-protect",
+                    "description": "IBM Key Protect",
+                    "always_on": True,
+                },
+                "container": {
+                    "name": "ibm-iks",
+                    "description": "IBM Kubernetes Service / Red Hat OpenShift",
+                    "requires_capability": "cicd",
+                },
+                "security": {
+                    "name": "ibm-security-compliance",
+                    "description": "IBM Security and Compliance Center",
+                    "requires_capability": "security",
+                },
+            },
+            "knowledge_bases": [
+                {"id": "kb-ibm-patterns", "name": "IBM IC4G Architecture Patterns"},
+            ],
+        },
     },
 }
 
@@ -866,7 +901,7 @@ def generate_blueprint(
         user_decisions: User-provided decisions and overrides.
         app_name: Name for the child application.
         port_offset: Port offset from ICDEV base ports (default 1000).
-        cloud_provider: Target cloud provider (aws, gcp, azure, oracle).
+        cloud_provider: Target cloud provider (aws, gcp, azure, oracle, ibm).
         cloud_region: Target deployment region.
         govcloud: Whether to use GovCloud partition.
         parent_callback_url: Optional URL for parent ICDEV callback.
@@ -1193,7 +1228,7 @@ def main():
     )
     parser.add_argument(
         "--cloud-provider",
-        choices=["aws", "gcp", "azure", "oracle"],
+        choices=["aws", "gcp", "azure", "oracle", "ibm"],
         default="aws",
         help="Target cloud service provider (default: aws)",
     )

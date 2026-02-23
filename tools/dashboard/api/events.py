@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Events API blueprint — HTTP poll transport, recent events, event ingest.
 
 Endpoints:

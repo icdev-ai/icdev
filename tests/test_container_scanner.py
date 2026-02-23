@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Tests for the ICDEV Container Scanner (tools/security/container_scanner.py).
 
 Validates Dockerfile static analysis (DS001-DS010 rules), Trivy output

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -511,4 +511,4 @@ class TestRetryLogic:
             assert max_possible_current >= max_possible_previous
 
 
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]

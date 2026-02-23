@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV CI/CD Configuration — channels, routing, recovery, conversation
 # Architecture Decisions: D132 (envelope), D133 (lane-aware), D136 (connectors), D137 (threads)
 

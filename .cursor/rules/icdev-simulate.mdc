@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: "Run Digital Program Twin simulations and generate COAs for requirements""
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-simulate
+
+When the user asks to "run digital program twin simulations and generate coas for requirements", follow these steps:

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV System Health Check
 # Adapted from ADW health_check.py for Gov/DoD environment validation
 

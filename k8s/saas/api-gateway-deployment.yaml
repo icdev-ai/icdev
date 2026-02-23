@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV SaaS - API Gateway Deployment
 # Routes tenant requests to isolated namespaces, enforces auth + rate limiting
 ---

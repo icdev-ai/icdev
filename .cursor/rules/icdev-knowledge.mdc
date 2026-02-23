@@ -1,0 +1,10 @@
+---
+description: "ICDEV workflow: Query, search, and update the ICDEV learning knowledge base for patterns, solutions, and recommendations"
+globs:
+  - "**/*.py"
+  - "**/*.yaml"
+---
+
+# icdev-knowledge
+
+When the user asks to query, search, and update the icdev learning knowledge base for patterns, solutions, and recommendations, follow these steps:

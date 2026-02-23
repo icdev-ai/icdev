@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """Agent Mailbox — HMAC-SHA256 signed inter-agent messaging.
 
 Provides tamper-evident, append-only messaging between agents using the

@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 Feature: ICDEV CI/CD Integration
   As a DevOps engineer
   I want automated CI/CD pipeline integration

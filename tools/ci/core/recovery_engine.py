@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Recovery Engine — self-recovery from test/lint failures (D134)
 
 """

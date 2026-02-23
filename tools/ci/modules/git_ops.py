@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Git Operations — branch, commit, push, PR/MR
 # Adapted from ADW git_ops.py with GitLab MR support
 

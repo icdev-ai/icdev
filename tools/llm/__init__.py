@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 """ICDEV LLM Provider Abstraction Layer.
 
 Vendor-agnostic interface for LLM inference and embeddings.

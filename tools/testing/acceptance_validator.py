@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+# [TEMPLATE: CUI // SP-CTI]
 # ICDEV Acceptance Criteria Validator (V&V)
 # Deterministic validation: plan criteria → test evidence + DOM content checks
 
