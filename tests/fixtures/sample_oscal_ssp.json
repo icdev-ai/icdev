@@ -1,0 +1,118 @@
+{
+  "system-security-plan": {
+    "uuid": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "metadata": {
+      "title": "Sample SSP for Testing",
+      "last-modified": "2026-01-15T12:00:00.000Z",
+      "version": "1.0.0",
+      "oscal-version": "1.1.2",
+      "roles": [
+        {
+          "id": "system-owner",
+          "title": "System Owner"
+        }
+      ],
+      "parties": [
+        {
+          "uuid": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
+          "type": "organization",
+          "name": "Test Organization"
+        }
+      ]
+    },
+    "import-profile": {
+      "href": "https://raw.githubusercontent.com/GSA/fedramp-automation/master/dist/content/rev5/baselines/json/FedRAMP_rev5_MODERATE-baseline-resolved-profile_catalog.json"
+    },
+    "system-characteristics": {
+      "system-ids": [
+        {
+          "id": "test-system-001"
+        }
+      ],
+      "system-name": "Test System",
+      "description": "A test system for OSCAL validation.",
+      "security-sensitivity-level": "moderate",
+      "system-information": {
+        "information-types": [
+          {
+            "uuid": "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
+            "title": "General Information",
+            "description": "General system information",
+            "categorizations": [
+              {
+                "system": "https://doi.org/10.6028/NIST.SP.800-60v2r1",
+                "information-type-ids": ["C.3.5.8"]
+              }
+            ],
+            "confidentiality-impact": {"base": "moderate"},
+            "integrity-impact": {"base": "moderate"},
+            "availability-impact": {"base": "low"}
+          }
+        ]
+      },
+      "security-impact-level": {
+        "security-objective-confidentiality": "moderate",
+        "security-objective-integrity": "moderate",
+        "security-objective-availability": "low"
+      },
+      "status": {
+        "state": "operational"
+      },
+      "authorization-boundary": {
+        "description": "Test authorization boundary."
+      }
+    },
+    "system-implementation": {
+      "users": [
+        {
+          "uuid": "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f80",
+          "role-ids": ["system-owner"],
+          "authorized-privileges": [
+            {
+              "title": "Full Access",
+              "functions-performed": ["system-administration"]
+            }
+          ]
+        }
+      ],
+      "components": [
+        {
+          "uuid": "e5f6a7b8-c9d0-4e1f-2a3b-4c5d6e7f8091",
+          "type": "this-system",
+          "title": "Test System Component",
+          "description": "Primary system component.",
+          "status": {
+            "state": "operational"
+          }
+        }
+      ]
+    },
+    "control-implementation": {
+      "description": "Control implementation for test system.",
+      "implemented-requirements": [
+        {
+          "uuid": "f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f809102",
+          "control-id": "ac-2",
+          "statements": [
+            {
+              "statement-id": "ac-2_smt",
+              "uuid": "a7b8c9d0-e1f2-4a3b-4c5d-6e7f80910213",
+              "description": "Account management is implemented via centralized IAM."
+            }
+          ]
+        },
+        {
+          "uuid": "b8c9d0e1-f2a3-4b4c-5d6e-7f8091021324",
+          "control-id": "ac-3",
+          "statements": [
+            {
+              "statement-id": "ac-3_smt",
+              "uuid": "c9d0e1f2-a3b4-4c5d-6e7f-809102132435",
+              "description": "Access enforcement uses RBAC with principle of least privilege."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
