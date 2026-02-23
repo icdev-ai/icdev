@@ -1,7 +1,9 @@
 ICDEV — Intelligent Coding Development Platform
-Copyright 2024-2026 ICDEV Contributors
+Copyright (C) 2024-2026 Steven Chuo
 
-Licensed under the Apache License, Version 2.0.
+Licensed under the GNU Affero General Public License, Version 3.0 or later.
+See LICENSE for the full license text.
+See COMMERCIAL.md for commercial licensing options.
 
 ================================================================================
 THIRD-PARTY NOTICES AND ATTRIBUTIONS
@@ -67,9 +69,9 @@ psycopg2-binary (LGPL)
   Copyright Federico Di Gregorio, Daniele Varrazzo
   https://github.com/psycopg/psycopg2
 
-oscal-pydantic (MIT)
-  Copyright EasyDynamics
-  https://github.com/EasyDynamics/oscal-pydantic
+oscal-pydantic (CC0-1.0 / Public Domain)
+  Copyright RS-Credentive / EasyDynamics
+  https://github.com/RS-Credentive/oscal-pydantic
   Optional dependency for type-safe OSCAL model validation (D303).
 
 --------------------------------------------------------------------------------

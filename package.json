@@ -12,7 +12,6 @@
     "test": "tests"
   },
   "dependencies": {
-    "audit": "^0.0.6",
     "playwright": "^1.58.2",
     "playwright-core": "^1.58.2"
   },
@@ -21,14 +20,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/goagiq/ICDEV.git"
+    "url": "git+https://github.com/icdev-ai/icdev.git"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "AGPL-3.0-or-later",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/goagiq/ICDEV/issues"
+    "url": "https://github.com/icdev-ai/icdev/issues"
   },
-  "homepage": "https://github.com/goagiq/ICDEV#readme"
+  "homepage": "https://github.com/icdev-ai/icdev#readme"
 }
