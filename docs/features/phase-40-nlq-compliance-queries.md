@@ -16,7 +16,7 @@
 
 ## 1. Problem Statement
 
-ICDEV's operational database contains 183 tables spanning compliance assessments, audit trails, security findings, project status, agent telemetry, and supply chain data. Compliance officers, ISSOs, and program managers need to query this data to answer questions like "Show all CAT1 STIG findings for project X" or "Which projects have expired cATO evidence?" — but they lack SQL expertise and should not be expected to learn the database schema.
+ICDEV's operational database contains 193 tables spanning compliance assessments, audit trails, security findings, project status, agent telemetry, and supply chain data. Compliance officers, ISSOs, and program managers need to query this data to answer questions like "Show all CAT1 STIG findings for project X" or "Which projects have expired cATO evidence?" — but they lack SQL expertise and should not be expected to learn the database schema.
 
 Prior to Phase 40, all compliance data access required either navigating dashboard pages (limited to pre-built views) or writing raw SQL queries against the database (requiring technical expertise and risking accidental data modification). Neither approach serves the needs of non-technical compliance stakeholders who need ad-hoc answers to specific compliance questions.
 

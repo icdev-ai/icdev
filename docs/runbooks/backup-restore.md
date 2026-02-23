@@ -12,7 +12,7 @@ ICDEV manages multiple SQLite databases (operational, memory, platform, per-tena
 
 | Database | Path | Purpose |
 |----------|------|---------|
-| `data/icdev.db` | Main operational DB | 183 tables: projects, agents, compliance, audit trail |
+| `data/icdev.db` | Main operational DB | 193 tables: projects, agents, compliance, audit trail |
 | `data/platform.db` | SaaS platform DB | 6 tables: tenants, users, API keys, subscriptions |
 | `data/memory.db` | Memory system | 3 tables: entries, daily logs, access log |
 | `data/activity.db` | Task tracking | 1 table: tasks |

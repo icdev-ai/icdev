@@ -538,7 +538,13 @@ def check_security_gates_config() -> AuditCheck:
         data = yaml.safe_load(gates_file.read_text(encoding="utf-8"))
         gate_count = len(data) if isinstance(data, dict) else 0
         expected_gates = ["merge_gates", "deploy_gates", "fedramp", "cmmc"]
-        present = [g for g in expected_gates if g in (data or {})]
+        # Accept alternate naming conventions (e.g., deployment_gates for deploy_gates)
+        aliases = {"deploy_gates": ["deployment_gates"]}
+        keys = set(data.keys()) if data else set()
+        present = [
+            g for g in expected_gates
+            if g in keys or any(a in keys for a in aliases.get(g, []))
+        ]
         ok = gate_count >= 5 and len(present) == len(expected_gates)
         return AuditCheck(
             check_id="CMP-004", check_name="Security Gates Config",
@@ -886,7 +892,9 @@ def check_migration_status() -> AuditCheck:
     if rc == 0:
         try:
             data = json.loads(stdout)
-            pending = data.get("pending", 0)
+            pending = data.get("pending_count", data.get("pending", 0))
+            if isinstance(pending, list):
+                pending = len(pending)
             ok = pending == 0
             return AuditCheck(
                 check_id="PRF-001", check_name="DB Migration Status",

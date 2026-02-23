@@ -123,7 +123,7 @@ ICDev/
 |   +-- logs/                  # Daily session logs (YYYY-MM-DD.md)
 |
 +-- data/                      # SQLite databases
-|   +-- icdev.db               # Main operational DB (183 tables)
+|   +-- icdev.db               # Main operational DB (193 tables)
 |   +-- platform.db            # SaaS platform DB (6 tables)
 |   +-- memory.db              # Memory system (3 tables)
 |   +-- activity.db            # Task tracking (1 table)

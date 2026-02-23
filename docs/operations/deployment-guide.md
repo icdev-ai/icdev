@@ -466,7 +466,7 @@ helm history icdev
 ### Initialization
 
 ```bash
-# Initialize the main ICDEV database (183 tables)
+# Initialize the main ICDEV database (193 tables)
 python tools/db/init_icdev_db.py
 ```
 

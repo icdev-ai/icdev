@@ -12,7 +12,7 @@ ICDEV uses 5 SQLite databases for its internal operations. SQLite was chosen for
 
 ```
 data/
-+-- icdev.db               # Main operational DB (183 tables)
++-- icdev.db               # Main operational DB (193 tables)
 +-- platform.db            # SaaS platform DB (6 tables)
 +-- memory.db              # Memory system (3 tables)
 +-- activity.db            # Task tracking (1 table)
@@ -585,7 +585,7 @@ python tools/db/backup.py --prune [--retention-days 30]
 ## Database Initialization
 
 ```bash
-# Initialize all 183 tables in icdev.db
+# Initialize all 193 tables in icdev.db
 python tools/db/init_icdev_db.py
 
 # Initialize SaaS platform database
