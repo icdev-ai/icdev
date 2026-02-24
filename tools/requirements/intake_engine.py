@@ -843,6 +843,9 @@ def process_turn(
     # --- Dev profile signals (Phase 34, D184-D188) ---
     dev_profile_signals = _detect_dev_profile_signals(customer_message, session_data)
 
+    # --- AI governance signals (Phase 50, D322) ---
+    ai_governance_signals = _detect_ai_governance_signals(customer_message, session_data)
+
     # --- Structured clarification (D159, spec-kit Pattern 4) ---
     clarification_signals = []
     try:
@@ -916,6 +919,7 @@ def process_turn(
         "devsecops_signals": devsecops_signals,
         "zta_signals": zta_signals,
         "mosa_signals": mosa_signals,
+        "ai_governance_signals": ai_governance_signals,
         "readiness_update": readiness_update,
         "total_requirements": req_count,
         "coverage": coverage,
@@ -1026,6 +1030,42 @@ def process_turn(
                     for q in probe_q:
                         response_parts.append(f"  - {q}")
 
+        if ai_governance_signals.get("ai_governance_detected"):
+            gov_pillars = ai_governance_signals.get("detected_pillars", [])
+            if ai_governance_signals.get("federal_agency_detected"):
+                response_parts.append(
+                    "\nFederal agency detected — AI governance requirements apply per OMB M-25-21. "
+                    "ICDEV will track AI inventory, model documentation, human oversight, "
+                    "impact assessments, transparency, and accountability."
+                )
+            else:
+                response_parts.append(
+                    "\nAI/ML system usage detected. AI governance framework will be "
+                    "included in compliance assessment."
+                )
+            if gov_pillars:
+                response_parts.append(
+                    f"  AI governance pillars identified: {', '.join(p.replace('_', ' ') for p in gov_pillars)}"
+                )
+            # Probe for missing governance pillars
+            all_gov_pillars = {"ai_inventory", "model_documentation", "human_oversight",
+                               "impact_assessment", "transparency", "accountability"}
+            missing_gov = all_gov_pillars - set(gov_pillars)
+            if missing_gov and len(gov_pillars) < 4:
+                gov_probes = {
+                    "ai_inventory": "Does this system use AI/ML models? If so, what types (classification, NLP, recommendation, generation)?",
+                    "model_documentation": "Are there existing model cards or documentation for the AI models used?",
+                    "human_oversight": "What human oversight is in place for AI decisions? Is there an appeal process?",
+                    "impact_assessment": "Has an algorithmic impact assessment been conducted? Does the AI make rights-impacting decisions?",
+                    "transparency": "Are users notified when AI is making or supporting decisions?",
+                    "accountability": "Is there a designated Chief AI Officer (CAIO) or responsible official?",
+                }
+                probe_q = [gov_probes[p] for p in sorted(missing_gov) if p in gov_probes][:2]
+                if probe_q:
+                    response_parts.append("\nTo complete AI governance assessment, please clarify:")
+                    for q in probe_q:
+                        response_parts.append(f"  - {q}")
+
         # Add readiness update and targeted follow-up question
         if readiness_update:
             response_parts.append(
@@ -1119,6 +1159,9 @@ def process_turn(
                 "mosa_detected": mosa_signals.get("mosa_detected", False),
                 "mosa_dod_ic_detected": mosa_signals.get("dod_ic_detected", False),
                 "mosa_pillars_detected": mosa_signals.get("detected_pillars", []),
+                "ai_governance_detected": ai_governance_signals.get("ai_governance_detected", False),
+                "ai_governance_pillars_detected": ai_governance_signals.get("detected_pillars", []),
+                "ai_governance_federal_agency": ai_governance_signals.get("federal_agency_detected", False),
                 "clarification_questions": len(clarification_signals),
                 "parallel_groups": len(parallel_opportunities),
             }),
@@ -1345,6 +1388,16 @@ def _analyze_conversation_coverage(session_id, conn):
                          "button", "design", "mobile", "responsive", "intuitive"],
             "covered_question": None,
             "gap_question": "What should the user interface look like? (web app, mobile, desktop) Any specific UX requirements?",
+        },
+        "ai_governance": {
+            "keywords": ["ai system", "machine learning", "ml model", "deep learning",
+                         "neural network", "nlp", "computer vision", "recommendation engine",
+                         "predictive model", "automated decision", "algorithmic", "chatbot",
+                         "generative ai", "llm", "foundation model", "model card",
+                         "human oversight", "impact assessment", "ai governance",
+                         "responsible ai", "caio", "chief ai officer"],
+            "covered_question": None,
+            "gap_question": "Does this system use AI/ML? If so, what governance is needed (model documentation, human oversight, impact assessments)?",
         },
     }
 
@@ -1812,6 +1865,93 @@ def _detect_dev_profile_signals(text, session_data=None):
         "detected_dimensions": sorted(detected_dimensions),
         "dimension_count": len(detected_dimensions),
         "suggested_templates": suggested_templates,
+    }
+
+
+def _detect_ai_governance_signals(text, session_data=None):
+    """Detect AI governance signals from customer text (D322).
+
+    Auto-triggers for federal agencies per OMB M-25-21 and any AI/ML mention.
+    Detects 6 governance pillar keywords for targeted follow-up questions.
+    """
+    lower = text.lower()
+    ai_governance_detected = False
+    detected_pillars = []
+    federal_agency_detected = False
+
+    # AI/ML mention keywords — auto-trigger governance (D322)
+    ai_ml_keywords = [
+        "ai system", "machine learning", "ml model", "deep learning",
+        "neural network", "natural language processing", "nlp",
+        "computer vision", "recommendation engine", "predictive model",
+        "automated decision", "algorithmic", "chatbot", "virtual assistant",
+        "generative ai", "large language model", "llm", "foundation model",
+    ]
+    if any(kw in lower for kw in ai_ml_keywords):
+        ai_governance_detected = True
+
+    # Federal agency keywords — auto-trigger per OMB M-25-21
+    federal_keywords = [
+        "federal agency", "omb", "executive order", "federal government",
+        "government agency", "gsa", "irs", "fda", "epa", "usda",
+        "hhs", "dhs", "dot", "hud", "ed.gov", "va ", "opm",
+    ]
+    if any(kw in lower for kw in federal_keywords):
+        federal_agency_detected = True
+        ai_governance_detected = True
+
+    # Also check session customer_org for federal indicators
+    if session_data:
+        org = (session_data.get("customer_org") or "").lower()
+        if any(kw in org for kw in ["federal", "agency", "government", "gsa",
+                                      "omb", "dod", "defense", "military"]):
+            federal_agency_detected = True
+            ai_governance_detected = True
+
+    # Governance pillar keywords (from ai_governance_config.yaml)
+    pillar_keywords = {
+        "ai_inventory": [
+            "ai system", "machine learning", "ml model", "deep learning",
+            "neural network", "nlp", "computer vision", "recommendation engine",
+            "predictive model", "automated decision", "algorithmic", "chatbot",
+            "generative ai", "llm", "foundation model",
+        ],
+        "model_documentation": [
+            "model card", "model documentation", "training data",
+            "model performance", "model accuracy", "model bias",
+            "model validation", "model versioning",
+        ],
+        "human_oversight": [
+            "human oversight", "human in the loop", "human on the loop",
+            "manual review", "human approval", "override capability",
+            "escalation", "appeal process",
+        ],
+        "impact_assessment": [
+            "impact assessment", "rights impacting", "safety critical",
+            "high risk ai", "algorithmic impact", "disparate impact",
+            "bias assessment", "fairness",
+        ],
+        "transparency": [
+            "transparency", "explainability", "interpretability",
+            "notice", "disclosure", "ai disclosure",
+        ],
+        "accountability": [
+            "accountability", "responsible ai", "caio",
+            "chief ai officer", "ai governance", "ethics review",
+            "incident response",
+        ],
+    }
+
+    for pillar, keywords in pillar_keywords.items():
+        if any(kw in lower for kw in keywords):
+            detected_pillars.append(pillar)
+            ai_governance_detected = True
+
+    return {
+        "ai_governance_detected": ai_governance_detected,
+        "federal_agency_detected": federal_agency_detected,
+        "detected_pillars": sorted(detected_pillars),
+        "pillar_count": len(detected_pillars),
     }
 
 

@@ -13,16 +13,16 @@ with architectural decisions D7/D25 — zero deps, air-gap safe).
 Usage:
     # Export requirements to ReqIF
     python tools/integration/doors_exporter.py --session-id sess-abc \\
-        --export-reqif --output-path /tmp/requirements.reqif --json
+        --export-reqif --output-path .tmp/requirements.reqif --json
 
     # Export without traceability links
     python tools/integration/doors_exporter.py --session-id sess-abc \\
-        --export-reqif --output-path /tmp/requirements.reqif \\
+        --export-reqif --output-path .tmp/requirements.reqif \\
         --no-trace --json
 
     # Validate a ReqIF file
     python tools/integration/doors_exporter.py --validate \\
-        --file-path /tmp/requirements.reqif --json
+        --file-path .tmp/requirements.reqif --json
 """
 
 import argparse

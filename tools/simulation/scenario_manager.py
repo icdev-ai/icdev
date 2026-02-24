@@ -22,11 +22,11 @@ Usage:
 
     # Export scenario to JSON file
     python tools/simulation/scenario_manager.py --scenario-id <id> --export \\
-        --output-path /tmp/scenario.json --json
+        --output-path .tmp/scenario.json --json
 
     # Import scenario from JSON file
     python tools/simulation/scenario_manager.py --project-id <id> --import \\
-        --input-path /tmp/scenario.json --json
+        --input-path .tmp/scenario.json --json
 
     # List scenarios for a project
     python tools/simulation/scenario_manager.py --project-id <id> --list --json

@@ -19,7 +19,7 @@ Usage:
     python tools/compliance/emass/emass_export.py --project-id proj-123 --type artifacts
     python tools/compliance/emass/emass_export.py --project-id proj-123 --type test-results
     python tools/compliance/emass/emass_export.py --project-id proj-123 --type all
-    python tools/compliance/emass/emass_export.py --project-id proj-123 --type all --output-dir /tmp/emass
+    python tools/compliance/emass/emass_export.py --project-id proj-123 --type all --output-dir .tmp/emass
 """
 
 import argparse

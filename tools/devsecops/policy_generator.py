@@ -10,7 +10,7 @@ ADR D121: Both Kyverno and OPA supported; customer selects in profile.
 Usage:
     python tools/devsecops/policy_generator.py --project-id "proj-123" --engine kyverno --json
     python tools/devsecops/policy_generator.py --project-id "proj-123" --engine opa --json
-    python tools/devsecops/policy_generator.py --project-id "proj-123" --engine kyverno --output /tmp/policies/
+    python tools/devsecops/policy_generator.py --project-id "proj-123" --engine kyverno --output .tmp/policies/
     python tools/devsecops/policy_generator.py --project-id "proj-123" --admission-config --json
 """
 

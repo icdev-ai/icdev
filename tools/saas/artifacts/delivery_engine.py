@@ -18,12 +18,12 @@ platform.db ``tenants`` table.  Every delivery is audit-logged to the
 
 Usage (library):
     from tools.saas.artifacts.delivery_engine import deliver_artifact
-    result = deliver_artifact("tenant-abc123", "/tmp/ssp.json", "ssp")
+    result = deliver_artifact("tenant-abc123", ".tmp/ssp.json", "ssp")
 
 Usage (CLI):
     python tools/saas/artifacts/delivery_engine.py \\
         --tenant-id tenant-abc123 \\
-        --artifact /tmp/ssp.json \\
+        --artifact .tmp/ssp.json \\
         --type ssp
 
     python tools/saas/artifacts/delivery_engine.py \\

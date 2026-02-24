@@ -7,12 +7,13 @@ ricoas:
 
   # Dimension weights for readiness scoring (must sum to 1.0)
   readiness_weights:
-    completeness: 0.22
-    clarity: 0.22
-    feasibility: 0.18
-    compliance: 0.13
-    testability: 0.13
-    devsecops_readiness: 0.12  # Phase 24: DevSecOps maturity dimension
+    completeness: 0.20
+    clarity: 0.20
+    feasibility: 0.16
+    compliance: 0.12
+    testability: 0.12
+    devsecops_readiness: 0.10  # Phase 24: DevSecOps maturity dimension
+    ai_governance_readiness: 0.10  # Phase 50: AI governance dimension (D323)
 
   # Gap detection settings
   gap_detection:

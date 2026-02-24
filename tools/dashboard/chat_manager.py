@@ -422,13 +422,32 @@ class ChatManager:
                     context_id, ctx.turn_number, "assistant", response,
                 )
 
-                # Dispatch post-hook
-                _dispatch_hook("chat_message_after", {
+                # Dispatch post-hook — check for governance advisory (D325, D327)
+                hook_result = _dispatch_hook("chat_message_after", {
                     "context_id": context_id,
                     "role": "assistant",
                     "content": response,
                     "turn_number": ctx.turn_number,
+                    "project_id": getattr(ctx, "project_id", ""),
                 })
+
+                # Inject governance advisory as system message if present
+                gov_advisory = hook_result.get("governance_advisory") if isinstance(hook_result, dict) else None
+                if gov_advisory:
+                    ctx.turn_number += 1
+                    advisory_content = (
+                        f"[AI Governance Advisory] {gov_advisory.get('message', '')}\n"
+                        f"Action: {gov_advisory.get('action', '')}"
+                    )
+                    self._db_insert_message(
+                        context_id, ctx.turn_number, "system", advisory_content,
+                        content_type="governance_advisory",
+                    )
+                    _mark_dirty(context_id, "governance_advisory", {
+                        "gap_id": gov_advisory.get("gap_id"),
+                        "severity": gov_advisory.get("severity"),
+                        "total_gaps": gov_advisory.get("total_gaps", 0),
+                    })
 
                 self._db_complete_task(task_id, response)
                 _mark_dirty(context_id, "new_message", {

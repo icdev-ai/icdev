@@ -5,8 +5,9 @@
 # Distribution: D
 """Multi-dimensional requirements readiness scorer.
 
-Scores an intake session across 5 dimensions:
-  completeness, clarity, feasibility, compliance, testability
+Scores an intake session across 7 dimensions:
+  completeness, clarity, feasibility, compliance, testability,
+  devsecops_readiness (D119), ai_governance_readiness (D323)
 
 Usage:
     python tools/requirements/readiness_scorer.py --session-id sess-abc --json
@@ -147,6 +148,33 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     with_criteria = sum(1 for r in reqs if r.get("acceptance_criteria"))
     testability = with_criteria / max(total, 1)
 
+    # --- DevSecOps Readiness (D119 — configured but previously unscored) ---
+    devsecops_readiness = 0.0
+    try:
+        devsecops_profile = conn.execute(
+            "SELECT maturity_level FROM devsecops_profiles WHERE project_id = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (session_data.get("project_id", ""),),
+        ).fetchone()
+        if devsecops_profile:
+            level_map = {"level_1_initial": 0.2, "level_2_managed": 0.4,
+                         "level_3_defined": 0.6, "level_4_measured": 0.8,
+                         "level_5_optimizing": 1.0}
+            devsecops_readiness = level_map.get(
+                devsecops_profile["maturity_level"], 0.0)
+    except Exception:
+        pass
+
+    # --- AI Governance Readiness (D323) ---
+    ai_governance_readiness = 0.0
+    try:
+        from tools.requirements.ai_governance_scorer import score_ai_governance_readiness
+        gov_result = score_ai_governance_readiness(
+            session_data.get("project_id", ""), conn=conn)
+        ai_governance_readiness = gov_result.get("score", 0.0)
+    except (ImportError, Exception):
+        pass
+
     weights = _load_weights()
     overall = (
         completeness * weights.get("completeness", 0.25)
@@ -154,6 +182,8 @@ def score_readiness(session_id: str, db_path=None) -> dict:
         + feasibility * weights.get("feasibility", 0.20)
         + compliance * weights.get("compliance", 0.15)
         + testability * weights.get("testability", 0.15)
+        + devsecops_readiness * weights.get("devsecops_readiness", 0.0)
+        + ai_governance_readiness * weights.get("ai_governance_readiness", 0.0)
     )
 
     # Get turn number for tracking
@@ -215,6 +245,8 @@ def score_readiness(session_id: str, db_path=None) -> dict:
             "feasibility": {"score": round(feasibility, 4), "weight": weights.get("feasibility", 0.20)},
             "compliance": {"score": round(compliance, 4), "weight": weights.get("compliance", 0.15)},
             "testability": {"score": round(testability, 4), "weight": weights.get("testability", 0.15)},
+            "devsecops_readiness": {"score": round(devsecops_readiness, 4), "weight": weights.get("devsecops_readiness", 0.0)},
+            "ai_governance_readiness": {"score": round(ai_governance_readiness, 4), "weight": weights.get("ai_governance_readiness", 0.0)},
         },
         "requirement_count": total,
         "types_present": list(types_present),

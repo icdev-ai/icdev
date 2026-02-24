@@ -46,6 +46,7 @@
             <span id="chat-title" style="font-weight: 600;">Select or create a context</span>
             <div>
                 <span id="chat-status" class="badge" style="font-size: 0.7rem;"></span>
+                <button id="btn-gov-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-purple, #7c4dff); color: #fff; border: none; border-radius: 3px; cursor: pointer;" title="Toggle AI Governance sidebar">Gov</button>
                 <button id="btn-close-context" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; display: none; background: var(--accent-red, #d44); color: #fff; border: none; border-radius: 3px; cursor: pointer;">Close</button>
             </div>
         </div>
@@ -70,7 +71,37 @@
             </div>
         </div>
     </div>
+
+    <!-- Right sidebar: AI Governance status (D326) -->
+    <div id="gov-sidebar" style="display: none; width: 260px; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); overflow-y: auto; max-height: 600px;">
+        <div style="padding: 12px; border-bottom: 1px solid var(--border-color);">
+            <strong style="color: var(--accent-purple, #7c4dff);">AI Governance</strong>
+        </div>
+        <div id="gov-sidebar-content" style="padding: 12px;">
+            <p style="font-size: 0.8rem; color: var(--text-secondary);">Loading governance status...</p>
+        </div>
+    </div>
 </div>
+
+<style>
+/* Governance advisory message styling (D327) */
+.msg-governance_advisory {
+    border-left: 3px solid var(--accent-purple, #7c4dff) !important;
+    background: rgba(124, 77, 255, 0.05) !important;
+}
+.msg-governance_advisory::before {
+    content: '\26A0';
+    margin-right: 6px;
+}
+.gov-stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; }
+.gov-stat-label { color: var(--text-secondary); }
+.gov-stat-value { font-weight: 600; }
+.gov-gap-item { padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.78rem; }
+.gov-gap-severity { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; }
+.gov-gap-severity.high { background: var(--accent-red, #d44); color: #fff; }
+.gov-gap-severity.medium { background: var(--accent-yellow, #fa0); color: #000; }
+.gov-gap-severity.low { background: var(--accent-blue); color: #fff; }
+</style>
 
 <!-- New Context Modal -->
 <div id="new-context-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
@@ -102,4 +133,64 @@
 
 {% block scripts %}
 <script defer src="{{ url_for('static', filename='js/chat_streams.js') }}"></script>
+<script>
+// AI Governance sidebar (D326)
+(function() {
+    const btn = document.getElementById('btn-gov-toggle');
+    const sidebar = document.getElementById('gov-sidebar');
+    const content = document.getElementById('gov-sidebar-content');
+    if (!btn || !sidebar) return;
+
+    btn.addEventListener('click', function() {
+        const visible = sidebar.style.display !== 'none';
+        sidebar.style.display = visible ? 'none' : 'block';
+        if (!visible) refreshGovernanceSidebar();
+    });
+
+    function refreshGovernanceSidebar() {
+        let html = '';
+        // Fetch transparency stats
+        Promise.all([
+            fetch('/api/ai-transparency/stats').then(r => r.ok ? r.json() : null).catch(() => null),
+            fetch('/api/ai-accountability/stats').then(r => r.ok ? r.json() : null).catch(() => null)
+        ]).then(([tStats, aStats]) => {
+            html += '<div style="margin-bottom: 12px;"><strong style="font-size: 0.82rem;">Transparency</strong></div>';
+            if (tStats) {
+                html += govStatRow('AI Systems', tStats.inventory_count || 0);
+                html += govStatRow('Model Cards', tStats.model_cards || 0);
+                html += govStatRow('System Cards', tStats.system_cards || 0);
+            } else {
+                html += '<p style="font-size:0.78rem;color:var(--text-secondary);">Transparency API not available</p>';
+            }
+
+            html += '<div style="margin: 12px 0 8px;"><strong style="font-size: 0.82rem;">Accountability</strong></div>';
+            if (aStats) {
+                html += govStatRow('Oversight Plans', aStats.oversight_plans || 0);
+                html += govStatRow('CAIO Designated', aStats.caio_designations || 0);
+                html += govStatRow('Open Appeals', aStats.open_appeals || aStats.total_appeals || 0);
+                html += govStatRow('Ethics Reviews', aStats.ethics_reviews || 0);
+                html += govStatRow('Reassessments', aStats.reassessment_schedules || 0);
+            } else {
+                html += '<p style="font-size:0.78rem;color:var(--text-secondary);">Accountability API not available</p>';
+            }
+
+            content.innerHTML = html;
+        });
+    }
+
+    function govStatRow(label, value) {
+        return '<div class="gov-stat-row"><span class="gov-stat-label">' + label + '</span><span class="gov-stat-value">' + value + '</span></div>';
+    }
+
+    // Refresh on governance_advisory state change
+    if (typeof window._chatStreamsOnStateChange === 'undefined') {
+        window._chatStreamsOnStateChange = [];
+    }
+    window._chatStreamsOnStateChange.push(function(data) {
+        if (data && data.change_type === 'governance_advisory' && sidebar.style.display !== 'none') {
+            refreshGovernanceSidebar();
+        }
+    });
+})();
+</script>
 {% endblock %}

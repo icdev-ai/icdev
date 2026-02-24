@@ -19,7 +19,7 @@ Supported workflows:
 CLI usage:
     python tools/mbse/sync_engine.py --project-id proj-123 detect-drift
     python tools/mbse/sync_engine.py --project-id proj-123 sync-model-to-code --language python
-    python tools/mbse/sync_engine.py --project-id proj-123 sync-code-to-model --output /tmp/updates.xmi
+    python tools/mbse/sync_engine.py --project-id proj-123 sync-code-to-model --output .tmp/updates.xmi
     python tools/mbse/sync_engine.py --project-id proj-123 resolve-conflict --mapping-id 7 --resolution keep_model
     python tools/mbse/sync_engine.py --project-id proj-123 reimport-xmi --file model_v2.xmi
     python tools/mbse/sync_engine.py --project-id proj-123 reimport-reqif --file reqs_v2.reqif

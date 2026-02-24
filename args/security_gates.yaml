@@ -575,6 +575,21 @@ ai_accountability:
     reassessment_max_overdue_days: 90
     ethics_review_max_age_days: 365
 
+ai_governance:
+  blocking:
+    - caio_not_designated_for_rights_impacting_ai
+    - oversight_plan_missing_for_high_impact_ai
+    - impact_assessment_not_completed
+  warning:
+    - model_card_missing
+    - fairness_assessment_stale
+    - reassessment_overdue
+    - ai_inventory_incomplete
+  thresholds:
+    caio_required_for_rights_impacting: true
+    oversight_plan_required: true
+    impact_assessment_required: true
+
 marketplace:
   thresholds:
     sast:

@@ -212,7 +212,10 @@ def main():
 
     # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+    try:
+        signal.signal(signal.SIGTERM, signal_handler)
+    except (OSError, AttributeError):
+        pass  # SIGTERM not available on Windows
 
     # Run initial check immediately
     check_and_process_issues(vcs)

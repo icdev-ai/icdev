@@ -14,12 +14,12 @@ All generated artifacts include CUI // SP-CTI banners as required for Controlled
 Unclassified Information handling.
 
 Usage:
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir /tmp/migration --type all
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir /tmp/migration --type schema
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir /tmp/migration --type data
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir /tmp/migration --type procedures --source-path /opt/legacy/sql
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir /tmp/migration --type validation
-    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir /tmp/migration --type all --json
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type all
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type schema
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type data
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type procedures --source-path /opt/legacy/sql
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type validation
+    python tools/modernization/db_migration_planner.py --app-id APP-001 --output-dir .tmp/migration --type all --json
 """
 
 import argparse
@@ -1257,20 +1257,20 @@ def main():
             Examples:
               # Generate all migration artifacts
               python tools/modernization/db_migration_planner.py \\
-                  --app-id APP-001 --output-dir /tmp/migration --type all
+                  --app-id APP-001 --output-dir .tmp/migration --type all
 
               # Generate only schema DDL
               python tools/modernization/db_migration_planner.py \\
-                  --app-id APP-001 --output-dir /tmp/migration --type schema
+                  --app-id APP-001 --output-dir .tmp/migration --type schema
 
               # Translate stored procedures
               python tools/modernization/db_migration_planner.py \\
-                  --app-id APP-001 --output-dir /tmp/migration \\
+                  --app-id APP-001 --output-dir .tmp/migration \\
                   --type procedures --source-path /opt/legacy/sql
 
               # JSON output for pipeline integration
               python tools/modernization/db_migration_planner.py \\
-                  --app-id APP-001 --output-dir /tmp/migration --type all --json
+                  --app-id APP-001 --output-dir .tmp/migration --type all --json
         """),
     )
 

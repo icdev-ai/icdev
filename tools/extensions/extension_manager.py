@@ -112,6 +112,8 @@ class ExtensionManager:
         self._lock = threading.Lock()
         self._config = _load_extension_config()
         self._loaded_files: set = set()
+        # Auto-load built-in extensions on init (D324)
+        self._auto_load_builtins()
 
     # ------------------------------------------------------------------
     # Registration
@@ -332,6 +334,89 @@ class ExtensionManager:
             description=description,
             file_path=str(file_path),
         )
+
+    # ------------------------------------------------------------------
+    # Auto-load built-in extensions (D324)
+    # ------------------------------------------------------------------
+
+    def _auto_load_builtins(self) -> int:
+        """Scan tools/extensions/builtins/*.py and register EXTENSION_HOOKS.
+
+        Each file is expected to export an ``EXTENSION_HOOKS`` dict mapping
+        hook point names to handler metadata::
+
+            EXTENSION_HOOKS = {
+                "chat_message_after": {
+                    "handler": handle,
+                    "name": "my_hook",
+                    "priority": 10,
+                    "allow_modification": True,
+                    "description": "...",
+                },
+            }
+
+        Returns the number of handlers registered.
+        """
+        builtins_dir = BASE_DIR / "tools" / "extensions" / "builtins"
+        if not builtins_dir.is_dir():
+            return 0
+
+        loaded = 0
+        for py_file in sorted(builtins_dir.glob("*.py")):
+            if py_file.name.startswith("_"):
+                continue
+            if str(py_file) in self._loaded_files:
+                continue
+
+            try:
+                module = self._load_file(py_file)
+                if module is None:
+                    continue
+
+                hooks = getattr(module, "EXTENSION_HOOKS", None)
+                if not isinstance(hooks, dict):
+                    continue
+
+                for hook_name, meta in hooks.items():
+                    try:
+                        hook_point = ExtensionPoint(hook_name)
+                    except ValueError:
+                        logger.warning(
+                            "Unknown hook point '%s' in %s", hook_name, py_file)
+                        continue
+
+                    handler_fn = meta.get("handler")
+                    if handler_fn is None or not callable(handler_fn):
+                        continue
+
+                    self.register(
+                        hook_point=hook_point,
+                        handler=handler_fn,
+                        name=meta.get("name", py_file.stem),
+                        priority=meta.get("priority", 500),
+                        allow_modification=meta.get("allow_modification", False),
+                        scope="builtin",
+                        description=meta.get("description", ""),
+                        file_path=str(py_file),
+                    )
+                    loaded += 1
+
+                self._loaded_files.add(str(py_file))
+            except Exception as exc:
+                logger.error("Failed to load builtin %s: %s", py_file, exc)
+
+        return loaded
+
+    def _load_file(self, file_path: Path):
+        """Load a Python file via importlib and return the module."""
+        spec = importlib.util.spec_from_file_location(
+            f"ext_builtin_{file_path.stem}", str(file_path)
+        )
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
     # ------------------------------------------------------------------
     # Introspection

@@ -9,20 +9,20 @@ icdev.db.  All generated source files carry CUI // SP-CTI banners.
 Usage:
     # Generate everything for a migration plan
     python tools/modernization/migration_code_generator.py \\
-        --plan-id mplan-001 --output /tmp/migration --generate all
+        --plan-id mplan-001 --output .tmp/migration --generate all
 
     # Generate only adapters in Java
     python tools/modernization/migration_code_generator.py \\
-        --plan-id mplan-001 --output /tmp/migration --generate adapters --language java
+        --plan-id mplan-001 --output .tmp/migration --generate adapters --language java
 
     # Generate a single service scaffold
     python tools/modernization/migration_code_generator.py \\
-        --plan-id mplan-001 --output /tmp/migration --generate scaffolds \\
+        --plan-id mplan-001 --output .tmp/migration --generate scaffolds \\
         --service-name user-service --language python --framework flask
 
     # JSON output
     python tools/modernization/migration_code_generator.py \\
-        --plan-id mplan-001 --output /tmp/migration --generate all --json
+        --plan-id mplan-001 --output .tmp/migration --generate all --json
 
 Classification: CUI // SP-CTI
 """

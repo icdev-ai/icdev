@@ -16,7 +16,7 @@ Tables:
 
 Usage:
     python tools/registry/child_registry.py --register --name "my-app" \\
-        --parent-project "proj-123" --project-path /tmp/my-app --json
+        --parent-project "proj-123" --project-path .tmp/my-app --json
     python tools/registry/child_registry.py --list --json
     python tools/registry/child_registry.py --get --child-id "child-abc" --json
     python tools/registry/child_registry.py --add-capability --child-id "child-abc" \\

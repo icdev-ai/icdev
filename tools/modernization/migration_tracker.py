@@ -32,7 +32,7 @@ Usage:
 
     # Generate PI migration report
     python tools/modernization/migration_tracker.py \\
-        --plan-id MP-001 --pi-report --pi PI-25.3 --output-dir /tmp/reports
+        --plan-id MP-001 --pi-report --pi PI-25.3 --output-dir .tmp/reports
 
     # Check compliance gate
     python tools/modernization/migration_tracker.py \\

@@ -10,6 +10,7 @@ compliance, and feature mapping checks. On failure, feeds errors back to LLM."""
 import argparse
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -18,6 +19,9 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+# Platform-aware null device (D145)
+_NULL_DEVICE = "NUL" if os.name == "nt" else "/dev/null"
 
 # Validation check names
 CHECKS = [
@@ -28,7 +32,7 @@ CHECKS = [
 # Syntax check commands per language
 SYNTAX_COMMANDS = {
     "python": ["python", "-m", "py_compile"],
-    "java": ["javac", "-d", "/dev/null"],
+    "java": ["javac", "-d", _NULL_DEVICE],
     "go": ["go", "vet"],
     "rust": ["cargo", "check"],
     "csharp": ["dotnet", "build", "--no-restore"],
@@ -38,7 +42,7 @@ SYNTAX_COMMANDS = {
 # Lint commands per language
 LINT_COMMANDS = {
     "python": ["ruff", "check"],
-    "java": ["checkstyle", "-c", "/dev/null"],
+    "java": ["checkstyle", "-c", _NULL_DEVICE],
     "go": ["golangci-lint", "run"],
     "rust": ["cargo", "clippy"],
     "csharp": ["dotnet", "format", "--verify-no-changes"],

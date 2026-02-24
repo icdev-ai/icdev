@@ -709,6 +709,13 @@
 | Provenance Page | tools/dashboard/templates/provenance.html | Provenance viewer: entity/activity tables, lineage query | (template) | HTML page |
 | XAI Page | tools/dashboard/templates/xai.html | XAI dashboard: assessment runner, coverage gauge, SHAP chart | (template) | HTML page |
 
+## AI Governance Integration (Phase 50)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| AI Governance Scorer | tools/requirements/ai_governance_scorer.py | Score AI governance readiness (6 components) for 7th readiness dimension | project_id, conn/db_path | JSON score + gaps |
+| AI Governance Chat Extension | tools/extensions/builtins/010_ai_governance_chat.py | Chat hook: detect AI keywords, check governance gaps, inject advisory messages | chat context dict | context + governance_advisory |
+| AI Governance Config | args/ai_governance_config.yaml | Intake detection keywords, chat governance, readiness weights, auto-trigger rules | (config) | YAML config |
+
 ## Safety Hooks
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

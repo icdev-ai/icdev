@@ -15,14 +15,14 @@ verify_signature() raise RuntimeError with install instructions.
 Usage (library):
     from tools.saas.artifacts.signer import hash_artifact, sign_artifact
 
-    info = hash_artifact("/tmp/ssp.json")
-    sig  = sign_artifact("/tmp/ssp.json", private_key_path="/keys/icdev.pem")
-    ok   = verify_signature("/tmp/ssp.json", sig["signature"], "/keys/icdev.pub")
+    info = hash_artifact(".tmp/ssp.json")
+    sig  = sign_artifact(".tmp/ssp.json", private_key_path="/keys/icdev.pem")
+    ok   = verify_signature(".tmp/ssp.json", sig["signature"], "/keys/icdev.pub")
 
 Usage (CLI):
-    python tools/saas/artifacts/signer.py --hash /tmp/ssp.json
-    python tools/saas/artifacts/signer.py --sign /tmp/ssp.json --key /keys/icdev.pem
-    python tools/saas/artifacts/signer.py --verify /tmp/ssp.json \\
+    python tools/saas/artifacts/signer.py --hash .tmp/ssp.json
+    python tools/saas/artifacts/signer.py --sign .tmp/ssp.json --key /keys/icdev.pem
+    python tools/saas/artifacts/signer.py --verify .tmp/ssp.json \\
         --signature <base64> --pubkey /keys/icdev.pub
 """
 

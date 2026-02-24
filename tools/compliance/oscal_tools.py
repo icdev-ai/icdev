@@ -177,9 +177,10 @@ def _find_oscal_cli():
             bat = vendor_dir / "bin" / "oscal-cli.bat"
             if bat.exists():
                 return str(bat), "wrapper"
-        sh = vendor_dir / "bin" / "oscal-cli"
-        if sh.exists():
-            return str(sh), "wrapper"
+        else:
+            sh = vendor_dir / "bin" / "oscal-cli"
+            if sh.exists():
+                return str(sh), "wrapper"
         # Fallback: single fat JAR
         jar_rel = config.get("oscal_cli", {}).get("jar_path", "vendor/oscal-cli/oscal-cli.jar")
         jar_path = BASE_DIR / jar_rel

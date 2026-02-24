@@ -397,6 +397,8 @@ pytest tests/test_ai_incident_response.py -v            # AI incident response t
 pytest tests/test_ai_reassessment_scheduler.py -v       # AI reassessment scheduler tests (18 tests)
 pytest tests/test_ai_accountability_audit.py -v         # AI accountability audit tests (20 tests)
 pytest tests/test_assessor_accountability_fixes.py -v   # Assessor accountability fixes tests (24 tests)
+pytest tests/test_ai_governance_intake.py -v            # AI governance intake detection tests (37 tests)
+pytest tests/test_ai_governance_chat_extension.py -v    # AI governance chat extension tests (28 tests)
 
 # .claude directory governance
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
@@ -1248,6 +1250,8 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/security_gates.yaml` | (updated) Added `observability_xai` gate with blocking: tracing_not_active, provenance_graph_empty, xai_assessment_not_completed, content_tracing_active_in_cui_without_approval; thresholds: tracing_required=true, provenance_required=true, shap_max_age_days=30, min_xai_coverage_pct=80 |
 | `args/oscal_tools_config.yaml` | OSCAL Ecosystem Tools (D302-D306): oscal-cli paths/timeout/JVM args, oscal-pydantic validation toggles, catalog source priority (official NIST → ICDEV fallback), validation pipeline order (structural → pydantic → Metaschema), max errors per validator |
 | `args/security_gates.yaml` | (updated) Added `ai_transparency` gate with blocking: high_impact_ai_not_classified, model_cards_missing_for_deployed_models, ai_inventory_incomplete, gao_evidence_gaps_on_critical_practices, confabulation_detection_not_active; thresholds: min_gao_evidence_coverage_pct=80 |
+| `args/ai_governance_config.yaml` | AI Governance Integration (Phase 50, D322-D330): intake detection keywords by 6 pillars, auto-trigger rules (federal agencies, impact level), chat governance (advisory cooldown, AI keyword list, priority order), readiness dimension component weights, probe questions for missing pillars |
+| `args/security_gates.yaml` | (updated) Added `ai_governance` gate with blocking: caio_not_designated_for_rights_impacting_ai, oversight_plan_missing_for_high_impact_ai, impact_assessment_not_completed; warning: model_card_missing, fairness_assessment_stale, reassessment_overdue, ai_inventory_incomplete; thresholds: caio_required_for_rights_impacting=true, oversight_plan_required=true, impact_assessment_required=true |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1505,6 +1509,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **Translation Gate:** Blocking: syntax errors in output, API surface < 90%, compliance coverage < 95%, secrets detected, CUI markings missing. Warning: round-trip similarity < 80%, type coverage < 85%, complexity increase > 30%, unmapped deps, stub functions, lint issues
 - **Claude Config Alignment Gate:** Blocking: append-only table unprotected in pre_tool_use.py, hook syntax error, hook reference missing. Warning: dashboard route undocumented, E2E coverage gap, settings deny rule missing
 - **AI Accountability Gate:** CAIO designated for high-impact AI, oversight plan exists, 0 unresolved critical AI incidents, no reassessments overdue >90 days; warn on appeal process not defined, ethics review not conducted, impact assessment missing, fairness gate not passing
+- **AI Governance Gate:** CAIO designated for rights-impacting AI, oversight plan for high-impact AI, impact assessment completed; warn on model card missing, fairness assessment stale, reassessment overdue, AI inventory incomplete
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -1591,6 +1596,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | Observability & XAI | `goals/observability_traceability_xai.md` | Distributed tracing (OTel+SQLite), W3C PROV-AGENT provenance, AgentSHAP tool attribution, XAI compliance assessor (10 checks), dashboard pages (/traces, /provenance, /xai), MCP server (Phase 46, D280-D290) |
 | AI Transparency | `goals/ai_transparency.md` | AI Transparency & Accountability: OMB M-25-21/M-26-04, NIST AI 600-1, GAO-21-519SP — model cards, system cards, AI inventory, confabulation detection, fairness assessment, GAO evidence, cross-framework audit (Phase 48, D307-D315) |
 | AI Accountability | `goals/ai_accountability.md` | AI Accountability: oversight plans, CAIO designation, appeals, incident response, ethics reviews, reassessment scheduling, cross-framework audit, assessor fixes (Phase 49, D316-D321) |
+| AI Governance Intake | `goals/ai_governance_intake.md` | AI governance integration: RICOAS intake detection (6 pillars), 7th readiness dimension, chat extension advisory, governance sidebar, auto-trigger for federal agencies (Phase 50, D322-D330) |
 
 ---
 
@@ -1714,6 +1720,15 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D319:** Ethics reviews store boolean flags (`opt_out_policy`, `legal_compliance_matrix`, `pre_deployment_review`) for fast assessor checks rather than free-text scanning
 - **D320:** Impact assessment stored in `ai_ethics_reviews` with `review_type='impact_assessment'` rather than a separate table — avoids table proliferation
 - **D321:** Fairness gate lowered to 25% to be achievable with DB-only checks (no `project_dir` required) — 2 existing + 4 new DB checks = 6/8 = 75% maximum possible
+- **D322:** AI governance keyword detection reuses existing `_detect_*_signals()` intake pattern (D119, D125) — deterministic keyword matching from YAML config, no LLM needed
+- **D323:** AI governance readiness is the 7th readiness dimension (extends D21 weighted average) — checks 6 governance components against existing Phase 48/49 DB tables
+- **D324:** Extension builtins stored in `tools/extensions/builtins/` with numbered Python files (Agent Zero pattern) — auto-loaded by ExtensionManager on init
+- **D325:** `chat_message_after` hook activated for governance advisory injection — observational tier, does not block message delivery
+- **D326:** Governance sidebar fetches from existing transparency/accountability APIs (no new endpoints) — reuses `/api/ai-transparency/stats` and `/api/ai-accountability/stats`
+- **D327:** Advisory messages are non-blocking system messages (advisory-only, not enforcing) — cooldown prevents spamming (default 5 turns)
+- **D328:** Single config file (`args/ai_governance_config.yaml`) for all governance integration settings — intake, chat, readiness, auto-trigger
+- **D329:** No new database tables — reuses Phase 48/49 tables (`ai_use_case_inventory`, `ai_model_cards`, `ai_oversight_plans`, `ai_ethics_reviews`, `ai_caio_registry`, `ai_reassessment_schedule`) for all governance checks
+- **D330:** `ai_governance` security gate is separate from `ai_transparency` and `ai_accountability` gates — governance focuses on cross-cutting intake/chat integration requirements
 
 ### Innovation Security Gates
 | Gate | Condition |
@@ -1742,7 +1757,7 @@ RICOAS transforms vague customer requirements into structured, decomposed, MBSE-
 1. **Session Setup** — Create intake session with customer info, impact level, classification, ATO context
 2. **Conversational Intake** — AI-guided Q&A extracting requirements, detecting ambiguities and gaps in real-time
 3. **Document Upload** — Upload SOW/CDD/CONOPS, extract shall/must/should statements as structured requirements
-4. **Gap Detection & Readiness** — 5-dimension scoring (completeness, clarity, feasibility, compliance, testability), NIST gap analysis
+4. **Gap Detection & Readiness** — 7-dimension scoring (completeness, clarity, feasibility, compliance, testability, devsecops_readiness, ai_governance_readiness), NIST gap analysis
 5. **SAFe Decomposition** — Epic > Capability > Feature > Story > Enabler with WSJF scoring, T-shirt sizing, BDD criteria
 
 ### ATO Boundary Impact (4 Tiers)

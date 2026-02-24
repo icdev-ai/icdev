@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import signal
 import sqlite3
@@ -192,10 +193,17 @@ def spawn_workflow(tag: str, issue_iid: int, issue_data: dict,
             print(f"Warning: Workflow script not found: {script_path}", file=sys.stderr)
             return None
         cwd = worktree_path or str(BASE_DIR)
+        popen_kwargs = dict(
+            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_kwargs["start_new_session"] = True
         process = subprocess.Popen(
             [sys.executable, str(script_path), str(issue_iid)],
-            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, start_new_session=True,
+            **popen_kwargs,
         )
         return str(process.pid)
 

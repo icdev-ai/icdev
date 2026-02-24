@@ -10,9 +10,9 @@ All generated documents include CUI // SP-CTI banners at top and bottom as
 required for Controlled Unclassified Information handling.
 
 Usage:
-    python tools/modernization/doc_generator.py --app-id APP-001 --output-dir /tmp/docs --type all
-    python tools/modernization/doc_generator.py --app-id APP-001 --output-dir /tmp/docs --type api
-    python tools/modernization/doc_generator.py --app-id APP-001 --output-dir /tmp/docs --type all --json
+    python tools/modernization/doc_generator.py --app-id APP-001 --output-dir .tmp/docs --type all
+    python tools/modernization/doc_generator.py --app-id APP-001 --output-dir .tmp/docs --type api
+    python tools/modernization/doc_generator.py --app-id APP-001 --output-dir .tmp/docs --type all --json
 """
 
 import argparse

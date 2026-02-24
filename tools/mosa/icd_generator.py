@@ -15,7 +15,7 @@ Authority: 10 U.S.C. Section 4401, DoDI 5000.87
 Usage:
     python tools/mosa/icd_generator.py --project-id proj-123 --all
     python tools/mosa/icd_generator.py --project-id proj-123 --interface-id ifc-abc
-    python tools/mosa/icd_generator.py --project-id proj-123 --all --output-dir /tmp/icd
+    python tools/mosa/icd_generator.py --project-id proj-123 --all --output-dir .tmp/icd
     python tools/mosa/icd_generator.py --project-id proj-123 --all --json
     python tools/mosa/icd_generator.py --project-id proj-123 --all --human
 """
