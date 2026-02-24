@@ -38,6 +38,8 @@
             <li><a href="/translations" class="{% if '/translations' in request.path %}active{% endif %}">Translations</a></li>
             <li><a href="/oscal" class="{% if '/oscal' in request.path %}active{% endif %}">OSCAL</a></li>
             <li><a href="/prod-audit" class="{% if '/prod-audit' in request.path %}active{% endif %}">Audit</a></li>
+            <li><a href="/ai-transparency" class="{% if '/ai-transparency' in request.path %}active{% endif %}">AI Transparency</a></li>
+            <li><a href="/ai-accountability" class="{% if '/ai-accountability' in request.path %}active{% endif %}">AI Accountability</a></li>
             {% if current_user and current_user.role == 'admin' %}
             <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
             {% endif %}

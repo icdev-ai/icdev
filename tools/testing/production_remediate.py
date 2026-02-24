@@ -137,6 +137,38 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "suggestion": None,
     },
 
+    # --- AI Transparency (Phase 48) — auto-fix via dedicated tools ---
+    "AI-001": {
+        "confidence": 0.80,
+        "tier": "auto_fix",
+        "strategy": "populate_ai_inventory",
+        "command": [
+            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "ai_inventory_manager.py"),
+            "--project-id", "icdev-platform", "--register", "--name", "default", "--json",
+        ],
+        "suggestion": None,
+    },
+    "AI-002": {
+        "confidence": 0.80,
+        "tier": "auto_fix",
+        "strategy": "generate_model_cards",
+        "command": [
+            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "model_card_generator.py"),
+            "--project-id", "icdev-platform", "--model-name", "default", "--json",
+        ],
+        "suggestion": None,
+    },
+    "AI-003": {
+        "confidence": 0.75,
+        "tier": "auto_fix",
+        "strategy": "run_ai_transparency_audit",
+        "command": [
+            sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "ai_transparency_audit.py"),
+            "--project-id", "icdev-platform", "--json",
+        ],
+        "suggestion": None,
+    },
+
     # --- Suggest (confidence 0.3-0.7) ---
     "SEC-001": {
         "confidence": 0.50,

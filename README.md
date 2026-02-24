@@ -1,8 +1,8 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/compliance%20frameworks-25%2B-orange" alt="Compliance Frameworks">
-  <img src="https://img.shields.io/badge/tools-230%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/compliance%20frameworks-29%2B-orange" alt="Compliance Frameworks">
+  <img src="https://img.shields.io/badge/tools-248%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
 </p>
 
@@ -10,7 +10,7 @@
 
 **Describe what you want. Get an ATO-ready application.**
 
-ICDEV is an AI-powered platform that builds complete, compliance-ready applications from a plain-English description. Not scaffolding. Not boilerplate. Full applications — with requirements traceability, security scanning, NIST 800-53 control mappings across 25+ frameworks, and every artifact you need for Authority to Operate.
+ICDEV is an AI-powered platform that builds complete, compliance-ready applications from a plain-English description. Not scaffolding. Not boilerplate. Full applications — with requirements traceability, security scanning, NIST 800-53 control mappings across 29+ frameworks, and every artifact you need for Authority to Operate.
 
 One developer built this. Imagine what your team could do with it.
 
@@ -44,7 +44,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 ┌─ GENERATE ────────────────────────────────────────────┐
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
-│  → 193-table database with append-only audit trail     │
+│  → 199-table database with append-only audit trail     │
 │  → GOTCHA framework + ATLAS workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
@@ -60,7 +60,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 │  ATO package generated automatically                   │
 │  → SSP covering 17 FIPS 200 control families           │
 │  → POAM, STIG checklist, SBOM, OSCAL artifacts         │
-│  → Crosswalk maps controls across 25+ frameworks       │
+│  → Crosswalk maps controls across 29+ frameworks       │
 │  → cATO monitoring with evidence freshness tracking     │
 └───────────────────────────┬───────────────────────────┘
                             ▼
@@ -218,7 +218,7 @@ git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
 
-# Initialize databases (193 tables)
+# Initialize databases (199 tables)
 python tools/db/init_icdev_db.py
 
 # Start the dashboard
@@ -261,12 +261,14 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 /icdev-agentic       # Generate the full application
 /icdev-build         # TDD build (RED → GREEN → REFACTOR)
 /icdev-comply        # Generate ATO artifacts
-/audit               # 30-check production readiness audit
+/icdev-transparency  # AI transparency & accountability audit
+/icdev-accountability # AI accountability — oversight, CAIO, appeals, incidents
+/audit               # 33-check production readiness audit
 ```
 
 ---
 
-## 25+ Compliance Frameworks
+## 29+ Compliance Frameworks
 
 | Category | Frameworks |
 |----------|------------|
@@ -277,6 +279,7 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 | **Law Enforcement** | CJIS Security Policy |
 | **International** | ISO/IEC 27001:2022, ISO/IEC 42001:2023 |
 | **AI/ML Security** | NIST AI RMF 1.0, MITRE ATLAS, OWASP LLM Top 10, OWASP Agentic AI |
+| **AI Transparency** | OMB M-25-21 (High-Impact AI), OMB M-26-04 (Unbiased AI), NIST AI 600-1 (GenAI), GAO-21-519SP (AI Accountability) |
 | **Architecture** | NIST 800-207 Zero Trust, CISA Secure by Design, IEEE 1012 IV&V |
 
 ---
@@ -344,9 +347,9 @@ ICDEV's core architecture separates deterministic tools from probabilistic AI:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Goals         →  What to achieve (46 workflows)     │
+│  Goals         →  What to achieve (47 workflows)     │
 │  Orchestration →  AI decides tool order (LLM layer)  │
-│  Tools         →  Deterministic scripts (230+ tools) │
+│  Tools         →  Deterministic scripts (248+ tools) │
 │  Context       →  Static reference (35 catalogs)     │
 │  Hard Prompts  →  Reusable LLM templates             │
 │  Args          →  YAML/JSON config (30+ files)       │
@@ -364,10 +367,10 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                  Claude Code / AI IDE                      │
-│            (37 slash commands, 230 MCP tools)              │
+│            (39 slash commands, 248 MCP tools)              │
 ├──────────────────────────────────────────────────────────┤
 │                 Unified MCP Gateway                        │
-│          (single server, all 230 tools, lazy-loaded)       │
+│          (single server, all 248 tools, lazy-loaded)       │
 ├──────────┬──────────┬───────────┬───────────┬────────────┤
 │   Core   │  Domain  │  Domain   │  Domain   │  Support   │
 │          │          │           │           │            │
@@ -381,7 +384,7 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 │       Goals │ Tools │ Args │ Context │ Hard Prompts        │
 ├──────────────────────────────────────────────────────────┤
 │  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │
-│  193 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
+│  199 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
 │  Per-tenant DB isolation           │  IBM │Local/Air-Gap   │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -408,6 +411,8 @@ python tools/dashboard/app.py
 | `/traces` | Distributed trace explorer with span waterfall |
 | `/provenance` | W3C PROV lineage viewer |
 | `/xai` | Explainable AI dashboard with SHAP analysis |
+| `/ai-transparency` | AI Transparency: model cards, system cards, AI inventory, fairness, GAO readiness |
+| `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
 
 Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, isso, co). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
@@ -415,7 +420,7 @@ Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, is
 
 ## MCP Server Integration
 
-All 230 tools exposed through a single MCP gateway. Works with any AI coding assistant:
+All 248 tools exposed through a single MCP gateway. Works with any AI coding assistant:
 
 ```json
 {
@@ -445,6 +450,8 @@ Defense-in-depth by default:
 - **Behavioral drift detection** — z-score baseline monitoring for all agents
 - **Tool chain validation** — blocks dangerous execution sequences
 - **MCP RBAC** — per-tool, per-role deny-first authorization
+- **AI transparency** — model cards, system cards, AI use case inventory, confabulation detection, fairness assessment per OMB M-25-21/M-26-04, NIST AI 600-1, and GAO-21-519SP
+- **AI accountability** — human oversight plans, CAIO designation, appeal tracking, AI incident response, ethics reviews, reassessment scheduling, cross-framework accountability audit
 - **Self-healing** — confidence-based remediation (≥0.7 auto-fix, 0.3–0.7 suggest, <0.3 escalate)
 
 ---
@@ -481,7 +488,7 @@ helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
 | **Healthcare** | HIPAA + HITRUST + SOC 2 | Health IT / EHR |
 | **Financial** | PCI DSS + SOC 2 + ISO 27001 | FinTech / Banking |
 | **Law Enforcement** | CJIS + FIPS 199/200 | Criminal justice systems |
-| **GovCloud Full** | All 25+ frameworks | Maximum compliance |
+| **GovCloud Full** | All 29+ frameworks | Maximum compliance |
 
 ---
 
@@ -489,8 +496,8 @@ helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
 
 ```
 icdev/
-├── goals/                # 46 workflow definitions
-├── tools/                # 230+ tools across 44 categories
+├── goals/                # 47 workflow definitions
+├── tools/                # 248+ tools across 44 categories
 │   ├── compliance/       # 25+ framework assessors, crosswalk, OSCAL
 │   ├── security/         # SAST, AI security, ATLAS, prompt injection
 │   ├── builder/          # TDD, scaffolding, app generation, 6 languages
@@ -500,7 +507,7 @@ icdev/
 │   ├── agent/            # Multi-agent orchestration, DAG workflows
 │   ├── cloud/            # 6 CSP abstractions, region validation
 │   ├── saas/             # Multi-tenant platform layer
-│   ├── mcp/              # Unified MCP gateway (230 tools)
+│   ├── mcp/              # Unified MCP gateway (248 tools)
 │   ├── modernization/    # 7R assessment, legacy migration
 │   ├── observability/    # Tracing, provenance, AgentSHAP, XAI
 │   ├── innovation/       # Autonomous self-improvement engine
@@ -508,11 +515,11 @@ icdev/
 ├── args/                 # 30+ YAML/JSON configuration files
 ├── context/              # 35 compliance catalogs, language profiles
 ├── hardprompts/          # Reusable LLM instruction templates
-├── tests/                # 124 test files
+├── tests/                # 130 test files
 ├── k8s/                  # Production Kubernetes manifests
 ├── docker/               # STIG-hardened Dockerfiles
 ├── deploy/helm/          # Helm chart for on-prem deployment
-├── .claude/commands/     # 37 Claude Code slash commands
+├── .claude/commands/     # 38 Claude Code slash commands
 └── CLAUDE.md             # Comprehensive architecture documentation
 ```
 
@@ -521,7 +528,7 @@ icdev/
 ## Testing
 
 ```bash
-# All tests (124 test files, 1500+ tests)
+# All tests (130 test files, 1600+ tests)
 pytest tests/ -v --tb=short
 
 # BDD scenario tests
@@ -530,7 +537,7 @@ behave features/
 # E2E browser tests (Playwright)
 python tools/testing/e2e_runner.py --run-all
 
-# Production readiness audit (30 checks, 6 categories)
+# Production readiness audit (33 checks, 6 categories)
 python tools/testing/production_audit.py --human --stream
 ```
 

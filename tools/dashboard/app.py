@@ -53,6 +53,8 @@ from tools.dashboard.api.usage import usage_api
 from tools.dashboard.api.traces import traces_api, provenance_api, xai_api
 from tools.dashboard.api.oscal import oscal_api
 from tools.dashboard.api.prod_audit import prod_audit_api
+from tools.dashboard.api.ai_transparency import ai_transparency_api
+from tools.dashboard.api.ai_accountability import ai_accountability_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -184,6 +186,8 @@ def create_app() -> Flask:
     app.register_blueprint(xai_api)
     app.register_blueprint(oscal_api)
     app.register_blueprint(prod_audit_api)
+    app.register_blueprint(ai_transparency_api)
+    app.register_blueprint(ai_accountability_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -1311,6 +1315,16 @@ def create_app() -> Flask:
     def prod_audit_page():
         """Production readiness audit — 30 checks, 6 categories (D291-D300)."""
         return render_template("prod_audit.html")
+
+    @app.route("/ai-transparency")
+    def ai_transparency_page():
+        """AI Transparency — OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48, D307-D315)."""
+        return render_template("ai_transparency.html")
+
+    @app.route("/ai-accountability")
+    def ai_accountability_page():
+        """AI Accountability — oversight, appeals, CAIO, incidents, ethics (Phase 49, D316-D321)."""
+        return render_template("ai_accountability.html")
 
     @app.errorhandler(401)
     def unauthorized(e):

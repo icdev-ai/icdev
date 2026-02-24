@@ -331,6 +331,52 @@ frameworks:
     status: planned
     phase: 25
 
+  # ── Phase 48: AI Transparency & Accountability (D307-D315) ──
+
+  omb_m25_21:
+    name: "OMB M-25-21 (High-Impact AI)"
+    hub: nist
+    type: policy
+    catalog: "omb_m25_21_high_impact_ai.json"
+    assessor: "omb_m25_21_assessor.py"
+    report: "via base_assessor"
+    status: active
+    phase: 48
+    data_types: [AI]
+
+  omb_m26_04:
+    name: "OMB M-26-04 (Unbiased AI)"
+    hub: nist
+    type: policy
+    catalog: "omb_m26_04_unbiased_ai.json"
+    assessor: "omb_m26_04_assessor.py"
+    report: "via base_assessor"
+    status: active
+    phase: 48
+    data_types: [AI]
+
+  nist_ai_600_1:
+    name: "NIST AI 600-1 (GenAI Profile)"
+    hub: nist
+    type: baseline
+    catalog: "nist_ai_600_1_genai.json"
+    assessor: "nist_ai_600_1_assessor.py"
+    report: "via base_assessor"
+    status: active
+    phase: 48
+    data_types: [AI]
+
+  gao_ai:
+    name: "GAO-21-519SP (AI Accountability)"
+    hub: nist
+    type: audit
+    catalog: "gao_ai_accountability.json"
+    assessor: "gao_ai_assessor.py"
+    report: "via base_assessor"
+    status: active
+    phase: 48
+    data_types: [AI]
+
 # Crosswalk bridges between hubs
 bridges:
   iso27001_nist:
@@ -353,6 +399,7 @@ data_category_triggers:
   ITAR: [nist_800_171, cmmc_level_2]
   ZTA: [nist_800_207]
   MOSA: [mosa]
+  AI: [omb_m25_21, omb_m26_04, nist_ai_600_1, gao_ai]
 
 # Sensitivity order (highest first) — used for composite markings
 sensitivity_order:

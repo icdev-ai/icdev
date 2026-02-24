@@ -536,6 +536,45 @@ marketplace_install:
     - version_constraint_not_satisfied
     - asset_deprecated
 
+# Phase 48: AI Transparency & Accountability (D307-D315)
+ai_transparency:
+  blocking:
+    - high_impact_ai_not_classified
+    - model_cards_missing_for_deployed_models
+    - ai_inventory_incomplete
+    - gao_evidence_gaps_on_critical_practices
+    - confabulation_detection_not_active
+  warning:
+    - system_card_stale
+    - fairness_assessment_not_conducted
+    - bias_mitigation_not_documented
+    - annual_report_data_missing
+  thresholds:
+    ai_inventory_required: true
+    model_card_required_per_model: true
+    system_card_max_age_days: 90
+    confabulation_detection_required: true
+    min_gao_evidence_coverage_pct: 80
+    fairness_assessment_max_age_days: 180
+
+ai_accountability:
+  blocking:
+    - caio_not_designated_for_high_impact
+    - oversight_plan_missing_for_high_impact
+    - critical_incident_unresolved
+    - reassessment_overdue_over_90_days
+  warning:
+    - appeal_process_not_defined
+    - ethics_review_not_conducted
+    - impact_assessment_missing
+    - fairness_gate_not_passing
+  thresholds:
+    caio_required_for_high_impact: true
+    oversight_plan_required: true
+    max_unresolved_critical_incidents: 0
+    reassessment_max_overdue_days: 90
+    ethics_review_max_age_days: 365
+
 marketplace:
   thresholds:
     sast:

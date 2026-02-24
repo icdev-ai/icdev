@@ -96,6 +96,21 @@
                         <span class="nav-icon">&#9874;</span> OSCAL
                     </a>
                 </li>
+                <li class="{% if active_page == 'prod_audit' %}active{% endif %}">
+                    <a href="{{ url_for('portal.prod_audit') }}">
+                        <span class="nav-icon">&#9888;</span> Prod Audit
+                    </a>
+                </li>
+                <li class="{% if active_page == 'ai_transparency' %}active{% endif %}">
+                    <a href="{{ url_for('portal.ai_transparency') }}">
+                        <span class="nav-icon">&#9883;</span> AI Transparency
+                    </a>
+                </li>
+                <li class="{% if active_page == 'ai_accountability' %}active{% endif %}">
+                    <a href="{{ url_for('portal.ai_accountability') }}">
+                        <span class="nav-icon">&#9878;</span> AI Accountability
+                    </a>
+                </li>
                 <li class="{% if active_page == 'audit' %}active{% endif %}">
                     <a href="{{ url_for('portal.audit') }}">
                         <span class="nav-icon">&#9998;</span> Audit Trail

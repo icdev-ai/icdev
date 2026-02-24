@@ -129,6 +129,17 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "remediation_audit_log",
         # OSCAL Ecosystem (D306 — validation audit trail)
         "oscal_validation_log",
+        # Phase 48 — AI Transparency & Accountability (D307-D315)
+        "confabulation_checks",
+        "fairness_assessments",
+        "model_cards",
+        "system_cards",
+        "ai_use_case_inventory",
+        # Phase 49 — AI Accountability (D316-D321)
+        "ai_oversight_plans",
+        "ai_accountability_appeals",
+        "ai_incident_log",
+        "ai_ethics_reviews",
     ]
 
     if tool_name == "Bash":

@@ -162,13 +162,13 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 
 ### MCP Servers (Unified Gateway + 18 individual servers)
 
-**Recommended: Use `icdev-unified` — single server with all 230 tools (D301).**
+**Recommended: Use `icdev-unified` — single server with all 238 tools (D301).**
 
 | Server | Config Key | Tools |
 |--------|-----------|-------|
-| **icdev-unified** | `.mcp.json` | **All 225 tools from 18 servers + 55 new tools** (lazy-loaded, D301) |
+| **icdev-unified** | `.mcp.json` | **All 225 tools from 18 servers + 63 new tools** (lazy-loaded, D301) |
 | icdev-core | `.mcp.json` | project_create, project_list, project_status, task_dispatch, agent_status |
-| icdev-compliance | `.mcp.json` | ssp_generate, poam_generate, stig_check, sbom_generate, cui_mark, control_map, nist_lookup, cssp_assess, cssp_report, cssp_ir_plan, cssp_evidence, xacta_sync, xacta_export, sbd_assess, sbd_report, ivv_assess, ivv_report, rtm_generate, **crosswalk_query, fedramp_assess, fedramp_report, cmmc_assess, cmmc_report, oscal_generate, emass_sync, cato_monitor, pi_compliance, classification_check, fips199_categorize, fips200_validate, security_categorize, oscal_validate_deep, oscal_convert, oscal_resolve_profile, oscal_catalog_lookup, oscal_detect_tools** |
+| icdev-compliance | `.mcp.json` | ssp_generate, poam_generate, stig_check, sbom_generate, cui_mark, control_map, nist_lookup, cssp_assess, cssp_report, cssp_ir_plan, cssp_evidence, xacta_sync, xacta_export, sbd_assess, sbd_report, ivv_assess, ivv_report, rtm_generate, **crosswalk_query, fedramp_assess, fedramp_report, cmmc_assess, cmmc_report, oscal_generate, emass_sync, cato_monitor, pi_compliance, classification_check, fips199_categorize, fips200_validate, security_categorize, oscal_validate_deep, oscal_convert, oscal_resolve_profile, oscal_catalog_lookup, oscal_detect_tools, omb_m25_21_assess, omb_m26_04_assess, nist_ai_600_1_assess, gao_ai_assess, model_card_generate, system_card_generate, ai_transparency_audit, confabulation_check, ai_inventory_register, fairness_assess** |
 | icdev-builder | `.mcp.json` | scaffold, generate_code, write_tests, run_tests, lint, format, dev_profile_create, dev_profile_get, dev_profile_resolve, dev_profile_detect |
 | icdev-infra | `.mcp.json` | terraform_plan, terraform_apply, ansible_run, k8s_deploy, pipeline_generate, rollback |
 | icdev-knowledge | `.mcp.json` | search_knowledge, add_pattern, get_recommendations, analyze_failure, self_heal |
@@ -216,6 +216,10 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | SAFE-AI (NIST 800-53 AI) | `safeai_controls.json` | via crosswalk | AI-affected control overlay |
 | OWASP Agentic AI | `owasp_agentic_threats.json` | `owasp_agentic_assessor.py` | via base_assessor |
 | XAI (Observability) | `xai_requirements.json` | `xai_assessor.py` | via base_assessor |
+| OMB M-25-21 (High-Impact AI) | `omb_m25_21_high_impact_ai.json` | `omb_m25_21_assessor.py` | via base_assessor |
+| OMB M-26-04 (Unbiased AI) | `omb_m26_04_unbiased_ai.json` | `omb_m26_04_assessor.py` | via base_assessor |
+| NIST AI 600-1 (GenAI Profile) | `nist_ai_600_1_genai.json` | `nist_ai_600_1_assessor.py` | via base_assessor |
+| GAO-21-519SP (AI Accountability) | `gao_ai_accountability.json` | `gao_ai_assessor.py` | via base_assessor |
 
 ### Control Crosswalk
 The crosswalk engine (`tools/compliance/crosswalk_engine.py`) uses a dual-hub model (ADR D111):
@@ -276,6 +280,8 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/icdev-trace` | Observability & XAI — distributed tracing queries, provenance lineage, AgentSHAP tool attribution, XAI compliance assessment (Phase 46) |
 | `/audit` | Production readiness audit — 30 checks across 6 categories (platform, security, compliance, integration, performance, documentation), streaming results, consolidated report, trend tracking |
 | `/remediate` | Auto-fix audit blockers — 3-tier confidence model (auto-fix >= 0.7, suggest 0.3-0.7, escalate < 0.3), verification re-runs, append-only audit trail, chains from `/audit` |
+| `/icdev-transparency` | AI transparency workflow — AI inventory, model/system cards, 4 framework assessors, confabulation detection, fairness assessment, GAO evidence, cross-framework audit |
+| `/icdev-accountability` | AI Accountability — oversight plans, CAIO designation, appeals, incidents, ethics reviews, reassessment scheduling, cross-framework accountability audit (Phase 49) |
 
 ### Cross-Platform Compatibility (D145)
 ```bash
@@ -379,6 +385,18 @@ pytest tests/test_agent_shap.py -v                    # AgentSHAP Shapley value 
 pytest tests/test_xai_assessor.py -v                  # XAI compliance assessor tests (34 tests)
 pytest tests/test_unified_server.py -v                 # Unified MCP gateway tests (42 tests)
 pytest tests/test_oscal_tools.py -v                    # OSCAL ecosystem tools tests (40 tests)
+pytest tests/test_omb_m25_21_assessor.py -v              # OMB M-25-21 assessor tests
+pytest tests/test_omb_m26_04_assessor.py -v              # OMB M-26-04 assessor tests
+pytest tests/test_nist_ai_600_1_assessor.py -v           # NIST AI 600-1 assessor tests
+pytest tests/test_gao_ai_assessor.py -v                  # GAO AI assessor tests
+pytest tests/test_model_card_generator.py -v             # Model card generator tests
+pytest tests/test_ai_transparency.py -v                  # AI transparency integration tests
+pytest tests/test_accountability_manager.py -v          # Accountability manager tests (25 tests)
+pytest tests/test_ai_impact_assessor.py -v              # AI impact assessor tests (13 tests)
+pytest tests/test_ai_incident_response.py -v            # AI incident response tests (19 tests)
+pytest tests/test_ai_reassessment_scheduler.py -v       # AI reassessment scheduler tests (18 tests)
+pytest tests/test_ai_accountability_audit.py -v         # AI accountability audit tests (20 tests)
+pytest tests/test_assessor_accountability_fixes.py -v   # Assessor accountability fixes tests (24 tests)
 
 # .claude directory governance
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
@@ -492,7 +510,7 @@ python tools/installer/platform_setup.py --generate helm-values --modules core,l
 ### ICDEV Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (193 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV database (199 tables)
 
 # Database Migrations (D150)
 python tools/db/migrate.py --status [--json]                      # Show migration status
@@ -518,7 +536,7 @@ python tools/audit/audit_query.py --project "proj-123" --format json
 python tools/audit/decision_recorder.py --project-id "proj-123" --decision "Use PostgreSQL" --rationale "RDS requirement" --actor "architect-agent"
 
 # MCP servers (stdio transport)
-python tools/mcp/unified_server.py                   # Start unified MCP gateway (230 tools, recommended)
+python tools/mcp/unified_server.py                   # Start unified MCP gateway (238 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
 python tools/mcp/compliance_server.py               # Start compliance MCP server
 python tools/mcp/builder_server.py                  # Start builder MCP server
@@ -949,6 +967,38 @@ python tools/security/atlas_red_team.py --behavioral --brt-technique BRT-001 --j
 python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json                      # OWASP Agentic assessment
 python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --gate                      # OWASP Agentic gate
 
+# AI Transparency & Accountability (Phase 48)
+python tools/compliance/ai_inventory_manager.py --project-id "proj-123" --register --name "Claude Sonnet" --json
+python tools/compliance/ai_inventory_manager.py --project-id "proj-123" --list --json
+python tools/compliance/ai_inventory_manager.py --project-id "proj-123" --export --json
+python tools/compliance/model_card_generator.py --project-id "proj-123" --model-name "claude-sonnet" --json
+python tools/compliance/system_card_generator.py --project-id "proj-123" --json
+python tools/compliance/fairness_assessor.py --project-id "proj-123" --json
+python tools/compliance/fairness_assessor.py --project-id "proj-123" --gate
+python tools/security/confabulation_detector.py --project-id "proj-123" --check-output "text" --json
+python tools/security/confabulation_detector.py --project-id "proj-123" --summary --json
+python tools/compliance/gao_evidence_builder.py --project-id "proj-123" --json
+python tools/compliance/ai_transparency_audit.py --project-id "proj-123" --json
+python tools/compliance/ai_transparency_audit.py --project-id "proj-123" --human
+python tools/compliance/omb_m25_21_assessor.py --project-id "proj-123" --json
+python tools/compliance/omb_m26_04_assessor.py --project-id "proj-123" --json
+python tools/compliance/nist_ai_600_1_assessor.py --project-id "proj-123" --json
+python tools/compliance/gao_ai_assessor.py --project-id "proj-123" --json
+
+# AI Accountability (Phase 49)
+python tools/compliance/accountability_manager.py --project-id "proj-123" --summary --json                    # Accountability summary
+python tools/compliance/accountability_manager.py --project-id "proj-123" --register-oversight --plan-name "Human Oversight Plan" --json   # Register plan
+python tools/compliance/accountability_manager.py --project-id "proj-123" --designate-caio --name "Jane Smith" --role CAIO --json           # Designate CAIO
+python tools/compliance/accountability_manager.py --project-id "proj-123" --file-appeal --appellant "John Doe" --ai-system "System" --json  # File appeal
+python tools/compliance/accountability_manager.py --project-id "proj-123" --submit-ethics-review --review-type bias_testing_policy --json   # Ethics review
+python tools/compliance/ai_impact_assessor.py --project-id "proj-123" --ai-system "System" --json             # Impact assessment
+python tools/compliance/ai_impact_assessor.py --project-id "proj-123" --summary --json                        # Impact summary
+python tools/compliance/ai_incident_response.py --project-id "proj-123" --log --type bias_detected --severity high --description "Bias found" --json   # Log incident
+python tools/compliance/ai_incident_response.py --project-id "proj-123" --stats --json                        # Incident stats
+python tools/compliance/ai_reassessment_scheduler.py --project-id "proj-123" --create --ai-system "System" --frequency annual --json   # Schedule reassessment
+python tools/compliance/ai_reassessment_scheduler.py --project-id "proj-123" --overdue --json                 # Check overdue
+python tools/compliance/ai_accountability_audit.py --project-id "proj-123" --json                              # Accountability audit
+
 # Observability, Traceability & Explainable AI (Phase 46)
 python -c "from tools.observability import get_tracer; print(type(get_tracer()).__name__)"           # Check active tracer
 python tools/observability/shap/agent_shap.py --trace-id "<trace-id>" --iterations 1000 --json       # SHAP analysis on trace
@@ -1026,6 +1076,8 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /xai               — XAI dashboard: assessment runner, coverage gauge, SHAP bar chart (Phase 46)
 #   /oscal             — OSCAL ecosystem: tool detection, validation log, catalog browser, artifacts (D302-D306)
 #   /prod-audit        — Production readiness audit: 30 checks, 6 categories, remediation log (D291-D300)
+#   /ai-transparency   — AI Transparency dashboard: framework scores, model/system cards, AI inventory, fairness, confabulation, GAO evidence, gap analysis (Phase 48)
+#   /ai-accountability — AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment scheduling, cross-framework audit (Phase 49)
 #   /admin/users       — Admin user/key management (admin role only)
 # Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
 # RBAC: 5 roles (admin, pm, developer, isso, co) — D172
@@ -1142,7 +1194,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 193 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306) |
+| `data/icdev.db` | 208 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1195,6 +1247,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/observability_tracing_config.yaml` | Observability & XAI (Phase 46, D290): dual-mode tracer config (otel/sqlite auto-detect via ICDEV_MLFLOW_TRACKING_URI), sampling rate, retention (sqlite_retention_days, mlflow_retention_days), content tracing policy (hash-only vs plaintext, ICDEV_CONTENT_TRACING_ENABLED), PROV-AGENT settings, AgentSHAP defaults (iterations, seed), XAI assessment thresholds |
 | `args/security_gates.yaml` | (updated) Added `observability_xai` gate with blocking: tracing_not_active, provenance_graph_empty, xai_assessment_not_completed, content_tracing_active_in_cui_without_approval; thresholds: tracing_required=true, provenance_required=true, shap_max_age_days=30, min_xai_coverage_pct=80 |
 | `args/oscal_tools_config.yaml` | OSCAL Ecosystem Tools (D302-D306): oscal-cli paths/timeout/JVM args, oscal-pydantic validation toggles, catalog source priority (official NIST → ICDEV fallback), validation pipeline order (structural → pydantic → Metaschema), max errors per validator |
+| `args/security_gates.yaml` | (updated) Added `ai_transparency` gate with blocking: high_impact_ai_not_classified, model_cards_missing_for_deployed_models, ai_inventory_incomplete, gao_evidence_gaps_on_critical_practices, confabulation_detection_not_active; thresholds: min_gao_evidence_coverage_pct=80 |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1451,6 +1504,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 - **Marketplace Behavioral Sandbox Gate (Gate 9):** 0 critical dangerous code patterns (eval, exec, os.system) — warning gate
 - **Translation Gate:** Blocking: syntax errors in output, API surface < 90%, compliance coverage < 95%, secrets detected, CUI markings missing. Warning: round-trip similarity < 80%, type coverage < 85%, complexity increase > 30%, unmapped deps, stub functions, lint issues
 - **Claude Config Alignment Gate:** Blocking: append-only table unprotected in pre_tool_use.py, hook syntax error, hook reference missing. Warning: dashboard route undocumented, E2E coverage gap, settings deny rule missing
+- **AI Accountability Gate:** CAIO designated for high-impact AI, oversight plan exists, 0 unresolved critical AI incidents, no reassessments overdue >90 days; warn on appeal process not defined, ethics review not conducted, impact assessment missing, fairness gate not passing
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -1535,6 +1589,8 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | OWASP Agentic Security | `goals/owasp_agentic_security.md` | OWASP Agentic AI 8-gap implementation: behavioral drift detection (z-score baseline), tool chain validation (sliding-window sequence matching), output content safety (classification leak + PII), formal agentic threat model (STRIDE + T1-T17), dynamic trust scoring (decay/recovery), MCP per-tool RBAC (deny-first, 5 roles), behavioral red teaming (6 BRT techniques), OWASP agentic assessor (17 automated checks). Config: `args/owasp_agentic_config.yaml` (Phase 45) |
 | Agentic Threat Model | `goals/agentic_threat_model.md` | Formal STRIDE + OWASP T1-T17 agentic threat model: trust boundaries, MCP server threat surface, 17 threat entries with NIST 800-53 crosswalk, residual risk analysis (Phase 45) |
 | Observability & XAI | `goals/observability_traceability_xai.md` | Distributed tracing (OTel+SQLite), W3C PROV-AGENT provenance, AgentSHAP tool attribution, XAI compliance assessor (10 checks), dashboard pages (/traces, /provenance, /xai), MCP server (Phase 46, D280-D290) |
+| AI Transparency | `goals/ai_transparency.md` | AI Transparency & Accountability: OMB M-25-21/M-26-04, NIST AI 600-1, GAO-21-519SP — model cards, system cards, AI inventory, confabulation detection, fairness assessment, GAO evidence, cross-framework audit (Phase 48, D307-D315) |
+| AI Accountability | `goals/ai_accountability.md` | AI Accountability: oversight plans, CAIO designation, appeals, incident response, ethics reviews, reassessment scheduling, cross-framework audit, assessor fixes (Phase 49, D316-D321) |
 
 ---
 
@@ -1637,12 +1693,27 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D288:** AgentSHAP post-hoc tool attribution via Monte Carlo Shapley values — 0.945 consistency (arXiv:2512.12597), stdlib `random` for sampling (D22 air-gap safe)
 - **D289:** XAI assessor via BaseAssessor pattern (D116) — ~200 LOC, crosswalk to NIST 800-53 US hub cascades to FedRAMP/CMMC
 - **D290:** Dual-mode config in `args/observability_tracing_config.yaml` — auto-detect: `ICDEV_MLFLOW_TRACKING_URI` set → `otel` mode, else → `sqlite` mode
-- **D301:** Unified MCP gateway (`unified_server.py`) uses declarative tool registry (`tool_registry.py`) with lazy module loading. Existing 18 servers remain independently runnable (backward compat). Registry maps tool name → (module, handler, schema). Handlers imported via `importlib.import_module()` on first call, cached thereafter. 55 new tools for CLI gaps use direct Python import with subprocess fallback (`gap_handlers.py`). All 230 tools inherit D284 auto-instrumentation from `base_server.py`. Reduces `.mcp.json` from 18 entries to 1.
+- **D301:** Unified MCP gateway (`unified_server.py`) uses declarative tool registry (`tool_registry.py`) with lazy module loading. Existing 18 servers remain independently runnable (backward compat). Registry maps tool name → (module, handler, schema). Handlers imported via `importlib.import_module()` on first call, cached thereafter. 55 new tools for CLI gaps use direct Python import with subprocess fallback (`gap_handlers.py`). All 238 tools inherit D284 auto-instrumentation from `base_server.py`. Reduces `.mcp.json` from 18 entries to 1.
 - **D302:** oscal-cli invoked via subprocess (`_run_cli()` pattern). Java detected at load time, cached. Degrades to built-in validation when absent. Config: `args/oscal_tools_config.yaml`
 - **D303:** oscal-pydantic is a post-generation validation layer. Does NOT replace dict construction. Skipped via `ImportError` when not installed. MIT license.
 - **D304:** Official NIST OSCAL catalog stored in `context/oscal/` (downloaded, not committed — 14MB). ICDEV custom catalog (`context/compliance/nist_800_53.json`) preserved as fallback. `OscalCatalogAdapter` normalizes both formats. Priority: official → ICDEV.
 - **D305:** Single orchestrator module (`oscal_tools.py`) composes all three integrations. Each independently optional. 3-layer validation pipeline: structural → pydantic → Metaschema.
 - **D306:** `oscal_validation_log` append-only table records every validation attempt (D6 pattern). Validator name, pass/fail, error count, duration tracked per layer.
+- **D307:** All 4 AI transparency assessors use BaseAssessor ABC (D116) — ~150-200 LOC each, automatic gate/CLI/crosswalk
+- **D308:** Model cards follow Google Model Cards format (open standard, widely adopted in Gov AI community)
+- **D309:** System cards are ICDEV-specific (broader than model cards — cover full agentic system, not just individual models)
+- **D310:** Confabulation detector uses deterministic methods only (consistency checks, citation verification) — no LLM-based detection (air-gap safe)
+- **D311:** Fairness assessor focuses on compliance documentation evidence, not statistical bias testing (ICDEV doesn't train models — it uses them)
+- **D312:** AI inventory follows OMB M-25-21 schema for direct government reporting compatibility
+- **D313:** GAO evidence builder reuses existing ICDEV data (audit_trail, ai_telemetry, XAI, SHAP, provenance) — no new data collection needed
+- **D314:** New `AI` data category trigger auto-activates all 4 frameworks + existing NIST AI RMF + ISO 42001 when AI components detected
+- **D315:** COSAiS overlay mapping deferred until NIST publishes final specification (anticipated late 2026) — catalog stub in framework_registry.yaml with status: planned
+- **D316:** Accountability tables are append-only (D6) except `ai_caio_registry` and `ai_reassessment_schedule` which allow UPDATE (officials change, schedules shift)
+- **D317:** Accountability manager is a single coordinator tool (not 13 separate tools) — consolidates gaps into one import with focused functions
+- **D318:** AI incident log is separate from `audit_trail` — incidents are AI-specific events requiring corrective action, not generic audit events
+- **D319:** Ethics reviews store boolean flags (`opt_out_policy`, `legal_compliance_matrix`, `pre_deployment_review`) for fast assessor checks rather than free-text scanning
+- **D320:** Impact assessment stored in `ai_ethics_reviews` with `review_type='impact_assessment'` rather than a separate table — avoids table proliferation
+- **D321:** Fairness gate lowered to 25% to be achievable with DB-only checks (no `project_dir` required) — 2 existing + 4 new DB checks = 6/8 = 75% maximum possible
 
 ### Innovation Security Gates
 | Gate | Condition |
@@ -1855,7 +1926,7 @@ ICDEV is exposed as a multi-tenant SaaS platform. The SaaS layer **wraps** exist
 | Artifact Delivery | `tools/saas/artifacts/delivery_engine.py` | Push artifacts to tenant S3/Git/SFTP |
 | Bedrock Proxy | `tools/saas/bedrock/bedrock_proxy.py` | Route LLM calls to BYOK or shared pool |
 | License Validator | `tools/saas/licensing/license_validator.py` | RSA-SHA256 offline license validation |
-| Tenant Portal | `tools/saas/portal/app.py` | Web dashboard for tenant admin |
+| Tenant Portal | `tools/saas/portal/app.py` | Web dashboard for tenant admin (pages: dashboard, projects, compliance, team, settings, profile, api_keys, usage, cmmc, phases, translations, oscal, prod-audit, ai-transparency, chat-streams, audit) |
 | NS Provisioner | `tools/saas/infra/namespace_provisioner.py` | Create per-tenant K8s namespace |
 
 ---

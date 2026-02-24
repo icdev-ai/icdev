@@ -1,0 +1,174 @@
+<!-- [TEMPLATE: CUI // SP-CTI] -->
+{% extends "portal_base.html" %}
+{% set active_page = "prod_audit" %}
+{% block title %}Production Audit - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('portal.compliance') }}">Compliance</a>
+    <span class="separator">/</span>
+    <span class="current">Production Audit</span>
+</nav>
+<div class="page-header">
+    <h1>Production Readiness Audit</h1>
+    <p>33 checks across 6 categories with 3-tier remediation (D291-D300)</p>
+</div>
+
+<!-- Summary Stats -->
+<div class="card">
+    <h2>Latest Result</h2>
+    <div class="stat-row" style="display:flex;gap:2rem;flex-wrap:wrap;margin:1rem 0;">
+        <div style="text-align:center;min-width:100px;">
+            <div style="font-size:1.5rem;font-weight:bold;" id="st-status">--</div>
+            <div style="color:#666;font-size:0.85rem;">Status</div>
+        </div>
+        <div style="text-align:center;min-width:100px;">
+            <div style="font-size:2rem;font-weight:bold;color:#4caf50;" id="st-pass">--</div>
+            <div style="color:#666;font-size:0.85rem;">Passed</div>
+        </div>
+        <div style="text-align:center;min-width:100px;">
+            <div style="font-size:2rem;font-weight:bold;color:#f44336;" id="st-fail">--</div>
+            <div style="color:#666;font-size:0.85rem;">Failed</div>
+        </div>
+        <div style="text-align:center;min-width:100px;">
+            <div style="font-size:2rem;font-weight:bold;color:#ff9800;" id="st-warn">--</div>
+            <div style="color:#666;font-size:0.85rem;">Warnings</div>
+        </div>
+        <div style="text-align:center;min-width:100px;">
+            <div style="font-size:2rem;font-weight:bold;color:#9e9e9e;" id="st-skip">--</div>
+            <div style="color:#666;font-size:0.85rem;">Skipped</div>
+        </div>
+    </div>
+</div>
+
+<!-- Actions -->
+<div class="card">
+    <h2>Actions</h2>
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button onclick="runAudit()" id="btn-audit" class="btn btn-primary">Run Audit</button>
+        <button onclick="runRemediation(false)" id="btn-remediate" class="btn btn-success">Remediate</button>
+        <button onclick="runRemediation(true)" class="btn btn-warning">Dry Run</button>
+    </div>
+    <div id="action-status" style="margin:0.5rem 0;"></div>
+</div>
+
+<!-- Check Results -->
+<div class="card">
+    <h2>Check Results</h2>
+    <div id="check-results">
+        <p class="empty-state">Run an audit to see results.</p>
+    </div>
+</div>
+
+<!-- Audit History -->
+<div class="card">
+    <h2>Audit History</h2>
+    {% if audits %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Production audit history">
+            <thead>
+                <tr><th>Date</th><th>Status</th><th>Passed</th><th>Failed</th><th>Warned</th><th>Duration</th></tr>
+            </thead>
+            <tbody>
+                {% for a in audits %}
+                <tr>
+                    <td class="td-nowrap">{{ a.created_at }}</td>
+                    <td><span class="badge {% if a.overall_pass %}badge-success{% else %}badge-danger{% endif %}">{{ 'PASS' if a.overall_pass else 'FAIL' }}</span></td>
+                    <td>{{ a.passed or 0 }}</td>
+                    <td>{{ a.failed or 0 }}</td>
+                    <td>{{ a.warned or 0 }}</td>
+                    <td>{{ a.duration_ms or 0 }}ms</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No audit history yet. Run an audit to get started.</p>
+    {% endif %}
+</div>
+
+<!-- Remediation Log -->
+<div class="card">
+    <h2>Remediation Log</h2>
+    {% if remediations %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Remediation audit log">
+            <thead>
+                <tr><th>Date</th><th>Check</th><th>Category</th><th>Tier</th><th>Status</th><th>Confidence</th></tr>
+            </thead>
+            <tbody>
+                {% for r in remediations %}
+                <tr>
+                    <td class="td-nowrap">{{ r.created_at }}</td>
+                    <td>{{ r.check_id }}</td>
+                    <td>{{ r.category }}</td>
+                    <td>{{ r.tier }}</td>
+                    <td><span class="badge {% if r.status == 'fixed' %}badge-success{% elif r.status == 'suggested' %}badge-info{% else %}badge-secondary{% endif %}">{{ r.status }}</span></td>
+                    <td>{{ r.confidence }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No remediation actions recorded.</p>
+    {% endif %}
+</div>
+
+<script>
+(function() {
+    var apiKey = document.querySelector('meta[name="api-key"]');
+    var headers = {'Content-Type': 'application/json'};
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey.content;
+
+    function setStatus(msg, color) {
+        document.getElementById('action-status').innerHTML = '<span style="color:' + (color||'#666') + '">' + msg + '</span>';
+    }
+
+    window.runAudit = function() {
+        document.getElementById('btn-audit').disabled = true;
+        setStatus('Running audit...', '#1976d2');
+        fetch('/api/v1/audit/run', {method: 'POST', headers: headers, body: '{}'})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-audit').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('Audit complete. Refresh page to see results.', '#4caf50');
+                if (d.summary) {
+                    document.getElementById('st-status').innerHTML = d.summary.overall_pass ? '<span class="badge badge-success">PASS</span>' : '<span class="badge badge-danger">FAIL</span>';
+                    document.getElementById('st-pass').textContent = d.summary.passed || 0;
+                    document.getElementById('st-fail').textContent = d.summary.failed || 0;
+                    document.getElementById('st-warn').textContent = d.summary.warned || 0;
+                    document.getElementById('st-skip').textContent = d.summary.skipped || 0;
+                }
+                if (d.results) {
+                    var html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th></tr></thead><tbody>';
+                    d.results.forEach(function(r) {
+                        var cls = r.status === 'pass' ? 'badge-success' : r.status === 'fail' ? 'badge-danger' : r.status === 'warn' ? 'badge-warning' : 'badge-secondary';
+                        html += '<tr><td>' + r.check_id + '</td><td>' + r.name + '</td><td>' + r.category + '</td><td><span class="badge ' + cls + '">' + r.status.toUpperCase() + '</span></td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    document.getElementById('check-results').innerHTML = html;
+                }
+            })
+            .catch(function(e) { document.getElementById('btn-audit').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+
+    window.runRemediation = function(dryRun) {
+        document.getElementById('btn-remediate').disabled = true;
+        setStatus(dryRun ? 'Running dry run...' : 'Remediating...', '#1976d2');
+        fetch('/api/v1/audit/remediate', {method: 'POST', headers: headers, body: JSON.stringify({dry_run: dryRun})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-remediate').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus((dryRun ? 'Dry run' : 'Remediation') + ' complete. Refresh page for details.', '#4caf50');
+            })
+            .catch(function(e) { document.getElementById('btn-remediate').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+})();
+</script>
+{% endblock %}

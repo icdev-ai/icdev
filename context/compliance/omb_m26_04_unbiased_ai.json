@@ -1,0 +1,262 @@
+{
+  "metadata": {
+    "title": "OMB Memorandum M-26-04 — Advancing Unbiased and Transparent Artificial Intelligence in the Federal Government",
+    "source": "Office of Management and Budget, M-26-04, January 2026",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-23",
+    "description": "OMB M-26-04 requirements for federal agencies on model cards, system cards, bias testing, fairness metrics, disparity analysis, human review processes, and documentation standards. Builds on M-25-21 and EO 13960 'Promoting the Use of Trustworthy Artificial Intelligence in the Federal Government.' Maps to NIST 800-53 Rev 5 controls via crosswalk for multi-regime deduplication (D113)."
+  },
+  "categories": [
+    {
+      "id": "MODEL_DOCS",
+      "title": "Model Documentation",
+      "description": "Requirements for model cards and system cards documenting AI components",
+      "requirement_count": 4
+    },
+    {
+      "id": "BIAS_FAIRNESS",
+      "title": "Bias and Fairness",
+      "description": "Requirements for bias testing, fairness metrics, and disparity analysis",
+      "requirement_count": 5
+    },
+    {
+      "id": "HUMAN_REVIEW",
+      "title": "Human Review and Appeal",
+      "description": "Requirements for human-in-the-loop review and appeal processes",
+      "requirement_count": 4
+    },
+    {
+      "id": "IMPACT_ASSESS",
+      "title": "Impact Assessment",
+      "description": "Requirements for pre-deployment and ongoing impact assessments",
+      "requirement_count": 3
+    }
+  ],
+  "requirements": [
+    {
+      "id": "M26-DOC-1",
+      "family": "Model Documentation",
+      "title": "Model Card Generation",
+      "description": "Agencies shall produce a model card for each AI/ML model deployed in production systems. Model cards shall follow the format established by Mitchell et al. (2019) as adapted for federal use, and include: model details (name, version, type, architecture), intended use (primary use cases, out-of-scope uses), training data (sources, preprocessing, known limitations), evaluation data and metrics, ethical considerations, and caveats and limitations. Model cards must be updated when models are retrained, fine-tuned, or significantly modified.",
+      "evidence_required": "Model card documents for each deployed model, model card update history, model card review and approval records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-2", "SA-4", "CM-8"],
+      "key_actions": [
+        "Generate model cards for all deployed AI models",
+        "Include all required sections per federal template",
+        "Update model cards on model changes"
+      ]
+    },
+    {
+      "id": "M26-DOC-2",
+      "family": "Model Documentation",
+      "title": "System Card Generation",
+      "description": "Agencies shall produce a system card for each AI system (encompassing one or more models, data pipelines, and integration components). System cards shall document: system purpose and scope, component models (with references to individual model cards), data flows and processing, human oversight design, risk profile, appeal mechanisms, monitoring approach, and compliance status. System cards provide the holistic view necessary for governance review.",
+      "evidence_required": "System card documents, component model references, data flow diagrams, human oversight documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-2", "SA-3", "SA-4", "PM-5"],
+      "key_actions": [
+        "Generate system cards for all AI systems",
+        "Link to component model cards",
+        "Document data flows and oversight design"
+      ]
+    },
+    {
+      "id": "M26-DOC-3",
+      "family": "Model Documentation",
+      "title": "Documentation Accessibility",
+      "description": "Model cards and system cards for non-classified AI systems shall be made available to relevant stakeholders including oversight bodies, affected communities, and (where appropriate) the public. Documentation shall be written in plain language and maintained in a centralized, searchable repository.",
+      "evidence_required": "Documentation repository, stakeholder access records, plain language review evidence, public-facing documentation (where applicable).",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-15", "AC-8", "PL-4"],
+      "key_actions": [
+        "Maintain centralized documentation repository",
+        "Ensure plain language accessibility",
+        "Share with relevant stakeholders"
+      ]
+    },
+    {
+      "id": "M26-DOC-4",
+      "family": "Model Documentation",
+      "title": "Documentation Currency",
+      "description": "Model cards and system cards shall be reviewed and updated at least annually, upon significant system changes, upon discovery of new risks or biases, or when operational context materially changes. Agencies shall maintain version history of all documentation changes with change rationale.",
+      "evidence_required": "Documentation version history, update trigger records, change rationale documentation, annual review records.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CM-3", "CM-4", "PL-2"],
+      "key_actions": [
+        "Review documentation annually at minimum",
+        "Update on significant changes",
+        "Maintain version history with rationale"
+      ]
+    },
+    {
+      "id": "M26-BIAS-1",
+      "family": "Bias and Fairness",
+      "title": "Pre-Deployment Bias Testing",
+      "description": "Agencies shall conduct bias testing before deploying any AI system that makes or supports decisions affecting individuals. Testing shall evaluate the system's performance across relevant demographic groups, protected classes, and historically underserved populations. Bias testing methodology, results, and any identified disparities shall be documented in the model card and system card.",
+      "evidence_required": "Pre-deployment bias test plans, test results across demographic groups, identified disparity documentation, remediation actions taken.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-2", "SA-11", "RA-3"],
+      "key_actions": [
+        "Develop bias testing methodology",
+        "Test across demographic groups before deployment",
+        "Document and remediate identified disparities"
+      ]
+    },
+    {
+      "id": "M26-BIAS-2",
+      "family": "Bias and Fairness",
+      "title": "Fairness Metrics Definition",
+      "description": "Agencies shall define and track fairness metrics appropriate to each AI system's context and use case. Metrics shall include but are not limited to: demographic parity, equalized odds, predictive parity, and calibration across groups. The choice of fairness metrics shall be documented with rationale, and trade-offs between metrics shall be explicitly acknowledged and justified.",
+      "evidence_required": "Fairness metrics selection documentation, metric calculation methodology, metric tracking records, trade-off analysis documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "PM-9"],
+      "key_actions": [
+        "Select appropriate fairness metrics per system",
+        "Document metric selection rationale",
+        "Track metrics continuously"
+      ]
+    },
+    {
+      "id": "M26-BIAS-3",
+      "family": "Bias and Fairness",
+      "title": "Disparity Analysis",
+      "description": "Agencies shall conduct disparity analysis for high-impact AI systems at least quarterly, comparing system outcomes across demographic groups. Analysis shall identify statistically significant disparities, evaluate whether disparities are justified by legitimate operational factors, and document remediation plans for unjustified disparities. Disparity analysis results shall be reported to the Chief AI Officer.",
+      "evidence_required": "Quarterly disparity analysis reports, statistical significance methodology, justification for observed disparities, remediation plans, CAIO reporting records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "AU-6", "PM-9"],
+      "key_actions": [
+        "Conduct quarterly disparity analysis",
+        "Evaluate and justify observed disparities",
+        "Report to Chief AI Officer"
+      ]
+    },
+    {
+      "id": "M26-BIAS-4",
+      "family": "Bias and Fairness",
+      "title": "Bias Mitigation Measures",
+      "description": "Agencies shall implement and document bias mitigation measures for AI systems where bias risks have been identified. Mitigation approaches may include: training data augmentation, algorithmic adjustments, post-processing corrections, human review of flagged decisions, or alternative decision pathways. The effectiveness of mitigation measures shall be evaluated and documented.",
+      "evidence_required": "Bias mitigation plan, mitigation implementation evidence, mitigation effectiveness evaluation, before/after metric comparison.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "CA-7", "PM-4"],
+      "key_actions": [
+        "Implement bias mitigation measures",
+        "Evaluate mitigation effectiveness",
+        "Document before/after comparisons"
+      ]
+    },
+    {
+      "id": "M26-BIAS-5",
+      "family": "Bias and Fairness",
+      "title": "Protected Class Monitoring",
+      "description": "Agencies shall implement ongoing monitoring of AI system outputs for disparate impact on protected classes as defined by applicable civil rights laws, executive orders, and agency-specific policies. Where direct demographic data is unavailable, agencies shall use proxy analysis methodologies documented and validated by agency statisticians or data scientists.",
+      "evidence_required": "Protected class monitoring plan, monitoring results, proxy methodology documentation (if applicable), data scientist validation records.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "AU-6"],
+      "key_actions": [
+        "Monitor outputs for disparate impact",
+        "Validate proxy methodologies",
+        "Report monitoring results periodically"
+      ]
+    },
+    {
+      "id": "M26-REV-1",
+      "family": "Human Review and Appeal",
+      "title": "Human Review of Adverse AI Decisions",
+      "description": "Agencies shall ensure that individuals adversely affected by AI-assisted decisions have the right to request and receive human review. Human reviewers shall have the authority, training, and information necessary to evaluate the AI's recommendation independently, including access to the factors considered by the AI system. Human review shall be completed within a timeframe consistent with the urgency and impact of the decision.",
+      "evidence_required": "Human review policy, reviewer training records, reviewer authority documentation, review completion time records, review outcome records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-6", "AU-2", "PM-15"],
+      "key_actions": [
+        "Establish human review rights for adverse decisions",
+        "Train qualified human reviewers",
+        "Track review completion times and outcomes"
+      ]
+    },
+    {
+      "id": "M26-REV-2",
+      "family": "Human Review and Appeal",
+      "title": "Formal Appeal Process",
+      "description": "Agencies shall establish formal appeal processes for AI-assisted decisions, separate from the initial human review. The appeal process shall include: clear instructions accessible to all affected individuals, the ability to submit additional evidence or context, review by a decision-maker independent of the original AI-assisted process, written explanation of appeal outcomes, and information about further recourse options.",
+      "evidence_required": "Formal appeal process documentation, appeal submission mechanism, independent reviewer assignment records, written appeal outcome records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IR-4", "PM-15", "PL-4"],
+      "key_actions": [
+        "Establish formal appeal process",
+        "Assign independent appeal reviewers",
+        "Provide written appeal outcomes"
+      ]
+    },
+    {
+      "id": "M26-REV-3",
+      "family": "Human Review and Appeal",
+      "title": "Opt-Out and Alternative Pathways",
+      "description": "Where feasible and consistent with the agency's mission, agencies shall provide individuals the option to opt out of AI-assisted decision-making and request a fully human-driven process. Where opt-out is not feasible, agencies shall document the justification and ensure enhanced human oversight of the AI-assisted process.",
+      "evidence_required": "Opt-out policy documentation, opt-out mechanism, feasibility analysis (where opt-out not provided), enhanced oversight documentation.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AC-6", "PM-15"],
+      "key_actions": [
+        "Evaluate opt-out feasibility per system",
+        "Implement opt-out mechanisms where feasible",
+        "Document justification where opt-out not possible"
+      ]
+    },
+    {
+      "id": "M26-REV-4",
+      "family": "Human Review and Appeal",
+      "title": "Decision Explanation Capability",
+      "description": "Agencies shall ensure that AI systems supporting high-impact decisions can provide meaningful explanations of the factors that contributed to each decision. Explanations shall be understandable to both the affected individual and the human reviewer, and shall identify the key data inputs, model factors, and confidence level that influenced the AI's recommendation.",
+      "evidence_required": "Explainability capability documentation, sample explanations, user comprehension testing, explanation accuracy validation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AU-2", "SI-4", "PM-15"],
+      "key_actions": [
+        "Implement decision explanation capability",
+        "Test explanation comprehensibility",
+        "Validate explanation accuracy"
+      ]
+    },
+    {
+      "id": "M26-IMP-1",
+      "family": "Impact Assessment",
+      "title": "Pre-Deployment Impact Assessment",
+      "description": "Agencies shall conduct a comprehensive impact assessment before deploying any AI system classified as high-impact. The assessment shall evaluate potential impacts on affected individuals and communities, including: civil rights and civil liberties impacts, privacy impacts, safety impacts, economic impacts, and impacts on government decision quality. Impact assessments shall be reviewed by the agency's Chief AI Officer and relevant civil rights and privacy officials.",
+      "evidence_required": "Pre-deployment impact assessment report, civil rights impact analysis, privacy impact analysis, safety impact analysis, CAIO review and sign-off.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "RA-8", "PM-9"],
+      "key_actions": [
+        "Conduct pre-deployment impact assessment",
+        "Analyze civil rights, privacy, and safety impacts",
+        "Obtain CAIO review and approval"
+      ]
+    },
+    {
+      "id": "M26-IMP-2",
+      "family": "Impact Assessment",
+      "title": "Ongoing Impact Monitoring",
+      "description": "Agencies shall monitor the real-world impacts of deployed AI systems on an ongoing basis. Impact monitoring shall include tracking actual outcomes for affected individuals, collecting feedback from users and affected communities, comparing predicted impacts with actual impacts, and identifying unintended consequences. Material deviations from expected impacts shall trigger reassessment.",
+      "evidence_required": "Impact monitoring reports, outcome tracking data, community feedback records, predicted vs. actual impact comparison, reassessment trigger documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "PM-4"],
+      "key_actions": [
+        "Track real-world AI outcomes",
+        "Collect stakeholder feedback",
+        "Compare predicted vs. actual impacts"
+      ]
+    },
+    {
+      "id": "M26-IMP-3",
+      "family": "Impact Assessment",
+      "title": "Impact Assessment Publication",
+      "description": "Agencies shall make non-classified portions of impact assessments available to relevant oversight bodies and, where appropriate, to the public. Published assessments shall include a summary of findings, identified risks and mitigation measures, and the agency's decision regarding deployment. Classified assessments shall be reported through appropriate channels.",
+      "evidence_required": "Published impact assessment summaries, oversight body notification records, public-facing assessment (where applicable).",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-15", "PL-4", "AC-8"],
+      "key_actions": [
+        "Publish non-classified assessment portions",
+        "Notify oversight bodies",
+        "Maintain classified reporting channels"
+      ]
+    }
+  ]
+}

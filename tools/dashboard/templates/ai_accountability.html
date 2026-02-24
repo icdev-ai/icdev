@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}AI Accountability - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>AI Accountability</h1>
+    <p class="text-muted">Human oversight, appeals, CAIO designation, incident response, ethics reviews (Phase 49, D316-D321)</p>
+
+    <!-- Stat Grid -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-score" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Accountability Score</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-oversight" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Oversight Plans</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-appeals" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Appeals (Open)</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-incidents" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Incidents (Open)</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-caio" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">CAIO Designated</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-ethics" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Ethics Reviews</div>
+        </div>
+    </div>
+
+    <!-- Recent Appeals -->
+    <h2>Recent Appeals</h2>
+    <div class="table-container">
+        <table id="appeals-table" aria-label="AI accountability appeals">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Appellant</th>
+                    <th>AI System</th>
+                    <th>Status</th>
+                    <th>Resolution</th>
+                    <th>Filed</th>
+                </tr>
+            </thead>
+            <tbody id="appeals-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Recent Incidents -->
+    <h2>Recent Incidents</h2>
+    <div class="table-container">
+        <table id="incidents-table" aria-label="AI incidents">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>AI System</th>
+                    <th>Severity</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                    <th>Reported</th>
+                </tr>
+            </thead>
+            <tbody id="incidents-body">
+                <tr><td colspan="7" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Overdue Reassessments -->
+    <h2>Overdue Reassessments</h2>
+    <div class="table-container">
+        <table id="overdue-table" aria-label="Overdue reassessments">
+            <thead>
+                <tr>
+                    <th>AI System</th>
+                    <th>Frequency</th>
+                    <th>Due Date</th>
+                    <th>Last Completed</th>
+                </tr>
+            </thead>
+            <tbody id="overdue-body">
+                <tr><td colspan="4" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Accountability Gaps -->
+    <h2>Accountability Gaps</h2>
+    <div class="table-container">
+        <table id="gaps-table" aria-label="Accountability gaps">
+            <thead>
+                <tr>
+                    <th>Check</th>
+                    <th>Title</th>
+                    <th>Severity</th>
+                    <th>Frameworks</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="gaps-body">
+                <tr><td colspan="5" style="text-align:center;color:#999;">Run an audit to see gaps.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Actions -->
+    <div style="margin:2rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button class="btn" onclick="runAccountabilityAudit()" id="btn-audit">Run Accountability Audit</button>
+    </div>
+    <pre id="action-output" style="display:none;background:#1e1e1e;color:#d4d4d4;padding:1rem;border-radius:4px;max-height:400px;overflow:auto;white-space:pre-wrap;"></pre>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    async function loadStats() {
+        try {
+            const resp = await fetch('/api/ai-accountability/stats');
+            if (!resp.ok) return;
+            const d = await resp.json();
+            document.getElementById('stat-score').textContent = d.accountability_score != null ? d.accountability_score + '%' : '--';
+            document.getElementById('stat-oversight').textContent = d.oversight_plan_count ?? '--';
+            document.getElementById('stat-appeals').textContent = d.open_appeals != null ? d.open_appeals + '/' + d.appeal_count : '--';
+            document.getElementById('stat-incidents').textContent = d.open_incidents ?? '--';
+            document.getElementById('stat-caio').textContent = d.caio_count > 0 ? 'Yes' : 'No';
+            document.getElementById('stat-ethics').textContent = d.ethics_review_count ?? '--';
+        } catch(e) { console.warn('Stats load failed:', e); }
+    }
+
+    async function loadAppeals() {
+        try {
+            const resp = await fetch('/api/ai-accountability/appeals');
+            if (!resp.ok) return;
+            const d = await resp.json();
+            const tbody = document.getElementById('appeals-body');
+            if (!d.appeals || d.appeals.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No appeals filed.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.appeals.map(a => `<tr>
+                <td>${a.id}</td>
+                <td>${a.appellant}</td>
+                <td>${a.ai_system}</td>
+                <td><span class="badge ${a.appeal_status === 'resolved' ? 'badge-success' : a.appeal_status === 'dismissed' ? 'badge-warning' : 'badge-danger'}">${a.appeal_status}</span></td>
+                <td>${a.resolution || '--'}</td>
+                <td>${a.created_at}</td>
+            </tr>`).join('');
+        } catch(e) { console.warn('Appeals load failed:', e); }
+    }
+
+    async function loadIncidents() {
+        try {
+            const resp = await fetch('/api/ai-accountability/incidents');
+            if (!resp.ok) return;
+            const d = await resp.json();
+            const tbody = document.getElementById('incidents-body');
+            if (!d.incidents || d.incidents.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">No incidents logged.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.incidents.map(i => `<tr>
+                <td>${i.id}</td>
+                <td>${i.incident_type}</td>
+                <td>${i.ai_system || '--'}</td>
+                <td><span class="badge ${i.severity === 'critical' ? 'badge-danger' : i.severity === 'high' ? 'badge-warning' : 'badge-success'}">${i.severity}</span></td>
+                <td><span class="badge ${i.status === 'resolved' || i.status === 'closed' ? 'badge-success' : 'badge-danger'}">${i.status}</span></td>
+                <td>${(i.description || '').substring(0, 80)}</td>
+                <td>${i.created_at}</td>
+            </tr>`).join('');
+        } catch(e) { console.warn('Incidents load failed:', e); }
+    }
+
+    async function loadOverdue() {
+        try {
+            const resp = await fetch('/api/ai-accountability/overdue');
+            if (!resp.ok) return;
+            const d = await resp.json();
+            const tbody = document.getElementById('overdue-body');
+            if (!d.overdue || d.overdue.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999;">No overdue reassessments.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.overdue.map(o => `<tr>
+                <td>${o.ai_system}</td>
+                <td>${o.frequency}</td>
+                <td><span class="badge badge-danger">${o.next_due}</span></td>
+                <td>${o.last_completed || 'Never'}</td>
+            </tr>`).join('');
+        } catch(e) { console.warn('Overdue load failed:', e); }
+    }
+
+    loadStats();
+    loadAppeals();
+    loadIncidents();
+    loadOverdue();
+
+    window.runAccountabilityAudit = async function() {
+        const out = document.getElementById('action-output');
+        out.style.display = 'block';
+        out.textContent = 'Running AI accountability audit...\n';
+        try {
+            const resp = await fetch('/api/ai-accountability/audit', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+            const d = await resp.json();
+            out.textContent = JSON.stringify(d, null, 2);
+            // Refresh tables
+            loadStats();
+            // Show gaps
+            const tbody = document.getElementById('gaps-body');
+            if (d.gaps && d.gaps.length > 0) {
+                tbody.innerHTML = d.gaps.map(g => `<tr>
+                    <td>${g.check_id}</td>
+                    <td>${g.title}</td>
+                    <td><span class="badge ${g.severity === 'high' ? 'badge-danger' : 'badge-warning'}">${g.severity.toUpperCase()}</span></td>
+                    <td>${(g.frameworks || []).join(', ')}</td>
+                    <td><code style="font-size:0.8em">${g.action || '--'}</code></td>
+                </tr>`).join('');
+            } else {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#4caf50;">All accountability checks passed!</td></tr>';
+            }
+        } catch(e) { out.textContent = 'Error: ' + e.message; }
+    };
+})();
+</script>
+{% endblock %}

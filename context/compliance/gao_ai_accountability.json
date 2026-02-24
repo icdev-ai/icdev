@@ -1,0 +1,262 @@
+{
+  "metadata": {
+    "title": "GAO-21-519SP — Artificial Intelligence: An Accountability Framework for Federal Agencies and Other Entities",
+    "source": "U.S. Government Accountability Office, GAO-21-519SP, June 2021",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-23",
+    "description": "GAO AI Accountability Framework requirements across 4 principles (Governance, Data, Performance, Monitoring) with sub-practices and evidence requirements. This framework is used by Congress and oversight bodies to evaluate federal agency AI programs. Maps to NIST 800-53 Rev 5 controls via crosswalk for multi-regime deduplication (D113)."
+  },
+  "categories": [
+    {
+      "id": "GOVERNANCE",
+      "title": "Governance",
+      "description": "Promote accountability by establishing governance structures and defining clear roles and responsibilities for AI",
+      "requirement_count": 4
+    },
+    {
+      "id": "DATA",
+      "title": "Data",
+      "description": "Ensure data used for AI are reliable, of sufficient quality, and appropriate for their intended purpose",
+      "requirement_count": 4
+    },
+    {
+      "id": "PERFORMANCE",
+      "title": "Performance",
+      "description": "Produce results that are consistent with program objectives through ongoing evaluation and documentation",
+      "requirement_count": 4
+    },
+    {
+      "id": "MONITORING",
+      "title": "Monitoring",
+      "description": "Ensure that AI systems are reliable, relevant, and continuously performing as intended",
+      "requirement_count": 4
+    }
+  ],
+  "requirements": [
+    {
+      "id": "GAO-GOV-1",
+      "family": "Governance",
+      "title": "AI Governance Structure",
+      "description": "Entities shall establish a governance structure for AI that defines roles, responsibilities, and accountability. The governance structure shall include executive-level oversight, designated AI officers or equivalents, cross-functional governance bodies, and clear escalation paths for AI-related risks and incidents. The structure shall be documented and communicated to all stakeholders.",
+      "evidence_required": "AI governance charter or policy, organizational chart with AI roles, governance body membership and meeting records, escalation procedure documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-1", "PM-2", "PM-10"],
+      "key_actions": [
+        "Establish AI governance charter",
+        "Define and assign AI governance roles",
+        "Document escalation procedures"
+      ]
+    },
+    {
+      "id": "GAO-GOV-2",
+      "family": "Governance",
+      "title": "AI Legal and Regulatory Compliance",
+      "description": "Entities shall identify and comply with applicable legal and regulatory requirements for AI, including privacy laws, civil rights statutes, sector-specific regulations, and executive orders. A legal compliance matrix shall be maintained mapping each AI system to its applicable legal requirements, with regular review for changes in the legal landscape.",
+      "evidence_required": "Legal compliance matrix, legal review records, regulatory change monitoring evidence, legal counsel engagement records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-1", "PL-4", "PM-9"],
+      "key_actions": [
+        "Maintain AI legal compliance matrix",
+        "Conduct regular legal reviews",
+        "Monitor regulatory changes"
+      ]
+    },
+    {
+      "id": "GAO-GOV-3",
+      "family": "Governance",
+      "title": "AI Ethics Framework",
+      "description": "Entities shall adopt and implement an AI ethics framework that addresses principles of fairness, transparency, accountability, privacy, safety, and human dignity. The ethics framework shall be integrated into AI development and deployment processes, with mechanisms for ethical review of AI use cases prior to deployment.",
+      "evidence_required": "AI ethics framework document, ethics review board or process documentation, pre-deployment ethical review records, ethics training records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-9", "PM-13", "AT-3"],
+      "key_actions": [
+        "Adopt AI ethics framework",
+        "Integrate ethics into development processes",
+        "Conduct pre-deployment ethical reviews"
+      ]
+    },
+    {
+      "id": "GAO-GOV-4",
+      "family": "Governance",
+      "title": "AI Risk Management Integration",
+      "description": "Entities shall integrate AI risk management into existing enterprise risk management (ERM) processes. AI-specific risks shall be identified, assessed, and managed alongside traditional IT, cybersecurity, and operational risks. Risk management activities shall be proportional to the AI system's impact level and documented in the enterprise risk register.",
+      "evidence_required": "Enterprise risk register with AI risks, AI risk management process documentation, risk assessment records, risk treatment plans.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-9", "RA-1", "RA-3"],
+      "key_actions": [
+        "Integrate AI into enterprise risk management",
+        "Identify and assess AI-specific risks",
+        "Document risk treatment plans"
+      ]
+    },
+    {
+      "id": "GAO-DATA-1",
+      "family": "Data",
+      "title": "Data Quality Assessment",
+      "description": "Entities shall assess and document the quality of data used in AI systems, including: completeness, accuracy, timeliness, consistency, representativeness, and fitness for purpose. Data quality assessments shall be conducted before AI system deployment and periodically during operation. Known data quality limitations shall be documented in model and system cards.",
+      "evidence_required": "Data quality assessment reports, data quality metrics, known limitations documentation, periodic reassessment records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-3", "SI-12", "PM-5"],
+      "key_actions": [
+        "Assess data quality across all dimensions",
+        "Document known data limitations",
+        "Conduct periodic data quality reviews"
+      ]
+    },
+    {
+      "id": "GAO-DATA-2",
+      "family": "Data",
+      "title": "Data Provenance and Documentation",
+      "description": "Entities shall maintain documentation of data provenance for AI systems, including: data sources, collection methods, preprocessing steps, transformations applied, and any augmentation or synthesis. Data lineage shall be traceable from source to model input. For third-party data, entities shall document provider data practices and any licensing restrictions.",
+      "evidence_required": "Data provenance documentation, data lineage diagrams, preprocessing documentation, third-party data agreements and assessments.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "SA-4"],
+      "key_actions": [
+        "Document data provenance for all AI data",
+        "Create data lineage diagrams",
+        "Assess third-party data practices"
+      ]
+    },
+    {
+      "id": "GAO-DATA-3",
+      "family": "Data",
+      "title": "Data Security and Privacy",
+      "description": "Entities shall implement security and privacy controls for data used in AI systems, commensurate with the data's sensitivity classification. Controls shall address data at rest, in transit, and during processing, including within AI training and inference pipelines. Privacy-enhancing techniques (de-identification, differential privacy, federated learning) shall be evaluated and applied where appropriate.",
+      "evidence_required": "Data security control documentation, privacy control implementation evidence, encryption configuration, privacy-enhancing technique evaluation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-28", "SC-8", "SC-13", "PM-25"],
+      "key_actions": [
+        "Implement data security controls",
+        "Evaluate privacy-enhancing techniques",
+        "Protect data across all processing stages"
+      ]
+    },
+    {
+      "id": "GAO-DATA-4",
+      "family": "Data",
+      "title": "Data Representativeness and Bias",
+      "description": "Entities shall evaluate whether training data is representative of the population or domain the AI system serves. Gaps in representation shall be identified, documented, and addressed through data augmentation, collection of additional data, or documented acknowledgment of limitations. Data bias assessments shall consider historical biases that may be embedded in training data.",
+      "evidence_required": "Data representativeness analysis, representation gap documentation, data augmentation records, historical bias assessment.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "PM-9", "SA-3"],
+      "key_actions": [
+        "Evaluate training data representativeness",
+        "Identify and document representation gaps",
+        "Assess historical biases in training data"
+      ]
+    },
+    {
+      "id": "GAO-PERF-1",
+      "family": "Performance",
+      "title": "Performance Metrics Definition",
+      "description": "Entities shall define clear, measurable performance metrics for each AI system aligned with the system's intended purpose and operational context. Metrics shall include both technical performance measures (accuracy, precision, recall, F1, latency) and mission-relevant performance measures (decision quality, user satisfaction, process improvement). Performance targets shall be established and documented.",
+      "evidence_required": "Performance metrics definition document, metric calculation methodology, performance target documentation, metric alignment to mission objectives.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "PM-5", "SI-4"],
+      "key_actions": [
+        "Define technical and mission performance metrics",
+        "Establish performance targets",
+        "Document metric calculation methods"
+      ]
+    },
+    {
+      "id": "GAO-PERF-2",
+      "family": "Performance",
+      "title": "Performance Evaluation Process",
+      "description": "Entities shall establish a regular performance evaluation process for deployed AI systems, including: benchmarking against defined metrics, comparison to baseline or alternative approaches, evaluation across relevant subgroups and operating conditions, and documentation of performance trends over time.",
+      "evidence_required": "Performance evaluation schedule, evaluation results, benchmark comparisons, subgroup analysis results, trend reports.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-2", "CA-7", "PM-4"],
+      "key_actions": [
+        "Conduct regular performance evaluations",
+        "Benchmark against targets and baselines",
+        "Analyze performance across subgroups"
+      ]
+    },
+    {
+      "id": "GAO-PERF-3",
+      "family": "Performance",
+      "title": "Explainability and Interpretability",
+      "description": "Entities shall implement explainability measures appropriate to each AI system's use case and impact level. For high-impact AI, stakeholders shall be able to understand the key factors driving AI outputs. Explainability approaches may include feature importance analysis, attention visualization, counterfactual explanations, or natural language explanations. The level of explainability shall be proportional to the consequences of AI decisions.",
+      "evidence_required": "Explainability approach documentation, sample explanations, stakeholder comprehension testing, explainability tool implementation evidence.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AU-2", "SI-4", "PM-15"],
+      "key_actions": [
+        "Implement appropriate explainability measures",
+        "Test stakeholder comprehension",
+        "Document explainability approach per system"
+      ]
+    },
+    {
+      "id": "GAO-PERF-4",
+      "family": "Performance",
+      "title": "Documentation and Audit Trail",
+      "description": "Entities shall maintain comprehensive documentation of AI system design, development, testing, and deployment decisions. An audit trail shall capture: model selection rationale, training data decisions, hyperparameter choices, validation results, deployment approval, and any modifications to deployed systems. Documentation shall be sufficient for independent third-party review.",
+      "evidence_required": "AI system documentation package, design decision records, training documentation, deployment approval records, modification log, third-party review evidence (if conducted).",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "AU-6", "CM-3"],
+      "key_actions": [
+        "Maintain comprehensive AI documentation",
+        "Capture decision rationale in audit trail",
+        "Ensure documentation supports third-party review"
+      ]
+    },
+    {
+      "id": "GAO-MON-1",
+      "family": "Monitoring",
+      "title": "Continuous Performance Monitoring",
+      "description": "Entities shall implement continuous monitoring of AI system performance in production, including automated tracking of defined performance metrics, drift detection for model performance degradation, anomaly detection for unexpected outputs, and alerting when performance drops below established thresholds.",
+      "evidence_required": "Monitoring system documentation, performance dashboard, drift detection configuration, alert configuration, alert response records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "AU-6"],
+      "key_actions": [
+        "Deploy continuous performance monitoring",
+        "Configure drift and anomaly detection",
+        "Establish and respond to alerts"
+      ]
+    },
+    {
+      "id": "GAO-MON-2",
+      "family": "Monitoring",
+      "title": "Feedback Collection and Integration",
+      "description": "Entities shall establish mechanisms for collecting feedback on AI system performance from users, operators, affected individuals, and domain experts. Feedback shall be systematically analyzed and integrated into performance evaluation, risk assessment, and system improvement processes. Negative feedback trends shall trigger investigation and potential system modification.",
+      "evidence_required": "Feedback collection mechanism documentation, feedback analysis records, feedback integration into risk assessment, improvement actions taken based on feedback.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-4", "CA-7", "PM-15"],
+      "key_actions": [
+        "Establish feedback collection mechanisms",
+        "Analyze feedback systematically",
+        "Integrate feedback into improvement processes"
+      ]
+    },
+    {
+      "id": "GAO-MON-3",
+      "family": "Monitoring",
+      "title": "Incident Detection and Response",
+      "description": "Entities shall implement AI-specific incident detection and response capabilities, including: detection of adversarial attacks, data poisoning, model failures, and unintended harmful outputs. Incident response procedures shall include containment (ability to deactivate or constrain the AI system), investigation (root cause analysis), remediation (system correction), and communication (notification to affected parties).",
+      "evidence_required": "AI incident detection system documentation, incident response plan, incident log, root cause analysis reports, notification records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IR-1", "IR-4", "IR-5", "SI-4"],
+      "key_actions": [
+        "Implement AI incident detection",
+        "Establish AI-specific incident response",
+        "Maintain incident log and RCA reports"
+      ]
+    },
+    {
+      "id": "GAO-MON-4",
+      "family": "Monitoring",
+      "title": "Periodic Reassessment and Recertification",
+      "description": "Entities shall conduct periodic reassessment of deployed AI systems at defined intervals (at least annually for high-impact systems) to evaluate: continued fitness for purpose, alignment with current legal and regulatory requirements, performance against evolving benchmarks, and appropriateness of risk classification. Reassessment findings shall be documented and may result in system modification, enhanced controls, reclassification, or decommissioning.",
+      "evidence_required": "Reassessment schedule, reassessment reports, finding documentation, resulting actions (modifications, reclassification, decommissioning), recertification records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-2", "CA-6", "CA-7", "PM-9"],
+      "key_actions": [
+        "Schedule periodic AI system reassessments",
+        "Evaluate fitness, compliance, and performance",
+        "Document and act on reassessment findings"
+      ]
+    }
+  ]
+}

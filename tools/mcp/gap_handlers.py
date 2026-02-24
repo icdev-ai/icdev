@@ -722,3 +722,257 @@ def handle_nlq_query(args: dict) -> dict:
         }
     except Exception as exc:
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# AI Transparency & Accountability (Phase 48, D307-D315) — 10 tools
+# ---------------------------------------------------------------------------
+
+def handle_omb_m25_21_assess(args: dict) -> dict:
+    """OMB M-25-21 High-Impact AI assessment."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from omb_m25_21_assessor import OMBM2521Assessor
+        assessor = OMBM2521Assessor(db_path=DB_PATH)
+        return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_omb_m26_04_assess(args: dict) -> dict:
+    """OMB M-26-04 Unbiased AI assessment."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from omb_m26_04_assessor import OMBM2604Assessor
+        assessor = OMBM2604Assessor(db_path=DB_PATH)
+        return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_nist_ai_600_1_assess(args: dict) -> dict:
+    """NIST AI 600-1 GenAI Profile assessment."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from nist_ai_600_1_assessor import NISTAI6001Assessor
+        assessor = NISTAI6001Assessor(db_path=DB_PATH)
+        return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_gao_ai_assess(args: dict) -> dict:
+    """GAO-21-519SP AI Accountability assessment."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from gao_ai_assessor import GAOAIAssessor
+        assessor = GAOAIAssessor(db_path=DB_PATH)
+        return assessor.assess(args["project_id"], project_dir=args.get("project_dir"))
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_model_card_generate(args: dict) -> dict:
+    """Generate model card per OMB M-26-04 / Google Model Cards format."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from model_card_generator import generate_model_card
+        return generate_model_card(args["project_id"], args["model_name"], db_path=DB_PATH)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_system_card_generate(args: dict) -> dict:
+    """Generate system-level AI card."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from system_card_generator import generate_system_card
+        return generate_system_card(args["project_id"], db_path=DB_PATH)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_transparency_audit(args: dict) -> dict:
+    """Run cross-framework AI transparency audit."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from ai_transparency_audit import run_transparency_audit
+        return run_transparency_audit(args["project_id"], args.get("project_dir"), db_path=DB_PATH)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_confabulation_check(args: dict) -> dict:
+    """Check text for confabulation indicators."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "security"))
+        from confabulation_detector import check_output
+        return check_output(args["project_id"], args["text"], db_path=DB_PATH)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_inventory_register(args: dict) -> dict:
+    """Register an AI use case in the OMB M-25-21 inventory."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from ai_inventory_manager import register_ai_component
+        return register_ai_component(
+            args["project_id"], args["name"],
+            purpose=args.get("purpose", ""),
+            risk_level=args.get("risk_level", "minimal_risk"),
+            db_path=DB_PATH,
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_fairness_assess(args: dict) -> dict:
+    """Assess fairness and bias compliance per OMB M-26-04."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from fairness_assessor import assess_fairness
+        return assess_fairness(args["project_id"], args.get("project_dir"), db_path=DB_PATH)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# AI Accountability (Phase 49, D316-D321) — 8 tools
+# ---------------------------------------------------------------------------
+
+def handle_ai_oversight_plan_create(args: dict) -> dict:
+    """Register a human oversight plan."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from accountability_manager import _get_connection, _ensure_tables, register_oversight_plan
+        conn = _get_connection(DB_PATH)
+        _ensure_tables(conn)
+        try:
+            return register_oversight_plan(
+                conn, args["project_id"], args["plan_name"],
+                description=args.get("plan_data", ""),
+                created_by=args.get("approved_by", ""),
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_caio_designate(args: dict) -> dict:
+    """Designate a CAIO / responsible AI official."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from accountability_manager import _get_connection, _ensure_tables, designate_caio
+        conn = _get_connection(DB_PATH)
+        _ensure_tables(conn)
+        try:
+            return designate_caio(
+                conn, args["project_id"],
+                name=args.get("official_name", args.get("name", "")),
+                role=args.get("official_role", args.get("role", "CAIO")),
+                organization=args.get("organization", ""),
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_appeal_file(args: dict) -> dict:
+    """File an AI accountability appeal."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from accountability_manager import _get_connection, _ensure_tables, file_appeal
+        conn = _get_connection(DB_PATH)
+        _ensure_tables(conn)
+        try:
+            return file_appeal(
+                conn, args["project_id"], args["appellant"], args["ai_system"],
+                grievance=args.get("decision_contested", args.get("grievance", "")),
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_appeal_resolve(args: dict) -> dict:
+    """Resolve an AI accountability appeal."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from accountability_manager import _get_connection, _ensure_tables, resolve_appeal
+        conn = _get_connection(DB_PATH)
+        _ensure_tables(conn)
+        try:
+            return resolve_appeal(
+                conn, args["appeal_id"], args["resolution"],
+                status=args.get("resolved_by", "resolved"),
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_ethics_review_submit(args: dict) -> dict:
+    """Submit an ethics review for an AI system."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from accountability_manager import _get_connection, _ensure_tables, submit_ethics_review
+        conn = _get_connection(DB_PATH)
+        _ensure_tables(conn)
+        try:
+            return submit_ethics_review(
+                conn, args["project_id"], args["review_type"],
+                summary=args.get("ai_system", ""),
+                findings=args.get("findings", ""),
+                recommendation=args.get("reviewer", ""),
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_incident_log(args: dict) -> dict:
+    """Log an AI-specific incident."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from ai_incident_response import log_incident
+        return log_incident(
+            args["project_id"], args["incident_type"],
+            ai_system=args.get("ai_system"),
+            severity=args.get("severity", "medium"),
+            description=args["description"],
+            reported_by=args.get("reported_by"),
+            db_path=DB_PATH,
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_reassessment_schedule(args: dict) -> dict:
+    """Create a reassessment schedule for an AI system."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from ai_reassessment_scheduler import create_schedule
+        return create_schedule(
+            args["project_id"], args["ai_system"],
+            frequency=args.get("frequency", "annual"),
+            next_due=args.get("next_due"),
+            db_path=DB_PATH,
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ai_accountability_audit(args: dict) -> dict:
+    """Run cross-framework AI accountability audit."""
+    try:
+        sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
+        from ai_accountability_audit import run_accountability_audit
+        return run_accountability_audit(args["project_id"], db_path=DB_PATH)
+    except Exception as exc:
+        return {"error": str(exc)}

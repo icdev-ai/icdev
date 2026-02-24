@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Production Readiness Audit — comprehensive pre-production validation.
 
-Runs 30 checks across 6 categories: platform, security, compliance,
+Runs 33 checks across 6 categories: platform, security, compliance,
 integration, performance, documentation.  Streams results live and
 produces a consolidated report stored in the production_audits table.
 
@@ -616,6 +616,136 @@ def check_sbom_generation() -> AuditCheck:
         )
 
 
+def check_ai_inventory() -> AuditCheck:
+    """AI-001: AI inventory populated (Phase 48)."""
+    if not DB_PATH.exists():
+        return AuditCheck(
+            check_id="AI-001", check_name="AI Inventory Populated",
+            category="compliance", status="skip", severity="warning",
+            message="Database not found", details={},
+        )
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        # Check if table exists
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_use_case_inventory'"
+        ).fetchone()
+        if not table_exists:
+            conn.close()
+            return AuditCheck(
+                check_id="AI-001", check_name="AI Inventory Populated",
+                category="compliance", status="fail", severity="warning",
+                message="ai_use_case_inventory table not found — run init_icdev_db.py",
+                details={"table_exists": False},
+            )
+        count = conn.execute("SELECT COUNT(*) FROM ai_use_case_inventory").fetchone()[0]
+        conn.close()
+        ok = count > 0
+        return AuditCheck(
+            check_id="AI-001", check_name="AI Inventory Populated",
+            category="compliance", status="pass" if ok else "fail",
+            severity="warning",
+            message=f"{count} AI use cases registered" if ok else "No AI use cases registered — run ai_inventory_manager.py",
+            details={"record_count": count},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="AI-001", check_name="AI Inventory Populated",
+            category="compliance", status="fail", severity="warning",
+            message=str(e), details={},
+        )
+
+
+def check_model_cards() -> AuditCheck:
+    """AI-002: Model cards generated (Phase 48)."""
+    if not DB_PATH.exists():
+        return AuditCheck(
+            check_id="AI-002", check_name="Model Cards Generated",
+            category="compliance", status="skip", severity="warning",
+            message="Database not found", details={},
+        )
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='model_cards'"
+        ).fetchone()
+        if not table_exists:
+            conn.close()
+            return AuditCheck(
+                check_id="AI-002", check_name="Model Cards Generated",
+                category="compliance", status="fail", severity="warning",
+                message="model_cards table not found — run init_icdev_db.py",
+                details={"table_exists": False},
+            )
+        count = conn.execute("SELECT COUNT(*) FROM model_cards").fetchone()[0]
+        conn.close()
+        ok = count > 0
+        return AuditCheck(
+            check_id="AI-002", check_name="Model Cards Generated",
+            category="compliance", status="pass" if ok else "fail",
+            severity="warning",
+            message=f"{count} model cards generated" if ok else "No model cards generated — run model_card_generator.py",
+            details={"record_count": count},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="AI-002", check_name="Model Cards Generated",
+            category="compliance", status="fail", severity="warning",
+            message=str(e), details={},
+        )
+
+
+def check_ai_transparency_frameworks() -> AuditCheck:
+    """AI-003: AI transparency frameworks assessed (Phase 48)."""
+    if not DB_PATH.exists():
+        return AuditCheck(
+            check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
+            category="compliance", status="skip", severity="warning",
+            message="Database not found", details={},
+        )
+    assessment_tables = [
+        "omb_m25_21_assessments",
+        "omb_m26_04_assessments",
+        "nist_ai_600_1_assessments",
+        "gao_ai_assessments",
+    ]
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        found_tables = []
+        total_records = 0
+        for tbl in assessment_tables:
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
+            ).fetchone()
+            if exists:
+                cnt = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+                if cnt > 0:
+                    found_tables.append({"table": tbl, "count": cnt})
+                    total_records += cnt
+        conn.close()
+        ok = len(found_tables) > 0
+        if ok:
+            tbl_names = [t["table"] for t in found_tables]
+            return AuditCheck(
+                check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
+                category="compliance", status="pass", severity="warning",
+                message=f"{len(found_tables)} framework(s) assessed ({total_records} total records): {', '.join(tbl_names)}",
+                details={"assessed_frameworks": found_tables, "total_records": total_records},
+            )
+        return AuditCheck(
+            check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
+            category="compliance", status="fail", severity="warning",
+            message="No AI transparency framework assessments found — run ai_transparency_audit.py",
+            details={"checked_tables": assessment_tables, "assessed_frameworks": []},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="AI-003", check_name="AI Transparency Frameworks Assessed",
+            category="compliance", status="fail", severity="warning",
+            message=str(e), details={},
+        )
+
+
 def check_oscal_ecosystem() -> AuditCheck:
     """CMP-007: OSCAL ecosystem tools readiness (D302-D306)."""
     oscal_tools = PROJECT_ROOT / "tools" / "compliance" / "oscal_tools.py"
@@ -1186,6 +1316,10 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "CMP-005": (check_xai_compliance, "compliance", "warning"),
     "CMP-006": (check_sbom_generation, "compliance", "warning"),
     "CMP-007": (check_oscal_ecosystem, "compliance", "warning"),
+    # AI Transparency (Phase 48)
+    "AI-001": (check_ai_inventory, "compliance", "warning"),
+    "AI-002": (check_model_cards, "compliance", "warning"),
+    "AI-003": (check_ai_transparency_frameworks, "compliance", "warning"),
     # Integration
     "INT-001": (check_mcp_servers, "integration", "blocking"),
     "INT-002": (check_db_schema, "integration", "blocking"),

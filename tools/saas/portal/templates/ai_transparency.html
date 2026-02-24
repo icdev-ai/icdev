@@ -1,0 +1,227 @@
+<!-- [TEMPLATE: CUI // SP-CTI] -->
+{% extends "portal_base.html" %}
+{% set active_page = "ai_transparency" %}
+{% block title %}AI Transparency - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('portal.compliance') }}">Compliance</a>
+    <span class="separator">/</span>
+    <span class="current">AI Transparency</span>
+</nav>
+<div class="page-header">
+    <h1>AI Transparency &amp; Accountability</h1>
+    <p>Cross-framework AI compliance: OMB M-25-21, M-26-04, NIST AI 600-1, GAO-21-519SP (Phase 48)</p>
+</div>
+
+<!-- Stat Grid -->
+<div class="card">
+    <h2>Overview</h2>
+    <div class="stat-row" style="display:flex;gap:2rem;flex-wrap:wrap;margin:1rem 0;">
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-score">--</div>
+            <div style="color:#666;font-size:0.85rem;">Transparency Score</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-inventory">--</div>
+            <div style="color:#666;font-size:0.85rem;">AI Inventory</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-model-cards">--</div>
+            <div style="color:#666;font-size:0.85rem;">Model Cards</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-system-cards">--</div>
+            <div style="color:#666;font-size:0.85rem;">System Cards</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-confab">--</div>
+            <div style="color:#666;font-size:0.85rem;">Confabulation Checks</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-fairness">--</div>
+            <div style="color:#666;font-size:0.85rem;">Fairness Score</div>
+        </div>
+    </div>
+</div>
+
+<!-- Framework Assessments -->
+<div class="card">
+    <h2>Framework Assessments</h2>
+    <div id="frameworks-container">
+        <p class="empty-state">Loading framework data...</p>
+    </div>
+</div>
+
+<!-- AI Inventory -->
+<div class="card">
+    <h2>AI Use Case Inventory</h2>
+    {% if inventory %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="AI use case inventory">
+            <thead>
+                <tr><th>Name</th><th>Purpose</th><th>Risk Level</th><th>Classification</th><th>Status</th><th>Registered</th></tr>
+            </thead>
+            <tbody>
+                {% for item in inventory %}
+                <tr>
+                    <td>{{ item.name }}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;">{{ item.purpose or '' }}</td>
+                    <td><span class="badge {% if item.risk_level == 'high_impact' %}badge-danger{% elif item.risk_level == 'safety_impacting' %}badge-warning{% else %}badge-success{% endif %}">{{ item.risk_level }}</span></td>
+                    <td>{{ item.classification or '' }}</td>
+                    <td>{{ item.deployment_status or 'registered' }}</td>
+                    <td class="td-nowrap">{{ item.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No AI components registered. Use <code>ai_inventory_register</code> MCP tool or CLI to register components.</p>
+    {% endif %}
+</div>
+
+<!-- Model Cards -->
+<div class="card">
+    <h2>Model Cards</h2>
+    {% if model_cards %}
+    <div class="table-wrapper">
+        <table class="data-table" aria-label="Model cards">
+            <thead>
+                <tr><th>Project</th><th>Model</th><th>Version</th><th>Created</th></tr>
+            </thead>
+            <tbody>
+                {% for mc in model_cards %}
+                <tr>
+                    <td>{{ mc.project_id }}</td>
+                    <td>{{ mc.model_name }}</td>
+                    <td>{{ mc.version or '1' }}</td>
+                    <td class="td-nowrap">{{ mc.created_at }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No model cards generated yet.</p>
+    {% endif %}
+</div>
+
+<!-- Actions -->
+<div class="card">
+    <h2>Actions</h2>
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button onclick="runAudit()" id="btn-audit" class="btn btn-primary">Run Transparency Audit</button>
+        <button onclick="generateModelCard()" id="btn-model-card" class="btn btn-success">Generate Model Card</button>
+        <button onclick="generateSystemCard()" id="btn-system-card" class="btn btn-info">Generate System Card</button>
+    </div>
+    <div id="action-status" style="margin:0.5rem 0;"></div>
+</div>
+
+<!-- Transparency Gaps -->
+<div class="card">
+    <h2>Transparency Gaps</h2>
+    <div id="gaps-container">
+        <p class="empty-state">Run a transparency audit to identify gaps.</p>
+    </div>
+</div>
+
+<script>
+(function() {
+    var apiKey = document.querySelector('meta[name="api-key"]');
+    var headers = {'Content-Type': 'application/json'};
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey.content;
+
+    function setStatus(msg, color) {
+        document.getElementById('action-status').innerHTML = '<span style="color:' + (color||'#666') + '">' + msg + '</span>';
+    }
+
+    // Load stats
+    fetch('/api/v1/ai-transparency/stats', {headers: headers})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.error) return;
+            document.getElementById('stat-inventory').textContent = d.inventory_count || 0;
+            document.getElementById('stat-model-cards').textContent = d.model_card_count || 0;
+            document.getElementById('stat-system-cards').textContent = d.system_card_count || 0;
+            document.getElementById('stat-confab').textContent = d.confabulation_count || 0;
+            document.getElementById('stat-fairness').textContent = d.fairness_score !== null ? d.fairness_score + '%' : 'N/A';
+            document.getElementById('stat-score').textContent = d.transparency_score !== null ? d.transparency_score + '%' : '--';
+        }).catch(function() {});
+
+    // Load frameworks
+    fetch('/api/v1/ai-transparency/frameworks', {headers: headers})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.frameworks || d.frameworks.length === 0) {
+                document.getElementById('frameworks-container').innerHTML = '<p class="empty-state">No framework assessments available.</p>';
+                return;
+            }
+            var html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Framework</th><th>Coverage</th><th>Requirements</th><th>Status</th></tr></thead><tbody>';
+            d.frameworks.forEach(function(f) {
+                var cls = f.coverage >= 80 ? 'badge-success' : f.coverage >= 50 ? 'badge-warning' : 'badge-danger';
+                html += '<tr><td>' + f.name + '</td><td>' + f.coverage + '%</td><td>' + f.total + '</td>';
+                html += '<td><span class="badge ' + cls + '">' + (f.coverage >= 80 ? 'Good' : f.coverage >= 50 ? 'Partial' : 'Low') + '</span></td></tr>';
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('frameworks-container').innerHTML = html;
+        }).catch(function() {
+            document.getElementById('frameworks-container').innerHTML = '<p class="empty-state">Could not load framework data.</p>';
+        });
+
+    window.runAudit = function() {
+        document.getElementById('btn-audit').disabled = true;
+        setStatus('Running transparency audit...', '#1976d2');
+        fetch('/api/v1/ai-transparency/audit', {method: 'POST', headers: headers, body: JSON.stringify({project_id: 'default'})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-audit').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('Audit complete. Refresh page for updated results.', '#4caf50');
+                if (d.gaps && d.gaps.length > 0) {
+                    var html = '<div class="table-wrapper"><table class="data-table"><thead><tr><th>Gap</th><th>Severity</th><th>Framework</th></tr></thead><tbody>';
+                    d.gaps.forEach(function(g) {
+                        var cls = g.severity === 'high' ? 'badge-danger' : g.severity === 'medium' ? 'badge-warning' : 'badge-info';
+                        html += '<tr><td>' + g.description + '</td><td><span class="badge ' + cls + '">' + g.severity + '</span></td><td>' + (g.framework || '') + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    document.getElementById('gaps-container').innerHTML = html;
+                } else {
+                    document.getElementById('gaps-container').innerHTML = '<p class="empty-state">No transparency gaps found.</p>';
+                }
+            })
+            .catch(function(e) { document.getElementById('btn-audit').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+
+    window.generateModelCard = function() {
+        var modelName = prompt('Enter model name:');
+        if (!modelName) return;
+        document.getElementById('btn-model-card').disabled = true;
+        setStatus('Generating model card...', '#1976d2');
+        fetch('/api/v1/ai-transparency/model-card', {method: 'POST', headers: headers, body: JSON.stringify({project_id: 'default', model_name: modelName})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-model-card').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('Model card generated for ' + modelName + '. Refresh page.', '#4caf50');
+            })
+            .catch(function(e) { document.getElementById('btn-model-card').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+
+    window.generateSystemCard = function() {
+        document.getElementById('btn-system-card').disabled = true;
+        setStatus('Generating system card...', '#1976d2');
+        fetch('/api/v1/ai-transparency/system-card', {method: 'POST', headers: headers, body: JSON.stringify({project_id: 'default'})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-system-card').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('System card generated. Refresh page.', '#4caf50');
+            })
+            .catch(function(e) { document.getElementById('btn-system-card').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+})();
+</script>
+{% endblock %}

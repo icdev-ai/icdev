@@ -370,6 +370,104 @@ TOOL_REGISTRY = [
             "required": ["project_dir"],
         },
     },
+    # Phase 48 — AI Transparency & Accountability
+    {
+        "name": "ai_transparency_audit",
+        "description": "Run cross-framework AI transparency audit (OMB, NIST AI, GAO)",
+        "module": "tools.compliance.ai_transparency_audit",
+        "function": "run_transparency_audit",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "description": "Project ID"},
+                "project_dir": {"type": "string", "description": "Optional project directory"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "model_card_generate",
+        "description": "Generate model card per OMB M-26-04",
+        "module": "tools.compliance.model_card_generator",
+        "function": "generate_model_card",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "model_name": {"type": "string", "description": "Name of the AI model"},
+            },
+            "required": ["project_id", "model_name"],
+        },
+    },
+    {
+        "name": "system_card_generate",
+        "description": "Generate system card for AI system",
+        "module": "tools.compliance.system_card_generator",
+        "function": "generate_system_card",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "ai_inventory_register",
+        "description": "Register AI use case in inventory (OMB M-25-21)",
+        "module": "tools.compliance.ai_inventory_manager",
+        "function": "register_ai_component",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "name": {"type": "string", "description": "AI component name"},
+                "purpose": {"type": "string", "description": "Purpose of the AI component"},
+                "risk_level": {"type": "string", "description": "minimal_risk, high_impact, or safety_impacting"},
+            },
+            "required": ["project_id", "name"],
+        },
+    },
+    {
+        "name": "confabulation_check",
+        "description": "Check output for confabulation indicators (NIST AI 600-1)",
+        "module": "tools.security.confabulation_detector",
+        "function": "check_output",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+                "text": {"type": "string", "description": "Text to check for confabulation"},
+            },
+            "required": ["project_id", "text"],
+        },
+    },
+    {
+        "name": "fairness_assess",
+        "description": "Run fairness and bias compliance assessment (OMB M-26-04)",
+        "module": "tools.compliance.fairness_assessor",
+        "function": "assess_fairness",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
+    {
+        "name": "gao_evidence_build",
+        "description": "Build GAO audit evidence package (GAO-21-519SP)",
+        "module": "tools.compliance.gao_evidence_builder",
+        "function": "build_evidence",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string"},
+            },
+            "required": ["project_id"],
+        },
+    },
 ]
 
 # Build lookup dict

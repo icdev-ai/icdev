@@ -25,6 +25,8 @@ Endpoint groups:
     /api/v1/oscal/...         - OSCAL tool detection & catalog (D302-D306)
     /api/v1/projects/<id>/oscal - OSCAL validation & conversion
     /api/v1/audit/...         - Production readiness audit & remediation (D291-D300)
+    /api/v1/ai-transparency/... - AI Transparency & Accountability (Phase 48)
+    /api/v1/ai-accountability/... - AI Accountability (Phase 49)
     /api/v1/events            - SSE platform audit event stream
     /api/v1/usage             - Usage & billing data
 
@@ -1516,6 +1518,365 @@ def stream_platform_events():
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ============================================================================
+# AI TRANSPARENCY & ACCOUNTABILITY (Phase 48)
+# ============================================================================
+
+
+@api_bp.route("/ai-transparency/stats", methods=["GET"])
+def ai_transparency_stats():
+    """GET /api/v1/ai-transparency/stats -- Summary statistics."""
+    project_id = request.args.get("project_id")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+
+        def _count(table, pid=None):
+            try:
+                if pid:
+                    return conn.execute(
+                        "SELECT COUNT(*) FROM {} WHERE project_id = ?".format(table), (pid,)
+                    ).fetchone()[0]
+                return conn.execute("SELECT COUNT(*) FROM {}".format(table)).fetchone()[0]
+            except Exception:
+                return 0
+
+        stats = {
+            "inventory_count": _count("ai_use_case_inventory", project_id),
+            "model_card_count": _count("model_cards", project_id),
+            "system_card_count": _count("system_cards", project_id),
+            "confabulation_count": _count("confabulation_checks", project_id),
+            "transparency_score": None,
+            "fairness_score": None,
+        }
+        try:
+            where = "WHERE project_id = ?" if project_id else ""
+            params = (project_id,) if project_id else ()
+            row = conn.execute(
+                "SELECT overall_score FROM fairness_assessments {} ORDER BY created_at DESC LIMIT 1".format(where),
+                params,
+            ).fetchone()
+            if row:
+                stats["fairness_score"] = round(row["overall_score"], 1)
+        except Exception:
+            pass
+        conn.close()
+        return jsonify(stats)
+    except Exception as exc:
+        logger.error("ai_transparency_stats error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-transparency/frameworks", methods=["GET"])
+def ai_transparency_frameworks():
+    """GET /api/v1/ai-transparency/frameworks -- Framework assessment coverage."""
+    project_id = request.args.get("project_id")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        frameworks = []
+        for table, name in [
+            ("omb_m25_21_assessments", "OMB M-25-21"),
+            ("omb_m26_04_assessments", "OMB M-26-04"),
+            ("nist_ai_600_1_assessments", "NIST AI 600-1"),
+            ("gao_ai_assessments", "GAO-21-519SP"),
+        ]:
+            try:
+                where = "WHERE project_id = ?" if project_id else ""
+                params = (project_id,) if project_id else ()
+                total = conn.execute(
+                    "SELECT COUNT(DISTINCT requirement_id) FROM {} {}".format(table, where), params
+                ).fetchone()[0]
+                sat_where = "{} {} status IN ('satisfied','partially_satisfied')".format(
+                    where, "AND" if project_id else "WHERE"
+                )
+                satisfied = conn.execute(
+                    "SELECT COUNT(DISTINCT requirement_id) FROM {} {}".format(table, sat_where), params
+                ).fetchone()[0]
+                coverage = round(satisfied / total * 100, 1) if total > 0 else 0
+                frameworks.append({"name": name, "coverage": coverage, "total": total})
+            except Exception:
+                frameworks.append({"name": name, "coverage": 0, "total": 0})
+        conn.close()
+        return jsonify({"frameworks": frameworks})
+    except Exception as exc:
+        logger.error("ai_transparency_frameworks error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-transparency/inventory", methods=["GET"])
+def ai_transparency_inventory():
+    """GET /api/v1/ai-transparency/inventory -- AI use case inventory."""
+    project_id = request.args.get("project_id")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        where = "WHERE project_id = ?" if project_id else ""
+        params = (project_id,) if project_id else ()
+        rows = conn.execute(
+            "SELECT * FROM ai_use_case_inventory {} ORDER BY name".format(where), params
+        ).fetchall()
+        conn.close()
+        return jsonify({"items": [dict(r) for r in rows], "total": len(rows)})
+    except Exception as exc:
+        logger.error("ai_transparency_inventory error: %s", exc)
+        return jsonify({"items": [], "total": 0, "error": str(exc)})
+
+
+@api_bp.route("/ai-transparency/model-cards", methods=["GET"])
+def ai_transparency_model_cards():
+    """GET /api/v1/ai-transparency/model-cards -- Model cards listing."""
+    project_id = request.args.get("project_id")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        where = "WHERE project_id = ?" if project_id else ""
+        params = (project_id,) if project_id else ()
+        rows = conn.execute(
+            "SELECT id, project_id, model_name, version, created_at FROM model_cards {} ORDER BY created_at DESC".format(where),
+            params,
+        ).fetchall()
+        conn.close()
+        return jsonify({"cards": [dict(r) for r in rows], "total": len(rows)})
+    except Exception as exc:
+        logger.error("ai_transparency_model_cards error: %s", exc)
+        return jsonify({"cards": [], "total": 0, "error": str(exc)})
+
+
+@api_bp.route("/ai-transparency/gaps", methods=["GET"])
+def ai_transparency_gaps():
+    """GET /api/v1/ai-transparency/gaps -- Transparency gaps from latest audit."""
+    project_id = request.args.get("project_id", "default")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.ai_transparency_audit import run_transparency_audit
+        result = run_transparency_audit(project_id, db_path=db_path)
+        return jsonify({"gaps": result.get("gaps", []), "gap_count": result.get("gap_count", 0)})
+    except Exception as exc:
+        logger.error("ai_transparency_gaps error: %s", exc)
+        return jsonify({"gaps": [], "gap_count": 0, "error": str(exc)})
+
+
+@api_bp.route("/ai-transparency/audit", methods=["POST"])
+def ai_transparency_audit():
+    """POST /api/v1/ai-transparency/audit -- Run full transparency audit."""
+    data = request.get_json(force=True, silent=True) or {}
+    project_id = data.get("project_id", "default")
+    project_dir = data.get("project_dir")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.ai_transparency_audit import run_transparency_audit
+        result = run_transparency_audit(project_id, project_dir, db_path=db_path)
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("ai_transparency_audit error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-transparency/model-card", methods=["POST"])
+def ai_transparency_gen_model_card():
+    """POST /api/v1/ai-transparency/model-card -- Generate a model card."""
+    data = request.get_json(force=True, silent=True) or {}
+    project_id = data.get("project_id", "default")
+    model_name = data.get("model_name")
+    if not model_name:
+        return _error("model_name is required", status=400)
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.model_card_generator import generate_model_card
+        result = generate_model_card(project_id, model_name, db_path=db_path)
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("ai_transparency_gen_model_card error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-transparency/system-card", methods=["POST"])
+def ai_transparency_gen_system_card():
+    """POST /api/v1/ai-transparency/system-card -- Generate a system card."""
+    data = request.get_json(force=True, silent=True) or {}
+    project_id = data.get("project_id", "default")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.system_card_generator import generate_system_card
+        result = generate_system_card(project_id, db_path=db_path)
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("ai_transparency_gen_system_card error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+# ============================================================================
+# AI ACCOUNTABILITY (Phase 49)
+# ============================================================================
+
+
+@api_bp.route("/ai-accountability/stats", methods=["GET"])
+def ai_accountability_stats():
+    """GET /api/v1/ai-accountability/stats -- Summary statistics."""
+    project_id = request.args.get("project_id", "default")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+
+        def _cnt(table, extra=""):
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM {} WHERE project_id = ? {}".format(table, extra),
+                    (project_id,),
+                ).fetchone()
+                return row["cnt"] if row else 0
+            except Exception:
+                return 0
+
+        stats = {
+            "oversight_plans": _cnt("ai_oversight_plans"),
+            "appeals": _cnt("ai_accountability_appeals"),
+            "open_appeals": _cnt("ai_accountability_appeals", "AND appeal_status IN ('submitted', 'under_review')"),
+            "caio_designated": _cnt("ai_caio_registry"),
+            "incidents": _cnt("ai_incident_log"),
+            "open_incidents": _cnt("ai_incident_log", "AND status IN ('open', 'investigating')"),
+            "ethics_reviews": _cnt("ai_ethics_reviews"),
+            "reassessments": _cnt("ai_reassessment_schedule"),
+        }
+        conn.close()
+        return jsonify(stats)
+    except Exception as exc:
+        logger.error("ai_accountability_stats error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-accountability/appeals", methods=["GET"])
+def ai_accountability_appeals():
+    """GET /api/v1/ai-accountability/appeals -- List appeals."""
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM ai_accountability_appeals ORDER BY created_at DESC LIMIT 100"
+        ).fetchall()
+        conn.close()
+        return jsonify({"appeals": [dict(r) for r in rows], "total": len(rows)})
+    except Exception as exc:
+        logger.error("ai_accountability_appeals error: %s", exc)
+        return jsonify({"appeals": [], "total": 0, "error": str(exc)})
+
+
+@api_bp.route("/ai-accountability/incidents", methods=["GET"])
+def ai_accountability_incidents():
+    """GET /api/v1/ai-accountability/incidents -- List incidents."""
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM ai_incident_log "
+            "ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 "
+            "WHEN 'medium' THEN 3 ELSE 4 END, created_at DESC LIMIT 100"
+        ).fetchall()
+        conn.close()
+        return jsonify({"incidents": [dict(r) for r in rows], "total": len(rows)})
+    except Exception as exc:
+        logger.error("ai_accountability_incidents error: %s", exc)
+        return jsonify({"incidents": [], "total": 0, "error": str(exc)})
+
+
+@api_bp.route("/ai-accountability/overdue", methods=["GET"])
+def ai_accountability_overdue():
+    """GET /api/v1/ai-accountability/overdue -- Overdue reassessments."""
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM ai_reassessment_schedule "
+            "WHERE next_due < date('now') ORDER BY next_due ASC"
+        ).fetchall()
+        conn.close()
+        return jsonify({"overdue": [dict(r) for r in rows], "total": len(rows)})
+    except Exception as exc:
+        logger.error("ai_accountability_overdue error: %s", exc)
+        return jsonify({"overdue": [], "total": 0, "error": str(exc)})
+
+
+@api_bp.route("/ai-accountability/audit", methods=["POST"])
+def ai_accountability_audit():
+    """POST /api/v1/ai-accountability/audit -- Run accountability audit."""
+    data = request.get_json(force=True, silent=True) or {}
+    project_id = data.get("project_id", "default")
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.ai_accountability_audit import run_accountability_audit
+        result = run_accountability_audit(project_id, db_path=db_path)
+        return jsonify(result)
+    except Exception as exc:
+        logger.error("ai_accountability_audit error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-accountability/appeal", methods=["POST"])
+def ai_accountability_file_appeal():
+    """POST /api/v1/ai-accountability/appeal -- File an appeal."""
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.accountability_manager import file_appeal
+        result = file_appeal(
+            project_id=data.get("project_id", "default"),
+            appellant=data.get("appellant", ""),
+            ai_system=data.get("ai_system", ""),
+            decision_contested=data.get("decision_contested", ""),
+            db_path=db_path,
+        )
+        return jsonify(result), 201
+    except Exception as exc:
+        logger.error("ai_accountability_file_appeal error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
+
+
+@api_bp.route("/ai-accountability/incident", methods=["POST"])
+def ai_accountability_log_incident():
+    """POST /api/v1/ai-accountability/incident -- Log an incident."""
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        _, get_db_path, _ = _import_tenant_db()
+        db_path = get_db_path(g.tenant_id)
+        from tools.compliance.ai_incident_response import log_incident
+        result = log_incident(
+            project_id=data.get("project_id", "default"),
+            incident_type=data.get("incident_type", "other"),
+            description=data.get("description", ""),
+            ai_system=data.get("ai_system", ""),
+            severity=data.get("severity", "medium"),
+            reported_by=data.get("reported_by", ""),
+            db_path=db_path,
+        )
+        return jsonify(result), 201
+    except Exception as exc:
+        logger.error("ai_accountability_log_incident error: %s", exc)
+        return _error(str(exc), code="INTERNAL_ERROR", status=500)
 
 
 # ============================================================================

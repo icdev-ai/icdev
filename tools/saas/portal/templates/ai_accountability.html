@@ -1,0 +1,245 @@
+<!-- [TEMPLATE: CUI // SP-CTI] -->
+{% extends "portal_base.html" %}
+{% set active_page = "ai_accountability" %}
+{% block title %}AI Accountability - {{ tenant_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="{{ url_for('portal.dashboard') }}">Home</a>
+    <span class="separator">/</span>
+    <a href="{{ url_for('portal.compliance') }}">Compliance</a>
+    <span class="separator">/</span>
+    <span class="current">AI Accountability</span>
+</nav>
+<div class="page-header">
+    <h1>AI Accountability</h1>
+    <p>Oversight plans, appeals, incident response, CAIO registry, ethics reviews, reassessment schedules (Phase 49)</p>
+</div>
+
+<!-- Stat Grid -->
+<div class="card">
+    <h2>Overview</h2>
+    <div class="stat-row" style="display:flex;gap:2rem;flex-wrap:wrap;margin:1rem 0;">
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-oversight">--</div>
+            <div style="color:#666;font-size:0.85rem;">Oversight Plans</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-appeals">--</div>
+            <div style="color:#666;font-size:0.85rem;">Appeals</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-open-appeals">--</div>
+            <div style="color:#666;font-size:0.85rem;">Open Appeals</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-incidents">--</div>
+            <div style="color:#666;font-size:0.85rem;">Incidents</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-open-incidents">--</div>
+            <div style="color:#666;font-size:0.85rem;">Open Incidents</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-caio">--</div>
+            <div style="color:#666;font-size:0.85rem;">CAIO Designated</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-ethics">--</div>
+            <div style="color:#666;font-size:0.85rem;">Ethics Reviews</div>
+        </div>
+        <div style="text-align:center;min-width:120px;">
+            <div style="font-size:2rem;font-weight:bold;" id="stat-reassessments">--</div>
+            <div style="color:#666;font-size:0.85rem;">Reassessments</div>
+        </div>
+    </div>
+</div>
+
+<!-- Appeals -->
+<div class="card">
+    <h2>Recent Appeals</h2>
+    <div id="appeals-container">
+        <p class="empty-state">Loading appeals...</p>
+    </div>
+</div>
+
+<!-- Incidents -->
+<div class="card">
+    <h2>Incidents</h2>
+    <div id="incidents-container">
+        <p class="empty-state">Loading incidents...</p>
+    </div>
+</div>
+
+<!-- Overdue Reassessments -->
+<div class="card">
+    <h2>Overdue Reassessments</h2>
+    <div id="overdue-container">
+        <p class="empty-state">Loading overdue reassessments...</p>
+    </div>
+</div>
+
+<!-- Actions -->
+<div class="card">
+    <h2>Actions</h2>
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button onclick="runAccountabilityAudit()" id="btn-audit" class="btn btn-primary">Run Accountability Audit</button>
+        <button onclick="fileAppeal()" id="btn-appeal" class="btn btn-info">File Appeal</button>
+        <button onclick="logIncident()" id="btn-incident" class="btn btn-warning">Log Incident</button>
+    </div>
+    <div id="action-status" style="margin:0.5rem 0;"></div>
+</div>
+
+<script>
+(function() {
+    var apiKey = document.querySelector('meta[name="api-key"]');
+    var headers = {'Content-Type': 'application/json'};
+    if (apiKey) headers['Authorization'] = 'Bearer ' + apiKey.content;
+
+    function setStatus(msg, color) {
+        document.getElementById('action-status').innerHTML = '<span style="color:' + (color||'#666') + '">' + msg + '</span>';
+    }
+
+    function escapeHtml(text) {
+        var d = document.createElement('div');
+        d.textContent = text || '';
+        return d.innerHTML;
+    }
+
+    // Load stats
+    fetch('/api/v1/ai-accountability/stats', {headers: headers})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.error) return;
+            document.getElementById('stat-oversight').textContent = d.oversight_plans || 0;
+            document.getElementById('stat-appeals').textContent = d.appeals || 0;
+            document.getElementById('stat-open-appeals').textContent = d.open_appeals || 0;
+            document.getElementById('stat-incidents').textContent = d.incidents || 0;
+            document.getElementById('stat-open-incidents').textContent = d.open_incidents || 0;
+            document.getElementById('stat-caio').textContent = d.caio_designated || 0;
+            document.getElementById('stat-ethics').textContent = d.ethics_reviews || 0;
+            document.getElementById('stat-reassessments').textContent = d.reassessments || 0;
+        }).catch(function() {});
+
+    // Load appeals
+    fetch('/api/v1/ai-accountability/appeals', {headers: headers})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.appeals || d.appeals.length === 0) {
+                document.getElementById('appeals-container').innerHTML = '<p class="empty-state">No appeals filed.</p>';
+                return;
+            }
+            var html = '<div class="table-wrapper"><table class="data-table" aria-label="AI accountability appeals"><thead><tr><th>Appellant</th><th>AI System</th><th>Decision Contested</th><th>Status</th><th>Filed</th></tr></thead><tbody>';
+            d.appeals.forEach(function(a) {
+                var cls = a.appeal_status === 'resolved' ? 'badge-success' : a.appeal_status === 'under_review' ? 'badge-warning' : 'badge-info';
+                html += '<tr><td>' + escapeHtml(a.appellant) + '</td><td>' + escapeHtml(a.ai_system) + '</td>';
+                html += '<td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(a.decision_contested) + '</td>';
+                html += '<td><span class="badge ' + cls + '">' + escapeHtml(a.appeal_status) + '</span></td>';
+                html += '<td class="td-nowrap">' + escapeHtml(a.created_at) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('appeals-container').innerHTML = html;
+        }).catch(function() {
+            document.getElementById('appeals-container').innerHTML = '<p class="empty-state">Could not load appeals data.</p>';
+        });
+
+    // Load incidents
+    fetch('/api/v1/ai-accountability/incidents', {headers: headers})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.incidents || d.incidents.length === 0) {
+                document.getElementById('incidents-container').innerHTML = '<p class="empty-state">No incidents logged.</p>';
+                return;
+            }
+            var html = '<div class="table-wrapper"><table class="data-table" aria-label="AI incident log"><thead><tr><th>Type</th><th>AI System</th><th>Severity</th><th>Status</th><th>Reported By</th><th>Created</th></tr></thead><tbody>';
+            d.incidents.forEach(function(inc) {
+                var cls = inc.severity === 'critical' ? 'badge-danger' : inc.severity === 'high' ? 'badge-warning' : inc.severity === 'medium' ? 'badge-info' : 'badge-success';
+                html += '<tr><td>' + escapeHtml(inc.incident_type) + '</td><td>' + escapeHtml(inc.ai_system) + '</td>';
+                html += '<td><span class="badge ' + cls + '">' + escapeHtml(inc.severity) + '</span></td>';
+                html += '<td>' + escapeHtml(inc.status) + '</td>';
+                html += '<td>' + escapeHtml(inc.reported_by) + '</td>';
+                html += '<td class="td-nowrap">' + escapeHtml(inc.created_at) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('incidents-container').innerHTML = html;
+        }).catch(function() {
+            document.getElementById('incidents-container').innerHTML = '<p class="empty-state">Could not load incidents data.</p>';
+        });
+
+    // Load overdue reassessments
+    fetch('/api/v1/ai-accountability/overdue', {headers: headers})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (!d.overdue || d.overdue.length === 0) {
+                document.getElementById('overdue-container').innerHTML = '<p class="empty-state">No overdue reassessments.</p>';
+                return;
+            }
+            var html = '<div class="table-wrapper"><table class="data-table" aria-label="Overdue reassessments"><thead><tr><th>Project</th><th>AI System</th><th>Next Due</th><th>Frequency</th></tr></thead><tbody>';
+            d.overdue.forEach(function(o) {
+                html += '<tr><td>' + escapeHtml(o.project_id) + '</td><td>' + escapeHtml(o.ai_system_id) + '</td>';
+                html += '<td class="td-nowrap"><span class="badge badge-danger">' + escapeHtml(o.next_due) + '</span></td>';
+                html += '<td>' + escapeHtml(o.frequency) + '</td></tr>';
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('overdue-container').innerHTML = html;
+        }).catch(function() {
+            document.getElementById('overdue-container').innerHTML = '<p class="empty-state">Could not load overdue data.</p>';
+        });
+
+    window.runAccountabilityAudit = function() {
+        document.getElementById('btn-audit').disabled = true;
+        setStatus('Running accountability audit...', '#1976d2');
+        fetch('/api/v1/ai-accountability/audit', {method: 'POST', headers: headers, body: JSON.stringify({project_id: 'default'})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-audit').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('Accountability audit complete. Refresh page for updated results.', '#4caf50');
+            })
+            .catch(function(e) { document.getElementById('btn-audit').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+
+    window.fileAppeal = function() {
+        var appellant = prompt('Appellant name:');
+        if (!appellant) return;
+        var aiSystem = prompt('AI system name:');
+        if (!aiSystem) return;
+        var decision = prompt('Decision being contested:');
+        if (!decision) return;
+        document.getElementById('btn-appeal').disabled = true;
+        setStatus('Filing appeal...', '#1976d2');
+        fetch('/api/v1/ai-accountability/appeal', {method: 'POST', headers: headers, body: JSON.stringify({project_id: 'default', appellant: appellant, ai_system: aiSystem, decision_contested: decision})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-appeal').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('Appeal filed successfully. Refresh page.', '#4caf50');
+            })
+            .catch(function(e) { document.getElementById('btn-appeal').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+
+    window.logIncident = function() {
+        var aiSystem = prompt('AI system name:');
+        if (!aiSystem) return;
+        var incidentType = prompt('Incident type (bias, safety, privacy, security, other):');
+        if (!incidentType) return;
+        var severity = prompt('Severity (critical, high, medium, low):');
+        if (!severity) return;
+        var description = prompt('Description:');
+        if (!description) return;
+        var reportedBy = prompt('Reported by:');
+        if (!reportedBy) return;
+        document.getElementById('btn-incident').disabled = true;
+        setStatus('Logging incident...', '#1976d2');
+        fetch('/api/v1/ai-accountability/incident', {method: 'POST', headers: headers, body: JSON.stringify({project_id: 'default', ai_system: aiSystem, incident_type: incidentType, severity: severity, description: description, reported_by: reportedBy})})
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                document.getElementById('btn-incident').disabled = false;
+                if (d.error) { setStatus('Error: ' + d.error, '#f44336'); return; }
+                setStatus('Incident logged successfully. Refresh page.', '#4caf50');
+            })
+            .catch(function(e) { document.getElementById('btn-incident').disabled = false; setStatus('Error: ' + e, '#f44336'); });
+    };
+})();
+</script>
+{% endblock %}

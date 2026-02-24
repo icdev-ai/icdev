@@ -4029,6 +4029,255 @@ CREATE INDEX IF NOT EXISTS idx_oscal_val_file ON oscal_validation_log(file_path)
 CREATE INDEX IF NOT EXISTS idx_oscal_val_validator ON oscal_validation_log(validator);
 CREATE INDEX IF NOT EXISTS idx_oscal_val_project ON oscal_validation_log(project_id);
 CREATE INDEX IF NOT EXISTS idx_oscal_val_created ON oscal_validation_log(created_at);
+
+-- ============================================================
+-- AI TRANSPARENCY & ACCOUNTABILITY (Phase 48, D307-D315)
+-- ============================================================
+
+-- ── OMB M-25-21 Assessments (BaseAssessor standard schema) ──
+CREATE TABLE IF NOT EXISTS omb_m25_21_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_assessed'
+        CHECK(status IN ('satisfied', 'partially_satisfied', 'not_satisfied', 'not_assessed', 'not_applicable')),
+    evidence TEXT,
+    notes TEXT,
+    nist_800_53_crosswalk TEXT,
+    crosswalk_status TEXT,
+    assessed_by TEXT DEFAULT 'icdev-compliance-engine',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_omb2521_project ON omb_m25_21_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_omb2521_requirement ON omb_m25_21_assessments(requirement_id);
+
+-- ── OMB M-26-04 Assessments (BaseAssessor standard schema) ──
+CREATE TABLE IF NOT EXISTS omb_m26_04_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_assessed'
+        CHECK(status IN ('satisfied', 'partially_satisfied', 'not_satisfied', 'not_assessed', 'not_applicable')),
+    evidence TEXT,
+    notes TEXT,
+    nist_800_53_crosswalk TEXT,
+    crosswalk_status TEXT,
+    assessed_by TEXT DEFAULT 'icdev-compliance-engine',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_omb2604_project ON omb_m26_04_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_omb2604_requirement ON omb_m26_04_assessments(requirement_id);
+
+-- ── NIST AI 600-1 Assessments (BaseAssessor standard schema) ──
+CREATE TABLE IF NOT EXISTS nist_ai_600_1_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_assessed'
+        CHECK(status IN ('satisfied', 'partially_satisfied', 'not_satisfied', 'not_assessed', 'not_applicable')),
+    evidence TEXT,
+    notes TEXT,
+    nist_800_53_crosswalk TEXT,
+    crosswalk_status TEXT,
+    assessed_by TEXT DEFAULT 'icdev-compliance-engine',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai6001_project ON nist_ai_600_1_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_ai6001_requirement ON nist_ai_600_1_assessments(requirement_id);
+
+-- ── GAO AI Assessments (BaseAssessor standard schema) ──
+CREATE TABLE IF NOT EXISTS gao_ai_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_date TEXT NOT NULL,
+    requirement_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_assessed'
+        CHECK(status IN ('satisfied', 'partially_satisfied', 'not_satisfied', 'not_assessed', 'not_applicable')),
+    evidence TEXT,
+    notes TEXT,
+    nist_800_53_crosswalk TEXT,
+    crosswalk_status TEXT,
+    assessed_by TEXT DEFAULT 'icdev-compliance-engine',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_gaoai_project ON gao_ai_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_gaoai_requirement ON gao_ai_assessments(requirement_id);
+
+-- ── Model Cards (OMB M-26-04, Google Model Cards format) ──
+CREATE TABLE IF NOT EXISTS model_cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    model_name TEXT NOT NULL,
+    card_data TEXT NOT NULL,
+    card_hash TEXT,
+    version INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, model_name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_model_cards_project ON model_cards(project_id);
+CREATE INDEX IF NOT EXISTS idx_model_cards_model ON model_cards(model_name);
+
+-- ── System Cards (ICDEV system-level AI documentation) ──
+CREATE TABLE IF NOT EXISTS system_cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    card_data TEXT NOT NULL,
+    card_hash TEXT,
+    version INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_system_cards_project ON system_cards(project_id);
+
+-- ── Confabulation Checks (NIST AI 600-1 GAI.1, append-only) ──
+CREATE TABLE IF NOT EXISTS confabulation_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    check_type TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    result TEXT NOT NULL,
+    risk_score REAL DEFAULT 0.0,
+    findings_count INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_confab_project ON confabulation_checks(project_id);
+CREATE INDEX IF NOT EXISTS idx_confab_created ON confabulation_checks(created_at);
+
+-- ── AI Use Case Inventory (OMB M-25-21 public inventory) ──
+CREATE TABLE IF NOT EXISTS ai_use_case_inventory (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    purpose TEXT,
+    risk_level TEXT DEFAULT 'minimal_risk'
+        CHECK(risk_level IN ('minimal_risk', 'high_impact', 'safety_impacting')),
+    classification TEXT DEFAULT 'CUI',
+    deployment_status TEXT DEFAULT 'development',
+    responsible_official TEXT,
+    oversight_role TEXT,
+    appeal_mechanism TEXT,
+    last_assessed TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_inventory_project ON ai_use_case_inventory(project_id);
+
+-- ── Fairness Assessments (OMB M-26-04 bias/fairness evidence, append-only) ──
+CREATE TABLE IF NOT EXISTS fairness_assessments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    assessment_data TEXT NOT NULL,
+    overall_score REAL DEFAULT 0.0,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fairness_project ON fairness_assessments(project_id);
+CREATE INDEX IF NOT EXISTS idx_fairness_created ON fairness_assessments(created_at);
+
+-- ============================================================
+-- AI ACCOUNTABILITY (Phase 49, D316-D321)
+-- ============================================================
+
+-- ── AI Oversight Plans (M25-OVR-1, GAO accountability, append-only) ──
+CREATE TABLE IF NOT EXISTS ai_oversight_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    plan_name TEXT NOT NULL,
+    plan_data TEXT NOT NULL,
+    approval_status TEXT DEFAULT 'draft'
+        CHECK(approval_status IN ('draft', 'submitted', 'approved', 'rejected')),
+    approved_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_oversight_project ON ai_oversight_plans(project_id);
+
+-- ── AI Accountability Appeals (M25-OVR-3, M26-REV-2, FAIR-7, append-only) ──
+CREATE TABLE IF NOT EXISTS ai_accountability_appeals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    appellant TEXT NOT NULL,
+    ai_system TEXT NOT NULL,
+    decision_contested TEXT,
+    appeal_status TEXT DEFAULT 'submitted'
+        CHECK(appeal_status IN ('submitted', 'under_review', 'resolved', 'dismissed')),
+    resolution TEXT,
+    resolved_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_appeals_project ON ai_accountability_appeals(project_id);
+CREATE INDEX IF NOT EXISTS idx_ai_appeals_status ON ai_accountability_appeals(appeal_status);
+
+-- ── AI CAIO Registry (M25-OVR-4, Chief AI Officer tracking) ──
+CREATE TABLE IF NOT EXISTS ai_caio_registry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    official_name TEXT NOT NULL,
+    official_role TEXT NOT NULL DEFAULT 'CAIO',
+    organization TEXT,
+    designation_date TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_caio_project ON ai_caio_registry(project_id);
+
+-- ── AI Incident Log (M25-RISK-4, GAO-MON-3, append-only) ──
+CREATE TABLE IF NOT EXISTS ai_incident_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    incident_type TEXT NOT NULL
+        CHECK(incident_type IN ('confabulation', 'bias_detected', 'unauthorized_access',
+              'model_drift', 'data_breach', 'safety_violation', 'appeal_escalation', 'other')),
+    ai_system TEXT,
+    severity TEXT DEFAULT 'medium'
+        CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+    description TEXT NOT NULL,
+    corrective_action TEXT,
+    status TEXT DEFAULT 'open'
+        CHECK(status IN ('open', 'investigating', 'mitigated', 'resolved', 'closed')),
+    reported_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_incident_project ON ai_incident_log(project_id);
+CREATE INDEX IF NOT EXISTS idx_ai_incident_status ON ai_incident_log(status);
+CREATE INDEX IF NOT EXISTS idx_ai_incident_severity ON ai_incident_log(severity);
+
+-- ── AI Reassessment Schedule (M25-INV-3, GAO-MON-4) ──
+CREATE TABLE IF NOT EXISTS ai_reassessment_schedule (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    ai_system TEXT NOT NULL,
+    frequency TEXT NOT NULL DEFAULT 'annual'
+        CHECK(frequency IN ('quarterly', 'semi_annual', 'annual', 'biennial')),
+    next_due TEXT,
+    last_completed TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, ai_system)
+);
+CREATE INDEX IF NOT EXISTS idx_ai_reassess_project ON ai_reassessment_schedule(project_id);
+CREATE INDEX IF NOT EXISTS idx_ai_reassess_due ON ai_reassessment_schedule(next_due);
+
+-- ── AI Ethics Reviews (GAO-GOV-2, GAO-GOV-3, M26-REV-3, FAIR-1, append-only) ──
+CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
+    review_type TEXT NOT NULL
+        CHECK(review_type IN ('bias_testing_policy', 'impact_assessment', 'ethics_framework',
+              'legal_compliance', 'pre_deployment', 'annual_review', 'other')),
+    ai_system TEXT,
+    findings TEXT,
+    opt_out_policy INTEGER DEFAULT 0,
+    legal_compliance_matrix INTEGER DEFAULT 0,
+    pre_deployment_review INTEGER DEFAULT 0,
+    reviewer TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_ethics_project ON ai_ethics_reviews(project_id);
+CREATE INDEX IF NOT EXISTS idx_ai_ethics_type ON ai_ethics_reviews(review_type);
 """
 
 
@@ -4128,6 +4377,14 @@ OBSERVABILITY_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN provenance_enabled INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN shap_enabled INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN xai_assessment_status TEXT DEFAULT 'not_assessed'",
+]
+
+# Phase 48: AI Transparency & Accountability columns (D307-D315)
+AI_TRANSPARENCY_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN ai_transparency_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN ai_inventory_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN model_card_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN gao_readiness_score REAL",
 ]
 
 # Spec-kit Pattern 7: Parallel task markers (D161)
@@ -4272,6 +4529,12 @@ def init_db(db_path=None):
             pass
     # Phase 46: Observability, Traceability & XAI columns (D280-D290)
     for sql in OBSERVABILITY_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 48: AI Transparency & Accountability columns (D307-D315)
+    for sql in AI_TRANSPARENCY_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

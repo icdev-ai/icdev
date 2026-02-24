@@ -1730,6 +1730,138 @@ TOOL_REGISTRY = {
         "description": "Run natural language compliance query (NLQ to SQL).",
         "input_schema": {"type": "object", "properties": {"query": {"type": "string"}, "project_id": {"type": "string"}}, "required": ["query"]},
     },
+    # ============================================================
+    # AI TRANSPARENCY & ACCOUNTABILITY (Phase 48, 10 tools)
+    # ============================================================
+    "omb_m25_21_assess": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_omb_m25_21_assess",
+        "description": "Run OMB M-25-21 High-Impact AI assessment. Checks AI inventory, risk classification, oversight plans, and transparency notices.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
+    },
+    "omb_m26_04_assess": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_omb_m26_04_assess",
+        "description": "Run OMB M-26-04 Unbiased AI assessment. Checks model cards, system cards, bias testing, fairness metrics, and human review processes.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
+    },
+    "nist_ai_600_1_assess": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nist_ai_600_1_assess",
+        "description": "Run NIST AI 600-1 GenAI Profile assessment. Checks confabulation detection, data privacy, information integrity, CBRN safeguards, and value chain transparency.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
+    },
+    "gao_ai_assess": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_gao_ai_assess",
+        "description": "Run GAO-21-519SP AI Accountability assessment. Checks governance, data, performance, and monitoring evidence.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
+    },
+    "model_card_generate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_model_card_generate",
+        "description": "Generate a model card per OMB M-26-04 / Google Model Cards format. Pulls data from AI BOM, telemetry, and XAI assessments.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "model_name": {"type": "string", "description": "Name of the AI model"}}, "required": ["project_id", "model_name"]},
+    },
+    "system_card_generate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_system_card_generate",
+        "description": "Generate a system-level AI card covering the entire AI system (models, tools, agents, data flows, risk profile).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]},
+    },
+    "ai_transparency_audit": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_transparency_audit",
+        "description": "Run cross-framework AI transparency audit across all 4 frameworks (OMB M-25-21, M-26-04, AI 600-1, GAO) with gap analysis.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "project_dir": {"type": "string"}}, "required": ["project_id"]},
+    },
+    "confabulation_check": {
+        "category": "security",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_confabulation_check",
+        "description": "Check text output for confabulation (hallucination) indicators using deterministic methods: citation verification, contradiction detection, confidence calibration.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "text": {"type": "string", "description": "Text to check for confabulation"}}, "required": ["project_id", "text"]},
+    },
+    "ai_inventory_register": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_inventory_register",
+        "description": "Register an AI use case in the OMB M-25-21 inventory. Classifies risk level (minimal, high-impact, safety-impacting).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "name": {"type": "string", "description": "AI component name"}, "purpose": {"type": "string"}, "risk_level": {"type": "string", "enum": ["minimal_risk", "high_impact", "safety_impacting"], "default": "minimal_risk"}}, "required": ["project_id", "name"]},
+    },
+    "fairness_assess": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_fairness_assess",
+        "description": "Assess fairness and bias compliance per OMB M-26-04. Checks documentation evidence for bias testing, fairness metrics, and appeal processes.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "project_dir": {"type": "string"}}, "required": ["project_id"]},
+    },
+    # ============================================================
+    # AI ACCOUNTABILITY (Phase 49, D316-D321, 8 tools)
+    # ============================================================
+    "ai_oversight_plan_create": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_oversight_plan_create",
+        "description": "Register a human oversight plan for an AI system (M25-OVR-1, GAO accountability).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "plan_name": {"type": "string"}, "plan_data": {"type": "string"}, "approved_by": {"type": "string"}}, "required": ["project_id", "plan_name"]},
+    },
+    "ai_caio_designate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_caio_designate",
+        "description": "Designate a Chief AI Officer or responsible AI official for a project (M25-OVR-4).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "official_name": {"type": "string"}, "official_role": {"type": "string", "default": "CAIO"}, "organization": {"type": "string"}}, "required": ["project_id", "official_name"]},
+    },
+    "ai_appeal_file": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_appeal_file",
+        "description": "File an accountability appeal for an AI system decision (M25-OVR-3, M26-REV-2, FAIR-7).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "appellant": {"type": "string"}, "ai_system": {"type": "string"}, "decision_contested": {"type": "string"}}, "required": ["project_id", "appellant", "ai_system"]},
+    },
+    "ai_appeal_resolve": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_appeal_resolve",
+        "description": "Resolve a previously filed AI accountability appeal.",
+        "input_schema": {"type": "object", "properties": {"appeal_id": {"type": "integer"}, "resolution": {"type": "string"}, "resolved_by": {"type": "string"}}, "required": ["appeal_id", "resolution", "resolved_by"]},
+    },
+    "ai_ethics_review_submit": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_ethics_review_submit",
+        "description": "Submit an ethics review for an AI system (GAO-GOV-2/3, M26-REV-3, FAIR-1).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "review_type": {"type": "string"}, "ai_system": {"type": "string"}, "findings": {"type": "string"}, "opt_out_policy": {"type": "boolean", "default": False}, "legal_compliance_matrix": {"type": "boolean", "default": False}, "pre_deployment_review": {"type": "boolean", "default": False}, "reviewer": {"type": "string"}}, "required": ["project_id", "review_type"]},
+    },
+    "ai_incident_log": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_incident_log",
+        "description": "Log an AI-specific incident for tracking and corrective action (M25-RISK-4, GAO-MON-3).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "incident_type": {"type": "string", "enum": ["confabulation", "bias_detected", "unauthorized_access", "model_drift", "data_breach", "safety_violation", "appeal_escalation", "other"]}, "ai_system": {"type": "string"}, "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"], "default": "medium"}, "description": {"type": "string"}, "reported_by": {"type": "string"}}, "required": ["project_id", "incident_type", "description"]},
+    },
+    "ai_reassessment_schedule": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_reassessment_schedule",
+        "description": "Create or update a reassessment schedule for an AI system (M25-INV-3, GAO-MON-4).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "ai_system": {"type": "string"}, "frequency": {"type": "string", "enum": ["monthly", "quarterly", "semi_annual", "annual"], "default": "annual"}, "next_due": {"type": "string", "description": "ISO date for next reassessment"}}, "required": ["project_id", "ai_system"]},
+    },
+    "ai_accountability_audit": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ai_accountability_audit",
+        "description": "Run cross-framework AI accountability audit across all 4 frameworks with gap analysis and remediation guidance (Phase 49).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "project_dir": {"type": "string"}}, "required": ["project_id"]},
+    },
 }
 
 

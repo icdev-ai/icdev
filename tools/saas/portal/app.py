@@ -22,6 +22,9 @@ Routes:
     GET  /portal/keys      -> API key management
     GET  /portal/usage     -> Usage metrics
     GET  /portal/audit     -> Audit trail viewer
+    GET  /portal/prod-audit -> Production readiness audit (Phase 47)
+    GET  /portal/ai-transparency -> AI Transparency & Accountability (Phase 48)
+    GET  /portal/ai-accountability -> AI Accountability (Phase 49)
     GET  /portal/logout    -> Clear session, redirect to login
 
 Usage:
@@ -1134,4 +1137,115 @@ def chat_streams():
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
         active_page="chat-streams",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Production Readiness Audit (Phase 47, D291-D300)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/prod-audit")
+@_portal_auth_required
+def prod_audit():
+    """Production readiness audit — tenant-scoped (D291-D300)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    audits = []
+    remediations = []
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            try:
+                rows = tconn.execute(
+                    "SELECT id, overall_pass, total_checks, passed, failed, warned, "
+                    "skipped, categories_run, duration_ms, created_at "
+                    "FROM production_audits ORDER BY created_at DESC LIMIT 50"
+                ).fetchall()
+                audits = [dict(r) for r in rows]
+            except Exception:
+                pass
+            try:
+                rows = tconn.execute(
+                    "SELECT id, source_audit_id, check_id, check_name, category, "
+                    "confidence, tier, status, fix_strategy, message, duration_ms, "
+                    "verification_status, dry_run, created_at "
+                    "FROM remediation_audit_log ORDER BY created_at DESC LIMIT 50"
+                ).fetchall()
+                remediations = [dict(r) for r in rows]
+            except Exception:
+                pass
+        finally:
+            tconn.close()
+
+    return render_template(
+        "prod_audit.html",
+        tenant_name=tenant_name,
+        audits=audits,
+        remediations=remediations,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: AI Transparency & Accountability (Phase 48)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/ai-transparency")
+@_portal_auth_required
+def ai_transparency():
+    """AI Transparency & Accountability — tenant-scoped (Phase 48)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    inventory = []
+    model_cards = []
+    tconn = _get_tenant_conn(tenant_id)
+    if tconn:
+        try:
+            try:
+                rows = tconn.execute(
+                    "SELECT * FROM ai_use_case_inventory ORDER BY name"
+                ).fetchall()
+                inventory = [dict(r) for r in rows]
+            except Exception:
+                pass
+            try:
+                rows = tconn.execute(
+                    "SELECT id, project_id, model_name, version, created_at "
+                    "FROM model_cards ORDER BY created_at DESC LIMIT 50"
+                ).fetchall()
+                model_cards = [dict(r) for r in rows]
+            except Exception:
+                pass
+        finally:
+            tconn.close()
+
+    return render_template(
+        "ai_transparency.html",
+        tenant_name=tenant_name,
+        inventory=inventory,
+        model_cards=model_cards,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: AI Accountability (Phase 49)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/ai-accountability")
+@_portal_auth_required
+def ai_accountability():
+    """AI Accountability — oversight plans, appeals, incidents (Phase 49)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    return render_template(
+        "ai_accountability.html",
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
     )
