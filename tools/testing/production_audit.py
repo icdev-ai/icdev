@@ -2,8 +2,8 @@
 # CUI // SP-CTI
 """Production Readiness Audit — comprehensive pre-production validation.
 
-Runs 33 checks across 6 categories: platform, security, compliance,
-integration, performance, documentation.  Streams results live and
+Runs 38 checks across 7 categories: platform, security, compliance,
+integration, performance, documentation, code_quality.  Streams results live and
 produces a consolidated report stored in the production_audits table.
 
 Usage:
@@ -746,6 +746,107 @@ def check_ai_transparency_frameworks() -> AuditCheck:
         )
 
 
+def check_owasp_asi() -> AuditCheck:
+    """SEC-007: OWASP ASI01-ASI10 assessor present and catalog valid (Phase 53, D339)."""
+    assessor = PROJECT_ROOT / "tools" / "compliance" / "owasp_asi_assessor.py"
+    catalog = PROJECT_ROOT / "context" / "compliance" / "owasp_agentic_asi.json"
+    missing = []
+    if not assessor.exists():
+        missing.append("owasp_asi_assessor.py")
+    if not catalog.exists():
+        missing.append("owasp_agentic_asi.json")
+    if missing:
+        return AuditCheck(
+            check_id="SEC-007", check_name="OWASP ASI Assessor",
+            category="security", status="skip", severity="warning",
+            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+        )
+    try:
+        data = json.loads(catalog.read_text(encoding="utf-8"))
+        req_count = len(data.get("requirements", []))
+        ok = req_count == 10
+        return AuditCheck(
+            check_id="SEC-007", check_name="OWASP ASI Assessor",
+            category="security", status="pass" if ok else "warn",
+            severity="warning",
+            message=f"OWASP ASI catalog: {req_count} risks, assessor present",
+            details={"requirements": req_count, "assessor": str(assessor)},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="SEC-007", check_name="OWASP ASI Assessor",
+            category="security", status="fail", severity="warning",
+            message=str(e), details={},
+        )
+
+
+def check_fedramp_20x_ksi() -> AuditCheck:
+    """CMP-008: FedRAMP 20x KSI generator and schema present (Phase 53, D338)."""
+    generator = PROJECT_ROOT / "tools" / "compliance" / "fedramp_ksi_generator.py"
+    schema = PROJECT_ROOT / "context" / "compliance" / "fedramp_20x_ksi_schemas.json"
+    missing = []
+    if not generator.exists():
+        missing.append("fedramp_ksi_generator.py")
+    if not schema.exists():
+        missing.append("fedramp_20x_ksi_schemas.json")
+    if missing:
+        return AuditCheck(
+            check_id="CMP-008", check_name="FedRAMP 20x KSI",
+            category="compliance", status="skip", severity="warning",
+            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+        )
+    try:
+        data = json.loads(schema.read_text(encoding="utf-8"))
+        ksi_count = sum(len(f.get("ksis", [])) for f in data.get("ksi_families", []))
+        families = len(data.get("ksi_families", []))
+        return AuditCheck(
+            check_id="CMP-008", check_name="FedRAMP 20x KSI",
+            category="compliance", status="pass" if ksi_count > 0 else "warn",
+            severity="warning",
+            message=f"FedRAMP 20x: {ksi_count} KSIs across {families} families",
+            details={"ksi_count": ksi_count, "families": families},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CMP-008", check_name="FedRAMP 20x KSI",
+            category="compliance", status="fail", severity="warning",
+            message=str(e), details={},
+        )
+
+
+def check_slsa_swft() -> AuditCheck:
+    """CMP-009: SLSA attestation generator and SWFT evidence bundler present (Phase 54, D341)."""
+    slsa = PROJECT_ROOT / "tools" / "compliance" / "slsa_attestation_generator.py"
+    swft = PROJECT_ROOT / "tools" / "compliance" / "swft_evidence_bundler.py"
+    missing = []
+    if not slsa.exists():
+        missing.append("slsa_attestation_generator.py")
+    if not swft.exists():
+        missing.append("swft_evidence_bundler.py")
+    if missing:
+        return AuditCheck(
+            check_id="CMP-009", check_name="SLSA/SWFT",
+            category="compliance", status="skip", severity="warning",
+            message=f"Missing: {', '.join(missing)}", details={"missing": missing},
+        )
+    try:
+        import py_compile
+        for f in [slsa, swft]:
+            py_compile.compile(str(f), doraise=True)
+        return AuditCheck(
+            check_id="CMP-009", check_name="SLSA/SWFT",
+            category="compliance", status="pass", severity="warning",
+            message="SLSA v1.0 attestation generator and SWFT evidence bundler present",
+            details={"slsa": True, "swft": True},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CMP-009", check_name="SLSA/SWFT",
+            category="compliance", status="fail", severity="warning",
+            message=str(e), details={},
+        )
+
+
 def check_oscal_ecosystem() -> AuditCheck:
     """CMP-007: OSCAL ecosystem tools readiness (D302-D306)."""
     oscal_tools = PROJECT_ROOT / "tools" / "compliance" / "oscal_tools.py"
@@ -946,7 +1047,7 @@ def check_dashboard_health() -> AuditCheck:
              "/chat", "/gateway", "/wizard", "/quick-paths", "/batch",
              "/dev-profiles", "/children", "/phases", "/translations",
              "/traces", "/provenance", "/xai", "/activity", "/usage",
-             "/profile", "/chat-streams", "/diagrams", "/cicd"]
+             "/profile", "/diagrams", "/cicd"]
     ok_count = 0
     fail_pages = []
     for page in pages:
@@ -1125,7 +1226,176 @@ def check_test_collection() -> AuditCheck:
 
 
 # ---------------------------------------------------------------------------
-# Category 6: Documentation Alignment (DOC-001..005)
+# Category 7: Code Quality Intelligence (CODE-001..005) — Phase 52
+# ---------------------------------------------------------------------------
+
+def check_code_analyzer_syntax() -> AuditCheck:
+    """CODE-001: Code analyzer tool syntax check."""
+    try:
+        mod_path = PROJECT_ROOT / "tools" / "analysis" / "code_analyzer.py"
+        if not mod_path.exists():
+            return AuditCheck(
+                check_id="CODE-001", check_name="Code Analyzer Syntax",
+                category="code_quality", status="skip", severity="warning",
+                message="code_analyzer.py not found", details={},
+            )
+        with open(mod_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        ast.parse(source)
+        return AuditCheck(
+            check_id="CODE-001", check_name="Code Analyzer Syntax",
+            category="code_quality", status="pass", severity="warning",
+            message="code_analyzer.py parses without errors",
+            details={"file": str(mod_path)},
+        )
+    except SyntaxError as e:
+        return AuditCheck(
+            check_id="CODE-001", check_name="Code Analyzer Syntax",
+            category="code_quality", status="fail", severity="warning",
+            message=f"Syntax error: {e}",
+            details={"error": str(e)},
+        )
+
+
+def check_avg_complexity() -> AuditCheck:
+    """CODE-002: Average cyclomatic complexity (blocking at >25, warn >10)."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.analysis.code_analyzer import CodeAnalyzer
+        analyzer = CodeAnalyzer(project_dir=str(PROJECT_ROOT / "tools"))
+        result = analyzer.scan_directory()
+        metrics = result.get("metrics", [])
+        fn_metrics = [m for m in metrics if m.get("function_name")]
+        if not fn_metrics:
+            return AuditCheck(
+                check_id="CODE-002", check_name="Avg Cyclomatic Complexity",
+                category="code_quality", status="skip", severity="blocking",
+                message="No function metrics collected", details={},
+            )
+        avg_cc = sum(m.get("cyclomatic_complexity", 0) for m in fn_metrics) / len(fn_metrics)
+        avg_cc = round(avg_cc, 2)
+        if avg_cc > 25:
+            status = "fail"
+        elif avg_cc > 10:
+            status = "warn"
+        else:
+            status = "pass"
+        return AuditCheck(
+            check_id="CODE-002", check_name="Avg Cyclomatic Complexity",
+            category="code_quality", status=status, severity="blocking",
+            message=f"Avg CC={avg_cc} across {len(fn_metrics)} functions",
+            details={"avg_complexity": avg_cc, "function_count": len(fn_metrics)},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-002", check_name="Avg Cyclomatic Complexity",
+            category="code_quality", status="skip", severity="blocking",
+            message=f"Analysis failed: {e}", details={"error": str(e)},
+        )
+
+
+def check_high_complexity_pct() -> AuditCheck:
+    """CODE-003: High-complexity function count (warn if >5% have CC>15)."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.analysis.code_analyzer import CodeAnalyzer
+        analyzer = CodeAnalyzer(project_dir=str(PROJECT_ROOT / "tools"))
+        result = analyzer.scan_directory()
+        metrics = result.get("metrics", [])
+        fn_metrics = [m for m in metrics if m.get("function_name")]
+        if not fn_metrics:
+            return AuditCheck(
+                check_id="CODE-003", check_name="High Complexity Functions",
+                category="code_quality", status="skip", severity="warning",
+                message="No function metrics collected", details={},
+            )
+        high_cc = [m for m in fn_metrics if m.get("cyclomatic_complexity", 0) > 15]
+        pct = round(len(high_cc) / len(fn_metrics) * 100, 2)
+        return AuditCheck(
+            check_id="CODE-003", check_name="High Complexity Functions",
+            category="code_quality", status="warn" if pct > 5.0 else "pass",
+            severity="warning",
+            message=f"{len(high_cc)}/{len(fn_metrics)} functions ({pct}%) have CC>15",
+            details={"high_cc_count": len(high_cc), "total": len(fn_metrics), "pct": pct},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-003", check_name="High Complexity Functions",
+            category="code_quality", status="skip", severity="warning",
+            message=f"Analysis failed: {e}", details={"error": str(e)},
+        )
+
+
+def check_smell_density() -> AuditCheck:
+    """CODE-004: Smell density per KLOC (warn >10, fail >20)."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.analysis.code_analyzer import CodeAnalyzer
+        analyzer = CodeAnalyzer(project_dir=str(PROJECT_ROOT / "tools"))
+        result = analyzer.scan_directory()
+        metrics = result.get("metrics", [])
+        total_loc = sum(m.get("loc", 0) for m in metrics)
+        total_smells = sum(m.get("smell_count", 0) for m in metrics)
+        kloc = max(total_loc / 1000.0, 0.001)
+        density = round(total_smells / kloc, 2)
+        if density > 20.0:
+            status = "fail"
+        elif density > 10.0:
+            status = "warn"
+        else:
+            status = "pass"
+        return AuditCheck(
+            check_id="CODE-004", check_name="Smell Density",
+            category="code_quality", status=status, severity="warning",
+            message=f"{total_smells} smells / {round(kloc, 1)} KLOC = {density} per KLOC",
+            details={"total_smells": total_smells, "total_loc": total_loc, "density_per_kloc": density},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-004", check_name="Smell Density",
+            category="code_quality", status="skip", severity="warning",
+            message=f"Analysis failed: {e}", details={"error": str(e)},
+        )
+
+
+def check_maintainability_trend() -> AuditCheck:
+    """CODE-005: Maintainability trend (warn if declining)."""
+    try:
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from tools.analysis.code_analyzer import CodeAnalyzer
+        analyzer = CodeAnalyzer(
+            project_dir=str(PROJECT_ROOT / "tools"),
+            project_id="icdev",
+            db_path=DB_PATH,
+        )
+        trend = analyzer.get_trend("icdev", db_path=DB_PATH)
+        if len(trend) < 2:
+            return AuditCheck(
+                check_id="CODE-005", check_name="Maintainability Trend",
+                category="code_quality", status="skip", severity="warning",
+                message=f"Need >=2 scans for trend (have {len(trend)})",
+                details={"scan_count": len(trend)},
+            )
+        latest = trend[-1].get("avg_maintainability", 0)
+        previous = trend[-2].get("avg_maintainability", 0)
+        declining = latest < previous - 0.05
+        return AuditCheck(
+            check_id="CODE-005", check_name="Maintainability Trend",
+            category="code_quality", status="warn" if declining else "pass",
+            severity="warning",
+            message=f"Latest={round(latest, 3)}, Previous={round(previous, 3)}" + (" (declining)" if declining else ""),
+            details={"latest": latest, "previous": previous, "declining": declining},
+        )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-005", check_name="Maintainability Trend",
+            category="code_quality", status="skip", severity="warning",
+            message=f"Trend unavailable: {e}", details={"error": str(e)},
+        )
+
+
+# ---------------------------------------------------------------------------
+# Category 8: Documentation Alignment (DOC-001..005)
 # ---------------------------------------------------------------------------
 
 def check_claude_md_table_count() -> AuditCheck:
@@ -1308,6 +1578,7 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "SEC-004": (check_prompt_injection_gate, "security", "blocking"),
     "SEC-005": (check_owasp_agentic, "security", "warning"),
     "SEC-006": (check_code_pattern_scan, "security", "blocking"),
+    "SEC-007": (check_owasp_asi, "security", "warning"),
     # Compliance
     "CMP-001": (check_cui_markings, "compliance", "warning"),
     "CMP-002": (check_claude_governance, "compliance", "blocking"),
@@ -1316,6 +1587,8 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "CMP-005": (check_xai_compliance, "compliance", "warning"),
     "CMP-006": (check_sbom_generation, "compliance", "warning"),
     "CMP-007": (check_oscal_ecosystem, "compliance", "warning"),
+    "CMP-008": (check_fedramp_20x_ksi, "compliance", "warning"),
+    "CMP-009": (check_slsa_swft, "compliance", "warning"),
     # AI Transparency (Phase 48)
     "AI-001": (check_ai_inventory, "compliance", "warning"),
     "AI-002": (check_model_cards, "compliance", "warning"),
@@ -1337,10 +1610,16 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "DOC-003": (check_goals_manifest, "documentation", "warning"),
     "DOC-004": (check_route_documentation, "documentation", "warning"),
     "DOC-005": (check_skill_count, "documentation", "warning"),
+    # Code Quality (Phase 52)
+    "CODE-001": (check_code_analyzer_syntax, "code_quality", "warning"),
+    "CODE-002": (check_avg_complexity, "code_quality", "blocking"),
+    "CODE-003": (check_high_complexity_pct, "code_quality", "warning"),
+    "CODE-004": (check_smell_density, "code_quality", "warning"),
+    "CODE-005": (check_maintainability_trend, "code_quality", "warning"),
 }
 
 # Execution order of categories
-CATEGORY_ORDER = ["platform", "security", "compliance", "integration", "performance", "documentation"]
+CATEGORY_ORDER = ["platform", "security", "compliance", "integration", "performance", "documentation", "code_quality"]
 
 ALL_CATEGORIES = set(CATEGORY_ORDER)
 

@@ -416,7 +416,7 @@ class TestCheckE2eCoverage:
         e2e_dir = tmp_path / "e2e"
         e2e_dir.mkdir()
         for name in ["dashboard_health", "agents_monitoring", "activity_usage",
-                      "compliance_artifacts", "security_scan", "chat_streams", "saas_portal"]:
+                      "compliance_artifacts", "security_scan", "chat", "saas_portal"]:
             (e2e_dir / f"{name}.md").write_text(f"# {name}")
 
         result = check_e2e_test_coverage(tmp_path / "app.py", e2e_dir)

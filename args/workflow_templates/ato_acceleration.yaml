@@ -1,0 +1,54 @@
+# CUI // SP-CTI
+# ATO Acceleration Workflow — Categorize → Assess → SSP → POAM → SBOM
+description: "ATO acceleration: security categorization, multi-framework assessment, artifact generation"
+category: compliance
+steps:
+  - id: categorize
+    name: "FIPS 199 Security Categorization"
+    tool: "tools/compliance/fips199_categorizer.py"
+    args:
+      categorize: true
+    description: "Categorize system per FIPS 199 / SP 800-60"
+
+  - id: assess
+    name: "Multi-Framework Compliance Assessment"
+    tool: "tools/compliance/multi_regime_assessor.py"
+    depends_on: [categorize]
+    description: "Assess against all applicable compliance frameworks"
+
+  - id: ssp
+    name: "Generate SSP"
+    tool: "tools/compliance/ssp_generator.py"
+    depends_on: [assess]
+    description: "Generate System Security Plan"
+
+  - id: poam
+    name: "Generate POAM"
+    tool: "tools/compliance/poam_generator.py"
+    depends_on: [assess]
+    description: "Generate Plan of Action and Milestones"
+
+  - id: sbom
+    name: "Generate SBOM"
+    tool: "tools/compliance/sbom_generator.py"
+    args:
+      spec-version: "1.7"
+    inject_project_id: true
+    depends_on: []
+    description: "Generate Software Bill of Materials (CycloneDX 1.7)"
+
+  - id: slsa
+    name: "SLSA Provenance"
+    tool: "tools/compliance/slsa_attestation_generator.py"
+    args:
+      generate: true
+    depends_on: [sbom]
+    description: "Generate SLSA v1.0 provenance attestation"
+
+  - id: oscal
+    name: "Generate OSCAL SSP"
+    tool: "tools/compliance/oscal_generator.py"
+    args:
+      artifact: ssp
+    depends_on: [ssp]
+    description: "Generate OSCAL-formatted SSP"

@@ -195,9 +195,11 @@ class TestScoreReadinessMinimal:
 
         result = score_readiness(sid, db_path=db_path)
         dims = result["dimensions"]
-        assert set(dims.keys()) == {
-            "completeness", "clarity", "feasibility", "compliance", "testability",
-        }
+        # Core 5 dimensions always present; additional dimensions
+        # (devsecops_readiness, ai_governance_readiness) added by later phases
+        core_dims = {"completeness", "clarity", "feasibility", "compliance", "testability"}
+        assert core_dims.issubset(set(dims.keys())), \
+            f"Missing core dimensions: {core_dims - set(dims.keys())}"
         for dim_data in dims.values():
             assert "score" in dim_data
             assert "weight" in dim_data

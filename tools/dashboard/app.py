@@ -55,6 +55,10 @@ from tools.dashboard.api.oscal import oscal_api
 from tools.dashboard.api.prod_audit import prod_audit_api
 from tools.dashboard.api.ai_transparency import ai_transparency_api
 from tools.dashboard.api.ai_accountability import ai_accountability_api
+from tools.dashboard.api.code_quality import code_quality_api
+from tools.dashboard.api.fedramp_20x import fedramp_20x_api
+from tools.dashboard.api.evidence import evidence_api
+from tools.dashboard.api.lineage import lineage_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -188,6 +192,10 @@ def create_app() -> Flask:
     app.register_blueprint(prod_audit_api)
     app.register_blueprint(ai_transparency_api)
     app.register_blueprint(ai_accountability_api)
+    app.register_blueprint(code_quality_api)
+    app.register_blueprint(fedramp_20x_api)
+    app.register_blueprint(evidence_api)
+    app.register_blueprint(lineage_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -694,11 +702,6 @@ def create_app() -> Flask:
             )
         finally:
             conn.close()
-
-    @app.route("/chat-streams")
-    def chat_streams_page():
-        """Multi-stream parallel chat — Phase 44 (D257-D260)."""
-        return render_template("chat_streams.html")
 
     @app.route("/quick-paths")
     def quick_paths_page():
@@ -1325,6 +1328,47 @@ def create_app() -> Flask:
     def ai_accountability_page():
         """AI Accountability — oversight, appeals, CAIO, incidents, ethics (Phase 49, D316-D321)."""
         return render_template("ai_accountability.html")
+
+    @app.route("/code-quality")
+    def code_quality_page():
+        """Code Quality Intelligence — AST analysis, smells, maintainability, runtime feedback (Phase 52, D331-D337)."""
+        return render_template("code_quality.html")
+
+    @app.route("/fedramp-20x")
+    def fedramp_20x_page():
+        """FedRAMP 20x KSI Dashboard — KSI evidence generation, maturity levels, authorization package (Phase 53, D338)."""
+        return render_template("fedramp_20x.html")
+
+    @app.route("/evidence")
+    def evidence_page():
+        """Evidence Collection — universal evidence auto-collection across all frameworks (Phase 56, D347)."""
+        from tools.compliance.evidence_collector import FRAMEWORK_EVIDENCE_MAP, _get_connection, _table_exists
+        stats = {"total_frameworks": len(FRAMEWORK_EVIDENCE_MAP), "required_frameworks": 0, "frameworks": []}
+        try:
+            conn = _get_connection()
+            for fw_id, fw_config in FRAMEWORK_EVIDENCE_MAP.items():
+                if fw_config["required"]:
+                    stats["required_frameworks"] += 1
+                total = 0
+                for table_name in fw_config["tables"]:
+                    if _table_exists(conn, table_name):
+                        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+                        total += row[0]
+                stats["frameworks"].append({
+                    "id": fw_id,
+                    "description": fw_config["description"],
+                    "required": fw_config["required"],
+                    "total_records": total,
+                })
+            conn.close()
+        except Exception:
+            pass
+        return render_template("evidence.html", stats=stats)
+
+    @app.route("/lineage")
+    def lineage_page():
+        """Artifact Lineage — unified DAG visualization of digital thread, provenance, audit trail, SBOM (Phase 56, D348)."""
+        return render_template("lineage.html")
 
     @app.errorhandler(401)
     def unauthorized(e):

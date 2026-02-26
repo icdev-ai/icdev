@@ -375,7 +375,7 @@ def check_e2e_test_coverage(
         "activity",     # /activity, /usage
         "compliance",   # compliance artifacts
         "security",     # security scan results
-        "chat",         # /chat, /chat-streams
+        "chat",         # /chat (unified multi-stream + RICOAS)
         "portal",       # SaaS portal
     ]
 

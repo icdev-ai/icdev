@@ -1,0 +1,108 @@
+{
+  "framework_id": "eu_ai_act",
+  "framework_name": "EU Artificial Intelligence Act (Regulation 2024/1689)",
+  "version": "2024",
+  "description": "EU AI Act risk classification and requirements for AI systems placed on the EU market.",
+  "requirements": [
+    {
+      "id": "EUAI-01",
+      "title": "Risk Classification",
+      "family": "classification",
+      "description": "AI system must be classified into risk categories: unacceptable, high-risk, limited, or minimal risk.",
+      "nist_800_53_crosswalk": ["RA-2", "RA-3"]
+    },
+    {
+      "id": "EUAI-02",
+      "title": "Data Governance",
+      "family": "data_governance",
+      "description": "High-risk AI systems must use training, validation, and testing data sets subject to appropriate data governance practices.",
+      "nist_800_53_crosswalk": ["SA-3", "SI-12"]
+    },
+    {
+      "id": "EUAI-03",
+      "title": "Technical Documentation",
+      "family": "documentation",
+      "description": "Technical documentation must be drawn up and kept up to date before the AI system is placed on the market.",
+      "nist_800_53_crosswalk": ["SA-5", "PL-2"]
+    },
+    {
+      "id": "EUAI-04",
+      "title": "Record-Keeping",
+      "family": "logging",
+      "description": "High-risk AI systems must allow for automatic recording of events (logging) throughout the AI system lifecycle.",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "AU-6"]
+    },
+    {
+      "id": "EUAI-05",
+      "title": "Transparency",
+      "family": "transparency",
+      "description": "High-risk AI systems must be designed to ensure appropriate transparency to deployers.",
+      "nist_800_53_crosswalk": ["PL-4", "AT-2"]
+    },
+    {
+      "id": "EUAI-06",
+      "title": "Human Oversight",
+      "family": "oversight",
+      "description": "High-risk AI systems must be designed to allow effective human oversight during use.",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4"]
+    },
+    {
+      "id": "EUAI-07",
+      "title": "Accuracy, Robustness, Cybersecurity",
+      "family": "technical",
+      "description": "High-risk AI systems must achieve appropriate levels of accuracy, robustness, and cybersecurity.",
+      "nist_800_53_crosswalk": ["SA-11", "SI-2", "SC-7"]
+    },
+    {
+      "id": "EUAI-08",
+      "title": "Risk Management System",
+      "family": "risk_management",
+      "description": "A risk management system must be established, implemented, documented and maintained for high-risk AI systems.",
+      "nist_800_53_crosswalk": ["RA-1", "RA-2", "PM-9"]
+    },
+    {
+      "id": "EUAI-09",
+      "title": "Conformity Assessment",
+      "family": "conformity",
+      "description": "High-risk AI systems must undergo conformity assessment before being placed on the market.",
+      "nist_800_53_crosswalk": ["CA-2", "CA-6"]
+    },
+    {
+      "id": "EUAI-10",
+      "title": "Post-Market Monitoring",
+      "family": "monitoring",
+      "description": "Providers must establish a post-market monitoring system proportionate to the risk level.",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "PM-14"]
+    },
+    {
+      "id": "EUAI-11",
+      "title": "Incident Reporting",
+      "family": "incident",
+      "description": "Providers of high-risk AI systems must report serious incidents and malfunctions to market surveillance authorities.",
+      "nist_800_53_crosswalk": ["IR-6", "SI-5"]
+    },
+    {
+      "id": "EUAI-12",
+      "title": "Fundamental Rights Impact Assessment",
+      "family": "rights",
+      "description": "Deployers of high-risk AI systems must perform a fundamental rights impact assessment before deployment.",
+      "nist_800_53_crosswalk": ["RA-5", "PM-9"]
+    }
+  ],
+  "annex_iii_categories": [
+    {"id": "AX3-1", "title": "Biometric identification and categorisation of natural persons"},
+    {"id": "AX3-2", "title": "Management and operation of critical infrastructure"},
+    {"id": "AX3-3", "title": "Education and vocational training"},
+    {"id": "AX3-4", "title": "Employment, workers management and access to self-employment"},
+    {"id": "AX3-5", "title": "Access to essential private and public services"},
+    {"id": "AX3-6", "title": "Law enforcement"},
+    {"id": "AX3-7", "title": "Migration, asylum and border control management"},
+    {"id": "AX3-8", "title": "Administration of justice and democratic processes"}
+  ],
+  "risk_levels": [
+    {"level": "unacceptable", "description": "Banned AI practices (social scoring, real-time biometric identification)"},
+    {"level": "high_risk", "description": "AI systems in Annex III areas requiring full compliance"},
+    {"level": "limited_risk", "description": "AI systems with transparency obligations (chatbots, deepfakes)"},
+    {"level": "minimal_risk", "description": "AI systems with no specific requirements (spam filters, games)"}
+  ]
+}

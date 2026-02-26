@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Artifact Lineage - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <h1>Artifact Lineage</h1>
+  <p style="color:#666;">Phase 56 &mdash; Unified DAG visualization joining digital thread, provenance, audit trail, and SBOM (D348)</p>
+
+  <!-- Controls -->
+  <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;">
+    <input id="lin-project-id" type="text" placeholder="Project ID" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;width:240px;" />
+    <button onclick="loadLineage()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Load Lineage</button>
+  </div>
+
+  <!-- Stat Grid -->
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="lin-nodes" style="font-size:2rem;font-weight:bold;">--</div>
+      <div class="stat-label" style="color:#999;">Nodes</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="lin-edges" style="font-size:2rem;font-weight:bold;">--</div>
+      <div class="stat-label" style="color:#999;">Edges</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="lin-sources" style="font-size:2rem;font-weight:bold;">--</div>
+      <div class="stat-label" style="color:#999;">Sources</div>
+    </div>
+  </div>
+
+  <!-- SVG DAG Visualization -->
+  <h2 style="margin-top:1.5rem;">Lineage Graph</h2>
+  <div id="lin-svg-container" style="border:1px solid #ddd;border-radius:8px;padding:1rem;min-height:300px;background:#fafafa;overflow:auto;">
+    <svg id="lin-svg" role="img" aria-label="Artifact lineage DAG" width="100%" height="400" style="display:block;">
+      <text x="50%" y="50%" text-anchor="middle" fill="#999" font-size="14">Load a project to see the lineage graph</text>
+    </svg>
+  </div>
+
+  <!-- Node Table -->
+  <h2 style="margin-top:1.5rem;">Artifact Inventory</h2>
+  <div class="table-container">
+    <table id="lin-table" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid #ddd;">
+          <th style="text-align:left;padding:0.5rem;">ID</th>
+          <th style="text-align:left;padding:0.5rem;">Type</th>
+          <th style="text-align:left;padding:0.5rem;">Label</th>
+          <th style="text-align:left;padding:0.5rem;">Source</th>
+        </tr>
+      </thead>
+      <tbody id="lin-tbody">
+        <tr><td colspan="4" style="padding:1rem;text-align:center;color:#999;">No data loaded</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+var SOURCE_COLORS = {
+  digital_thread: '#1976d2',
+  provenance: '#7b1fa2',
+  audit_trail: '#388e3c',
+  sbom: '#f57c00'
+};
+
+function loadLineage() {
+  var pid = document.getElementById('lin-project-id').value.trim();
+  if (!pid) { alert('Enter a Project ID'); return; }
+  fetch('/api/lineage/graph?project_id=' + encodeURIComponent(pid))
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    document.getElementById('lin-nodes').textContent = data.summary.total_nodes;
+    document.getElementById('lin-edges').textContent = data.summary.total_edges;
+    document.getElementById('lin-sources').textContent = data.summary.sources.length;
+    renderSVG(data.nodes, data.edges);
+    renderTable(data.nodes);
+  });
+}
+
+function renderSVG(nodes, edges) {
+  var svg = document.getElementById('lin-svg');
+  var w = svg.clientWidth || 800;
+  var h = Math.max(400, nodes.length * 30);
+  svg.setAttribute('height', h);
+  svg.innerHTML = '';
+  if (nodes.length === 0) {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#999" font-size="14">No artifacts found for this project</text>';
+    return;
+  }
+  // Simple force-free layout: arrange by source in columns
+  var srcOrder = ['digital_thread', 'provenance', 'audit_trail', 'sbom'];
+  var colWidth = w / (srcOrder.length + 1);
+  var positions = {};
+  var counts = {};
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    var col = srcOrder.indexOf(n.source);
+    if (col === -1) col = srcOrder.length;
+    if (!counts[col]) counts[col] = 0;
+    counts[col]++;
+    var x = (col + 1) * colWidth;
+    var y = counts[col] * 35;
+    positions[n.id] = {x: x, y: y};
+    var color = SOURCE_COLORS[n.source] || '#666';
+    svg.innerHTML += '<circle cx="'+x+'" cy="'+y+'" r="6" fill="'+color+'" />';
+    svg.innerHTML += '<text x="'+(x+10)+'" y="'+(y+4)+'" font-size="11" fill="#333">'+escHtml(n.label.substring(0,40))+'</text>';
+  }
+  // Draw edges
+  var edgeHtml = '';
+  for (var j = 0; j < edges.length; j++) {
+    var e = edges[j];
+    var s = positions[e.source];
+    var t = positions[e.target];
+    if (s && t) {
+      edgeHtml += '<line x1="'+s.x+'" y1="'+s.y+'" x2="'+t.x+'" y2="'+t.y+'" stroke="#ccc" stroke-width="1" />';
+    }
+  }
+  svg.innerHTML = edgeHtml + svg.innerHTML; // edges behind nodes
+  svg.setAttribute('height', Math.max(h, (Math.max.apply(null, Object.values(counts)) + 1) * 35 + 20));
+}
+
+function renderTable(nodes) {
+  var tbody = document.getElementById('lin-tbody');
+  if (nodes.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:1rem;text-align:center;color:#999;">No artifacts found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    var color = SOURCE_COLORS[n.source] || '#666';
+    tbody.innerHTML += '<tr style="border-bottom:1px solid #eee;">'
+      + '<td style="padding:0.5rem;font-family:monospace;font-size:0.85rem;">' + escHtml(n.id) + '</td>'
+      + '<td style="padding:0.5rem;">' + escHtml(n.type) + '</td>'
+      + '<td style="padding:0.5rem;">' + escHtml(n.label) + '</td>'
+      + '<td style="padding:0.5rem;"><span style="color:'+color+';font-weight:600;">' + escHtml(n.source) + '</span></td></tr>';
+  }
+}
+
+function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+{% endblock %}

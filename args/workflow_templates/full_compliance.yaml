@@ -1,0 +1,43 @@
+# CUI // SP-CTI
+# Full Compliance Workflow — Detect → Multi-Regime Assess → Crosswalk
+description: "Full compliance: framework detection, multi-regime assessment, crosswalk analysis"
+category: compliance
+steps:
+  - id: detect
+    name: "Compliance Framework Detection"
+    tool: "tools/compliance/compliance_detector.py"
+    description: "Auto-detect applicable compliance frameworks"
+
+  - id: assess
+    name: "Multi-Regime Assessment"
+    tool: "tools/compliance/multi_regime_assessor.py"
+    depends_on: [detect]
+    description: "Assess all detected compliance frameworks"
+
+  - id: crosswalk
+    name: "Control Crosswalk Coverage"
+    tool: "tools/compliance/crosswalk_engine.py"
+    args:
+      coverage: true
+    depends_on: [assess]
+    description: "Crosswalk control coverage across all frameworks"
+
+  - id: ai_transparency
+    name: "AI Transparency Audit"
+    tool: "tools/compliance/ai_transparency_audit.py"
+    depends_on: [assess]
+    required: false
+    description: "AI transparency cross-framework audit"
+
+  - id: ai_accountability
+    name: "AI Accountability Audit"
+    tool: "tools/compliance/ai_accountability_audit.py"
+    depends_on: [assess]
+    required: false
+    description: "AI accountability cross-framework audit"
+
+  - id: production_audit
+    name: "Production Readiness Audit"
+    tool: "tools/testing/production_audit.py"
+    depends_on: [assess]
+    description: "30-check production readiness audit"

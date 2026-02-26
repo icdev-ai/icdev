@@ -31,8 +31,8 @@ Phase 50 closes this gap by integrating AI governance into the two primary opera
 3. Generate governance probe questions for missing pillars to capture requirements early in the intake flow
 4. Add ai_governance_readiness as a seventh dimension to readiness scoring, and implement the previously stubbed devsecops_readiness dimension
 5. Activate built-in extension hook handlers for governance context injection at the pre-LLM and post-tool hook points
-6. Display governance advisory messages in agent chat streams when AI governance gaps are detected
-7. Render a governance sidebar in chat showing real-time governance posture per project
+6. Display governance advisory messages in the unified agent chat when AI governance gaps are detected
+7. Render a governance sidebar in the unified chat showing real-time governance posture per project
 8. Consolidate all governance integration configuration into a single `args/ai_governance_config.yaml` file
 9. Reuse existing database tables from Phase 48 and Phase 49 without creating new tables
 

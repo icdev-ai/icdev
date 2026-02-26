@@ -60,6 +60,22 @@ Feature: <Feature Name>
 
 **Verify:** Feature file parses correctly with `behave --dry-run`.
 
+#### BDD Step Alignment Rules
+
+When writing Gherkin features and step definitions, follow these rules to prevent mismatches:
+
+1. **Match step definitions to tool return signatures.** Read the tool function's return type before writing Then steps. If a function returns `{"impacts": [...]}`, the step must access `result["impacts"]`, not iterate over `result` directly.
+
+2. **Use the exact field names from tool output.** If the tool returns `impact_severity`, do not write a step that checks `impact_score`. Run the tool once and inspect the output dict keys.
+
+3. **Trailing colons for data tables.** When a Gherkin step uses a data table, the step text MUST end with a colon. Example: `When I add the following entities:` (not `When I add the following entities`).
+
+4. **Article variants need separate decorators.** Behave treats `a` and `an` as different text. Either use a regex step (`@given('(?:a|an) "{type}" entity')`) or register both variants.
+
+5. **CHECK constraints in test DB.** If the tool code validates against a Python constant (e.g., `ENTITY_TYPES`), ensure the test database schema uses the same constant. Import `SCHEMA_SQL` from the init script rather than duplicating SQL in `conftest.py` or `environment.py`.
+
+6. **Tolerance for probabilistic outputs.** Monte Carlo and simulation results are non-deterministic. Use range checks (`assert 0.3 < value < 0.7`) not exact equality. Histogram bin counts should use `>=` thresholds, not `==`.
+
 ---
 
 ### Step 2: Generate pytest Test Cases (Step Definitions)

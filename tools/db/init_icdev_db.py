@@ -4278,6 +4278,89 @@ CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_ethics_project ON ai_ethics_reviews(project_id);
 CREATE INDEX IF NOT EXISTS idx_ai_ethics_type ON ai_ethics_reviews(review_type);
+
+-- ============================================================
+-- CODE INTELLIGENCE (Phase 52 — D331-D337)
+-- ============================================================
+
+-- ── Code Quality Metrics (append-only time-series, D332) ──
+CREATE TABLE IF NOT EXISTS code_quality_metrics (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    file_path TEXT NOT NULL,
+    function_name TEXT,
+    class_name TEXT,
+    language TEXT NOT NULL,
+    cyclomatic_complexity INTEGER DEFAULT 0,
+    cognitive_complexity INTEGER DEFAULT 0,
+    loc INTEGER DEFAULT 0,
+    loc_code INTEGER DEFAULT 0,
+    loc_comment INTEGER DEFAULT 0,
+    parameter_count INTEGER DEFAULT 0,
+    nesting_depth INTEGER DEFAULT 0,
+    import_count INTEGER DEFAULT 0,
+    class_count INTEGER DEFAULT 0,
+    function_count INTEGER DEFAULT 0,
+    smells_json TEXT DEFAULT '[]',
+    smell_count INTEGER DEFAULT 0,
+    maintainability_score REAL DEFAULT 0.0,
+    content_hash TEXT,
+    scan_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cqm_project ON code_quality_metrics(project_id);
+CREATE INDEX IF NOT EXISTS idx_cqm_scan ON code_quality_metrics(scan_id);
+CREATE INDEX IF NOT EXISTS idx_cqm_file ON code_quality_metrics(file_path);
+
+-- ── Runtime Feedback (append-only test-to-source correlation, D332/D334) ──
+CREATE TABLE IF NOT EXISTS runtime_feedback (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    source_file TEXT NOT NULL,
+    source_function TEXT,
+    test_file TEXT,
+    test_function TEXT,
+    test_passed INTEGER,
+    test_duration_ms REAL,
+    error_type TEXT,
+    error_message TEXT,
+    coverage_pct REAL,
+    run_id TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_rf_project ON runtime_feedback(project_id);
+CREATE INDEX IF NOT EXISTS idx_rf_run ON runtime_feedback(run_id);
+CREATE INDEX IF NOT EXISTS idx_rf_source_fn ON runtime_feedback(source_function);
+
+-- Phase 53: OWASP ASI01-ASI10 Assessments (D339)
+CREATE TABLE IF NOT EXISTS owasp_asi_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    assessment_date TEXT DEFAULT (datetime('now')),
+    results_json TEXT,
+    total_controls INTEGER DEFAULT 0,
+    satisfied_count INTEGER DEFAULT 0,
+    not_satisfied_count INTEGER DEFAULT 0,
+    coverage_pct REAL DEFAULT 0.0,
+    assessor_version TEXT DEFAULT '1.0',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_owasp_asi_project ON owasp_asi_assessments(project_id);
+
+-- Phase 57: EU AI Act Assessments (D349)
+CREATE TABLE IF NOT EXISTS eu_ai_act_assessments (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    assessment_date TEXT DEFAULT (datetime('now')),
+    results_json TEXT,
+    total_controls INTEGER DEFAULT 0,
+    satisfied_count INTEGER DEFAULT 0,
+    not_satisfied_count INTEGER DEFAULT 0,
+    coverage_pct REAL DEFAULT 0.0,
+    assessor_version TEXT DEFAULT '1.0',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_eu_ai_act_project ON eu_ai_act_assessments(project_id);
 """
 
 

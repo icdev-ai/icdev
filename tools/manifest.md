@@ -670,7 +670,7 @@
 |------|------|-------------|-------|--------|
 | Chat Manager | tools/dashboard/chat_manager.py | Multi-stream parallel chat: thread-per-context, max 5/user, message queue, mid-stream intervention (D257-D260, D265-D267) | (library) | ChatManager class |
 | Chat API | tools/dashboard/api/chat.py | Flask Blueprint: create/list/send/intervene/resume/delete chat contexts | /api/chat/* | JSON chat data |
-| Chat Streams JS | tools/dashboard/static/js/chat_streams.js | Multi-pane chat UI with intervention controls and real-time updates | (browser) | Chat UI |
+| Chat JS | tools/dashboard/static/js/chat.js | Unified multi-stream + RICOAS chat UI with intervention controls and real-time updates | (browser) | Chat UI |
 | State Tracker | tools/dashboard/state_tracker.py | Dirty-tracking state push: per-client version counters, debounced SSE, incremental updates (D268-D270) | (library) | StateTracker class |
 | Phase Loader | tools/dashboard/phase_loader.py | Load and render phase registry data for dashboard phases page | (library) | Phase data |
 | Extension Manager | tools/extensions/extension_manager.py | Active extension hook system: 10 hook points, behavioral/observational tiers, layered override (project > tenant > default) (D261-D264) | (library) | ExtensionManager class |
@@ -709,12 +709,66 @@
 | Provenance Page | tools/dashboard/templates/provenance.html | Provenance viewer: entity/activity tables, lineage query | (template) | HTML page |
 | XAI Page | tools/dashboard/templates/xai.html | XAI dashboard: assessment runner, coverage gauge, SHAP chart | (template) | HTML page |
 
+## Code Intelligence (Phase 52 — D331-D337)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Code Analyzer | tools/analysis/code_analyzer.py | AST self-analysis: per-function cyclomatic/cognitive complexity, nesting, params, LOC, smell detection, maintainability scoring (D331, D333, D337) | --project-dir, --file, --project-id, --store, --trend, --json, --human | Metrics JSON |
+| Runtime Feedback | tools/analysis/runtime_feedback.py | Test-to-source correlation: JUnit XML parsing, stdout fallback, per-function health scoring (D332, D334) | --xml, --stdout, --project-id, --health, --function, --json | Feedback JSON |
+| Code Quality API | tools/dashboard/api/code_quality.py | Flask Blueprint: summary stats, top-complex functions, smell distribution, trend data, runtime feedback, scan trigger | /api/code-quality/* | REST endpoints |
+| Code Quality Page | tools/dashboard/templates/code_quality.html | Dashboard: stat grid (7 metrics), SVG trend chart, smell bar chart, complex functions table, runtime feedback table | (template) | HTML page |
+| Code Quality Config | args/code_quality_config.yaml | Smell thresholds, maintainability weights (D337), audit thresholds, scan exclusion dirs | (config) | YAML config |
+
 ## AI Governance Integration (Phase 50)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | AI Governance Scorer | tools/requirements/ai_governance_scorer.py | Score AI governance readiness (6 components) for 7th readiness dimension | project_id, conn/db_path | JSON score + gaps |
 | AI Governance Chat Extension | tools/extensions/builtins/010_ai_governance_chat.py | Chat hook: detect AI keywords, check governance gaps, inject advisory messages | chat context dict | context + governance_advisory |
 | AI Governance Config | args/ai_governance_config.yaml | Intake detection keywords, chat governance, readiness weights, auto-trigger rules | (config) | YAML config |
+
+## FedRAMP 20x KSI + OWASP ASI (Phase 53)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| FedRAMP 20x KSI Generator | tools/compliance/fedramp_ksi_generator.py | Generate Key Security Indicators (KSIs) for FedRAMP 20x authorization. Maps ICDEV evidence to 61 KSI schemas. | --project-id, --ksi-id, --all, --json | KSI evidence manifest |
+| FedRAMP Auth Packager | tools/compliance/fedramp_authorization_packager.py | Bundle OSCAL SSP + KSI evidence into FedRAMP 20x authorization package | --project-id, --output-dir, --json | Authorization bundle |
+| FedRAMP 20x API | tools/dashboard/api/fedramp_20x.py | Blueprint: stats, KSI list, generate, package | /api/fedramp-20x/* | REST endpoints |
+| FedRAMP 20x Page | tools/dashboard/templates/fedramp_20x.html | Dashboard: stat-grid + KSI table + package status | (template) | HTML page |
+| KSI Schemas | context/compliance/fedramp_20x_ksi_schemas.json | 61 KSI definitions (id, title, family, evidence_sources, nist_crosswalk) | (catalog) | JSON catalog |
+| OWASP ASI Assessor | tools/compliance/owasp_asi_assessor.py | BaseAssessor for OWASP ASI01-ASI10 agentic AI risks. Maps 10 ASI risks to ICDEV controls via NIST 800-53 crosswalk. | --project-id, --json, --gate | Assessment JSON |
+| OWASP ASI Catalog | context/compliance/owasp_agentic_asi.json | 10 ASI risk definitions with NIST crosswalk | (catalog) | JSON catalog |
+
+## SWFT/SLSA + Cross-Phase Orchestration (Phase 54)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| SLSA Attestation Generator | tools/compliance/slsa_attestation_generator.py | Generate SLSA v1.0 provenance statements and VEX documents from build pipeline evidence | --project-id, --generate, --verify, --vex, --json | SLSA provenance + VEX |
+| SWFT Evidence Bundler | tools/compliance/swft_evidence_bundler.py | Bundle DoD SWFT evidence package (SLSA, SBOM, VEX, scan results) | --project-id, --output-dir, --json | SWFT bundle |
+| Workflow Composer | tools/orchestration/workflow_composer.py | Declarative cross-phase workflow engine using YAML templates + TopologicalSorter DAG | --template, --project-id, --dry-run, --list, --json | Workflow execution plan + results |
+| ATO Workflow Template | args/workflow_templates/ato_acceleration.yaml | Workflow: categorize → assess → SSP → POAM → SBOM | (template) | YAML workflow |
+| Security Workflow Template | args/workflow_templates/security_hardening.yaml | Workflow: SAST → deps → secrets → OWASP → ATLAS | (template) | YAML workflow |
+| Compliance Workflow Template | args/workflow_templates/full_compliance.yaml | Workflow: detect → multi-regime assess → crosswalk | (template) | YAML workflow |
+| Build Workflow Template | args/workflow_templates/build_deploy.yaml | Workflow: scaffold → test → build → lint → deploy | (template) | YAML workflow |
+
+## A2A v0.3 + MCP OAuth (Phase 55)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| A2A Agent Card Generator | tools/agent/a2a_agent_card_generator.py | Generate v0.3 Agent Cards with capabilities, protocolVersion, tasks/sendSubscribe | --all, --agent-id, --json | Agent Cards JSON |
+| A2A Discovery Server | tools/agent/a2a_discovery_server.py | Agent discovery endpoint serving /.well-known/agent.json for all 15 agents | (server) | JSON-RPC discovery |
+| MCP OAuth | tools/saas/mcp_oauth.py | OAuth 2.1 + HMAC offline + JWT token verification for MCP transport. Elicitation handler. Task manager. | MCPOAuthVerifier, MCPElicitationHandler, MCPTaskManager | Token verification, elicitation, tasks |
+
+## Compliance Evidence Auto-Collection + Lineage (Phase 56)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Evidence Collector | tools/compliance/evidence_collector.py | Universal evidence auto-collection across 14 compliance frameworks. DB query + file scan. | --project-id, --project-dir, --framework, --freshness, --list-frameworks, --json | Evidence manifest |
+| Evidence API | tools/dashboard/api/evidence.py | Blueprint: evidence stats, collect, freshness check, framework list | /api/evidence/* | REST endpoints |
+| Evidence Page | tools/dashboard/templates/evidence.html | Dashboard: evidence inventory, freshness status, collect trigger | (template) | HTML page |
+| Lineage API | tools/dashboard/api/lineage.py | Blueprint: artifact lineage DAG (digital thread + provenance + audit trail + SBOM), stats | /api/lineage/* | REST endpoints |
+| Lineage Page | tools/dashboard/templates/lineage.html | Dashboard: SVG DAG artifact visualization, color-coded by source | (template) | HTML page |
+
+## EU AI Act + Platform One (Phase 57)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| EU AI Act Classifier | tools/compliance/eu_ai_act_classifier.py | BaseAssessor for EU AI Act (Regulation 2024/1689) risk classification. 12 requirements via ISO 27001 bridge. | --project-id, --json, --gate | Classification JSON |
+| EU AI Act Catalog | context/compliance/eu_ai_act_annex_iii.json | 12 high-risk requirements, 8 Annex III categories, 4 risk levels with NIST crosswalk | (catalog) | JSON catalog |
+| Iron Bank Generator | tools/infra/ironbank_metadata_generator.py | Generate Platform One / Iron Bank hardening_manifest.yaml and container_approval.json for DoD Iron Bank submission. Language auto-detection. | --project-id, --project-dir, --output-dir, --generate, --validate, --json | Hardening manifest + approval record |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

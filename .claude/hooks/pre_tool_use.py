@@ -140,6 +140,13 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ai_accountability_appeals",
         "ai_incident_log",
         "ai_ethics_reviews",
+        # Phase 52 — Code Intelligence (D332)
+        "code_quality_metrics",
+        "runtime_feedback",
+        # Phase 53 — OWASP ASI + FedRAMP 20x (D339)
+        "owasp_asi_assessments",
+        # Phase 57 — EU AI Act (D349)
+        "eu_ai_act_assessments",
     ]
 
     if tool_name == "Bash":

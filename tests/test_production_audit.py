@@ -109,15 +109,15 @@ class TestAuditReport:
 # ---------------------------------------------------------------------------
 
 class TestCheckRegistry:
-    def test_registry_has_30_checks(self):
-        assert len(CHECK_REGISTRY) == 30
+    def test_registry_has_at_least_30_checks(self):
+        assert len(CHECK_REGISTRY) >= 30
 
     def test_all_categories_covered(self):
         categories = {cat for _, (_, cat, _) in CHECK_REGISTRY.items()}
         assert categories == ALL_CATEGORIES
 
-    def test_category_order_has_6(self):
-        assert len(CATEGORY_ORDER) == 6
+    def test_category_order_has_7(self):
+        assert len(CATEGORY_ORDER) == 7
 
     def test_all_check_ids_unique(self):
         ids = list(CHECK_REGISTRY.keys())

@@ -976,3 +976,103 @@ def handle_ai_accountability_audit(args: dict) -> dict:
         return run_accountability_audit(args["project_id"], db_path=DB_PATH)
     except Exception as exc:
         return {"error": str(exc)}
+
+
+# ============================================================
+# CODE INTELLIGENCE (Phase 52, D331-D337)
+# ============================================================
+
+def handle_code_analyze(args: dict) -> dict:
+    """Run AST-based code quality analysis."""
+    try:
+        from tools.analysis.code_analyzer import CodeAnalyzer
+        project_dir = args.get("project_dir", str(BASE_DIR / "tools"))
+        project_id = args.get("project_id")
+        analyzer = CodeAnalyzer(
+            project_dir=project_dir,
+            project_id=project_id,
+            db_path=DB_PATH,
+        )
+        result = analyzer.scan_directory()
+        if args.get("store"):
+            try:
+                stored = analyzer.store_metrics(
+                    result.get("metrics", []),
+                    result.get("scan_id", ""),
+                    db_path=DB_PATH,
+                )
+                result["stored_rows"] = stored
+            except Exception:
+                result["stored_rows"] = 0
+        # Summarize (don't return full metrics in MCP response)
+        metrics = result.pop("metrics", [])
+        result["function_count"] = len([m for m in metrics if m.get("function_name")])
+        return result
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_code_quality_report(args: dict) -> dict:
+    """Get code quality trend report."""
+    try:
+        from tools.analysis.code_analyzer import CodeAnalyzer
+        analyzer = CodeAnalyzer(project_id=args.get("project_id"), db_path=DB_PATH)
+        trend = analyzer.get_trend(args.get("project_id"), db_path=DB_PATH)
+        return {"project_id": args.get("project_id"), "trend": trend, "scan_count": len(trend)}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ironbank_generate(args: dict) -> dict:
+    """Generate Iron Bank hardening manifest and container approval record."""
+    try:
+        from tools.infra.ironbank_metadata_generator import generate_hardening_manifest
+        return generate_hardening_manifest(
+            project_id=args["project_id"],
+            project_dir=args.get("project_dir"),
+            output_dir=args.get("output_dir"),
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_ironbank_validate(args: dict) -> dict:
+    """Validate Iron Bank hardening manifest."""
+    try:
+        from tools.infra.ironbank_metadata_generator import validate_hardening_manifest
+        return validate_hardening_manifest(
+            project_id=args["project_id"],
+            manifest_path=args.get("manifest_path"),
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_eu_ai_act_classify(args: dict) -> dict:
+    """Run EU AI Act risk classification and compliance assessment."""
+    try:
+        from tools.compliance.eu_ai_act_classifier import EUAIActClassifier
+        assessor = EUAIActClassifier()
+        project = {"id": args["project_id"]}
+        result = assessor.assess(project, project_dir=args.get("project_dir"))
+        return result
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_runtime_feedback_collect(args: dict) -> dict:
+    """Collect runtime feedback from test results."""
+    try:
+        from tools.analysis.runtime_feedback import RuntimeFeedbackCollector
+        collector = RuntimeFeedbackCollector(
+            project_id=args.get("project_id"),
+            db_path=DB_PATH,
+        )
+        xml_path = Path(args["xml_path"])
+        return collector.collect_from_xml(
+            xml_path,
+            run_id=args.get("run_id"),
+            db_path=DB_PATH,
+        )
+    except Exception as exc:
+        return {"error": str(exc)}

@@ -55,9 +55,10 @@ class TestRegistration:
         assert removed is False
 
     def test_total_handler_count(self, manager):
+        baseline = manager.handler_count()  # builtins auto-loaded on init
         manager.register(ExtensionPoint.TOOL_EXECUTE_BEFORE, handler=lambda c: c, name="a")
         manager.register(ExtensionPoint.CHAT_MESSAGE_AFTER, handler=lambda c: c, name="b")
-        assert manager.handler_count() == 2
+        assert manager.handler_count() == baseline + 2
 
 
 # ---------------------------------------------------------------------------
@@ -216,13 +217,15 @@ class TestFileLoading:
 
 class TestIntrospection:
     def test_list_handlers(self, manager):
+        baseline = len(manager.list_handlers())  # builtins auto-loaded
         manager.register(ExtensionPoint.TOOL_EXECUTE_BEFORE, handler=lambda c: c, name="h1", priority=100)
         manager.register(ExtensionPoint.CHAT_MESSAGE_AFTER, handler=lambda c: c, name="h2", priority=200)
 
         all_handlers = manager.list_handlers()
-        assert len(all_handlers) == 2
+        assert len(all_handlers) == baseline + 2
         names = {h["name"] for h in all_handlers}
-        assert names == {"h1", "h2"}
+        assert "h1" in names
+        assert "h2" in names
 
     def test_list_handlers_filtered(self, manager):
         manager.register(ExtensionPoint.TOOL_EXECUTE_BEFORE, handler=lambda c: c, name="h1")

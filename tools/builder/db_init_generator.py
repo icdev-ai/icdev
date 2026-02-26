@@ -667,6 +667,20 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append(f'DB_PATH = Path(__file__).resolve().parent / "data" / "{safe_name}.db"')
     parts.append("")
     parts.append("")
+    parts.append("# " + "-" * 60)
+    parts.append("# PATTERN: Define CHECK constraint values as Python constants")
+    parts.append("# so SQL and Python stay in sync.  Example:")
+    parts.append("#")
+    parts.append("#   ENTITY_TYPES = ('person', 'organization', 'location')")
+    parts.append("#   _entity_check = ','.join(repr(t) for t in ENTITY_TYPES)")
+    parts.append("#")
+    parts.append("#   Then in SQL:")
+    parts.append(f"#   CHECK (entity_type IN ({{_entity_check}}))")
+    parts.append("#")
+    parts.append("# This avoids CHECK constraint mismatches when adding new types.")
+    parts.append("# " + "-" * 60)
+    parts.append("")
+    parts.append("")
     parts.append("# " + "=" * 60)
     parts.append("# CORE SQL -- always created")
     parts.append("# " + "=" * 60)
@@ -683,6 +697,19 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("_CAPABILITY_SQL_MAP = {")
     parts.append(migrate_map_src)
     parts.append("}")
+    parts.append("")
+    parts.append("")
+
+    # SCHEMA_SQL constant for test imports (BDD environment.py, conftest.py)
+    parts.append("# Combined SQL for test setup (import this in features/environment.py)")
+    if capability_init_calls:
+        cap_refs = " + ".join(
+            call_line.strip().replace("conn.executescript(", "").rstrip(")")
+            for call_line in capability_init_calls
+        )
+        parts.append(f"SCHEMA_SQL = CORE_SQL + {cap_refs}")
+    else:
+        parts.append("SCHEMA_SQL = CORE_SQL")
     parts.append("")
     parts.append("")
 

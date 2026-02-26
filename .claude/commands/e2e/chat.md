@@ -1,6 +1,6 @@
-# E2E Test: Chat Streams Multi-Pane Interface
+# E2E Test: Chat Multi-Pane Interface
 
-Verify the Phase 44 Chat Streams page loads correctly with multi-context UI, message send, and intervention controls.
+Verify the unified Chat page loads correctly with multi-context UI, RICOAS sidebar, message send, and intervention controls.
 
 ## Prerequisites
 - Flask dashboard running on http://localhost:5000
@@ -8,10 +8,10 @@ Verify the Phase 44 Chat Streams page loads correctly with multi-context UI, mes
 
 ## Steps
 
-1. Navigate to http://localhost:5000/chat-streams
+1. Navigate to http://localhost:5000/chat
 2. Wait for the page to fully load
-3. Verify the page title or heading contains "Chat Streams"
-4. Screenshot the full chat streams page
+3. Verify the page title or heading contains "Chat"
+4. Screenshot the full chat page
 
 5. Assert the CUI banner "CUI // SP-CTI" is visible at the top of the page
 6. Assert the CUI banner "CUI // SP-CTI" is visible at the bottom of the page
@@ -37,16 +37,16 @@ Verify the Phase 44 Chat Streams page loads correctly with multi-context UI, mes
 
 21. Navigate back to http://localhost:5000
 22. Verify the main dashboard loads without errors
-23. Navigate to http://localhost:5000/chat-streams again
+23. Navigate to http://localhost:5000/chat again
 24. Verify the previously created context is still listed in the sidebar
 
 ## Expected Results
-- Chat Streams page loads without errors (no 500, no tracebacks)
+- Chat page loads without errors (no 500, no tracebacks)
 - CUI // SP-CTI banners are visible on every page view
 - Context sidebar renders with create button
 - New context can be created and appears in list
 - Message input works and displays sent messages
-- Navigation to/from chat streams preserves context state
+- Navigation to/from chat preserves context state
 
 ## CUI Verification
 - Check that both header and footer CUI banners are present

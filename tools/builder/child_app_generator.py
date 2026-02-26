@@ -20,12 +20,14 @@ CLI: python tools/builder/child_app_generator.py --blueprint bp.json --project-p
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -338,7 +340,19 @@ def step_02_copy_and_adapt_tools(
 # ---------------------------------------------------------------------------
 
 def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
-    """Return skills for an agent based on its role."""
+    """Return skills for an agent based on its role.
+
+    Priority:
+    1. Blueprint agent 'skills' field (if provided by the blueprint)
+    2. Known ICDEV defaults (orchestrator, architect, builder, etc.)
+    3. Auto-generated from the agent's 'role' description
+    """
+    # 1. Check blueprint for explicit skills
+    for agent in blueprint.get("agents", []):
+        if agent.get("name") == agent_name and agent.get("skills"):
+            return agent["skills"]
+
+    # 2. Known ICDEV defaults for standard agents
     skills_map = {
         "orchestrator": [
             {
@@ -430,7 +444,22 @@ def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
             },
         ],
     }
-    return skills_map.get(agent_name, [])
+    if agent_name in skills_map:
+        return skills_map[agent_name]
+
+    # 3. Auto-generate skills from the agent's role description
+    for agent in blueprint.get("agents", []):
+        if agent.get("name") == agent_name:
+            role = agent.get("role", agent_name)
+            return [
+                {
+                    "id": f"{agent_name}-primary",
+                    "name": role.split(",")[0].strip().title()
+                    if role else agent_name.title(),
+                    "description": role or f"{agent_name} agent capabilities",
+                },
+            ]
+    return []
 
 
 def _generate_agent_config(
@@ -490,7 +519,7 @@ def _generate_mcp_stubs(
     )
 
     stubs_written = 0
-    # Map agent roles to MCP server names
+    # Map known ICDEV agent roles to MCP server names
     mcp_map = {
         "orchestrator": "core_server",
         "architect": "core_server",   # shared
@@ -503,8 +532,10 @@ def _generate_mcp_stubs(
 
     written_servers = set()
     for agent in agents:
-        server_name = mcp_map.get(agent["name"])
-        if not server_name or server_name in written_servers:
+        # Use known mapping for standard agents, derive name for custom agents
+        server_name = mcp_map.get(
+            agent["name"], f"{agent['name']}_server")
+        if server_name in written_servers:
             continue
         written_servers.add(server_name)
 
@@ -582,6 +613,175 @@ def _generate_mcp_stubs(
     return stubs_written
 
 
+def _generate_dashboard_stub(
+    child_root: Path, blueprint: dict
+) -> bool:
+    """Generate a minimal capability-driven Flask dashboard stub.
+
+    Instead of copying ICDEV's dashboard (which has ICDEV-specific routes),
+    generate a minimal Flask app with routes driven by the child app's
+    enabled capabilities. The child app developer fills in domain-specific
+    logic.
+
+    The generated dashboard adapts to any app type — multi-agent, single
+    service, data pipeline, CLI tool, etc.
+    """
+    app_name = blueprint["app_name"]
+    classification = blueprint.get("classification", "CUI")
+    agents = blueprint.get("agents", [])
+    capabilities = blueprint.get("capabilities", {})
+    demo_mode = blueprint.get("demo_mode", False)
+
+    cui_line = (
+        "SECRET // NOFORN" if classification == "SECRET" else "CUI // SP-CTI"
+    )
+
+    # Demo banner HTML (orange, top + bottom of every page, like CUI banners)
+    demo_banner_style = (
+        ".demo-banner { background: #e65100; color: #fff; text-align: center; "
+        "padding: 6px; font-weight: bold; font-size: 0.85rem; "
+        "letter-spacing: 1px; }"
+    )
+    demo_banner_top = (
+        '<div class="demo-banner">'
+        "DEMONSTRATION ONLY \\u2014 NOT FOR OPERATIONAL USE"
+        "</div>"
+    )
+
+    # Build nav links and page functions based on enabled capabilities
+    nav_links = ['"<a href=\\"/\\">Home</a>"']
+    page_functions = []
+
+    # Home page — always present
+    page_functions.append(
+        '    @app.route("/")\n'
+        '    def home():\n'
+        '        return _render("Home", "<h2>Welcome</h2>"\n'
+        f'            "<p>{app_name} dashboard.</p>")\n'
+    )
+
+    # Agents page — only if the app has agents
+    if agents:
+        nav_links.append('"<a href=\\"/agents\\">Agents</a>"')
+        agent_list_items = "".join(
+            f'<li><strong>{a["name"]}</strong> (port {a.get("port", "?")}) '
+            f'\\u2014 {a.get("role", "")}</li>'
+            for a in agents
+        )
+        page_functions.append(
+            '    @app.route("/agents")\n'
+            '    def agents_page():\n'
+            f'        return _render("Agents", "<h2>Agents</h2>"\n'
+            f'            "<ul>{agent_list_items}</ul>")\n'
+        )
+
+    # Compliance page — only if compliance capability enabled
+    if capabilities.get("compliance", False):
+        nav_links.append('"<a href=\\"/compliance\\">Compliance</a>"')
+        page_functions.append(
+            '    @app.route("/compliance")\n'
+            '    def compliance_page():\n'
+            '        # TODO: Add compliance status from DB\n'
+            '        return _render("Compliance",\n'
+            '            "<h2>Compliance</h2>"\n'
+            '            "<p>Compliance status placeholder.</p>")\n'
+        )
+
+    # Security page — only if security capability enabled
+    if capabilities.get("security", False):
+        nav_links.append('"<a href=\\"/security\\">Security</a>"')
+        page_functions.append(
+            '    @app.route("/security")\n'
+            '    def security_page():\n'
+            '        # TODO: Add security scan results from DB\n'
+            '        return _render("Security",\n'
+            '            "<h2>Security</h2>"\n'
+            '            "<p>Security scan placeholder.</p>")\n'
+        )
+
+    # API health endpoint — always present
+    page_functions.append(
+        '    @app.route("/api/health")\n'
+        '    def api_health():\n'
+        f'        return jsonify({{"status": "healthy", '
+        f'"app": "{app_name}"}})\n'
+    )
+
+    nav_html = "\n        ".join(nav_links)
+
+    stub_content = (
+        f'#!/usr/bin/env python3\n'
+        f'# {cui_line}\n'
+        f'"""{app_name} Dashboard — Flask SSR + HTMX\n'
+        f'\n'
+        f'Generated by ICDEV child app generator.\n'
+        f'Customize routes and pages for your domain.\n'
+        f'"""\n'
+        f'\n'
+        f'import sqlite3\n'
+        f'from pathlib import Path\n'
+        f'from flask import Flask, jsonify\n'
+        f'\n'
+        f'DB_PATH = str(Path(__file__).resolve().parent.parent.parent\n'
+        f'              / "data" / "{app_name}.db")\n'
+        f'\n'
+        f'\n'
+        f'def _layout(title: str, body: str) -> str:\n'
+        f'    """Wrap page body in HTML layout."""\n'
+        f'    return (\n'
+        f'        "<!DOCTYPE html><html><head>"\n'
+        f'        f"<title>{{title}} — {app_name}</title>"\n'
+        f'        "<style>"\n'
+        f'        "body {{ font-family: system-ui; margin: 2rem; "\n'
+        f'        "background: #1a1a2e; color: #e0e0e0; }}"\n'
+        f'        "a {{ color: #64b5f6; }} nav {{ margin-bottom: 1.5rem; }}"\n'
+        f'        "nav a {{ margin-right: 1rem; }}"\n'
+        f'        ".card {{ background: #16213e; padding: 1rem; "\n'
+        f'        "border-radius: 8px; margin: 0.5rem 0; }}"\n'
+        f'        "{demo_banner_style if demo_mode else ""}"\n'
+        f'        "</style></head><body>"\n'
+        f'        "{demo_banner_top if demo_mode else ""}"\n'
+        f'        "<h1>{app_name}</h1>"\n'
+        f'        "<nav>"\n'
+        f'        {nav_html}\n'
+        f'        "</nav>"\n'
+        f'        f"{{body}}"\n'
+        f'        "{demo_banner_top if demo_mode else ""}"\n'
+        f'        "</body></html>"\n'
+        f'    )\n'
+        f'\n'
+        f'\n'
+        f'def _render(title: str, body: str) -> str:\n'
+        f'    """Render a page with the standard layout."""\n'
+        f'    return _layout(title, body)\n'
+        f'\n'
+        f'\n'
+        f'def create_app() -> Flask:\n'
+        f'    """Create and configure the Flask application."""\n'
+        f'    app = Flask(__name__)\n'
+        f'\n'
+    )
+
+    for fn in page_functions:
+        stub_content += fn + "\n"
+
+    stub_content += (
+        f'    return app\n'
+        f'\n'
+        f'\n'
+        f'app = create_app()\n'
+        f'\n'
+        f'\n'
+        f'if __name__ == "__main__":\n'
+        f'    app.run(host="0.0.0.0", port=5000, debug=True)\n'
+    )
+
+    dash_dir = child_root / "tools" / "dashboard"
+    dash_dir.mkdir(parents=True, exist_ok=True)
+    (dash_dir / "app.py").write_text(stub_content, encoding="utf-8")
+    return True
+
+
 def step_03_agent_infrastructure(
     child_root: Path, blueprint: dict
 ) -> dict:
@@ -627,11 +827,21 @@ def step_03_agent_infrastructure(
     mcp_stubs_written = _generate_mcp_stubs(
         mcp_dir, agents, app_name, blueprint)
 
+    # Generate capability-driven dashboard stub (not copied from ICDEV)
+    dashboard_generated = False
+    capabilities = blueprint.get("capabilities", {})
+    if capabilities.get("dashboard", False):
+        dashboard_generated = _generate_dashboard_stub(child_root, blueprint)
+
     logger.info(
-        "Step 3: %d agent cards, 1 config, %d MCP stubs",
-        cards_written, mcp_stubs_written,
+        "Step 3: %d agent cards, 1 config, %d MCP stubs, dashboard=%s",
+        cards_written, mcp_stubs_written, dashboard_generated,
     )
-    return {"agent_cards": cards_written, "mcp_stubs": mcp_stubs_written}
+    return {
+        "agent_cards": cards_written,
+        "mcp_stubs": mcp_stubs_written,
+        "dashboard_generated": dashboard_generated,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -648,9 +858,21 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
         "fitness_scorecard", {}).get("architecture", "hybrid")
     parent_cb = blueprint.get("parent_callback", {})
 
-    # Create MEMORY.md
-    agent_names = ", ".join(a["name"] for a in agents)
+    # Create MEMORY.md with blueprint-enriched content
     timestamp = datetime.now(tz=timezone.utc).isoformat()
+
+    demo_mode = blueprint.get("demo_mode", False)
+
+    # Extract capabilities list from blueprint
+    capabilities = blueprint.get("capabilities", {})
+    active_caps = [k for k, v in capabilities.items()
+                   if v] if isinstance(capabilities, dict) else []
+
+    # Extract description/purpose if provided
+    description = blueprint.get("description", "")
+    purpose = blueprint.get("purpose", "")
+    scorecard = blueprint.get("fitness_scorecard", {})
+    spec = scorecard.get("spec", description or purpose or "")
 
     memory_content = (
         f"# MEMORY.md — {app_name}\n"
@@ -661,8 +883,47 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
         f"- **Classification:** {classification}\n"
         f"- **Impact Level:** {impact_level}\n"
         f"- **Architecture:** {architecture}\n"
-        f"- **Agents:** {len(agents)} ({agent_names})\n"
-        f"- **Generated at:** {timestamp}\n"
+    )
+
+    if demo_mode:
+        memory_content += (
+            f"- **Mode:** DEMONSTRATION ONLY\n"
+            f"  - This is a demo application. Do NOT use for operational or classified data.\n"
+        )
+
+    # Agent details — only if the app has agents
+    if agents:
+        memory_content += f"- **Agents:** {len(agents)}\n"
+        for a in agents:
+            role = a.get("role", "")
+            port = a.get("port", "")
+            if role:
+                memory_content += (
+                    f"  - **{a['name'].title()}** (port {port}): {role}\n"
+                )
+            else:
+                memory_content += (
+                    f"  - **{a['name'].title()}** (port {port})\n"
+                )
+
+    memory_content += f"- **Generated at:** {timestamp}\n"
+
+    if spec:
+        memory_content += (
+            f"\n"
+            f"## Purpose\n"
+            f"{spec}\n"
+        )
+
+    if active_caps:
+        memory_content += (
+            f"\n"
+            f"## Capabilities\n"
+        )
+        for cap in active_caps:
+            memory_content += f"- {cap}\n"
+
+    memory_content += (
         f"\n"
         f"## User Preferences\n"
         f"(To be populated during first session)\n"
@@ -1217,6 +1478,98 @@ Thumbs.db
 
 
 # ============================================================
+# STEP 9b: License Files
+# ============================================================
+
+
+def _copy_license_files(
+    child_root: Path, blueprint: dict, icdev_root: Path
+) -> dict:
+    """Copy ICDEV license validator (and optionally generator) to child app.
+
+    For demo apps, also auto-generates a 30-day trial license file.
+
+    Args:
+        child_root: Root directory of the child app.
+        blueprint: Blueprint dict.
+        icdev_root: ICDEV project root.
+
+    Returns:
+        Dict with files copied and license info.
+    """
+    app_name = blueprint["app_name"]
+    demo_mode = blueprint.get("demo_mode", False)
+    files_copied = []
+
+    # Create licensing directory in child app
+    lic_dir = child_root / "tools" / "saas" / "licensing"
+    lic_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create __init__.py files for the package path
+    for pkg_dir in [
+        child_root / "tools" / "saas",
+        lic_dir,
+    ]:
+        init_file = pkg_dir / "__init__.py"
+        if not init_file.exists():
+            init_file.write_text("", encoding="utf-8")
+
+    # Always copy license_validator.py
+    validator_src = icdev_root / "tools" / "saas" / "licensing" / "license_validator.py"
+    if validator_src.exists():
+        _copy_and_adapt_file(
+            validator_src, lic_dir / "license_validator.py",
+            ["app_name_replace"], blueprint
+        )
+        files_copied.append("license_validator.py")
+
+    # Demo: also copy generator + create trial license
+    license_info = None
+    if demo_mode:
+        gen_src = icdev_root / "tools" / "saas" / "licensing" / "license_generator.py"
+        if gen_src.exists():
+            _copy_and_adapt_file(
+                gen_src, lic_dir / "license_generator.py",
+                ["app_name_replace"], blueprint
+            )
+            files_copied.append("license_generator.py")
+
+        # Auto-generate 30-day demo license
+        expires_at = (
+            datetime.now(tz=timezone.utc) + timedelta(days=30)
+        ).isoformat()
+        license_info = {
+            "license_id": f"demo-{uuid.uuid4().hex[:12]}",
+            "customer": f"{app_name}-demo",
+            "tier": "starter",
+            "max_projects": 5,
+            "max_users": 3,
+            "allowed_il_levels": ["IL2"],
+            "issued_at": datetime.now(tz=timezone.utc).isoformat(),
+            "expires_at": expires_at,
+            "signature": "",
+            "demo": True,
+        }
+        data_dir = child_root / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        lic_path = data_dir / "license.json"
+        lic_path.write_text(
+            json.dumps(license_info, indent=2), encoding="utf-8"
+        )
+        files_copied.append("data/license.json")
+
+    logger.info(
+        "Step 9b: License files copied: %s (demo=%s)",
+        files_copied, demo_mode
+    )
+    return {
+        "files_copied": files_copied,
+        "demo_mode": demo_mode,
+        "license_info": license_info,
+    }
+
+
+# ============================================================
 # STEP 10: CSP MCP Server Configuration
 # ============================================================
 
@@ -1323,6 +1676,174 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
         "total_mcp_servers": len(mcp_config["mcpServers"]),
         "csp_servers": len(csp_servers),
     }
+
+
+# ============================================================
+# STEP 11b: README Generation
+# ============================================================
+
+# Human-readable capability descriptions for the README "sell" section
+CAP_DESCRIPTIONS: Dict[str, str] = {
+    "compliance": "ATO Compliance — SSP, POAM, STIG, SBOM, CUI markings, NIST 800-53, FedRAMP, CMMC",
+    "security": "Security Scanning — SAST (Bandit), dependency audit, secret detection, container scanning",
+    "testing": "Testing Framework — pytest unit + behave BDD + Playwright E2E + security gates",
+    "multi_agent": "Multi-Agent Architecture — A2A protocol, agent cards, MCP servers, domain routing",
+    "cicd": "CI/CD Integration — GitHub Actions + GitLab CI, webhooks, poll triggers, slash commands",
+    "mbse": "Model-Based Systems Engineering — SysML, DOORS NG, digital thread, model-code sync",
+    "monitoring": "Production Monitoring — Log analysis, metrics, alerts, health checks, self-healing",
+    "dashboard": "Web Dashboard — Flask SSR, real-time updates, role-based views, accessibility",
+    "knowledge": "Knowledge Base — Pattern detection, self-healing, ML recommendations",
+    "modernization": "App Modernization — 7R assessment, version/framework migration, strangler fig",
+    "supply_chain": "Supply Chain Intelligence — Dependency graph, SBOM aggregation, ISA lifecycle, CVE triage",
+    "simulation": "Digital Program Twin — 6-dimension simulation, Monte Carlo, COA generation",
+    "devsecops": "DevSecOps — Pipeline security, policy-as-code (Kyverno/OPA), image attestation",
+    "zta": "Zero Trust Architecture — 7-pillar maturity, NIST 800-207, service mesh, mTLS",
+    "mosa": "DoD MOSA — Modular Open Systems, ICD/TSP generation, modularity analysis",
+    "marketplace": "GOTCHA Marketplace — Federated asset sharing, 7-gate security pipeline",
+    "innovation": "Innovation Engine — Autonomous self-improvement, web scanning, trend detection",
+    "translation": "Cross-Language Translation — 5-phase hybrid pipeline, 30 language pairs",
+    "observability": "Observability & XAI — Distributed tracing, provenance, AgentSHAP attribution",
+    "ai_transparency": "AI Transparency — Model/system cards, AI inventory, fairness, confabulation detection",
+    "ai_accountability": "AI Accountability — Oversight plans, CAIO designation, incident response",
+}
+
+
+def _generate_readme(child_root: Path, blueprint: dict) -> dict:
+    """Generate README.md that tells the ICDEV story and lists capabilities used.
+
+    Args:
+        child_root: Root directory of the generated child app.
+        blueprint: Blueprint dict from app_blueprint.py.
+
+    Returns:
+        Dict with readme_path and sections_count.
+    """
+    app_name = blueprint["app_name"]
+    classification = blueprint.get("classification", "CUI")
+    impact_level = blueprint.get("impact_level", "IL4")
+    demo_mode = blueprint.get("demo_mode", False)
+    agents = blueprint.get("agents", [])
+    capabilities = blueprint.get("capabilities", {})
+    scorecard = blueprint.get("fitness_scorecard", {})
+
+    active_caps = sorted(k for k, v in capabilities.items() if v)
+    description = (
+        blueprint.get("description", "")
+        or blueprint.get("purpose", "")
+        or scorecard.get("spec", "")
+    )
+
+    sections: list = []
+
+    # Demo banner
+    if demo_mode:
+        sections.append(
+            "> **DEMONSTRATION ONLY** — This application is a demo build. "
+            "It uses PUBLIC classification and must NOT be used for operational, "
+            "classified, or sensitive data.\n"
+        )
+
+    # Title + ICDEV intro
+    sections.append(f"# {app_name}\n")
+    sections.append(
+        f"**Built with [ICDEV](https://github.com/icdev) — the Intelligent "
+        f"Coding Development platform.**\n\n"
+        f"ICDEV is a meta-builder that autonomously constructs Gov/DoD applications "
+        f"using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
+        f"Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
+        f"→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
+        f"compliance, and self-healing capabilities.\n"
+    )
+
+    # Classification badge
+    sections.append(
+        f"**Classification:** `{classification}` | **Impact Level:** `{impact_level}`\n"
+    )
+
+    # Purpose
+    if description:
+        sections.append(f"## Purpose\n\n{description}\n")
+
+    # Architecture
+    sections.append(
+        "## Architecture\n\n"
+        "This application follows the **GOTCHA 6-Layer Framework**:\n\n"
+        "| Layer | Role |\n"
+        "|-------|------|\n"
+        "| **Goals** | Process definitions — what to achieve, which tools, expected outputs |\n"
+        "| **Orchestration** | AI reads goals → decides tool order → applies args → references context |\n"
+        "| **Tools** | Python scripts, one job each. Deterministic. |\n"
+        "| **Args** | YAML/JSON behavior settings |\n"
+        "| **Context** | Static reference material |\n"
+        "| **Hard Prompts** | Reusable LLM instruction templates |\n"
+    )
+
+    # ICDEV Capabilities Used — the "sell" section
+    if active_caps:
+        sections.append("## ICDEV Capabilities Used\n")
+        sections.append(
+            "This application leverages the following ICDEV capabilities:\n"
+        )
+        for cap in active_caps:
+            desc = CAP_DESCRIPTIONS.get(cap, cap.replace("_", " ").title())
+            sections.append(f"- **{cap}** — {desc}")
+        sections.append("")  # blank line
+
+    # Agents
+    if agents:
+        sections.append("## Agents\n")
+        sections.append("| Agent | Port | Role |")
+        sections.append("|-------|------|------|")
+        for a in agents:
+            name = a.get("name", "unknown")
+            port = a.get("port", "?")
+            role = a.get("role", "")
+            sections.append(f"| {name.title()} | {port} | {role} |")
+        sections.append("")
+
+    # Compliance Posture
+    if capabilities.get("compliance", False):
+        sections.append(
+            "## Compliance Posture\n\n"
+            "This application includes compliance tooling for:\n"
+            "- NIST 800-53 Rev 5 control mapping\n"
+            "- FedRAMP Moderate/High baselines\n"
+            "- CMMC Level 2/3 practices\n"
+            "- ATO artifacts: SSP, POAM, STIG checklist, SBOM\n"
+            "- CUI markings applied at generation time\n"
+        )
+
+    # Quick Start
+    quick_start_cmds = [
+        "# Initialize database",
+        "python tools/db/init_db.py",
+        "",
+        "# Load memory",
+        "python tools/memory/memory_read.py --format markdown",
+    ]
+    if capabilities.get("dashboard", False):
+        quick_start_cmds += ["", "# Start dashboard", "python tools/dashboard/app.py"]
+    if capabilities.get("testing", False):
+        quick_start_cmds += ["", "# Run tests", "pytest tests/ -v"]
+
+    sections.append("## Quick Start\n")
+    sections.append("```bash")
+    sections.extend(quick_start_cmds)
+    sections.append("```\n")
+
+    # Footer
+    gen_date = blueprint.get("generated_at", datetime.now(tz=timezone.utc).isoformat())
+    sections.append("---\n")
+    sections.append(
+        f"*Generated by ICDEV on {gen_date[:10]}*\n"
+    )
+
+    readme_content = "\n".join(sections)
+    readme_path = child_root / "README.md"
+    readme_path.write_text(readme_content, encoding="utf-8")
+
+    logger.info("Step 11b: README.md generated (%d sections)", len(sections))
+    return {"readme_path": str(readme_path), "sections_count": len(sections)}
 
 
 # ============================================================
@@ -1514,6 +2035,80 @@ def step_12_audit_and_registration(
 
 
 # ============================================================
+# STEP 13: Production Audit
+# ============================================================
+
+
+def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
+    """Run production audit on the generated child app.
+
+    Invokes ICDEV's production_audit.py as a subprocess with the child app
+    as the working directory, then stores the results in the child app's
+    data directory.
+
+    Args:
+        child_root: Root directory of the child app.
+        blueprint: Blueprint dict.
+
+    Returns:
+        Dict with audit results summary.
+    """
+    audit_script = BASE_DIR / "tools" / "testing" / "production_audit.py"
+    if not audit_script.exists():
+        logger.warning("Step 13: production_audit.py not found, skipping")
+        return {"skipped": True, "reason": "audit script not found"}
+
+    try:
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        result = subprocess.run(
+            [sys.executable, str(audit_script), "--json"],
+            capture_output=True, text=True, cwd=str(child_root),
+            timeout=120, env=env,
+        )
+
+        # Parse JSON output
+        audit_data = {}
+        if result.stdout.strip():
+            try:
+                audit_data = json.loads(result.stdout.strip())
+            except json.JSONDecodeError:
+                audit_data = {"raw_output": result.stdout[:2000]}
+
+        # Store audit results in child app
+        data_dir = child_root / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        audit_path = data_dir / "production_audit.json"
+        audit_path.write_text(
+            json.dumps(audit_data, indent=2, default=str), encoding="utf-8"
+        )
+
+        # Summary
+        checks = audit_data.get("checks", [])
+        passed = sum(1 for c in checks if c.get("status") == "pass")
+        failed = sum(1 for c in checks if c.get("status") == "fail")
+        total = len(checks)
+
+        logger.info(
+            "Step 13: Production audit complete — %d/%d passed, %d failed",
+            passed, total, failed
+        )
+        return {
+            "audit_path": str(audit_path),
+            "total_checks": total,
+            "passed": passed,
+            "failed": failed,
+            "exit_code": result.returncode,
+        }
+
+    except subprocess.TimeoutExpired:
+        logger.warning("Step 13: Production audit timed out (120s)")
+        return {"skipped": True, "reason": "timeout"}
+    except Exception as e:
+        logger.warning("Step 13: Production audit failed: %s", e)
+        return {"skipped": True, "reason": str(e)}
+
+
+# ============================================================
 # MAIN ORCHESTRATOR
 # ============================================================
 
@@ -1527,7 +2122,8 @@ def generate_child_app(
 ) -> dict:
     """Generate a complete child application from a blueprint.
 
-    Executes all 12 steps sequentially, collecting results from each.
+    Executes 15 steps sequentially (12 core + 9b license + 11b README + 13 audit),
+    collecting results from each.
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
@@ -1566,9 +2162,12 @@ def generate_child_app(
         ("07_args_context", lambda: step_07_args_and_context(child_root, blueprint, icdev_root)),
         ("08_a2a_callback", lambda: step_08_a2a_callback_client(child_root, blueprint)),
         ("09_cicd_setup", lambda: step_09_cicd_setup(child_root, blueprint, icdev_root)),
+        ("09b_license", lambda: _copy_license_files(child_root, blueprint, icdev_root)),
         ("10_csp_mcp_config", lambda: step_10_csp_mcp_config(child_root, blueprint)),
         ("11_claude_md", lambda: step_11_dynamic_claude_md(child_root, blueprint)),
+        ("11b_readme", lambda: _generate_readme(child_root, blueprint)),
         ("12_audit_register", lambda: step_12_audit_and_registration(child_root, blueprint, db_path)),
+        ("13_production_audit", lambda: step_13_production_audit(child_root, blueprint)),
     ]
 
     for step_name, step_fn in steps:

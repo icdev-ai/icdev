@@ -112,6 +112,19 @@ CHECK_REGISTRY = {
         "stage": "security",
         "artifact": None,
     },
+    # Platform One / Iron Bank stages (D350)
+    "ironbank_generate": {
+        "name": "Iron Bank Hardening Manifest",
+        "command": 'python tools/infra/ironbank_metadata_generator.py --project-id "$PROJECT_ID" --generate --output-dir .tmp/ironbank --json',
+        "stage": "artifacts",
+        "artifact": ".tmp/ironbank/hardening_manifest.yaml",
+    },
+    "ironbank_validate": {
+        "name": "Iron Bank Manifest Validation",
+        "command": 'python tools/infra/ironbank_metadata_generator.py --project-id "$PROJECT_ID" --validate --manifest-path .tmp/ironbank/hardening_manifest.yaml --json',
+        "stage": "artifacts",
+        "artifact": None,
+    },
 }
 
 # Stage ordering

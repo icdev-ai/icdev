@@ -72,7 +72,7 @@ The `010_ai_governance_chat.py` builtin extension hooks into `chat_message_after
 
 ### Governance Sidebar
 
-The chat streams page includes a collapsible "Gov" sidebar showing:
+The unified chat page includes a collapsible "Gov" sidebar showing:
 - AI Transparency stats (inventory count, model cards, system cards)
 - Accountability stats (oversight plans, CAIO designations, open appeals, ethics reviews, reassessments)
 

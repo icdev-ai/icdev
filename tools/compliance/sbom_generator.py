@@ -18,9 +18,17 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-# CycloneDX spec version
+# CycloneDX spec version (default 1.4, supports 1.4-1.7 via --spec-version)
 CYCLONEDX_SPEC_VERSION = "1.4"
 CYCLONEDX_SCHEMA = "http://cyclonedx.org/schema/bom-1.4.schema.json"
+
+# Supported CycloneDX spec versions (D342)
+CYCLONEDX_SUPPORTED_VERSIONS = {
+    "1.4": "http://cyclonedx.org/schema/bom-1.4.schema.json",
+    "1.5": "http://cyclonedx.org/schema/bom-1.5.schema.json",
+    "1.6": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+    "1.7": "http://cyclonedx.org/schema/bom-1.7.schema.json",
+}
 
 
 def _get_connection(db_path=None):
@@ -717,9 +725,9 @@ def _build_cyclonedx_sbom(project, components, serial_number=None):
         cdx_components.append(cdx_comp)
 
     sbom = {
-        "$schema": CYCLONEDX_SCHEMA,
+        "$schema": active_schema,
         "bomFormat": "CycloneDX",
-        "specVersion": CYCLONEDX_SPEC_VERSION,
+        "specVersion": active_spec_version,
         "serialNumber": serial_number,
         "version": 1,
         "metadata": {
@@ -767,6 +775,7 @@ def generate_sbom(
     sbom_format="cyclonedx",
     output_path=None,
     db_path=None,
+    spec_version=None,
 ):
     """Generate a Software Bill of Materials for a project.
 
@@ -781,6 +790,12 @@ def generate_sbom(
     """
     if sbom_format != "cyclonedx":
         raise ValueError(f"Unsupported SBOM format: {sbom_format}. Only 'cyclonedx' is supported.")
+
+    # Apply spec version override (D342 — backward-compatible)
+    active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
+    if active_spec_version not in CYCLONEDX_SUPPORTED_VERSIONS:
+        raise ValueError(f"Unsupported CycloneDX spec version: {active_spec_version}. Supported: {list(CYCLONEDX_SUPPORTED_VERSIONS.keys())}")
+    active_schema = CYCLONEDX_SUPPORTED_VERSIONS[active_spec_version]
 
     conn = _get_connection(db_path)
     try:
@@ -937,7 +952,7 @@ def generate_sbom(
 
         print("\nSBOM generated successfully:")
         print(f"  File: {out_file}")
-        print(f"  Format: CycloneDX {CYCLONEDX_SPEC_VERSION}")
+        print(f"  Format: CycloneDX {active_spec_version}")
         print(f"  Version: {new_version}")
         print(f"  Components: {component_count}")
         print(f"  Serial: {sbom['serialNumber']}")
@@ -960,6 +975,11 @@ def main():
     )
     parser.add_argument("--output", help="Output file path")
     parser.add_argument("--db", help="Database path")
+    parser.add_argument(
+        "--spec-version", dest="spec_version", default=None,
+        choices=["1.4", "1.5", "1.6", "1.7"],
+        help="CycloneDX spec version (default: 1.4, D342)"
+    )
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     args = parser.parse_args()
 
@@ -969,6 +989,7 @@ def main():
             sbom_format=args.sbom_format,
             output_path=args.output,
             db_path=Path(args.db) if args.db else None,
+            spec_version=args.spec_version,
         )
         print(f"\nSBOM path: {path}")
     except (FileNotFoundError, ValueError) as e:

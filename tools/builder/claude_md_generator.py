@@ -75,6 +75,12 @@ except ImportError:
 CLAUDE_MD_TEMPLATE = r"""# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with {{ app_name }}.
+{% if demo_mode %}
+
+> **DEMONSTRATION ONLY** — This application is a demo. It uses PUBLIC classification
+> and must NOT be used for operational, classified, or sensitive data. All CUI/SECRET
+> banners and compliance artifacts are simulated for demonstration purposes.
+{% endif %}
 
 ---
 
@@ -171,6 +177,14 @@ python tools/ci/workflows/icdev_sdlc.py 123          # Run full SDLC pipeline
 ```bash
 python tools/dashboard/app.py                        # Start web dashboard on port 5000
 ```
+{% endif %}
+
+{% if app_description %}
+---
+
+## {{ app_name }} — Overview
+
+{{ app_description }}
 {% endif %}
 
 ---
@@ -619,6 +633,20 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     # Database name
     db_name = db_config.get("name", f"{app_name}.db")
 
+    # Extract app description from scorecard spec or blueprint fields
+    scorecard = blueprint.get("fitness_scorecard", {})
+    app_description = (
+        blueprint.get("description", "")
+        or blueprint.get("purpose", "")
+        or scorecard.get("spec", "")
+    )
+
+    # Extract LLM config hints
+    llm_config = blueprint.get("llm_config", {})
+
+    # Demo mode flag
+    demo_mode = blueprint.get("demo_mode", False)
+
     return {
         "app_name": app_name,
         "capabilities": capabilities,
@@ -636,6 +664,9 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
         "db_config": db_config,
         "db_name": db_name,
         "key_decisions": key_decisions,
+        "app_description": app_description,
+        "llm_config": llm_config,
+        "demo_mode": demo_mode,
     }
 
 
@@ -847,11 +878,27 @@ def _generate_fallback(blueprint: Dict[str, Any]) -> str:
         f"This file provides guidance to Claude Code (claude.ai/code) "
         f"when working with {ctx['app_name']}.\n"
     )
+
+    if ctx.get("demo_mode"):
+        sections.append(
+            "> **DEMONSTRATION ONLY** — This application is a demo. "
+            "It uses PUBLIC classification\n"
+            "> and must NOT be used for operational, classified, or sensitive data. "
+            "All CUI/SECRET\n"
+            "> banners and compliance artifacts are simulated for demonstration purposes.\n"
+        )
+
     sections.append("---\n")
 
     # -- Quick Reference --
     sections.append("## Quick Reference\n")
     sections.append(_build_commands_section(ctx))
+
+    # -- App Description (from blueprint spec) --
+    if ctx.get("app_description"):
+        sections.append("---\n")
+        sections.append(f"## {ctx['app_name']} — Overview\n")
+        sections.append(f"{ctx['app_description']}\n")
 
     # -- GOTCHA Framework --
     sections.append("---\n")

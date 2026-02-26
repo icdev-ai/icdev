@@ -156,12 +156,12 @@ class TestChatPages:
     def test_chat_new_page(self, client):
         resp = client.get("/chat")
         assert resp.status_code == 200
-        assert b"Requirements Chat" in resp.data
+        assert b"<h1>Chat</h1>" in resp.data
 
     def test_chat_new_with_wizard_params(self, client):
         resp = client.get("/chat?goal=build&role=developer&classification=il4")
         assert resp.status_code == 200
-        assert b"Requirements Chat" in resp.data
+        assert b"<h1>Chat</h1>" in resp.data
 
     def test_chat_session_not_found(self, client):
         resp = client.get("/chat/nonexistent-session")

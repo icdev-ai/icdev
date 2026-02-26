@@ -110,7 +110,9 @@
       "Bash(do python tools/db/migrate.py --mark-applied $v)",
       "WebFetch(domain:www.gnu.org)",
       "Bash(git remote set-url:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(\"c:/Users/schuo/Downloads/ICDev/tools/compliance/accountability_manager.py\":*)",
+      "Bash(printf:*)"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",

@@ -1,224 +1,241 @@
 {% extends "base.html" %}
-{% block title %}Requirements Chat - ICDEV Dashboard{% endblock %}
+
+{% block title %}Chat — ICDEV Dashboard{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <div class="breadcrumbs">
-        <a href="/">Home</a>
-        <span class="separator">/</span>
-        {% if session_id %}
-        <a href="/chat">Requirements Chat</a>
-        <span class="separator">/</span>
-        <span class="current">{{ session_id }}</span>
-        {% else %}
-        <span class="current">Requirements Chat</span>
-        {% endif %}
-    </div>
-    <h1>Requirements Chat</h1>
-    <p class="subtitle">Describe what you want to build. ICDEV will capture requirements, detect gaps, and score readiness.</p>
+    <h1>Chat</h1>
+    <p class="text-muted">Multi-stream agent chat with requirements intake, COA generation, and build pipeline.</p>
 </div>
 
-<div class="chat-layout" id="chat-layout">
-    <!-- Left pane: messages + input -->
-    <div class="chat-messages-pane">
-        <div class="chat-messages" id="chat-messages">
-            {% if messages %}
-                {% for msg in messages %}
-                <div class="message-bubble message-{{ msg.role }}">
-                    <div class="message-role">{{ 'You' if msg.role == 'customer' else 'ICDEV Analyst' }}</div>
-                    <div class="message-content">{{ msg.content }}</div>
-                </div>
-                {% endfor %}
-            {% else %}
-            <div class="message-bubble message-analyst">
-                <div class="message-role">ICDEV Analyst</div>
-                <div class="message-content">Welcome! I'm the ICDEV Requirements Analyst. Tell me about the application you want to build — what problem does it solve, who are the users, and what are the key capabilities needed?
+<!-- Stats bar -->
+<div class="stat-grid" id="chat-top-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-active">0</div>
+        <div class="stat-label">Active Chats</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-processing">0</div>
+        <div class="stat-label">Processing</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-queued">0</div>
+        <div class="stat-label">Queued Messages</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total Contexts</div>
+    </div>
+</div>
 
-You can also upload documents (SOW, CDD, CONOPS) or images (whiteboard photos, diagrams) using the paperclip button below.</div>
+<!-- Main layout: sidebar + chat pane + right sidebar -->
+<div style="display: flex; gap: 16px; margin-top: 16px; min-height: 500px;">
+    <!-- Left sidebar: context list -->
+    <div style="width: 280px; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); overflow-y: auto; max-height: 600px;">
+        <div style="padding: 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <strong>Contexts</strong>
+            <button id="btn-new-context" class="btn btn-sm" style="font-size: 0.75rem; padding: 4px 10px; background: var(--accent-blue); color: #fff; border: none; border-radius: 4px; cursor: pointer;" title="Create new chat context">+ New</button>
+        </div>
+        <div id="context-list" style="padding: 4px;"></div>
+    </div>
+
+    <!-- Main chat pane -->
+    <div style="flex: 1; display: flex; flex-direction: column; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary);">
+        <!-- Chat header -->
+        <div id="chat-header" style="padding: 10px 16px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <span id="chat-title" style="font-weight: 600;">Select or create a context</span>
+            <div>
+                <span id="chat-status" class="badge" style="font-size: 0.7rem;"></span>
+                <button id="btn-ricoas-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-blue); color: #fff; border: none; border-radius: 3px; cursor: pointer; display: none;" title="Toggle RICOAS sidebar">RICOAS</button>
+                <button id="btn-gov-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-purple, #7c4dff); color: #fff; border: none; border-radius: 3px; cursor: pointer;" title="Toggle AI Governance sidebar">Gov</button>
+                <button id="btn-close-context" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; display: none; background: var(--accent-red, #d44); color: #fff; border: none; border-radius: 3px; cursor: pointer;">Close</button>
             </div>
-            {% endif %}
         </div>
 
-        <!-- Upload drop zone overlay -->
-        <div class="chat-upload-zone" id="chat-upload-zone">
-            <div class="chat-upload-zone-text">Drop files here to upload<br>
-            <small>PDF, DOCX, TXT, PNG, JPG supported</small></div>
+        <!-- Message stream -->
+        <div id="message-stream" style="flex: 1; overflow-y: auto; padding: 16px; min-height: 300px; max-height: 450px;"></div>
+
+        <!-- Intervention bar (visible during processing) -->
+        <div id="intervention-bar" style="display: none; padding: 8px 16px; background: var(--bg-warning, #332); border-top: 1px solid var(--border-color);">
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <span style="font-size: 0.8rem; color: var(--accent-yellow, #fa0);">Agent is processing...</span>
+                <input type="text" id="intervention-input" placeholder="Type to intervene..." style="flex: 1; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 6px 10px; font-size: 0.85rem;">
+                <button id="btn-intervene" style="background: var(--accent-yellow, #fa0); color: #000; border: none; border-radius: 4px; padding: 6px 14px; font-size: 0.8rem; cursor: pointer;">Intervene</button>
+            </div>
         </div>
 
-        <!-- Input area -->
-        <div class="chat-input-area" id="chat-input-area">
-            <button class="chat-upload-btn" id="chat-upload-btn" title="Upload document or image" aria-label="Upload file">
-                &#x1F4CE;
-            </button>
-            <textarea id="chat-input" class="chat-input" rows="1"
-                      placeholder="Describe your requirements..."
-                      aria-label="Message input"></textarea>
-            <button class="btn btn-primary chat-send-btn" id="chat-send-btn" onclick="ICDEV.chatSend()" disabled>
-                Send &#x2192;
-            </button>
-            <input type="file" id="chat-file-input" style="display:none"
-                   accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
+        <!-- Input area with file upload -->
+        <div id="input-area" style="padding: 12px 16px; border-top: 1px solid var(--border-color);">
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="chat-upload-btn" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 1rem; display: none;" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
+                <input type="text" id="message-input" placeholder="Type a message..." style="flex: 1; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 12px; font-size: 0.9rem;" disabled>
+                <button id="btn-send" style="background: var(--accent-blue); color: #fff; border: none; border-radius: 4px; padding: 8px 20px; font-size: 0.85rem; cursor: pointer;" disabled>Send</button>
+                <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
+            </div>
         </div>
     </div>
 
-    <!-- Right sidebar: readiness + stats + frameworks + BDD -->
-    <div class="chat-sidebar" id="chat-sidebar">
-        <!-- Compliance Frameworks -->
-        <div class="sidebar-section" id="frameworks-section" style="display:none;">
-            <h3>Compliance Frameworks</h3>
-            <div id="framework-tags" class="framework-tags"></div>
-        </div>
+    <!-- Right sidebar: RICOAS + AI Governance -->
+    <div id="right-sidebar" style="display: none; width: 280px; flex-shrink: 0; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); overflow-y: auto; max-height: 600px;">
 
-        <!-- Complexity / Scale-Adaptive Indicator -->
-        <div class="sidebar-section" id="complexity-section" style="display:none;">
-            <h3>Project Complexity</h3>
-            <div class="complexity-indicator" id="complexity-indicator">
-                <div class="complexity-level" id="complexity-level"></div>
-                <div class="complexity-bar-container">
-                    <div class="complexity-bar-fill" id="complexity-bar" style="width:0%"></div>
+        <!-- RICOAS Section (shown when context is intake-linked) -->
+        <div id="ricoas-sidebar" style="display: none; padding: 12px;">
+            <!-- Compliance Frameworks -->
+            <div class="sidebar-section" id="frameworks-section" style="display:none;">
+                <h4 style="margin: 0 0 8px; font-size: 0.85rem;">Compliance Frameworks</h4>
+                <div id="framework-tags" class="framework-tags"></div>
+            </div>
+
+            <!-- Complexity -->
+            <div class="sidebar-section" id="complexity-section" style="display:none;">
+                <h4 style="margin: 8px 0; font-size: 0.85rem;">Project Complexity</h4>
+                <div class="complexity-indicator" id="complexity-indicator">
+                    <div class="complexity-level" id="complexity-level"></div>
+                    <div class="complexity-bar-container"><div class="complexity-bar-fill" id="complexity-bar" style="width:0%"></div></div>
+                    <div class="complexity-score-text" id="complexity-score-text"></div>
                 </div>
-                <div class="complexity-score-text" id="complexity-score-text"></div>
+                <div class="complexity-recommendation" id="complexity-recommendation" style="display:none;"></div>
             </div>
-            <div class="complexity-recommendation" id="complexity-recommendation" style="display:none;"></div>
-        </div>
 
-        <h3>Readiness Score</h3>
-        <div class="readiness-gauge-container" id="readiness-gauge">
-            <svg viewBox="0 0 120 120" class="readiness-gauge-svg">
-                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
-                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent-blue)" stroke-width="10"
-                        stroke-dasharray="314" stroke-dashoffset="314" stroke-linecap="round"
-                        transform="rotate(-90 60 60)" id="readiness-arc"/>
-                <text x="60" y="60" text-anchor="middle" dominant-baseline="central"
-                      fill="var(--text-primary)" font-size="24" font-weight="bold" id="readiness-pct">0%</text>
-            </svg>
-        </div>
+            <!-- Readiness Score -->
+            <h4 style="margin: 8px 0; font-size: 0.85rem;">Readiness Score</h4>
+            <div class="readiness-gauge-container" id="readiness-gauge" style="text-align: center;">
+                <svg viewBox="0 0 120 120" class="readiness-gauge-svg" style="width: 100px; height: 100px;">
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent-blue)" stroke-width="10"
+                            stroke-dasharray="314" stroke-dashoffset="314" stroke-linecap="round"
+                            transform="rotate(-90 60 60)" id="readiness-arc"/>
+                    <text x="60" y="60" text-anchor="middle" dominant-baseline="central"
+                          fill="var(--text-primary)" font-size="24" font-weight="bold" id="readiness-pct">0%</text>
+                </svg>
+            </div>
 
-        <div class="readiness-dimensions" id="readiness-dimensions">
-            <div class="readiness-dim">
-                <span class="readiness-dim-label">Completeness</span>
-                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-completeness" style="width:0%"></div></div>
-                <span class="readiness-dim-value" id="val-completeness">0%</span>
+            <div class="readiness-dimensions" id="readiness-dimensions">
+                <div class="readiness-dim"><span class="readiness-dim-label">Completeness</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-completeness" style="width:0%"></div></div><span class="readiness-dim-value" id="val-completeness">0%</span></div>
+                <div class="readiness-dim"><span class="readiness-dim-label">Clarity</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-clarity" style="width:0%"></div></div><span class="readiness-dim-value" id="val-clarity">0%</span></div>
+                <div class="readiness-dim"><span class="readiness-dim-label">Feasibility</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-feasibility" style="width:0%"></div></div><span class="readiness-dim-value" id="val-feasibility">0%</span></div>
+                <div class="readiness-dim"><span class="readiness-dim-label">Compliance</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-compliance" style="width:0%"></div></div><span class="readiness-dim-value" id="val-compliance">0%</span></div>
+                <div class="readiness-dim"><span class="readiness-dim-label">Testability</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-testability" style="width:0%"></div></div><span class="readiness-dim-value" id="val-testability">0%</span></div>
             </div>
-            <div class="readiness-dim">
-                <span class="readiness-dim-label">Clarity</span>
-                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-clarity" style="width:0%"></div></div>
-                <span class="readiness-dim-value" id="val-clarity">0%</span>
-            </div>
-            <div class="readiness-dim">
-                <span class="readiness-dim-label">Feasibility</span>
-                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-feasibility" style="width:0%"></div></div>
-                <span class="readiness-dim-value" id="val-feasibility">0%</span>
-            </div>
-            <div class="readiness-dim">
-                <span class="readiness-dim-label">Compliance</span>
-                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-compliance" style="width:0%"></div></div>
-                <span class="readiness-dim-value" id="val-compliance">0%</span>
-            </div>
-            <div class="readiness-dim">
-                <span class="readiness-dim-label">Testability</span>
-                <div class="readiness-bar"><div class="readiness-bar-fill" id="bar-testability" style="width:0%"></div></div>
-                <span class="readiness-dim-value" id="val-testability">0%</span>
-            </div>
-        </div>
 
-        <div class="chat-stats" id="chat-stats">
-            <div class="chat-stat">
-                <span class="chat-stat-label">Requirements</span>
-                <span class="chat-stat-value" id="stat-requirements">0</span>
+            <div class="chat-stats" style="margin: 8px 0; font-size: 0.8rem;">
+                <div class="chat-stat"><span class="chat-stat-label">Requirements</span> <span class="chat-stat-value" id="stat-requirements">0</span></div>
+                <div class="chat-stat"><span class="chat-stat-label">Documents</span> <span class="chat-stat-value" id="stat-documents">0</span></div>
+                <div class="chat-stat"><span class="chat-stat-label">Turns</span> <span class="chat-stat-value" id="stat-turns">0</span></div>
             </div>
-            <div class="chat-stat">
-                <span class="chat-stat-label">Documents</span>
-                <span class="chat-stat-value" id="stat-documents">0</span>
-            </div>
-            <div class="chat-stat">
-                <span class="chat-stat-label">Turns</span>
-                <span class="chat-stat-value" id="stat-turns">{{ messages|length if messages else 0 }}</span>
-            </div>
-        </div>
 
-        <!-- Elicitation Techniques -->
-        <div class="sidebar-section" id="techniques-section">
-            <h3>Elicitation Techniques</h3>
-            <div id="technique-active" class="technique-active-banner" style="display:none;">
-                <span id="technique-active-name"></span>
-                <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
+            <!-- Elicitation Techniques -->
+            <div class="sidebar-section" id="techniques-section">
+                <h4 style="margin: 8px 0; font-size: 0.85rem;">Elicitation Techniques</h4>
+                <div id="technique-active" class="technique-active-banner" style="display:none;">
+                    <span id="technique-active-name"></span>
+                    <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
+                </div>
+                <div id="technique-chips" class="technique-chips"></div>
             </div>
-            <div id="technique-chips" class="technique-chips"></div>
-        </div>
 
-        <!-- BDD Preview -->
-        <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
-            <h3>BDD Scenarios (Draft)</h3>
-            <div id="bdd-preview-list" class="bdd-preview-list"></div>
-        </div>
+            <!-- BDD Preview -->
+            <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
+                <h4 style="margin: 8px 0; font-size: 0.85rem;">BDD Scenarios (Draft)</h4>
+                <div id="bdd-preview-list" class="bdd-preview-list"></div>
+            </div>
 
-        <!-- Courses of Action -->
-        <div class="sidebar-section" id="coa-section" style="display:none;">
-            <h3>Courses of Action</h3>
-            <div id="coa-list"></div>
-            <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">
-                &#x2713; <span id="coa-selected-name"></span> selected
+            <!-- Courses of Action -->
+            <div class="sidebar-section" id="coa-section" style="display:none;">
+                <h4 style="margin: 8px 0; font-size: 0.85rem;">Courses of Action</h4>
+                <div id="coa-list"></div>
+                <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">&#x2713; <span id="coa-selected-name"></span> selected</div>
+            </div>
+
+            <div id="chat-actions" style="margin-top: 12px;">
+                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none; width:100%; font-size: 0.85rem;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
+                <button class="btn btn-secondary" id="export-btn" style="width:100%; margin-top:8px; display:none; font-size: 0.85rem;" onclick="ICDEV.chatExport()">Export Requirements</button>
+            </div>
+
+            <!-- Post-export actions -->
+            <div id="post-export-actions" class="post-export-actions" style="display:none;">
+                <h4 style="margin: 8px 0; font-size: 0.85rem;">What's next?</h4>
+                <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
+                <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>
+            </div>
+
+            <!-- Build Pipeline -->
+            <div class="sidebar-section" id="build-pipeline-section" style="display:none;">
+                <h4 style="margin: 8px 0; font-size: 0.85rem;">Build Pipeline</h4>
+                <div id="build-pipeline-phases" class="build-pipeline"></div>
+                <div id="build-pipeline-status" class="build-pipeline-status"></div>
+                <div id="build-done-actions" class="build-done-actions" style="display:none;">
+                    <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatViewProject()">View Project</button>
+                    <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatRunTests()">Run Tests</button>
+                    <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="window.open('/events','_blank')">View Events</button>
+                </div>
             </div>
         </div>
 
-        <div id="chat-actions" style="margin-top: 16px;">
-            <button class="btn btn-success btn-lg" id="generate-plan-btn"
-                    style="display:none; width:100%;"
-                    onclick="ICDEV.chatGeneratePlan()">
-                Generate Plan &#x2192;
-            </button>
-            <button class="btn btn-secondary" id="export-btn"
-                    style="width:100%; margin-top:8px; display:none;"
-                    onclick="ICDEV.chatExport()">
-                Export Requirements
-            </button>
-        </div>
-
-        <!-- Post-export actions (hidden until export) -->
-        <div id="post-export-actions" class="post-export-actions" style="display:none;">
-            <h4>What's next?</h4>
-            <button class="btn btn-primary" style="width:100%; margin-bottom:8px;"
-                    onclick="ICDEV.chatTriggerBuild()">
-                Generate Application
-            </button>
-            <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
-                    onclick="ICDEV.chatRunSimulation()">
-                Run Simulation (COAs)
-            </button>
-            <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
-                    onclick="ICDEV.chatViewRequirements()">
-                View Requirements
-            </button>
-            <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
-                    onclick="ICDEV.chatGeneratePRD()">
-                &#x1F4C4; Generate PRD
-            </button>
-            <button class="btn btn-secondary" style="width:100%;"
-                    onclick="ICDEV.chatValidatePRD()">
-                &#x2714; Validate PRD
-            </button>
-        </div>
-
-        <!-- Build Pipeline (hidden until build starts) -->
-        <div class="sidebar-section" id="build-pipeline-section" style="display:none;">
-            <h3>Build Pipeline</h3>
-            <div id="build-pipeline-phases" class="build-pipeline"></div>
-            <div id="build-pipeline-status" class="build-pipeline-status"></div>
-            <div id="build-done-actions" class="build-done-actions" style="display:none;">
-                <button class="btn btn-primary" style="width:100%; margin-bottom:8px;"
-                        onclick="ICDEV.chatViewProject()">
-                    View Project
-                </button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:8px;"
-                        onclick="ICDEV.chatRunTests()">
-                    Run Tests
-                </button>
-                <button class="btn btn-secondary" style="width:100%;"
-                        onclick="window.open('/events','_blank')">
-                    View Events
-                </button>
+        <!-- AI Governance Section -->
+        <div id="gov-sidebar" style="display: none; padding: 12px;">
+            <div style="padding-bottom: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 8px;">
+                <strong style="color: var(--accent-purple, #7c4dff);">AI Governance</strong>
             </div>
+            <div id="gov-sidebar-content">
+                <p style="font-size: 0.8rem; color: var(--text-secondary);">Loading governance status...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Governance advisory message styling (D327) */
+.msg-governance_advisory {
+    border-left: 3px solid var(--accent-purple, #7c4dff) !important;
+    background: rgba(124, 77, 255, 0.05) !important;
+}
+.msg-governance_advisory::before {
+    content: '\26A0';
+    margin-right: 6px;
+}
+.gov-stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; }
+.gov-stat-label { color: var(--text-secondary); }
+.gov-stat-value { font-weight: 600; }
+.gov-gap-item { padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.78rem; }
+.gov-gap-severity { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-weight: 600; }
+.gov-gap-severity.high { background: var(--accent-red, #d44); color: #fff; }
+.gov-gap-severity.medium { background: var(--accent-yellow, #fa0); color: #000; }
+.gov-gap-severity.low { background: var(--accent-blue); color: #fff; }
+</style>
+
+<!-- New Context Modal -->
+<div id="new-context-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 24px; width: 400px; max-width: 90vw;">
+        <h3 style="margin-top: 0;">New Chat Context</h3>
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 0.85rem;">Title</label>
+            <input type="text" id="new-ctx-title" placeholder="Chat title..." style="width: 100%; margin-top: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px;">
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 0.85rem;">Agent Model</label>
+            <select id="new-ctx-model" style="width: 100%; margin-top: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px;">
+                <option value="sonnet">Sonnet (Default)</option>
+                <option value="opus">Opus</option>
+                <option value="haiku">Haiku</option>
+            </select>
+        </div>
+        <div style="margin-bottom: 12px;">
+            <label style="font-size: 0.85rem;">
+                <input type="checkbox" id="new-ctx-intake" style="vertical-align: middle; margin-right: 4px;">
+                Link to Requirements Intake (RICOAS)
+            </label>
+        </div>
+        <div style="margin-bottom: 16px;">
+            <label style="font-size: 0.85rem;">System Prompt (optional)</label>
+            <textarea id="new-ctx-prompt" placeholder="Custom system prompt..." rows="3" style="width: 100%; margin-top: 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px; resize: vertical;"></textarea>
+        </div>
+        <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button id="btn-cancel-modal" style="background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 8px 16px; cursor: pointer;">Cancel</button>
+            <button id="btn-create-context" style="background: var(--accent-blue); color: #fff; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">Create</button>
         </div>
     </div>
 </div>
@@ -226,17 +243,90 @@ You can also upload documents (SOW, CDD, CONOPS) or images (whiteboard photos, d
 <!-- Pass config to JS -->
 <script>
     window._CHAT_CONFIG = {
-        sessionId: {{ session_id|tojson }},
-        wizardGoal: {{ (wizard_goal or '')|tojson }},
-        wizardRole: {{ (wizard_role or '')|tojson }},
-        wizardClassification: {{ (wizard_classification or '')|tojson }},
-        wizardFrameworks: {{ (wizard_frameworks or '')|tojson }},
-        customRoleName: {{ (wizard_custom_role_name or '')|tojson }},
-        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson }}
+        sessionId: {{ session_id|tojson if session_id is defined else 'null' }},
+        wizardGoal: {{ (wizard_goal or '')|tojson if wizard_goal is defined else '""' }},
+        wizardRole: {{ (wizard_role or '')|tojson if wizard_role is defined else '""' }},
+        wizardClassification: {{ (wizard_classification or '')|tojson if wizard_classification is defined else '""' }},
+        wizardFrameworks: {{ (wizard_frameworks or '')|tojson if wizard_frameworks is defined else '""' }},
+        customRoleName: {{ (wizard_custom_role_name or '')|tojson if wizard_custom_role_name is defined else '""' }},
+        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }}
     };
 </script>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/chat.js') }}"></script>
+<script>
+// AI Governance sidebar (D326)
+(function() {
+    var btn = document.getElementById('btn-gov-toggle');
+    var sidebar = document.getElementById('gov-sidebar');
+    var rightSidebar = document.getElementById('right-sidebar');
+    var content = document.getElementById('gov-sidebar-content');
+    if (!btn || !sidebar) return;
+
+    btn.addEventListener('click', function() {
+        var visible = sidebar.style.display !== 'none';
+        sidebar.style.display = visible ? 'none' : 'block';
+        // Show right sidebar container if any section is visible
+        if (!visible) {
+            rightSidebar.style.display = 'block';
+            refreshGovernanceSidebar();
+        } else {
+            // Hide right sidebar if RICOAS is also hidden
+            var ricoas = document.getElementById('ricoas-sidebar');
+            if (!ricoas || ricoas.style.display === 'none') {
+                rightSidebar.style.display = 'none';
+            }
+        }
+    });
+
+    function refreshGovernanceSidebar() {
+        var html = '';
+        Promise.all([
+            fetch('/api/ai-transparency/stats').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; }),
+            fetch('/api/ai-accountability/stats').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
+        ]).then(function(results) {
+            var tStats = results[0];
+            var aStats = results[1];
+
+            html += '<div style="margin-bottom: 12px;"><strong style="font-size: 0.82rem;">Transparency</strong></div>';
+            if (tStats) {
+                html += govStatRow('AI Systems', tStats.inventory_count || 0);
+                html += govStatRow('Model Cards', tStats.model_cards || 0);
+                html += govStatRow('System Cards', tStats.system_cards || 0);
+            } else {
+                html += '<p style="font-size:0.78rem;color:var(--text-secondary);">Transparency API not available</p>';
+            }
+
+            html += '<div style="margin: 12px 0 8px;"><strong style="font-size: 0.82rem;">Accountability</strong></div>';
+            if (aStats) {
+                html += govStatRow('Oversight Plans', aStats.oversight_plans || 0);
+                html += govStatRow('CAIO Designated', aStats.caio_designations || 0);
+                html += govStatRow('Open Appeals', aStats.open_appeals || aStats.total_appeals || 0);
+                html += govStatRow('Ethics Reviews', aStats.ethics_reviews || 0);
+                html += govStatRow('Reassessments', aStats.reassessment_schedules || 0);
+            } else {
+                html += '<p style="font-size:0.78rem;color:var(--text-secondary);">Accountability API not available</p>';
+            }
+
+            content.innerHTML = html;
+        });
+    }
+
+    function govStatRow(label, value) {
+        return '<div class="gov-stat-row"><span class="gov-stat-label">' + label + '</span><span class="gov-stat-value">' + value + '</span></div>';
+    }
+
+    // Refresh on governance_advisory state change
+    if (typeof window._chatOnStateChange === 'undefined') {
+        window._chatOnStateChange = [];
+    }
+    window._chatOnStateChange.push(function(data) {
+        if (data && data.change_type === 'governance_advisory' && sidebar.style.display !== 'none') {
+            refreshGovernanceSidebar();
+        }
+    });
+})();
+</script>
 {% endblock %}

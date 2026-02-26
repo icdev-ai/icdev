@@ -325,22 +325,17 @@ class TestAssessment:
         satisfied_count = sum(1 for s in results.values() if s in ("satisfied", "partially_satisfied"))
         assert satisfied_count > 0, "Audit trail data should satisfy at least one check"
 
-    def test_agents_check_satisfied_with_data(self, mock_db_path):
-        """Populated agents table -> agents check improves."""
-        conn = sqlite3.connect(str(mock_db_path))
-        conn.execute(
-            "INSERT INTO agents (id, name, agent_type, port, status) "
-            "VALUES (?, ?, ?, ?, ?)",
-            ("builder-agent", "Builder", "domain", 8445, "healthy"),
-        )
-        conn.commit()
-        conn.close()
+    def test_agents_check_satisfied_with_data(self, mock_db_path, tmp_path):
+        """Agent governance file -> GAO-GOV-1 check satisfied."""
+        # GAO-GOV-1 checks for agent/authority keywords in YAML files
+        gov_yaml = tmp_path / "agent_authority.yaml"
+        gov_yaml.write_text("agent:\n  authority:\n    security: hard_veto\n")
 
         assessor = GAOAIAssessor(db_path=mock_db_path)
         project = {"id": "proj-test"}
-        results = assessor.get_automated_checks(project, project_dir=None)
-        satisfied_count = sum(1 for s in results.values() if s in ("satisfied", "partially_satisfied"))
-        assert satisfied_count > 0, "Agent registration data should satisfy at least one check"
+        results = assessor.get_automated_checks(project, project_dir=str(tmp_path))
+        assert results.get("GAO-GOV-1") == "satisfied", \
+            "Agent governance YAML should satisfy GAO-GOV-1"
 
     def test_telemetry_check_satisfied_with_data(self, mock_db_path):
         """Populated ai_telemetry -> telemetry check improves."""

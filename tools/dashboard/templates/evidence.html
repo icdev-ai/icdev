@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Evidence Collection - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <h1>Compliance Evidence Collection</h1>
+  <p style="color:#666;">Phase 56 &mdash; Universal evidence auto-collection across all compliance frameworks (D347)</p>
+
+  <!-- Controls -->
+  <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+    <input id="ev-project-id" type="text" placeholder="Project ID (e.g. proj-123)" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;width:240px;" />
+    <button onclick="collectEvidence()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Collect Evidence</button>
+    <button onclick="checkFreshness()" style="padding:0.4rem 1rem;background:#388e3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Check Freshness</button>
+  </div>
+
+  <!-- Stat Grid -->
+  <div id="ev-stats" class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1rem 0;">
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="ev-total-fw" style="font-size:2rem;font-weight:bold;">{{ stats.total_frameworks if stats else '--' }}</div>
+      <div class="stat-label" style="color:#999;">Frameworks</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="ev-required" style="font-size:2rem;font-weight:bold;">{{ stats.required_frameworks if stats else '--' }}</div>
+      <div class="stat-label" style="color:#999;">Required</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="ev-with-data" style="font-size:2rem;font-weight:bold;">--</div>
+      <div class="stat-label" style="color:#999;">With Evidence</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" id="ev-coverage" style="font-size:2rem;font-weight:bold;">--</div>
+      <div class="stat-label" style="color:#999;">Coverage %</div>
+    </div>
+  </div>
+
+  <!-- Framework Table -->
+  <h2 style="margin-top:1.5rem;">Framework Evidence Inventory</h2>
+  <div class="table-container">
+    <table id="ev-table" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid #ddd;">
+          <th style="text-align:left;padding:0.5rem;">Framework</th>
+          <th style="text-align:left;padding:0.5rem;">Description</th>
+          <th style="text-align:center;padding:0.5rem;">Required</th>
+          <th style="text-align:right;padding:0.5rem;">Records</th>
+          <th style="text-align:center;padding:0.5rem;">Status</th>
+        </tr>
+      </thead>
+      <tbody id="ev-tbody">
+        {% if stats and stats.frameworks %}
+          {% for fw in stats.frameworks %}
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:0.5rem;font-weight:600;">{{ fw.id }}</td>
+            <td style="padding:0.5rem;">{{ fw.description }}</td>
+            <td style="padding:0.5rem;text-align:center;">{{ '&#10003;' if fw.required else '' }}</td>
+            <td style="padding:0.5rem;text-align:right;">{{ fw.total_records }}</td>
+            <td style="padding:0.5rem;text-align:center;">
+              {% if fw.total_records > 0 %}
+                <span style="color:#388e3c;">&#9679; Has Data</span>
+              {% else %}
+                <span style="color:#999;">&#9675; No Data</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="5" style="padding:1rem;text-align:center;color:#999;">Enter a Project ID and click Collect Evidence</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Results Panel -->
+  <div id="ev-results" style="margin-top:1.5rem;display:none;">
+    <h2>Collection Results</h2>
+    <pre id="ev-json" style="background:#f5f5f5;padding:1rem;border-radius:4px;overflow-x:auto;max-height:500px;font-size:0.85rem;"></pre>
+  </div>
+</div>
+
+<script>
+function collectEvidence() {
+  var pid = document.getElementById('ev-project-id').value.trim();
+  if (!pid) { alert('Enter a Project ID'); return; }
+  fetch('/api/evidence/collect', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project_id: pid})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.summary) {
+      document.getElementById('ev-with-data').textContent = data.summary.frameworks_with_evidence;
+      document.getElementById('ev-coverage').textContent = data.summary.coverage_pct + '%';
+    }
+    document.getElementById('ev-results').style.display = 'block';
+    document.getElementById('ev-json').textContent = JSON.stringify(data, null, 2);
+    if (data.frameworks) { updateTable(data.frameworks); }
+  });
+}
+
+function checkFreshness() {
+  var pid = document.getElementById('ev-project-id').value.trim();
+  if (!pid) { alert('Enter a Project ID'); return; }
+  fetch('/api/evidence/freshness?project_id=' + encodeURIComponent(pid))
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    document.getElementById('ev-results').style.display = 'block';
+    document.getElementById('ev-json').textContent = JSON.stringify(data, null, 2);
+  });
+}
+
+function updateTable(frameworks) {
+  var tbody = document.getElementById('ev-tbody');
+  tbody.innerHTML = '';
+  var keys = Object.keys(frameworks);
+  for (var i = 0; i < keys.length; i++) {
+    var fw = frameworks[keys[i]];
+    var dbCount = 0;
+    for (var j = 0; j < fw.db_evidence.length; j++) { dbCount += fw.db_evidence[j].count; }
+    var statusHtml = fw.status === 'evidence_found'
+      ? '<span style="color:#388e3c;">&#9679; Found</span>'
+      : fw.status === 'partial'
+        ? '<span style="color:#f57c00;">&#9679; Partial</span>'
+        : '<span style="color:#999;">&#9675; None</span>';
+    var reqHtml = fw.required ? '&#10003;' : '';
+    tbody.innerHTML += '<tr style="border-bottom:1px solid #eee;">'
+      + '<td style="padding:0.5rem;font-weight:600;">' + keys[i] + '</td>'
+      + '<td style="padding:0.5rem;">' + fw.description + '</td>'
+      + '<td style="padding:0.5rem;text-align:center;">' + reqHtml + '</td>'
+      + '<td style="padding:0.5rem;text-align:right;">' + dbCount + '</td>'
+      + '<td style="padding:0.5rem;text-align:center;">' + statusHtml + '</td></tr>';
+  }
+}
+</script>
+{% endblock %}

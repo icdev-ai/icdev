@@ -458,6 +458,166 @@ def analyze_project(project_id: str, db_path: Path = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Code Quality Pattern Seeding (Phase 52 — D336)
+# ---------------------------------------------------------------------------
+
+_CODE_QUALITY_PATTERNS = [
+    {
+        "pattern_type": "code_quality",
+        "description": "High cyclomatic complexity with test failures",
+        "root_cause": "Complex functions (CC>15) often have untested edge cases leading to failures",
+        "resolution": "Refactor into smaller functions; add branch coverage tests",
+        "confidence": 0.6,
+        "auto_healable": False,
+    },
+    {
+        "pattern_type": "code_quality",
+        "description": "Deep nesting with test failures",
+        "root_cause": "Functions with nesting depth >4 are hard to test thoroughly",
+        "resolution": "Extract nested logic into helper functions; use early returns",
+        "confidence": 0.5,
+        "auto_healable": False,
+    },
+    {
+        "pattern_type": "code_quality",
+        "description": "Too many parameters causing integration issues",
+        "root_cause": "Functions with >5 parameters often have unclear contracts and misuse",
+        "resolution": "Group related parameters into data classes or config objects",
+        "confidence": 0.5,
+        "auto_healable": False,
+    },
+    {
+        "pattern_type": "code_quality",
+        "description": "God class with declining maintainability",
+        "root_cause": "Classes with >10 methods accumulate technical debt and become fragile",
+        "resolution": "Apply Single Responsibility Principle; extract cohesive method groups",
+        "confidence": 0.5,
+        "auto_healable": False,
+    },
+]
+
+
+def seed_code_quality_patterns(db_path: Path = None) -> dict:
+    """Seed initial code quality patterns into knowledge_patterns table.
+
+    Returns dict with counts of seeded/skipped patterns.
+    """
+    conn = _get_db(db_path)
+    seeded = 0
+    skipped = 0
+    try:
+        # Check if table exists
+        has_table = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='knowledge_patterns'"
+        ).fetchone()[0]
+        if not has_table:
+            return {"error": "knowledge_patterns table not found", "seeded": 0, "skipped": 0}
+
+        for p in _CODE_QUALITY_PATTERNS:
+            # Check if pattern already exists (by description)
+            existing = conn.execute(
+                "SELECT id FROM knowledge_patterns WHERE description = ?",
+                (p["description"],),
+            ).fetchone()
+            if existing:
+                skipped += 1
+                continue
+            conn.execute(
+                """INSERT INTO knowledge_patterns
+                (pattern_type, description, root_cause, resolution, confidence,
+                 auto_healable, occurrence_count, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                (p["pattern_type"], p["description"], p["root_cause"],
+                 p["resolution"], p["confidence"], 1 if p["auto_healable"] else 0,
+                 datetime.now(timezone.utc).isoformat(),
+                 datetime.now(timezone.utc).isoformat()),
+            )
+            seeded += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return {"seeded": seeded, "skipped": skipped, "total_patterns": len(_CODE_QUALITY_PATTERNS)}
+
+
+def learn_from_tdd_outcome(
+    project_id: str,
+    outcome: str,
+    function_name: str = None,
+    db_path: Path = None,
+) -> dict:
+    """After a TDD cycle, adjust confidence of matching code_quality patterns.
+
+    Uses existing update_pattern_confidence() (+0.1 success / -0.2 failure).
+
+    Args:
+        project_id: Project identifier.
+        outcome: 'success' or 'failure'.
+        function_name: Optional function name to scope the learning.
+        db_path: Optional DB path override.
+
+    Returns:
+        dict with updated patterns list.
+    """
+    conn = _get_db(db_path)
+    updated = []
+    try:
+        # Find code_quality patterns
+        patterns = conn.execute(
+            "SELECT id, description, confidence FROM knowledge_patterns WHERE pattern_type = 'code_quality'"
+        ).fetchall()
+        if not patterns:
+            return {"updated": [], "message": "No code_quality patterns found"}
+
+        # If function_name provided, check if function has relevant quality issues
+        relevant_ids = []
+        if function_name:
+            # Check code_quality_metrics for this function
+            has_cq = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='code_quality_metrics'"
+            ).fetchone()[0]
+            if has_cq:
+                metrics = conn.execute(
+                    """SELECT cyclomatic_complexity, nesting_depth, parameter_count, smell_count
+                       FROM code_quality_metrics
+                       WHERE function_name = ?
+                       ORDER BY created_at DESC LIMIT 1""",
+                    (function_name,),
+                ).fetchone()
+                if metrics:
+                    # Match patterns to actual metrics
+                    for p in patterns:
+                        desc = p["description"].lower()
+                        if "complexity" in desc and metrics["cyclomatic_complexity"] > 15:
+                            relevant_ids.append(p["id"])
+                        elif "nesting" in desc and metrics["nesting_depth"] > 4:
+                            relevant_ids.append(p["id"])
+                        elif "parameter" in desc and metrics["parameter_count"] > 5:
+                            relevant_ids.append(p["id"])
+                        elif "god class" in desc and metrics["smell_count"] > 2:
+                            relevant_ids.append(p["id"])
+        else:
+            # No function specified — update all code_quality patterns
+            relevant_ids = [p["id"] for p in patterns]
+
+    finally:
+        conn.close()
+
+    # Update confidence for relevant patterns
+    for pid in relevant_ids:
+        result = update_pattern_confidence(pid, outcome, db_path)
+        if "error" not in result:
+            updated.append(result)
+
+    return {
+        "project_id": project_id,
+        "outcome": outcome,
+        "function_name": function_name,
+        "patterns_evaluated": len(relevant_ids),
+        "updated": updated,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main():

@@ -55,6 +55,24 @@ from flask import Blueprint, Response, g, jsonify, request
 logger = logging.getLogger("saas.mcp_http")
 
 # ---------------------------------------------------------------------------
+# OAuth 2.1 / Elicitation / Tasks — Phase 55, D345-D346
+# ---------------------------------------------------------------------------
+from tools.saas.mcp_oauth import MCPElicitationHandler, MCPOAuthVerifier, MCPTaskManager
+
+_oauth_verifier: Optional[MCPOAuthVerifier] = None
+_elicitation_handler = MCPElicitationHandler()
+_task_manager = MCPTaskManager()
+
+
+def get_oauth_verifier() -> MCPOAuthVerifier:
+    """Lazy-init the OAuth verifier singleton."""
+    global _oauth_verifier
+    if _oauth_verifier is None:
+        _oauth_verifier = MCPOAuthVerifier()
+    return _oauth_verifier
+
+
+# ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------
 mcp_bp = Blueprint("mcp_v1", __name__, url_prefix="/mcp/v1")
@@ -642,6 +660,64 @@ def _handle_request(rpc_msg: dict, tenant_id: str, session_id: str) -> dict:
                 "isError": True,
             })
 
+    # ----- elicitation/create (D346) -----
+    if method == "elicitation/create":
+        tool_name = params.get("toolName", "")
+        question = params.get("question", "")
+        options = params.get("options")
+        input_type = params.get("inputType", "text")
+        if not tool_name or not question:
+            return _jsonrpc_error(rpc_id, -32602, "Missing required: toolName, question")
+        elicitation = _elicitation_handler.create_elicitation(
+            tool_name=tool_name,
+            question=question,
+            options=options,
+            input_type=input_type,
+        )
+        if session_id:
+            broadcast_event(session_id, "elicitation.created", elicitation)
+        return _jsonrpc_success(rpc_id, elicitation)
+
+    # ----- elicitation/respond (D346) -----
+    if method == "elicitation/respond":
+        elicitation_id = params.get("elicitationId", "")
+        response_text = params.get("response", "")
+        if not elicitation_id:
+            return _jsonrpc_error(rpc_id, -32602, "Missing required: elicitationId")
+        resolved = _elicitation_handler.resolve_elicitation(elicitation_id, response_text)
+        if "error" in resolved:
+            return _jsonrpc_error(rpc_id, -32602, resolved["error"])
+        if session_id:
+            broadcast_event(session_id, "elicitation.resolved", resolved)
+        return _jsonrpc_success(rpc_id, resolved)
+
+    # ----- tasks/create (D346) -----
+    if method == "tasks/create":
+        tool_name = params.get("toolName", "")
+        tool_params = params.get("params", {})
+        if not tool_name:
+            return _jsonrpc_error(rpc_id, -32602, "Missing required: toolName")
+        task = _task_manager.create_task(tool_name, tool_params)
+        if session_id:
+            broadcast_event(session_id, "task.created", task)
+        return _jsonrpc_success(rpc_id, task)
+
+    # ----- tasks/get (D346) -----
+    if method == "tasks/get":
+        task_id = params.get("taskId", "")
+        if not task_id:
+            return _jsonrpc_error(rpc_id, -32602, "Missing required: taskId")
+        task = _task_manager.get_task(task_id)
+        if "error" in task:
+            return _jsonrpc_error(rpc_id, -32602, task["error"])
+        return _jsonrpc_success(rpc_id, task)
+
+    # ----- tasks/list (D346) -----
+    if method == "tasks/list":
+        status_filter = params.get("status")
+        tasks = _task_manager.list_tasks(status=status_filter)
+        return _jsonrpc_success(rpc_id, {"tasks": tasks, "total": len(tasks)})
+
     # ----- unknown method -----
     return _jsonrpc_error(rpc_id, -32601, "Method not found: {}".format(method))
 
@@ -948,6 +1024,89 @@ def mcp_delete():
 # ---------------------------------------------------------------------------
 # Convenience endpoint: GET /mcp/v1/tools
 # ---------------------------------------------------------------------------
+@mcp_bp.route("/oauth/verify", methods=["POST"])
+def mcp_oauth_verify():
+    """POST /mcp/v1/oauth/verify -- Verify an OAuth/API token (D345).
+
+    Accepts JSON body with ``token`` field.  Returns verification result
+    including user info and scopes.  Useful for MCP clients that need
+    to pre-verify tokens before establishing a session.
+    """
+    data = request.get_json(force=True, silent=True)
+    if not data or "token" not in data:
+        return Response(
+            json.dumps({"error": "Missing 'token' in request body"}),
+            status=400,
+            content_type="application/json",
+            headers={"X-Classification": "CUI // SP-CTI"},
+        )
+    verifier = get_oauth_verifier()
+    result = verifier.verify_token(data["token"])
+    status_code = 200 if result.get("verified") else 401
+    return Response(
+        json.dumps(result, default=str),
+        status=status_code,
+        content_type="application/json",
+        headers={"X-Classification": "CUI // SP-CTI"},
+    )
+
+
+@mcp_bp.route("/oauth/token", methods=["POST"])
+def mcp_oauth_generate():
+    """POST /mcp/v1/oauth/token -- Generate offline HMAC token (D345).
+
+    For air-gapped environments.  Requires existing authentication
+    (gateway middleware sets g.user_id).  Returns an HMAC-signed token.
+    """
+    user_id = getattr(g, "user_id", None) or ""
+    if not user_id:
+        return Response(
+            json.dumps({"error": "Authentication required"}),
+            status=401,
+            content_type="application/json",
+            headers={"X-Classification": "CUI // SP-CTI"},
+        )
+    data = request.get_json(force=True, silent=True) or {}
+    verifier = get_oauth_verifier()
+    token = verifier.generate_offline_token(
+        user_id=user_id,
+        email=getattr(g, "user_email", data.get("email", "")),
+        role=getattr(g, "user_role", data.get("role", "developer")),
+        scopes=data.get("scopes", ["mcp:read", "mcp:write"]),
+        tenant_id=getattr(g, "tenant_id", data.get("tenant_id")),
+        ttl_seconds=int(data.get("ttl_seconds", 3600)),
+    )
+    return jsonify({
+        "token": token,
+        "token_type": "hmac",
+        "expires_in": int(data.get("ttl_seconds", 3600)),
+        "classification": "CUI // SP-CTI",
+    })
+
+
+@mcp_bp.route("/elicitations", methods=["GET"])
+def mcp_list_elicitations():
+    """GET /mcp/v1/elicitations -- List pending elicitations (D346)."""
+    pending = _elicitation_handler.get_pending()
+    return jsonify({
+        "elicitations": pending,
+        "total": len(pending),
+        "classification": "CUI // SP-CTI",
+    })
+
+
+@mcp_bp.route("/tasks", methods=["GET"])
+def mcp_list_tasks_endpoint():
+    """GET /mcp/v1/tasks -- List MCP tasks (D346)."""
+    status_filter = request.args.get("status")
+    tasks = _task_manager.list_tasks(status=status_filter)
+    return jsonify({
+        "tasks": tasks,
+        "total": len(tasks),
+        "classification": "CUI // SP-CTI",
+    })
+
+
 @mcp_bp.route("/tools", methods=["GET"])
 def mcp_list_tools():
     """GET /mcp/v1/tools -- List available MCP tools (convenience endpoint).

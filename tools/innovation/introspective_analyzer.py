@@ -66,6 +66,7 @@ except ImportError:
 ANALYSIS_TYPES = [
     "failed_self_heals", "gate_failures", "unused_tools",
     "slow_pipelines", "nlq_gaps", "knowledge_gaps", "cli_harmonization",
+    "code_quality",
 ]
 DEFAULT_GATE_FAILURE_MIN = 3
 DEFAULT_GATE_FAILURE_DAYS = 30
@@ -570,9 +571,81 @@ def generate_introspective_signals(analysis_results, db_path=None):
             "duplicates": duplicates, "errors": errors}
 
 
+# ---- ANALYSIS #8: Code Quality (Phase 52 — D335) ----
+def analyze_code_quality(db_path=None):
+    """Cross-reference code_quality_metrics with runtime_feedback to find functions
+    with high complexity AND low test pass rate. Generates innovation signals for
+    guided refactoring."""
+    r = _make_result("code_quality")
+    try:
+        conn = _get_db(db_path)
+    except FileNotFoundError as e:
+        return _skip(r, str(e))
+    try:
+        for t in ("code_quality_metrics", "runtime_feedback"):
+            if not _table_exists(conn, t):
+                return _skip(r, f"{t} table not found")
+
+        # Find functions with high complexity (CC >= 10) that also have failing tests
+        rows = conn.execute(
+            """SELECT cq.function_name, cq.file_path, cq.cyclomatic_complexity,
+                      cq.cognitive_complexity, cq.nesting_depth, cq.smell_count,
+                      cq.maintainability_score,
+                      COUNT(rf.id) AS test_total,
+                      SUM(CASE WHEN rf.test_passed = 1 THEN 1 ELSE 0 END) AS test_passed,
+                      AVG(rf.test_duration_ms) AS avg_duration
+               FROM code_quality_metrics cq
+               LEFT JOIN runtime_feedback rf
+                   ON cq.function_name = rf.source_function
+               WHERE cq.function_name IS NOT NULL
+                 AND cq.cyclomatic_complexity >= 10
+               GROUP BY cq.function_name, cq.file_path
+               ORDER BY cq.cyclomatic_complexity DESC
+               LIMIT 50"""
+        ).fetchall()
+
+        for row in rows:
+            total = row["test_total"] or 0
+            passed = row["test_passed"] or 0
+            pass_rate = passed / max(total, 1)
+            # Flag if complexity is high AND (no tests OR failing tests)
+            if total == 0 or pass_rate < 0.8:
+                r["findings"].append({
+                    "function_name": row["function_name"],
+                    "file_path": row["file_path"],
+                    "cyclomatic_complexity": row["cyclomatic_complexity"],
+                    "cognitive_complexity": row["cognitive_complexity"],
+                    "nesting_depth": row["nesting_depth"],
+                    "smell_count": row["smell_count"],
+                    "maintainability_score": row["maintainability_score"],
+                    "test_total": total,
+                    "test_passed": passed,
+                    "test_pass_rate": round(pass_rate, 4),
+                    "avg_test_duration_ms": round(row["avg_duration"] or 0, 2),
+                    "reason": "no_tests" if total == 0 else "low_pass_rate",
+                })
+
+        if r["findings"]:
+            no_tests = [f for f in r["findings"] if f["reason"] == "no_tests"]
+            failing = [f for f in r["findings"] if f["reason"] == "low_pass_rate"]
+            if no_tests:
+                r["recommendations"].append(
+                    f"{len(no_tests)} complex functions have NO tests. Prioritize test coverage.")
+            if failing:
+                r["recommendations"].append(
+                    f"{len(failing)} complex functions have failing tests. Consider refactoring.")
+            r["recommendations"].append(
+                "Run: python tools/analysis/code_analyzer.py --project-dir tools/ --json")
+    except sqlite3.OperationalError as e:
+        _skip(r, f"SQL: {e}")
+    finally:
+        conn.close()
+    return r
+
+
 # ---- ORCHESTRATOR ----
 def analyze_all(db_path=None, **kw):
-    """Run all 7 introspective analyses and generate signals.
+    """Run all 8 introspective analyses and generate signals.
 
     Args:
         db_path: Optional database path override.
@@ -589,6 +662,7 @@ def analyze_all(db_path=None, **kw):
         "nlq_gaps": analyze_nlq_gaps(db_path, kw.get("min_occurrences")),
         "knowledge_gaps": analyze_knowledge_gaps(db_path),
         "cli_harmonization": analyze_cli_harmonization(db_path),
+        "code_quality": analyze_code_quality(db_path),
     }
     sig_result = generate_introspective_signals(analyses, db_path)
     for a in analyses.values():
@@ -635,6 +709,7 @@ def main():
                     "nlq_gaps": lambda: analyze_nlq_gaps(args.db_path, args.min_occurrences),
                     "knowledge_gaps": lambda: analyze_knowledge_gaps(args.db_path),
                     "cli_harmonization": lambda: analyze_cli_harmonization(args.db_path),
+                    "code_quality": lambda: analyze_code_quality(args.db_path),
                 }
                 result = dispatch[args.type]()
                 result["signal_generation"] = generate_introspective_signals(

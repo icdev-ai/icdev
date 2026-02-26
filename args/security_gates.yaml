@@ -590,6 +590,77 @@ ai_governance:
     oversight_plan_required: true
     impact_assessment_required: true
 
+owasp_asi:
+  blocking:
+    - critical_asi_risk_unmitigated
+    - prompt_injection_defense_inactive_for_asi01
+    - tool_chain_validation_missing_for_asi02
+    - supply_chain_ai_bom_missing_for_asi04
+  warning:
+    - memory_integrity_not_verified_asi06
+    - inter_agent_comms_not_secured_asi07
+    - resilience_config_missing_asi08
+    - human_oversight_gaps_asi09
+    - rogue_agent_detection_not_active_asi10
+  thresholds:
+    min_asi_coverage_pct: 60
+    critical_risks_must_pass: true
+    supply_chain_verification_required: true
+
+eu_ai_act:
+  blocking:
+    - high_risk_ai_system_not_classified
+    - risk_management_system_missing
+    - data_governance_not_documented
+    - technical_documentation_missing
+    - transparency_requirements_not_met
+  warning:
+    - human_oversight_plan_incomplete
+    - record_keeping_partial
+    - conformity_assessment_missing
+    - post_market_monitoring_not_active
+    - incident_reporting_not_configured
+    - fundamental_rights_impact_not_assessed
+  thresholds:
+    risk_classification_required: true
+    min_euai_coverage_pct: 60
+    data_governance_required_for_high_risk: true
+    transparency_required: true
+    human_oversight_required_for_high_risk: true
+
+swft:
+  blocking:
+    - slsa_provenance_missing
+    - sbom_not_generated
+    - sast_scan_not_completed
+    - secret_detection_not_run
+    - dependency_audit_not_completed
+  warning:
+    - slsa_level_below_target
+    - vex_document_missing
+    - container_scan_not_completed
+    - image_attestation_missing
+    - swft_evidence_stale
+  thresholds:
+    min_slsa_level: 2
+    sbom_max_age_days: 30
+    sast_required: true
+    dependency_audit_required: true
+    secret_detection_required: true
+
+code_quality:
+  blocking:
+    - avg_cyclomatic_complexity_exceeds_critical
+  warning:
+    - maintainability_score_declining
+    - high_smell_density
+    - dead_code_exceeds_threshold
+  thresholds:
+    max_avg_complexity: 25
+    min_maintainability_score: 0.40
+    max_smell_density_per_kloc: 20
+    max_dead_code_pct: 10
+
 marketplace:
   thresholds:
     sast:

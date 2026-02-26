@@ -1,0 +1,133 @@
+{
+  "metadata": {
+    "title": "OWASP Top 10 Risks for Agentic AI Systems (ASI01-ASI10)",
+    "source": "OWASP Top 10 for Agentic AI Applications 2025, mapped to NIST 800-53 Rev 5",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-24",
+    "description": "Industry-standard risk taxonomy for agentic AI systems. Maps 10 ASI risks to existing ICDEV controls and NIST 800-53 families. Each requirement describes a specific agentic risk with automated check mapping to ICDEV tools.",
+    "total_requirements": 10
+  },
+  "requirements": [
+    {
+      "id": "ASI-01",
+      "title": "Agentic Goal Hijacking",
+      "family": "prompt_security",
+      "description": "An adversary manipulates an agent's goals through prompt injection, context poisoning, or indirect instruction override to cause the agent to pursue attacker-controlled objectives instead of its intended mission. Agentic goal hijacking is more dangerous than static prompt injection because compromised goals persist across tool calls and multi-step workflows, enabling sustained adversary control over agent behavior in mission-critical Gov/DoD environments.",
+      "risk_level": "critical",
+      "evidence_required": "Prompt injection detection active across 5 categories (role hijacking, delimiter attacks, instruction injection, data exfiltration, encoded payloads), evidence of goal persistence validation, and red-team testing for goal hijacking resistance.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-10", "AC-3", "SC-18", "SI-4"],
+      "icdev_controls": ["prompt_injection_detector", "agent_output_validator"],
+      "automated_check": "prompt_injection_log records exist with detection active"
+    },
+    {
+      "id": "ASI-02",
+      "title": "Tool and Function Abuse",
+      "family": "tool_security",
+      "description": "An adversary causes agents to misuse their authorized tools by crafting inputs that exploit loose parameter validation, bypass allowlists, or chain tools in unintended sequences. In Gov/DoD environments, tool abuse can trigger unauthorized infrastructure changes, corrupt compliance artifacts, or exfiltrate data through legitimate API calls.",
+      "risk_level": "critical",
+      "evidence_required": "MCP tool authorization (RBAC) configured with per-role allowlists, tool chain validation rules active detecting malicious tool sequences, and audit logging of all tool invocations.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-6", "CM-7", "SI-10", "AU-12"],
+      "icdev_controls": ["mcp_tool_authorizer", "tool_chain_validator"],
+      "automated_check": "MCP RBAC configured and tool chain rules defined"
+    },
+    {
+      "id": "ASI-03",
+      "title": "Identity and Access Abuse",
+      "family": "identity_access",
+      "description": "Agents escalate privileges, inherit excessive user permissions, or exploit weak identity verification in multi-agent delegation chains to access resources beyond their authorized scope. In Gov/DoD environments, identity abuse can breach classification boundaries, bypass ATO controls, or grant unauthorized access to restricted resources.",
+      "risk_level": "critical",
+      "evidence_required": "RBAC matrix mapping agent identities to permitted operations, agent trust scoring with dynamic decay/recovery, least-privilege enforcement for all agent service accounts, and periodic access review evidence.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-2", "AC-3", "AC-6", "IA-2", "IA-5"],
+      "icdev_controls": ["mcp_tool_authorizer", "agent_trust_scorer", "dashboard_auth"],
+      "automated_check": "RBAC configuration exists and agent trust scores recorded"
+    },
+    {
+      "id": "ASI-04",
+      "title": "Supply Chain and Environment Risks",
+      "family": "supply_chain",
+      "description": "Compromised dependencies, AI model components, marketplace assets, or MCP tool servers are introduced through the software or AI supply chain. Agentic supply chain attacks can target agent capabilities (skills, goals, prompts), model weights, and tool implementations. Gov/DoD environments require SBOM, AI-BOM, and marketplace security scanning.",
+      "risk_level": "critical",
+      "evidence_required": "AI Bill of Materials (AI-BOM) present, SBOM for software dependencies, marketplace 7-gate security pipeline results, SCRM assessment for AI component vendors, and Section 889 compliance.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-12", "SR-3", "SR-5", "SR-11"],
+      "icdev_controls": ["ai_bom_generator", "sbom_generator", "marketplace_scanner"],
+      "automated_check": "AI-BOM records exist in database"
+    },
+    {
+      "id": "ASI-05",
+      "title": "Unsafe Code Generation and Execution",
+      "family": "code_security",
+      "description": "Agents generate or execute code containing security vulnerabilities, dangerous patterns (eval, exec, os.system), or embedded malicious payloads. Without sandboxing and static analysis, agent-generated code can compromise host systems, escalate to infrastructure access, or install persistent backdoors.",
+      "risk_level": "critical",
+      "evidence_required": "SAST scanning of agent-generated code, dangerous code pattern detection active across 6 languages, sandboxed execution environments for generated code, and evidence of code pattern scanning results.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-3", "SI-7", "CM-7", "SC-39"],
+      "icdev_controls": ["code_pattern_scanner", "sast_runner", "dangerous_pattern_detector"],
+      "automated_check": "Code pattern scan configuration exists"
+    },
+    {
+      "id": "ASI-06",
+      "title": "Memory and Context Manipulation",
+      "family": "memory_security",
+      "description": "Adversaries corrupt agent memory stores, context windows, or knowledge bases to alter future decision-making. Poisoned memories persist across sessions and compound over time, causing increasingly compromised decisions. In Gov/DoD environments, memory manipulation can silently shift compliance posture or inject false context into mission-critical workflows.",
+      "risk_level": "high",
+      "evidence_required": "Append-only immutable memory stores with integrity verification, memory consolidation with anomaly detection, behavioral drift detection monitoring agent memory access patterns, and memory audit results.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-4", "SI-7", "AU-6", "AU-12"],
+      "icdev_controls": ["memory_consolidation", "behavioral_drift_detector", "audit_trail"],
+      "automated_check": "Behavioral drift detection configured or memory consolidation active"
+    },
+    {
+      "id": "ASI-07",
+      "title": "Multi-Agent Communication Compromise",
+      "family": "communication_security",
+      "description": "Attackers intercept, modify, replay, or inject messages into inter-agent communication channels to manipulate multi-agent system behavior. Targets A2A protocol layer through insufficient message authentication, missing replay protection, or unencrypted transport. Protocol abuse can redirect tasks, forge compliance results, or manipulate workflow execution.",
+      "risk_level": "high",
+      "evidence_required": "Mutual TLS (mTLS) for inter-agent communication, HMAC-SHA256 message integrity verification, replay protection with bounded timestamp windows, and monitoring for anomalous inter-agent message patterns.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-8", "SC-13", "SC-23", "SI-7"],
+      "icdev_controls": ["a2a_mtls", "hmac_signing", "agent_server_auth"],
+      "automated_check": "A2A agent configuration includes mTLS or HMAC signing settings"
+    },
+    {
+      "id": "ASI-08",
+      "title": "Cascading Failures and Denial of Service",
+      "family": "resilience",
+      "description": "An agent consumes excessive resources through recursive loops, unbounded tool chains, or cascading hallucinations that propagate through the multi-agent system. Resource overload degrades availability for all tenants and creates denial-of-service conditions. Cascading failures amplify errors across agents.",
+      "risk_level": "high",
+      "evidence_required": "Circuit breaker configuration for agent-to-service connections, retry utility with exponential backoff, per-agent token budgets, rate limiting, and recursion detection in agent execution paths.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-5", "SC-6", "SI-4", "CP-2"],
+      "icdev_controls": ["circuit_breaker", "retry_utility", "token_tracker"],
+      "automated_check": "Resilience configuration exists with circuit breaker settings"
+    },
+    {
+      "id": "ASI-09",
+      "title": "Insufficient Human Oversight",
+      "family": "human_oversight",
+      "description": "The system lacks adequate human-in-the-loop review gates, provides insufficient audit trails, or overwhelms human reviewers with approval requests leading to rubber-stamping. Without oversight, agents can make unchecked decisions affecting mission outcomes, compliance posture, and security. Gov/DoD environments require demonstrated HITL gates at critical decision points.",
+      "risk_level": "high",
+      "evidence_required": "HITL review gates at critical workflow decision points, append-only immutable audit trail with HMAC signing, human reviewer workload management, and self-healing confidence thresholds (auto >= 0.7, suggest 0.3-0.7, escalate < 0.3).",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "AU-6", "AU-12", "SA-11"],
+      "icdev_controls": ["audit_trail", "self_healing_gates", "hitl_confirmation"],
+      "automated_check": "Audit trail records exist for the project"
+    },
+    {
+      "id": "ASI-10",
+      "title": "Rogue Agent Behavior",
+      "family": "agent_governance",
+      "description": "A compromised, malfunctioning, or adversarially manipulated agent operates within the multi-agent system while producing incorrect outputs, ignoring security policies, or actively working against system objectives. Rogue agents are particularly dangerous because they have legitimate credentials and established trust. Behavioral anomaly detection and domain authority hard vetoes are required to contain rogue agents.",
+      "risk_level": "high",
+      "evidence_required": "Agent trust scoring with dynamic decay/recovery, behavioral anomaly detection, behavioral red teaming results, domain authority enforcement with hard vetoes from security and compliance agents, and agent quarantine procedures.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-4", "CA-7", "IR-5", "SA-11"],
+      "icdev_controls": ["agent_trust_scorer", "behavioral_red_team", "domain_authority"],
+      "automated_check": "Agent trust scores recorded or behavioral red team results exist"
+    }
+  ]
+}

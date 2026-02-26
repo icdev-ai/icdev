@@ -1761,6 +1761,55 @@ TOOL_REGISTRY = {
         "description": "Run GAO-21-519SP AI Accountability assessment. Checks governance, data, performance, and monitoring evidence.",
         "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
     },
+    "fedramp_ksi_generate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_fedramp_ksi_generate",
+        "description": "Generate FedRAMP 20x KSI evidence for continuous authorization. Maps ICDEV evidence to 43 KSIs across 12 NIST families.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "ksi_id": {"type": "string", "description": "Specific KSI ID (optional, generates all if omitted)"}}, "required": ["project_id"]},
+    },
+    "fedramp_authorization_package": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_fedramp_authorization_package",
+        "description": "Bundle FedRAMP 20x authorization package with OSCAL SSP, KSI evidence, and compliance artifacts.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "output_dir": {"type": "string", "description": "Output directory (optional)"}}, "required": ["project_id"]},
+    },
+    "owasp_asi_assess": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_owasp_asi_assess",
+        "description": "Run OWASP ASI01-ASI10 Agentic AI risk assessment. Maps 10 ASI risks to ICDEV controls.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
+    },
+    "slsa_generate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_slsa_generate",
+        "description": "Generate SLSA v1.0 provenance statement from build pipeline evidence (D341).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "target_level": {"type": "integer", "description": "Target SLSA level (0-4, default 3)"}}, "required": ["project_id"]},
+    },
+    "slsa_verify": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_slsa_verify",
+        "description": "Verify project meets target SLSA level with gap analysis and recommendations.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "target_level": {"type": "integer", "description": "Target SLSA level (0-4, default 3)"}}, "required": ["project_id"]},
+    },
+    "swft_bundle": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_swft_bundle",
+        "description": "Bundle DoD SWFT evidence package with SLSA provenance, SBOM, VEX, and compliance artifacts.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "output_dir": {"type": "string", "description": "Output directory (optional)"}}, "required": ["project_id"]},
+    },
+    "vex_generate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_vex_generate",
+        "description": "Generate VEX (Vulnerability Exploitability eXchange) document from vulnerability data.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}}, "required": ["project_id"]},
+    },
     "model_card_generate": {
         "category": "compliance",
         "module": "tools.mcp.gap_handlers",
@@ -1861,6 +1910,54 @@ TOOL_REGISTRY = {
         "handler": "handle_ai_accountability_audit",
         "description": "Run cross-framework AI accountability audit across all 4 frameworks with gap analysis and remediation guidance (Phase 49).",
         "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "project_dir": {"type": "string"}}, "required": ["project_id"]},
+    },
+    # ============================================================
+    # CODE INTELLIGENCE (Phase 52, D331-D337, 3 tools)
+    # ============================================================
+    "code_analyze": {
+        "category": "builder",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_code_analyze",
+        "description": "Run AST-based code quality analysis on a project directory. Returns per-function metrics: cyclomatic/cognitive complexity, nesting depth, LOC, smells, maintainability score.",
+        "input_schema": {"type": "object", "properties": {"project_dir": {"type": "string", "description": "Directory to analyze"}, "project_id": {"type": "string"}, "store": {"type": "boolean", "description": "Store metrics in DB", "default": False}}, "required": ["project_dir"]},
+    },
+    "code_quality_report": {
+        "category": "builder",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_code_quality_report",
+        "description": "Get code quality trend report for a project. Shows maintainability over time, complexity distribution, and smell density.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]},
+    },
+    # ============================================================
+    # PLATFORM ONE / IRON BANK (Phase 57, D350, 2 tools)
+    # ============================================================
+    "ironbank_generate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ironbank_generate",
+        "description": "Generate Platform One / Iron Bank hardening manifest (hardening_manifest.yaml) and container approval record for DoD Iron Bank submission.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project source directory (optional, for language detection)"}, "output_dir": {"type": "string", "description": "Output directory for artifacts (optional)"}}, "required": ["project_id"]},
+    },
+    "ironbank_validate": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ironbank_validate",
+        "description": "Validate existing Iron Bank hardening manifest against required fields and Iron Bank submission requirements.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "manifest_path": {"type": "string", "description": "Path to hardening_manifest.yaml (optional)"}}, "required": ["project_id"]},
+    },
+    "eu_ai_act_classify": {
+        "category": "compliance",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_eu_ai_act_classify",
+        "description": "Run EU AI Act (Regulation 2024/1689) risk classification and compliance assessment. Maps 12 high-risk requirements to ICDEV controls via ISO 27001 bridge.",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string", "description": "Project UUID"}, "project_dir": {"type": "string", "description": "Project directory path (optional)"}}, "required": ["project_id"]},
+    },
+    "runtime_feedback_collect": {
+        "category": "builder",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_runtime_feedback_collect",
+        "description": "Collect runtime feedback from test results. Parses JUnit XML or pytest stdout and correlates test results back to source functions.",
+        "input_schema": {"type": "object", "properties": {"xml_path": {"type": "string", "description": "Path to JUnit XML file"}, "project_id": {"type": "string"}, "run_id": {"type": "string"}}, "required": ["xml_path"]},
     },
 }
 

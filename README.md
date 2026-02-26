@@ -2,7 +2,7 @@
   <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/compliance%20frameworks-29%2B-orange" alt="Compliance Frameworks">
-  <img src="https://img.shields.io/badge/tools-248%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/tools-251%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
 </p>
 
@@ -44,7 +44,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 ┌─ GENERATE ────────────────────────────────────────────┐
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
-│  → 199-table database with append-only audit trail     │
+│  → 210-table database with append-only audit trail     │
 │  → GOTCHA framework + ATLAS workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
@@ -218,7 +218,7 @@ git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
 
-# Initialize databases (199 tables)
+# Initialize databases (210 tables)
 python tools/db/init_icdev_db.py
 
 # Start the dashboard
@@ -349,7 +349,7 @@ ICDEV's core architecture separates deterministic tools from probabilistic AI:
 ┌──────────────────────────────────────────────────────┐
 │  Goals         →  What to achieve (47 workflows)     │
 │  Orchestration →  AI decides tool order (LLM layer)  │
-│  Tools         →  Deterministic scripts (248+ tools) │
+│  Tools         →  Deterministic scripts (251+ tools) │
 │  Context       →  Static reference (35 catalogs)     │
 │  Hard Prompts  →  Reusable LLM templates             │
 │  Args          →  YAML/JSON config (30+ files)       │
@@ -367,10 +367,10 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                  Claude Code / AI IDE                      │
-│            (39 slash commands, 248 MCP tools)              │
+│            (39 slash commands, 251 MCP tools)              │
 ├──────────────────────────────────────────────────────────┤
 │                 Unified MCP Gateway                        │
-│          (single server, all 248 tools, lazy-loaded)       │
+│          (single server, all 251 tools, lazy-loaded)       │
 ├──────────┬──────────┬───────────┬───────────┬────────────┤
 │   Core   │  Domain  │  Domain   │  Domain   │  Support   │
 │          │          │           │           │            │
@@ -384,7 +384,7 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 │       Goals │ Tools │ Args │ Context │ Hard Prompts        │
 ├──────────────────────────────────────────────────────────┤
 │  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │
-│  199 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
+│  210 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
 │  Per-tenant DB isolation           │  IBM │Local/Air-Gap   │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -413,6 +413,7 @@ python tools/dashboard/app.py
 | `/xai` | Explainable AI dashboard with SHAP analysis |
 | `/ai-transparency` | AI Transparency: model cards, system cards, AI inventory, fairness, GAO readiness |
 | `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
+| `/code-quality` | Code Quality Intelligence: AST metrics, smell detection, maintainability trend, runtime feedback |
 
 Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, isso, co). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
@@ -420,7 +421,7 @@ Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, is
 
 ## MCP Server Integration
 
-All 248 tools exposed through a single MCP gateway. Works with any AI coding assistant:
+All 251 tools exposed through a single MCP gateway. Works with any AI coding assistant:
 
 ```json
 {
@@ -497,7 +498,7 @@ helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
 ```
 icdev/
 ├── goals/                # 47 workflow definitions
-├── tools/                # 248+ tools across 44 categories
+├── tools/                # 251+ tools across 44 categories
 │   ├── compliance/       # 25+ framework assessors, crosswalk, OSCAL
 │   ├── security/         # SAST, AI security, ATLAS, prompt injection
 │   ├── builder/          # TDD, scaffolding, app generation, 6 languages
@@ -507,7 +508,7 @@ icdev/
 │   ├── agent/            # Multi-agent orchestration, DAG workflows
 │   ├── cloud/            # 6 CSP abstractions, region validation
 │   ├── saas/             # Multi-tenant platform layer
-│   ├── mcp/              # Unified MCP gateway (248 tools)
+│   ├── mcp/              # Unified MCP gateway (251 tools)
 │   ├── modernization/    # 7R assessment, legacy migration
 │   ├── observability/    # Tracing, provenance, AgentSHAP, XAI
 │   ├── innovation/       # Autonomous self-improvement engine
@@ -537,8 +538,11 @@ behave features/
 # E2E browser tests (Playwright)
 python tools/testing/e2e_runner.py --run-all
 
-# Production readiness audit (33 checks, 6 categories)
+# Production readiness audit (38 checks, 7 categories)
 python tools/testing/production_audit.py --human --stream
+
+# Code quality self-analysis
+python tools/analysis/code_analyzer.py --project-dir tools/ --json
 ```
 
 ---

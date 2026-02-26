@@ -1123,20 +1123,20 @@ def translation_detail(job_id):
     )
 
 
-@portal_bp.route("/chat-streams")
+@portal_bp.route("/chat")
 @_portal_auth_required
-def chat_streams():
-    """Multi-stream parallel chat — Phase 44 (D257-D260). Tenant-scoped."""
+def chat():
+    """Unified agent chat — multi-stream + RICOAS + governance (Phases 44/50/51). Tenant-scoped."""
     tenant_id = g.tenant_id
     tenant = _get_tenant_info(tenant_id)
     tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
 
     return render_template(
-        "chat_streams.html",
+        "chat.html",
         tenant_name=tenant_name,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),
-        active_page="chat-streams",
+        active_page="chat",
     )
 
 
@@ -1245,6 +1245,25 @@ def ai_accountability():
 
     return render_template(
         "ai_accountability.html",
+        tenant_name=tenant_name,
+        user_name=session.get("portal_user_name", "User"),
+        user_role=session.get("portal_user_role", "viewer"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Routes: Code Quality Intelligence (Phase 52)
+# ---------------------------------------------------------------------------
+@portal_bp.route("/code-quality")
+@_portal_auth_required
+def code_quality():
+    """Code Quality Intelligence — tenant-scoped (Phase 52, D331-D337)."""
+    tenant_id = g.tenant_id
+    tenant = _get_tenant_info(tenant_id)
+    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
+
+    return render_template(
+        "code_quality.html",
         tenant_name=tenant_name,
         user_name=session.get("portal_user_name", "User"),
         user_role=session.get("portal_user_role", "viewer"),

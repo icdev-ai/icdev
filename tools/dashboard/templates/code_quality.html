@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Code Quality - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Code Quality Intelligence</h1>
+    <p class="text-muted">AST self-analysis, smell detection, maintainability scoring, runtime feedback (Phase 52, D331-D337).</p>
+
+    <!-- Summary Stats -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-files" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Files</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-functions" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Functions</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-loc" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">LOC</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-cc" style="font-size:2rem;font-weight:bold;color:#1976d2;">--</div>
+            <div class="stat-label" style="color:#666;">Avg CC</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-maint" style="font-size:2rem;font-weight:bold;color:#4caf50;">--</div>
+            <div class="stat-label" style="color:#666;" data-glossary="Maintainability score is a weighted average of complexity, smell density, test health, coupling, and coverage (D337).">Maintainability</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-smells" style="font-size:2rem;font-weight:bold;color:#ff9800;">--</div>
+            <div class="stat-label" style="color:#666;">Smells</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="st-high-cc" style="font-size:2rem;font-weight:bold;color:#f44336;">--</div>
+            <div class="stat-label" style="color:#666;">High CC (&gt;15)</div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <button onclick="runScan()" id="btn-scan" style="padding:0.5rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Run Scan</button>
+        <span id="scan-status" style="color:#666;font-size:0.9rem;"></span>
+    </div>
+
+    <!-- Trend Chart -->
+    <h2>Maintainability Trend</h2>
+    <div id="trend-chart" style="margin:1rem 0;min-height:180px;border:1px solid #eee;border-radius:8px;padding:1rem;background:#fafafa;">
+        <p style="color:#999;text-align:center;">Loading trend data...</p>
+    </div>
+
+    <!-- Smell Breakdown -->
+    <h2>Smell Distribution</h2>
+    <div id="smell-chart" style="margin:1rem 0;min-height:120px;">
+        <p style="color:#999;">Loading...</p>
+    </div>
+
+    <!-- Top Complex Functions -->
+    <h2>Most Complex Functions</h2>
+    <div class="table-container">
+        <table id="tbl-complex">
+            <thead>
+                <tr>
+                    <th>Function</th>
+                    <th>File</th>
+                    <th>CC</th>
+                    <th>Cognitive</th>
+                    <th>Nesting</th>
+                    <th>Params</th>
+                    <th>Smells</th>
+                    <th>Maintainability</th>
+                </tr>
+            </thead>
+            <tbody id="complex-body">
+                <tr><td colspan="8" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Runtime Feedback -->
+    <h2>Runtime Feedback (Test Pass Rates)</h2>
+    <div class="table-container">
+        <table id="tbl-feedback">
+            <thead>
+                <tr>
+                    <th>Source Function</th>
+                    <th>Tests</th>
+                    <th>Passed</th>
+                    <th>Pass Rate</th>
+                    <th>Avg Duration</th>
+                </tr>
+            </thead>
+            <tbody id="feedback-body">
+                <tr><td colspan="5" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    const API = '/api/code-quality';
+
+    function fmt(n, d) { return n !== null && n !== undefined ? Number(n).toFixed(d || 0) : '--'; }
+
+    function loadSummary() {
+        fetch(API + '/summary').then(r => r.json()).then(d => {
+            if (!d.has_data) { document.getElementById('st-files').textContent = '0'; return; }
+            document.getElementById('st-files').textContent = fmt(d.total_files);
+            document.getElementById('st-functions').textContent = fmt(d.total_functions);
+            document.getElementById('st-loc').textContent = d.total_loc > 999 ? fmt(d.total_loc/1000, 1) + 'K' : fmt(d.total_loc);
+            document.getElementById('st-cc').textContent = fmt(d.avg_complexity, 1);
+            document.getElementById('st-maint').textContent = fmt(d.avg_maintainability, 3);
+            document.getElementById('st-smells').textContent = fmt(d.total_smells);
+            document.getElementById('st-high-cc').textContent = fmt(d.high_complexity_count);
+        }).catch(() => {});
+    }
+
+    function loadTopComplex() {
+        fetch(API + '/top-complex?limit=20').then(r => r.json()).then(d => {
+            const tbody = document.getElementById('complex-body');
+            if (!d.functions || !d.functions.length) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">No data — run a scan first.</td></tr>'; return; }
+            tbody.innerHTML = d.functions.map(f =>
+                '<tr>' +
+                '<td><code>' + (f.function_name || '--') + '</code></td>' +
+                '<td>' + (f.file_path || '--').split('/').pop() + '</td>' +
+                '<td style="font-weight:bold;color:' + (f.cyclomatic_complexity > 15 ? '#f44336' : f.cyclomatic_complexity > 10 ? '#ff9800' : '#4caf50') + ';">' + f.cyclomatic_complexity + '</td>' +
+                '<td>' + (f.cognitive_complexity || 0) + '</td>' +
+                '<td>' + (f.nesting_depth || 0) + '</td>' +
+                '<td>' + (f.parameter_count || 0) + '</td>' +
+                '<td>' + (f.smell_count || 0) + '</td>' +
+                '<td>' + fmt(f.maintainability_score, 3) + '</td>' +
+                '</tr>'
+            ).join('');
+        }).catch(() => {});
+    }
+
+    function loadSmells() {
+        fetch(API + '/smells').then(r => r.json()).then(d => {
+            const el = document.getElementById('smell-chart');
+            if (!d.smells || !d.smells.length) { el.innerHTML = '<p style="color:#999;">No smells detected.</p>'; return; }
+            const max = d.smells[0].count;
+            const colors = {'long_function':'#ff9800','deep_nesting':'#f44336','high_complexity':'#e91e63','too_many_params':'#9c27b0','god_class':'#673ab7'};
+            el.innerHTML = d.smells.map(s =>
+                '<div style="display:flex;align-items:center;gap:0.5rem;margin:0.4rem 0;">' +
+                '<span style="min-width:140px;font-size:0.9rem;">' + s.name.replace(/_/g, ' ') + '</span>' +
+                '<div style="flex:1;background:#eee;border-radius:4px;height:20px;">' +
+                '<div style="width:' + (s.count/max*100) + '%;background:' + (colors[s.name]||'#1976d2') + ';height:100%;border-radius:4px;"></div>' +
+                '</div>' +
+                '<span style="min-width:30px;text-align:right;font-weight:bold;">' + s.count + '</span>' +
+                '</div>'
+            ).join('');
+        }).catch(() => {});
+    }
+
+    function loadTrend() {
+        fetch(API + '/trend').then(r => r.json()).then(d => {
+            const el = document.getElementById('trend-chart');
+            if (!d.trend || d.trend.length < 2) { el.innerHTML = '<p style="color:#999;text-align:center;">Need >=2 scans for trend chart. Run scans to populate.</p>'; return; }
+            // Simple SVG line chart
+            const w = 700, h = 160, pad = 40;
+            const pts = d.trend.map((t, i) => ({ x: pad + i * ((w - 2*pad) / (d.trend.length - 1)), y: h - pad - (t.avg_maintainability || 0) * (h - 2*pad) }));
+            const line = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p.x + ',' + p.y).join(' ');
+            el.innerHTML = '<svg width="' + w + '" height="' + h + '" role="img" aria-label="Maintainability trend">' +
+                '<line x1="' + pad + '" y1="' + (h-pad) + '" x2="' + (w-pad) + '" y2="' + (h-pad) + '" stroke="#ccc"/>' +
+                '<path d="' + line + '" fill="none" stroke="#4caf50" stroke-width="2"/>' +
+                pts.map(p => '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="#4caf50"/>').join('') +
+                '<text x="' + pad + '" y="' + (h-8) + '" font-size="10" fill="#999">Oldest</text>' +
+                '<text x="' + (w-pad-30) + '" y="' + (h-8) + '" font-size="10" fill="#999">Latest</text>' +
+                '<text x="5" y="' + pad + '" font-size="10" fill="#999">1.0</text>' +
+                '<text x="5" y="' + (h-pad) + '" font-size="10" fill="#999">0.0</text>' +
+                '</svg>';
+        }).catch(() => {});
+    }
+
+    function loadFeedback() {
+        fetch(API + '/feedback?limit=20').then(r => r.json()).then(d => {
+            const tbody = document.getElementById('feedback-body');
+            if (!d.feedback || !d.feedback.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">No runtime feedback collected yet.</td></tr>'; return; }
+            tbody.innerHTML = d.feedback.map(f =>
+                '<tr>' +
+                '<td><code>' + f.source_function + '</code></td>' +
+                '<td>' + f.test_total + '</td>' +
+                '<td>' + f.test_passed + '</td>' +
+                '<td style="color:' + (f.pass_rate >= 0.8 ? '#4caf50' : f.pass_rate >= 0.5 ? '#ff9800' : '#f44336') + ';font-weight:bold;">' + (f.pass_rate * 100).toFixed(1) + '%</td>' +
+                '<td>' + f.avg_duration_ms.toFixed(1) + 'ms</td>' +
+                '</tr>'
+            ).join('');
+        }).catch(() => {});
+    }
+
+    window.runScan = function() {
+        const btn = document.getElementById('btn-scan');
+        const status = document.getElementById('scan-status');
+        btn.disabled = true;
+        status.textContent = 'Scanning...';
+        fetch(API + '/scan', {method: 'POST'}).then(r => r.json()).then(d => {
+            status.textContent = d.error ? 'Error: ' + d.error : 'Scanned ' + (d.files_analyzed || 0) + ' files, stored ' + (d.stored_rows || 0) + ' rows.';
+            btn.disabled = false;
+            loadSummary(); loadTopComplex(); loadSmells(); loadTrend(); loadFeedback();
+        }).catch(e => { status.textContent = 'Error: ' + e; btn.disabled = false; });
+    };
+
+    // Initial load
+    loadSummary();
+    loadTopComplex();
+    loadSmells();
+    loadTrend();
+    loadFeedback();
+})();
+</script>
+{% endblock %}

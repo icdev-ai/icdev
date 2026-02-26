@@ -1,0 +1,53 @@
+# CUI // SP-CTI
+# Build & Deploy Workflow — Scaffold → Test → Build → Lint → Deploy
+description: "Build and deploy: scaffolding, testing, linting, IaC generation"
+category: build
+steps:
+  - id: scaffold
+    name: "Project Scaffold"
+    tool: "tools/builder/scaffolder.py"
+    inject_project_id: false
+    args:
+      type: "api"
+      name: "app"
+    required: false
+    description: "Scaffold project structure"
+
+  - id: lint
+    name: "Code Linting"
+    tool: "tools/builder/linter.py"
+    inject_project_id: false
+    args:
+      project-dir: "tools/"
+    required: false
+    description: "Run linter on project code"
+
+  - id: test
+    name: "Run Tests"
+    tool: "tools/testing/test_orchestrator.py"
+    inject_project_id: false
+    args:
+      project-dir: "."
+      skip-e2e: true
+    depends_on: [lint]
+    required: false
+    description: "Run full test suite (unit + BDD)"
+
+  - id: terraform
+    name: "Generate Terraform IaC"
+    tool: "tools/infra/terraform_generator.py"
+    depends_on: []
+    required: false
+    description: "Generate infrastructure as code"
+
+  - id: pipeline
+    name: "Generate CI/CD Pipeline"
+    tool: "tools/ci/pipeline_config_generator.py"
+    inject_project_id: false
+    args:
+      dir: "."
+      platform: auto
+      dry-run: true
+    depends_on: []
+    required: false
+    description: "Generate CI/CD pipeline configuration"
