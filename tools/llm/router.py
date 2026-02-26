@@ -6,6 +6,7 @@ provider + model via fallback chain. Probes provider availability
 and caches results.
 """
 
+import copy
 import logging
 import os
 import re
@@ -353,6 +354,130 @@ class LLMRouter:
 
         return result["action"]
 
+    # -------------------------------------------------------------------
+    # Two-tier routing helpers (D-TT1: qwen3 worker → Claude planner)
+    # -------------------------------------------------------------------
+
+    def _invoke_model_direct(self, model_name: str, request: LLMRequest) -> Optional[LLMResponse]:
+        """Invoke a specific named model without chain fallback.
+
+        Returns None on any error so callers can fall through to chain.
+        """
+        model_cfg = self._get_model_config(model_name)
+        if not model_cfg:
+            logger.warning("Two-tier: model '%s' not found in config", model_name)
+            return None
+        provider_name = model_cfg.get("provider", "")
+        provider = self._get_provider(provider_name)
+        if provider is None:
+            logger.warning("Two-tier: provider '%s' unavailable for model '%s'", provider_name, model_name)
+            return None
+        model_id = model_cfg.get("model_id", "")
+        try:
+            return provider.invoke(request, model_id, model_cfg)
+        except Exception as exc:
+            logger.warning("Two-tier: direct invoke failed for %s/%s: %s", model_name, model_id, exc)
+            return None
+
+    def _draft_request(self, request: LLMRequest) -> LLMRequest:
+        """Return a copy of request with a compact-output instruction appended.
+
+        Instructs qwen3 to produce a short, structured draft — the key to
+        keeping Claude's review input token count LOW vs Claude doing the
+        full task alone.
+        """
+        req = copy.copy(request)
+        compact = (
+            "\n\n[DRAFT MODE] Produce a COMPACT, structured response: bullet points, "
+            "short sentences, no step-by-step reasoning chains. Max ~400 words. "
+            "This draft will be reviewed and finalized by another model."
+        )
+        req.system_prompt = (request.system_prompt or "") + compact
+        return req
+
+    def _review_request(self, original: LLMRequest, draft: LLMResponse, function: str) -> LLMRequest:
+        """Build a Claude review request from the original task + qwen3 draft.
+
+        Claude receives: compact review system prompt + original task + draft.
+        This is intentionally smaller than Claude handling the full task alone.
+        """
+        req = copy.copy(original)
+        req.system_prompt = (
+            f"You are reviewing a draft from a local AI assistant (function: {function}). "
+            "Verify correctness, fix errors, fill gaps, and return the final polished response. "
+            "Be direct — do not explain what you changed."
+        )
+        # Extract original user message for context
+        original_task = ""
+        for msg in (original.messages or []):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                c = msg.get("content", "")
+                original_task = c if isinstance(c, str) else str(c)
+                break
+        req.messages = [{"role": "user", "content": (
+            f"ORIGINAL TASK:\n{original_task}\n\n"
+            f"DRAFT TO REVIEW:\n{draft.content}\n\n"
+            "Return the corrected, final response only."
+        )}]
+        return req
+
+    def _maybe_invoke_two_tier(
+        self, function: str, request: LLMRequest
+    ) -> Optional[LLMResponse]:
+        """Apply two-tier routing if function is configured for it.
+
+        Returns LLMResponse if two-tier handled the call, else None
+        (caller falls through to normal chain-based routing).
+
+        Three paths:
+          planner_functions  → Claude directly (no qwen3 pre-step)
+          worker_functions   → qwen3 compact draft → Claude review
+          scanner_functions  → qwen3 only (no review)
+        """
+        cfg = self._config.get("two_tier", {})
+        if not cfg.get("enabled", False):
+            return None
+
+        tier1 = cfg.get("tier1_model", "qwen3-local")
+        tier2 = cfg.get("tier2_model", "claude-sonnet")
+        planners = cfg.get("planner_functions", [])
+        workers = cfg.get("worker_functions", [])
+        scanners = cfg.get("scanner_functions", [])
+
+        if function in planners:
+            # Claude plans directly
+            logger.debug("Two-tier: %s → planner (Claude direct)", function)
+            result = self._invoke_model_direct(tier2, request)
+            if result is not None:
+                return result
+            # Fall through to chain on failure
+
+        elif function in workers:
+            # qwen3 drafts, Claude reviews
+            logger.debug("Two-tier: %s → worker (qwen3 draft → Claude review)", function)
+            draft = self._invoke_model_direct(tier1, self._draft_request(request))
+            if draft is not None:
+                review_req = self._review_request(request, draft, function)
+                reviewed = self._invoke_model_direct(tier2, review_req)
+                if reviewed is not None:
+                    # Store draft on response for audit/observability
+                    reviewed.draft_content = draft.content  # type: ignore[attr-defined]
+                    return reviewed
+                # Claude unavailable — return qwen3 draft as fallback
+                logger.warning("Two-tier: Claude review unavailable for %s, returning qwen3 draft", function)
+                return draft
+            # qwen3 unavailable — fall through to chain
+
+        elif function in scanners:
+            # qwen3 only, no review
+            logger.debug("Two-tier: %s → scanner (qwen3 only)", function)
+            result = self._invoke_model_direct(tier1, request)
+            if result is not None:
+                return result
+            # Fall through to chain on failure
+
+        return None  # Not in two_tier config or model unavailable → use chain
+
     def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
 
@@ -381,6 +506,11 @@ class LLMRouter:
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
+
+        # Two-tier routing: qwen3 worker → Claude planner/reviewer
+        two_tier_result = self._maybe_invoke_two_tier(function, request)
+        if two_tier_result is not None:
+            return two_tier_result
 
         chain = self._get_chain_for_function(function)
         last_error = None

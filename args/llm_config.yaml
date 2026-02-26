@@ -182,6 +182,15 @@ models:
     supports_structured_output: false
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  qwen3-local:
+    provider: ollama
+    model_id: qwen3:latest
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # -- Vision Models (Local) --
   gemma3-local:
     provider: ollama
@@ -232,59 +241,59 @@ models:
 # First available model in the chain is used.
 routing:
   agent_architect:
-    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, llama-local]
+    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
     effort: max
 
   agent_orchestrator:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
     effort: high
 
   agent_builder:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
     effort: max
 
   agent_compliance:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: high
 
   agent_security:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: high
 
   agent_infra:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
 
   agent_knowledge:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
 
   agent_monitor:
-    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
     effort: low
 
   task_decomposition:
-    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o]
+    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, qwen3-local]
     effort: high
 
   collaboration:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
 
   nlq_sql:
-    chain: [gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
+    chain: [gpt-4o-mini, gemini-2.0-flash, claude-haiku, qwen3-local, llama-local]
     effort: low
 
   code_generation:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
     effort: high
 
   saas_proxy:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local]
     effort: medium
 
   child_app:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local]
     effort: medium
 
   screenshot_validation:
@@ -312,44 +321,44 @@ routing:
     effort: low
 
   intake_persona_response:
-    chain: [claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
 
   bdd_preview:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, codestral-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, codestral-local]
     effort: low
 
   narrative_generation:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: high
 
   compliance_export:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
     effort: medium
 
   # Cross-Language Translation (Phase 43)
   code_translation:
-    chain: [claude-opus, claude-sonnet, o3, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [claude-opus, claude-sonnet, o3, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
     effort: max
 
   code_translation_repair:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
     effort: high
 
   code_translation_review:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
     effort: high
 
   test_translation:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
     effort: high
 
   dependency_suggestion:
-    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, codestral-local]
+    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, codestral-local]
     effort: low
 
   default:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
 
 # -----------------------------------------------------------------------
@@ -432,4 +441,55 @@ settings:
   base_retry_delay_seconds: 1.0
   max_retry_delay_seconds: 30.0
   availability_cache_ttl_seconds: 1800
-  prefer_local: false    # Set true in air-gapped environments
+  prefer_local: false    # Two-tier handles local/cloud split — do not set true (blocks Claude tier2)
+
+# -----------------------------------------------------------------------
+# Two-Tier Routing (qwen3 worker → Claude planner/reviewer)
+# -----------------------------------------------------------------------
+# Claude is the brain. qwen3 handles drafting, research, and scanning.
+#
+# planner_functions : Claude directly — no qwen3 pre-step (architecture,
+#                     orchestration, high-stakes planning)
+# worker_functions  : qwen3 drafts a COMPACT structured response, then
+#                     Claude verifies/corrects and returns the final answer.
+#                     qwen3 output is intentionally short (reduces Claude's
+#                     input tokens vs. Claude doing the full task alone).
+# scanner_functions : qwen3 only — log analysis, health checks, simple
+#                     pattern matching where review adds no value.
+#
+# Set enabled: false to fall back to normal chain-based routing.
+two_tier:
+  enabled: true
+  tier1_model: qwen3-local    # Worker — research, draft, scan (free/local)
+  tier2_model: claude-sonnet  # Planner/Reviewer — verify, decide, plan
+
+  planner_functions:
+    - agent_architect
+    - agent_orchestrator
+    - task_decomposition
+    - child_app
+    - saas_proxy
+
+  worker_functions:
+    - agent_builder
+    - agent_compliance
+    - agent_security
+    - agent_infra
+    - agent_knowledge
+    - code_generation
+    - code_translation
+    - code_translation_repair
+    - code_translation_review
+    - test_translation
+    - bdd_preview
+    - nlq_sql
+    - narrative_generation
+    - compliance_export
+    - intake_persona_response
+    - collaboration
+    - dependency_suggestion
+    - default
+
+  scanner_functions:
+    - agent_monitor
+    - attachment_analysis
