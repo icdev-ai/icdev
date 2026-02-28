@@ -124,6 +124,69 @@ profiles:
     recommended_addons: []
     notes: "Start with minimum core and add modules individually via --add-module."
 
+  # ── Customer Delivery Profiles (D374) ───────────────────────────────
+  # Free on-prem ICDEV for winning GovProposal customers.
+  # Excludes internal business tools: GovProposal/RFX, GovCon Intel,
+  # Creative Engine, Innovation Engine, Marketplace SaaS, agentic gen.
+
+  customer_core:
+    name: "Customer Delivery — Core Platform"
+    description: "SDLC + compliance essentials for winning government customers"
+    delivery_tier: core
+    modules: [core, llm, builder, security, testing, compliance_base, dashboard, cicd]
+    default_compliance: []
+    default_platform: k8s
+    cui_enabled: true
+    recommended_addons: [infrastructure, monitoring]
+    excluded_reason:
+      govcon: "Internal capture tool — not for customer delivery"
+      creative: "Internal competitive intelligence"
+      innovation: "Internal R&D self-improvement"
+      govproposal: "Internal proposal writing engine"
+      saas: "We run the SaaS, customer is on-prem"
+      marketplace: "Customer consumes from marketplace, not runs it"
+      agentic_generation: "Advanced — available in Enterprise tier"
+    notes: "Minimum viable platform. Builder + Security + Testing + Compliance + Dashboard + CI/CD. Customer adds frameworks post-install."
+
+  customer_standard:
+    name: "Customer Delivery — Standard Platform"
+    description: "Full DevSecOps + requirements intake for winning government customers"
+    delivery_tier: standard
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, infrastructure, dashboard, monitoring, devsecops_zta, ricoas]
+    default_compliance: []
+    default_platform: k8s
+    cui_enabled: true
+    impact_level: IL5
+    recommended_addons: [mosa, agent_orchestration]
+    excluded_reason:
+      govcon: "Internal capture tool"
+      creative: "Internal competitive intelligence"
+      innovation: "Internal R&D"
+      govproposal: "Internal proposal engine"
+      saas: "Customer is on-prem"
+      marketplace: "Customer consumes, not runs"
+    notes: "Most common delivery tier. Adds DevSecOps/ZTA, requirements intake (RICOAS), infrastructure generation, and monitoring."
+
+  customer_enterprise:
+    name: "Customer Delivery — Enterprise Platform"
+    description: "Full engineering suite for winning government customers (excludes internal business tools)"
+    delivery_tier: enterprise
+    modules: [core, llm, builder, security, testing, compliance_base, cicd, infrastructure, dashboard, agent_orchestration, monitoring, devsecops_zta, mosa, ricoas, mbse, modernization, gateway, mcp_servers]
+    default_compliance: []
+    default_platform: k8s
+    cui_enabled: true
+    impact_level: IL5
+    recommended_addons: []
+    excluded_reason:
+      govcon: "Internal capture tool"
+      creative: "Internal competitive intelligence"
+      innovation: "Internal R&D"
+      govproposal: "Internal proposal engine"
+      saas: "Customer is on-prem"
+      marketplace: "Customer consumes, not runs"
+      agentic_generation: "Grandchild prevention (D52)"
+    notes: "Everything except internal business tools. MBSE, modernization, gateway, multi-agent orchestration included."
+
 # ── Platform Definitions ────────────────────────────────────────────
 
 platforms:

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}GovCon Requirements - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <h1>Requirement Pattern Analysis</h1>
+  <p style="color:var(--text-secondary);">Phase 59 &mdash; Frequency analysis, domain heatmap, trend detection across SAM.gov RFPs</p>
+
+  <!-- Stat Grid -->
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1rem 0;">
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ total_requirements }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Total Requirements</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ total_patterns }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Clustered Patterns</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ domain_count }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Domains</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ top_frequency }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Top Frequency</div>
+    </div>
+  </div>
+
+  <!-- Domain Heatmap -->
+  <h2 style="margin-top:1.5rem;">Domain Heatmap</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:1rem 0;">
+    {% for domain, info in domain_stats.items() %}
+    {% set pct = (info.count / total_requirements * 100) if total_requirements > 0 else 0 %}
+    {% set heat = '#d32f2f' if pct > 25 else '#f57c00' if pct > 15 else '#fbc02d' if pct > 8 else '#388e3c' if pct > 3 else '#90caf9' %}
+    <div style="padding:12px;border-radius:6px;background:{{ heat }};color:#fff;text-align:center;">
+      <div style="font-weight:600;font-size:0.85rem;">{{ domain }}</div>
+      <div style="font-size:1.3rem;font-weight:bold;">{{ info.count }}</div>
+      <div style="font-size:0.75rem;">{{ pct|round(1) }}%</div>
+    </div>
+    {% endfor %}
+    {% if not domain_stats %}
+    <div style="padding:12px;color:var(--text-secondary);">No requirements extracted yet.</div>
+    {% endif %}
+  </div>
+
+  <!-- Top Patterns -->
+  <h2 style="margin-top:1.5rem;">Top Requirement Patterns <span style="font-weight:normal;font-size:0.85rem;color:var(--text-secondary);">(frequency &ge; {{ min_frequency }})</span></h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Pattern</th>
+          <th style="text-align:left;padding:0.5rem;">Domain</th>
+          <th style="text-align:right;padding:0.5rem;">Frequency</th>
+          <th style="text-align:center;padding:0.5rem;">Coverage</th>
+          <th style="text-align:center;padding:0.5rem;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in patterns %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;">
+            <div style="font-weight:600;">{{ p.pattern_name }}</div>
+            <div style="font-size:0.8rem;color:var(--text-secondary);max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ p.representative_text or '' }}</div>
+          </td>
+          <td style="padding:0.5rem;">
+            <span style="padding:2px 8px;border-radius:10px;font-size:0.8rem;background:var(--bg-secondary);border:1px solid var(--border-color);">{{ p.domain_category }}</span>
+          </td>
+          <td style="padding:0.5rem;text-align:right;font-weight:600;">{{ p.frequency }}</td>
+          <td style="padding:0.5rem;text-align:center;">
+            {% if p.capability_coverage is not none and p.capability_coverage != '' %}
+              {% set cov = p.capability_coverage|float %}
+              {% set cov_color = '#388e3c' if cov >= 0.80 else '#f57c00' if cov >= 0.40 else '#d32f2f' %}
+              <span style="color:{{ cov_color }};font-weight:600;">{{ (cov * 100)|round|int }}%</span>
+            {% else %}
+              <span style="color:var(--text-secondary);">--</span>
+            {% endif %}
+          </td>
+          <td style="padding:0.5rem;text-align:center;">
+            {% set status_colors = {'new':'#1976d2', 'mapped':'#388e3c', 'gap_identified':'#f57c00', 'addressed':'#388e3c'} %}
+            <span style="color:{{ status_colors.get(p.status, '#999') }};">{{ p.status or 'new' }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not patterns %}
+        <tr><td colspan="5" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No patterns found. Run Extract + Map to cluster requirements.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Statement Types -->
+  <h2 style="margin-top:1.5rem;">Statement Types</h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Type</th>
+          <th style="text-align:right;padding:0.5rem;">Count</th>
+          <th style="text-align:left;padding:0.5rem;">Bar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set max_type = type_stats.values()|max if type_stats else 1 %}
+        {% for stype, count in type_stats.items() %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;font-weight:600;">{{ stype }}</td>
+          <td style="padding:0.5rem;text-align:right;">{{ count }}</td>
+          <td style="padding:0.5rem;">
+            <div style="background:var(--accent-color,#4a90d9);height:14px;border-radius:3px;width:{{ (count / max_type * 100)|round|int }}%;min-width:4px;"></div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not type_stats %}
+        <tr><td colspan="3" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No data yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

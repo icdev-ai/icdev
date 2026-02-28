@@ -651,11 +651,42 @@ def store_signals(signals, db_path=None):
 # SCAN ORCHESTRATOR
 # =========================================================================
 # Map source name -> scanner function
+def scan_sam_gov_for_innovation(config):
+    """Scan SAM.gov opportunities as innovation signals (D361 cross-registration).
+
+    Converts SAM.gov RFP requirement patterns into innovation signals,
+    enabling ICDEV to detect trends in government demand for specific capabilities.
+    """
+    signals = []
+    try:
+        from tools.govcon.requirement_extractor import get_patterns
+        patterns = get_patterns(min_frequency=3)
+        for p in patterns.get("patterns", []):
+            signals.append({
+                "source_type": "sam_gov",
+                "category": "govcon_opportunity",
+                "title": f"GovCon pattern: {p.get('pattern_name', 'unknown')}",
+                "description": p.get("representative_text", "")[:500],
+                "url": "",
+                "relevance_score": min(p.get("frequency", 1) / 10.0, 1.0),
+                "metadata": json.dumps({
+                    "domain": p.get("domain_category", "unknown"),
+                    "frequency": p.get("frequency", 0),
+                    "coverage": p.get("capability_coverage"),
+                    "source": "sam_gov_requirement_pattern",
+                }),
+            })
+    except Exception:
+        signals.append({"source_type": "scan_error", "title": "SAM.gov scan failed", "description": ""})
+    return signals
+
+
 SOURCE_SCANNERS = {
     "github": scan_github,
     "cve_databases": scan_cve_databases,
     "stackoverflow": scan_stackoverflow,
     "hackernews": scan_hackernews,
+    "sam_gov": scan_sam_gov_for_innovation,
 }
 
 

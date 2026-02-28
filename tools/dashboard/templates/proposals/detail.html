@@ -43,6 +43,24 @@
     </div>
 </div>
 
+<!-- GovCon Intelligence Actions -->
+<div class="card" style="padding:12px; margin-top:16px; border-left:3px solid var(--accent-color, #4a90d9);">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+            <strong>GovCon Intelligence</strong>
+            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">AI-powered proposal automation</span>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-secondary btn-sm" onclick="govconAction('extract', '{{ opp.id }}')" title="Extract shall/must/will statements from RFP text">Extract Requirements</button>
+            <button class="btn btn-secondary btn-sm" onclick="govconAction('map', '{{ opp.id }}')" title="Map extracted requirements to ICDEV capabilities">Map Capabilities</button>
+            <button class="btn btn-secondary btn-sm" onclick="govconAction('compliance', '{{ opp.id }}')" title="Auto-populate L/M/N compliance matrix">Auto-Compliance</button>
+            <button class="btn btn-primary btn-sm" onclick="govconAction('draft', '{{ opp.id }}')" title="AI-draft responses using two-tier LLM (qwen3 + Claude)">AI Draft All</button>
+            <button class="btn btn-secondary btn-sm" onclick="govconAction('bid', '{{ opp.id }}')" title="Get bid/no-bid recommendation based on coverage">Bid Recommendation</button>
+        </div>
+    </div>
+    <div id="govcon-status" style="margin-top:8px; font-size:12px; color:var(--text-secondary); display:none;"></div>
+</div>
+
 <!-- Tabs -->
 <div class="tabs" style="margin-top:20px;">
     <button class="tab-btn active" data-tab="tab-overview">Overview</button>
@@ -51,6 +69,7 @@
     <button class="tab-btn" data-tab="tab-compliance">Compliance Matrix</button>
     <button class="tab-btn" data-tab="tab-timeline">Timeline</button>
     <button class="tab-btn" data-tab="tab-reviews">Reviews</button>
+    <button class="tab-btn" data-tab="tab-drafts">AI Drafts</button>
 </div>
 
 <!-- ===================== Overview Tab ===================== -->
@@ -218,6 +237,30 @@
                 {% endfor %}
                 {% endfor %}
             </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== AI Drafts Tab ===================== -->
+<div id="tab-drafts" class="tab-content" style="display:none;">
+    <div style="margin:16px 0; display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-primary" onclick="govconAction('draft', '{{ opp.id }}')">Generate AI Drafts</button>
+        <span style="font-size:12px; color:var(--text-secondary);">Two-tier LLM: qwen3 drafts, Claude reviews</span>
+    </div>
+    <div id="drafts-loading" style="display:none; padding:12px; color:var(--text-secondary);">Loading drafts...</div>
+    <div class="table-container">
+        <table id="drafts-table">
+            <thead>
+                <tr>
+                    <th>Requirement</th>
+                    <th>Domain</th>
+                    <th>Confidence</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="drafts-tbody"></tbody>
         </table>
     </div>
 </div>
@@ -460,6 +503,117 @@ document.addEventListener("DOMContentLoaded", function() {
     if (window.ICDEV && ICDEV.proposals) {
         ICDEV.proposals.startAutoRefresh("{{ opp.id }}", 30000);
     }
+
+    // Load drafts when AI Drafts tab clicked
+    document.querySelector('[data-tab="tab-drafts"]').addEventListener("click", function() {
+        loadDrafts("{{ opp.id }}");
+    });
 });
+
+// ── GovCon Intelligence Actions ──────────────────────────────────
+function govconAction(action, oppId) {
+    var statusEl = document.getElementById("govcon-status");
+    statusEl.style.display = "block";
+    statusEl.textContent = "Running " + action + "...";
+    statusEl.style.color = "var(--accent-color, #4a90d9)";
+
+    var endpoints = {
+        "extract": {url: "/api/govcon/opportunities/" + oppId + "/extract-requirements", method: "POST"},
+        "map": {url: "/api/govcon/opportunities/" + oppId + "/map-capabilities", method: "POST"},
+        "compliance": {url: "/api/govcon/opportunities/" + oppId + "/auto-compliance", method: "POST"},
+        "draft": {url: "/api/govcon/opportunities/" + oppId + "/auto-draft", method: "POST"},
+        "bid": {url: "/api/govcon/opportunities/" + oppId + "/bid-recommendation", method: "GET"},
+    };
+
+    var ep = endpoints[action];
+    if (!ep) return;
+
+    fetch(ep.url, {
+        method: ep.method,
+        headers: {"Content-Type": "application/json"},
+        body: ep.method === "POST" ? JSON.stringify({}) : undefined,
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            statusEl.textContent = "Error: " + data.error;
+            statusEl.style.color = "var(--status-red, #dc3545)";
+        } else {
+            var msg = action + " completed. ";
+            if (action === "extract" && data.extracted !== undefined) msg += data.extracted + " statements extracted.";
+            if (action === "map" && data.mapped !== undefined) msg += data.mapped + " patterns mapped.";
+            if (action === "compliance") {
+                msg += "L=" + (data.L_compliant||0) + " M=" + (data.M_partial||0) + " N=" + (data.N_gap||0);
+                if (data.compliance_items_created) msg += " (" + data.compliance_items_created + " items created)";
+            }
+            if (action === "draft" && data.drafted !== undefined) msg += data.drafted + " drafts generated.";
+            if (action === "bid" && data.bid_recommendation) {
+                var rec = data.bid_recommendation;
+                msg = "Recommendation: " + (rec.decision || "").toUpperCase() + " — " + (rec.reason || "");
+            }
+            statusEl.textContent = msg;
+            statusEl.style.color = "var(--status-green, #28a745)";
+            // Reload page after 2s to reflect changes
+            if (action !== "bid") setTimeout(function() { location.reload(); }, 2000);
+        }
+    })
+    .catch(function(err) {
+        statusEl.textContent = "Network error: " + err;
+        statusEl.style.color = "var(--status-red, #dc3545)";
+    });
+}
+
+// ── AI Drafts Tab ────────────────────────────────────────────────
+function loadDrafts(oppId) {
+    var tbody = document.getElementById("drafts-tbody");
+    var loading = document.getElementById("drafts-loading");
+    loading.style.display = "block";
+
+    fetch("/api/govcon/opportunities/" + oppId + "/drafts")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        loading.style.display = "none";
+        tbody.innerHTML = "";
+        var drafts = data.drafts || [];
+        if (drafts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">No drafts yet. Click "AI Draft All" to generate.</td></tr>';
+            return;
+        }
+        drafts.forEach(function(d) {
+            var conf = d.confidence ? (d.confidence * 100).toFixed(0) + "%" : "—";
+            var confColor = (d.confidence || 0) >= 0.7 ? "success" : ((d.confidence || 0) >= 0.4 ? "warning" : "error");
+            var statusColor = {"draft": "warning", "approved": "success", "rejected": "error", "reviewed": "info"}[d.status] || "info";
+            var actions = d.status === "draft"
+                ? '<button class="btn btn-sm btn-success" onclick="approveDraft(\'' + d.id + '\')">Approve</button> '
+                  + '<button class="btn btn-sm btn-error" onclick="rejectDraft(\'' + d.id + '\')">Reject</button>'
+                : '<span class="text-muted">' + d.status + '</span>';
+            tbody.innerHTML += '<tr>'
+                + '<td title="' + (d.shall_text || d.draft_content || '').substring(0, 200).replace(/"/g, '&quot;') + '">'
+                + (d.shall_text || d.draft_content || '—').substring(0, 80) + '...</td>'
+                + '<td><span class="badge badge-info">' + (d.domain || '—') + '</span></td>'
+                + '<td><span class="badge badge-' + confColor + '">' + conf + '</span></td>'
+                + '<td>' + (d.generation_model || '—') + '</td>'
+                + '<td><span class="badge badge-' + statusColor + '">' + d.status + '</span></td>'
+                + '<td>' + actions + '</td></tr>';
+        });
+    })
+    .catch(function() { loading.textContent = "Failed to load drafts."; });
+}
+
+function approveDraft(draftId) {
+    fetch("/api/govcon/drafts/" + draftId + "/approve", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reviewed_by: "dashboard_user"})
+    }).then(function() { loadDrafts("{{ opp.id }}"); });
+}
+
+function rejectDraft(draftId) {
+    var notes = prompt("Rejection reason:");
+    if (notes === null) return;
+    fetch("/api/govcon/drafts/" + draftId + "/reject", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reviewed_by: "dashboard_user", review_notes: notes})
+    }).then(function() { loadDrafts("{{ opp.id }}"); });
+}
 </script>
 {% endblock %}

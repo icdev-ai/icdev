@@ -157,6 +157,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_feature_gaps",
         "creative_specs",
         "creative_trends",
+        # GovCon Intelligence (Phase 59, D361-D373)
+        "rfp_shall_statements",
+        "rfp_requirement_patterns",
+        "icdev_capability_map",
+        "proposal_section_drafts",
+        "govcon_awards",
+        # Customer Delivery Tracking (D374)
+        "customer_deliveries",
     ]
 
     if tool_name == "Bash":

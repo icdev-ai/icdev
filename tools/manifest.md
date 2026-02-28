@@ -771,6 +771,21 @@
 | EU AI Act Catalog | context/compliance/eu_ai_act_annex_iii.json | 12 high-risk requirements, 8 Annex III categories, 4 risk levels with NIST crosswalk | (catalog) | JSON catalog |
 | Iron Bank Generator | tools/infra/ironbank_metadata_generator.py | Generate Platform One / Iron Bank hardening_manifest.yaml and container_approval.json for DoD Iron Bank submission. Language auto-detection. | --project-id, --project-dir, --output-dir, --generate, --validate, --json | Hardening manifest + approval record |
 
+## GovCon Intelligence (Phase 59)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| SAM.gov Scanner | tools/govcon/sam_scanner.py | Poll SAM.gov Opportunities API v2. Extracts opportunities by NAICS, notice type. Stores in sam_gov_opportunities. | --scan, --naics, --list-cached, --json | Opportunity JSON |
+| Requirement Extractor | tools/govcon/requirement_extractor.py | Extract shall/must/will statements from RFP descriptions. Domain-classify (9 domains). Cluster by keyword fingerprint (D364). | --extract-all, --patterns, --domain, --json | Requirements + patterns JSON |
+| Capability Mapper | tools/govcon/capability_mapper.py | Map requirement patterns to ICDEV capability catalog. Compute coverage scores (L/M/N). | --map-all, --coverage, --gaps, --json | Compliance matrix JSON |
+| Gap Analyzer | tools/govcon/gap_analyzer.py | Identify unmet requirements (coverage < 0.40). Generate enhancement recommendations. Cross-register to Innovation Engine. | --analyze, --recommendations, --json | Gap analysis JSON |
+| Response Drafter | tools/govcon/response_drafter.py | Two-tier LLM drafting (D365). qwen3 drafts compact response, Claude reviews. Stores in proposal_section_drafts. | --draft, --opp-id, --json | Draft response JSON |
+| Compliance Populator | tools/govcon/compliance_populator.py | Auto-populate L/M/N compliance matrix from capability coverage scores. Bid/no-bid recommendation. | --populate, --summary, --export-matrix, --opp-id, --json | Compliance matrix JSON |
+| Knowledge Base | tools/govcon/knowledge_base.py | CRUD for reusable content blocks. Organized by category, domain, NAICS. Keyword search. Usage tracking. | --search, --add, --seed, --json | KB entries JSON |
+| Award Tracker | tools/govcon/award_tracker.py | Poll SAM.gov for award notices. Extract vendor, value, NAICS. Cross-ref with creative_competitors. | --scan, --list, --vendor, --json | Award data JSON |
+| Competitor Profiler | tools/govcon/competitor_profiler.py | Aggregate competitor intelligence: total awards, contract value, agencies/NAICS diversity, leaderboard. | --profile, --leaderboard, --compare, --vendor, --json | Competitor profile JSON |
+| GovCon Engine | tools/govcon/govcon_engine.py | Pipeline orchestrator: DISCOVER → EXTRACT → MAP → DRAFT. Daemon mode with quiet hours. Status and reporting. | --run, --stage, --status, --pipeline-report, --daemon, --json | Pipeline results JSON |
+| GovCon API | tools/dashboard/api/govcon.py | Flask Blueprint with 20+ REST endpoints for GovCon Intelligence. Bridges govcon tools into proposal lifecycle. | (REST API) | JSON responses |
+
 ## Safety Hooks
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

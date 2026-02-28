@@ -1,20 +1,199 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/compliance%20frameworks-29%2B-orange" alt="Compliance Frameworks">
-  <img src="https://img.shields.io/badge/tools-251%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
+  <img src="https://img.shields.io/badge/tools-500%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
 </p>
 
 # ICDEV — Intelligent Coding Development Platform
 
-**Describe what you want. Get an ATO-ready application.**
+**A system that builds systems.**
 
-ICDEV is an AI-powered platform that builds complete, compliance-ready applications from a plain-English description. Not scaffolding. Not boilerplate. Full applications — with requirements traceability, security scanning, NIST 800-53 control mappings across 29+ frameworks, and every artifact you need for Authority to Operate.
+ICDEV is an AI-powered meta-builder that generates complete, autonomous applications — each with its own agent architecture, compliance automation, testing pipeline, and CI/CD integration. Describe what you need in plain English. Get an ATO-ready system with 42 compliance framework mappings, 15 coordinating AI agents, and every artifact you need for Authority to Operate.
+
+These aren't templates. They're living systems that can build their own features.
 
 One developer built this. Imagine what your team could do with it.
 
 > **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV applies to generated artifacts.
+
+---
+
+## A System That Builds Systems
+
+Most developer tools help you write code faster. ICDEV does something fundamentally different: it **generates entire applications** — each with its own multi-agent architecture, compliance automation, testing pipeline, memory system, and CI/CD integration. The generated application isn't a starter kit. It's an autonomous engineering platform that can build its own features using the same methodology that built it.
+
+**GovProposal** is the proof. ICDEV generated GovProposal — a complete government proposal lifecycle management platform with a 14-step section workflow, color team review cycle, compliance matrix, timeline tracking, and assignment management. Then ICDEV connected it to a **GovCon Intelligence pipeline** that automatically discovers government opportunities, extracts requirements, maps capabilities, and drafts proposal responses.
+
+Together, they form a self-reinforcing flywheel:
+
+```
+SAM.gov RFPs → Mine requirement patterns → Map to ICDEV capabilities → Identify gaps →
+Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV on-prem → Repeat
+```
+
+### How ICDEV Built GovProposal
+
+ICDEV generated GovProposal the same way it generates any application — through the GOTCHA framework and ATLAS workflow. GovProposal inherited:
+
+| What It Got | How It Works |
+|-------------|--------------|
+| **6-layer GOTCHA framework** | Goals, Orchestration, Tools, Args, Context, Hard Prompts — separating deterministic logic from AI |
+| **Multi-agent architecture** | 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) + 2 ATO agents |
+| **210-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
+| **42 compliance frameworks** | Dual-hub crosswalk engine — implement a control once, map to FedRAMP, CMMC, CJIS, HIPAA, and 38 more |
+| **9-step testing pipeline** | Syntax → lint → unit → BDD → SAST → E2E → vision → acceptance → security gates |
+| **CI/CD integration** | GitHub + GitLab dual-platform, webhook-triggered workflows |
+| **Memory system** | Long-term facts, daily logs, semantic search — learns from every proposal cycle |
+
+But GovProposal isn't just a child app. ICDEV then layered on the **GovCon Intelligence pipeline** — 11 specialized tools that automate the entire government contracting capture process:
+
+### The ICDEV → GovProposal Workflow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         ICDEV — GovCon Intelligence                         │
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
+│  │   DISCOVER   │───▶│   EXTRACT    │───▶│     MAP      │───▶│   DRAFT   │ │
+│  │              │    │              │    │              │    │           │ │
+│  │ SAM.gov API  │    │ "Shall/must/ │    │ Match reqs   │    │ qwen3     │ │
+│  │ scan opps +  │    │  will" regex │    │ to ICDEV     │    │ drafts →  │ │
+│  │ track awards │    │ extraction   │    │ capability   │    │ Claude    │ │
+│  │              │    │ + domain     │    │ catalog      │    │ reviews   │ │
+│  │ 8 NAICS      │    │   classify   │    │ (30 entries) │    │           │ │
+│  │ codes        │    │ + cluster    │    │ L/M/N grade  │    │ HITL gate │ │
+│  └──────────────┘    └──────────────┘    └──────────────┘    └───────────┘ │
+│         │                   │                    │                  │       │
+│         │                   │                    │                  │       │
+│         ▼                   ▼                    ▼                  ▼       │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                   GovCon API Bridge (20+ endpoints)                  │   │
+│  │  /sam/import → /auto-compliance → /auto-draft → /drafts/approve     │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                       │
+└────────────────────────────────────┼───────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    GovProposal — Proposal Lifecycle Platform                 │
+│                                                                             │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐   │
+│  │   OPPORTUNITIES  │  │    SECTIONS      │  │    COMPLIANCE MATRIX     │   │
+│  │                  │  │                  │  │                          │   │
+│  │ proposal_        │  │ 14-step pipeline:│  │ L → compliant            │   │
+│  │ opportunities    │  │ not_started →    │  │ M → partial              │   │
+│  │ (imported from   │  │ outlining →      │  │ N → non_compliant        │   │
+│  │  SAM.gov scan)   │  │ drafting →       │  │                          │   │
+│  │                  │  │ reviewing →      │  │ Auto-populated from      │   │
+│  │ licensing_model: │  │ final →          │  │ capability mapping       │   │
+│  │ on_prem_free |   │  │ submitted        │  │ scores                   │   │
+│  │ saas_paid |      │  │                  │  │                          │   │
+│  │ negotiated       │  │ AI drafts →      │  │ Covers all "shall"       │   │
+│  │                  │  │ human approves → │  │ statements extracted     │   │
+│  │                  │  │ section content   │  │ from RFP                 │   │
+│  └─────────────────┘  └──────────────────┘  └──────────────────────────┘   │
+│                                                                             │
+│  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐   │
+│  │   COLOR TEAM    │  │    TIMELINE      │  │    ASSIGNMENT MATRIX     │   │
+│  │   REVIEWS       │  │                  │  │                          │   │
+│  │                  │  │ Gantt chart      │  │ Who writes what          │   │
+│  │ Pink → Red →    │  │ milestones,      │  │ per-section role         │   │
+│  │ Gold → White →  │  │ deadlines,       │  │ tracking, workload       │   │
+│  │ Final           │  │ countdown        │  │ balancing                │   │
+│  └─────────────────┘  └──────────────────┘  └──────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                     │
+                                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          CROSS-ENGINE INTELLIGENCE                          │
+│                                                                             │
+│  ┌────────────────────────┐           ┌────────────────────────────────┐   │
+│  │    Innovation Engine    │           │       Creative Engine          │   │
+│  │                         │           │                                │   │
+│  │  SAM.gov requirement    │           │  Award leaderboard data →     │   │
+│  │  patterns registered    │           │  competitive gap analysis     │   │
+│  │  as innovation signals  │           │  against government           │   │
+│  │                         │           │  contractors                   │   │
+│  │  Enables: "Is cATO      │           │                                │   │
+│  │  appearing more in      │           │  Enables: identify where      │   │
+│  │  RFPs this quarter?"    │           │  competitors are winning      │   │
+│  └────────────────────────┘           └────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Step by step:**
+
+1. **DISCOVER** — ICDEV scans SAM.gov's Opportunities API for solicitations, pre-solicitations, and RFIs across 8 NAICS codes. Award notices feed competitive intelligence.
+
+2. **EXTRACT** — Deterministic regex extracts every "shall", "must", and "will" statement from RFP descriptions. Each is domain-classified (DevSecOps, AI/ML, ATO/RMF, Cloud, Security, Compliance, Agile, Data, Management) and clustered into patterns using keyword fingerprinting.
+
+3. **MAP** — Extracted requirements are matched against ICDEV's declarative capability catalog (~30 entries covering 42 compliance frameworks, 15 agents, and 500+ tools). Each requirement gets an **L/M/N grade**:
+   - **L** (≥ 80% coverage) — ICDEV fully meets this requirement
+   - **M** (40–79%) — partial capability, enhancement recommended
+   - **N** (< 40%) — gap identified, cross-registered to Innovation Engine for prioritized development
+
+4. **DRAFT** — Two-tier LLM pipeline: qwen3 generates a compact draft incorporating capability evidence, tool references, and compliance controls. Claude reviews and polishes. The draft is stored with `status='draft'` — a human must approve before it enters the proposal.
+
+5. **BRIDGE** — The GovCon API (20+ REST endpoints) moves data from ICDEV's intelligence tools into GovProposal's lifecycle tables:
+   - SAM.gov opportunities → `proposal_opportunities` (with licensing model tracking)
+   - "Shall" statements → `proposal_compliance_matrix` (L/M/N auto-populated)
+   - AI drafts → `proposal_section_drafts` → human approves → `proposal_sections`
+
+6. **LIFECYCLE** — GovProposal manages the rest: 14-step section workflow, color team reviews (Pink → Red → Gold → White → Final), timeline tracking with countdown to submission, assignment matrix, and compliance matrix with donut/bar charts.
+
+### The Flywheel Effect
+
+This isn't a linear pipeline — it's a compounding cycle:
+
+- **Win** a contract → customer gets ICDEV deployed on-prem (free for winners)
+- **Deliver** → ICDEV's capabilities proven in production = stronger past performance evidence
+- **Learn** → requirement patterns from real contracts improve capability mapping
+- **Build** → gaps identified by the MAP stage drive ICDEV development priorities
+- **Repeat** → next proposal has better evidence, higher L/M/N scores, stronger drafts
+
+Every proposal ICDEV writes makes the next one better. The product IS the proposal evidence.
+
+---
+
+## Why ICDEV
+
+### For Government Contractors
+
+| Challenge | How ICDEV Solves It | Benefit |
+|-----------|---------------------|---------|
+| Monitoring SAM.gov is manual and error-prone | Automated scanning of 8 NAICS codes with deduplication and caching | Never miss an opportunity. Surface patterns across hundreds of RFPs. |
+| Compliance matrices take weeks to populate | L/M/N auto-grading from capability catalog with keyword-overlap scoring | Compliance matrix populated in seconds, not weeks. Fully auditable. |
+| Proposal writing is expensive ($50K–$500K per response) | Two-tier LLM drafting with reusable knowledge base and HITL approval | Draft responses in hours with evidence baked in. Human reviews, not writes from scratch. |
+| No visibility into competitive landscape | Award tracker + competitor profiler from SAM.gov award data | Know who wins what, at what value, in which NAICS codes. |
+| Past performance is hard to articulate | ICDEV's own capability catalog IS the evidence | "We have 42 compliance frameworks" isn't marketing — it's `SELECT COUNT(*)` from the same DB. |
+
+### For Government Agencies (Evaluators)
+
+| Challenge | How ICDEV Helps | Benefit |
+|-----------|-----------------|---------|
+| Proposals claim capabilities they can't deliver | ICDEV's proposals reference actual tools, actual test results, actual compliance mappings | Every claim is verifiable against the delivered platform. |
+| ATO takes 12–18 months after award | ICDEV generates ATO artifacts (SSP, POAM, STIG, SBOM, OSCAL) automatically | ATO acceleration from day one of delivery. cATO-ready. |
+| Vendor lock-in | ICDEV is open source (AGPL-3.0), runs on 6 cloud providers or fully air-gapped | No proprietary dependencies. Full source code. Deploy anywhere. |
+| Difficulty evaluating technical depth | L/M/N grading is deterministic and reproducible | Same input always produces same compliance grade. Auditable. |
+
+### What No Other Tool Does
+
+1. **The product writes its own proposals.** ICDEV generates the application AND writes the proposal to sell it. The capability evidence in the proposal comes from the same codebase that gets delivered. No other GovCon tool is simultaneously the proposal platform and the delivered product.
+
+2. **Deterministic compliance grading.** Every "shall" statement in an RFP gets a machine-scored coverage grade (L/M/N) against a declarative capability catalog. This isn't LLM-generated opinion — it's keyword-overlap scoring that produces identical results every time. Air-gap safe.
+
+3. **Cross-engine intelligence.** SAM.gov data doesn't just feed proposals. Requirement patterns flow into the Innovation Engine for trend detection ("is cATO appearing more in RFPs?"). Award data flows into the Creative Engine for competitive positioning. Three engines sharing intelligence, each getting smarter.
+
+4. **42 compliance frameworks, one implementation.** Implement a NIST 800-53 control once. The dual-hub crosswalk engine automatically maps it to FedRAMP, CMMC, CJIS, HIPAA, PCI DSS, ISO 27001, and 35+ more. This works for proposals too — the compliance matrix covers every framework the RFP requires.
+
+5. **Self-reinforcing economics.** Winners get ICDEV deployed free on-prem. This means every win creates a production reference, every production deployment generates telemetry that improves the next proposal, and every gap identified during delivery becomes a development priority. Commercial competitors charge for both the proposal tool AND the delivered platform. ICDEV is both.
+
+6. **Air-gap native.** Every tool works without internet access. Regex-based requirement extraction (not LLM). Keyword-overlap scoring (not embeddings). SQLite database (not cloud). Ollama for local LLM inference. Designed for SIPR/JWICS from day one.
 
 ---
 
@@ -60,7 +239,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 │  ATO package generated automatically                   │
 │  → SSP covering 17 FIPS 200 control families           │
 │  → POAM, STIG checklist, SBOM, OSCAL artifacts         │
-│  → Crosswalk maps controls across 29+ frameworks       │
+│  → Crosswalk maps controls across all 42 frameworks    │
 │  → cATO monitoring with evidence freshness tracking     │
 └───────────────────────────┬───────────────────────────┘
                             ▼
@@ -183,7 +362,7 @@ ICDEV generates every artifact you need for ATO:
 - **STIG Checklist** — mapped to application technology stack
 - **Software Bill of Materials (SBOM)** — CycloneDX format, regenerated every build
 - **OSCAL artifacts** — machine-readable, validated against NIST Metaschema
-- **Control crosswalks** — implement AC-2 once, ICDEV maps it to FedRAMP, CMMC, 800-171, CJIS, HIPAA, PCI DSS, ISO 27001, and 15+ more
+- **Control crosswalks** — implement AC-2 once, ICDEV maps it to FedRAMP, CMMC, 800-171, CJIS, HIPAA, PCI DSS, ISO 27001, and 35+ more
 - **cATO evidence** — continuous monitoring with freshness tracking and automated evidence collection
 - **eMASS sync** — push/pull artifacts to eMASS
 
@@ -268,19 +447,20 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 
 ---
 
-## 29+ Compliance Frameworks
+## 42 Compliance Frameworks
 
 | Category | Frameworks |
 |----------|------------|
-| **Federal** | NIST 800-53 Rev 5, FedRAMP (Moderate/High), CMMC Level 2/3, FIPS 199/200, CNSSI 1253 |
+| **Federal** | NIST 800-53 Rev 5, NIST 800-171, FedRAMP (Moderate/High/20x), CMMC Level 2/3, FIPS 199/200, CNSSI 1253 |
 | **DoD** | DoDI 5000.87 DES, MOSA (10 U.S.C. §4401), CSSP (DI 8530.01), cATO Monitoring |
 | **Healthcare** | HIPAA Security Rule, HITRUST CSF v11 |
 | **Financial** | PCI DSS v4.0, SOC 2 Type II |
 | **Law Enforcement** | CJIS Security Policy |
-| **International** | ISO/IEC 27001:2022, ISO/IEC 42001:2023 |
-| **AI/ML Security** | NIST AI RMF 1.0, MITRE ATLAS, OWASP LLM Top 10, OWASP Agentic AI |
+| **International** | ISO/IEC 27001:2022, ISO/IEC 42001:2023, EU AI Act (Annex III) |
+| **AI/ML Security** | NIST AI RMF 1.0, MITRE ATLAS, OWASP LLM Top 10, OWASP Agentic AI, OWASP ASI, SAFE-AI |
 | **AI Transparency** | OMB M-25-21 (High-Impact AI), OMB M-26-04 (Unbiased AI), NIST AI 600-1 (GenAI), GAO-21-519SP (AI Accountability) |
 | **Architecture** | NIST 800-207 Zero Trust, CISA Secure by Design, IEEE 1012 IV&V |
+| **Explainability** | XAI Compliance, Model Cards, System Cards, Confabulation Detection, Fairness Assessment |
 
 ---
 
@@ -347,12 +527,12 @@ ICDEV's core architecture separates deterministic tools from probabilistic AI:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Goals         →  What to achieve (47 workflows)     │
-│  Orchestration →  AI decides tool order (LLM layer)  │
-│  Tools         →  Deterministic scripts (251+ tools) │
-│  Context       →  Static reference (35 catalogs)     │
-│  Hard Prompts  →  Reusable LLM templates             │
-│  Args          →  YAML/JSON config (30+ files)       │
+│  Goals         →  What to achieve (47 workflows)      │
+│  Orchestration →  AI decides tool order (LLM layer)   │
+│  Tools         →  Deterministic scripts (500+ tools)  │
+│  Context       →  Static reference (42 catalogs)      │
+│  Hard Prompts  →  Reusable LLM templates              │
+│  Args          →  YAML/JSON config (35+ files)        │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -367,10 +547,10 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                  Claude Code / AI IDE                      │
-│            (39 slash commands, 251 MCP tools)              │
+│            (39 slash commands, 250+ MCP tools)              │
 ├──────────────────────────────────────────────────────────┤
 │                 Unified MCP Gateway                        │
-│          (single server, all 251 tools, lazy-loaded)       │
+│          (single server, all 250+ tools, lazy-loaded)       │
 ├──────────┬──────────┬───────────┬───────────┬────────────┤
 │   Core   │  Domain  │  Domain   │  Domain   │  Support   │
 │          │          │           │           │            │
@@ -414,6 +594,10 @@ python tools/dashboard/app.py
 | `/ai-transparency` | AI Transparency: model cards, system cards, AI inventory, fairness, GAO readiness |
 | `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
 | `/code-quality` | Code Quality Intelligence: AST metrics, smell detection, maintainability trend, runtime feedback |
+| `/proposals` | GovProposal lifecycle: opportunities, sections, compliance matrix, timeline, reviews |
+| `/govcon` | GovCon Intelligence: SAM.gov scanning, pipeline status, domain distribution |
+| `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
+| `/govcon/capabilities` | ICDEV capability coverage: L/M/N grading, gaps, enhancement recommendations |
 
 Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, isso, co). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
@@ -421,7 +605,7 @@ Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, is
 
 ## MCP Server Integration
 
-All 251 tools exposed through a single MCP gateway. Works with any AI coding assistant:
+All 250+ tools exposed through a single MCP gateway. Works with any AI coding assistant:
 
 ```json
 {
@@ -489,7 +673,7 @@ helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
 | **Healthcare** | HIPAA + HITRUST + SOC 2 | Health IT / EHR |
 | **Financial** | PCI DSS + SOC 2 + ISO 27001 | FinTech / Banking |
 | **Law Enforcement** | CJIS + FIPS 199/200 | Criminal justice systems |
-| **GovCloud Full** | All 29+ frameworks | Maximum compliance |
+| **GovCloud Full** | All 42 frameworks | Maximum compliance |
 
 ---
 
@@ -498,7 +682,7 @@ helm install icdev deploy/helm/ --values deploy/helm/values-on-prem.yaml
 ```
 icdev/
 ├── goals/                # 47 workflow definitions
-├── tools/                # 251+ tools across 44 categories
+├── tools/                # 500+ tools across 44 categories
 │   ├── compliance/       # 25+ framework assessors, crosswalk, OSCAL
 │   ├── security/         # SAST, AI security, ATLAS, prompt injection
 │   ├── builder/          # TDD, scaffolding, app generation, 6 languages
@@ -508,13 +692,15 @@ icdev/
 │   ├── agent/            # Multi-agent orchestration, DAG workflows
 │   ├── cloud/            # 6 CSP abstractions, region validation
 │   ├── saas/             # Multi-tenant platform layer
-│   ├── mcp/              # Unified MCP gateway (251 tools)
+│   ├── mcp/              # Unified MCP gateway (250+ tools)
 │   ├── modernization/    # 7R assessment, legacy migration
 │   ├── observability/    # Tracing, provenance, AgentSHAP, XAI
 │   ├── innovation/       # Autonomous self-improvement engine
+│   ├── creative/         # Customer-centric feature discovery
+│   ├── govcon/           # GovCon Intelligence — SAM.gov capture pipeline
 │   └── ...               # 30+ more specialized categories
 ├── args/                 # 30+ YAML/JSON configuration files
-├── context/              # 35 compliance catalogs, language profiles
+├── context/              # 42 compliance catalogs, language profiles
 ├── hardprompts/          # Reusable LLM instruction templates
 ├── tests/                # 130 test files
 ├── k8s/                  # Production Kubernetes manifests

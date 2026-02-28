@@ -4701,6 +4701,225 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_hist_created ON proposal_status_history(created_at);
+
+-- =========================================================================
+-- GovCon Intelligence (Phase 59, D361-D373)
+-- =========================================================================
+
+-- SAM.gov opportunity cache (allows UPDATE for status sync)
+CREATE TABLE IF NOT EXISTS sam_gov_opportunities (
+    id TEXT PRIMARY KEY,
+    solicitation_number TEXT,
+    title TEXT NOT NULL,
+    agency TEXT NOT NULL,
+    agency_hierarchy TEXT,
+    naics_code TEXT,
+    classification_code TEXT,
+    notice_type TEXT NOT NULL,
+    posted_date TEXT,
+    response_deadline TEXT,
+    description TEXT,
+    point_of_contact TEXT,
+    set_aside_type TEXT,
+    place_of_performance TEXT,
+    attachment_urls TEXT DEFAULT '[]',
+    active TEXT DEFAULT 'true',
+    proposal_opportunity_id TEXT REFERENCES proposal_opportunities(id),
+    content_hash TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    first_seen TEXT NOT NULL,
+    last_synced TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_sam_naics ON sam_gov_opportunities(naics_code);
+CREATE INDEX IF NOT EXISTS idx_sam_type ON sam_gov_opportunities(notice_type);
+CREATE INDEX IF NOT EXISTS idx_sam_deadline ON sam_gov_opportunities(response_deadline);
+CREATE INDEX IF NOT EXISTS idx_sam_hash ON sam_gov_opportunities(content_hash);
+CREATE INDEX IF NOT EXISTS idx_sam_agency ON sam_gov_opportunities(agency);
+
+-- Extracted "shall" statements from RFPs (append-only, D6/D362)
+CREATE TABLE IF NOT EXISTS rfp_shall_statements (
+    id TEXT PRIMARY KEY,
+    sam_opportunity_id TEXT REFERENCES sam_gov_opportunities(id),
+    proposal_opportunity_id TEXT REFERENCES proposal_opportunities(id),
+    statement_text TEXT NOT NULL,
+    statement_type TEXT NOT NULL DEFAULT 'shall'
+        CHECK(statement_type IN ('shall', 'must', 'will', 'required', 'other')),
+    domain_category TEXT
+        CHECK(domain_category IS NULL OR domain_category IN
+            ('devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
+             'compliance', 'agile', 'data', 'management', 'other')),
+    keywords TEXT DEFAULT '[]',
+    keyword_fingerprint TEXT,
+    source_section TEXT,
+    content_hash TEXT NOT NULL,
+    extracted_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_shall_sam ON rfp_shall_statements(sam_opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_shall_prop ON rfp_shall_statements(proposal_opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_shall_domain ON rfp_shall_statements(domain_category);
+CREATE INDEX IF NOT EXISTS idx_shall_hash ON rfp_shall_statements(content_hash);
+
+-- Clustered requirement patterns across RFPs (append-only trends, D6/D364/D371)
+CREATE TABLE IF NOT EXISTS rfp_requirement_patterns (
+    id TEXT PRIMARY KEY,
+    pattern_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    domain_category TEXT NOT NULL
+        CHECK(domain_category IN
+            ('devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
+             'compliance', 'agile', 'data', 'management', 'other')),
+    frequency INTEGER NOT NULL DEFAULT 1,
+    shall_statement_ids TEXT NOT NULL DEFAULT '[]',
+    sam_opportunity_ids TEXT NOT NULL DEFAULT '[]',
+    keyword_fingerprint TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    representative_text TEXT NOT NULL,
+    capability_coverage REAL DEFAULT 0.0,
+    icdev_capability_ids TEXT DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'new'
+        CHECK(status IN ('new', 'mapped', 'gap_identified', 'addressed')),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_rfp_pattern_domain ON rfp_requirement_patterns(domain_category);
+CREATE INDEX IF NOT EXISTS idx_rfp_pattern_freq ON rfp_requirement_patterns(frequency);
+CREATE INDEX IF NOT EXISTS idx_rfp_pattern_coverage ON rfp_requirement_patterns(capability_coverage);
+CREATE INDEX IF NOT EXISTS idx_rfp_pattern_fingerprint ON rfp_requirement_patterns(keyword_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_rfp_pattern_status ON rfp_requirement_patterns(status);
+
+-- ICDEV capability-to-requirement bridge (append-only, D6/D363)
+CREATE TABLE IF NOT EXISTS icdev_capability_map (
+    id TEXT PRIMARY KEY,
+    pattern_id TEXT NOT NULL REFERENCES rfp_requirement_patterns(id),
+    capability_id TEXT NOT NULL,
+    capability_name TEXT NOT NULL,
+    coverage_score REAL NOT NULL DEFAULT 0.0,
+    matched_keywords TEXT DEFAULT '[]',
+    mapped_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_capmap_pattern ON icdev_capability_map(pattern_id);
+CREATE INDEX IF NOT EXISTS idx_capmap_capability ON icdev_capability_map(capability_id);
+
+-- AI-generated proposal section drafts (append-only, D6/D373)
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id TEXT PRIMARY KEY,
+    section_id TEXT NOT NULL REFERENCES proposal_sections(id),
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    shall_statement_id TEXT REFERENCES rfp_shall_statements(id),
+    capability_ids TEXT DEFAULT '[]',
+    draft_content TEXT NOT NULL,
+    confidence REAL DEFAULT 0.0,
+    generation_model TEXT,
+    knowledge_block_ids TEXT DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft', 'reviewed', 'approved', 'rejected')),
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    review_notes TEXT,
+    created_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_draft_section ON proposal_section_drafts(section_id);
+CREATE INDEX IF NOT EXISTS idx_draft_opp ON proposal_section_drafts(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_draft_status ON proposal_section_drafts(status);
+
+-- Reusable proposal content blocks (allows UPDATE for refinement, D368)
+CREATE TABLE IF NOT EXISTS proposal_knowledge_base (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL
+        CHECK(category IN ('capability_description', 'approach', 'staffing',
+                           'tools_used', 'past_performance', 'risk_mitigation',
+                           'transition_plan', 'quality_assurance', 'other')),
+    domain TEXT NOT NULL
+        CHECK(domain IN ('devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
+                         'compliance', 'agile', 'data', 'management', 'general')),
+    naics_codes TEXT DEFAULT '[]',
+    volume_type TEXT
+        CHECK(volume_type IS NULL OR volume_type IN
+            ('technical', 'management', 'past_performance', 'cost')),
+    keywords TEXT NOT NULL DEFAULT '[]',
+    usage_count INTEGER DEFAULT 0,
+    win_rate REAL,
+    last_used_at TEXT,
+    created_by TEXT,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active', 'archived', 'draft')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_kb_category ON proposal_knowledge_base(category);
+CREATE INDEX IF NOT EXISTS idx_kb_domain ON proposal_knowledge_base(domain);
+CREATE INDEX IF NOT EXISTS idx_kb_status ON proposal_knowledge_base(status);
+
+-- GovCon award tracking from SAM.gov (append-only, D6/D367)
+CREATE TABLE IF NOT EXISTS govcon_awards (
+    id TEXT PRIMARY KEY,
+    sam_opportunity_id TEXT REFERENCES sam_gov_opportunities(id),
+    solicitation_number TEXT,
+    title TEXT NOT NULL,
+    agency TEXT NOT NULL,
+    naics_code TEXT,
+    awardee_name TEXT NOT NULL,
+    awardee_duns TEXT,
+    awardee_uei TEXT,
+    contract_number TEXT,
+    award_amount REAL,
+    award_date TEXT,
+    period_of_performance_start TEXT,
+    period_of_performance_end TEXT,
+    set_aside_type TEXT,
+    competitor_id TEXT REFERENCES creative_competitors(id),
+    content_hash TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_award_awardee ON govcon_awards(awardee_name);
+CREATE INDEX IF NOT EXISTS idx_award_naics ON govcon_awards(naics_code);
+CREATE INDEX IF NOT EXISTS idx_award_date ON govcon_awards(award_date);
+CREATE INDEX IF NOT EXISTS idx_award_hash ON govcon_awards(content_hash);
+CREATE INDEX IF NOT EXISTS idx_award_sam ON govcon_awards(sam_opportunity_id);
+
+-- ── Customer Delivery Tracking (D374) ────────────────────────────────
+-- Tracks which ICDEV components a winning customer receives on-prem.
+-- Append-only: once a delivery is created, it cannot be modified.
+-- delivery_tier maps to deployment_profiles.yaml customer_* profiles.
+
+CREATE TABLE IF NOT EXISTS customer_deliveries (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    customer_name TEXT NOT NULL,
+    customer_agency TEXT,
+    contract_number TEXT,
+    delivery_tier TEXT NOT NULL CHECK(delivery_tier IN ('core', 'standard', 'enterprise', 'custom')),
+    deployment_profile TEXT NOT NULL,
+    modules_json TEXT NOT NULL,
+    compliance_frameworks_json TEXT DEFAULT '[]',
+    platform TEXT DEFAULT 'k8s',
+    impact_level TEXT DEFAULT 'IL4',
+    cui_enabled INTEGER DEFAULT 1,
+    license_key_hash TEXT,
+    effective_date TEXT NOT NULL,
+    expires_at TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'provisioning', 'delivered', 'active', 'expired', 'revoked')),
+    delivered_by TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_cust_delivery_opp ON customer_deliveries(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_cust_delivery_customer ON customer_deliveries(customer_name);
+CREATE INDEX IF NOT EXISTS idx_cust_delivery_status ON customer_deliveries(status);
+CREATE INDEX IF NOT EXISTS idx_cust_delivery_tier ON customer_deliveries(delivery_tier);
 """
 
 
@@ -4720,6 +4939,11 @@ RICOAS_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN ricoas_enabled INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN intake_session_count INTEGER DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN active_coa_id TEXT",
+]
+
+GOVCON_ALTER_SQL = [
+    "ALTER TABLE proposal_opportunities ADD COLUMN licensing_model TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN sam_gov_opportunity_id TEXT",
 ]
 
 AGENTIC_ALTER_SQL = [
@@ -4958,6 +5182,12 @@ def init_db(db_path=None):
             pass
     # Phase 48: AI Transparency & Accountability columns (D307-D315)
     for sql in AI_TRANSPARENCY_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 59: GovCon Intelligence columns (D361-D373)
+    for sql in GOVCON_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

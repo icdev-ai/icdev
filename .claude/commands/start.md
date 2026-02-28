@@ -59,7 +59,7 @@ PORTAL_PORT: 8443
 
 8. Report to the user:
    - **Dashboard**: `http://localhost:DASHBOARD_PORT`
-     - Pages: `/`, `/projects`, `/projects/<id>`, `/agents`, `/monitoring`, `/events`, `/activity`, `/usage`, `/wizard`, `/query`, `/chat`, `/chat/<id>`, `/quick-paths`, `/batch`, `/diagrams`, `/cicd`, `/gateway`, `/phases`, `/dev-profiles`, `/children`, `/profile`, `/translations`, `/translations/<id>`, `/traces`, `/provenance`, `/xai`, `/oscal`, `/prod-audit`, `/ai-transparency`, `/ai-accountability`, `/code-quality`, `/fedramp-20x`, `/evidence`, `/lineage`, `/proposals`, `/proposals/<id>`, `/proposals/<id>/sections/<id>`, `/login`, `/logout`
+     - Pages: `/`, `/projects`, `/projects/<id>`, `/agents`, `/monitoring`, `/events`, `/activity`, `/usage`, `/wizard`, `/query`, `/chat`, `/chat/<id>`, `/quick-paths`, `/batch`, `/diagrams`, `/cicd`, `/gateway`, `/phases`, `/dev-profiles`, `/children`, `/profile`, `/translations`, `/translations/<id>`, `/traces`, `/provenance`, `/xai`, `/oscal`, `/prod-audit`, `/ai-transparency`, `/ai-accountability`, `/code-quality`, `/fedramp-20x`, `/evidence`, `/lineage`, `/proposals`, `/proposals/<id>`, `/proposals/<id>/sections/<id>`, `/govcon`, `/govcon/requirements`, `/govcon/capabilities`, `/login`, `/logout`
      - Log: `.tmp/dashboard.log`
    - **SaaS Portal**: `http://localhost:PORTAL_PORT/portal/`
      - API docs: `http://localhost:PORTAL_PORT/api/v1/docs`

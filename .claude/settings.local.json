@@ -145,11 +145,18 @@
       "mcp__playwright__browser_file_upload",
       "Bash(git remote set-head origin main)",
       "Bash(bandit -r tools/ -f json -ll)",
-      "Bash(pip-audit)"
+      "Bash(pip-audit)",
+      "Bash(do echo \"=== $f ===\")",
+      "Bash(sed 's/ \\(.*//')"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",
       "c:\\Users\\schuo\\Downloads\\ICDev\\.claude"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "icdev-unified",
+    "playwright"
+  ],
+  "enableAllProjectMcpServers": true
 }

@@ -1,0 +1,218 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV Creative Engine Configuration — customer-centric feature discovery
+# Automates competitor gap analysis, pain point discovery, feature opportunity scouting
+
+# =========================================================================
+# Product Domain (what you're building for)
+# =========================================================================
+domain:
+  name: ""                              # e.g., "government proposal management"
+  g2_category_url: ""                   # G2 category page URL for auto-discovery
+  capterra_category_url: ""             # Capterra category page URL
+  trustradius_category_url: ""          # TrustRadius category page URL
+  producthunt_topic: ""                 # Product Hunt topic for monitoring
+
+# =========================================================================
+# Source Adapters
+# =========================================================================
+sources:
+  review_sites:
+    enabled: true
+    scan_interval_hours: 24
+    sites:
+      - name: g2
+        enabled: true
+        base_url: https://www.g2.com
+        max_reviews_per_competitor: 50
+        sort: recent
+      - name: capterra
+        enabled: true
+        base_url: https://www.capterra.com
+        max_reviews_per_competitor: 50
+        sort: recent
+      - name: trustradius
+        enabled: true
+        base_url: https://www.trustradius.com
+        max_reviews_per_competitor: 50
+        sort: recent
+    rate_limit:
+      requests_per_hour: 30
+      burst: 5
+      delay_between_requests_seconds: 3
+
+  community_forums:
+    enabled: true
+    scan_interval_hours: 12
+    platforms:
+      - name: reddit
+        subreddits: []                   # populated per domain
+        sort: hot
+        max_results: 50
+        min_upvotes: 10
+        keyword_filter: []               # populated per domain
+      - name: govcon_blogs
+        urls: []                         # populated per domain
+        max_results: 30
+      - name: linkedin
+        enabled: false                   # requires LinkedIn API access
+        max_results: 20
+    rate_limit:
+      requests_per_hour: 60
+      burst: 10
+
+  github_issues:
+    enabled: true
+    scan_interval_hours: 12
+    repos: []                            # populated per domain
+    labels: [enhancement, feature-request, feature, wishlist, "help wanted"]
+    max_results: 100
+    rate_limit:
+      requests_per_hour: 60
+      burst: 10
+
+  producthunt:
+    enabled: true
+    scan_interval_hours: 168             # weekly
+    topics: []                           # populated per domain
+    max_results: 20
+
+# =========================================================================
+# Competitor Auto-Discovery
+# =========================================================================
+competitor_discovery:
+  enabled: true
+  refresh_interval_days: 30              # re-scan category pages monthly
+  max_competitors_per_category: 20
+  auto_confirm: false                    # require human confirmation (D353)
+  min_review_count: 10                   # ignore competitors with < 10 reviews
+
+# =========================================================================
+# Pain Point Extraction (D354 — deterministic keyword matching)
+# =========================================================================
+extraction:
+  negative_indicators:
+    - "frustrating"
+    - "annoying"
+    - "difficult"
+    - "confusing"
+    - "slow"
+    - "missing"
+    - "lacking"
+    - "wish"
+    - "need"
+    - "want"
+    - "should"
+    - "would be nice"
+    - "pain point"
+    - "deal breaker"
+    - "workaround"
+    - "manual"
+    - "tedious"
+    - "clunky"
+    - "outdated"
+    - "broken"
+    - "buggy"
+    - "unreliable"
+  feature_request_indicators:
+    - "feature request"
+    - "would love"
+    - "please add"
+    - "it would be great"
+    - "suggestion"
+    - "roadmap"
+    - "planned"
+    - "wishlist"
+    - "integrate with"
+    - "support for"
+    - "ability to"
+    - "option to"
+  categories:
+    ux: [interface, UI, UX, user experience, navigation, design, layout, dashboard]
+    performance: [slow, fast, speed, performance, latency, timeout, loading]
+    integration: [integrate, API, webhook, connector, plugin, extension, import, export]
+    pricing: [expensive, price, cost, pricing, tier, plan, value, affordable]
+    compliance: [compliance, NIST, FedRAMP, CMMC, STIG, ATO, audit, certification]
+    security: [security, vulnerability, encryption, authentication, authorization, MFA]
+    reporting: [report, analytics, dashboard, metrics, KPI, insight, visualization]
+    customization: [customize, configure, template, workflow, flexible, adaptable]
+    support: [support, documentation, help, response time, SLA, training]
+    scalability: [scale, scalability, enterprise, large, volume, concurrent, multi-tenant]
+    documentation: [documentation, docs, guide, tutorial, onboarding, README]
+    onboarding: [onboarding, setup, getting started, learning curve, wizard]
+    api: [API, SDK, REST, GraphQL, endpoint, developer, programmatic]
+    automation: [automate, automation, workflow, trigger, schedule, batch, CI/CD]
+  min_keyword_length: 3
+  top_keywords_per_signal: 10
+  min_shared_keywords_for_cluster: 3
+  min_signals_for_pain_point: 2
+
+# =========================================================================
+# Composite Scoring (3-dimension, D355)
+# =========================================================================
+scoring:
+  weights:
+    pain_frequency: 0.40                 # how often users mention this pain point
+    gap_uniqueness: 0.35                 # how few competitors address this gap
+    effort_to_impact: 0.25               # estimated value / estimated effort ratio
+  thresholds:
+    auto_spec: 0.75                      # score >= 0.75: auto-generate feature spec
+    suggest: 0.50                        # score 0.50-0.74: suggest for review
+    log_only: 0.00                       # score < 0.50: log for trend analysis
+  severity_weights:
+    critical: 1.0
+    high: 0.75
+    medium: 0.5
+    low: 0.25
+  max_auto_specs_per_cycle: 20
+
+# =========================================================================
+# Spec Generation (D356 — template-based)
+# =========================================================================
+spec_generation:
+  template: default                      # default, detailed, minimal
+  include_competitive_analysis: true
+  include_user_quotes: true
+  max_quotes_per_spec: 5
+  effort_estimation:
+    small_threshold: 3                   # <= 3 affected areas = Small
+    medium_threshold: 6                  # <= 6 affected areas = Medium
+    large_threshold: 10                  # <= 10 affected areas = Large
+
+# =========================================================================
+# Innovation Engine Cross-Registration (D360)
+# =========================================================================
+innovation_bridge:
+  enabled: true
+  min_score_for_registration: 0.60
+  source_label: "creative_engine"
+
+# =========================================================================
+# Trend Detection
+# =========================================================================
+trends:
+  detection_window_days: 30
+  min_signals_for_trend: 3
+  velocity_window_days: 7
+  stale_after_days: 60
+
+# =========================================================================
+# Scheduling
+# =========================================================================
+scheduling:
+  daemon_mode: true
+  default_scan_interval_hours: 24
+  quiet_hours:
+    start: "02:00"
+    end: "06:00"
+    timezone: UTC
+  scan_timeout_seconds: 300
+
+# =========================================================================
+# Audit & Governance
+# =========================================================================
+audit:
+  log_scans: true
+  log_signals: true
+  log_pain_points: true
+  log_specs: true
+  retention_days: 365

@@ -60,6 +60,7 @@ from tools.dashboard.api.fedramp_20x import fedramp_20x_api
 from tools.dashboard.api.evidence import evidence_api
 from tools.dashboard.api.lineage import lineage_api
 from tools.dashboard.api.proposals import proposals_api
+from tools.dashboard.api.govcon import govcon_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -198,6 +199,7 @@ def create_app() -> Flask:
     app.register_blueprint(evidence_api)
     app.register_blueprint(lineage_api)
     app.register_blueprint(proposals_api)
+    app.register_blueprint(govcon_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -1577,6 +1579,191 @@ def create_app() -> Flask:
             ).fetchall()]
 
             return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
+        finally:
+            conn.close()
+
+    # ---- GovCon Intelligence Pages (Phase 59E) ----
+
+    @app.route("/govcon")
+    def govcon_pipeline_page():
+        """GovCon Intelligence — pipeline status, recent opportunities, domain distribution."""
+        conn = _get_db()
+        try:
+            from tools.govcon.govcon_engine import get_status
+            stats = get_status()
+
+            # Recent opportunities
+            try:
+                opps = conn.execute(
+                    "SELECT * FROM sam_gov_opportunities ORDER BY posted_date DESC LIMIT 25"
+                ).fetchall()
+                opportunities = [dict(r) for r in opps]
+            except Exception:
+                opportunities = []
+
+            # Which SAM opps are linked to proposals
+            linked_opp_ids = set()
+            try:
+                linked = conn.execute(
+                    "SELECT sam_gov_opportunity_id FROM proposal_opportunities WHERE sam_gov_opportunity_id IS NOT NULL"
+                ).fetchall()
+                linked_opp_ids = {r["sam_gov_opportunity_id"] for r in linked}
+            except Exception:
+                pass
+
+            return render_template("govcon/pipeline.html",
+                stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids)
+        except Exception:
+            stats = {"total_opportunities": 0, "total_requirements": 0, "total_patterns": 0,
+                     "total_capability_maps": 0, "total_drafts": 0, "total_awards": 0,
+                     "knowledge_blocks": 0, "linked_proposals": 0, "domain_distribution": {},
+                     "last_pipeline_run": None}
+            return render_template("govcon/pipeline.html",
+                stats=stats, opportunities=[], linked_opp_ids=set())
+        finally:
+            conn.close()
+
+    @app.route("/govcon/requirements")
+    def govcon_requirements_page():
+        """GovCon Requirements — pattern frequency, domain heatmap, statement types."""
+        conn = _get_db()
+        try:
+            # Total requirements
+            total_requirements = 0
+            try:
+                r = conn.execute("SELECT COUNT(*) as cnt FROM rfp_shall_statements").fetchone()
+                total_requirements = r["cnt"] if r else 0
+            except Exception:
+                pass
+
+            # Total patterns
+            total_patterns = 0
+            try:
+                r = conn.execute("SELECT COUNT(*) as cnt FROM rfp_requirement_patterns").fetchone()
+                total_patterns = r["cnt"] if r else 0
+            except Exception:
+                pass
+
+            # Domain stats
+            domain_stats = {}
+            try:
+                rows = conn.execute(
+                    "SELECT domain_category, COUNT(*) as cnt FROM rfp_shall_statements "
+                    "GROUP BY domain_category ORDER BY cnt DESC"
+                ).fetchall()
+                domain_stats = {r["domain_category"]: {"count": r["cnt"]} for r in rows}
+            except Exception:
+                pass
+
+            domain_count = len(domain_stats)
+
+            # Top patterns
+            patterns = []
+            min_frequency = 3
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30",
+                    (min_frequency,)
+                ).fetchall()
+                patterns = [dict(r) for r in rows]
+            except Exception:
+                pass
+
+            top_frequency = patterns[0]["frequency"] if patterns else 0
+
+            # Statement type distribution
+            type_stats = {}
+            try:
+                rows = conn.execute(
+                    "SELECT statement_type, COUNT(*) as cnt FROM rfp_shall_statements "
+                    "GROUP BY statement_type ORDER BY cnt DESC"
+                ).fetchall()
+                type_stats = {r["statement_type"]: r["cnt"] for r in rows}
+            except Exception:
+                pass
+
+            return render_template("govcon/requirements.html",
+                total_requirements=total_requirements, total_patterns=total_patterns,
+                domain_stats=domain_stats, domain_count=domain_count,
+                patterns=patterns, top_frequency=top_frequency,
+                type_stats=type_stats, min_frequency=min_frequency)
+        finally:
+            conn.close()
+
+    @app.route("/govcon/capabilities")
+    def govcon_capabilities_page():
+        """GovCon Capabilities — coverage by domain, gap list, enhancement recommendations."""
+        conn = _get_db()
+        try:
+            # Overall coverage
+            coverage = {"L": 0, "M": 0, "N": 0, "rate": 0}
+            try:
+                rows = conn.execute(
+                    """SELECT
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N,
+                        COUNT(*) as total
+                    FROM rfp_shall_statements s
+                    LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id"""
+                ).fetchone()
+                if rows and rows["total"] > 0:
+                    coverage["L"] = rows["L"] or 0
+                    coverage["M"] = rows["M"] or 0
+                    coverage["N"] = rows["N"] or 0
+                    coverage["rate"] = round(coverage["L"] / rows["total"] * 100)
+            except Exception:
+                pass
+
+            # Domain coverage
+            domain_coverage = []
+            try:
+                rows = conn.execute(
+                    """SELECT s.domain_category as domain,
+                        COUNT(*) as total,
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N
+                    FROM rfp_shall_statements s
+                    LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id
+                    GROUP BY s.domain_category
+                    ORDER BY total DESC"""
+                ).fetchall()
+                domain_coverage = [dict(r) for r in rows]
+            except Exception:
+                pass
+
+            # Gaps (coverage < 0.40)
+            gaps = []
+            total_gaps = 0
+            try:
+                rows = conn.execute(
+                    """SELECT p.pattern_name as requirement, p.domain_category as domain,
+                        p.frequency, COALESCE(m.coverage_score, 0) as coverage,
+                        p.frequency * (1 - COALESCE(m.coverage_score, 0)) as priority
+                    FROM rfp_requirement_patterns p
+                    LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
+                    WHERE COALESCE(m.coverage_score, 0) < 0.40
+                    ORDER BY priority DESC LIMIT 20"""
+                ).fetchall()
+                gaps = [dict(r) for r in rows]
+                total_gaps = len(gaps)
+            except Exception:
+                pass
+
+            # Enhancement recommendations
+            recommendations = []
+            try:
+                from tools.govcon.gap_analyzer import generate_recommendations
+                rec_result = generate_recommendations()
+                recommendations = rec_result.get("recommendations", [])[:15]
+            except Exception:
+                pass
+
+            return render_template("govcon/capabilities.html",
+                coverage=coverage, domain_coverage=domain_coverage,
+                gaps=gaps, total_gaps=total_gaps,
+                recommendations=recommendations)
         finally:
             conn.close()
 

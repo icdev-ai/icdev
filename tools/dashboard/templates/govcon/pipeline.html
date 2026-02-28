@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}GovCon Intelligence - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <h1>GovCon Intelligence Pipeline</h1>
+  <p style="color:var(--text-secondary);">Phase 59 &mdash; SAM.gov scanning, requirement mining, capability mapping, proposal automation</p>
+
+  <!-- Controls -->
+  <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+    <button onclick="runPipeline()" class="btn btn-primary" style="padding:0.4rem 1rem;">Run Full Pipeline</button>
+    <button onclick="runStage('discover')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Discover</button>
+    <button onclick="runStage('extract')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Extract</button>
+    <button onclick="runStage('map')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Map</button>
+    <button onclick="runStage('draft')" class="btn btn-secondary" style="padding:0.4rem 0.8rem;">Draft</button>
+    <span id="gc-status-msg" style="margin-left:8px;color:var(--text-secondary);font-size:0.85rem;"></span>
+  </div>
+
+  <!-- Stat Grid -->
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_opportunities }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Opportunities</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_requirements }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Requirements</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_patterns }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Patterns</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_capability_maps }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Mapped</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_drafts }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Drafts</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.total_awards }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Awards Tracked</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.knowledge_blocks }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">KB Blocks</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ stats.linked_proposals }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Linked Proposals</div>
+    </div>
+  </div>
+
+  <!-- Pipeline Flow -->
+  <h2 style="margin-top:1.5rem;">Pipeline Flow</h2>
+  <div style="display:flex;align-items:center;gap:8px;margin:1rem 0;flex-wrap:wrap;">
+    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
+      <div style="font-weight:600;">DISCOVER</div>
+      <div style="font-size:0.8rem;color:var(--text-secondary);">SAM.gov scan</div>
+    </div>
+    <span style="font-size:1.2rem;color:var(--text-secondary);">&#8594;</span>
+    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
+      <div style="font-weight:600;">EXTRACT</div>
+      <div style="font-size:0.8rem;color:var(--text-secondary);">Shall/must/will</div>
+    </div>
+    <span style="font-size:1.2rem;color:var(--text-secondary);">&#8594;</span>
+    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
+      <div style="font-weight:600;">MAP</div>
+      <div style="font-size:0.8rem;color:var(--text-secondary);">Capability match</div>
+    </div>
+    <span style="font-size:1.2rem;color:var(--text-secondary);">&#8594;</span>
+    <div style="padding:8px 16px;border-radius:6px;background:var(--accent-blue-light,#e3f2fd);border:1px solid var(--accent-color,#4a90d9);text-align:center;">
+      <div style="font-weight:600;">DRAFT</div>
+      <div style="font-size:0.8rem;color:var(--text-secondary);">Two-tier LLM</div>
+    </div>
+  </div>
+
+  <!-- Domain Distribution -->
+  <h2 style="margin-top:1.5rem;">Requirement Domain Distribution</h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Domain</th>
+          <th style="text-align:right;padding:0.5rem;">Count</th>
+          <th style="text-align:left;padding:0.5rem;">Bar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% set max_count = stats.domain_distribution.values()|max if stats.domain_distribution else 1 %}
+        {% for domain, count in stats.domain_distribution.items() %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;font-weight:600;">{{ domain }}</td>
+          <td style="padding:0.5rem;text-align:right;">{{ count }}</td>
+          <td style="padding:0.5rem;">
+            <div style="background:var(--accent-color,#4a90d9);height:16px;border-radius:3px;width:{{ (count / max_count * 100)|round|int }}%;min-width:4px;"></div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not stats.domain_distribution %}
+        <tr><td colspan="3" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No requirements extracted yet. Run the pipeline to begin.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Recent Opportunities -->
+  <h2 style="margin-top:1.5rem;">Recent SAM.gov Opportunities</h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Title</th>
+          <th style="text-align:left;padding:0.5rem;">Agency</th>
+          <th style="text-align:left;padding:0.5rem;">NAICS</th>
+          <th style="text-align:left;padding:0.5rem;">Type</th>
+          <th style="text-align:left;padding:0.5rem;">Deadline</th>
+          <th style="text-align:center;padding:0.5rem;">Linked</th>
+          <th style="text-align:center;padding:0.5rem;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for opp in opportunities %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.title }}">{{ opp.title[:60] }}{% if opp.title|length > 60 %}...{% endif %}</td>
+          <td style="padding:0.5rem;">{{ opp.agency or '' }}</td>
+          <td style="padding:0.5rem;">{{ opp.naics_code or '' }}</td>
+          <td style="padding:0.5rem;">{{ opp.notice_type or '' }}</td>
+          <td style="padding:0.5rem;">{{ opp.response_deadline or '' }}</td>
+          <td style="padding:0.5rem;text-align:center;">
+            {% if opp.id in linked_opp_ids %}
+              <span style="color:#388e3c;">&#10003;</span>
+            {% else %}
+              <button onclick="importOpp('{{ opp.id }}')" class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:2px 8px;">Import</button>
+            {% endif %}
+          </td>
+          <td style="padding:0.5rem;text-align:center;">
+            <button onclick="extractReqs('{{ opp.id }}')" class="btn btn-secondary btn-sm" style="font-size:0.75rem;padding:2px 8px;">Extract</button>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not opportunities %}
+        <tr><td colspan="7" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No opportunities cached. Click "Discover" to scan SAM.gov.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Last Run -->
+  {% if stats.last_pipeline_run %}
+  <p style="margin-top:1rem;color:var(--text-secondary);font-size:0.85rem;">Last pipeline run: {{ stats.last_pipeline_run }}</p>
+  {% endif %}
+</div>
+
+<script>
+function setMsg(txt, color) {
+  var el = document.getElementById('gc-status-msg');
+  el.textContent = txt;
+  el.style.color = color || 'var(--text-secondary)';
+}
+
+function runPipeline() {
+  setMsg('Running full pipeline...', '#1976d2');
+  fetch('/api/govcon/pipeline/run', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok' || d.status === 'partial') {
+        var s = d.summary || {};
+        setMsg('Pipeline complete: ' + (s.new_opportunities||0) + ' opps, ' +
+               (s.requirements_extracted||0) + ' reqs, ' + (s.drafts_created||0) + ' drafts', '#388e3c');
+        setTimeout(function(){ location.reload(); }, 2000);
+      } else {
+        setMsg('Pipeline error: ' + (d.error||'unknown'), '#d32f2f');
+      }
+    })
+    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+}
+
+function runStage(stage) {
+  setMsg('Running ' + stage + '...', '#1976d2');
+  fetch('/api/govcon/pipeline/run', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({stage: stage})})
+    .then(r => r.json())
+    .then(d => {
+      setMsg(stage + ' complete', '#388e3c');
+      setTimeout(function(){ location.reload(); }, 2000);
+    })
+    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+}
+
+function importOpp(samId) {
+  fetch('/api/govcon/sam/import/' + samId, {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'ok') {
+        setMsg('Imported as proposal opportunity', '#388e3c');
+        setTimeout(function(){ location.reload(); }, 1500);
+      } else {
+        setMsg('Import error: ' + (d.error || d.message || 'unknown'), '#d32f2f');
+      }
+    })
+    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+}
+
+function extractReqs(oppId) {
+  setMsg('Extracting requirements...', '#1976d2');
+  fetch('/api/govcon/opportunities/' + oppId + '/extract-requirements', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      setMsg('Extracted ' + (d.total_extracted || 0) + ' requirements', '#388e3c');
+    })
+    .catch(function(e) { setMsg('Error: ' + e, '#d32f2f'); });
+}
+</script>
+{% endblock %}
