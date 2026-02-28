@@ -40,6 +40,7 @@
             <li><a href="/ai-transparency" class="{% if '/ai-transparency' in request.path %}active{% endif %}">AI Transparency</a></li>
             <li><a href="/ai-accountability" class="{% if '/ai-accountability' in request.path %}active{% endif %}">AI Accountability</a></li>
             <li><a href="/code-quality" class="{% if '/code-quality' in request.path %}active{% endif %}">Code Quality</a></li>
+            <li><a href="/proposals" class="{% if '/proposals' in request.path %}active{% endif %}">Proposals</a></li>
             {% if current_user and current_user.role == 'admin' %}
             <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
             {% endif %}
@@ -91,6 +92,7 @@
     <script defer src="{{ url_for('static', filename='js/batch.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/shortcuts.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/kanban.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/proposals.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

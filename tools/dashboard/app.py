@@ -59,6 +59,7 @@ from tools.dashboard.api.code_quality import code_quality_api
 from tools.dashboard.api.fedramp_20x import fedramp_20x_api
 from tools.dashboard.api.evidence import evidence_api
 from tools.dashboard.api.lineage import lineage_api
+from tools.dashboard.api.proposals import proposals_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -196,6 +197,7 @@ def create_app() -> Flask:
     app.register_blueprint(fedramp_20x_api)
     app.register_blueprint(evidence_api)
     app.register_blueprint(lineage_api)
+    app.register_blueprint(proposals_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -1369,6 +1371,214 @@ def create_app() -> Flask:
     def lineage_page():
         """Artifact Lineage — unified DAG visualization of digital thread, provenance, audit trail, SBOM (Phase 56, D348)."""
         return render_template("lineage.html")
+
+    # ---- Proposal Lifecycle Pages (D-PROP) ----
+
+    @app.route("/proposals")
+    def proposals_list_page():
+        """Proposal Opportunities — GovCon proposal writing lifecycle tracker."""
+        conn = _get_db()
+        try:
+            rows = conn.execute("SELECT * FROM proposal_opportunities ORDER BY due_date ASC").fetchall()
+            opportunities = [dict(r) for r in rows]
+            from datetime import date
+            today = date.today()
+            nearest_deadline = None
+            for opp in opportunities:
+                if opp.get("due_date") and opp["status"] not in ("submitted", "won", "lost", "cancelled", "no_bid"):
+                    try:
+                        dd = date.fromisoformat(opp["due_date"])
+                        days_left = (dd - today).days
+                        opp["days_left"] = days_left
+                        if nearest_deadline is None or days_left < nearest_deadline:
+                            nearest_deadline = days_left
+                    except (ValueError, TypeError):
+                        opp["days_left"] = None
+                else:
+                    opp["days_left"] = None
+            return render_template("proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline)
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>")
+    def proposals_detail_page(opp_id):
+        """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            # Sections (JOIN volumes for volume_number/title)
+            sections = [dict(r) for r in conn.execute(
+                """SELECT s.*, v.volume_number, v.title as volume_title
+                   FROM proposal_sections s
+                   LEFT JOIN proposal_volumes v ON s.volume_id = v.id
+                   WHERE s.opportunity_id = ?
+                   ORDER BY v.volume_number, s.section_number""", (opp_id,)
+            ).fetchall()]
+            # Overdue flag
+            from datetime import date
+            today = date.today()
+            for s in sections:
+                s["overdue"] = False
+                if s.get("due_date") and s["status"] not in ("final", "submitted"):
+                    try:
+                        s["overdue"] = date.fromisoformat(s["due_date"]) < today
+                    except (ValueError, TypeError):
+                        pass
+            # Volumes
+            volumes = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
+            ).fetchall()]
+            # Compliance items
+            compliance_items = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+            ).fetchall()]
+            # Reviews
+            reviews = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
+            ).fetchall()]
+            # Findings
+            findings = [dict(r) for r in conn.execute(
+                """SELECT f.*, r.review_type FROM proposal_review_findings f
+                   JOIN proposal_reviews r ON f.review_id = r.id
+                   WHERE r.opportunity_id = ?""", (opp_id,)
+            ).fetchall()]
+            # Stats
+            total_sections = len(sections)
+            completed_sections = len([s for s in sections if s["status"] in ("final", "submitted")])
+            total_compliance = len(compliance_items)
+            compliant_count = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
+            coverage_pct = (compliant_count / total_compliance * 100) if total_compliance > 0 else 0
+            open_findings = len([f for f in findings if f.get("status") in ("open", "in_progress")])
+            critical_findings = len([f for f in findings if f.get("severity") == "critical" and f.get("status") in ("open", "in_progress")])
+            # Section status distribution (for donut chart)
+            section_status_dist = {}
+            for s in sections:
+                st = s.get("status", "not_started")
+                section_status_dist[st] = section_status_dist.get(st, 0) + 1
+            # Finding severity distribution (for bar chart)
+            finding_severity_dist = {}
+            for f in findings:
+                if f.get("status") in ("open", "in_progress"):
+                    sev = f.get("severity", "minor")
+                    finding_severity_dist[sev] = finding_severity_dist.get(sev, 0) + 1
+            # Compliance stats
+            cm_compliant = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
+            cm_partial = len([c for c in compliance_items if c.get("compliance_status") == "partial"])
+            cm_non_compliant = len([c for c in compliance_items if c.get("compliance_status") == "non_compliant"])
+            cm_not_addressed = len([c for c in compliance_items if c.get("compliance_status") == "not_addressed"])
+            cm_not_applicable = len([c for c in compliance_items if c.get("compliance_status") == "not_applicable"])
+            cm_gap_pct = round(cm_not_addressed / total_compliance * 100) if total_compliance > 0 else 0
+            compliance_stats = {
+                "total": total_compliance,
+                "compliant": cm_compliant,
+                "partial": cm_partial,
+                "non_compliant": cm_non_compliant,
+                "not_addressed": cm_not_addressed,
+                "not_applicable": cm_not_applicable,
+                "gap_pct": cm_gap_pct,
+            }
+            # Reviews with nested findings (for template iteration and JS)
+            findings_by_review = {}
+            for f in findings:
+                rid = f.get("review_id")
+                if rid:
+                    findings_by_review.setdefault(rid, []).append(f)
+            reviews_data = []
+            for rev in reviews:
+                rd = dict(rev)
+                rd["findings"] = findings_by_review.get(rev["id"], [])
+                reviews_data.append(rd)
+            # Days left
+            days_left = None
+            if opp.get("due_date"):
+                try:
+                    days_left = (date.fromisoformat(opp["due_date"]) - today).days
+                except (ValueError, TypeError):
+                    pass
+
+            stats = {
+                "sections_total": total_sections,
+                "sections_complete": completed_sections,
+                "compliance_coverage_pct": round(coverage_pct),
+                "open_findings": open_findings,
+                "critical_findings": critical_findings,
+                "section_status_distribution": section_status_dist,
+                "finding_severity_distribution": finding_severity_dist,
+            }
+
+            return render_template("proposals/detail.html",
+                opp=opp, sections=sections, volumes=volumes,
+                compliance_items=compliance_items, reviews=reviews_data, findings=findings,
+                stats=stats, compliance_stats=compliance_stats,
+                reviews_data=reviews_data, days_left=days_left)
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>/sections/<sec_id>")
+    def proposals_section_detail_page(opp_id, sec_id):
+        """Proposal Section Detail — status pipeline, notes, compliance, findings, history."""
+        conn = _get_db()
+        try:
+            section = conn.execute(
+                """SELECT s.*, v.volume_number, v.title as volume_title
+                   FROM proposal_sections s
+                   LEFT JOIN proposal_volumes v ON s.volume_id = v.id
+                   WHERE s.id = ? AND s.opportunity_id = ?""",
+                (sec_id, opp_id)).fetchone()
+            if not section:
+                return render_template("404.html", message="Section not found"), 404
+            section = dict(section)
+            # Opp title for breadcrumb
+            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp_title = opp["title"] if opp else "Unknown"
+            # Valid transitions
+            from tools.dashboard.api.proposals import SECTION_TRANSITIONS
+            section["valid_transitions"] = SECTION_TRANSITIONS.get(section["status"], [])
+            # Overdue flag
+            from datetime import date
+            section["overdue"] = False
+            if section.get("due_date") and section["status"] not in ("final", "submitted"):
+                try:
+                    section["overdue"] = date.fromisoformat(section["due_date"]) < date.today()
+                except (ValueError, TypeError):
+                    pass
+            # Compliance items linked to this section
+            section["compliance_items"] = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
+            ).fetchall()]
+            # Findings for this section
+            section["findings"] = [dict(r) for r in conn.execute(
+                """SELECT f.*, r.review_type FROM proposal_review_findings f
+                   JOIN proposal_reviews r ON f.review_id = r.id
+                   WHERE f.section_id = ?""", (sec_id,)
+            ).fetchall()]
+            # Dependencies
+            deps = conn.execute(
+                """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
+                   FROM proposal_section_dependencies d
+                   JOIN proposal_sections s ON d.depends_on_section_id = s.id
+                   WHERE d.section_id = ?""", (sec_id,)
+            ).fetchall()
+            dep_list = []
+            for d in deps:
+                d = dict(d)
+                from tools.dashboard.api.proposals import SECTION_STATUS_ORDER
+                req_idx = SECTION_STATUS_ORDER.index(d["required_status"]) if d["required_status"] in SECTION_STATUS_ORDER else 0
+                cur_idx = SECTION_STATUS_ORDER.index(d["depends_on_status"]) if d["depends_on_status"] in SECTION_STATUS_ORDER else 0
+                d["met"] = cur_idx >= req_idx
+                dep_list.append(d)
+            section["dependencies"] = dep_list
+            # Status history
+            section["history"] = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
+            ).fetchall()]
+
+            return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
+        finally:
+            conn.close()
 
     @app.errorhandler(401)
     def unauthorized(e):

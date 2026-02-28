@@ -147,6 +147,16 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "owasp_asi_assessments",
         # Phase 57 — EU AI Act (D349)
         "eu_ai_act_assessments",
+        # Proposal Lifecycle (D-PROP-3 — reviews, findings, status history are immutable)
+        "proposal_reviews",
+        "proposal_review_findings",
+        "proposal_status_history",
+        # Creative Engine (D357 — creative_competitors excluded: allows UPDATE for status transitions)
+        "creative_signals",
+        "creative_pain_points",
+        "creative_feature_gaps",
+        "creative_specs",
+        "creative_trends",
     ]
 
     if tool_name == "Bash":

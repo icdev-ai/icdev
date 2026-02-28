@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+{% block title %}{{ opp.title }} - Proposals - ICDEV{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><a href="/proposals">Proposals</a><span class="separator">/</span><span>{{ opp.title }}</span></div>
+
+<!-- Header with countdown -->
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+        <h1>{{ opp.title }}</h1>
+        <p class="subtitle">{{ opp.solicitation_number }} &mdash; {{ opp.agency }}{% if opp.sub_agency %} / {{ opp.sub_agency }}{% endif %}</p>
+        <div style="margin-top:4px;">
+            {% set status_colors = {'intake': 'info', 'bid_no_bid': 'warning', 'go': 'success', 'writing': 'info', 'review': 'warning', 'final': 'success', 'submitted': 'success', 'won': 'success', 'lost': 'error', 'no_bid': 'warning', 'cancelled': 'error'} %}
+            <span class="badge badge-{{ status_colors.get(opp.status, 'info') }}">{{ opp.status | replace('_', ' ') | title }}</span>
+            <span class="badge badge-info">{{ opp.proposal_type | replace('_', ' ') }}</span>
+            {% if opp.set_aside_type %}<span class="badge badge-warning">{{ opp.set_aside_type | replace('_', ' ') | title }}</span>{% endif %}
+        </div>
+    </div>
+    <div id="countdown-box" style="text-align:right; min-width:140px;" data-due-date="{{ opp.due_date }}">
+        <div style="font-size:12px; color:var(--text-secondary);">DEADLINE</div>
+        <div id="countdown-value" style="font-size:28px; font-weight:bold;">—</div>
+        <div style="font-size:12px; color:var(--text-secondary);">{{ opp.due_date }}</div>
+    </div>
+</div>
+
+<!-- Stat Grid -->
+<div class="stat-grid" id="detail-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-sections">{{ stats.sections_complete }}/{{ stats.sections_total }}</div>
+        <div class="stat-label">Sections Complete</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-coverage">{{ stats.compliance_coverage_pct }}%</div>
+        <div class="stat-label">Compliance Coverage</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-findings">{{ stats.open_findings }}</div>
+        <div class="stat-label">Open Findings</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-critical">{{ stats.critical_findings }}</div>
+        <div class="stat-label">Critical Findings</div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" style="margin-top:20px;">
+    <button class="tab-btn active" data-tab="tab-overview">Overview</button>
+    <button class="tab-btn" data-tab="tab-sections">Sections</button>
+    <button class="tab-btn" data-tab="tab-assignment">Assignment Matrix</button>
+    <button class="tab-btn" data-tab="tab-compliance">Compliance Matrix</button>
+    <button class="tab-btn" data-tab="tab-timeline">Timeline</button>
+    <button class="tab-btn" data-tab="tab-reviews">Reviews</button>
+</div>
+
+<!-- ===================== Overview Tab ===================== -->
+<div id="tab-overview" class="tab-content active">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+        <div class="card" style="padding:16px;">
+            <div class="card-label">Section Status Distribution</div>
+            <div id="chart-status-donut" style="min-height:220px;"></div>
+        </div>
+        <div class="card" style="padding:16px;">
+            <div class="card-label">Open Findings by Severity</div>
+            <div id="chart-findings-bar" style="min-height:220px;"></div>
+        </div>
+    </div>
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Opportunity Details</div>
+        <div class="info-grid" style="margin-top:8px;">
+            <div class="info-item"><div class="label">Agency</div><div class="value">{{ opp.agency }}{% if opp.sub_agency %} / {{ opp.sub_agency }}{% endif %}</div></div>
+            <div class="info-item"><div class="label">NAICS</div><div class="value">{{ opp.naics_code or '—' }}</div></div>
+            <div class="info-item"><div class="label">Set-Aside</div><div class="value">{{ (opp.set_aside_type or '—') | replace('_', ' ') | title }}</div></div>
+            <div class="info-item"><div class="label">Proposal Type</div><div class="value">{{ opp.proposal_type | replace('_', ' ') }}</div></div>
+            <div class="info-item"><div class="label">Estimated Value</div><div class="value">{% if opp.estimated_value_low %}${{ opp.estimated_value_low|round(0)|int }}{% endif %}{% if opp.estimated_value_high %} – ${{ opp.estimated_value_high|round(0)|int }}{% endif %}{% if not opp.estimated_value_low and not opp.estimated_value_high %}—{% endif %}</div></div>
+            <div class="info-item"><div class="label">Capture Manager</div><div class="value">{{ opp.capture_manager or '—' }}</div></div>
+            <div class="info-item"><div class="label">Proposal Manager</div><div class="value">{{ opp.proposal_manager or '—' }}</div></div>
+            <div class="info-item"><div class="label">Bid Decision</div><div class="value">{{ (opp.bid_decision or 'pending') | title }}</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ===================== Sections Tab ===================== -->
+<div id="tab-sections" class="tab-content" style="display:none;">
+    <div style="margin:16px 0; display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-section-modal')">+ Add Section</button>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Section #</th>
+                    <th>Title</th>
+                    <th>Volume</th>
+                    <th>Writer</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Words</th>
+                    <th>Due Date</th>
+                </tr>
+            </thead>
+            <tbody id="sections-tbody">
+                {% for sec in sections %}
+                <tr>
+                    <td><a href="/proposals/{{ opp.id }}/sections/{{ sec.id }}">{{ sec.section_number }}</a></td>
+                    <td><a href="/proposals/{{ opp.id }}/sections/{{ sec.id }}">{{ sec.title }}</a></td>
+                    <td>{{ sec.volume_title or '—' }}</td>
+                    <td>{{ sec.writer or '<span class="text-muted">Unassigned</span>' | safe }}</td>
+                    <td>
+                        {% set sec_colors = {'not_started': 'info', 'outlining': 'info', 'drafting': 'warning', 'internal_review': 'warning', 'pink_team_ready': 'warning', 'pink_team_review': 'warning', 'rework_pink': 'error', 'red_team_ready': 'warning', 'red_team_review': 'warning', 'rework_red': 'error', 'gold_team_ready': 'warning', 'gold_team_review': 'warning', 'white_glove': 'info', 'final': 'success', 'submitted': 'success'} %}
+                        <span class="badge badge-{{ sec_colors.get(sec.status, 'info') }}">{{ sec.status | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        {% set pri_colors = {'critical_path': 'error', 'high': 'warning', 'standard': 'info', 'supporting': 'info'} %}
+                        <span class="badge badge-{{ pri_colors.get(sec.priority, 'info') }}">{{ sec.priority | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>{{ sec.current_word_count or 0 }}{% if sec.word_limit %}/{{ sec.word_limit }}{% endif %}</td>
+                    <td class="{% if sec.overdue %}text-danger{% endif %}">{{ sec.due_date or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== Assignment Matrix Tab ===================== -->
+<div id="tab-assignment" class="tab-content" style="display:none;">
+    <div id="assignment-matrix" style="margin-top:16px;"></div>
+</div>
+
+<!-- ===================== Compliance Matrix Tab ===================== -->
+<div id="tab-compliance" class="tab-content" style="display:none;">
+    <div style="margin:16px 0; display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-cm-modal')">+ Add Requirement</button>
+        <div id="compliance-bar" style="flex:1; margin-left:16px;"></div>
+    </div>
+    {% if compliance_stats.total > 0 and compliance_stats.not_addressed > 0 %}
+    <div class="card" style="padding:12px; margin-bottom:12px; border-left:3px solid var(--status-red);">
+        <strong>{{ compliance_stats.not_addressed }}</strong> requirements not yet addressed ({{ compliance_stats.gap_pct }}% gap)
+    </div>
+    {% endif %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ref</th>
+                    <th>Requirement</th>
+                    <th>Type</th>
+                    <th>Compliance</th>
+                    <th>Linked Section</th>
+                    <th>Response</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cm in compliance_items %}
+                <tr>
+                    <td>{{ cm.section_ref }}</td>
+                    <td>{{ cm.requirement_text[:120] }}{% if cm.requirement_text | length > 120 %}...{% endif %}</td>
+                    <td><span class="badge badge-info">{{ cm.requirement_type }}</span></td>
+                    <td>
+                        {% set cm_colors = {'compliant': 'success', 'partial': 'warning', 'non_compliant': 'error', 'not_applicable': 'info', 'not_addressed': 'error'} %}
+                        <span class="badge badge-{{ cm_colors.get(cm.compliance_status, 'info') }}">{{ cm.compliance_status | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>{{ cm.section_title or '—' }}</td>
+                    <td class="text-muted">{{ (cm.response_summary or '—')[:80] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== Timeline Tab ===================== -->
+<div id="tab-timeline" class="tab-content" style="display:none;">
+    <div id="timeline-gantt" style="margin-top:16px; min-height:300px; overflow-x:auto;"></div>
+</div>
+
+<!-- ===================== Reviews Tab ===================== -->
+<div id="tab-reviews" class="tab-content" style="display:none;">
+    <div style="margin:16px 0;">
+        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-review-modal')">+ Schedule Review</button>
+    </div>
+    <!-- Review Pipeline -->
+    <div id="review-pipeline" style="margin-bottom:20px;"></div>
+    <!-- Findings Table -->
+    <div class="table-container">
+        <div class="table-header"><h2>Review Findings</h2></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Review</th>
+                    <th>Section</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>Description</th>
+                    <th>Assigned To</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rev in reviews %}
+                {% for f in rev.findings %}
+                <tr>
+                    <td><span class="badge badge-info">{{ rev.review_type | replace('_', ' ') | title }}</span></td>
+                    <td>{{ f.section_title or '—' }}</td>
+                    <td>{{ f.finding_type | replace('_', ' ') | title }}</td>
+                    <td>
+                        {% set sev_colors = {'critical': 'error', 'major': 'warning', 'minor': 'info', 'observation': 'info'} %}
+                        <span class="badge badge-{{ sev_colors.get(f.severity, 'info') }}">{{ f.severity | title }}</span>
+                    </td>
+                    <td>{{ f.description[:100] }}{% if f.description | length > 100 %}...{% endif %}</td>
+                    <td>{{ f.assigned_to or '—' }}</td>
+                    <td>
+                        {% set fs_colors = {'open': 'error', 'in_progress': 'warning', 'resolved': 'success', 'deferred': 'info', 'wont_fix': 'info'} %}
+                        <span class="badge badge-{{ fs_colors.get(f.status, 'info') }}">{{ f.status | replace('_', ' ') | title }}</span>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== Modals ===================== -->
+
+<!-- Create Section Modal -->
+<div id="create-section-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add Section</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-section-modal')">&times;</button>
+        </div>
+        <form id="create-section-form" onsubmit="return ICDEV.proposals.submitSectionForm(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Volume *</label>
+                    <select name="volume_id" required>
+                        {% for vol in volumes %}
+                        <option value="{{ vol.id }}">Vol {{ vol.volume_number }}: {{ vol.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Section Number *</label>
+                    <input type="text" name="section_number" required placeholder="e.g., 3.1.2">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Title *</label>
+                    <input type="text" name="title" required placeholder="Section title">
+                </div>
+                <div class="form-group">
+                    <label>Writer</label>
+                    <input type="text" name="writer" placeholder="Writer name">
+                </div>
+                <div class="form-group">
+                    <label>Reviewer</label>
+                    <input type="text" name="reviewer" placeholder="Reviewer name">
+                </div>
+                <div class="form-group">
+                    <label>Word Limit</label>
+                    <input type="number" name="word_limit" placeholder="e.g., 2000">
+                </div>
+                <div class="form-group">
+                    <label>Page Limit</label>
+                    <input type="number" name="page_limit" placeholder="e.g., 10">
+                </div>
+                <div class="form-group">
+                    <label>Due Date</label>
+                    <input type="date" name="due_date">
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select name="priority">
+                        <option value="standard">Standard</option>
+                        <option value="critical_path">Critical Path</option>
+                        <option value="high">High</option>
+                        <option value="supporting">Supporting</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-section-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Section</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Create Compliance Item Modal -->
+<div id="create-cm-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add Requirement</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-cm-modal')">&times;</button>
+        </div>
+        <form id="create-cm-form" onsubmit="return ICDEV.proposals.submitComplianceForm(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Section Reference *</label>
+                    <input type="text" name="section_ref" required placeholder="e.g., L.3.1.2">
+                </div>
+                <div class="form-group">
+                    <label>Type</label>
+                    <select name="requirement_type">
+                        <option value="L">L — Instructions</option>
+                        <option value="M">M — Evaluation</option>
+                        <option value="N">N — Other</option>
+                    </select>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Requirement Text *</label>
+                    <textarea name="requirement_text" required rows="3" placeholder="The offeror shall..." style="background:var(--bg-secondary);border:1px solid var(--border-color,#2a2a4a);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Link to Section</label>
+                    <select name="proposal_section_id">
+                        <option value="">— Not linked —</option>
+                        {% for sec in sections %}
+                        <option value="{{ sec.id }}">{{ sec.section_number }}: {{ sec.title }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Compliance Status</label>
+                    <select name="compliance_status">
+                        <option value="not_addressed">Not Addressed</option>
+                        <option value="compliant">Compliant</option>
+                        <option value="partial">Partial</option>
+                        <option value="non_compliant">Non-Compliant</option>
+                        <option value="not_applicable">N/A</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-cm-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Requirement</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Schedule Review Modal -->
+<div id="create-review-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Schedule Review</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-review-modal')">&times;</button>
+        </div>
+        <form id="create-review-form" onsubmit="return ICDEV.proposals.submitReviewForm(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Review Type *</label>
+                    <select name="review_type" required>
+                        <option value="pink_team">Pink Team</option>
+                        <option value="red_team">Red Team</option>
+                        <option value="gold_team">Gold Team</option>
+                        <option value="white_glove">White Glove</option>
+                        <option value="internal">Internal Review</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Scheduled Date</label>
+                    <input type="date" name="scheduled_date">
+                </div>
+                <div class="form-group">
+                    <label>Lead Reviewer</label>
+                    <input type="text" name="lead_reviewer" placeholder="Name">
+                </div>
+                <div class="form-group">
+                    <label>Participants</label>
+                    <input type="text" name="participants" placeholder="Comma-separated names">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-review-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Schedule Review</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
+.modal-content { background:var(--bg-card, #16213e); border:1px solid var(--border-color, #2a2a4a); border-radius:8px; padding:24px; max-width:700px; width:90%; max-height:85vh; overflow-y:auto; }
+.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.modal-header h2 { margin:0; }
+.modal-close { background:none; border:none; color:var(--text-primary, #e0e0e0); font-size:24px; cursor:pointer; }
+.modal-footer { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color, #2a2a4a); }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.form-group { display:flex; flex-direction:column; }
+.form-group label { font-size:12px; color:var(--text-secondary, #a0a0b8); margin-bottom:4px; }
+.form-group input, .form-group select { background:var(--bg-secondary, #1a1a2e); border:1px solid var(--border-color, #2a2a4a); color:var(--text-primary, #e0e0e0); padding:8px; border-radius:4px; font-size:14px; }
+.text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Tab switching
+    document.querySelectorAll(".tab-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.remove("active"); });
+            document.querySelectorAll(".tab-content").forEach(function(c) { c.style.display = "none"; c.classList.remove("active"); });
+            btn.classList.add("active");
+            var tab = document.getElementById(btn.getAttribute("data-tab"));
+            if (tab) { tab.style.display = "block"; tab.classList.add("active"); }
+        });
+    });
+
+    // Countdown
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.renderCountdown("countdown-value", "{{ opp.due_date }}");
+    }
+
+    // Charts
+    var statusDist = {{ stats.section_status_distribution | tojson }};
+    var severityDist = {{ stats.finding_severity_distribution | tojson }};
+
+    if (window.ICDEV && ICDEV.donutChart && Object.keys(statusDist).length > 0) {
+        var series = [];
+        var colors = {"not_started":"#6c6c80","outlining":"#4a90d9","drafting":"#ffc107","internal_review":"#ffc107","pink_team_ready":"#e67e22","pink_team_review":"#e67e22","rework_pink":"#dc3545","red_team_ready":"#e67e22","red_team_review":"#e67e22","rework_red":"#dc3545","gold_team_ready":"#f39c12","gold_team_review":"#f39c12","white_glove":"#17a2b8","final":"#28a745","submitted":"#28a745"};
+        for (var k in statusDist) {
+            series.push({label: k.replace(/_/g, " "), value: statusDist[k], color: colors[k] || "#4a90d9"});
+        }
+        ICDEV.donutChart("chart-status-donut", series, {width:280, height:200});
+    }
+
+    if (window.ICDEV && ICDEV.barChart && Object.keys(severityDist).length > 0) {
+        var barData = [];
+        var sevColors = {"critical":"#dc3545","major":"#ffc107","minor":"#4a90d9","observation":"#6c6c80"};
+        for (var s in severityDist) {
+            barData.push({x: s, value: severityDist[s], color: sevColors[s] || "#4a90d9"});
+        }
+        ICDEV.barChart("chart-findings-bar", barData, {width:280, height:200});
+    }
+
+    // Compliance bar
+    var cmStats = {{ compliance_stats | tojson }};
+    if (window.ICDEV && ICDEV.proposals && cmStats.total > 0) {
+        ICDEV.proposals.renderComplianceBar("compliance-bar", cmStats);
+    }
+
+    // Review pipeline
+    var reviews = {{ reviews_data | tojson }};
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.renderReviewPipeline("review-pipeline", reviews);
+    }
+
+    // Assignment matrix
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.loadAssignmentMatrix("assignment-matrix", "{{ opp.id }}");
+    }
+
+    // Timeline
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.loadTimeline("timeline-gantt", "{{ opp.id }}", "{{ opp.due_date }}");
+    }
+
+    // Auto-refresh stats every 30s
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.startAutoRefresh("{{ opp.id }}", 30000);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Proposals - ICDEV{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>Proposals</span></div>
+
+<div class="page-header">
+    <h1>Proposal Opportunities</h1>
+    <p class="subtitle">GovCon proposal writing lifecycle tracker</p>
+</div>
+
+<!-- Stat Grid -->
+<div class="stat-grid" id="prop-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total">{{ opportunities | length }}</div>
+        <div class="stat-label">Total</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-writing">{{ opportunities | selectattr('status', 'equalto', 'writing') | list | length }}</div>
+        <div class="stat-label">In Writing</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-review">{{ opportunities | selectattr('status', 'equalto', 'review') | list | length }}</div>
+        <div class="stat-label">In Review</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-submitted">{{ opportunities | selectattr('status', 'equalto', 'submitted') | list | length }}</div>
+        <div class="stat-label">Submitted</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value {% if nearest_deadline and nearest_deadline <= 7 %}text-danger{% elif nearest_deadline and nearest_deadline <= 14 %}text-warning{% endif %}" id="stat-deadline">
+            {{ nearest_deadline if nearest_deadline is not none else '—' }}
+        </div>
+        <div class="stat-label">Days to Nearest Deadline</div>
+    </div>
+</div>
+
+<!-- Actions -->
+<div style="margin: 16px 0; display: flex; gap: 8px;">
+    <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('create-opp-modal')">+ New Opportunity</button>
+</div>
+
+<!-- Opportunity Table -->
+<div class="table-container">
+    <div class="table-header">
+        <h2>Opportunities</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Solicitation #</th>
+                <th>Title</th>
+                <th>Agency</th>
+                <th>Due Date</th>
+                <th>Days Left</th>
+                <th>Type</th>
+                <th>Set-Aside</th>
+                <th>Status</th>
+                <th>Proposal Mgr</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for opp in opportunities %}
+            <tr>
+                <td><a href="/proposals/{{ opp.id }}">{{ opp.solicitation_number }}</a></td>
+                <td><a href="/proposals/{{ opp.id }}">{{ opp.title }}</a></td>
+                <td>{{ opp.agency }}</td>
+                <td>{{ opp.due_date }}</td>
+                <td class="{% if opp.days_left is not none and opp.days_left <= 7 %}text-danger{% elif opp.days_left is not none and opp.days_left <= 14 %}text-warning{% endif %}">
+                    {{ opp.days_left if opp.days_left is not none else '—' }}
+                </td>
+                <td><span class="badge badge-info">{{ opp.proposal_type }}</span></td>
+                <td>{{ opp.set_aside_type or '—' }}</td>
+                <td>
+                    {% set status_colors = {'intake': 'info', 'bid_no_bid': 'warning', 'go': 'success', 'writing': 'info', 'review': 'warning', 'final': 'success', 'submitted': 'success', 'won': 'success', 'lost': 'error', 'no_bid': 'warning', 'cancelled': 'error'} %}
+                    <span class="badge badge-{{ status_colors.get(opp.status, 'info') }}">{{ opp.status | replace('_', ' ') | title }}</span>
+                </td>
+                <td>{{ opp.proposal_manager or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9" class="text-muted" style="text-align:center;">No opportunities yet. Click "+ New Opportunity" to create one.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Create Opportunity Modal -->
+<div id="create-opp-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>New Opportunity</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('create-opp-modal')">&times;</button>
+        </div>
+        <form id="create-opp-form" onsubmit="return ICDEV.proposals.submitOppForm(event)">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Solicitation Number *</label>
+                    <input type="text" name="solicitation_number" required placeholder="e.g., W911NF-25-R-0001">
+                </div>
+                <div class="form-group">
+                    <label>Title *</label>
+                    <input type="text" name="title" required placeholder="Proposal title">
+                </div>
+                <div class="form-group">
+                    <label>Agency *</label>
+                    <input type="text" name="agency" required placeholder="e.g., U.S. Army">
+                </div>
+                <div class="form-group">
+                    <label>Sub-Agency</label>
+                    <input type="text" name="sub_agency" placeholder="e.g., PEO IEW&S">
+                </div>
+                <div class="form-group">
+                    <label>Due Date *</label>
+                    <input type="date" name="due_date" required>
+                </div>
+                <div class="form-group">
+                    <label>Proposal Type *</label>
+                    <select name="proposal_type" required>
+                        <option value="FFP">FFP — Firm Fixed Price</option>
+                        <option value="T_AND_M">T&M — Time & Materials</option>
+                        <option value="CPFF">CPFF — Cost Plus Fixed Fee</option>
+                        <option value="CPIF">CPIF — Cost Plus Incentive Fee</option>
+                        <option value="IDIQ_TO">IDIQ TO — Task Order</option>
+                        <option value="BPA_CALL">BPA Call</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Set-Aside</label>
+                    <select name="set_aside_type">
+                        <option value="">None</option>
+                        <option value="full_open">Full & Open</option>
+                        <option value="small_business">Small Business</option>
+                        <option value="8a">8(a)</option>
+                        <option value="hubzone">HUBZone</option>
+                        <option value="sdvosb">SDVOSB</option>
+                        <option value="wosb">WOSB</option>
+                        <option value="edwosb">EDWOSB</option>
+                        <option value="sole_source">Sole Source</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>NAICS Code</label>
+                    <input type="text" name="naics_code" placeholder="e.g., 541512">
+                </div>
+                <div class="form-group">
+                    <label>Capture Manager</label>
+                    <input type="text" name="capture_manager" placeholder="Name">
+                </div>
+                <div class="form-group">
+                    <label>Proposal Manager</label>
+                    <input type="text" name="proposal_manager" placeholder="Name">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('create-opp-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Opportunity</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.modal-overlay { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:flex; align-items:center; justify-content:center; }
+.modal-content { background:var(--bg-card, #16213e); border:1px solid var(--border-color, #2a2a4a); border-radius:8px; padding:24px; max-width:700px; width:90%; max-height:85vh; overflow-y:auto; }
+.modal-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.modal-header h2 { margin:0; }
+.modal-close { background:none; border:none; color:var(--text-primary, #e0e0e0); font-size:24px; cursor:pointer; }
+.modal-footer { display:flex; justify-content:flex-end; gap:8px; margin-top:16px; padding-top:16px; border-top:1px solid var(--border-color, #2a2a4a); }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.form-group { display:flex; flex-direction:column; }
+.form-group label { font-size:12px; color:var(--text-secondary, #a0a0b8); margin-bottom:4px; }
+.form-group input, .form-group select { background:var(--bg-secondary, #1a1a2e); border:1px solid var(--border-color, #2a2a4a); color:var(--text-primary, #e0e0e0); padding:8px; border-radius:4px; font-size:14px; }
+.form-group input:focus, .form-group select:focus { outline:none; border-color:var(--accent-blue, #4a90d9); }
+.text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
+.text-warning { color: var(--status-yellow, #ffc107) !important; }
+@media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}

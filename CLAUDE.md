@@ -1117,6 +1117,9 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /lineage           — Artifact lineage DAG: SVG visualization joining digital thread, provenance, audit trail, SBOM (Phase 56, D348)
 #   /ai-transparency   — AI Transparency dashboard: framework scores, model/system cards, AI inventory, fairness, confabulation, GAO evidence, gap analysis (Phase 48)
 #   /ai-accountability — AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment scheduling, cross-framework audit (Phase 49)
+#   /proposals         — Proposal lifecycle tracker: opportunity list, stat grid, new opportunity modal
+#   /proposals/<id>    — Opportunity detail: 6 tabs (Overview, Sections, Assignment Matrix, Compliance Matrix, Timeline Gantt, Reviews), countdown, donut/bar charts
+#   /proposals/<id>/sections/<id> — Section detail: 14-step status pipeline, info grid, notes, compliance items, findings, dependencies, status history, advance workflow
 #   /admin/users       — Admin user/key management (admin role only)
 # Auth: per-user API keys (SHA-256 hashed), Flask signed sessions (D169-D171)
 # RBAC: 5 roles (admin, pm, developer, isso, co) — D172
@@ -1233,7 +1236,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 210 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349) |
+| `data/icdev.db` | 216 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1291,6 +1294,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | `args/security_gates.yaml` | (updated) Added `ai_governance` gate with blocking: caio_not_designated_for_rights_impacting_ai, oversight_plan_missing_for_high_impact_ai, impact_assessment_not_completed; warning: model_card_missing, fairness_assessment_stale, reassessment_overdue, ai_inventory_incomplete; thresholds: caio_required_for_rights_impacting=true, oversight_plan_required=true, impact_assessment_required=true |
 | `args/code_quality_config.yaml` | Code Intelligence (Phase 52, D331-D337): smell thresholds (long_function, deep_nesting, high_complexity, too_many_params, god_class), maintainability weights (complexity 0.30, smell_density 0.20, test_health 0.20, coupling 0.15, coverage 0.15), audit thresholds, scan exclusion dirs, Innovation Engine integration |
 | `args/security_gates.yaml` | (updated) Added `code_quality` gate with blocking: avg_cyclomatic_complexity_exceeds_critical; warning: maintainability_score_declining, high_smell_density, dead_code_exceeds_threshold; thresholds: max_avg_complexity=25, min_maintainability_score=0.40, max_smell_density_per_kloc=20, max_dead_code_pct=10 |
+| `args/creative_config.yaml` | Creative Engine (Phase 58, D351-D360): domain, sources (review_sites, community_forums, github_issues, producthunt), competitor_discovery (refresh interval, auto_confirm=false), extraction (negative/feature-request keywords, 15 categories, clustering), scoring weights (pain_frequency 0.40, gap_uniqueness 0.35, effort_to_impact 0.25), thresholds (auto_spec 0.75, suggest 0.50), spec_generation, innovation_bridge (min_score 0.60), trends, scheduling (daemon interval, quiet hours) |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1643,6 +1647,7 @@ python tools/agent/agent_executor.py --prompt "text" --bedrock               # E
 | A2A v0.3 | `goals/a2a_v03.md` | A2A Protocol v0.3: capabilities in Agent Cards, tasks/sendSubscribe streaming, backward-compatible protocolVersion field, discovery server (Phase 55, D344) |
 | Evidence Collection | `goals/evidence_collection.md` | Universal compliance evidence auto-collection across 14 frameworks, freshness checking, heartbeat integration (Phase 56, D347) |
 | EU AI Act | `goals/eu_ai_act.md` | EU AI Act (Regulation 2024/1689) risk classification: 12 Annex III requirements, 4 risk levels, ISO 27001 bridge crosswalk (Phase 57, D349) |
+| Creative Engine | `goals/creative_engine.md` | Customer-centric feature opportunity discovery: auto-discover competitors, scan review sites/forums/GitHub, extract pain points (deterministic keyword), 3-dimension scoring (pain_frequency 0.40 + gap_uniqueness 0.35 + effort_to_impact 0.25), trend detection, template-based spec generation, Innovation Engine bridge (Phase 58, D351-D360) |
 
 ---
 
@@ -1795,6 +1800,16 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D348:** Lineage dashboard joins digital thread + provenance + audit trail + SBOM into unified DAG visualization. Read-only SVG rendering.
 - **D349:** EU AI Act classifier uses BaseAssessor ABC. Bridges through ISO 27001 international hub (D111). Optional — triggered only when `eu_market: true`.
 - **D350:** Iron Bank metadata generator follows `terraform_generator.py` pattern. Produces `hardening_manifest.yaml` for Platform One Big Bang. Language auto-detection from project directory.
+- **D351:** Creative Engine is separate from Innovation Engine — different domain (customer voice vs. technical signals), different scoring (3-dimension vs. 5-dimension), different sources (review sites/forums vs. CVE/package/standards feeds)
+- **D352:** Source adapters via function registry dict (D66/web_scanner `SOURCE_SCANNERS` pattern) — add new sources without code changes
+- **D353:** Competitor auto-discovery is advisory-only — stores as `status='discovered'`; human must confirm before tracking activates
+- **D354:** Pain extraction is deterministic keyword/regex — no LLM needed, air-gap safe, reproducible
+- **D355:** 3-dimension scoring: pain_frequency(0.40) + gap_uniqueness(0.35) + effort_to_impact(0.25) — user-specified weights, deterministic weighted average (D21)
+- **D356:** Feature specs are template-based — follows `solution_generator.py` pattern, no LLM, reproducible
+- **D357:** All Creative Engine tables append-only except `creative_competitors` (allows UPDATE for status transitions discovered→confirmed→archived)
+- **D358:** Reuses `_safe_get()`, `_get_db()`, `_now()`, `_audit()` helpers — copy-adapted from `web_scanner.py`
+- **D359:** Daemon mode respects quiet hours from config — consistent with `innovation_manager.py`
+- **D360:** High-scoring creative signals cross-register to `innovation_signals` — enables Innovation Engine trend detection on creative discoveries
 
 ### Innovation Security Gates
 | Gate | Condition |
@@ -1807,6 +1822,76 @@ python tools/innovation/signal_ranker.py --calibrate --json
 | Budget Cap | Max 10 auto-solutions per PI |
 | Build Gates | All existing security gates (SAST, deps, secrets, CUI) |
 | Marketplace Publish | 7-gate marketplace pipeline |
+
+---
+
+## Creative Engine — Customer-Centric Feature Discovery (Phase 58)
+
+### Overview
+Automates competitor gap analysis, customer pain point discovery, and feature opportunity scouting from public review sites, community forums, and GitHub issues. Outputs ranked feature specs with justification. Separate from Innovation Engine — different domain (customer voice vs. technical signals), different scoring, different sources (D351).
+
+### Pipeline
+```
+DISCOVER → EXTRACT → SCORE → RANK → GENERATE
+```
+
+1. **DISCOVER** — Auto-discover competitors from category pages; scan review sites, forums, GitHub issues
+2. **EXTRACT** — Extract pain points from raw signals via deterministic keyword matching + sentiment detection (D354)
+3. **SCORE** — 3-dimension composite score: pain_frequency(0.40) + gap_uniqueness(0.35) + effort_to_impact(0.25)
+4. **RANK** — Deduplicate, cluster, prioritize by composite score; detect trends (velocity/acceleration)
+5. **GENERATE** — Template-based feature specs with justification, competitive analysis, user quotes (D356)
+
+### Commands
+```bash
+# Full pipeline
+python tools/creative/creative_engine.py --run --json
+python tools/creative/creative_engine.py --run --domain "proposal management" --json
+
+# Individual stages
+python tools/creative/creative_engine.py --discover --domain "proposal management" --json
+python tools/creative/creative_engine.py --scan --all --json
+python tools/creative/creative_engine.py --extract --json
+python tools/creative/creative_engine.py --score --json
+python tools/creative/creative_engine.py --rank --top-k 20 --json
+python tools/creative/creative_engine.py --generate --json
+
+# Status
+python tools/creative/creative_engine.py --status --json
+python tools/creative/creative_engine.py --pipeline-report --json
+python tools/creative/creative_engine.py --competitors --json
+python tools/creative/creative_engine.py --trends --json
+python tools/creative/creative_engine.py --specs --json
+
+# Sub-tools
+python tools/creative/source_scanner.py --scan --all --json
+python tools/creative/source_scanner.py --list-sources --json
+python tools/creative/competitor_discoverer.py --discover --domain "proposal management" --json
+python tools/creative/competitor_discoverer.py --list --json
+python tools/creative/competitor_discoverer.py --confirm --competitor-id <id> --json
+python tools/creative/pain_extractor.py --extract-all --json
+python tools/creative/gap_scorer.py --score-all --json
+python tools/creative/gap_scorer.py --top --limit 20 --json
+python tools/creative/gap_scorer.py --gaps --json
+python tools/creative/trend_tracker.py --detect --json
+python tools/creative/trend_tracker.py --report --json
+python tools/creative/spec_generator.py --generate-all --json
+python tools/creative/spec_generator.py --list --json
+
+# Daemon mode
+python tools/creative/creative_engine.py --daemon --json
+```
+
+### Architecture Decisions
+- **D351:** Creative Engine is separate from Innovation Engine (different domain, scoring, sources)
+- **D352:** Source adapters via function registry dict (web_scanner pattern)
+- **D353:** Competitor auto-discovery is advisory-only (human must confirm)
+- **D354:** Pain extraction is deterministic keyword/regex (air-gap safe)
+- **D355:** 3-dimension scoring: pain_frequency(0.40) + gap_uniqueness(0.35) + effort_to_impact(0.25)
+- **D356:** Feature specs are template-based (no LLM, reproducible)
+- **D357:** All tables append-only except creative_competitors (UPDATE for status transitions)
+- **D358:** Reuses _safe_get(), _get_db(), _now(), _audit() helpers
+- **D359:** Daemon mode respects quiet hours from config
+- **D360:** High-scoring signals cross-register to innovation_signals
 
 ---
 

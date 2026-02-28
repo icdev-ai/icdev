@@ -4361,6 +4361,346 @@ CREATE TABLE IF NOT EXISTS eu_ai_act_assessments (
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_eu_ai_act_project ON eu_ai_act_assessments(project_id);
+
+-- ============================================================
+-- CREATIVE ENGINE: Customer-Centric Feature Discovery (D351-D360)
+-- ============================================================
+
+-- Creative competitors — auto-discovered and manually confirmed competitor profiles
+-- NOTE: This table allows UPDATE for status transitions (discovered -> confirmed -> archived) (D357)
+CREATE TABLE IF NOT EXISTS creative_competitors (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    domain TEXT,
+    source TEXT NOT NULL CHECK(source IN ('g2','capterra','trustradius','producthunt','manual')),
+    source_url TEXT,
+    rating REAL,
+    review_count INTEGER DEFAULT 0,
+    features TEXT DEFAULT '[]',
+    pricing_tier TEXT,
+    status TEXT NOT NULL DEFAULT 'discovered'
+        CHECK(status IN ('discovered','confirmed','archived')),
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    confirmed_at TEXT,
+    confirmed_by TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_creative_comp_domain ON creative_competitors(domain);
+CREATE INDEX IF NOT EXISTS idx_creative_comp_status ON creative_competitors(status);
+
+-- Creative signals — raw signals from review sites, forums, GitHub issues (append-only, D6)
+CREATE TABLE IF NOT EXISTS creative_signals (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL CHECK(source IN ('g2','capterra','trustradius','reddit','github',
+                                          'producthunt','govcon_blog','linkedin','stackoverflow')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('review','forum_post','issue','comment','launch','scan_error')),
+    competitor_id TEXT REFERENCES creative_competitors(id),
+    title TEXT NOT NULL,
+    body TEXT,
+    url TEXT,
+    author TEXT,
+    rating REAL,
+    upvotes INTEGER DEFAULT 0,
+    sentiment TEXT CHECK(sentiment IS NULL OR sentiment IN ('positive','negative','neutral','mixed')),
+    content_hash TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_csig_source ON creative_signals(source);
+CREATE INDEX IF NOT EXISTS idx_csig_competitor ON creative_signals(competitor_id);
+CREATE INDEX IF NOT EXISTS idx_csig_hash ON creative_signals(content_hash);
+CREATE INDEX IF NOT EXISTS idx_csig_discovered ON creative_signals(discovered_at);
+
+-- Creative pain points — extracted and clustered pain points (append-only, D6)
+CREATE TABLE IF NOT EXISTS creative_pain_points (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL CHECK(category IN ('ux','performance','integration','pricing','compliance',
+        'security','reporting','customization','support','scalability','documentation',
+        'onboarding','api','automation','other')),
+    frequency INTEGER NOT NULL DEFAULT 1,
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    competitor_ids TEXT DEFAULT '[]',
+    keyword_fingerprint TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    severity TEXT DEFAULT 'medium' CHECK(severity IN ('critical','high','medium','low')),
+    status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','scored','spec_generated','addressed')),
+    composite_score REAL,
+    score_breakdown TEXT,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpp_category ON creative_pain_points(category);
+CREATE INDEX IF NOT EXISTS idx_cpp_score ON creative_pain_points(composite_score);
+CREATE INDEX IF NOT EXISTS idx_cpp_fingerprint ON creative_pain_points(keyword_fingerprint);
+
+-- Creative feature gaps — features customers want that competitors lack (append-only, D6)
+CREATE TABLE IF NOT EXISTS creative_feature_gaps (
+    id TEXT PRIMARY KEY,
+    pain_point_id TEXT REFERENCES creative_pain_points(id),
+    feature_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    requested_by_count INTEGER DEFAULT 0,
+    competitor_coverage TEXT DEFAULT '{}',
+    gap_score REAL DEFAULT 0.0,
+    market_demand REAL DEFAULT 0.0,
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'identified'
+        CHECK(status IN ('identified','validated','spec_generated','addressed','rejected')),
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cfg_pain ON creative_feature_gaps(pain_point_id);
+CREATE INDEX IF NOT EXISTS idx_cfg_gap ON creative_feature_gaps(gap_score);
+
+-- Creative specs — generated feature specifications (append-only, D6)
+CREATE TABLE IF NOT EXISTS creative_specs (
+    id TEXT PRIMARY KEY,
+    feature_gap_id TEXT REFERENCES creative_feature_gaps(id),
+    pain_point_id TEXT REFERENCES creative_pain_points(id),
+    title TEXT NOT NULL,
+    spec_content TEXT NOT NULL,
+    composite_score REAL NOT NULL,
+    justification TEXT NOT NULL,
+    estimated_effort TEXT NOT NULL CHECK(estimated_effort IN ('S','M','L','XL')),
+    target_persona TEXT,
+    competitive_advantage TEXT,
+    status TEXT NOT NULL DEFAULT 'generated'
+        CHECK(status IN ('generated','reviewed','approved','building','rejected')),
+    reviewer TEXT,
+    reviewed_at TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cspec_score ON creative_specs(composite_score);
+CREATE INDEX IF NOT EXISTS idx_cspec_status ON creative_specs(status);
+
+-- Creative trends — trending pain points over time (append-only, D6)
+CREATE TABLE IF NOT EXISTS creative_trends (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    category TEXT,
+    pain_point_ids TEXT NOT NULL DEFAULT '[]',
+    signal_count INTEGER NOT NULL DEFAULT 0,
+    keyword_fingerprint TEXT NOT NULL,
+    keywords TEXT NOT NULL DEFAULT '[]',
+    velocity REAL DEFAULT 0.0,
+    acceleration REAL DEFAULT 0.0,
+    status TEXT NOT NULL DEFAULT 'emerging'
+        CHECK(status IN ('emerging','active','declining','stale')),
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_ctrend_status ON creative_trends(status);
+CREATE INDEX IF NOT EXISTS idx_ctrend_velocity ON creative_trends(velocity);
+
+-- ============================================================
+-- PROPOSAL LIFECYCLE — GovCon Proposal Writing Tracker
+-- ============================================================
+
+-- Root entity: one per RFP/RFI opportunity
+CREATE TABLE IF NOT EXISTS proposal_opportunities (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    solicitation_number TEXT NOT NULL,
+    title TEXT NOT NULL,
+    agency TEXT NOT NULL,
+    sub_agency TEXT,
+    due_date TEXT NOT NULL,
+    due_time TEXT DEFAULT '17:00',
+    set_aside_type TEXT CHECK(set_aside_type IN (
+        'full_open', 'small_business', '8a', 'hubzone', 'sdvosb',
+        'wosb', 'edwosb', 'sole_source', 'other')),
+    naics_code TEXT,
+    estimated_value_low REAL,
+    estimated_value_high REAL,
+    proposal_type TEXT NOT NULL CHECK(proposal_type IN (
+        'FFP', 'T_AND_M', 'CPFF', 'CPIF', 'IDIQ_TO', 'BPA_CALL', 'other')),
+    status TEXT NOT NULL DEFAULT 'intake' CHECK(status IN (
+        'intake', 'bid_no_bid', 'go', 'writing', 'review',
+        'final', 'submitted', 'won', 'lost', 'no_bid', 'cancelled')),
+    bid_decision TEXT CHECK(bid_decision IN ('go', 'no_go', 'pending')),
+    bid_decision_date TEXT,
+    bid_decision_rationale TEXT,
+    rfp_document_path TEXT,
+    rfp_url TEXT,
+    capture_manager TEXT,
+    proposal_manager TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_opp_status ON proposal_opportunities(status);
+CREATE INDEX IF NOT EXISTS idx_prop_opp_due ON proposal_opportunities(due_date);
+CREATE INDEX IF NOT EXISTS idx_prop_opp_project ON proposal_opportunities(project_id);
+CREATE INDEX IF NOT EXISTS idx_prop_opp_solicitation ON proposal_opportunities(solicitation_number);
+
+-- Proposal structure: volumes (Technical, Management, Past Performance, Cost)
+CREATE TABLE IF NOT EXISTS proposal_volumes (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    volume_number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    page_limit INTEGER,
+    word_limit INTEGER,
+    sort_order INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK(status IN (
+        'not_started', 'in_progress', 'review', 'final')),
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_vol_opp ON proposal_volumes(opportunity_id);
+
+-- Work units: sections assigned to writers with 14-step status workflow
+CREATE TABLE IF NOT EXISTS proposal_sections (
+    id TEXT PRIMARY KEY,
+    volume_id TEXT NOT NULL REFERENCES proposal_volumes(id),
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    parent_section_id TEXT REFERENCES proposal_sections(id),
+    section_number TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    writer TEXT,
+    writer_email TEXT,
+    reviewer TEXT,
+    page_limit INTEGER,
+    word_limit INTEGER,
+    current_word_count INTEGER DEFAULT 0,
+    current_page_count INTEGER DEFAULT 0,
+    priority TEXT DEFAULT 'standard' CHECK(priority IN (
+        'critical_path', 'high', 'standard', 'supporting')),
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK(status IN (
+        'not_started', 'outlining', 'drafting',
+        'internal_review', 'pink_team_ready', 'pink_team_review',
+        'rework_pink', 'red_team_ready', 'red_team_review',
+        'rework_red', 'gold_team_ready', 'gold_team_review',
+        'white_glove', 'final', 'submitted')),
+    due_date TEXT,
+    content_path TEXT,
+    notes TEXT,
+    sort_order INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_sec_vol ON proposal_sections(volume_id);
+CREATE INDEX IF NOT EXISTS idx_prop_sec_opp ON proposal_sections(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_sec_writer ON proposal_sections(writer);
+CREATE INDEX IF NOT EXISTS idx_prop_sec_status ON proposal_sections(status);
+CREATE INDEX IF NOT EXISTS idx_prop_sec_parent ON proposal_sections(parent_section_id);
+
+-- Section dependency graph (adjacency list, D27 pattern)
+CREATE TABLE IF NOT EXISTS proposal_section_dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    section_id TEXT NOT NULL REFERENCES proposal_sections(id),
+    depends_on_section_id TEXT NOT NULL REFERENCES proposal_sections(id),
+    dependency_type TEXT DEFAULT 'content' CHECK(dependency_type IN (
+        'content', 'data', 'approval', 'pricing')),
+    required_status TEXT DEFAULT 'drafting',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_dep_section ON proposal_section_dependencies(section_id);
+CREATE INDEX IF NOT EXISTS idx_prop_dep_depends ON proposal_section_dependencies(depends_on_section_id);
+
+-- L/M/N compliance matrix: links RFP requirements to proposal sections
+CREATE TABLE IF NOT EXISTS proposal_compliance_matrix (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    section_ref TEXT NOT NULL,
+    volume_ref TEXT,
+    requirement_text TEXT NOT NULL,
+    requirement_type TEXT DEFAULT 'L' CHECK(requirement_type IN ('L', 'M', 'N', 'other')),
+    compliance_status TEXT DEFAULT 'not_addressed' CHECK(compliance_status IN (
+        'compliant', 'partial', 'non_compliant', 'not_applicable', 'not_addressed')),
+    proposal_section_id TEXT REFERENCES proposal_sections(id),
+    response_summary TEXT,
+    notes TEXT,
+    sort_order INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_cm_opp ON proposal_compliance_matrix(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_cm_status ON proposal_compliance_matrix(compliance_status);
+CREATE INDEX IF NOT EXISTS idx_prop_cm_section ON proposal_compliance_matrix(proposal_section_id);
+CREATE INDEX IF NOT EXISTS idx_prop_cm_type ON proposal_compliance_matrix(requirement_type);
+
+-- Color team review events (append-only — NIST AU)
+CREATE TABLE IF NOT EXISTS proposal_reviews (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    review_type TEXT NOT NULL CHECK(review_type IN (
+        'pink_team', 'red_team', 'gold_team', 'white_glove', 'internal')),
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN (
+        'scheduled', 'in_progress', 'completed', 'cancelled')),
+    scheduled_date TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    lead_reviewer TEXT,
+    participants TEXT,
+    summary TEXT,
+    overall_rating TEXT CHECK(overall_rating IN (
+        'pass', 'pass_with_findings', 'major_rework', 'fail')),
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_rev_opp ON proposal_reviews(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_rev_type ON proposal_reviews(review_type);
+CREATE INDEX IF NOT EXISTS idx_prop_rev_status ON proposal_reviews(status);
+
+-- Review findings per color team (append-only — NIST AU)
+CREATE TABLE IF NOT EXISTS proposal_review_findings (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL REFERENCES proposal_reviews(id),
+    section_id TEXT REFERENCES proposal_sections(id),
+    finding_type TEXT NOT NULL CHECK(finding_type IN (
+        'compliance_gap', 'content_weakness', 'competitive_risk',
+        'formatting', 'pricing_concern', 'technical_error',
+        'missing_content', 'other')),
+    severity TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN (
+        'critical', 'major', 'minor', 'observation')),
+    description TEXT NOT NULL,
+    recommendation TEXT,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN (
+        'open', 'in_progress', 'resolved', 'deferred', 'wont_fix')),
+    assigned_to TEXT,
+    resolved_at TEXT,
+    resolution_notes TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_find_review ON proposal_review_findings(review_id);
+CREATE INDEX IF NOT EXISTS idx_prop_find_section ON proposal_review_findings(section_id);
+CREATE INDEX IF NOT EXISTS idx_prop_find_status ON proposal_review_findings(status);
+CREATE INDEX IF NOT EXISTS idx_prop_find_severity ON proposal_review_findings(severity);
+
+-- Status change audit trail (append-only — NIST AU)
+CREATE TABLE IF NOT EXISTS proposal_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN (
+        'opportunity', 'volume', 'section', 'review', 'finding', 'compliance_item')),
+    entity_id TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT NOT NULL,
+    changed_by TEXT,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_hist_created ON proposal_status_history(created_at);
 """
 
 
