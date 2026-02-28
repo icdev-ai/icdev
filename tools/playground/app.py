@@ -40,7 +40,10 @@ def create_app():
         static_folder=str(STATIC_DIR),
         static_url_path="/playground/static",
     )
-    app.config["SECRET_KEY"] = "playground-demo-key-not-for-production"
+    import secrets as _secrets
+    app.config["SECRET_KEY"] = os.environ.get(
+        "PLAYGROUND_SECRET_KEY", _secrets.token_hex(32)
+    )
 
     @app.context_processor
     def inject_demo():
@@ -144,7 +147,7 @@ def main():
     app = create_app()
     port = int(os.environ.get("PLAYGROUND_PORT", 5001))
     logger.info("Starting ICDEV Playground on port %d", port)
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
 
 
 if __name__ == "__main__":

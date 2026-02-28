@@ -365,7 +365,8 @@ def _sftp_paramiko(host, port, user, key_path, local_path,
                    remote_dir, remote_path):
     """SFTP upload using paramiko library."""
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.load_system_host_keys()
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
 
     connect_kwargs = {
         "hostname": host,

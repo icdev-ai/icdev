@@ -56,9 +56,12 @@ class MCPOAuthVerifier:
     def _get_secret_key(self) -> str:
         """Get HMAC secret key from environment or generate one."""
         import os
+        import secrets as _secrets
         key = os.environ.get("ICDEV_MCP_OAUTH_SECRET", "")
         if not key:
-            key = os.environ.get("ICDEV_DASHBOARD_SECRET", "icdev-mcp-default-secret")
+            key = os.environ.get("ICDEV_DASHBOARD_SECRET", "")
+        if not key:
+            key = _secrets.token_hex(32)
         return key
 
     def verify_token(self, token: str) -> dict:

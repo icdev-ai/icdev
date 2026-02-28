@@ -244,7 +244,7 @@ if __name__ == "__main__":
         from flask import Flask
         app = Flask(__name__)
         app.register_blueprint(create_blueprint())
-        app.run(debug=True, port=5000)
+        app.run(debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true", port=5000)
     except ImportError:
         print("Flask is required. Install with: pip install flask")
 '''

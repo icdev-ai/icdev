@@ -59,6 +59,19 @@ the ability to generate new applications.
    - Check .mcp.json has CSP servers
    - Report summary to user
 
+8. **GOTCHA Compliance Validation**
+   Run the GOTCHA validator as a mandatory gate:
+   ```bash
+   python tools/builder/gotcha_validator.py --project-dir <child_path> --gate
+   ```
+   - If validation PASSES: report score and proceed
+   - If validation FAILS: report which GOTCHA layers are missing, provide fix suggestions, and warn the user
+   - The validator checks all 6 GOTCHA layers (Goals, Orchestration, Tools, Args, Context, Hard Prompts) plus CLAUDE.md, Memory, Database, and ATLAS presence
+   - Also consider running BMAD PRD validator on requirements quality:
+     ```bash
+     python tools/requirements/prd_validator.py --spec-file <requirements_file> --json
+     ```
+
 ## Output
 After generation, provide the user with:
 - Path to the generated application

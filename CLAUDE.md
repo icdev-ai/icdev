@@ -122,6 +122,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - In Behave step definitions, match step text to tool return signatures — read the function return dict keys before writing Then steps
 - When defining SQL CHECK constraints, derive the values from a Python constant (e.g., `ENTITY_TYPES` tuple) using string formatting — never hardcode the same list in both Python and SQL
 - Entity types must be added to BOTH the Python constant AND the SQL CHECK constraint (via the constant) — the `db_init_generator.py` pattern comment shows how
+- When generating a child application, ALWAYS use the `child_app_generator.py` pipeline and run `gotcha_validator.py --gate` post-generation — GOTCHA compliance is mandatory, manual scaffolding is prohibited
 
 *(Add new guardrails as mistakes happen. Keep under 15 items.)*
 

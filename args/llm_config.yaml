@@ -461,7 +461,7 @@ settings:
 two_tier:
   enabled: true
   tier1_model: qwen3-local    # Worker — research, draft, scan (free/local)
-  tier2_model: claude-sonnet  # Planner/Reviewer — verify, decide, plan
+  tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
 
   planner_functions:
     - agent_architect

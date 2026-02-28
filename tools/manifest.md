@@ -214,13 +214,14 @@
 | Formatter | tools/builder/formatter.py | Multi-language formatting (black, prettier, gofmt, rustfmt, dotnet-format) | --project | Formatted files |
 | Agentic Fitness | tools/builder/agentic_fitness.py | Assess component fitness for agentic architecture (6-dimension scoring) | --spec, --project-id, --json | Fitness scorecard |
 | App Blueprint | tools/builder/app_blueprint.py | Generate deployment blueprint from fitness scorecard | --fitness-scorecard, --user-decisions, --app-name, --json | Blueprint JSON |
-| Child App Generator | tools/builder/child_app_generator.py | Generate mini-ICDEV clone child applications (12-step pipeline) | --blueprint, --output, --json | Generated app path |
+| Child App Generator | tools/builder/child_app_generator.py | Generate mini-ICDEV clone child applications (16-step pipeline) | --blueprint, --output, --json | Generated app path |
 | Claude MD Generator | tools/builder/claude_md_generator.py | Generate dynamic CLAUDE.md for child apps (Jinja2) | --blueprint, --output, --json | CLAUDE.md path |
 | Goal Adapter | tools/builder/goal_adapter.py | Copy and adapt ICDEV goals for child applications | --source-goals, --output, --app-name, --json | Adapted goal paths |
 | DB Init Generator | tools/builder/db_init_generator.py | Generate standalone DB init scripts for child apps | --blueprint, --output, --app-name, --json | DB init script path |
 | Dev Profile Manager | tools/builder/dev_profile_manager.py | 5-layer cascade dev profiles (Platform→Tenant→Program→Project→User) with version immutability, role-based locks, LLM injection (D183-D188) | --scope, --scope-id, --create, --get, --update, --resolve, --lock, --inject, --diff, --rollback, --json | Profile + cascade |
 | Profile Detector | tools/builder/profile_detector.py | Auto-detect dev profile from repo analysis or natural language text (D185 advisory-only) | --repo-path, --text, --json | Detected dimensions |
 | Profile MD Generator | tools/builder/profile_md_generator.py | Generate PROFILE.md from resolved dev profile via Jinja2 (D186) | --scope, --scope-id, --output, --store, --json | PROFILE.md path |
+| GOTCHA Validator | tools/builder/gotcha_validator.py | Validate GOTCHA framework compliance for child apps (6 layers + 4 meta checks) | --project-dir, --json, --human, --gate | Validation report |
 
 ## Security Scanning
 | Tool | File | Description | Input | Output |

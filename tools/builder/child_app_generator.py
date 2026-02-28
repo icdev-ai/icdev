@@ -773,7 +773,7 @@ def _generate_dashboard_stub(
         f'\n'
         f'\n'
         f'if __name__ == "__main__":\n'
-        f'    app.run(host="0.0.0.0", port=5000, debug=True)\n'
+        f'    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")\n'
     )
 
     dash_dir = child_root / "tools" / "dashboard"
@@ -2109,6 +2109,83 @@ def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
 
 
 # ============================================================
+# STEP 14: GOTCHA Compliance Validation
+# ============================================================
+
+
+def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
+    """Step 14: Validate GOTCHA framework compliance of generated child app.
+
+    Runs the gotcha_validator to verify all 6 GOTCHA layers are populated
+    and ATLAS workflow structure is present. This ensures child apps follow
+    the GOTCHA framework as mandated by build_app.md.
+
+    BMAD-adapted: adversarial validation — assumes the build is incomplete
+    until proven otherwise.
+    """
+    validate_fn = _import_sister("gotcha_validator", "validate")
+
+    if validate_fn:
+        report = validate_fn(child_root)
+        report_dict = report.to_dict()
+
+        # Store validation results in child app
+        data_dir = child_root / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        report_path = data_dir / "gotcha_validation.json"
+        report_path.write_text(
+            json.dumps(report_dict, indent=2, default=str), encoding="utf-8"
+        )
+
+        # Log warnings for failed checks
+        for check in report_dict.get("checks", []):
+            if check.get("status") == "fail":
+                logger.warning(
+                    "GOTCHA validation FAIL: %s — %s (fix: %s)",
+                    check.get("check_id"), check.get("message"),
+                    check.get("fix_suggestion"),
+                )
+            elif check.get("status") == "warn":
+                logger.info(
+                    "GOTCHA validation WARN: %s — %s",
+                    check.get("check_id"), check.get("message"),
+                )
+
+        logger.info(
+            "Step 14: GOTCHA validation — score %.0f%% (%d/%d passed, %d failed)",
+            report_dict.get("score", 0) * 100,
+            report_dict.get("passed_checks", 0),
+            report_dict.get("total_checks", 0),
+            report_dict.get("failed_checks", 0),
+        )
+        return {
+            "report_path": str(report_path),
+            "overall_pass": report_dict.get("overall_pass", False),
+            "score": report_dict.get("score", 0),
+            "passed": report_dict.get("passed_checks", 0),
+            "failed": report_dict.get("failed_checks", 0),
+            "warned": report_dict.get("warned_checks", 0),
+            "layer_summary": report_dict.get("layer_summary", {}),
+        }
+
+    # Fallback: basic directory existence check
+    logger.warning("Step 14: gotcha_validator not available, running basic check")
+    gotcha_dirs = ["goals", "tools", "args", "context", "hardprompts", "memory"]
+    present = [d for d in gotcha_dirs if (child_root / d).is_dir()]
+    missing = [d for d in gotcha_dirs if d not in present]
+
+    if missing:
+        logger.warning("Step 14: Missing GOTCHA directories: %s", ", ".join(missing))
+
+    return {
+        "method": "fallback",
+        "overall_pass": len(missing) == 0,
+        "present": present,
+        "missing": missing,
+    }
+
+
+# ============================================================
 # MAIN ORCHESTRATOR
 # ============================================================
 
@@ -2122,8 +2199,8 @@ def generate_child_app(
 ) -> dict:
     """Generate a complete child application from a blueprint.
 
-    Executes 15 steps sequentially (12 core + 9b license + 11b README + 13 audit),
-    collecting results from each.
+    Executes 16 steps sequentially (12 core + 9b license + 11b README +
+    13 audit + 14 GOTCHA validation), collecting results from each.
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
@@ -2168,6 +2245,7 @@ def generate_child_app(
         ("11b_readme", lambda: _generate_readme(child_root, blueprint)),
         ("12_audit_register", lambda: step_12_audit_and_registration(child_root, blueprint, db_path)),
         ("13_production_audit", lambda: step_13_production_audit(child_root, blueprint)),
+        ("14_gotcha_validation", lambda: step_14_gotcha_validation(child_root, blueprint)),
     ]
 
     for step_name, step_fn in steps:
