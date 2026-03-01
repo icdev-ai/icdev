@@ -7,6 +7,7 @@ and ThreadPoolExecutor.
 
 Decision D36: ThreadPoolExecutor for parallel subtask dispatch.
 Decision D40: graphlib.TopologicalSorter (Python 3.9+ stdlib) for DAG resolution.
+Decision D-DISP-1: Dispatcher mode enforcement in _execute_subtask (Phase 61).
 """
 
 import argparse
@@ -164,7 +165,7 @@ class TeamOrchestrator:
         _ensure_tables(self._db_path)
 
     # -------------------------------------------------------------------
-    # LLM Router (lazy init — Enhancement #4 Bedrock decoupling)
+    # LLM Router (lazy init -- Enhancement #4 Bedrock decoupling)
     # -------------------------------------------------------------------
     def _get_llm_router(self):
         """Return cached LLMRouter, creating if needed."""
@@ -221,7 +222,7 @@ class TeamOrchestrator:
             )
         except Exception as exc:
             logger.warning(
-                "Bedrock decomposition failed (%s) — using fallback", exc,
+                "Bedrock decomposition failed (%s) -- using fallback", exc,
             )
             workflow = self._decompose_fallback(
                 workflow, task_description, project_id,
@@ -441,7 +442,7 @@ class TeamOrchestrator:
                     deps.add(dep_id)
                 else:
                     logger.warning(
-                        "Subtask '%s' depends on unknown '%s' — ignoring dependency",
+                        "Subtask '%s' depends on unknown '%s' -- ignoring dependency",
                         st_id, dep_id,
                     )
             graph[st_id] = deps
@@ -633,10 +634,12 @@ class TeamOrchestrator:
     def _execute_subtask(self, subtask: Subtask, context: Dict) -> Subtask:
         """Execute a single subtask by dispatching to the target agent.
 
-        1. Looks up the target agent from agent_registry.
-        2. Sends the task via A2AAgentClient.send_task().
-        3. Waits for completion with timeout.
-        4. Returns the updated subtask.
+        1. Checks dispatcher mode -- if enabled and orchestrator tries to
+           execute a blocked tool, redirects to the appropriate domain agent.
+        2. Looks up the target agent from agent_registry.
+        3. Sends the task via A2AAgentClient.send_task().
+        4. Waits for completion with timeout.
+        5. Returns the updated subtask.
 
         Args:
             subtask: The subtask to execute.
@@ -648,6 +651,43 @@ class TeamOrchestrator:
         subtask.status = "working"
         subtask.attempt_count += 1
         start_time = time.time()
+
+        # Phase 61: Dispatcher mode enforcement (D-DISP-1)
+        # If dispatcher mode is active and the orchestrator is the source,
+        # check whether the skill is blocked for direct execution.
+        try:
+            from tools.agent.dispatcher_mode import (
+                is_dispatcher_mode, is_tool_allowed, get_redirect_agent,
+            )
+            project_id = context.get("project_id", "")
+            if is_dispatcher_mode(project_id=project_id, db_path=self._db_path):
+                if not is_tool_allowed(subtask.skill_id, project_id=project_id,
+                                       db_path=self._db_path):
+                    # Redirect to appropriate domain agent
+                    redirect = get_redirect_agent(subtask.skill_id)
+                    if redirect:
+                        logger.info(
+                            "Dispatcher mode: redirecting skill '%s' from orchestrator to '%s'",
+                            subtask.skill_id, redirect,
+                        )
+                        subtask.agent_id = redirect
+                    _audit_log(
+                        event_type="dispatcher_mode.redirect",
+                        actor="orchestrator-agent",
+                        action=(
+                            f"Dispatcher mode blocked direct execution of '{subtask.skill_id}'; "
+                            f"redirected to {redirect or 'unknown agent'}"
+                        ),
+                        project_id=project_id,
+                        details={
+                            "skill_id": subtask.skill_id,
+                            "original_agent": "orchestrator-agent",
+                            "redirected_to": redirect,
+                        },
+                        db_path=self._db_path,
+                    )
+        except ImportError:
+            pass  # dispatcher_mode module not available -- skip check
 
         try:
             # Look up agent
@@ -924,7 +964,7 @@ class TeamOrchestrator:
 def main():
     """CLI for workflow decomposition and execution."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Team Orchestrator — DAG-based multi-agent workflow engine"
+        description="ICDEV Team Orchestrator -- DAG-based multi-agent workflow engine"
     )
     parser.add_argument(
         "--decompose",

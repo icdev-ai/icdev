@@ -103,6 +103,11 @@ VALID_EVENT_TYPES = (
     "prov.entity_created", "prov.activity_recorded", "prov.relation_established",
     "shap.analysis_completed", "shap.analysis_failed",
     "xai.assessment_completed", "xai.gate_evaluated",
+    # ATLAS Critique Phase (Phase 61 — Feature 3)
+    "critique_session_created", "critique_completed",
+    "critique_revision_requested",
+    # Session Purpose (Phase 61 — D-ORCH-5)
+    "session.purpose_declared",
 )
 
 

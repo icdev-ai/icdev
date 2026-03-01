@@ -4,6 +4,8 @@
 Routes skill invocations to the healthiest available agent, respecting
 heartbeat staleness windows and current task load. Provides routing table
 introspection for the orchestrator and dashboard.
+
+Decision D-DISP-1: Dispatcher mode awareness in route_skill (Phase 61).
 """
 
 import argparse
@@ -147,7 +149,7 @@ def discover_agents_healthy(
                 healthy.append(agent)
             else:
                 logger.debug(
-                    "Agent '%s' excluded — heartbeat stale (last: %s, window: %ds)",
+                    "Agent '%s' excluded -- heartbeat stale (last: %s, window: %ds)",
                     agent.get("id", "?"), hb, staleness_seconds,
                 )
 
@@ -219,24 +221,80 @@ def route_skill(
     skill_id: str,
     db_path: Path = None,
     staleness_seconds: int = 120,
+    project_id: str = None,
 ) -> Optional[dict]:
     """Find the healthiest agent for a given skill.
 
     Routing algorithm:
-    1. Use agent_registry.find_agent_for_skill to get candidate agents.
-    2. Check each candidate's heartbeat against staleness window.
-    3. If multiple agents handle the skill, pick the least-loaded.
-    4. Log audit event if all candidates are stale.
+    1. Check dispatcher mode -- if enabled and the skill is blocked for the
+       orchestrator, redirect to the appropriate domain agent (D-DISP-1).
+    2. Use agent_registry.find_agent_for_skill to get candidate agents.
+    3. Check each candidate's heartbeat against staleness window.
+    4. If multiple agents handle the skill, pick the least-loaded.
+    5. Log audit event if all candidates are stale.
 
     Args:
         skill_id: The skill to route.
         db_path: Optional database path override.
         staleness_seconds: Maximum heartbeat age (default: 120s).
+        project_id: Optional project ID for dispatcher mode checks.
 
     Returns:
         Agent dict with load info appended, or None if no healthy agent found.
     """
     effective_db = db_path or DB_PATH
+
+    # Phase 61: Dispatcher mode awareness (D-DISP-1)
+    # If dispatcher mode is active and the orchestrator requests a blocked skill,
+    # redirect to the domain agent that owns the skill.
+    try:
+        from tools.agent.dispatcher_mode import (
+            is_dispatcher_mode, is_tool_allowed, get_redirect_agent,
+        )
+        if is_dispatcher_mode(project_id=project_id, db_path=effective_db):
+            if not is_tool_allowed(skill_id, project_id=project_id,
+                                   db_path=effective_db):
+                redirect_agent = get_redirect_agent(skill_id)
+                if redirect_agent:
+                    logger.info(
+                        "Dispatcher mode: skill '%s' blocked for orchestrator, "
+                        "routing to '%s'",
+                        skill_id, redirect_agent,
+                    )
+                    _audit_log(
+                        event_type="dispatcher_mode.skill_redirect",
+                        actor="skill-router",
+                        action=(
+                            f"Dispatcher mode redirected skill '{skill_id}' "
+                            f"to {redirect_agent}"
+                        ),
+                        project_id=project_id,
+                        details={
+                            "skill_id": skill_id,
+                            "redirected_to": redirect_agent,
+                        },
+                        db_path=effective_db,
+                    )
+                    # Look up the redirect agent directly
+                    conn = _get_db(effective_db)
+                    try:
+                        c = conn.cursor()
+                        c.execute(
+                            "SELECT * FROM agents WHERE id = ? AND status = 'active'",
+                            (redirect_agent,),
+                        )
+                        row = c.fetchone()
+                        if row:
+                            agent = _row_to_dict(row)
+                            agent["load"] = get_agent_load(
+                                redirect_agent, db_path=effective_db,
+                            )
+                            agent["dispatcher_redirect"] = True
+                            return agent
+                    finally:
+                        conn.close()
+    except ImportError:
+        pass  # dispatcher_mode module not available -- skip check
 
     # Step 1: Find all agents that can handle this skill
     candidates = _find_all_agents_for_skill(skill_id, effective_db)
@@ -428,7 +486,7 @@ def get_routing_table(db_path: Path = None, staleness_seconds: int = 120) -> dic
 def main():
     """CLI for skill routing and agent health introspection."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Skill Router — health-aware agent-skill routing"
+        description="ICDEV Skill Router -- health-aware agent-skill routing"
     )
     parser.add_argument(
         "--route-skill",
@@ -454,6 +512,7 @@ def main():
         default=120,
         help="Heartbeat staleness window in seconds (default: 120)",
     )
+    parser.add_argument("--project-id", help="Project ID for dispatcher mode checks")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", help="Override database path")
     args = parser.parse_args()
@@ -470,6 +529,7 @@ def main():
             skill_id=args.route_skill,
             db_path=db_path,
             staleness_seconds=args.staleness,
+            project_id=args.project_id,
         )
 
         if agent:
@@ -484,6 +544,8 @@ def main():
                 print(f"  Working: {load.get('working_count', 0)}")
                 print(f"  Queued: {load.get('queued_count', 0)}")
                 print(f"Last heartbeat: {agent.get('last_heartbeat', 'N/A')}")
+                if agent.get("dispatcher_redirect"):
+                    print("  (redirected by dispatcher mode)")
                 print("Classification: CUI // SP-CTI")
         else:
             if args.json:

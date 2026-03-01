@@ -170,7 +170,9 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'spec.init', 'spec.register',
         'heartbeat_check_warning', 'heartbeat_check_critical',
         'auto_resolution_started', 'auto_resolution_completed',
-        'auto_resolution_failed', 'auto_resolution_escalated'
+        'auto_resolution_failed', 'auto_resolution_escalated',
+        'critique_session_created', 'critique_completed',
+        'critique_revision_requested'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -5442,6 +5444,132 @@ CREATE TABLE IF NOT EXISTS proposal_question_responses (
 );
 CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(question_id);
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
+
+-- =========================================================================
+-- ATLAS Critique Phase (Phase 61 — Feature 3)
+-- =========================================================================
+
+-- Critique sessions: one per ATLAS critique invocation (append-only except status updates)
+CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    workflow_id TEXT,
+    phase_input_hash TEXT NOT NULL,
+    status TEXT DEFAULT 'in_progress' CHECK(status IN (
+        'in_progress', 'go', 'nogo', 'conditional', 'revised', 'failed')),
+    round_number INTEGER DEFAULT 1,
+    max_rounds INTEGER DEFAULT 3,
+    consensus TEXT CHECK(consensus IN ('go', 'nogo', 'conditional') OR consensus IS NULL),
+    critics_assigned TEXT DEFAULT '[]',
+    total_findings INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    medium_count INTEGER DEFAULT 0,
+    low_count INTEGER DEFAULT 0,
+    revision_summary TEXT,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_critique_session_project ON atlas_critique_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_critique_session_status ON atlas_critique_sessions(status);
+
+-- Critique findings: individual findings from critic agents (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS atlas_critique_findings (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES atlas_critique_sessions(id),
+    critic_agent TEXT NOT NULL,
+    round_number INTEGER DEFAULT 1,
+    finding_type TEXT NOT NULL CHECK(finding_type IN (
+        'security_vulnerability', 'compliance_gap', 'architecture_flaw',
+        'performance_risk', 'maintainability_concern', 'testing_gap',
+        'deployment_risk', 'data_handling_issue')),
+    severity TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    evidence TEXT,
+    suggested_fix TEXT,
+    nist_controls TEXT DEFAULT '[]',
+    addressed_in_revision INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_critique_finding_session ON atlas_critique_findings(session_id);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_severity ON atlas_critique_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_type ON atlas_critique_findings(finding_type);
+
+-- =========================================================================
+-- PROMPT CHAIN EXECUTIONS (Phase 61 — Feature 2)
+-- =========================================================================
+
+-- Declarative prompt chain execution records
+CREATE TABLE IF NOT EXISTS prompt_chain_executions (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    chain_name TEXT NOT NULL,
+    original_input TEXT NOT NULL,
+    original_input_hash TEXT NOT NULL,
+    status TEXT DEFAULT 'running'
+        CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+    steps_completed INTEGER DEFAULT 0,
+    steps_total INTEGER NOT NULL,
+    step_results TEXT DEFAULT '{}',
+    final_output TEXT,
+    final_output_hash TEXT,
+    total_duration_ms INTEGER,
+    total_tokens_used INTEGER DEFAULT 0,
+    error_message TEXT,
+    executed_by TEXT,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_chain_exec_project ON prompt_chain_executions(project_id);
+CREATE INDEX IF NOT EXISTS idx_chain_exec_chain ON prompt_chain_executions(chain_name);
+CREATE INDEX IF NOT EXISTS idx_chain_exec_status ON prompt_chain_executions(status);
+
+-- =========================================================================
+-- DISPATCHER MODE OVERRIDES (Phase 61 -- Feature 1, D-DISP-1)
+-- =========================================================================
+
+-- Per-project overrides for dispatcher-only orchestrator mode.
+-- Allows UPDATE for enable/disable toggles (not append-only).
+CREATE TABLE IF NOT EXISTS dispatcher_mode_overrides (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    custom_dispatch_tools TEXT DEFAULT '[]',
+    custom_blocked_tools TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_by TEXT NOT NULL DEFAULT 'system'
+);
+
+CREATE INDEX IF NOT EXISTS idx_dispatcher_mode_project
+    ON dispatcher_mode_overrides(project_id);
+
+-- =========================================================================
+-- SESSION PURPOSES (Phase 61 -- D-ORCH-5)
+-- =========================================================================
+
+-- Session-level intent tracking for NIST AU-3 event detail traceability.
+-- Declares purpose before work begins, injected into agent system prompts.
+CREATE TABLE IF NOT EXISTS session_purposes (
+    id TEXT PRIMARY KEY,
+    project_id TEXT,
+    purpose TEXT NOT NULL,
+    purpose_hash TEXT NOT NULL,
+    declared_by TEXT DEFAULT 'user',
+    scope TEXT DEFAULT 'session' CHECK(scope IN ('session','workflow','task')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','completed','abandoned')),
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_purposes_project
+    ON session_purposes(project_id);
+CREATE INDEX IF NOT EXISTS idx_session_purposes_status
+    ON session_purposes(status);
 """
 
 

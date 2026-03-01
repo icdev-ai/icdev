@@ -40,7 +40,12 @@ HMAC_SECRET = os.environ.get("ICDEV_MAILBOX_SECRET", "icdev-default-hmac-key")
 VALID_MESSAGE_TYPES = (
     "request", "response", "notification", "veto",
     "escalation", "collaboration_invite", "memory_share",
+    "async_result",
 )
+
+# Priority levels for async result injection (D-ORCH-7)
+PRIORITY_INJECT_NEXT_TURN = 9  # Auto-injected into orchestrator's next turn
+PRIORITY_NORMAL = 5
 
 # Graceful audit import
 try:
@@ -299,6 +304,104 @@ def verify_signature(message_id: str, db_path=None) -> bool:
             logger.debug("Message %s signature verified OK", message_id)
 
         return is_valid
+    finally:
+        conn.close()
+
+
+def send_async_result(from_agent_id: str, to_agent_id: str,
+                      subject: str, result_body: str,
+                      inject_next_turn: bool = True,
+                      db_path=None) -> str:
+    """Send an async result that auto-injects into the recipient's next turn.
+
+    Fire-and-forget pattern: a background agent delivers its result back
+    to the orchestrator. When inject_next_turn=True, the result is sent
+    with priority 9 (PRIORITY_INJECT_NEXT_TURN), causing the orchestrator
+    to pull it before its next LLM invocation.
+
+    Decision D-ORCH-7: Async result injection for non-blocking agent workflows.
+
+    Args:
+        from_agent_id: The agent that completed the work.
+        to_agent_id: The orchestrator or parent agent.
+        subject: Brief description of what was completed.
+        result_body: The result content (may be JSON string).
+        inject_next_turn: If True, uses high priority for auto-injection.
+        db_path: Optional database path override.
+
+    Returns:
+        The message ID.
+    """
+    priority = PRIORITY_INJECT_NEXT_TURN if inject_next_turn else PRIORITY_NORMAL
+
+    message_id = send(
+        from_agent_id=from_agent_id,
+        to_agent_id=to_agent_id,
+        message_type="async_result",
+        subject=subject,
+        body=result_body,
+        priority=priority,
+        db_path=db_path,
+    )
+
+    logger.info("Async result %s sent: %s -> %s [inject=%s] %s",
+                message_id, from_agent_id, to_agent_id, inject_next_turn, subject)
+
+    return message_id
+
+
+def collect_pending_injections(agent_id: str, auto_mark_read: bool = True,
+                               db_path=None) -> list:
+    """Collect all pending async results for injection into next turn.
+
+    Called by the orchestrator before each LLM invocation to pull
+    any fire-and-forget results from background agents.
+
+    Args:
+        agent_id: The orchestrator/parent agent ID.
+        auto_mark_read: If True, marks collected messages as read.
+        db_path: Optional database path override.
+
+    Returns:
+        List of result dicts with from_agent, subject, body.
+    """
+    conn = _get_db(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT * FROM agent_mailbox
+               WHERE to_agent_id = ?
+               AND message_type = 'async_result'
+               AND read_at IS NULL
+               AND priority >= ?
+               ORDER BY priority DESC, created_at ASC""",
+            (agent_id, PRIORITY_INJECT_NEXT_TURN),
+        ).fetchall()
+
+        results = []
+        for row in rows:
+            results.append({
+                "message_id": row["id"],
+                "from_agent": row["from_agent_id"],
+                "subject": row["subject"],
+                "body": row["body"],
+                "priority": row["priority"],
+                "created_at": row["created_at"],
+            })
+
+            if auto_mark_read:
+                conn.execute(
+                    "UPDATE agent_mailbox SET read_at = datetime('now') WHERE id = ?",
+                    (row["id"],),
+                )
+
+        if auto_mark_read and results:
+            conn.commit()
+
+        if results:
+            logger.info("Collected %d pending injections for %s",
+                        len(results), agent_id)
+
+        return results
     finally:
         conn.close()
 

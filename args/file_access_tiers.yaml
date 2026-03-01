@@ -1,0 +1,88 @@
+# File Access Tier Configuration — Defense-in-depth path protection
+# Decision D-ORCH-8: Tiered file access control (zero_access, read_only, no_delete)
+#
+# Three protection tiers:
+#   zero_access  — Complete block (read AND write prohibited)
+#   read_only    — Read allowed, write/edit/delete blocked
+#   no_delete    — Read/write/edit allowed, delete blocked
+#
+# Patterns use glob-style matching. Paths are relative to project root.
+
+file_access_tiers:
+  enabled: true
+
+  zero_access:
+    description: "Complete access prohibition — secrets and sensitive credentials"
+    patterns:
+      - ".env"
+      - ".env.*"
+      - "!.env.sample"
+      - "!.env.example"
+      - "**/*.pem"
+      - "**/*.key"
+      - "**/*.p12"
+      - "**/*.pfx"
+      - "**/*.jks"
+      - "**/credentials.json"
+      - "**/service-account*.json"
+      - "**/.ssh/*"
+      - "**/.gnupg/*"
+      - "**/*.tfstate"
+      - "**/*.tfstate.backup"
+      - "**/secrets.yaml"
+      - "**/secrets.yml"
+
+  read_only:
+    description: "Read allowed, write blocked — compliance catalogs and lockfiles"
+    patterns:
+      # Compliance reference catalogs
+      - "context/compliance/nist_800_53.json"
+      - "context/compliance/fedramp_*_baseline.json"
+      - "context/compliance/cmmc_practices.json"
+      - "context/compliance/cnssi_1253_overlay.json"
+      - "context/compliance/cjis_security_policy.json"
+      - "context/compliance/hipaa_security_rule.json"
+      - "context/compliance/pci_dss_v4.json"
+      - "context/compliance/iso27001_2022_controls.json"
+      - "context/compliance/nist_800_207_zta.json"
+      - "context/compliance/eu_ai_act_annex_iii.json"
+      - "context/compliance/owasp_agentic_*.json"
+      - "context/compliance/atlas_mitigations.json"
+      # Lock files
+      - "package-lock.json"
+      - "poetry.lock"
+      - "Pipfile.lock"
+      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "Cargo.lock"
+      - "go.sum"
+      # Build outputs
+      - "node_modules/**"
+      - "__pycache__/**"
+      - "*.pyc"
+      - "dist/**"
+      - "build/**"
+      - ".tox/**"
+
+  no_delete:
+    description: "Modify allowed, delete blocked — critical project files"
+    patterns:
+      - "CLAUDE.md"
+      - "README.md"
+      - "LICENSE"
+      - ".gitignore"
+      - ".git/**"
+      - "goals/*.md"
+      - "tools/manifest.md"
+      - "memory/MEMORY.md"
+      - "Dockerfile*"
+      - "docker-compose*.yml"
+      - "docker-compose*.yaml"
+      - ".gitlab-ci.yml"
+      - ".github/workflows/*"
+      - "k8s/*.yaml"
+      - "deploy/helm/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - "setup.py"
+      - "setup.cfg"

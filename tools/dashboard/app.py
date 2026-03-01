@@ -64,6 +64,7 @@ from tools.dashboard.api.lineage import lineage_api
 from tools.dashboard.api.proposals import proposals_api
 from tools.dashboard.api.govcon import govcon_api
 from tools.dashboard.api.cpmp import cpmp_api
+from tools.dashboard.api.orchestration import orchestration_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -209,6 +210,7 @@ def create_app() -> Flask:
     app.register_blueprint(proposals_api)
     app.register_blueprint(govcon_api)
     app.register_blueprint(cpmp_api)
+    app.register_blueprint(orchestration_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -1982,6 +1984,13 @@ def create_app() -> Flask:
                 recommendations=recommendations)
         finally:
             conn.close()
+
+    # ---- Phase 61: Orchestration Dashboard ----
+
+    @app.route("/orchestration")
+    def orchestration_dashboard():
+        """Real-time multi-agent orchestration dashboard — agent grid, DAG, mailbox (Phase 61)."""
+        return render_template("orchestration/dashboard.html")
 
     @app.errorhandler(401)
     def unauthorized(e):

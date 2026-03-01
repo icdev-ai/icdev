@@ -447,7 +447,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Team Orchestrator | tools/agent/team_orchestrator.py | DAG-based workflow engine: LLM task decomposition, TopologicalSorter + ThreadPoolExecutor parallel execution | --decompose, --execute, --workflow-id, --json | Workflow result |
-| Skill Router | tools/agent/skill_router.py | Health-aware agent-skill routing: staleness check, least-loaded selection | --route-skill, --health, --routing-table | Agent routing |
+| Prompt Chain Executor | tools/agent/prompt_chain_executor.py | Declarative LLM-to-LLM sequential reasoning chains: YAML-driven prompt templates with $INPUT/$ORIGINAL/$STEP{x} variable substitution, per-step agent routing via LLMRouter (D-PC-1 through D-PC-3) | --chain, --input, --list, --dry-run, --history, --project-id, --json | Chain execution result |
+| Skill Router | tools/agent/skill_router.py | Health-aware agent-skill routing: staleness check, least-loaded selection, dispatcher mode awareness (D-DISP-1) | --route-skill, --health, --routing-table, --project-id | Agent routing |
+| Dispatcher Mode | tools/agent/dispatcher_mode.py | Dispatcher-only orchestrator mode: restricts orchestrator to delegation tools, blocks domain tool execution, per-project DB overrides, tool-to-agent redirect mapping (Phase 61, D-DISP-1) | --status, --enable, --disable, --check-tool, --project-id, --json, --human | Dispatcher status |
 
 ## Agent Collaboration (Opus 4.6 Multi-Agent — Phase C)
 | Tool | File | Description | Input | Output |
@@ -797,6 +799,12 @@
 | CDRL Generator | tools/govcon/cdrl_generator.py | CDRL auto-generation by dispatching to ICDEV tools (SSP, SBOM, POAM, STIG, EVM, ICD, TSP). Append-only generation audit. | --generate, --generate-due, --list-generations, --tool-mapping, --json | Generation result JSON |
 | SAM Contract Sync | tools/govcon/sam_contract_sync.py | SAM.gov Contract Awards API v1 adapter. Rate-limited, content hash dedup, search, link to CPMP contracts. | --sync, --list, --search, --link, --json | Award sync JSON |
 | CPMP API | tools/dashboard/api/cpmp.py | Flask Blueprint with ~40 REST endpoints for CPMP. Contracts, CLINs, WBS, deliverables, EVM, CPARS, subcontractors, COR portal. | (REST API) | JSON responses |
+
+## ATLAS Critique Phase (Phase 61 — Feature 3)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| ATLAS Critique | tools/agent/atlas_critique.py | Adversarial multi-agent plan critique: parallel dispatch to security/compliance/knowledge agents, severity classification, GO/NOGO/CONDITIONAL consensus, revision loop (max 3 rounds). Append-only findings (NIST AU). | --project-id, --phase-output, --session-id, --status, --history, --max-rounds, --json | Critique session + findings JSON |
+| ATLAS Critique Config | args/atlas_critique_config.yaml | Critique phase config: critic agent assignments, focus areas, consensus rules, revision prompt, max rounds | (data) | YAML config |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

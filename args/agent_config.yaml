@@ -19,6 +19,32 @@ agents:
       effort: "high"
       max_tokens: 16384
     max_concurrent: 20
+    # Phase 61: Dispatcher-Only Orchestrator Mode (D-DISP-1)
+    # When enabled, restricts orchestrator to delegation-only — enforces GOTCHA
+    # principle that the Orchestration layer delegates, not executes.
+    dispatcher_mode:
+      enabled: false
+      dispatch_only_tools:
+        - task_dispatch
+        - agent_status
+        - agent_mailbox
+        - workflow_status
+        - prompt_chain_execute
+      blocked_when_dispatching:
+        - scaffold
+        - generate_code
+        - write_tests
+        - run_tests
+        - lint
+        - format
+        - ssp_generate
+        - poam_generate
+        - stig_check
+        - sbom_generate
+        - terraform_plan
+        - terraform_apply
+        - ansible_run
+        - k8s_deploy
 
   architect:
     id: "architect-agent"

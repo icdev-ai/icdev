@@ -18,8 +18,11 @@ Exit codes:
 """
 
 import json
+import os
 import re
 import sys
+from fnmatch import fnmatch
+from pathlib import Path
 
 
 def is_dangerous_rm_command(command: str) -> bool:
@@ -173,6 +176,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_evm_periods",
         "cpmp_cdrl_generations",
         "cpmp_cor_access_log",
+        # Phase 61 — ATLAS Critique (Feature 3)
+        "atlas_critique_findings",
+        # Phase 61 — Prompt Chain Execution (Feature 2)
+        "prompt_chain_executions",
     ]
 
     if tool_name == "Bash":
@@ -189,6 +196,103 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
                 return True
 
     return False
+
+
+def _load_file_access_tiers():
+    """Load file access tier config from args/file_access_tiers.yaml."""
+    try:
+        import yaml
+    except ImportError:
+        return None
+    config_path = Path(__file__).resolve().parent.parent.parent / "args" / "file_access_tiers.yaml"
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        tiers = config.get("file_access_tiers", {})
+        if not tiers.get("enabled", False):
+            return None
+        return tiers
+    except Exception:
+        return None
+
+
+def _matches_tier(file_path: str, patterns: list) -> bool:
+    """Check if file_path matches any pattern in the tier (glob-style)."""
+    if not file_path:
+        return False
+    # Normalize to forward slashes and strip leading ./
+    fp = file_path.replace("\\", "/")
+    if fp.startswith("./"):
+        fp = fp[2:]
+    for pattern in patterns:
+        if pattern.startswith("!"):
+            continue  # exclusion patterns handled separately
+        # Check exclusions first
+        excluded = False
+        for exc in patterns:
+            if exc.startswith("!") and fnmatch(fp, exc[1:]):
+                excluded = True
+                break
+        if excluded:
+            continue
+        if fnmatch(fp, pattern) or fnmatch(os.path.basename(fp), pattern):
+            return True
+    return False
+
+
+def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
+    """Check file access tiers. Returns error message if blocked, None if allowed.
+
+    Decision D-ORCH-8: Tiered file access control.
+    """
+    tiers = _load_file_access_tiers()
+    if not tiers:
+        return None
+
+    file_path = ""
+    is_write = False
+    is_delete = False
+
+    if tool_name in ("Read",):
+        file_path = tool_input.get("file_path", "")
+        # Read — only blocked by zero_access
+    elif tool_name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        file_path = tool_input.get("file_path", tool_input.get("notebook_path", ""))
+        is_write = True
+    elif tool_name == "Bash":
+        command = tool_input.get("command", "")
+        # Check for rm/delete commands targeting protected files
+        rm_match = re.search(r'\brm\s+(?:-[a-z]*\s+)*([^\s|;&]+)', command)
+        if rm_match:
+            file_path = rm_match.group(1)
+            is_delete = True
+        # Check for write redirections
+        redir_match = re.search(r'>\s*([^\s|;&]+)', command)
+        if redir_match and not is_delete:
+            file_path = redir_match.group(1)
+            is_write = True
+
+    if not file_path:
+        return None
+
+    # Zero access — block everything
+    zero_patterns = [p for t in [tiers.get("zero_access", {})] for p in t.get("patterns", [])]
+    if _matches_tier(file_path, zero_patterns):
+        return f"BLOCKED: File '{file_path}' is in zero_access tier (D-ORCH-8). No access allowed."
+
+    # Read only — block writes and deletes
+    ro_patterns = [p for t in [tiers.get("read_only", {})] for p in t.get("patterns", [])]
+    if (is_write or is_delete) and _matches_tier(file_path, ro_patterns):
+        return f"BLOCKED: File '{file_path}' is in read_only tier (D-ORCH-8). Write/delete prohibited."
+
+    # No delete — block deletes only
+    nd_patterns = [p for t in [tiers.get("no_delete", {})] for p in t.get("patterns", [])]
+    if is_delete and _matches_tier(file_path, nd_patterns):
+        return f"BLOCKED: File '{file_path}' is in no_delete tier (D-ORCH-8). Deletion prohibited."
+
+    return None
 
 
 def main():
@@ -212,6 +316,12 @@ def main():
         # Block modification of all append-only tables (NIST 800-53 AU, D6)
         if is_append_only_table_modification(tool_name, tool_input):
             print("BLOCKED: Append-only table (D6, NIST 800-53 AU). No UPDATE/DELETE/DROP/TRUNCATE allowed.", file=sys.stderr)
+            sys.exit(2)
+
+        # Check tiered file access control (D-ORCH-8)
+        tier_error = check_file_access_tiers(tool_name, tool_input)
+        if tier_error:
+            print(tier_error, file=sys.stderr)
             sys.exit(2)
 
         sys.exit(0)

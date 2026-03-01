@@ -4,7 +4,7 @@
 
 Build full-stack applications using AI assistance within the GOTCHA framework. This workflow ensures apps are production-ready, not just demos.
 
-**ATLAS** is a 5-step process:
+**ATLAS** is a 5-step process (6 steps with optional Critique phase):
 
 | Step | Phase | What You Do |
 |------|-------|-------------|
@@ -12,7 +12,14 @@ Build full-stack applications using AI assistance within the GOTCHA framework. T
 | **T** | Trace | Data schema, integrations map, stack proposal |
 | **L** | Link | Validate ALL connections before building |
 | **A** | Assemble | Build with layered architecture |
+| **C** | Critique | *(Optional)* Adversarial multi-agent plan review |
 | **S** | Stress-test | Test functionality, error handling |
+
+When the Critique phase is enabled (`atlas_critique.enabled: true` in `args/atlas_critique_config.yaml`), the workflow becomes **ATLAS-CR**:
+
+```
+A(rchitect) → T(race) → L(ink) → A(ssemble) → C(ritique) → S(tress-test)
+```
 
 ```mermaid
 flowchart LR
@@ -20,15 +27,22 @@ flowchart LR
     T["T: Trace\nData schema,\nintegrations, stack"]
     L["L: Link\nValidate connections,\ntest APIs"]
     As["A: Assemble\nBuild layers\nDB → Backend → UI"]
+    C["C: Critique\nAdversarial\nmulti-agent review"]
     S["S: Stress-test\nFunctional, integration,\nedge case tests"]
-    A --> T --> L --> As --> S
+    A --> T --> L --> As --> C --> S
+    C -.->|CONDITIONAL\nrevise| As
+    C -.->|NOGO\nescalate| Stop["Human\nEscalation"]
     S -.->|Issues found| As
     style A fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
     style T fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
     style L fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
     style As fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style C fill:#3a1a3a,stroke:#9b59b6,color:#e0e0e0
     style S fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
+    style Stop fill:#3a1a1a,stroke:#e74c3c,color:#e0e0e0
 ```
+
+If the Critique phase is disabled, ATLAS operates as the original 5-step process (backward compatible).
 
 ## For prod builds when asked specifically add:
 + V - Validate (security/input sanitization, edge cases, unit tests)
@@ -227,6 +241,79 @@ Working application with:
 
 ---
 
+## C — Critique (Optional, Phase 61)
+
+**Purpose:** Adversarial multi-agent review of the Assemble output before stress-testing. Catches security, compliance, and architectural issues early through independent parallel review.
+
+This phase is **optional** and controlled by `atlas_critique.enabled` in `args/atlas_critique_config.yaml`. When disabled, ATLAS proceeds directly from Assemble to Stress-test (backward compatible).
+
+### How It Works
+
+1. The Assemble-phase output (plan/implementation) is dispatched to **3 critic agents** in parallel:
+   - **Security Agent** — Reviews for vulnerabilities, attack surface, OWASP Top 10, STIG compliance
+   - **Compliance Agent** — Reviews for NIST 800-53 gaps, FedRAMP requirements, CUI markings, audit trail
+   - **Knowledge Agent** — Reviews for architecture flaws, performance risks, maintainability, testing gaps
+
+2. Each agent independently produces findings classified by severity: **critical**, **high**, **medium**, **low**
+
+3. A **consensus vote** determines the outcome:
+   - **GO** (0 critical, 0 high) — Proceed to Stress-test
+   - **CONDITIONAL** (0 critical, >0 high) — Loop back to Assemble with fix list (max 3 rounds)
+   - **NOGO** (>0 critical) — Stop, escalate to human
+
+4. If CONDITIONAL, the architect revises and resubmits. Up to `max_rounds` (default 3) revision cycles.
+
+### Running the Critique
+
+```bash
+# Run critique on plan text
+python tools/agent/atlas_critique.py --project-id "proj-123" \
+    --phase-output "plan text here" --json
+
+# Run critique on a file
+python tools/agent/atlas_critique.py --project-id "proj-123" \
+    --phase-output /path/to/plan.md --json
+
+# Check session status
+python tools/agent/atlas_critique.py --project-id "proj-123" \
+    --session-id "crit-abc123" --status --json
+
+# View critique history for a project
+python tools/agent/atlas_critique.py --project-id "proj-123" \
+    --history --json
+```
+
+### Finding Types
+
+| Type | Description |
+|------|-------------|
+| `security_vulnerability` | Security weakness or attack vector |
+| `compliance_gap` | Missing or incomplete compliance control |
+| `architecture_flaw` | Design pattern violation or structural issue |
+| `performance_risk` | Potential performance bottleneck |
+| `maintainability_concern` | Code quality or maintainability issue |
+| `testing_gap` | Missing or inadequate test coverage |
+| `deployment_risk` | Deployment or operational risk |
+| `data_handling_issue` | Data classification, encryption, or handling gap |
+
+### Configuration
+
+See `args/atlas_critique_config.yaml` for:
+- Critic agent assignments and focus areas
+- Consensus rules (GO/NOGO/CONDITIONAL thresholds)
+- Revision prompt template
+- Max rounds
+
+### Output
+
+Critique result with:
+- Consensus decision (GO/NOGO/CONDITIONAL)
+- All findings with severity, type, and suggested fixes
+- Revision summary (if CONDITIONAL with revisions)
+- Round count
+
+---
+
 ## S — Stress-test
 
 **Purpose:** Test before shipping. This is the step most "vibe coding" tutorials skip entirely.
@@ -306,6 +393,7 @@ If the project has `mbse_enabled=1`, use the **M-ATLAS** workflow which adds a *
 | **T** | Trace | Data schema + integrations (augmented with model traceability) |
 | **L** | Link | Validate connections including model-code mappings |
 | **A** | Assemble | Build with model-generated scaffolding as starting point |
+| **C** | Critique | *(Optional)* Adversarial multi-agent plan review |
 | **S** | Stress-test | Test including model-generated test stubs |
 
 ```mermaid
@@ -316,10 +404,12 @@ flowchart LR
     T["T: Trace\nData schema +\nmodel traceability"]
     L["L: Link\nValidate connections +\nmodel-code mappings"]
     As["A: Assemble\nBuild with model-generated\nscaffolding"]
+    C["C: Critique\nAdversarial\nmulti-agent review"]
     S["S: Stress-test\nTest including\nmodel-generated stubs"]
     Check -->|Yes| M --> A
     Check -->|No| A
-    A --> T --> L --> As --> S
+    A --> T --> L --> As --> C --> S
+    C -.->|CONDITIONAL| As
     S -.->|Issues found| As
     style Check fill:#3a3a1a,stroke:#ffc107,color:#e0e0e0
     style M fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
@@ -327,6 +417,7 @@ flowchart LR
     style T fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
     style L fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
     style As fill:#1a3a5c,stroke:#4a90d9,color:#e0e0e0
+    style C fill:#3a1a3a,stroke:#9b59b6,color:#e0e0e0
     style S fill:#1a3a2d,stroke:#28a745,color:#e0e0e0
 ```
 
@@ -372,6 +463,7 @@ These are the mistakes "vibe coders" make:
 | Trace | Context (reference patterns) |
 | Link | Args (environment setup) |
 | Assemble | Tools (execution) |
+| Critique | Orchestration (multi-agent adversarial review) |
 | Stress-test | Orchestration (AI validates) |
 
 
