@@ -1,0 +1,50 @@
+{
+  "name": "ICDEV Supply Chain",
+  "description": "Supply chain intelligence — upstream/downstream impact propagation, SBOM aggregation, ISA lifecycle, CVE triage, NIST 800-161 SCRM.",
+  "url": "https://localhost:8454",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "build-dependency-graph",
+      "name": "Build Dependency Graph",
+      "description": "Build supply chain dependency graph with upstream/downstream relationships.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "propagate-impact",
+      "name": "Propagate Impact",
+      "description": "Propagate vulnerability or change impact through dependency graph.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "manage-isa",
+      "name": "Manage ISA Lifecycle",
+      "description": "ISA/MOU lifecycle tracking — create, expiring, review due, renew, revoke.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "triage-cve",
+      "name": "Triage CVE",
+      "description": "CVE triage with blast radius analysis and SLA tracking.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "assess-scrm",
+      "name": "Assess SCRM",
+      "description": "NIST 800-161 supply chain risk assessment across 6 dimensions.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

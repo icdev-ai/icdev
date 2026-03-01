@@ -1,0 +1,359 @@
+{
+  "metadata": {
+    "classification": "CUI // SP-CTI",
+    "title": "Framework Migration Patterns for DoD ICDEV Systems",
+    "version": "1.0.0",
+    "last_updated": "2026-02-16",
+    "description": "Comprehensive migration patterns covering Java, C#/.NET, and Python framework transitions for DoD IL4+ environments",
+    "applicable_environments": ["AWS GovCloud", "IL4", "IL5", "Air-Gapped"],
+    "owner": "ICDEV Architect Agent"
+  },
+  "migration_patterns": [
+    {
+      "id": "JAVA-001",
+      "source_framework": "Apache Struts",
+      "source_version_range": "1.x–2.x",
+      "target_framework": "Spring Boot",
+      "target_version": "3.2.x",
+      "component_mappings": [
+        { "source_pattern": "struts-config.xml Action mappings", "target_pattern": "@RestController / @Controller with @RequestMapping", "description": "Replace XML-based action routing with annotation-driven Spring MVC controllers" },
+        { "source_pattern": "ActionForm beans", "target_pattern": "POJO DTOs with Jakarta Bean Validation (@Valid)", "description": "Replace Struts form beans with plain DTOs and constraint annotations" },
+        { "source_pattern": "Struts ActionForward / dispatch", "target_pattern": "Spring ModelAndView or ResponseEntity returns", "description": "Replace forward/redirect dispatch with Spring return types" },
+        { "source_pattern": "Tiles XML layout definitions", "target_pattern": "Thymeleaf layout dialect or React SPA with REST API", "description": "Replace Tiles composite views with modern templating or SPA architecture" },
+        { "source_pattern": "Struts Interceptors (struts.xml)", "target_pattern": "Spring HandlerInterceptor or Servlet Filters", "description": "Migrate interceptor stack to Spring's interceptor or filter chain" }
+      ],
+      "config_mappings": [
+        { "source_file": "struts-config.xml", "target_file": "application.yml + @Configuration classes", "transform_rules": ["Extract action paths to @RequestMapping values", "Convert form-bean refs to @ModelAttribute parameters", "Map global-forwards to Spring view resolver config"] },
+        { "source_file": "validation.xml", "target_file": "Jakarta Bean Validation annotations on DTOs", "transform_rules": ["Convert <field> rules to @NotNull, @Size, @Pattern", "Replace custom validators with ConstraintValidator implementations"] },
+        { "source_file": "web.xml (StrutsServlet)", "target_file": "SpringBootApplication auto-configuration", "transform_rules": ["Remove ActionServlet declaration", "Add spring-boot-starter-web dependency", "Configure embedded Tomcat via application.yml"] }
+      ],
+      "breaking_changes": [
+        "Struts OGNL expressions not compatible with Spring SpEL — full rewrite required",
+        "Session-scoped ActionForms replaced by Spring session attributes or stateless design",
+        "Struts 1.x MessageResources replaced by Spring MessageSource",
+        "Tag libraries (html:form, bean:write) must be replaced with Thymeleaf or removed for SPA"
+      ],
+      "migration_steps": [
+        "Inventory all Struts actions, forms, and tiles definitions",
+        "Scaffold Spring Boot project with spring-boot-starter-web and spring-boot-starter-thymeleaf",
+        "Create Spring controllers mirroring Struts action paths",
+        "Replace ActionForm beans with validated DTOs",
+        "Migrate view layer from JSP+Tiles to Thymeleaf templates or React components",
+        "Convert validation.xml rules to Bean Validation annotations",
+        "Replace Struts interceptors with Spring interceptors or filters",
+        "Migrate message resources to Spring MessageSource bundles",
+        "Run integration tests against all migrated endpoints",
+        "Execute SAST and dependency audit on new Spring Boot project"
+      ],
+      "estimated_effort_factor": 2.8
+    },
+    {
+      "id": "JAVA-002",
+      "source_framework": "EJB (Enterprise JavaBeans)",
+      "source_version_range": "2.x–3.x",
+      "target_framework": "Spring Boot",
+      "target_version": "3.2.x",
+      "component_mappings": [
+        { "source_pattern": "@Stateless / @Stateful session beans", "target_pattern": "@Service Spring-managed beans", "description": "Replace EJB session beans with Spring service components using dependency injection" },
+        { "source_pattern": "@MessageDriven beans (JMS)", "target_pattern": "@JmsListener or Spring Cloud Stream with SQS", "description": "Replace MDBs with Spring messaging listeners backed by AWS SQS in GovCloud" },
+        { "source_pattern": "EJB @Remote / @Local interfaces", "target_pattern": "Spring REST controllers or gRPC services", "description": "Replace RMI-based remote interfaces with HTTP/gRPC endpoints" },
+        { "source_pattern": "Container-Managed Transactions (CMT)", "target_pattern": "@Transactional annotation with Spring TX manager", "description": "Replace CMT with Spring declarative transaction management" },
+        { "source_pattern": "JNDI lookups for DataSource / JMS", "target_pattern": "Spring auto-configuration with application.yml properties", "description": "Replace JNDI resource lookups with Spring Boot auto-configured beans" }
+      ],
+      "config_mappings": [
+        { "source_file": "ejb-jar.xml", "target_file": "@Configuration classes + application.yml", "transform_rules": ["Convert bean declarations to @Service/@Component annotations", "Map transaction attributes to @Transactional propagation settings", "Convert security-role-ref to Spring Security @Secured"] },
+        { "source_file": "persistence.xml (JPA in EJB)", "target_file": "application.yml spring.datasource + spring.jpa properties", "transform_rules": ["Move datasource JNDI to spring.datasource.url", "Keep JPA entity annotations unchanged", "Configure Hibernate dialect for target RDS instance"] },
+        { "source_file": "jboss-web.xml / glassfish-web.xml", "target_file": "application.yml server configuration", "transform_rules": ["Remove vendor-specific deployment descriptors", "Configure embedded server via Spring Boot properties"] }
+      ],
+      "breaking_changes": [
+        "EJB Timer Service replaced by Spring @Scheduled or Quartz integration",
+        "EJB security annotations (@RolesAllowed) require migration to Spring Security",
+        "CMP entity beans (EJB 2.x) require full rewrite to JPA entities",
+        "JNDI-based resource injection not available — use Spring @Autowired",
+        "Application server classloader isolation replaced by Spring Boot fat-jar model"
+      ],
+      "migration_steps": [
+        "Catalog all EJB session beans, MDBs, and entity beans",
+        "Create Spring Boot project with required starters (web, data-jpa, jms)",
+        "Convert session beans to @Service classes with @Autowired dependencies",
+        "Replace CMT with @Transactional annotations preserving propagation semantics",
+        "Migrate MDBs to @JmsListener methods or Spring Cloud Stream consumers",
+        "Replace JNDI lookups with Spring auto-configured datasources and connection factories",
+        "Migrate EJB security to Spring Security with role-based access",
+        "Convert EJB timers to Spring @Scheduled or Quartz jobs",
+        "Validate JPA entities work under Spring Data JPA repositories",
+        "Run full regression suite and STIG compliance check"
+      ],
+      "estimated_effort_factor": 2.5
+    },
+    {
+      "id": "JAVA-003",
+      "source_framework": "JSP (JavaServer Pages)",
+      "source_version_range": "2.0–2.3",
+      "target_framework": "Thymeleaf / React SPA",
+      "target_version": "3.1.x / React 18.x",
+      "component_mappings": [
+        { "source_pattern": "JSP scriptlets (<% ... %>)", "target_pattern": "Thymeleaf th:* attributes or React JSX components", "description": "Eliminate embedded Java code in views; move logic to controllers or React state" },
+        { "source_pattern": "JSTL <c:forEach>, <c:if>", "target_pattern": "Thymeleaf th:each, th:if or React .map() / conditional rendering", "description": "Replace JSTL tags with Thymeleaf natural templates or React declarative rendering" },
+        { "source_pattern": "Custom JSP tag libraries (.tld)", "target_pattern": "Thymeleaf dialect processors or React reusable components", "description": "Convert custom tags to Thymeleaf custom dialects or React component library" },
+        { "source_pattern": "JSP includes (jsp:include)", "target_pattern": "Thymeleaf th:replace/th:insert fragments or React component composition", "description": "Replace JSP includes with Thymeleaf fragment system or React component tree" }
+      ],
+      "config_mappings": [
+        { "source_file": "web.xml (JSP servlet mapping)", "target_file": "application.yml spring.thymeleaf.* properties", "transform_rules": ["Remove JSP servlet config", "Set Thymeleaf template prefix/suffix", "Configure template caching for production"] },
+        { "source_file": "*.tld (tag library descriptors)", "target_file": "Thymeleaf IDialect implementations or React component exports", "transform_rules": ["Map tag attributes to dialect processor attributes", "Convert body content handlers to React children props"] }
+      ],
+      "breaking_changes": [
+        "JSP scriptlets with business logic must be extracted to service classes before migration",
+        "JSP implicit objects (request, session, application) not directly available in Thymeleaf/React",
+        "Custom tag libraries require rewrite as Thymeleaf dialects or React components",
+        "JSP EL expressions use different syntax than Thymeleaf SpEL or React JSX"
+      ],
+      "migration_steps": [
+        "Audit all JSPs for scriptlet usage and extract business logic to controllers",
+        "Choose target: Thymeleaf (server-rendered) or React (SPA with REST API)",
+        "For Thymeleaf: convert JSP tags to th:* equivalents page by page",
+        "For React: create REST API endpoints and build component hierarchy",
+        "Migrate custom tag libraries to target framework equivalents",
+        "Replace JSTL formatting tags with Thymeleaf #dates/#numbers or React i18n libraries",
+        "Update form handling to use Thymeleaf form binding or React controlled components",
+        "Validate 508 accessibility compliance on all migrated views",
+        "Run cross-browser testing and visual regression suite"
+      ],
+      "estimated_effort_factor": 2.0
+    },
+    {
+      "id": "JAVA-004",
+      "source_framework": "Spring Framework",
+      "source_version_range": "3.x–4.x",
+      "target_framework": "Spring Boot",
+      "target_version": "3.2.x",
+      "component_mappings": [
+        { "source_pattern": "XML bean definitions (applicationContext.xml)", "target_pattern": "@Configuration classes with @Bean methods", "description": "Replace XML-based Spring config with Java-based configuration and auto-configuration" },
+        { "source_pattern": "javax.* namespace imports", "target_pattern": "jakarta.* namespace imports", "description": "Spring Boot 3.x requires Jakarta EE 9+ namespace migration from javax to jakarta" },
+        { "source_pattern": "Spring MVC XML config (mvc:annotation-driven)", "target_pattern": "WebMvcConfigurer implementations with @EnableWebMvc", "description": "Replace XML MVC config with Java-based WebMvcConfigurer" },
+        { "source_pattern": "PropertyPlaceholderConfigurer", "target_pattern": "@ConfigurationProperties with application.yml binding", "description": "Replace legacy property resolution with type-safe configuration properties" }
+      ],
+      "config_mappings": [
+        { "source_file": "applicationContext.xml", "target_file": "@SpringBootApplication + application.yml", "transform_rules": ["Convert <bean> definitions to @Bean methods or component scanning", "Replace <property> injection with @Value or @ConfigurationProperties", "Move property files to application.yml format"] },
+        { "source_file": "web.xml (DispatcherServlet)", "target_file": "Auto-configured by spring-boot-starter-web", "transform_rules": ["Remove DispatcherServlet manual registration", "Remove ContextLoaderListener configuration", "Configure via application.yml server.* properties"] },
+        { "source_file": "pom.xml (individual Spring deps)", "target_file": "pom.xml with spring-boot-starter-parent and starters", "transform_rules": ["Replace individual spring-* artifacts with starter POMs", "Add spring-boot-maven-plugin for fat-jar packaging", "Remove explicit version management covered by starter-parent"] }
+      ],
+      "breaking_changes": [
+        "javax.* to jakarta.* namespace change affects all servlet, persistence, and validation imports",
+        "Spring Security 6.x removes deprecated WebSecurityConfigurerAdapter — use SecurityFilterChain @Bean",
+        "Minimum Java 17 required for Spring Boot 3.x",
+        "Removed support for Apache HttpClient 4 — migrate to HttpClient 5 or RestClient",
+        "Spring Boot 3.x requires Hibernate 6.x with revised HQL semantics"
+      ],
+      "migration_steps": [
+        "Upgrade to Java 17+ and verify all dependencies support it",
+        "Replace javax.* imports with jakarta.* across entire codebase",
+        "Convert XML bean definitions to @Configuration classes",
+        "Add spring-boot-starter-parent and replace individual dependencies with starters",
+        "Migrate Spring Security config from WebSecurityConfigurerAdapter to SecurityFilterChain",
+        "Replace deprecated APIs (RestTemplate usages to RestClient or WebClient)",
+        "Update Hibernate/JPA configuration for Hibernate 6.x compatibility",
+        "Convert property files to application.yml with Spring Boot conventions",
+        "Run full test suite with Spring Boot Test auto-configuration",
+        "Validate embedded server startup and actuator health endpoints"
+      ],
+      "estimated_effort_factor": 1.5
+    },
+    {
+      "id": "DOTNET-001",
+      "source_framework": "WCF (Windows Communication Foundation)",
+      "source_version_range": "3.5–4.8",
+      "target_framework": "ASP.NET Core gRPC",
+      "target_version": ".NET 8 / Grpc.AspNetCore 2.x",
+      "component_mappings": [
+        { "source_pattern": "[ServiceContract] / [OperationContract] interfaces", "target_pattern": "Protocol Buffer .proto service definitions", "description": "Replace WCF service contracts with Protobuf service and rpc definitions" },
+        { "source_pattern": "[DataContract] / [DataMember] DTOs", "target_pattern": "Protobuf message types in .proto files", "description": "Replace WCF data contracts with strongly-typed Protobuf messages" },
+        { "source_pattern": "WCF bindings (basicHttp, netTcp, wsHttp)", "target_pattern": "gRPC over HTTP/2 with TLS", "description": "Replace WCF transport bindings with gRPC HTTP/2 channels secured via mTLS" },
+        { "source_pattern": "WCF behaviors (ServiceBehavior, throttling)", "target_pattern": "ASP.NET Core middleware and gRPC interceptors", "description": "Replace WCF behavior extensions with gRPC server interceptors and Kestrel config" },
+        { "source_pattern": "WCF duplex channels (callback contracts)", "target_pattern": "gRPC server streaming or bidirectional streaming RPCs", "description": "Replace WCF duplex communication with gRPC streaming patterns" }
+      ],
+      "config_mappings": [
+        { "source_file": "web.config / app.config (system.serviceModel)", "target_file": "appsettings.json + Program.cs Kestrel config", "transform_rules": ["Remove <system.serviceModel> sections entirely", "Configure Kestrel HTTP/2 endpoints in Program.cs", "Set TLS certificates via appsettings.json or AWS Secrets Manager"] },
+        { "source_file": "*.svc service host files", "target_file": "Program.cs MapGrpcService<T> registrations", "transform_rules": ["Remove .svc files", "Register gRPC services in app.MapGrpcService<TService>()"] }
+      ],
+      "breaking_changes": [
+        "WCF SOAP/WSDL not supported — gRPC uses Protobuf binary serialization",
+        "WCF message-level security (WS-Security) replaced by transport-level TLS",
+        "WCF sessions and reliable messaging have no direct gRPC equivalent",
+        "Client proxy generation changes from svcutil.exe to protoc/dotnet-grpc tooling",
+        "WCF fault contracts replaced by gRPC status codes and RpcException"
+      ],
+      "migration_steps": [
+        "Inventory all WCF services, operations, and data contracts",
+        "Define .proto files mirroring WCF service and data contracts",
+        "Generate C# server stubs and client code from .proto definitions",
+        "Implement gRPC service classes inheriting from generated base classes",
+        "Replace WCF duplex channels with gRPC streaming RPCs where needed",
+        "Configure Kestrel for HTTP/2 with mTLS for DoD environments",
+        "Migrate WCF interceptors (IDispatchMessageInspector) to gRPC interceptors",
+        "Update all client applications to use generated gRPC client stubs",
+        "Run contract-level integration tests validating request/response parity",
+        "Perform load testing to validate HTTP/2 performance under expected traffic"
+      ],
+      "estimated_effort_factor": 3.0
+    },
+    {
+      "id": "DOTNET-002",
+      "source_framework": "ASP.NET WebForms",
+      "source_version_range": "2.0–4.8",
+      "target_framework": "Blazor Server / Razor Pages",
+      "target_version": ".NET 8",
+      "component_mappings": [
+        { "source_pattern": "*.aspx pages with code-behind (*.aspx.cs)", "target_pattern": "Razor Pages (.cshtml + .cshtml.cs PageModel) or Blazor components (.razor)", "description": "Replace WebForms page model with Razor Pages handler model or Blazor component model" },
+        { "source_pattern": "ViewState (hidden __VIEWSTATE field)", "target_pattern": "Blazor component state or Razor Pages TempData/session", "description": "Replace ViewState with explicit state management — Blazor tracks component state via SignalR" },
+        { "source_pattern": "ASP.NET server controls (asp:GridView, asp:Repeater)", "target_pattern": "Blazor components or Razor tag helpers with HTML tables", "description": "Replace server controls with Blazor interactive components or standard HTML with tag helpers" },
+        { "source_pattern": "Page lifecycle events (Page_Load, Page_Init)", "target_pattern": "Blazor lifecycle methods (OnInitialized, OnParametersSet) or Razor Pages OnGet/OnPost handlers", "description": "Replace WebForms page lifecycle with Blazor component lifecycle or Razor Pages handler methods" },
+        { "source_pattern": "UpdatePanel (partial postbacks)", "target_pattern": "Blazor interactive rendering or HTMX/fetch for Razor Pages", "description": "Replace UpdatePanel AJAX with Blazor real-time UI updates or modern fetch-based partial rendering" }
+      ],
+      "config_mappings": [
+        { "source_file": "Web.config (system.web)", "target_file": "appsettings.json + Program.cs", "transform_rules": ["Remove <system.web> configuration sections", "Migrate authentication settings to ASP.NET Core Identity or OIDC config", "Convert httpModules/httpHandlers to middleware registrations"] },
+        { "source_file": "Global.asax (Application_Start)", "target_file": "Program.cs builder and app configuration", "transform_rules": ["Move Application_Start logic to Program.cs service configuration", "Replace Application_Error with exception handling middleware", "Convert session configuration to ASP.NET Core session middleware"] }
+      ],
+      "breaking_changes": [
+        "ViewState does not exist in ASP.NET Core — all state must be explicitly managed",
+        "WebForms server controls have no equivalents — UI must be rewritten",
+        "WebForms postback model replaced by Blazor SignalR or Razor Pages form posts",
+        "System.Web namespace not available in .NET 8 — replace HttpContext.Current usages",
+        "WebForms authentication (FormsAuthentication) replaced by ASP.NET Core Identity"
+      ],
+      "migration_steps": [
+        "Inventory all .aspx pages, user controls (.ascx), and master pages",
+        "Choose target: Blazor Server (interactive) or Razor Pages (request-response)",
+        "Extract business logic from code-behind files into service classes",
+        "Create Razor Pages or Blazor components for each WebForms page",
+        "Replace server controls with HTML + tag helpers or Blazor components",
+        "Migrate ViewState-dependent logic to explicit state management",
+        "Replace FormsAuthentication with ASP.NET Core Identity",
+        "Migrate Global.asax event handlers to ASP.NET Core middleware",
+        "Convert Web.config settings to appsettings.json and Program.cs",
+        "Run accessibility (Section 508) and security (STIG) compliance checks"
+      ],
+      "estimated_effort_factor": 3.2
+    },
+    {
+      "id": "DOTNET-003",
+      "source_framework": ".NET Framework",
+      "source_version_range": "4.5–4.8",
+      "target_framework": ".NET",
+      "target_version": "8.0 (LTS)",
+      "component_mappings": [
+        { "source_pattern": "System.Web.* references", "target_pattern": "Microsoft.AspNetCore.* packages", "description": "Replace System.Web dependencies with ASP.NET Core equivalents" },
+        { "source_pattern": "Global.asax application class", "target_pattern": "Program.cs with WebApplicationBuilder", "description": "Replace Global.asax with minimal hosting model in Program.cs" },
+        { "source_pattern": "Web.config / App.config XML configuration", "target_pattern": "appsettings.json + environment-specific overrides", "description": "Replace XML configuration with JSON-based configuration and IOptions pattern" },
+        { "source_pattern": "packages.config NuGet references", "target_pattern": "PackageReference in .csproj (SDK-style)", "description": "Migrate from packages.config to SDK-style project format with PackageReference" },
+        { "source_pattern": "AppDomain isolation / remoting", "target_pattern": "Process isolation or AssemblyLoadContext", "description": "Replace AppDomain usage with process-level isolation — AppDomain.CreateDomain not supported" }
+      ],
+      "config_mappings": [
+        { "source_file": "*.csproj (legacy format)", "target_file": "*.csproj (SDK-style format)", "transform_rules": ["Convert to <Project Sdk=\"Microsoft.NET.Sdk.Web\">", "Replace packages.config with PackageReference elements", "Remove AssemblyInfo.cs — auto-generated in SDK-style projects"] },
+        { "source_file": "Web.config", "target_file": "appsettings.json + Program.cs", "transform_rules": ["Convert connectionStrings to ConnectionStrings section in appsettings.json", "Convert appSettings to typed IOptions<T> configuration classes", "Migrate httpModules to middleware pipeline in Program.cs"] },
+        { "source_file": "packages.config", "target_file": "PackageReference in .csproj", "transform_rules": ["Run dotnet migrate or manually convert each <package> to <PackageReference>", "Remove packages/ folder — restored to global cache", "Verify all packages have .NET 8-compatible versions"] }
+      ],
+      "breaking_changes": [
+        "System.Web namespace removed entirely — no HttpContext.Current in .NET 8",
+        "Windows-only APIs (Registry, WMI, COM Interop) require Windows compatibility pack or redesign",
+        "AppDomain.CreateDomain not supported — use AssemblyLoadContext for plugin isolation",
+        "Binary serialization (BinaryFormatter) disabled by default for security",
+        "Synchronous I/O disabled by default in Kestrel — adopt async/await patterns"
+      ],
+      "migration_steps": [
+        "Run .NET Upgrade Assistant to analyze migration scope and compatibility",
+        "Convert project files to SDK-style format with target framework net8.0",
+        "Replace packages.config with PackageReference and update NuGet packages",
+        "Replace System.Web.* APIs with ASP.NET Core equivalents",
+        "Migrate configuration from Web.config XML to appsettings.json",
+        "Replace Global.asax with Program.cs and middleware pipeline",
+        "Update dependency injection from third-party containers to Microsoft.Extensions.DependencyInjection",
+        "Convert synchronous I/O calls to async/await patterns",
+        "Address Windows-specific APIs with compatibility shims or redesign",
+        "Run full test suite on .NET 8 runtime and validate all endpoints"
+      ],
+      "estimated_effort_factor": 2.2
+    },
+    {
+      "id": "PYTHON-001",
+      "source_framework": "Django",
+      "source_version_range": "1.8–1.11",
+      "target_framework": "Django",
+      "target_version": "4.2 (LTS)",
+      "component_mappings": [
+        { "source_pattern": "url() with regex patterns in urls.py", "target_pattern": "path() and re_path() with typed converters", "description": "Replace url() regex routing with path() using <int:pk>, <str:slug> type converters" },
+        { "source_pattern": "ForeignKey without on_delete argument", "target_pattern": "ForeignKey(on_delete=models.CASCADE) — on_delete is required", "description": "All ForeignKey and OneToOneField definitions must specify on_delete behavior" },
+        { "source_pattern": "render_to_response() shortcut", "target_pattern": "render() shortcut with request as first argument", "description": "Replace deprecated render_to_response with render() which includes RequestContext automatically" },
+        { "source_pattern": "django.conf.urls.defaults imports", "target_pattern": "django.urls.path and django.urls.include", "description": "Replace removed django.conf.urls.defaults with django.urls module" },
+        { "source_pattern": "South migrations", "target_pattern": "Built-in django.db.migrations framework", "description": "Replace South with Django native migrations — squash and recreate migration history" }
+      ],
+      "config_mappings": [
+        { "source_file": "settings.py (MIDDLEWARE_CLASSES tuple)", "target_file": "settings.py (MIDDLEWARE list)", "transform_rules": ["Rename MIDDLEWARE_CLASSES to MIDDLEWARE", "Convert tuple to list", "Update middleware class paths to new-style middleware"] },
+        { "source_file": "settings.py (DATABASES with legacy backends)", "target_file": "settings.py (DATABASES with updated engine paths)", "transform_rules": ["Replace django.db.backends.postgresql_psycopg2 with django.db.backends.postgresql", "Ensure database engine supports Django 4.2 requirements"] },
+        { "source_file": "urls.py (url() patterns)", "target_file": "urls.py (path() and re_path() patterns)", "transform_rules": ["Convert url(r'^articles/(?P<pk>\\d+)/$') to path('articles/<int:pk>/')", "Use re_path() only for complex regex patterns that cannot use path converters"] }
+      ],
+      "breaking_changes": [
+        "Python 3.8+ required — Python 2 support removed since Django 2.0",
+        "on_delete argument required on all ForeignKey and OneToOneField definitions",
+        "MIDDLEWARE_CLASSES replaced by MIDDLEWARE — different callable signature",
+        "django.utils.encoding.force_text renamed to force_str",
+        "django.utils.translation.ugettext_lazy replaced by django.utils.translation.gettext_lazy",
+        "Default password hashing upgraded — existing hashes still work but will be re-hashed on next login",
+        "USE_L10N defaults to True in Django 4.0+ — may change number/date formatting"
+      ],
+      "migration_steps": [
+        "Ensure codebase runs on Python 3.10+ and fix any Python 2 syntax remnants",
+        "Upgrade incrementally: 1.11 -> 2.0 -> 2.2 -> 3.0 -> 3.2 -> 4.0 -> 4.2",
+        "Add on_delete to all ForeignKey and OneToOneField definitions",
+        "Replace url() with path() and re_path() in all urls.py files",
+        "Rename MIDDLEWARE_CLASSES to MIDDLEWARE and update middleware classes",
+        "Replace deprecated imports (ugettext_lazy -> gettext_lazy, force_text -> force_str)",
+        "Remove South migrations and regenerate with Django native makemigrations",
+        "Update template tags and filters for any removed or renamed builtins",
+        "Run python manage.py check --deploy for production readiness warnings",
+        "Execute full test suite at each major version increment to catch regressions"
+      ],
+      "estimated_effort_factor": 1.8
+    },
+    {
+      "id": "PYTHON-002",
+      "source_framework": "Flask",
+      "source_version_range": "0.10–0.12",
+      "target_framework": "Flask",
+      "target_version": "3.1.x",
+      "component_mappings": [
+        { "source_pattern": "from flask.ext.* imports", "target_pattern": "from flask_* imports (flat namespace)", "description": "Replace flask.ext.foo with flask_foo — the flask.ext import shim was removed in Flask 1.0" },
+        { "source_pattern": "@app.before_first_request decorator", "target_pattern": "Initialization logic in create_app() factory or app.before_request with a flag", "description": "before_first_request removed in Flask 2.3 — move init logic to app factory" },
+        { "source_pattern": "flask.json.jsonify with manual serialization", "target_pattern": "Return dicts directly from views (auto-jsonified in Flask 2.2+)", "description": "Flask 2.2+ auto-converts dict returns to JSON responses — jsonify still works but is optional" },
+        { "source_pattern": "Synchronous-only view functions", "target_pattern": "async def views with async/await (Flask 2.0+)", "description": "Flask 2.0+ supports async views natively — enables non-blocking I/O for async workloads" },
+        { "source_pattern": "flask.escape / Markup from flask", "target_pattern": "markupsafe.escape / markupsafe.Markup", "description": "HTML escaping utilities moved to MarkupSafe package — direct imports from flask removed" }
+      ],
+      "config_mappings": [
+        { "source_file": "setup.py with Flask<1.0 dependency", "target_file": "pyproject.toml with Flask>=3.0 dependency", "transform_rules": ["Migrate setup.py to pyproject.toml with [build-system] and [project] tables", "Update Flask version constraint to >=3.0,<4.0", "Update all flask extension version constraints for Flask 3.x compatibility"] },
+        { "source_file": "config.py (DEBUG, SECRET_KEY as module globals)", "target_file": "config.py with class-based configs or .env loading", "transform_rules": ["Use class-based configuration (DevelopmentConfig, ProductionConfig)", "Load SECRET_KEY from environment variables or AWS Secrets Manager", "Never hardcode secrets — use python-dotenv or equivalent"] }
+      ],
+      "breaking_changes": [
+        "flask.ext.* import path removed — use flask_* flat imports",
+        "before_first_request removed in Flask 2.3 — no direct replacement",
+        "JSON handling refactored — flask.json.JSONEncoder removed in Flask 2.3",
+        "Minimum Python 3.8 required for Flask 3.x",
+        "Werkzeug 3.x required — many Werkzeug internals changed",
+        "flask.escape moved to markupsafe.escape"
+      ],
+      "migration_steps": [
+        "Update Python to 3.10+ and verify all dependencies support it",
+        "Replace all flask.ext.* imports with flask_* equivalents",
+        "Upgrade incrementally: 0.12 -> 1.0 -> 2.0 -> 2.3 -> 3.0 -> 3.1",
+        "Remove @app.before_first_request and move logic to app factory",
+        "Replace custom JSONEncoder subclass with json_provider_class attribute",
+        "Replace flask.escape imports with markupsafe.escape",
+        "Migrate setup.py to pyproject.toml with updated dependency versions",
+        "Convert synchronous views to async where I/O-bound operations benefit",
+        "Update all Flask extension packages to Flask 3.x compatible versions",
+        "Run pytest suite at each upgrade step and validate all routes with integration tests"
+      ],
+      "estimated_effort_factor": 1.3
+    }
+  ],
+  "classification_footer": "CUI // SP-CTI"
+}

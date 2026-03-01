@@ -15,12 +15,12 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 # Mock audit_log_event before importing modules to avoid writing to real DB
-_audit_mock_sp = patch("tools.agent.session_purpose.audit_log_event", lambda **kw: None)
+_audit_mock_sp = patch("icdev.tools.agent.session_purpose.audit_log_event", lambda **kw: None)
 _audit_mock_sp.start()
-_audit_mock_mb = patch("tools.agent.mailbox.audit_log_event", lambda **kw: None)
+_audit_mock_mb = patch("icdev.tools.agent.mailbox.audit_log_event", lambda **kw: None)
 _audit_mock_mb.start()
 
-from tools.agent.session_purpose import (
+from icdev.tools.agent.session_purpose import (
     abandon,
     complete,
     declare,
@@ -231,7 +231,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_send_async_result(self):
         """Test sending an async result."""
-        from tools.agent.mailbox import send_async_result
+        from icdev.tools.agent.mailbox import send_async_result
         msg_id = send_async_result(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -243,7 +243,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_async_result_high_priority(self):
         """Test async result gets priority 9 for injection."""
-        from tools.agent.mailbox import send_async_result, receive, PRIORITY_INJECT_NEXT_TURN
+        from icdev.tools.agent.mailbox import send_async_result, receive, PRIORITY_INJECT_NEXT_TURN
         send_async_result(
             from_agent_id="security-agent",
             to_agent_id="orchestrator-agent",
@@ -258,7 +258,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_collect_pending_injections(self):
         """Test collecting pending injections."""
-        from tools.agent.mailbox import send_async_result, collect_pending_injections
+        from icdev.tools.agent.mailbox import send_async_result, collect_pending_injections
         send_async_result(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -279,7 +279,7 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_collect_marks_read(self):
         """Test that collection marks messages as read."""
-        from tools.agent.mailbox import send_async_result, collect_pending_injections
+        from icdev.tools.agent.mailbox import send_async_result, collect_pending_injections
         send_async_result(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",
@@ -296,13 +296,13 @@ class TestAsyncResultInjection(unittest.TestCase):
 
     def test_collect_empty(self):
         """Test collection with no pending messages."""
-        from tools.agent.mailbox import collect_pending_injections
+        from icdev.tools.agent.mailbox import collect_pending_injections
         results = collect_pending_injections("orchestrator-agent", db_path=self.db_path)
         self.assertEqual(len(results), 0)
 
     def test_no_inject_normal_messages(self):
         """Test that normal messages are not collected as injections."""
-        from tools.agent.mailbox import send, collect_pending_injections
+        from icdev.tools.agent.mailbox import send, collect_pending_injections
         send(
             from_agent_id="builder-agent",
             to_agent_id="orchestrator-agent",

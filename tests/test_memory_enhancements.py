@@ -85,20 +85,20 @@ def memory_db(tmp_path):
 
 class TestContentHashDedup:
     def test_compute_content_hash_deterministic(self):
-        from tools.memory.memory_write import compute_content_hash
+        from icdev.tools.memory.memory_write import compute_content_hash
         h1 = compute_content_hash("hello world")
         h2 = compute_content_hash("hello world")
         assert h1 == h2
         assert len(h1) == 64  # SHA-256 hex length
 
     def test_compute_content_hash_different_inputs(self):
-        from tools.memory.memory_write import compute_content_hash
+        from icdev.tools.memory.memory_write import compute_content_hash
         h1 = compute_content_hash("hello")
         h2 = compute_content_hash("world")
         assert h1 != h2
 
     def test_write_with_dedup_first_write_succeeds(self, memory_db, monkeypatch):
-        from tools.memory import memory_write
+        from icdev.tools.memory import memory_write
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         entry_id, is_dup = memory_write.write_to_db("test content", "fact", 5)
@@ -106,7 +106,7 @@ class TestContentHashDedup:
         assert is_dup is False
 
     def test_write_with_dedup_duplicate_returns_existing(self, memory_db, monkeypatch):
-        from tools.memory import memory_write
+        from icdev.tools.memory import memory_write
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         id1, dup1 = memory_write.write_to_db("same content", "fact", 5)
@@ -116,7 +116,7 @@ class TestContentHashDedup:
         assert id1 == id2
 
     def test_different_users_same_content_no_dedup(self, memory_db, monkeypatch):
-        from tools.memory import memory_write
+        from icdev.tools.memory import memory_write
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         id1, dup1 = memory_write.write_to_db("shared fact", "fact", 5, user_id="user-a")
@@ -126,7 +126,7 @@ class TestContentHashDedup:
         assert id1 != id2
 
     def test_null_user_dedup(self, memory_db, monkeypatch):
-        from tools.memory import memory_write
+        from icdev.tools.memory import memory_write
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
         id1, _ = memory_write.write_to_db("no user content", "event", 3)
@@ -160,7 +160,7 @@ class TestUserScopedMemory:
         conn.close()
 
     def test_search_filters_by_user(self, memory_db, monkeypatch):
-        from tools.memory import memory_db as mdb
+        from icdev.tools.memory import memory_db as mdb
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -171,7 +171,7 @@ class TestUserScopedMemory:
         assert "user2 fact" not in contents
 
     def test_search_without_user_returns_all(self, memory_db, monkeypatch):
-        from tools.memory import memory_db as mdb
+        from icdev.tools.memory import memory_db as mdb
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -179,7 +179,7 @@ class TestUserScopedMemory:
         assert len(results) >= 3  # All fact entries
 
     def test_list_all_user_scoped(self, memory_db, monkeypatch):
-        from tools.memory import memory_db as mdb
+        from icdev.tools.memory import memory_db as mdb
         monkeypatch.setattr(mdb, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -190,7 +190,7 @@ class TestUserScopedMemory:
         assert "user1 fact" not in contents
 
     def test_hybrid_search_user_scoped(self, memory_db, monkeypatch):
-        from tools.memory import hybrid_search
+        from icdev.tools.memory import hybrid_search
         monkeypatch.setattr(hybrid_search, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -200,7 +200,7 @@ class TestUserScopedMemory:
         assert "user2 fact" not in contents
 
     def test_memory_read_user_scoped(self, memory_db, monkeypatch):
-        from tools.memory import memory_read
+        from icdev.tools.memory import memory_read
         monkeypatch.setattr(memory_read, "DB_PATH", memory_db)
         self._seed_entries(memory_db)
 
@@ -216,21 +216,21 @@ class TestUserScopedMemory:
 
 class TestAutoCapture:
     def test_capture_writes_to_buffer(self, memory_db):
-        from tools.memory.auto_capture import capture
+        from icdev.tools.memory.auto_capture import capture
         result = capture("test capture", source="hook", db_path=memory_db)
         assert result["status"] == "captured"
         assert result["buffer_id"] > 0
         assert result["buffer_size"] == 1
 
     def test_capture_dedup_in_buffer(self, memory_db):
-        from tools.memory.auto_capture import capture
+        from icdev.tools.memory.auto_capture import capture
         r1 = capture("duplicate content", source="hook", db_path=memory_db)
         r2 = capture("duplicate content", source="hook", db_path=memory_db)
         assert r1["status"] == "captured"
         assert r2["status"] == "duplicate"
 
     def test_flush_buffer_to_entries(self, memory_db):
-        from tools.memory.auto_capture import capture, flush_buffer
+        from icdev.tools.memory.auto_capture import capture, flush_buffer
         capture("flush me", source="hook", db_path=memory_db)
         capture("flush me too", source="auto", db_path=memory_db)
 
@@ -251,9 +251,9 @@ class TestAutoCapture:
         assert buf_count == 0
 
     def test_flush_dedup_against_entries(self, memory_db):
-        from tools.memory.auto_capture import capture, flush_buffer
-        from tools.memory.memory_write import write_to_db, DB_PATH
-        import tools.memory.memory_write as mw
+        from icdev.tools.memory.auto_capture import capture, flush_buffer
+        from icdev.tools.memory.memory_write import write_to_db, DB_PATH
+        import icdev.tools.memory.memory_write as mw
 
         # Monkeypatch DB_PATH for write_to_db
         original = mw.DB_PATH
@@ -273,7 +273,7 @@ class TestAutoCapture:
         mw.DB_PATH = original
 
     def test_buffer_status(self, memory_db):
-        from tools.memory.auto_capture import capture, buffer_status
+        from icdev.tools.memory.auto_capture import capture, buffer_status
         capture("entry 1", source="hook", db_path=memory_db)
         capture("entry 2", source="thinking", db_path=memory_db)
 
@@ -283,7 +283,7 @@ class TestAutoCapture:
         assert status["by_source"]["thinking"] == 1
 
     def test_thinking_source_type(self, memory_db):
-        from tools.memory.auto_capture import capture
+        from icdev.tools.memory.auto_capture import capture
         result = capture(
             "chain of thought reasoning",
             source="thinking",
@@ -308,16 +308,16 @@ class TestAutoCapture:
 
 class TestThinkingType:
     def test_thinking_type_in_valid_types(self):
-        from tools.memory.memory_write import VALID_TYPES
+        from icdev.tools.memory.memory_write import VALID_TYPES
         assert "thinking" in VALID_TYPES
 
     def test_thinking_half_life_in_config(self):
-        from tools.memory.time_decay import DEFAULT_CONFIG
+        from icdev.tools.memory.time_decay import DEFAULT_CONFIG
         assert "thinking" in DEFAULT_CONFIG["half_lives"]
         assert DEFAULT_CONFIG["half_lives"]["thinking"] == 3
 
     def test_thinking_decays_fast(self):
-        from tools.memory.time_decay import compute_decay_factor
+        from icdev.tools.memory.time_decay import compute_decay_factor
         from datetime import datetime, timezone, timedelta
 
         ref = datetime.now(timezone.utc)
@@ -340,7 +340,7 @@ class TestThinkingType:
 class TestEmbedMemoryD72:
     def test_get_embedding_client_tries_provider_first(self, monkeypatch):
         """Verify embed_memory tries LLM provider before OpenAI."""
-        from tools.memory import embed_memory
+        from icdev.tools.memory import embed_memory
 
         class MockProvider:
             def embed(self, text):
@@ -352,7 +352,7 @@ class TestEmbedMemoryD72:
             called["provider"] = True
             return MockProvider()
 
-        monkeypatch.setattr("tools.llm.get_embedding_provider", mock_get_provider)
+        monkeypatch.setattr("icdev.tools.llm.get_embedding_provider", mock_get_provider)
         client, name = embed_memory.get_embedding_client()
         assert called["provider"] is True
         assert name == "llm_provider"
@@ -384,7 +384,7 @@ class TestMigration:
         conn.commit()
 
         # Run migration
-        from tools.db.migrations import __path__ as _  # noqa: ensure importable
+        from icdev.tools.db.migrations import __path__ as _  # noqa: ensure importable
         sys.path.insert(0, str(BASE_DIR / "tools" / "db" / "migrations" / "002_memory_enhancements"))
         from up import up as migrate_up
         migrate_up(conn)

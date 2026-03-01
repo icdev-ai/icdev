@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.project.session_context_builder import (
+from icdev.tools.project.session_context_builder import (
     build_session_context,
     init_from_manifest,
     _detect_project,

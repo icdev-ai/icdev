@@ -134,14 +134,14 @@ class TestOscalCatalogAdapterOscalFormat:
         return path
 
     def test_load_oscal_catalog(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         assert adapter.is_loaded()
         assert adapter.is_official_catalog()
 
     def test_get_control_by_id(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         ctrl = adapter.get_control("AC-2")
@@ -151,7 +151,7 @@ class TestOscalCatalogAdapterOscalFormat:
         assert ctrl["source"] == "nist_oscal"
 
     def test_get_control_case_insensitive(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         ctrl = adapter.get_control("ac-2")
@@ -159,7 +159,7 @@ class TestOscalCatalogAdapterOscalFormat:
         assert ctrl["id"] == "AC-2"
 
     def test_get_enhancement(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         ctrl = adapter.get_control("AC-1(1)")
@@ -168,14 +168,14 @@ class TestOscalCatalogAdapterOscalFormat:
         assert ctrl["parent_id"] == "AC-1"
 
     def test_list_controls_by_family(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         controls = adapter.list_controls(family="AC")
         assert len(controls) >= 2  # AC-1, AC-2, plus enhancement(s)
 
     def test_list_controls_excludes_withdrawn(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         all_ctrls = adapter.list_controls(include_withdrawn=True)
@@ -183,7 +183,7 @@ class TestOscalCatalogAdapterOscalFormat:
         assert len(all_ctrls) > len(active_ctrls)
 
     def test_catalog_stats(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         stats = adapter.get_catalog_stats()
@@ -194,7 +194,7 @@ class TestOscalCatalogAdapterOscalFormat:
         assert stats["family_count"] >= 2
 
     def test_control_params_extracted(self, oscal_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(oscal_catalog_file))
         ctrl = adapter.get_control("AC-1")
@@ -212,14 +212,14 @@ class TestOscalCatalogAdapterIcdevFormat:
         return path
 
     def test_load_icdev_catalog(self, icdev_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(icdev_catalog_file))
         assert adapter.is_loaded()
         assert not adapter.is_official_catalog()
 
     def test_get_control(self, icdev_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(icdev_catalog_file))
         ctrl = adapter.get_control("AC-2")
@@ -228,14 +228,14 @@ class TestOscalCatalogAdapterIcdevFormat:
         assert ctrl["title"] == "Account Management"
 
     def test_list_controls(self, icdev_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(icdev_catalog_file))
         controls = adapter.list_controls()
         assert len(controls) == 2
 
     def test_stats(self, icdev_catalog_file):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
 
         adapter = OscalCatalogAdapter(catalog_path=str(icdev_catalog_file))
         stats = adapter.get_catalog_stats()
@@ -247,7 +247,7 @@ class TestCatalogAdapterFallback:
     """Test priority/fallback behavior."""
 
     def test_fallback_to_second_source(self, tmp_path):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
 
         # Clear module cache to avoid stale state
         _CATALOG_CACHE.clear()
@@ -263,7 +263,7 @@ class TestCatalogAdapterFallback:
         assert adapter._source_format == "icdev_custom"
 
     def test_no_catalogs_available(self, tmp_path):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
 
         _CATALOG_CACHE.clear()
         adapter = OscalCatalogAdapter(
@@ -272,7 +272,7 @@ class TestCatalogAdapterFallback:
         assert not adapter.is_loaded()
 
     def test_invalid_json_skipped(self, tmp_path):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
 
         _CATALOG_CACHE.clear()
         bad = tmp_path / "bad.json"
@@ -284,7 +284,7 @@ class TestCatalogAdapterFallback:
         assert adapter.is_loaded()
 
     def test_unrecognized_format_skipped(self, tmp_path):
-        from tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
+        from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter, _CATALOG_CACHE
 
         _CATALOG_CACHE.clear()
         unknown = tmp_path / "unknown.json"
@@ -300,22 +300,22 @@ class TestNormalizeControlId:
     """Test control ID normalization."""
 
     def test_lowercase(self):
-        from tools.compliance.oscal_catalog_adapter import _normalize_control_id
+        from icdev.tools.compliance.oscal_catalog_adapter import _normalize_control_id
 
         assert _normalize_control_id("ac-2") == "AC-2"
 
     def test_dot_to_parenthetical(self):
-        from tools.compliance.oscal_catalog_adapter import _normalize_control_id
+        from icdev.tools.compliance.oscal_catalog_adapter import _normalize_control_id
 
         assert _normalize_control_id("ac-2.1") == "AC-2(1)"
 
     def test_already_normalized(self):
-        from tools.compliance.oscal_catalog_adapter import _normalize_control_id
+        from icdev.tools.compliance.oscal_catalog_adapter import _normalize_control_id
 
         assert _normalize_control_id("AC-2(1)") == "AC-2(1)"
 
     def test_empty(self):
-        from tools.compliance.oscal_catalog_adapter import _normalize_control_id
+        from icdev.tools.compliance.oscal_catalog_adapter import _normalize_control_id
 
         assert _normalize_control_id("") == ""
         assert _normalize_control_id(None) == ""
@@ -328,7 +328,7 @@ class TestOscalToolDetection:
     """Test detect_oscal_tools() capability checks."""
 
     def test_detect_returns_dict(self):
-        from tools.compliance.oscal_tools import detect_oscal_tools
+        from icdev.tools.compliance.oscal_tools import detect_oscal_tools
 
         result = detect_oscal_tools()
         assert isinstance(result, dict)
@@ -337,13 +337,13 @@ class TestOscalToolDetection:
         assert "nist_catalog" in result
 
     def test_detect_oscal_cli_not_installed(self):
-        from tools.compliance.oscal_tools import detect_oscal_tools
-        import tools.compliance.oscal_tools as ot
+        from icdev.tools.compliance.oscal_tools import detect_oscal_tools
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._JAVA_INFO = None
         ot._OSCAL_CLI_INFO = None
         try:
-            with patch("tools.compliance.oscal_tools._detect_java",
+            with patch("icdev.tools.compliance.oscal_tools._detect_java",
                        return_value={"available": False, "version": None, "path": None, "error": "not found"}):
                 result = detect_oscal_tools()
                 assert result["oscal_cli"]["available"] is False
@@ -352,8 +352,8 @@ class TestOscalToolDetection:
             ot._OSCAL_CLI_INFO = None
 
     def test_detect_pydantic_not_installed(self):
-        from tools.compliance.oscal_tools import detect_oscal_tools
-        import tools.compliance.oscal_tools as ot
+        from icdev.tools.compliance.oscal_tools import detect_oscal_tools
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._PYDANTIC_INFO = None
         try:
@@ -365,14 +365,14 @@ class TestOscalToolDetection:
             ot._PYDANTIC_INFO = None
 
     def test_detect_nist_catalog(self):
-        from tools.compliance.oscal_tools import detect_oscal_tools
+        from icdev.tools.compliance.oscal_tools import detect_oscal_tools
 
         result = detect_oscal_tools()
         assert "available" in result["nist_catalog"]
         assert "format" in result["nist_catalog"]
 
     def test_detect_has_all_four_keys(self):
-        from tools.compliance.oscal_tools import detect_oscal_tools
+        from icdev.tools.compliance.oscal_tools import detect_oscal_tools
 
         result = detect_oscal_tools()
         assert "oscal_cli" in result
@@ -395,7 +395,7 @@ class TestDeepValidation:
         return str(BASE_DIR / "tests" / "fixtures" / "sample_oscal_ssp.json")
 
     def test_structural_validation_passes(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         result = validate_oscal_deep(sample_ssp_path)
         assert isinstance(result, dict)
@@ -406,13 +406,13 @@ class TestDeepValidation:
         assert structural[0]["valid"] is True
 
     def test_validation_on_nonexistent_file(self, tmp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         result = validate_oscal_deep(str(tmp_path / "nonexistent.json"))
         assert result["valid"] is False
 
     def test_validation_on_invalid_json(self, tmp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         bad = tmp_path / "bad.json"
         bad.write_text("{not valid json}", encoding="utf-8")
@@ -420,7 +420,7 @@ class TestDeepValidation:
         assert result["valid"] is False
 
     def test_validation_on_valid_ssp(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         result = validate_oscal_deep(sample_ssp_path)
         # Structural and pydantic layers should pass; metaschema may fail
@@ -431,7 +431,7 @@ class TestDeepValidation:
         assert "validators_run" in result
 
     def test_pydantic_layer_graceful_when_not_installed(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         result = validate_oscal_deep(sample_ssp_path)
         pydantic_entries = [v for v in result["validators"]
@@ -443,12 +443,12 @@ class TestDeepValidation:
             or "errors" in pydantic_layer  # errors key present means it ran but handled gracefully
 
     def test_metaschema_layer_graceful_when_no_java(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
-        with patch("tools.compliance.oscal_tools._detect_java",
+        with patch("icdev.tools.compliance.oscal_tools._detect_java",
                    return_value={"available": False, "version": None, "path": None, "error": "no java"}):
             # Reset cached detection results
-            import tools.compliance.oscal_tools as ot
+            import icdev.tools.compliance.oscal_tools as ot
             ot._JAVA_INFO = None
             ot._OSCAL_CLI_INFO = None
             try:
@@ -463,7 +463,7 @@ class TestDeepValidation:
                 ot._OSCAL_CLI_INFO = None
 
     def test_validation_result_has_file_info(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         result = validate_oscal_deep(sample_ssp_path)
         assert "file_path" in result
@@ -471,7 +471,7 @@ class TestDeepValidation:
 
     def test_validation_logs_to_db(self, sample_ssp_path, tmp_path):
         """Verify validation attempts are logged (D306)."""
-        from tools.compliance.oscal_tools import validate_oscal_deep
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
 
         db_path = tmp_path / "test.db"
         conn = sqlite3.connect(str(db_path))
@@ -514,16 +514,16 @@ class TestFormatConversion:
     """Test convert_oscal_format() — requires oscal-cli + Java."""
 
     def test_conversion_fails_gracefully_without_java(self, tmp_path):
-        from tools.compliance.oscal_tools import convert_oscal_format
+        from icdev.tools.compliance.oscal_tools import convert_oscal_format
 
         dummy = tmp_path / "test.oscal.json"
         dummy.write_text("{}", encoding="utf-8")
 
-        import tools.compliance.oscal_tools as ot
+        import icdev.tools.compliance.oscal_tools as ot
         ot._JAVA_INFO = None
         ot._OSCAL_CLI_INFO = None
         try:
-            with patch("tools.compliance.oscal_tools._detect_java",
+            with patch("icdev.tools.compliance.oscal_tools._detect_java",
                        return_value={"available": False, "version": None, "path": None, "error": "no java"}):
                 result = convert_oscal_format(str(dummy), "xml")
                 assert result.get("success") is False or result.get("error") is not None
@@ -532,7 +532,7 @@ class TestFormatConversion:
             ot._OSCAL_CLI_INFO = None
 
     def test_conversion_requires_valid_format(self):
-        from tools.compliance.oscal_tools import convert_oscal_format
+        from icdev.tools.compliance.oscal_tools import convert_oscal_format
 
         result = convert_oscal_format("/nonexistent.json", "pdf")
         assert result.get("success") is False
@@ -545,16 +545,16 @@ class TestProfileResolution:
     """Test resolve_oscal_profile() — requires oscal-cli + Java."""
 
     def test_resolution_fails_gracefully_without_java(self, tmp_path):
-        from tools.compliance.oscal_tools import resolve_oscal_profile
+        from icdev.tools.compliance.oscal_tools import resolve_oscal_profile
 
         dummy = tmp_path / "profile.json"
         dummy.write_text("{}", encoding="utf-8")
 
-        import tools.compliance.oscal_tools as ot
+        import icdev.tools.compliance.oscal_tools as ot
         ot._JAVA_INFO = None
         ot._OSCAL_CLI_INFO = None
         try:
-            with patch("tools.compliance.oscal_tools._detect_java",
+            with patch("icdev.tools.compliance.oscal_tools._detect_java",
                        return_value={"available": False, "version": None, "path": None, "error": "no java"}):
                 result = resolve_oscal_profile(str(dummy))
                 assert result.get("success") is False or result.get("error") is not None
@@ -571,28 +571,28 @@ class TestCatalogOperations:
 
     @pytest.fixture
     def catalog_env(self, tmp_path):
-        from tools.compliance.oscal_catalog_adapter import _CATALOG_CACHE
+        from icdev.tools.compliance.oscal_catalog_adapter import _CATALOG_CACHE
         _CATALOG_CACHE.clear()
         cat_path = tmp_path / "catalog.json"
         cat_path.write_text(json.dumps(SAMPLE_OSCAL_CATALOG), encoding="utf-8")
         return str(cat_path)
 
     def test_catalog_lookup(self, catalog_env):
-        from tools.compliance.oscal_tools import catalog_lookup
+        from icdev.tools.compliance.oscal_tools import catalog_lookup
 
         result = catalog_lookup("AC-2", catalog_path=catalog_env)
         assert result is not None
         assert result["id"] == "AC-2"
 
     def test_catalog_lookup_not_found(self, catalog_env):
-        from tools.compliance.oscal_tools import catalog_lookup
+        from icdev.tools.compliance.oscal_tools import catalog_lookup
 
         result = catalog_lookup("ZZ-999", catalog_path=catalog_env)
         # Returns error dict when not found, not None
         assert "error" in result
 
     def test_catalog_list(self, catalog_env):
-        from tools.compliance.oscal_tools import catalog_list
+        from icdev.tools.compliance.oscal_tools import catalog_list
 
         result = catalog_list(family="AC", catalog_path=catalog_env)
         assert isinstance(result, dict)
@@ -600,7 +600,7 @@ class TestCatalogOperations:
         assert len(result["controls"]) >= 2
 
     def test_catalog_stats(self, catalog_env):
-        from tools.compliance.oscal_tools import catalog_stats
+        from icdev.tools.compliance.oscal_tools import catalog_stats
 
         result = catalog_stats(catalog_path=catalog_env)
         assert result["source_format"] == "nist_oscal"
@@ -680,14 +680,14 @@ class TestPydanticV2Support:
         return str(BASE_DIR / "tests" / "fixtures" / "sample_oscal_ssp.json")
 
     def test_get_pydantic_version(self):
-        from tools.compliance.oscal_tools import _get_pydantic_version
+        from icdev.tools.compliance.oscal_tools import _get_pydantic_version
 
         pv = _get_pydantic_version()
         assert isinstance(pv, int)
         assert pv >= 2  # pydantic v2 is installed
 
     def test_load_oscal_model_returns_tuple(self):
-        import tools.compliance.oscal_tools as ot
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._OSCAL_MODEL_CACHE.clear()
         try:
@@ -702,7 +702,7 @@ class TestPydanticV2Support:
             ot._OSCAL_MODEL_CACHE.clear()
 
     def test_load_oscal_model_caches_result(self):
-        import tools.compliance.oscal_tools as ot
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._OSCAL_MODEL_CACHE.clear()
         try:
@@ -713,7 +713,7 @@ class TestPydanticV2Support:
             ot._OSCAL_MODEL_CACHE.clear()
 
     def test_load_oscal_model_unknown_type(self):
-        import tools.compliance.oscal_tools as ot
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._OSCAL_MODEL_CACHE.clear()
         try:
@@ -724,7 +724,7 @@ class TestPydanticV2Support:
             ot._OSCAL_MODEL_CACHE.clear()
 
     def test_builtin_v2_model_validates_ssp(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import _get_builtin_v2_model
+        from icdev.tools.compliance.oscal_tools import _get_builtin_v2_model
 
         model_cls = _get_builtin_v2_model("ssp")
         assert model_cls is not None
@@ -734,22 +734,22 @@ class TestPydanticV2Support:
         model_cls.model_validate(data)
 
     def test_builtin_v2_model_rejects_invalid(self):
-        from tools.compliance.oscal_tools import _get_builtin_v2_model
+        from icdev.tools.compliance.oscal_tools import _get_builtin_v2_model
 
         model_cls = _get_builtin_v2_model("ssp")
         with pytest.raises(Exception):  # ValidationError
             model_cls.model_validate({"system-security-plan": {"uuid": "test"}})
 
     def test_builtin_v2_model_all_types(self):
-        from tools.compliance.oscal_tools import _get_builtin_v2_model
+        from icdev.tools.compliance.oscal_tools import _get_builtin_v2_model
 
         for atype in ("ssp", "poam", "assessment_results", "component_definition"):
             model_cls = _get_builtin_v2_model(atype)
             assert model_cls is not None, f"No builtin model for {atype}"
 
     def test_validation_reports_compat_mode(self, sample_ssp_path):
-        from tools.compliance.oscal_tools import validate_oscal_deep
-        import tools.compliance.oscal_tools as ot
+        from icdev.tools.compliance.oscal_tools import validate_oscal_deep
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._OSCAL_MODEL_CACHE.clear()
         try:
@@ -763,7 +763,7 @@ class TestPydanticV2Support:
             ot._OSCAL_MODEL_CACHE.clear()
 
     def test_detect_reports_pydantic_version(self):
-        import tools.compliance.oscal_tools as ot
+        import icdev.tools.compliance.oscal_tools as ot
 
         ot._PYDANTIC_INFO = None
         try:

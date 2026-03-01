@@ -15,9 +15,9 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.cloud.secrets_provider import LocalSecretsProvider
-from tools.cloud.storage_provider import LocalStorageProvider
-from tools.cloud.kms_provider import LocalKMSProvider
+from icdev.tools.cloud.secrets_provider import LocalSecretsProvider
+from icdev.tools.cloud.storage_provider import LocalStorageProvider
+from icdev.tools.cloud.kms_provider import LocalKMSProvider
 
 
 # ============================================================
@@ -123,7 +123,7 @@ class TestLocalKMS:
         p = LocalKMSProvider()
         # Should be available if cryptography is installed
         # (it's in our requirements)
-        from tools.cloud.kms_provider import _HAS_FERNET
+        from icdev.tools.cloud.kms_provider import _HAS_FERNET
         assert p.check_availability() == _HAS_FERNET
 
     @pytest.mark.skipif(
@@ -162,14 +162,14 @@ class TestCSPProviderFactory:
         # Write minimal config
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         assert factory.global_provider == "local"
 
     def test_factory_secrets_local(self, tmp_path):
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_secrets_provider()
         assert provider.provider_name == "local"
@@ -177,7 +177,7 @@ class TestCSPProviderFactory:
     def test_factory_storage_local(self, tmp_path):
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_storage_provider()
         assert provider.provider_name == "local"
@@ -185,7 +185,7 @@ class TestCSPProviderFactory:
     def test_factory_kms_local(self, tmp_path):
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_kms_provider()
         assert provider.provider_name == "local"
@@ -193,7 +193,7 @@ class TestCSPProviderFactory:
     def test_factory_health_check(self, tmp_path):
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         health = factory.health_check()
         assert health["global_provider"] == "local"
@@ -204,21 +204,21 @@ class TestCSPProviderFactory:
     def test_factory_caching(self, tmp_path):
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         p1 = factory.get_secrets_provider()
         p2 = factory.get_secrets_provider()
         assert p1 is p2  # Same instance (cached)
 
     def test_factory_missing_config(self, tmp_path):
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(tmp_path / "nonexistent.yaml"))
         assert factory.global_provider == "local"
 
     def test_factory_aws_provider(self, tmp_path):
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: aws\n  region: us-gov-west-1\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_secrets_provider()
         assert provider.provider_name == "aws_secrets_manager"
@@ -227,7 +227,7 @@ class TestCSPProviderFactory:
         """Factory exposes get_monitoring_provider returning local fallback."""
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_monitoring_provider()
         assert provider.provider_name == "local"
@@ -236,7 +236,7 @@ class TestCSPProviderFactory:
         """Factory exposes get_iam_provider returning local fallback."""
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_iam_provider()
         assert provider.provider_name == "local"
@@ -245,7 +245,7 @@ class TestCSPProviderFactory:
         """Factory exposes get_registry_provider returning local fallback."""
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         provider = factory.get_registry_provider()
         assert provider.provider_name == "local"
@@ -254,7 +254,7 @@ class TestCSPProviderFactory:
         """Health check includes all 6 service categories."""
         config = tmp_path / "cloud_config.yaml"
         config.write_text("cloud:\n  provider: local\n")
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory(config_path=str(config))
         health = factory.health_check()
         for svc in ("secrets", "storage", "kms", "monitoring", "iam", "registry"):
@@ -268,41 +268,41 @@ class TestIBMProviderImports:
     """Verify all IBM provider classes are importable."""
 
     def test_import_ibm_secrets(self):
-        from tools.cloud.secrets_provider import IBMSecretsProvider
+        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
         assert IBMSecretsProvider is not None
 
     def test_import_ibm_storage(self):
-        from tools.cloud.storage_provider import IBMStorageProvider
+        from icdev.tools.cloud.storage_provider import IBMStorageProvider
         assert IBMStorageProvider is not None
 
     def test_import_ibm_kms(self):
-        from tools.cloud.kms_provider import IBMKMSProvider
+        from icdev.tools.cloud.kms_provider import IBMKMSProvider
         assert IBMKMSProvider is not None
 
     def test_import_ibm_monitoring(self):
-        from tools.cloud.monitoring_provider import IBMMonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
         assert IBMMonitoringProvider is not None
 
     def test_import_ibm_iam(self):
-        from tools.cloud.iam_provider import IBMIAMProvider
+        from icdev.tools.cloud.iam_provider import IBMIAMProvider
         assert IBMIAMProvider is not None
 
     def test_import_ibm_registry(self):
-        from tools.cloud.registry_provider import IBMRegistryProvider
+        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
         assert IBMRegistryProvider is not None
 
     def test_import_ibm_watsonx(self):
-        from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
+        from icdev.tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
         assert IBMWatsonxProvider is not None
 
     def test_ibm_providers_degrade_gracefully(self):
         """All IBM providers return False for availability without SDK."""
-        from tools.cloud.secrets_provider import IBMSecretsProvider
-        from tools.cloud.storage_provider import IBMStorageProvider
-        from tools.cloud.kms_provider import IBMKMSProvider
-        from tools.cloud.monitoring_provider import IBMMonitoringProvider
-        from tools.cloud.iam_provider import IBMIAMProvider
-        from tools.cloud.registry_provider import IBMRegistryProvider
+        from icdev.tools.cloud.secrets_provider import IBMSecretsProvider
+        from icdev.tools.cloud.storage_provider import IBMStorageProvider
+        from icdev.tools.cloud.kms_provider import IBMKMSProvider
+        from icdev.tools.cloud.monitoring_provider import IBMMonitoringProvider
+        from icdev.tools.cloud.iam_provider import IBMIAMProvider
+        from icdev.tools.cloud.registry_provider import IBMRegistryProvider
 
         for cls in (IBMSecretsProvider, IBMStorageProvider, IBMKMSProvider,
                     IBMMonitoringProvider, IBMIAMProvider, IBMRegistryProvider):

@@ -19,7 +19,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.compliance.atlas_assessor import ATLASAssessor
+from icdev.tools.compliance.atlas_assessor import ATLASAssessor
 
 
 # ============================================================
@@ -189,7 +189,7 @@ class TestM0019APIGatewayAuth:
         project = {"id": "proj-test"}
 
         # Patch BASE_DIR so it can find the middleware file
-        with patch("tools.compliance.atlas_assessor.BASE_DIR", tmp_path):
+        with patch("icdev.tools.compliance.atlas_assessor.BASE_DIR", tmp_path):
             results = assessor.get_automated_checks(project, project_dir=None)
 
         assert results.get("M0019") == "satisfied"
@@ -210,7 +210,7 @@ class TestM0026CommandAllowlist:
         assessor = ATLASAssessor(db_path=mock_db_path)
         project = {"id": "proj-test"}
 
-        with patch("tools.compliance.atlas_assessor.BASE_DIR", tmp_path):
+        with patch("icdev.tools.compliance.atlas_assessor.BASE_DIR", tmp_path):
             results = assessor.get_automated_checks(project, project_dir=None)
 
         assert results.get("M0026") == "satisfied"

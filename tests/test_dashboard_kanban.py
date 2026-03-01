@@ -153,11 +153,11 @@ def dashboard_app(tmp_path):
     conn2.commit()
     conn2.close()
 
-    with patch("tools.dashboard.config.DB_PATH", db_path), \
-         patch("tools.dashboard.app.DB_PATH", db_path), \
-         patch("tools.dashboard.api.projects.DB_PATH", db_path), \
-         patch("tools.dashboard.auth.DB_PATH", db_path):
-        from tools.dashboard.app import create_app
+    with patch("icdev.tools.dashboard.config.DB_PATH", db_path), \
+         patch("icdev.tools.dashboard.app.DB_PATH", db_path), \
+         patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path), \
+         patch("icdev.tools.dashboard.auth.DB_PATH", db_path):
+        from icdev.tools.dashboard.app import create_app
         app = create_app()
         app.config["TESTING"] = True
         yield app
@@ -297,11 +297,11 @@ class TestIndexEmptyState:
         conn.commit()
         conn.close()
 
-        with patch("tools.dashboard.config.DB_PATH", db_path), \
-             patch("tools.dashboard.app.DB_PATH", db_path), \
-             patch("tools.dashboard.api.projects.DB_PATH", db_path), \
-             patch("tools.dashboard.auth.DB_PATH", db_path):
-            from tools.dashboard.app import create_app
+        with patch("icdev.tools.dashboard.config.DB_PATH", db_path), \
+             patch("icdev.tools.dashboard.app.DB_PATH", db_path), \
+             patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path), \
+             patch("icdev.tools.dashboard.auth.DB_PATH", db_path):
+            from icdev.tools.dashboard.app import create_app
             app = create_app()
             app.config["TESTING"] = True
             yield app

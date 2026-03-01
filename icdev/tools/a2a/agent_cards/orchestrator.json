@@ -1,0 +1,36 @@
+{
+  "name": "ICDEV Orchestrator",
+  "description": "Top-level router. Decomposes tasks, dispatches to specialist agents, aggregates results, and manages end-to-end workflows.",
+  "url": "https://localhost:8443",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "orchestrate-workflow",
+      "name": "Orchestrate Workflow",
+      "description": "Decompose a high-level goal into sub-tasks, dispatch to specialist agents, and aggregate results into a unified output.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "route-task",
+      "name": "Route Task",
+      "description": "Determine the best agent to handle a given task based on skill requirements and agent availability.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "description": "Combine results from multiple agent tasks into a single coherent response.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

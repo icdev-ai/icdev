@@ -1,0 +1,78 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Scoring rubric for requirements readiness assessment",
+  "dimensions": {
+    "completeness": {
+      "weight": 0.25,
+      "description": "Are all necessary requirements captured?",
+      "scoring": {
+        "1.0": "All functional, non-functional, security, interface, and data requirements captured. No critical gaps.",
+        "0.8": "Most requirements captured. 1-2 minor gaps in non-critical areas.",
+        "0.6": "Core functional requirements present. Missing some security or interface specs.",
+        "0.4": "Only high-level capabilities described. Significant gaps in detail.",
+        "0.2": "Minimal requirements. Missing entire categories (security, data, interfaces).",
+        "0.0": "No structured requirements captured."
+      },
+      "auto_check": "gap_count == 0 and all required categories have >= 1 requirement"
+    },
+    "clarity": {
+      "weight": 0.25,
+      "description": "Are requirements unambiguous and specific?",
+      "scoring": {
+        "1.0": "Zero ambiguous terms. All requirements use measurable, testable language.",
+        "0.8": "1-3 minor ambiguities. Core requirements are clear.",
+        "0.6": "4-6 ambiguities. Some requirements need clarification.",
+        "0.4": "7-10 ambiguities. Multiple requirements use vague terms.",
+        "0.2": "10+ ambiguities. Most requirements are vague or subjective.",
+        "0.0": "Requirements are entirely qualitative with no measurable criteria."
+      },
+      "auto_check": "ambiguity_count / total_requirements < 0.1"
+    },
+    "feasibility": {
+      "weight": 0.20,
+      "description": "Can these requirements be built within the stated constraints?",
+      "scoring": {
+        "1.0": "All requirements feasible within budget, timeline, and technology constraints.",
+        "0.8": "Most feasible. 1-2 may require trade-offs but are achievable.",
+        "0.6": "Several requirements push constraints. Scope negotiation needed.",
+        "0.4": "Multiple conflicting constraints. Significant scope reduction required.",
+        "0.2": "Major feasibility concerns. Technology or timeline constraints severely limit scope.",
+        "0.0": "Requirements are not feasible within any reasonable interpretation of constraints."
+      },
+      "auto_check": "no requirements flagged as infeasible by architect assessment"
+    },
+    "compliance": {
+      "weight": 0.15,
+      "description": "Do requirements address NIST 800-53 controls for the impact level?",
+      "scoring": {
+        "1.0": "All applicable control families addressed. ATO boundary impact assessed.",
+        "0.8": "Most control families addressed. Minor gaps in low-impact areas.",
+        "0.6": "Core security controls addressed. Missing several families.",
+        "0.4": "Only basic security mentioned. No systematic control coverage.",
+        "0.2": "Minimal security awareness. Critical control families missing.",
+        "0.0": "No compliance requirements captured."
+      },
+      "auto_check": "crosswalk_coverage >= 0.8 for impact_level baseline"
+    },
+    "testability": {
+      "weight": 0.15,
+      "description": "Do requirements have measurable acceptance criteria?",
+      "scoring": {
+        "1.0": "All requirements have BDD-style acceptance criteria (Given/When/Then).",
+        "0.8": "80%+ have testable criteria. Remaining have clear intent.",
+        "0.6": "60-80% have some form of acceptance criteria.",
+        "0.4": "40-60% have criteria. Many are vague or untestable.",
+        "0.2": "Under 40% have any form of acceptance criteria.",
+        "0.0": "No acceptance criteria defined for any requirement."
+      },
+      "auto_check": "requirements_with_bdd_criteria / total_requirements >= 0.8"
+    }
+  },
+  "thresholds": {
+    "proceed_to_decomposition": 0.7,
+    "proceed_to_coa": 0.8,
+    "proceed_to_implementation": 0.9,
+    "warning": 0.5
+  }
+}

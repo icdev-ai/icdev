@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}FedRAMP 20x KSI Dashboard - ICDEV{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>FedRAMP 20x — Key Security Indicators</h1>
+    <p class="text-muted">Machine-readable KSI evidence for FedRAMP 20x continuous authorization (Phase 2).</p>
+
+    <!-- Summary Stats -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-total" style="font-size:1.5rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Total KSIs</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-coverage" style="font-size:1.5rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Coverage %</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-advanced" style="font-size:1.5rem;font-weight:bold;color:#2e7d32;">--</div>
+            <div class="stat-label" style="color:#666;">Advanced</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-intermediate" style="font-size:1.5rem;font-weight:bold;color:#1976d2;">--</div>
+            <div class="stat-label" style="color:#666;">Intermediate</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-basic" style="font-size:1.5rem;font-weight:bold;color:#f57c00;">--</div>
+            <div class="stat-label" style="color:#666;">Basic</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-none" style="font-size:1.5rem;font-weight:bold;color:#c62828;">--</div>
+            <div class="stat-label" style="color:#666;">No Evidence</div>
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <label for="project-select" style="font-weight:bold;">Project ID:</label>
+        <input type="text" id="project-select" placeholder="proj-..." style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;width:200px;">
+        <button onclick="loadKSIs()" id="btn-generate" style="padding:0.5rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Generate KSIs</button>
+        <button onclick="loadPackage()" id="btn-package" style="padding:0.5rem 1.2rem;background:#2e7d32;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Package Status</button>
+    </div>
+
+    <!-- Family Summary -->
+    <h2 style="margin-top:2rem;">KSI Coverage by Family</h2>
+    <div class="table-container">
+        <table id="family-table" aria-label="KSI Coverage by NIST 800-53 Family">
+            <thead>
+                <tr>
+                    <th>Family</th>
+                    <th>Total</th>
+                    <th>Covered</th>
+                    <th>Advanced</th>
+                    <th>Intermediate</th>
+                    <th>Basic</th>
+                    <th>None</th>
+                    <th>Coverage</th>
+                </tr>
+            </thead>
+            <tbody id="family-body">
+                <tr><td colspan="8" style="text-align:center;color:#999;">Enter a project ID and click Generate KSIs</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- KSI Detail Table -->
+    <h2 style="margin-top:2rem;">All KSIs</h2>
+    <div class="table-container">
+        <table id="ksi-table" aria-label="FedRAMP 20x Key Security Indicators">
+            <thead>
+                <tr>
+                    <th>KSI ID</th>
+                    <th>Title</th>
+                    <th>Family</th>
+                    <th>NIST Controls</th>
+                    <th>Maturity</th>
+                    <th>Evidence</th>
+                </tr>
+            </thead>
+            <tbody id="ksi-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">No data loaded</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Package Status -->
+    <div id="package-section" style="display:none;margin-top:2rem;">
+        <h2>Authorization Package Status</h2>
+        <div class="table-container">
+            <table id="package-table" aria-label="Authorization Package Artifacts">
+                <thead>
+                    <tr>
+                        <th>Artifact</th>
+                        <th>Status</th>
+                        <th>Available</th>
+                    </tr>
+                </thead>
+                <tbody id="package-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function getProjectId() {
+    return document.getElementById('project-select').value.trim() || 'proj-default';
+}
+
+const maturityColors = {
+    'advanced': '#2e7d32',
+    'intermediate': '#1976d2',
+    'basic': '#f57c00',
+    'none': '#c62828'
+};
+
+async function loadKSIs() {
+    const pid = getProjectId();
+    const btn = document.getElementById('btn-generate');
+    btn.textContent = 'Generating...';
+    btn.disabled = true;
+    try {
+        const resp = await fetch('/api/fedramp-20x/ksis?project_id=' + encodeURIComponent(pid));
+        const data = await resp.json();
+        if (data.error) { alert(data.error); return; }
+
+        // Update stats
+        const ms = data.maturity_summary || {};
+        document.getElementById('stat-total').textContent = data.total_ksis || 0;
+        document.getElementById('stat-coverage').textContent = (data.coverage_pct || 0) + '%';
+        document.getElementById('stat-advanced').textContent = ms.advanced || 0;
+        document.getElementById('stat-intermediate').textContent = ms.intermediate || 0;
+        document.getElementById('stat-basic').textContent = ms.basic || 0;
+        document.getElementById('stat-none').textContent = ms.none || 0;
+
+        // Build family summary
+        const families = {};
+        (data.ksis || []).forEach(k => {
+            if (!families[k.family]) families[k.family] = {total:0, covered:0, advanced:0, intermediate:0, basic:0, none:0};
+            families[k.family].total++;
+            families[k.family][k.maturity_level]++;
+            if (k.maturity_level !== 'none') families[k.family].covered++;
+        });
+        let famHtml = '';
+        Object.entries(families).forEach(([fam, d]) => {
+            const pct = d.total > 0 ? Math.round(d.covered / d.total * 100) : 0;
+            famHtml += `<tr><td><strong>${fam}</strong></td><td>${d.total}</td><td>${d.covered}</td>
+                <td style="color:#2e7d32">${d.advanced}</td><td style="color:#1976d2">${d.intermediate}</td>
+                <td style="color:#f57c00">${d.basic}</td><td style="color:#c62828">${d.none}</td>
+                <td>${pct}%</td></tr>`;
+        });
+        document.getElementById('family-body').innerHTML = famHtml || '<tr><td colspan="8">No families</td></tr>';
+
+        // Build KSI table
+        let html = '';
+        (data.ksis || []).forEach(k => {
+            const color = maturityColors[k.maturity_level] || '#999';
+            html += `<tr>
+                <td><code>${k.ksi_id}</code></td>
+                <td>${k.title}</td>
+                <td>${k.family}</td>
+                <td><code>${(k.nist_controls||[]).join(', ')}</code></td>
+                <td style="color:${color};font-weight:bold;">${k.maturity_level}</td>
+                <td>${k.evidence_available}/${k.evidence_total}</td>
+            </tr>`;
+        });
+        document.getElementById('ksi-body').innerHTML = html || '<tr><td colspan="6">No KSIs</td></tr>';
+    } catch(e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.textContent = 'Generate KSIs';
+        btn.disabled = false;
+    }
+}
+
+async function loadPackage() {
+    const pid = getProjectId();
+    const btn = document.getElementById('btn-package');
+    btn.textContent = 'Loading...';
+    btn.disabled = true;
+    try {
+        const resp = await fetch('/api/fedramp-20x/package?project_id=' + encodeURIComponent(pid));
+        const data = await resp.json();
+        if (data.error) { alert(data.error); return; }
+
+        document.getElementById('package-section').style.display = 'block';
+        let html = '';
+        (data.artifacts || []).forEach(a => {
+            const icon = a.available ? '&#10003;' : '&#10007;';
+            const color = a.available ? '#2e7d32' : '#c62828';
+            html += `<tr>
+                <td>${a.artifact}</td>
+                <td>${a.status}</td>
+                <td style="color:${color};font-weight:bold;">${icon}</td>
+            </tr>`;
+        });
+        document.getElementById('package-body').innerHTML = html;
+    } catch(e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.textContent = 'Package Status';
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

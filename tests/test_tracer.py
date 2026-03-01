@@ -28,7 +28,7 @@ import pytest
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.observability.tracer import (
+from icdev.tools.observability.tracer import (
     NullSpan,
     NullTracer,
     ProxyTracer,
@@ -36,7 +36,7 @@ from tools.observability.tracer import (
     Tracer,
     set_content_tag,
 )
-from tools.observability.sqlite_tracer import SQLiteSpan, SQLiteTracer
+from icdev.tools.observability.sqlite_tracer import SQLiteSpan, SQLiteTracer
 
 
 # ============================================================
@@ -379,8 +379,8 @@ class TestContentTagGating:
 
 class TestTracedDecorator:
     def test_traced_wraps_function(self, sqlite_tracer, tmp_db):
-        from tools.observability import configure_tracer
-        from tools.observability.instrumentation import traced
+        from icdev.tools.observability import configure_tracer
+        from icdev.tools.observability.instrumentation import traced
 
         configure_tracer(sqlite_tracer)
 
@@ -398,8 +398,8 @@ class TestTracedDecorator:
         assert len(rows) == 1
 
     def test_traced_captures_error(self, sqlite_tracer, tmp_db):
-        from tools.observability import configure_tracer
-        from tools.observability.instrumentation import traced
+        from icdev.tools.observability import configure_tracer
+        from icdev.tools.observability.instrumentation import traced
 
         configure_tracer(sqlite_tracer)
 
@@ -420,8 +420,8 @@ class TestTracedDecorator:
         assert row["status_code"] == "ERROR"
 
     def test_traced_auto_names_from_function(self, sqlite_tracer, tmp_db):
-        from tools.observability import configure_tracer
-        from tools.observability.instrumentation import traced
+        from icdev.tools.observability import configure_tracer
+        from icdev.tools.observability.instrumentation import traced
 
         configure_tracer(sqlite_tracer)
 
@@ -439,8 +439,8 @@ class TestTracedDecorator:
         assert any("auto_named" in row[0] for row in rows)
 
     def test_traced_with_static_attributes(self, sqlite_tracer, tmp_db):
-        from tools.observability import configure_tracer
-        from tools.observability.instrumentation import traced
+        from icdev.tools.observability import configure_tracer
+        from icdev.tools.observability.instrumentation import traced
 
         configure_tracer(sqlite_tracer)
 
@@ -465,17 +465,17 @@ class TestTracedDecorator:
 
 class TestModuleLevelAPI:
     def test_get_tracer_returns_proxy(self):
-        from tools.observability import get_tracer
+        from icdev.tools.observability import get_tracer
         tracer = get_tracer()
         assert isinstance(tracer, ProxyTracer)
 
     def test_enable_tracing_null(self):
-        from tools.observability import enable_tracing
+        from icdev.tools.observability import enable_tracing
         tracer = enable_tracing("null")
         assert isinstance(tracer, NullTracer)
 
     def test_enable_tracing_sqlite(self, tmp_db):
-        from tools.observability import enable_tracing, get_tracer
+        from icdev.tools.observability import enable_tracing, get_tracer
         with patch.object(
             SQLiteTracer, '__init__',
             lambda self, **kw: (

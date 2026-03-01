@@ -23,17 +23,17 @@ class TestMonitoringProvider(unittest.TestCase):
 
     def test_import_base(self):
         """MonitoringProvider ABC should be importable."""
-        from tools.cloud.monitoring_provider import MonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import MonitoringProvider
         self.assertTrue(callable(MonitoringProvider))
 
     def test_import_local(self):
         """LocalMonitoringProvider should be importable."""
-        from tools.cloud.monitoring_provider import LocalMonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import LocalMonitoringProvider
         self.assertTrue(callable(LocalMonitoringProvider))
 
     def test_local_send_metric(self):
         """Local provider should accept metric data."""
-        from tools.cloud.monitoring_provider import LocalMonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import LocalMonitoringProvider
         provider = LocalMonitoringProvider()
         result = provider.send_metric(
             namespace="icdev-test",
@@ -46,7 +46,7 @@ class TestMonitoringProvider(unittest.TestCase):
 
     def test_local_send_log(self):
         """Local provider should accept log data."""
-        from tools.cloud.monitoring_provider import LocalMonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import LocalMonitoringProvider
         provider = LocalMonitoringProvider()
         result = provider.send_log(
             log_group="icdev-test",
@@ -58,13 +58,13 @@ class TestMonitoringProvider(unittest.TestCase):
 
     def test_local_check_availability(self):
         """Local provider should always be available."""
-        from tools.cloud.monitoring_provider import LocalMonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import LocalMonitoringProvider
         provider = LocalMonitoringProvider()
         self.assertTrue(provider.check_availability())
 
     def test_abc_methods(self):
         """ABC should define send_metric, send_log, query_metrics, create_alarm, check_availability."""
-        from tools.cloud.monitoring_provider import MonitoringProvider
+        from icdev.tools.cloud.monitoring_provider import MonitoringProvider
         import inspect
         methods = [m for m in dir(MonitoringProvider) if not m.startswith("_")]
         expected = {"send_metric", "send_log", "query_metrics", "create_alarm", "check_availability"}
@@ -76,17 +76,17 @@ class TestIAMProvider(unittest.TestCase):
 
     def test_import_base(self):
         """IAMProvider ABC should be importable."""
-        from tools.cloud.iam_provider import IAMProvider
+        from icdev.tools.cloud.iam_provider import IAMProvider
         self.assertTrue(callable(IAMProvider))
 
     def test_import_local(self):
         """LocalIAMProvider should be importable."""
-        from tools.cloud.iam_provider import LocalIAMProvider
+        from icdev.tools.cloud.iam_provider import LocalIAMProvider
         self.assertTrue(callable(LocalIAMProvider))
 
     def test_local_create_service_account(self):
         """Local provider should create service accounts."""
-        from tools.cloud.iam_provider import LocalIAMProvider
+        from icdev.tools.cloud.iam_provider import LocalIAMProvider
         with tempfile.TemporaryDirectory() as td:
             provider = LocalIAMProvider(data_dir=td)
             result = provider.create_service_account(
@@ -98,7 +98,7 @@ class TestIAMProvider(unittest.TestCase):
 
     def test_local_check_permission(self):
         """Local provider should check permissions."""
-        from tools.cloud.iam_provider import LocalIAMProvider
+        from icdev.tools.cloud.iam_provider import LocalIAMProvider
         provider = LocalIAMProvider()
         result = provider.check_permission(
             account_id="test-user",
@@ -109,7 +109,7 @@ class TestIAMProvider(unittest.TestCase):
 
     def test_local_check_availability(self):
         """Local provider should always be available."""
-        from tools.cloud.iam_provider import LocalIAMProvider
+        from icdev.tools.cloud.iam_provider import LocalIAMProvider
         provider = LocalIAMProvider()
         self.assertTrue(provider.check_availability())
 
@@ -119,24 +119,24 @@ class TestRegistryProvider(unittest.TestCase):
 
     def test_import_base(self):
         """RegistryProvider ABC should be importable."""
-        from tools.cloud.registry_provider import RegistryProvider
+        from icdev.tools.cloud.registry_provider import RegistryProvider
         self.assertTrue(callable(RegistryProvider))
 
     def test_import_local(self):
         """LocalDockerProvider should be importable."""
-        from tools.cloud.registry_provider import LocalDockerProvider
+        from icdev.tools.cloud.registry_provider import LocalDockerProvider
         self.assertTrue(callable(LocalDockerProvider))
 
     def test_local_list_images(self):
         """Local provider should list images."""
-        from tools.cloud.registry_provider import LocalDockerProvider
+        from icdev.tools.cloud.registry_provider import LocalDockerProvider
         provider = LocalDockerProvider()
         result = provider.list_images(repository="test-repo")
         self.assertIsInstance(result, list)
 
     def test_local_check_availability(self):
         """Local provider should always be available."""
-        from tools.cloud.registry_provider import LocalDockerProvider
+        from icdev.tools.cloud.registry_provider import LocalDockerProvider
         provider = LocalDockerProvider()
         self.assertTrue(provider.check_availability())
 
@@ -172,12 +172,12 @@ class TestCSPHealthChecker(unittest.TestCase):
 
     def test_import(self):
         """CSPHealthChecker should be importable."""
-        from tools.cloud.csp_health_checker import CSPHealthChecker
+        from icdev.tools.cloud.csp_health_checker import CSPHealthChecker
         self.assertTrue(callable(CSPHealthChecker))
 
     def test_check_all_services(self):
         """Health check should return status for all services."""
-        from tools.cloud.csp_health_checker import CSPHealthChecker
+        from icdev.tools.cloud.csp_health_checker import CSPHealthChecker
         checker = CSPHealthChecker(db_path=self.db_path)
         result = checker.check_all()
         self.assertIsInstance(result, dict)
@@ -185,7 +185,7 @@ class TestCSPHealthChecker(unittest.TestCase):
 
     def test_health_stored_in_db(self):
         """Health check results should be stored in cloud_provider_status."""
-        from tools.cloud.csp_health_checker import CSPHealthChecker
+        from icdev.tools.cloud.csp_health_checker import CSPHealthChecker
         checker = CSPHealthChecker(db_path=self.db_path)
         checker.check_all()
         conn = sqlite3.connect(self.db_path)
@@ -200,13 +200,13 @@ class TestProviderFactory(unittest.TestCase):
 
     def test_factory_import(self):
         """CSPProviderFactory should be importable."""
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         self.assertTrue(callable(CSPProviderFactory))
 
     @patch.dict(os.environ, {"ICDEV_CLOUD_PROVIDER": "local"})
     def test_factory_local_monitoring(self):
         """Factory should return local monitoring provider."""
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory()
         try:
             provider = factory.get_monitoring_provider()
@@ -218,7 +218,7 @@ class TestProviderFactory(unittest.TestCase):
     @patch.dict(os.environ, {"ICDEV_CLOUD_PROVIDER": "local"})
     def test_factory_local_iam(self):
         """Factory should return local IAM provider."""
-        from tools.cloud.provider_factory import CSPProviderFactory
+        from icdev.tools.cloud.provider_factory import CSPProviderFactory
         factory = CSPProviderFactory()
         try:
             provider = factory.get_iam_provider()

@@ -1,0 +1,57 @@
+{
+  "name": "ICDEV Compliance",
+  "description": "ATO artifact generation: SSP, POAM, STIG checklists, SBOM, CUI markings, and NIST 800-53 control mapping. Ensures continuous compliance throughout the development lifecycle.",
+  "url": "https://localhost:8446",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "generate-ssp",
+      "name": "Generate SSP",
+      "description": "Generate a System Security Plan (SSP) with all 17 NIST sections, tailored to the project's system boundary and controls.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/markdown"]
+    },
+    {
+      "id": "generate-poam",
+      "name": "Generate POAM",
+      "description": "Generate a Plan of Action and Milestones (POAM) from security findings, with remediation timelines and responsible parties.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "text/markdown"]
+    },
+    {
+      "id": "check-stig",
+      "name": "Check STIG",
+      "description": "Run STIG checklist evaluation against target systems and generate compliance findings.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "generate-sbom",
+      "name": "Generate SBOM",
+      "description": "Generate a Software Bill of Materials (SBOM) in CycloneDX format listing all dependencies.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json", "application/xml"]
+    },
+    {
+      "id": "apply-cui-markings",
+      "name": "Apply CUI Markings",
+      "description": "Apply Controlled Unclassified Information (CUI) classification markings to files and documents.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "map-controls",
+      "name": "Map NIST Controls",
+      "description": "Map NIST 800-53 controls to project implementations and generate a control matrix.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

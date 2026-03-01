@@ -1,0 +1,43 @@
+{
+  "name": "ICDEV Monitor",
+  "description": "Production monitoring agent. Performs log analysis, metric collection, alert correlation, health checking, and makes rollback decisions based on real-time observability data.",
+  "url": "https://localhost:8450",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "analyze-logs",
+      "name": "Analyze Logs",
+      "description": "Analyze application and infrastructure logs from ELK/Splunk to detect anomalies and error patterns.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "collect-metrics",
+      "name": "Collect Metrics",
+      "description": "Collect and aggregate Prometheus metrics for application and infrastructure health assessment.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "correlate-alerts",
+      "name": "Correlate Alerts",
+      "description": "Correlate alerts from multiple monitoring sources to identify root causes and reduce alert fatigue.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "check-health",
+      "name": "Check Health",
+      "description": "Perform comprehensive health checks on deployed applications including HTTP endpoints, database connectivity, and resource usage.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

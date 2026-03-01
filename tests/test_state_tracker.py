@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from tools.dashboard.state_tracker import StateTracker, ClientState
+from icdev.tools.dashboard.state_tracker import StateTracker, ClientState
 
 
 @pytest.fixture

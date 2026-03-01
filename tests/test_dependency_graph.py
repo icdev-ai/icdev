@@ -11,7 +11,7 @@ import sqlite3
 
 import pytest
 
-from tools.supply_chain.dependency_graph import (
+from icdev.tools.supply_chain.dependency_graph import (
     CRITICALITY_LEVELS,
     DEPENDENCY_TYPES,
     RISK_TIERS,

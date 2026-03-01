@@ -1,0 +1,50 @@
+{
+  "name": "ICDEV Builder",
+  "description": "Code generation with TDD methodology. Writes tests first (Cucumber/Gherkin), then generates implementation code, scaffolds projects, and runs linting/formatting.",
+  "url": "https://localhost:8445",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "write-tests",
+      "name": "Write BDD Tests",
+      "description": "Generate BDD tests in Cucumber/Gherkin format with step definitions for behave. Tests are written before implementation (TDD).",
+      "inputModes": ["application/json", "text/plain"],
+      "outputModes": ["application/json", "text/plain"]
+    },
+    {
+      "id": "generate-code",
+      "name": "Generate Code",
+      "description": "Generate implementation code from specifications with proper structure, docstrings, type hints, and CUI headers.",
+      "inputModes": ["application/json", "text/plain"],
+      "outputModes": ["application/json", "text/plain"]
+    },
+    {
+      "id": "scaffold-project",
+      "name": "Scaffold Project",
+      "description": "Create project scaffolding from templates including directory structure, config files, Dockerfile, and compliance artifacts.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "lint-code",
+      "name": "Lint Code",
+      "description": "Run language-specific linters (flake8 for Python, eslint for JavaScript) and return structured findings.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "format-code",
+      "name": "Format Code",
+      "description": "Apply code formatting (black+isort for Python, prettier for JavaScript) to ensure consistent style.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

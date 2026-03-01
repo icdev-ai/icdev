@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 
 import pytest
 
-from tools.memory.time_decay import (
+from icdev.tools.memory.time_decay import (
     load_decay_config,
     compute_decay_factor,
     compute_time_aware_score,
@@ -327,14 +327,14 @@ class TestRankWithDecay:
 class TestHybridSearchIntegration:
     def test_time_decay_flag_accepted(self):
         """Verify hybrid_search module accepts --time-decay flag."""
-        from tools.memory.hybrid_search import hybrid_rank
+        from icdev.tools.memory.hybrid_search import hybrid_rank
         import inspect
         sig = inspect.signature(hybrid_rank)
         assert "time_decay_enabled" in sig.parameters
 
     def test_backward_compatible(self):
         """Verify hybrid_rank works without time-decay flag."""
-        from tools.memory.hybrid_search import hybrid_rank
+        from icdev.tools.memory.hybrid_search import hybrid_rank
         entries = [(1, "test content", "event", 5, None, "2026-01-01 00:00:00")]
         bm25 = [0.8]
         results = hybrid_rank(entries, bm25, None, 0.7, 0.3)
@@ -343,7 +343,7 @@ class TestHybridSearchIntegration:
 
     def test_time_decay_changes_score(self):
         """Verify time-decay changes the combined score."""
-        from tools.memory.hybrid_search import hybrid_rank
+        from icdev.tools.memory.hybrid_search import hybrid_rank
         entries = [(1, "test content", "event", 5, None, "2020-01-01 00:00:00")]
         bm25 = [0.8]
         # Without decay

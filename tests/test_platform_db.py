@@ -8,8 +8,8 @@ from unittest import mock
 
 import pytest
 
-import tools.saas.platform_db as platform_db_mod
-from tools.saas.platform_db import (
+import icdev.tools.saas.platform_db as platform_db_mod
+from icdev.tools.saas.platform_db import (
     EXPECTED_TABLES,
     init_platform_db,
     verify_platform_db,

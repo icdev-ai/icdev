@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from tools.requirements.clarification_engine import (
+from icdev.tools.requirements.clarification_engine import (
     PRIORITY_MATRIX,
     _score_impact,
     _score_uncertainty,

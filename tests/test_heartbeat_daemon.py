@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tools.monitor.heartbeat_daemon import (
+from icdev.tools.monitor.heartbeat_daemon import (
     CHECK_REGISTRY,
     _ensure_table,
     _load_config,

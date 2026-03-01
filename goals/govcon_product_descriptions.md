@@ -6,7 +6,7 @@
 
 The GovCon proposal writing engine (Phase 59) now describes **two complete products** in proposal responses — not just individual tools or capabilities:
 
-1. **ICDEV** — The Intelligent Coding Development Platform (the system that builds systems)
+1. **ICDEV** — The Intelligent Certified Development Platform (the system that builds systems)
 2. **Contract Performance Management Portal (CPMP)** — The post-award delivery tracking system
 
 This document describes how the proposal engine writes about each product, what content it includes, and how the system detects when a whole-product response is appropriate.
@@ -21,7 +21,7 @@ When an RFP requirement mentions integrated platforms, complete solutions, SDLC 
 
 | Aspect | What the Proposal Says |
 |--------|----------------------|
-| **Identity** | "ICDEV (Intelligent Coding Development) platform — a complete autonomous software development system" |
+| **Identity** | "ICDEV (Intelligent Certified Development) platform — a complete autonomous software development system" |
 | **Architecture** | 15 specialized AI agents, 6-layer GOTCHA framework, ATLAS workflow methodology |
 | **Scale** | 42 compliance frameworks, 500+ deterministic tools, 6 first-class programming languages |
 | **Compliance** | Dual-hub crosswalk (NIST 800-53 + ISO 27001) — implement once, cascade everywhere |

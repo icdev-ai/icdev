@@ -1,0 +1,38 @@
+{
+  "coa_types": {
+    "speed": {
+      "name": "Speed COA",
+      "priority_filter": ["P1"],
+      "timeline_pis_range": [1, 2],
+      "risk_level": "high",
+      "compliance_coverage_target": 0.70,
+      "contingency_factor": 0.10,
+      "team_size_factor": 0.7,
+      "advantages": ["Fastest delivery", "Lowest initial cost", "Quick customer feedback", "Minimal initial complexity"],
+      "disadvantages": ["Technical debt accumulation", "Limited feature scope", "Higher long-term risk", "May require significant rework"]
+    },
+    "balanced": {
+      "name": "Balanced COA",
+      "priority_filter": ["P1", "P2"],
+      "timeline_pis_range": [2, 3],
+      "risk_level": "moderate",
+      "compliance_coverage_target": 0.85,
+      "contingency_factor": 0.20,
+      "team_size_factor": 1.0,
+      "recommended": true,
+      "advantages": ["Good scope-risk balance", "Reasonable timeline", "Adequate compliance coverage", "Sustainable pace"],
+      "disadvantages": ["Some features deferred", "Moderate complexity", "Requires prioritization discipline"]
+    },
+    "comprehensive": {
+      "name": "Comprehensive COA",
+      "priority_filter": ["P1", "P2", "P3"],
+      "timeline_pis_range": [3, 5],
+      "risk_level": "low",
+      "compliance_coverage_target": 0.95,
+      "contingency_factor": 0.35,
+      "team_size_factor": 1.3,
+      "advantages": ["Complete scope coverage", "Lowest operational risk", "Full compliance", "Future-proof architecture"],
+      "disadvantages": ["Longest timeline", "Highest cost", "Feature creep risk", "Delayed initial value"]
+    }
+  }
+}

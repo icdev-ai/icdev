@@ -34,12 +34,12 @@ class TestAbsorptionEngine(unittest.TestCase):
             pass
 
     def _get_engine(self):
-        from tools.registry.absorption_engine import AbsorptionEngine
+        from icdev.tools.registry.absorption_engine import AbsorptionEngine
         return AbsorptionEngine(db_path=self.db_path)
 
     def test_import(self):
         """AbsorptionEngine class should be importable."""
-        from tools.registry.absorption_engine import AbsorptionEngine
+        from icdev.tools.registry.absorption_engine import AbsorptionEngine
         self.assertTrue(callable(AbsorptionEngine))
 
     def test_init_creates_tables(self):
@@ -100,12 +100,12 @@ class TestLearningCollector(unittest.TestCase):
             pass
 
     def _get_collector(self):
-        from tools.registry.learning_collector import LearningCollector
+        from icdev.tools.registry.learning_collector import LearningCollector
         return LearningCollector(db_path=self.db_path)
 
     def test_import(self):
         """LearningCollector class should be importable."""
-        from tools.registry.learning_collector import LearningCollector
+        from icdev.tools.registry.learning_collector import LearningCollector
         self.assertTrue(callable(LearningCollector))
 
     def test_init_creates_tables(self):
@@ -180,12 +180,12 @@ class TestCrossPollinator(unittest.TestCase):
             pass
 
     def _get_pollinator(self):
-        from tools.registry.cross_pollinator import CrossPollinator
+        from icdev.tools.registry.cross_pollinator import CrossPollinator
         return CrossPollinator(db_path=self.db_path)
 
     def test_import(self):
         """CrossPollinator class should be importable."""
-        from tools.registry.cross_pollinator import CrossPollinator
+        from icdev.tools.registry.cross_pollinator import CrossPollinator
         self.assertTrue(callable(CrossPollinator))
 
     def test_find_candidates_empty(self):

@@ -226,14 +226,14 @@ class TestWebScanner:
 
     def test_import(self):
         """web_scanner module imports successfully."""
-        from tools.innovation import web_scanner
+        from icdev.tools.innovation import web_scanner
         assert hasattr(web_scanner, "run_scan")
         assert hasattr(web_scanner, "list_sources")
         assert hasattr(web_scanner, "store_signals")
 
     def test_list_sources(self):
         """list_sources returns configured sources."""
-        from tools.innovation.web_scanner import list_sources
+        from icdev.tools.innovation.web_scanner import list_sources
         result = list_sources()
         assert "sources" in result
         assert "total" in result
@@ -241,7 +241,7 @@ class TestWebScanner:
 
     def test_store_signals_dedup(self, innovation_db):
         """store_signals deduplicates by content_hash."""
-        from tools.innovation.web_scanner import store_signals
+        from icdev.tools.innovation.web_scanner import store_signals
 
         signals = [
             {
@@ -276,7 +276,7 @@ class TestWebScanner:
 
     def test_store_signals_skips_errors(self, innovation_db):
         """store_signals skips error signals."""
-        from tools.innovation.web_scanner import store_signals
+        from icdev.tools.innovation.web_scanner import store_signals
 
         signals = [
             {
@@ -296,14 +296,14 @@ class TestWebScanner:
 
     def test_signal_id_format(self):
         """Signal IDs follow sig-xxx format."""
-        from tools.innovation.web_scanner import _signal_id
+        from icdev.tools.innovation.web_scanner import _signal_id
         sig_id = _signal_id()
         assert sig_id.startswith("sig-")
         assert len(sig_id) == 16  # "sig-" + 12 hex chars
 
     def test_content_hash_deterministic(self):
         """content_hash is deterministic for same input."""
-        from tools.innovation.web_scanner import _content_hash
+        from icdev.tools.innovation.web_scanner import _content_hash
         h1 = _content_hash("test content")
         h2 = _content_hash("test content")
         assert h1 == h2
@@ -311,7 +311,7 @@ class TestWebScanner:
 
     def test_get_scan_history(self, innovation_db):
         """get_scan_history returns signals from recent days."""
-        from tools.innovation.web_scanner import get_scan_history
+        from icdev.tools.innovation.web_scanner import get_scan_history
 
         # Insert a signal
         _insert_signal(innovation_db, source="github")
@@ -322,7 +322,7 @@ class TestWebScanner:
 
     def test_source_scanners_registered(self):
         """SOURCE_SCANNERS dict has expected entries."""
-        from tools.innovation.web_scanner import SOURCE_SCANNERS
+        from icdev.tools.innovation.web_scanner import SOURCE_SCANNERS
         assert "github" in SOURCE_SCANNERS
         assert "cve_databases" in SOURCE_SCANNERS
         assert "stackoverflow" in SOURCE_SCANNERS
@@ -337,14 +337,14 @@ class TestSignalRanker:
 
     def test_import(self):
         """signal_ranker module imports successfully."""
-        from tools.innovation import signal_ranker
+        from icdev.tools.innovation import signal_ranker
         assert hasattr(signal_ranker, "score_signal")
         assert hasattr(signal_ranker, "score_all_new")
         assert hasattr(signal_ranker, "get_top_signals")
 
     def test_score_signal(self, innovation_db):
         """score_signal scores a signal and updates DB."""
-        from tools.innovation.signal_ranker import score_signal
+        from icdev.tools.innovation.signal_ranker import score_signal
 
         sig_id = _insert_signal(
             innovation_db, title="Kubernetes security vulnerability scanner",
@@ -368,7 +368,7 @@ class TestSignalRanker:
 
     def test_score_all_new(self, innovation_db):
         """score_all_new scores all new signals."""
-        from tools.innovation.signal_ranker import score_all_new
+        from icdev.tools.innovation.signal_ranker import score_all_new
 
         # Insert multiple signals
         _insert_signal(innovation_db, title="Signal 1", community_score=0.3)
@@ -379,7 +379,7 @@ class TestSignalRanker:
 
     def test_get_top_signals(self, innovation_db):
         """get_top_signals returns highest-scored signals."""
-        from tools.innovation.signal_ranker import get_top_signals
+        from icdev.tools.innovation.signal_ranker import get_top_signals
 
         # Insert scored signals
         _insert_signal(
@@ -403,13 +403,13 @@ class TestTriageEngine:
 
     def test_import(self):
         """triage_engine module imports successfully."""
-        from tools.innovation import triage_engine
+        from icdev.tools.innovation import triage_engine
         assert hasattr(triage_engine, "triage_signal")
         assert hasattr(triage_engine, "triage_all_scored")
 
     def test_triage_scored_signal(self, innovation_db):
         """triage_signal runs 5-stage pipeline on scored signal."""
-        from tools.innovation.triage_engine import triage_signal
+        from icdev.tools.innovation.triage_engine import triage_signal
 
         sig_id = _insert_signal(
             innovation_db,
@@ -425,7 +425,7 @@ class TestTriageEngine:
 
     def test_triage_blocks_compliance_weakening(self, innovation_db):
         """triage blocks signals that weaken compliance."""
-        from tools.innovation.triage_engine import triage_signal
+        from icdev.tools.innovation.triage_engine import triage_signal
 
         sig_id = _insert_signal(
             innovation_db,
@@ -442,7 +442,7 @@ class TestTriageEngine:
 
     def test_triage_summary(self, innovation_db):
         """get_triage_summary returns aggregate statistics."""
-        from tools.innovation.triage_engine import get_triage_summary
+        from icdev.tools.innovation.triage_engine import get_triage_summary
 
         result = get_triage_summary(db_path=innovation_db)
         assert isinstance(result, dict)
@@ -456,20 +456,20 @@ class TestTrendDetector:
 
     def test_import(self):
         """trend_detector module imports successfully."""
-        from tools.innovation import trend_detector
+        from icdev.tools.innovation import trend_detector
         assert hasattr(trend_detector, "detect_trends")
         assert hasattr(trend_detector, "get_trend_report")
 
     def test_detect_trends_empty(self, innovation_db):
         """detect_trends handles empty signal set."""
-        from tools.innovation.trend_detector import detect_trends
+        from icdev.tools.innovation.trend_detector import detect_trends
 
         result = detect_trends(time_window_days=30, min_signals=3, db_path=innovation_db)
         assert isinstance(result, dict)
 
     def test_detect_trends_with_signals(self, innovation_db):
         """detect_trends finds trends when signals share keywords."""
-        from tools.innovation.trend_detector import detect_trends
+        from icdev.tools.innovation.trend_detector import detect_trends
 
         # Insert signals with overlapping keywords
         for i in range(5):
@@ -486,7 +486,7 @@ class TestTrendDetector:
     def test_keyword_extraction(self):
         """extract_keywords returns meaningful keywords."""
         try:
-            from tools.innovation.trend_detector import extract_keywords
+            from icdev.tools.innovation.trend_detector import extract_keywords
             keywords = extract_keywords("Kubernetes security vulnerability scanner tool")
             assert isinstance(keywords, list)
             assert len(keywords) > 0
@@ -505,12 +505,12 @@ class TestSolutionGenerator:
 
     def test_import(self):
         """solution_generator module imports successfully."""
-        from tools.innovation import solution_generator
+        from icdev.tools.innovation import solution_generator
         assert hasattr(solution_generator, "generate_solution_spec")
 
     def test_generate_solution_spec(self, innovation_db):
         """generate_solution_spec creates a spec from an approved signal."""
-        from tools.innovation.solution_generator import generate_solution_spec
+        from icdev.tools.innovation.solution_generator import generate_solution_spec
 
         sig_id = _insert_signal(
             innovation_db,
@@ -538,7 +538,7 @@ class TestSolutionGenerator:
 
     def test_list_solutions(self, innovation_db):
         """list_solutions returns generated solutions."""
-        from tools.innovation.solution_generator import list_solutions
+        from icdev.tools.innovation.solution_generator import list_solutions
 
         result = list_solutions(db_path=innovation_db)
         assert isinstance(result, dict)
@@ -552,14 +552,14 @@ class TestInnovationManager:
 
     def test_import(self):
         """innovation_manager module imports successfully."""
-        from tools.innovation import innovation_manager
+        from icdev.tools.innovation import innovation_manager
         assert hasattr(innovation_manager, "run_full_pipeline")
         assert hasattr(innovation_manager, "get_status")
         assert hasattr(innovation_manager, "get_pipeline_report")
 
     def test_get_status(self, innovation_db):
         """get_status returns engine health overview."""
-        from tools.innovation.innovation_manager import get_status
+        from icdev.tools.innovation.innovation_manager import get_status
 
         result = get_status(db_path=innovation_db)
         assert "healthy" in result
@@ -568,7 +568,7 @@ class TestInnovationManager:
 
     def test_get_status_with_signals(self, innovation_db):
         """get_status counts signals by status."""
-        from tools.innovation.innovation_manager import get_status
+        from icdev.tools.innovation.innovation_manager import get_status
 
         _insert_signal(innovation_db, status="new")
         _insert_signal(innovation_db, status="scored", innovation_score=0.7)
@@ -578,7 +578,7 @@ class TestInnovationManager:
 
     def test_get_pipeline_report(self, innovation_db):
         """get_pipeline_report returns pipeline throughput."""
-        from tools.innovation.innovation_manager import get_pipeline_report
+        from icdev.tools.innovation.innovation_manager import get_pipeline_report
 
         result = get_pipeline_report(db_path=innovation_db)
         assert "pipeline_health" in result
@@ -587,7 +587,7 @@ class TestInnovationManager:
 
     def test_quiet_hours_detection(self):
         """_in_quiet_hours correctly detects quiet periods."""
-        from tools.innovation.innovation_manager import _in_quiet_hours
+        from icdev.tools.innovation.innovation_manager import _in_quiet_hours
 
         config = {
             "scheduling": {
@@ -604,7 +604,7 @@ class TestInnovationManager:
 
     def test_stage_discover(self, innovation_db):
         """stage_discover runs web scanner stage."""
-        from tools.innovation.innovation_manager import stage_discover
+        from icdev.tools.innovation.innovation_manager import stage_discover
 
         result = stage_discover(db_path=innovation_db)
         assert "stage" in result
@@ -619,19 +619,19 @@ class TestIntrospectiveAnalyzer:
 
     def test_import(self):
         """introspective_analyzer module imports successfully."""
-        from tools.innovation import introspective_analyzer
+        from icdev.tools.innovation import introspective_analyzer
         assert hasattr(introspective_analyzer, "analyze_all")
 
     def test_analyze_all(self, innovation_db):
         """analyze_all runs all 6 analyses without error."""
-        from tools.innovation.introspective_analyzer import analyze_all
+        from icdev.tools.innovation.introspective_analyzer import analyze_all
 
         result = analyze_all(db_path=innovation_db)
         assert isinstance(result, dict)
 
     def test_analyze_gate_failures(self, innovation_db):
         """analyze_gate_failures handles empty audit trail."""
-        from tools.innovation.introspective_analyzer import analyze_gate_failures
+        from icdev.tools.innovation.introspective_analyzer import analyze_gate_failures
 
         result = analyze_gate_failures(db_path=innovation_db)
         assert isinstance(result, dict)
@@ -714,7 +714,7 @@ class TestInnovationPipelineIntegration:
 
         # Step 2: Score
         try:
-            from tools.innovation.signal_ranker import score_signal
+            from icdev.tools.innovation.signal_ranker import score_signal
             score_result = score_signal(sig_id, db_path=innovation_db)
             assert "error" not in score_result or True  # May fail due to missing config
         except Exception:
@@ -729,7 +729,7 @@ class TestInnovationPipelineIntegration:
 
         # Step 3: Triage
         try:
-            from tools.innovation.triage_engine import triage_signal
+            from icdev.tools.innovation.triage_engine import triage_signal
             triage_result = triage_signal(sig_id, db_path=innovation_db)
         except Exception:
             # Manually triage
@@ -744,7 +744,7 @@ class TestInnovationPipelineIntegration:
 
         # Step 4: Generate solution
         try:
-            from tools.innovation.solution_generator import generate_solution_spec
+            from icdev.tools.innovation.solution_generator import generate_solution_spec
             gen_result = generate_solution_spec(sig_id, db_path=innovation_db)
             assert isinstance(gen_result, dict)
         except Exception:

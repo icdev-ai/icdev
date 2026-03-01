@@ -15,28 +15,28 @@ import pytest
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.translation.translation_manager import (
+from icdev.tools.translation.translation_manager import (
     run_pipeline,
     VALID_LANGUAGES,
 )
-from tools.translation.code_translator import (
+from icdev.tools.translation.code_translator import (
     _get_translation_order,
     _generate_mock,
     CUI_HEADERS,
     NAMING_CONVENTIONS,
 )
-from tools.translation.project_assembler import (
+from icdev.tools.translation.project_assembler import (
     assemble_project,
     _ensure_cui_header,
     _format_dependencies,
 )
-from tools.translation.translation_validator import (
+from icdev.tools.translation.translation_validator import (
     check_api_surface,
     check_compliance,
     check_complexity,
 )
-from tools.translation.feature_map import FeatureMapLoader
-from tools.translation.type_checker import (
+from icdev.tools.translation.feature_map import FeatureMapLoader
+from icdev.tools.translation.type_checker import (
     load_type_mappings,
     map_type,
     check_signature_compatibility,

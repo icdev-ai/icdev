@@ -123,7 +123,7 @@ class TestEvidenceCollection:
     """Test evidence collection functionality."""
 
     def test_collect_empty_db(self, tmp_db):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         result = collect_evidence("proj-test", db_path=tmp_db)
         assert result["project_id"] == "proj-test"
         assert "summary" in result
@@ -131,7 +131,7 @@ class TestEvidenceCollection:
         assert result["summary"]["total_frameworks"] >= 10
 
     def test_collect_with_data(self, populated_db):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         result = collect_evidence("proj-test", db_path=populated_db)
         assert result["summary"]["frameworks_with_evidence"] > 0
         assert result["summary"]["tables_with_data"] > 0
@@ -140,18 +140,18 @@ class TestEvidenceCollection:
         assert nist["status"] in ("evidence_found", "partial")
 
     def test_collect_specific_framework(self, populated_db):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         result = collect_evidence("proj-test", framework="fedramp", db_path=populated_db)
         assert len(result["frameworks"]) == 1
         assert "fedramp" in result["frameworks"]
 
     def test_collect_unknown_framework(self, populated_db):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         result = collect_evidence("proj-test", framework="nonexistent", db_path=populated_db)
         assert "error" in result
 
     def test_collect_with_file_scanning(self, populated_db, tmp_path):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         # Create some artifact files
         (tmp_path / "ssp_report.json").write_text('{"type": "ssp"}')
         (tmp_path / "sbom_components.json").write_text('{"type": "sbom"}')
@@ -159,12 +159,12 @@ class TestEvidenceCollection:
         assert result["summary"]["total_file_artifacts"] > 0
 
     def test_coverage_percentage(self, populated_db):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         result = collect_evidence("proj-test", db_path=populated_db)
         assert 0 <= result["summary"]["coverage_pct"] <= 100
 
     def test_different_project_isolation(self, populated_db):
-        from tools.compliance.evidence_collector import collect_evidence
+        from icdev.tools.compliance.evidence_collector import collect_evidence
         result = collect_evidence("proj-nonexistent", db_path=populated_db)
         # Should have no evidence for non-existent project
         assert result["summary"]["frameworks_with_evidence"] == 0
@@ -178,13 +178,13 @@ class TestFreshness:
     """Test evidence freshness checking."""
 
     def test_freshness_empty_db(self, tmp_db):
-        from tools.compliance.evidence_collector import check_freshness
+        from icdev.tools.compliance.evidence_collector import check_freshness
         result = check_freshness("proj-test", db_path=tmp_db)
         assert result["overall_status"] == "unhealthy"
         assert result["summary"]["missing"] > 0
 
     def test_freshness_with_data(self, populated_db):
-        from tools.compliance.evidence_collector import check_freshness
+        from icdev.tools.compliance.evidence_collector import check_freshness
         result = check_freshness("proj-test", max_age_hours=48.0, db_path=populated_db)
         assert result["overall_status"] in ("healthy", "degraded", "unhealthy")
         assert result["summary"]["total"] == len(result["frameworks"])
@@ -192,7 +192,7 @@ class TestFreshness:
         assert result["summary"]["fresh"] > 0
 
     def test_freshness_stale_detection(self, populated_db):
-        from tools.compliance.evidence_collector import check_freshness
+        from icdev.tools.compliance.evidence_collector import check_freshness
         # proj-other only has old hipaa data — use tight max_age to catch it
         # First insert a stale record for proj-stale in a framework with only one table
         conn = sqlite3.connect(str(populated_db))
@@ -208,7 +208,7 @@ class TestFreshness:
         assert stale_count > 0
 
     def test_freshness_required_tracking(self, populated_db):
-        from tools.compliance.evidence_collector import check_freshness
+        from icdev.tools.compliance.evidence_collector import check_freshness
         result = check_freshness("proj-test", db_path=populated_db)
         # required_stale and required_missing should be tracked
         assert "required_stale" in result["summary"]
@@ -223,7 +223,7 @@ class TestFrameworkListing:
     """Test framework listing."""
 
     def test_list_frameworks(self):
-        from tools.compliance.evidence_collector import list_frameworks
+        from icdev.tools.compliance.evidence_collector import list_frameworks
         frameworks = list_frameworks()
         assert len(frameworks) >= 10
         names = [f["id"] for f in frameworks]
@@ -232,7 +232,7 @@ class TestFrameworkListing:
         assert "sbom" in names
 
     def test_framework_structure(self):
-        from tools.compliance.evidence_collector import list_frameworks
+        from icdev.tools.compliance.evidence_collector import list_frameworks
         frameworks = list_frameworks()
         for fw in frameworks:
             assert "id" in fw

@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 try:
-    from tools.llm.router import LLMRouter, _expand_env
-    from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
+    from icdev.tools.llm.router import LLMRouter, _expand_env
+    from icdev.tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
     _IMPORT_OK = True
 except ImportError:
     _IMPORT_OK = False

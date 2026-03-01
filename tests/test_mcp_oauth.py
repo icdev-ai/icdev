@@ -56,21 +56,21 @@ def tmp_db(tmp_path):
 @pytest.fixture
 def verifier(tmp_db):
     """Create an MCPOAuthVerifier with test DB."""
-    from tools.saas.mcp_oauth import MCPOAuthVerifier
+    from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier
     return MCPOAuthVerifier(db_path=tmp_db, secret_key="test-secret-key-123")
 
 
 @pytest.fixture
 def elicitation_handler():
     """Create an MCPElicitationHandler."""
-    from tools.saas.mcp_oauth import MCPElicitationHandler
+    from icdev.tools.saas.mcp_oauth import MCPElicitationHandler
     return MCPElicitationHandler()
 
 
 @pytest.fixture
 def task_manager():
     """Create an MCPTaskManager."""
-    from tools.saas.mcp_oauth import MCPTaskManager
+    from icdev.tools.saas.mcp_oauth import MCPTaskManager
     return MCPTaskManager()
 
 
@@ -110,7 +110,7 @@ class TestMCPOAuthVerifier:
         assert "Not an ICDEV API key" in result["error"]
 
     def test_api_key_no_db(self, tmp_path):
-        from tools.saas.mcp_oauth import MCPOAuthVerifier
+        from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier
         v = MCPOAuthVerifier(db_path=tmp_path / "nonexistent.db")
         result = v._verify_api_key("icdev_test")
         assert result["verified"] is False
@@ -168,7 +168,7 @@ class TestHMACToken:
         assert result2["verified"] is False
 
     def test_wrong_secret_key(self, tmp_db):
-        from tools.saas.mcp_oauth import MCPOAuthVerifier
+        from icdev.tools.saas.mcp_oauth import MCPOAuthVerifier
         v1 = MCPOAuthVerifier(db_path=tmp_db, secret_key="secret-A")
         v2 = MCPOAuthVerifier(db_path=tmp_db, secret_key="secret-B")
         token = v1.generate_offline_token(user_id="user-test")

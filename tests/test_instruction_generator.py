@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.dx.instruction_generator import (
+from icdev.tools.dx.instruction_generator import (
     TEMPLATES,
     collect_project_data,
     generate_instructions,

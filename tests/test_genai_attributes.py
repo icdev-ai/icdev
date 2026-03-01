@@ -16,7 +16,7 @@ Covers:
 
 import pytest
 
-from tools.observability import genai_attributes as ga
+from icdev.tools.observability import genai_attributes as ga
 
 
 # ---------------------------------------------------------------------------

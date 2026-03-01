@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 try:
-    from tools.saas.rate_limiter import (
+    from icdev.tools.saas.rate_limiter import (
         TIER_RATE_LIMITS,
         InMemoryBackend,
         check_rate_limit,
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.skipif(not _IMPORT_OK, reason="tools.saas.rate_limiter 
 @pytest.fixture(autouse=True)
 def fresh_backend(monkeypatch):
     """Reset the global backend before each test to ensure isolation."""
-    import tools.saas.rate_limiter as rl
+    import icdev.tools.saas.rate_limiter as rl
     monkeypatch.setattr(rl, "_backend", None)
     # Force InMemoryBackend (bypass scaling config)
     backend = InMemoryBackend()

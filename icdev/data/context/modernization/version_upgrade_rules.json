@@ -1,0 +1,279 @@
+{
+  "metadata": {
+    "classification": "CUI // SP-CTI",
+    "title": "Version Upgrade Transformation Rules",
+    "system": "ICDEV Modernization Engine",
+    "version": "1.0.0",
+    "created": "2026-02-16",
+    "description": "Regex-based transformation rules for legacy-to-modern version upgrades.",
+    "marking": "CUI // SP-CTI"
+  },
+  "language_versions": [
+    {
+      "language": "python",
+      "source_version": "2.x",
+      "target_version": "3.x",
+      "rules": [
+        {
+          "id": "PY2TO3-001",
+          "pattern": "\\bprint\\s+([^(\\n][^\\n]*)",
+          "replacement": "print($1)",
+          "description": "Convert print statement to print() function call",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-002",
+          "pattern": "\\bexcept\\s+(\\w+(?:\\.\\w+)*)\\s*,\\s*(\\w+)\\s*:",
+          "replacement": "except $1 as $2:",
+          "description": "Convert except comma syntax to 'as' keyword",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-003",
+          "pattern": "\\bunicode\\(",
+          "replacement": "str(",
+          "description": "Replace unicode() with str(); all strings are Unicode in Py3",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-004",
+          "pattern": "\\bxrange\\(",
+          "replacement": "range(",
+          "description": "Replace xrange() with range(); returns iterator in Py3",
+          "breaking": false, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-005",
+          "pattern": "\\braw_input\\(",
+          "replacement": "input(",
+          "description": "Replace raw_input() with input(); no longer evals in Py3",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-006",
+          "pattern": "\\.has_key\\(([^)]+)\\)",
+          "replacement": " in $1",
+          "description": "Replace dict.has_key(k) with 'k in dict'",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-007",
+          "pattern": "(\\w+)\\.(keys|values|items)\\(\\)",
+          "replacement": "$1.$2()",
+          "description": "dict.keys/values/items return views in Py3; wrap in list() if mutation needed",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-008",
+          "pattern": "\\b(from\\s+|import\\s+)ConfigParser\\b",
+          "replacement": "$1configparser",
+          "description": "Module renamed ConfigParser to configparser (lowercase)",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-009",
+          "pattern": "\\bfrom\\s+StringIO\\s+import\\s+StringIO",
+          "replacement": "from io import StringIO",
+          "description": "StringIO moved to io module",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-010",
+          "pattern": "\\b(import\\s+|from\\s+)urllib2\\b",
+          "replacement": "$1urllib.request",
+          "description": "urllib2 split into urllib.request/urllib.error in Py3",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-011",
+          "pattern": "\\b(import\\s+|from\\s+)urlparse\\b",
+          "replacement": "$1urllib.parse",
+          "description": "urlparse merged into urllib.parse",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-012",
+          "pattern": "\\bbasestring\\b",
+          "replacement": "str",
+          "description": "basestring removed; use str for string type checks",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-013",
+          "pattern": "\\breduce\\(",
+          "replacement": "functools.reduce(",
+          "description": "reduce() moved to functools; add 'import functools'",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-014",
+          "pattern": "\\blong\\(",
+          "replacement": "int(",
+          "description": "long type removed; int handles arbitrary precision",
+          "breaking": false, "requires_manual_review": false
+        },
+        {
+          "id": "PY2TO3-015",
+          "pattern": "\\bexec\\s+([^(\\n][^\\n]*)",
+          "replacement": "exec($1)",
+          "description": "Convert exec statement to exec() function",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "PY2TO3-016",
+          "pattern": "(?<![/])/((?!/))",
+          "replacement": "/$1",
+          "description": "/ always returns float in Py3; review for int division, use //",
+          "breaking": true, "requires_manual_review": true
+        }
+      ]
+    },
+    {
+      "language": "java",
+      "source_version": "8",
+      "target_version": "17",
+      "rules": [
+        {
+          "id": "JAVA8TO17-001",
+          "pattern": "(\\b(?:String|Integer|Long|Double|Float|Boolean|List|Map|Set|ArrayList|HashMap)(?:<[^>]+>)?)\\s+(\\w+)\\s*=\\s*new\\s+\\1",
+          "replacement": "var $2 = new $1",
+          "description": "Use var for local type inference when RHS type is obvious (Java 10+)",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "JAVA8TO17-002",
+          "pattern": "\"([^\"]*?)\"\\s*\\+\\s*\\n\\s*\"([^\"]*?)\"",
+          "replacement": "\"\"\"\n$1\n$2\"\"\"",
+          "description": "Convert multi-line string concat to text blocks (Java 13+)",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "JAVA8TO17-003",
+          "pattern": "if\\s*\\(\\s*(\\w+)\\s+instanceof\\s+(\\w+)\\s*\\)\\s*\\{\\s*\\n\\s*(\\2)\\s+(\\w+)\\s*=\\s*\\(\\2\\)\\s*\\1;",
+          "replacement": "if ($1 instanceof $2 $4) {",
+          "description": "Pattern matching instanceof eliminates explicit cast (Java 16+)",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "JAVA8TO17-004",
+          "pattern": "switch\\s*\\(([^)]+)\\)\\s*\\{\\s*case\\s+([^:]+):\\s*return\\s+([^;]+);",
+          "replacement": "switch ($1) { case $2 -> $3;",
+          "description": "Convert switch-return to switch expression arrow syntax (Java 14+)",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "JAVA8TO17-005",
+          "pattern": "\\.collect\\(Collectors\\.toList\\(\\)\\)",
+          "replacement": ".toList()",
+          "description": "Stream.toList() replaces Collectors.toList() (Java 16+); returns unmodifiable list",
+          "breaking": false, "requires_manual_review": true
+        },
+        {
+          "id": "JAVA8TO17-006",
+          "pattern": "\\.collect\\(Collectors\\.toUnmodifiableList\\(\\)\\)",
+          "replacement": ".toList()",
+          "description": "Stream.toList() replaces Collectors.toUnmodifiableList() (Java 16+)",
+          "breaking": false, "requires_manual_review": false
+        },
+        {
+          "id": "JAVA8TO17-007",
+          "pattern": "\\bjavax\\.(servlet|persistence|inject|ws\\.rs|annotation|validation|transaction)\\b",
+          "replacement": "jakarta.$1",
+          "description": "Migrate javax.* to jakarta.* namespace (Jakarta EE 9+)",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "JAVA8TO17-008",
+          "pattern": "ScriptEngineManager\\(\\)\\.getEngineByName\\(\"nashorn\"\\)",
+          "replacement": "/* REMOVED: Nashorn removed in Java 15. Use GraalVM JS runtime. */",
+          "description": "Nashorn JS engine removed; migrate to GraalVM or alternative",
+          "breaking": true, "requires_manual_review": true
+        }
+      ]
+    },
+    {
+      "language": "dotnet",
+      "source_version": "framework-4.x",
+      "target_version": "net-8",
+      "rules": [
+        {
+          "id": "DOTNET4TO8-001",
+          "pattern": "\\busing\\s+System\\.Web\\b",
+          "replacement": "using Microsoft.AspNetCore.Http",
+          "description": "Migrate System.Web to Microsoft.AspNetCore.Http",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-002",
+          "pattern": "\\busing\\s+System\\.Web\\.(Mvc|Http)\\b",
+          "replacement": "using Microsoft.AspNetCore.Mvc",
+          "description": "Migrate System.Web.Mvc and System.Web.Http to Microsoft.AspNetCore.Mvc",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-003",
+          "pattern": "\\busing\\s+System\\.Web\\.Security\\b",
+          "replacement": "using Microsoft.AspNetCore.Authentication",
+          "description": "Migrate System.Web.Security to Microsoft.AspNetCore.Authentication",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-004",
+          "pattern": "ConfigurationManager\\.AppSettings\\[\"([^\"]+)\"\\]",
+          "replacement": "_configuration[\"$1\"]",
+          "description": "Replace ConfigurationManager with IConfiguration (appsettings.json)",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-005",
+          "pattern": "<appSettings>[\\s\\S]*?</appSettings>",
+          "replacement": "/* MIGRATION: Move web.config appSettings to appsettings.json */",
+          "description": "Migrate web.config XML appSettings to appsettings.json format",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-006",
+          "pattern": "\\bGlobal\\.asax\\b",
+          "replacement": "Program.cs",
+          "description": "Global.asax lifecycle replaced by Program.cs middleware pipeline",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-007",
+          "pattern": "\\bHttpContext\\.Current\\b",
+          "replacement": "_httpContextAccessor.HttpContext",
+          "description": "Replace static HttpContext.Current with injected IHttpContextAccessor (DI)",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-008",
+          "pattern": "\\busing\\s+System\\.Data\\.SqlClient\\b",
+          "replacement": "using Microsoft.Data.SqlClient",
+          "description": "Migrate to Microsoft.Data.SqlClient (actively maintained)",
+          "breaking": true, "requires_manual_review": false
+        },
+        {
+          "id": "DOTNET4TO8-009",
+          "pattern": "\\bnew\\s+WebClient\\(\\)",
+          "replacement": "/* MIGRATION: Replace WebClient with HttpClient via IHttpClientFactory DI */",
+          "description": "WebClient deprecated; use HttpClient with IHttpClientFactory",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-010",
+          "pattern": "\\bThread\\.Abort\\(\\)",
+          "replacement": "/* REMOVED: Thread.Abort() throws PlatformNotSupportedException. Use CancellationToken. */",
+          "description": "Thread.Abort removed; migrate to CancellationToken cooperative cancellation",
+          "breaking": true, "requires_manual_review": true
+        },
+        {
+          "id": "DOTNET4TO8-011",
+          "pattern": "\\[HttpPost\\]\\s*public\\s+ActionResult",
+          "replacement": "[HttpPost]\npublic IActionResult",
+          "description": "Replace ActionResult with IActionResult interface in controllers",
+          "breaking": false, "requires_manual_review": true
+        }
+      ]
+    }
+  ]
+}

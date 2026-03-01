@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tools.marketplace.search_engine import (
+from icdev.tools.marketplace.search_engine import (
     _bm25_score,
     _bm25_score_corpus,
     _blob_to_embedding,
@@ -237,14 +237,14 @@ class TestBM25Fallback:
 
     def test_corpus_scoring_returns_list(self):
         docs = ["stig compliance checker", "bdd test generator", "oracle database scanner"]
-        with patch("tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus(["stig"], docs)
         assert isinstance(scores, list)
         assert len(scores) == 3
 
     def test_matching_doc_scores_highest(self):
         docs = ["stig compliance checker", "bdd test generator", "oracle database scanner"]
-        with patch("tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus(["stig"], docs)
         # First doc contains "stig", should score highest
         assert scores[0] > scores[1]
@@ -252,12 +252,12 @@ class TestBM25Fallback:
 
     def test_empty_query_all_zeros(self):
         docs = ["doc one", "doc two"]
-        with patch("tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus([], docs)
         assert scores == [0.0, 0.0]
 
     def test_empty_corpus_returns_empty(self):
-        with patch("tools.marketplace.search_engine._HAS_BM25", False):
+        with patch("icdev.tools.marketplace.search_engine._HAS_BM25", False):
             scores = _bm25_score_corpus(["test"], [])
         assert scores == []
 

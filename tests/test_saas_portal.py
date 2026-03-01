@@ -126,9 +126,9 @@ def portal_app(tmp_path):
     }
 
     with patch.dict(os.environ, env_patches):
-        with patch("tools.saas.platform_db.SQLITE_PATH", db_path), \
-             patch("tools.saas.portal.app.PLATFORM_DB", db_path):
-            from tools.saas.api_gateway import create_app
+        with patch("icdev.tools.saas.platform_db.SQLITE_PATH", db_path), \
+             patch("icdev.tools.saas.portal.app.PLATFORM_DB", db_path):
+            from icdev.tools.saas.api_gateway import create_app
             app = create_app()
             app.config["TESTING"] = True
             app.config["test_api_key"] = test_key
@@ -322,7 +322,7 @@ class TestSeedDemoData:
 
     def test_seed_creates_tenant_and_key(self, tmp_path):
         db_path = tmp_path / "seed_test.db"
-        import tools.saas.platform_db as pdb
+        import icdev.tools.saas.platform_db as pdb
         orig_path = pdb.SQLITE_PATH
         orig_dir = pdb.DATA_DIR
         try:
@@ -341,7 +341,7 @@ class TestSeedDemoData:
 
     def test_seed_is_idempotent(self, tmp_path):
         db_path = tmp_path / "seed_idem.db"
-        import tools.saas.platform_db as pdb
+        import icdev.tools.saas.platform_db as pdb
         orig_path = pdb.SQLITE_PATH
         orig_dir = pdb.DATA_DIR
         try:

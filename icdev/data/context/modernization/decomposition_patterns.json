@@ -1,0 +1,284 @@
+{
+  "metadata": {
+    "classification": "CUI // SP-CTI",
+    "title": "Monolith Decomposition Patterns",
+    "version": "1.0.0",
+    "system": "ICDEV Modernization Framework",
+    "created": "2026-02-16",
+    "description": "Canonical decomposition patterns for migrating DoD monolithic applications to microservice architectures under NIST 800-53 RMF and ATO constraints."
+  },
+  "patterns": [
+    {
+      "id": "ddd_bounded_contexts",
+      "name": "DDD Bounded Context Extraction",
+      "description": "Identify aggregate roots and context boundaries using Domain-Driven Design. Each bounded context encapsulates a cohesive domain model with its own ubiquitous language, enforcing clear ownership and reducing cross-team coupling.",
+      "when_to_use": [
+        "Monolith has distinct domain areas with overlapping or conflicting terminology",
+        "Multiple teams work on the same codebase and step on each other",
+        "Business stakeholders describe the system in clearly separable sub-domains",
+        "Data models have clusters of tightly related entities with loose inter-cluster coupling"
+      ],
+      "when_not_to_use": [
+        "Domain is too small or uniform to warrant separate contexts",
+        "Team lacks domain expertise to identify meaningful boundaries",
+        "System is primarily CRUD with no complex business logic"
+      ],
+      "implementation_steps": [
+        "Conduct EventStorming workshops with domain experts to map commands, events, and aggregates",
+        "Identify clusters of entities that share the same ubiquitous language",
+        "Define aggregate roots and their invariants within each candidate context",
+        "Draw context boundaries and define the context map (upstream/downstream relationships)",
+        "Establish published language and shared kernel agreements between contexts",
+        "Refactor monolith packages to align with discovered bounded contexts",
+        "Extract each bounded context into a deployable service with its own data store",
+        "Validate boundary correctness by measuring cross-context call frequency"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "domain_vocabulary_clustering", "description": "Classes sharing the same domain terms (e.g., 'Order', 'LineItem', 'Shipment') belong to one context", "weight": 0.9 },
+        { "name": "aggregate_cohesion", "description": "Entities modified in the same transaction form a natural aggregate and context boundary", "weight": 0.85 },
+        { "name": "change_frequency_correlation", "description": "Files that change together in version control likely belong to the same bounded context", "weight": 0.7 },
+        { "name": "team_ownership_alignment", "description": "Code owned by the same team should map to the same context (Conway's Law)", "weight": 0.6 }
+      ],
+      "risk_factors": [
+        "Incorrectly drawn boundaries cause excessive cross-service communication",
+        "Shared database tables may span multiple contexts, requiring careful splitting",
+        "Ubiquitous language disagreements between teams can stall boundary decisions",
+        "Over-decomposition creates distributed monolith with worse characteristics"
+      ],
+      "ato_considerations": "Each bounded context becomes a separate authorization boundary component. SSP must document inter-context data flows, and each context's data classification must be independently assessed per NIST SP 800-53 SC-7 (Boundary Protection)."
+    },
+    {
+      "id": "business_capability",
+      "name": "Business Capability Decomposition",
+      "description": "Decompose the monolith along business capability lines such as OrderManagement, UserManagement, and Billing. Each capability maps to an organizational function and becomes an independently deployable service.",
+      "when_to_use": [
+        "Organization has well-defined business capabilities documented in enterprise architecture",
+        "Monolith's top-level package or namespace structure already mirrors business functions",
+        "Teams are organized by business capability (or will be restructured to match)",
+        "Executive stakeholders need clear service-to-mission mapping for funding justification"
+      ],
+      "when_not_to_use": [
+        "Business capabilities are poorly defined or overlap significantly",
+        "Technical decomposition (e.g., by layer) is more appropriate for the problem",
+        "Codebase structure does not reflect any business grouping"
+      ],
+      "implementation_steps": [
+        "Map enterprise business capabilities from organizational charts and mission statements",
+        "Align monolith top-level packages/namespaces to identified capabilities",
+        "Identify cross-capability dependencies and data sharing patterns",
+        "Define service APIs that expose each capability's operations",
+        "Extract capability code into separate modules with clear dependency injection",
+        "Migrate each capability module to an independent service with its own CI/CD pipeline",
+        "Implement API gateway routing to direct traffic to capability-aligned services"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "package_namespace_grouping", "description": "Top-level packages (e.g., com.agency.orders, com.agency.billing) indicate capability boundaries", "weight": 0.85 },
+        { "name": "organizational_alignment", "description": "Services should map 1:1 to teams responsible for the business capability", "weight": 0.8 },
+        { "name": "independent_lifecycle", "description": "Capabilities with different release cadences or SLAs are strong candidates for separation", "weight": 0.75 },
+        { "name": "data_ownership_clarity", "description": "Each capability should own its master data entities without shared write access", "weight": 0.7 }
+      ],
+      "risk_factors": [
+        "Capability boundaries may not align with existing code structure, requiring significant refactoring",
+        "Shared utility code can create hidden coupling between capability services",
+        "Organizational politics may resist capability reassignment",
+        "Over-broad capabilities lead to services that are still monolithic internally"
+      ],
+      "ato_considerations": "Each business capability service requires independent security control inheritance documentation. NIST AC-4 (Information Flow Enforcement) must be evaluated for all cross-capability data exchanges, and each capability must maintain its own audit trail per AU-2."
+    },
+    {
+      "id": "database_per_service",
+      "name": "Database-per-Service Isolation",
+      "description": "Each extracted microservice owns its database schema exclusively. Shared tables are split by data ownership, and foreign key relationships across service boundaries are replaced with API calls or event-driven synchronization.",
+      "when_to_use": [
+        "Monolith uses a single shared database that creates tight coupling between modules",
+        "Multiple teams need to evolve their schemas independently",
+        "Different services have different data storage requirements (relational, document, graph)",
+        "Data classification levels differ between service domains"
+      ],
+      "when_not_to_use": [
+        "Strict ACID transactions span multiple service domains and cannot be refactored to sagas",
+        "Data volume is too small to justify multiple database instances",
+        "Operational team cannot manage multiple database instances"
+      ],
+      "implementation_steps": [
+        "Inventory all database tables and map ownership to candidate services",
+        "Identify shared tables and determine primary owner vs. consumers",
+        "Split shared tables: owner keeps the table, consumers get read-only replicas or API access",
+        "Replace foreign key joins with API calls or materialized views within each service",
+        "Implement saga pattern or event-driven consistency for cross-service transactions",
+        "Migrate each service's schema to its own database instance or isolated schema",
+        "Set up data synchronization mechanisms for eventually consistent reads",
+        "Validate data integrity with reconciliation jobs during transition period"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "table_write_ownership", "description": "Tables written by only one module are clearly owned by that service", "weight": 0.9 },
+        { "name": "join_frequency_analysis", "description": "Tables frequently joined in queries should remain in the same service's database", "weight": 0.85 },
+        { "name": "transaction_boundary_scope", "description": "Tables modified in the same transaction should stay together to avoid distributed transactions", "weight": 0.8 },
+        { "name": "data_classification_level", "description": "Tables with different CUI categories or classification levels must be separated", "weight": 0.95 }
+      ],
+      "risk_factors": [
+        "Distributed transactions across services require saga orchestration, adding complexity",
+        "Data consistency becomes eventual rather than immediate",
+        "Reporting and analytics queries that span services require CQRS or data warehouse",
+        "Database migration during transition creates risk of data loss or inconsistency"
+      ],
+      "ato_considerations": "Each database instance becomes a separate data-at-rest encryption boundary per NIST SC-28. Separate databases simplify per-service data classification but require independent backup/recovery procedures (CP-9) and access control policies (AC-3) for each store."
+    },
+    {
+      "id": "shared_kernel",
+      "name": "Shared Kernel Extraction",
+      "description": "Identify utility classes, common domain models, and cross-cutting concerns used by multiple services. Extract these into a versioned shared library rather than duplicating code across services, maintaining a single source of truth for common logic.",
+      "when_to_use": [
+        "Multiple services need identical data transfer objects, validation rules, or utility functions",
+        "Security-critical code (encryption, authentication) must be consistent across all services",
+        "CUI marking logic and compliance utilities are required by every service",
+        "Duplication would create drift and maintenance burden across services"
+      ],
+      "when_not_to_use": [
+        "Shared code is minimal and duplication is simpler than managing a shared library",
+        "Services are written in different languages making a shared library impractical",
+        "Shared kernel would create tight coupling that negates microservice independence"
+      ],
+      "implementation_steps": [
+        "Audit monolith for cross-cutting utilities used by multiple candidate services",
+        "Categorize shared code: domain models, security utilities, compliance helpers, infra abstractions",
+        "Extract shared code into a versioned library with semantic versioning",
+        "Define strict API contracts for the shared kernel with backward compatibility guarantees",
+        "Publish shared kernel to internal artifact repository (e.g., private PyPI or Maven)",
+        "Update all services to depend on the shared kernel as a versioned dependency",
+        "Establish governance process for shared kernel changes (review, approval, release)"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "cross_service_import_count", "description": "Modules imported by 3+ services are candidates for the shared kernel", "weight": 0.85 },
+        { "name": "security_criticality", "description": "Authentication, encryption, and CUI marking code must be centralized, not duplicated", "weight": 0.95 },
+        { "name": "change_independence", "description": "Code that rarely changes is safer in a shared kernel than frequently evolving code", "weight": 0.7 },
+        { "name": "domain_neutrality", "description": "Truly generic utilities (logging, config, serialization) are good kernel candidates", "weight": 0.75 }
+      ],
+      "risk_factors": [
+        "Shared kernel becomes a bottleneck if governance is too strict or releases too slow",
+        "Version conflicts arise when services depend on different kernel versions",
+        "Kernel scope creep turns it into a dumping ground for all shared code",
+        "Breaking changes in the kernel cascade to all dependent services simultaneously"
+      ],
+      "ato_considerations": "Shared kernel is a high-value target; vulnerabilities affect all consuming services. Must undergo independent SAST/DAST per NIST SA-11 and maintain its own SBOM. Version pinning and integrity verification (SI-7) are required for all consumers."
+    },
+    {
+      "id": "anti_corruption_layer",
+      "name": "Anti-Corruption Layer (ACL)",
+      "description": "Introduce an adapter layer between legacy monolith code and new microservice code. The ACL translates legacy data models and interfaces into the new domain model, preventing legacy design decisions from leaking into modern services.",
+      "when_to_use": [
+        "Legacy system has a deeply entrenched data model that cannot be changed",
+        "New services must integrate with legacy APIs that use outdated conventions",
+        "Gradual migration requires legacy and modern systems to coexist for an extended period",
+        "Legacy system uses different data formats, protocols, or naming conventions"
+      ],
+      "when_not_to_use": [
+        "Legacy system is being fully replaced in a single cutover (no coexistence period)",
+        "Legacy and modern models are already well-aligned",
+        "Performance overhead of translation layer is unacceptable for the use case"
+      ],
+      "implementation_steps": [
+        "Map legacy domain model to new bounded context domain model (field-by-field translation)",
+        "Design adapter interfaces that expose new-model APIs backed by legacy implementations",
+        "Implement translators that convert between legacy DTOs and new domain objects",
+        "Deploy ACL as a standalone service or in-process library depending on latency requirements",
+        "Route new service calls through the ACL instead of directly to legacy code",
+        "Add monitoring to track ACL translation errors and performance overhead",
+        "Retire ACL adapters incrementally as legacy components are fully replaced"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "model_divergence_score", "description": "Degree of mismatch between legacy and modern data models indicates ACL necessity", "weight": 0.9 },
+        { "name": "legacy_api_stability", "description": "Unstable legacy APIs require thicker ACL layers to absorb frequent changes", "weight": 0.75 },
+        { "name": "integration_point_count", "description": "Number of touchpoints between legacy and modern code determines ACL scope", "weight": 0.8 },
+        { "name": "data_format_incompatibility", "description": "Different serialization formats (XML vs JSON, SOAP vs REST) require translation", "weight": 0.85 }
+      ],
+      "risk_factors": [
+        "ACL adds latency to every cross-boundary call",
+        "Translation logic can become complex and error-prone for deeply nested models",
+        "ACL may mask underlying legacy issues rather than resolving them",
+        "Maintaining bidirectional translation for read-write scenarios doubles complexity"
+      ],
+      "ato_considerations": "ACL is a trust boundary per NIST SC-7; all data crossing the ACL must be validated and sanitized. Audit logging (AU-3) must capture pre- and post-translation payloads for forensic analysis. The ACL must enforce data classification downgrade prevention."
+    },
+    {
+      "id": "event_driven",
+      "name": "Event-Driven Decomposition",
+      "description": "Replace synchronous inter-module calls with asynchronous domain events published to a message bus. Each service publishes events when state changes occur and subscribes to events from other services, enabling loose coupling and temporal decoupling.",
+      "when_to_use": [
+        "Synchronous call chains between modules create cascading failure risks",
+        "Services need temporal decoupling (producer and consumer don't need to be online simultaneously)",
+        "Multiple consumers need to react to the same business event differently",
+        "System requires audit trail of all state changes (event sourcing compatibility)"
+      ],
+      "when_not_to_use": [
+        "Request-response semantics are required with immediate consistency",
+        "Event infrastructure (message broker) is not available or approved in the environment",
+        "Team lacks experience with eventual consistency debugging and monitoring"
+      ],
+      "implementation_steps": [
+        "Identify synchronous inter-module calls that can be converted to asynchronous events",
+        "Define domain event schemas with versioning strategy (e.g., CloudEvents format)",
+        "Deploy approved message broker (Amazon SQS/SNS in GovCloud or Kafka if approved)",
+        "Implement event publishers in source services using outbox pattern for reliability",
+        "Implement event consumers with idempotent handlers and dead-letter queue routing",
+        "Add correlation IDs to all events for distributed tracing across services",
+        "Implement compensating transactions for failure scenarios in event-driven workflows",
+        "Monitor event lag, dead-letter queues, and consumer group health"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "async_compatibility", "description": "Interactions where the caller does not need an immediate response are ideal for events", "weight": 0.9 },
+        { "name": "fan_out_pattern", "description": "One action triggering updates in multiple modules indicates event-driven suitability", "weight": 0.85 },
+        { "name": "temporal_decoupling_need", "description": "Producer and consumer operating on different schedules benefit from message queues", "weight": 0.8 },
+        { "name": "state_change_audit_requirement", "description": "Events naturally create an audit trail of all state transitions", "weight": 0.75 }
+      ],
+      "risk_factors": [
+        "Eventual consistency creates complexity in user-facing workflows expecting immediate results",
+        "Event schema evolution requires careful versioning to avoid breaking consumers",
+        "Message ordering guarantees vary by broker and can cause subtle bugs",
+        "Dead-letter queue buildup indicates consumer failures that need operational attention",
+        "Debugging distributed event flows is harder than tracing synchronous call stacks"
+      ],
+      "ato_considerations": "Message broker must be FedRAMP-authorized (SQS/SNS in GovCloud). Events carrying CUI must be encrypted in transit (SC-8) and at rest (SC-28). Event retention policies must align with records management requirements per NIST AU-11. Correlation IDs enable end-to-end audit traceability."
+    },
+    {
+      "id": "strangler_fig",
+      "name": "Strangler Fig Migration",
+      "description": "Incrementally replace legacy monolith functionality by routing traffic through a facade. New requests are handled by modern services while legacy endpoints remain operational. Over time, the modern system 'strangles' the legacy system until it can be decommissioned.",
+      "when_to_use": [
+        "Big-bang rewrite is too risky or politically infeasible for the program",
+        "Legacy system must remain operational during the multi-month migration",
+        "Individual features or endpoints can be migrated independently",
+        "Stakeholders need to see incremental progress and value delivery"
+      ],
+      "when_not_to_use": [
+        "Legacy system is small enough for a complete rewrite in a single sprint",
+        "Legacy system cannot coexist with modern services (e.g., licensing constraints)",
+        "No suitable interception point exists for routing traffic between legacy and modern"
+      ],
+      "implementation_steps": [
+        "Deploy a routing facade (API gateway or reverse proxy) in front of the legacy monolith",
+        "Inventory all legacy endpoints and prioritize migration order by business value and risk",
+        "Implement the highest-priority feature as a new microservice behind the facade",
+        "Configure facade to route that feature's traffic to the new service instead of legacy",
+        "Run parallel validation: compare legacy and modern responses for correctness",
+        "Decommission the legacy implementation of the migrated feature after validation",
+        "Repeat for each feature, expanding modern service coverage incrementally",
+        "Decommission the legacy monolith once all features are migrated and validated"
+      ],
+      "service_boundary_heuristics": [
+        { "name": "endpoint_isolation", "description": "Endpoints with minimal cross-dependencies are easiest to strangle first", "weight": 0.9 },
+        { "name": "business_value_priority", "description": "High-value, high-change endpoints benefit most from early migration", "weight": 0.85 },
+        { "name": "risk_assessment_score", "description": "Low-risk endpoints should be migrated first to build team confidence", "weight": 0.8 },
+        { "name": "data_dependency_depth", "description": "Endpoints with shallow data dependencies are easier to extract cleanly", "weight": 0.75 }
+      ],
+      "risk_factors": [
+        "Coexistence period introduces routing complexity and potential inconsistencies",
+        "Session state shared between legacy and modern requires careful management",
+        "Parallel running of legacy and modern increases infrastructure costs temporarily",
+        "Migration stalls can leave the system in a worse hybrid state indefinitely",
+        "Facade routing rules accumulate technical debt if not cleaned up after migration"
+      ],
+      "ato_considerations": "During coexistence, both legacy and modern systems remain in the authorization boundary and must maintain independent ATO artifacts. The routing facade is a critical security control point requiring SC-7 boundary protection. Decommissioning legacy components must follow NIST media sanitization (MP-6) and configuration management (CM-3) procedures."
+    }
+  ]
+}

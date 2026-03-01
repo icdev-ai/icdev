@@ -14,7 +14,7 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from tools.memory.memory_consolidation import (
+from icdev.tools.memory.memory_consolidation import (
     MemoryConsolidator,
     ACTIONS,
     JACCARD_SKIP_THRESHOLD,
@@ -181,7 +181,7 @@ class TestConstants:
 # ---------------------------------------------------------------------------
 
 class TestStats:
-    @patch("tools.memory.memory_consolidation.sqlite3")
+    @patch("icdev.tools.memory.memory_consolidation.sqlite3")
     def test_get_stats_handles_db_error(self, mock_sqlite):
         import sqlite3
         mock_sqlite.connect.side_effect = sqlite3.OperationalError("no table")

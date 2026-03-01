@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tools.audit.audit_logger import VALID_EVENT_TYPES, log_event
+from icdev.tools.audit.audit_logger import VALID_EVENT_TYPES, log_event
 
 
 def _create_audit_table(db_path: Path):
@@ -214,14 +214,14 @@ class TestLogEventSessionId:
         """When session_id is None, log_event should try to get correlation ID."""
         mock_corr_id = "corr-auto-12345"
         with patch(
-            "tools.audit.audit_logger.get_correlation_id",
+            "icdev.tools.audit.audit_logger.get_correlation_id",
             create=True,
         ) as mock_get:
             # We need to patch the import inside log_event
             with patch.dict("sys.modules", {
-                "tools.resilience.correlation": type(sys)("tools.resilience.correlation")
+                "icdev.tools.resilience.correlation": type(sys)("icdev.tools.resilience.correlation")
             }):
-                sys.modules["tools.resilience.correlation"].get_correlation_id = lambda: mock_corr_id
+                sys.modules["icdev.tools.resilience.correlation"].get_correlation_id = lambda: mock_corr_id
                 entry_id = log_event(
                     event_type="project_created",
                     actor="test",

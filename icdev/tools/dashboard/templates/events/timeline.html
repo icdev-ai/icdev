@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Events Timeline — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a>
+    <span class="separator" aria-hidden="true">/</span>
+    <span class="current">Events</span>
+</nav>
+
+<div class="page-header">
+    <h1>Event Timeline</h1>
+    <p class="subtitle">Real-time hook events and system activity
+        <span class="help-icon" title="Events are ingested from Claude Code hooks and CI/CD triggers. Polling updates every 3 seconds.">?</span>
+    </p>
+</div>
+
+<!-- Filter Bar -->
+<div style="display: flex; gap: 8px; align-items: center; margin-bottom: 1rem; flex-wrap: wrap;">
+    <label for="filter-severity" style="font-size: 0.85rem;">Severity:</label>
+    <select id="filter-severity" aria-label="Filter by severity"
+            style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px;">
+        <option value="">All</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="warning">Warning</option>
+        <option value="info">Info</option>
+    </select>
+    <label for="filter-hook" style="font-size: 0.85rem; margin-left: 8px;">Hook:</label>
+    <select id="filter-hook" aria-label="Filter by hook type"
+            style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px;">
+        <option value="">All</option>
+    </select>
+    <label for="filter-tool" style="font-size: 0.85rem; margin-left: 8px;">Tool:</label>
+    <select id="filter-tool" aria-label="Filter by tool name"
+            style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px;">
+        <option value="">All</option>
+    </select>
+    <button onclick="loadEvents()" style="background: var(--accent-blue); color: white; border: none; border-radius: 4px; padding: 4px 12px; cursor: pointer; margin-left: 8px;">Refresh</button>
+    <span id="poll-status" class="text-muted" style="margin-left: auto; font-size: 0.8rem;"></span>
+</div>
+
+<!-- Summary Cards -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <div class="card stat-card">
+        <div class="stat-label">Total Events</div>
+        <div class="stat-value" id="stat-total">{{ recent_events|length }}</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-label">Critical</div>
+        <div class="stat-value" id="stat-critical" style="color: var(--status-critical);">0</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-label">Warnings</div>
+        <div class="stat-value" id="stat-warning" style="color: var(--status-warning);">0</div>
+    </div>
+    <div class="card stat-card">
+        <div class="stat-label">Info</div>
+        <div class="stat-value" id="stat-info" style="color: var(--accent-blue-light);">0</div>
+    </div>
+</div>
+
+<!-- Events Table -->
+<div class="card table-container">
+    <table id="events-table" role="grid" aria-label="Hook events timeline">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Severity</th>
+                <th>Hook Type</th>
+                <th>Tool</th>
+                <th>Message</th>
+                <th>Project</th>
+            </tr>
+        </thead>
+        <tbody id="events-body">
+            {% if recent_events %}
+                {% for ev in recent_events %}
+                <tr>
+                    <td><small>{{ ev.created_at or '—' }}</small></td>
+                    <td>
+                        {% if ev.severity == 'critical' %}
+                            <span style="color: var(--status-critical); font-weight: 600;">{{ ev.severity }}</span>
+                        {% elif ev.severity == 'high' %}
+                            <span style="color: var(--status-critical);">{{ ev.severity }}</span>
+                        {% elif ev.severity == 'warning' %}
+                            <span style="color: var(--status-warning);">{{ ev.severity }}</span>
+                        {% else %}
+                            <span class="text-muted">{{ ev.severity or 'info' }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ ev.hook_type or '—' }}</td>
+                    <td>{{ ev.tool_name or '—' }}</td>
+                    <td>{{ ev.message or '—' }}</td>
+                    <td>{{ ev.project_id or '—' }}</td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr><td colspan="6" class="text-muted" style="text-align: center;">No events recorded yet. Events appear as hooks fire during Claude Code sessions.</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    'use strict';
+
+    var _cursor = '';
+    var _pollInterval = 3000;
+    var _pollTimer = null;
+
+    function severityBadge(sev) {
+        var colors = {
+            critical: 'var(--status-critical)',
+            high: 'var(--status-critical)',
+            warning: 'var(--status-warning)',
+            info: 'var(--accent-blue-light)'
+        };
+        var c = colors[sev] || 'var(--text-muted)';
+        var bold = sev === 'critical' ? 'font-weight:600;' : '';
+        return '<span style="color:' + c + ';' + bold + '">' + (sev || 'info') + '</span>';
+    }
+
+    function esc(s) {
+        var d = document.createElement('div');
+        d.appendChild(document.createTextNode(s || ''));
+        return d.innerHTML;
+    }
+
+    // Load filter options
+    fetch('/api/events/filter-options')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var hookSel = document.getElementById('filter-hook');
+            (data.hook_types || []).forEach(function (h) {
+                var o = document.createElement('option');
+                o.value = h; o.textContent = h;
+                hookSel.appendChild(o);
+            });
+            var toolSel = document.getElementById('filter-tool');
+            (data.tool_names || []).forEach(function (t) {
+                var o = document.createElement('option');
+                o.value = t; o.textContent = t;
+                toolSel.appendChild(o);
+            });
+        })
+        .catch(function () {});
+
+    window.loadEvents = function () {
+        var sev = document.getElementById('filter-severity').value;
+        var hook = document.getElementById('filter-hook').value;
+        var tool = document.getElementById('filter-tool').value;
+        var params = ['limit=50'];
+        if (sev) params.push('severity=' + encodeURIComponent(sev));
+        if (hook) params.push('hook_type=' + encodeURIComponent(hook));
+        if (tool) params.push('tool_name=' + encodeURIComponent(tool));
+
+        fetch('/api/events/recent?' + params.join('&'))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var events = data.events || [];
+                updateStats(events, data.total || events.length);
+                renderTable(events);
+                if (events.length > 0) _cursor = events[0].created_at;
+            })
+            .catch(function (err) {
+                document.getElementById('events-body').innerHTML =
+                    '<tr><td colspan="6" class="text-muted" style="text-align:center;">Error: ' + err + '</td></tr>';
+            });
+    };
+
+    function updateStats(events, total) {
+        document.getElementById('stat-total').textContent = total;
+        var counts = { critical: 0, warning: 0, info: 0 };
+        events.forEach(function (e) {
+            if (e.severity === 'critical' || e.severity === 'high') counts.critical++;
+            else if (e.severity === 'warning') counts.warning++;
+            else counts.info++;
+        });
+        document.getElementById('stat-critical').textContent = counts.critical;
+        document.getElementById('stat-warning').textContent = counts.warning;
+        document.getElementById('stat-info').textContent = counts.info;
+    }
+
+    function renderTable(events) {
+        var tbody = document.getElementById('events-body');
+        if (events.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;">No events recorded yet.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = events.map(function (e) {
+            return '<tr>' +
+                '<td><small>' + esc(e.created_at) + '</small></td>' +
+                '<td>' + severityBadge(e.severity) + '</td>' +
+                '<td>' + esc(e.hook_type) + '</td>' +
+                '<td>' + esc(e.tool_name) + '</td>' +
+                '<td>' + esc(e.message) + '</td>' +
+                '<td>' + esc(e.project_id) + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    // Poll for new events
+    function poll() {
+        var params = ['limit=10'];
+        if (_cursor) params.push('since=' + encodeURIComponent(_cursor));
+        fetch('/api/events/poll?' + params.join('&'))
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.events && data.events.length > 0) {
+                    _cursor = data.cursor;
+                    loadEvents();
+                }
+                _pollInterval = data.poll_interval_ms || 3000;
+                document.getElementById('poll-status').textContent = 'Polling active';
+            })
+            .catch(function () {
+                document.getElementById('poll-status').textContent = 'Poll error';
+            });
+    }
+
+    // Start polling
+    _pollTimer = setInterval(poll, _pollInterval);
+
+    // Initial load via JS (overwrite server-rendered content for live updates)
+    loadEvents();
+})();
+</script>
+{% endblock %}

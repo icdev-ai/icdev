@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Quick Paths - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <span class="current">Quick Paths</span>
+    </div>
+    <h1>Quick Paths</h1>
+    <p class="subtitle">Pre-built workflow shortcuts &mdash; pick one and follow the steps. Not sure which? <a href="/wizard">Try the Getting Started wizard</a>.</p>
+</div>
+
+<div class="quick-path-grid">
+    {% for path in QUICK_PATHS %}
+    <div class="quick-path-card">
+        <span class="quick-path-icon">{{ path.icon }}</span>
+        <div class="quick-path-title">{{ path.title }}</div>
+        <div class="quick-path-desc">{{ path.description }}</div>
+        <div class="quick-path-meta">
+            <span>&#x1F464; {{ path.audience }}</span>
+            <span>&#x23F1; {{ path.estimated_time }}</span>
+        </div>
+        <ol class="quick-path-steps">
+            {% for step in path.steps %}
+            <li>
+                <span class="step-icon">&#x25B6;</span>
+                <strong>{{ step.name }}</strong>
+                <span class="text-muted">&mdash; {{ step.desc }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        <div class="quick-path-action">
+            <span class="help-text">First command: <code>python tools/{{ path.steps[0].tool }}</code></span>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Error Recovery Reference -->
+<div class="table-container mt-3">
+    <div class="table-header">
+        <h2>Common Issues &amp; How to Fix Them</h2>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Issue</th>
+                <th>What Happened</th>
+                <th>How to Fix</th>
+                <th>Who</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for key, err in ERROR_RECOVERY.items() %}
+            <tr>
+                <td><strong>{{ key | replace("_", " ") | title }}</strong></td>
+                <td>{{ err.what }}</td>
+                <td style="white-space: pre-line; font-size: 0.8rem;">{{ err.fix }}</td>
+                <td>{{ err.who }}</td>
+                <td class="text-muted">{{ err.time }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

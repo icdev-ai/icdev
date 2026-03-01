@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from tools.requirements.constitution_manager import (
+from icdev.tools.requirements.constitution_manager import (
     add_principle,
     list_principles,
     remove_principle,

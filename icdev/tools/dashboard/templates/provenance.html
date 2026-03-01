@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Provenance - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Provenance Graph</h1>
+    <p class="text-muted">W3C PROV-AGENT artifact lineage — tracks what produced what across agent operations (Phase 46).</p>
+
+    <!-- Stat grid -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-entities" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Entities</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-activities" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Activities</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-relations" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Relations</div>
+        </div>
+    </div>
+
+    <!-- Entity table -->
+    <h2>Entities</h2>
+    <div class="table-container">
+        <table id="entities-table" aria-label="Provenance entities">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Label</th>
+                    <th>Content Hash</th>
+                    <th>Agent</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody id="entities-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Activity timeline -->
+    <h2>Activities</h2>
+    <div class="table-container">
+        <table id="activities-table" aria-label="Provenance activities">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Label</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Agent</th>
+                </tr>
+            </thead>
+            <tbody id="activities-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Lineage query -->
+    <h2>Lineage Query</h2>
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;">
+        <label for="lineage-entity">Entity ID:</label>
+        <input type="text" id="lineage-entity" placeholder="entity UUID" style="padding:0.4rem;border:1px solid #ccc;border-radius:4px;width:300px;">
+        <select id="lineage-direction" style="padding:0.4rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="backward">Backward (what produced this?)</option>
+            <option value="forward">Forward (what did this produce?)</option>
+        </select>
+        <button onclick="queryLineage()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Query</button>
+    </div>
+    <div id="lineage-result" style="margin-top:1rem;"></div>
+
+    <!-- PROV-JSON export -->
+    <div style="margin-top:2rem;">
+        <button onclick="exportProvJSON()" style="padding:0.5rem 1rem;background:#388e3c;color:#fff;border:none;border-radius:4px;cursor:pointer;">Export PROV-JSON</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // Load entities
+    fetch('/api/provenance/entities?limit=50')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-entities').textContent = data.total || 0;
+            const tbody = document.getElementById('entities-body');
+            if (!data.entities || data.entities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No provenance entities yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.entities.map(e => `
+                <tr>
+                    <td><code title="${e.id}">${(e.id || '').substring(0, 12)}...</code></td>
+                    <td><span class="badge">${e.entity_type}</span></td>
+                    <td>${e.label || ''}</td>
+                    <td><code>${(e.content_hash || '').substring(0, 16)}</code></td>
+                    <td>${e.agent_id || ''}</td>
+                    <td>${e.created_at || ''}</td>
+                </tr>
+            `).join('');
+        }).catch(() => {});
+
+    // Load activities
+    fetch('/api/provenance/activities?limit=50')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-activities').textContent = data.total || 0;
+            const tbody = document.getElementById('activities-body');
+            if (!data.activities || data.activities.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No provenance activities yet.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.activities.map(a => `
+                <tr>
+                    <td><code title="${a.id}">${(a.id || '').substring(0, 12)}...</code></td>
+                    <td><span class="badge">${a.activity_type}</span></td>
+                    <td>${a.label || ''}</td>
+                    <td>${a.start_time || ''}</td>
+                    <td>${a.end_time || ''}</td>
+                    <td>${a.agent_id || ''}</td>
+                </tr>
+            `).join('');
+        }).catch(() => {});
+
+    // Load relation count
+    fetch('/api/provenance/relations?limit=1')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-relations').textContent = (data.relations || []).length;
+        }).catch(() => {});
+
+    // Lineage query
+    window.queryLineage = function() {
+        const entityId = document.getElementById('lineage-entity').value.trim();
+        const direction = document.getElementById('lineage-direction').value;
+        if (!entityId) return;
+
+        fetch(`/api/provenance/lineage/${entityId}?direction=${direction}`)
+            .then(r => r.json())
+            .then(data => {
+                const div = document.getElementById('lineage-result');
+                if (data.error) {
+                    div.innerHTML = `<p style="color:red;">${data.error}</p>`;
+                    return;
+                }
+                if (!data.lineage || data.lineage.length === 0) {
+                    div.innerHTML = '<p>No lineage found for this entity.</p>';
+                    return;
+                }
+                let html = '<table class="table-container"><thead><tr><th>Relation</th><th>Subject</th><th>Object</th></tr></thead><tbody>';
+                data.lineage.forEach(r => {
+                    html += `<tr><td>${r.relation_type}</td><td><code>${(r.subject_id||'').substring(0,12)}</code></td><td><code>${(r.object_id||'').substring(0,12)}</code></td></tr>`;
+                });
+                html += '</tbody></table>';
+                div.innerHTML = html;
+            }).catch(() => {});
+    };
+
+    // PROV-JSON export
+    window.exportProvJSON = function() {
+        fetch('/api/provenance/export')
+            .then(r => r.json())
+            .then(data => {
+                const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'prov-export.json';
+                a.click();
+            }).catch(() => {});
+    };
+})();
+</script>
+{% endblock %}

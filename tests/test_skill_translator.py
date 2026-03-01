@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.dx.skill_translator import (
+from icdev.tools.dx.skill_translator import (
     list_skills,
     parse_claude_skill,
     translate_skills,

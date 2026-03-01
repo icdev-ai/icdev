@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}GovCon Capabilities - ICDEV Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <h1>ICDEV Capability Coverage</h1>
+  <p style="color:var(--text-secondary);">Phase 59 &mdash; Coverage by domain, gap analysis, enhancement recommendations</p>
+
+  <!-- Stat Grid -->
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1rem 0;">
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#388e3c;">{{ coverage.L }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">L (Compliant)</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#f57c00;">{{ coverage.M }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">M (Partial)</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;color:#d32f2f;">{{ coverage.N }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">N (Gap)</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ coverage.rate }}%</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Compliance Rate</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid var(--border-color);border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ total_gaps }}</div>
+      <div class="stat-label" style="color:var(--text-secondary);">Unmet Requirements</div>
+    </div>
+  </div>
+
+  <!-- Domain Coverage Grid -->
+  <h2 style="margin-top:1.5rem;">Coverage by Domain</h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Domain</th>
+          <th style="text-align:right;padding:0.5rem;">Total</th>
+          <th style="text-align:right;padding:0.5rem;">L</th>
+          <th style="text-align:right;padding:0.5rem;">M</th>
+          <th style="text-align:right;padding:0.5rem;">N</th>
+          <th style="text-align:center;padding:0.5rem;">Coverage</th>
+          <th style="text-align:left;padding:0.5rem;">Bar</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in domain_coverage %}
+        {% set rate = ((d.L / d.total) * 100) if d.total > 0 else 0 %}
+        {% set bar_color = '#388e3c' if rate >= 80 else '#f57c00' if rate >= 40 else '#d32f2f' %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;font-weight:600;">{{ d.domain }}</td>
+          <td style="padding:0.5rem;text-align:right;">{{ d.total }}</td>
+          <td style="padding:0.5rem;text-align:right;color:#388e3c;">{{ d.L }}</td>
+          <td style="padding:0.5rem;text-align:right;color:#f57c00;">{{ d.M }}</td>
+          <td style="padding:0.5rem;text-align:right;color:#d32f2f;">{{ d.N }}</td>
+          <td style="padding:0.5rem;text-align:center;font-weight:600;color:{{ bar_color }};">{{ rate|round|int }}%</td>
+          <td style="padding:0.5rem;">
+            <div style="background:#e0e0e0;border-radius:3px;height:16px;position:relative;">
+              <div style="background:{{ bar_color }};height:100%;border-radius:3px;width:{{ rate|round|int }}%;min-width:2px;"></div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not domain_coverage %}
+        <tr><td colspan="7" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No capability mappings yet. Run the Map stage.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Gap List -->
+  <h2 style="margin-top:1.5rem;">Top Gaps <span style="font-weight:normal;font-size:0.85rem;color:var(--text-secondary);">(coverage &lt; 0.40)</span></h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Requirement</th>
+          <th style="text-align:left;padding:0.5rem;">Domain</th>
+          <th style="text-align:center;padding:0.5rem;">Coverage</th>
+          <th style="text-align:right;padding:0.5rem;">Frequency</th>
+          <th style="text-align:right;padding:0.5rem;">Priority</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in gaps %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;max-width:350px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ g.requirement }}">{{ g.requirement[:70] }}{% if g.requirement|length > 70 %}...{% endif %}</td>
+          <td style="padding:0.5rem;">
+            <span style="padding:2px 8px;border-radius:10px;font-size:0.8rem;background:var(--bg-secondary);border:1px solid var(--border-color);">{{ g.domain }}</span>
+          </td>
+          <td style="padding:0.5rem;text-align:center;color:#d32f2f;font-weight:600;">{{ (g.coverage * 100)|round|int }}%</td>
+          <td style="padding:0.5rem;text-align:right;">{{ g.frequency }}</td>
+          <td style="padding:0.5rem;text-align:right;font-weight:600;">{{ g.priority|round(2) }}</td>
+        </tr>
+        {% endfor %}
+        {% if not gaps %}
+        <tr><td colspan="5" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No gaps identified yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Enhancement Recommendations -->
+  <h2 style="margin-top:1.5rem;">Enhancement Recommendations</h2>
+  <div class="table-container">
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color);">
+          <th style="text-align:left;padding:0.5rem;">Recommendation</th>
+          <th style="text-align:left;padding:0.5rem;">Domain</th>
+          <th style="text-align:left;padding:0.5rem;">Type</th>
+          <th style="text-align:right;padding:0.5rem;">Impact</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recommendations %}
+        <tr style="border-bottom:1px solid var(--border-color);">
+          <td style="padding:0.5rem;">{{ r.recommendation }}</td>
+          <td style="padding:0.5rem;">{{ r.domain }}</td>
+          <td style="padding:0.5rem;">{{ r.type }}</td>
+          <td style="padding:0.5rem;text-align:right;">
+            {% set imp_color = '#d32f2f' if r.impact == 'high' else '#f57c00' if r.impact == 'medium' else '#388e3c' %}
+            <span style="color:{{ imp_color }};font-weight:600;">{{ r.impact }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not recommendations %}
+        <tr><td colspan="4" style="padding:0.5rem;color:var(--text-secondary);text-align:center;">No recommendations generated yet.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

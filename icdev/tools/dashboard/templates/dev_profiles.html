@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% block title %}Dev Profiles — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<h1>Development Profiles</h1>
+<p class="page-description">
+    Manage tenant and project development standards — coding conventions, tooling preferences,
+    security requirements, and compliance frameworks. Profiles cascade through 5 layers:
+    Platform &rarr; Tenant &rarr; Program &rarr; Project &rarr; User.
+</p>
+
+<!-- Starter Templates -->
+<div class="profile-section">
+    <h3>Starter Templates</h3>
+    <p>Create a profile from an ICDEV-shipped starter template:</p>
+    <div class="table-container">
+        <table class="data-table" id="templates-table">
+            <thead>
+                <tr>
+                    <th>Template</th>
+                    <th>Description</th>
+                    <th>Impact Levels</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="templates-body">
+                <tr><td colspan="4">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Active Profiles -->
+<div class="profile-section">
+    <h3>Active Profiles</h3>
+    <div class="table-container">
+        <table class="data-table" id="profiles-table">
+            <thead>
+                <tr>
+                    <th>Scope</th>
+                    <th>Scope ID</th>
+                    <th>Version</th>
+                    <th>Template</th>
+                    <th>Created By</th>
+                    <th>Created At</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="profiles-body">
+                <tr><td colspan="7">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Create Profile Form -->
+<div class="profile-section">
+    <h3>Create New Profile</h3>
+    <form id="create-profile-form" onsubmit="createProfile(event)">
+        <div class="form-row">
+            <label for="new-scope">Scope:</label>
+            <select id="new-scope" name="scope">
+                <option value="project">Project</option>
+                <option value="tenant">Tenant</option>
+                <option value="program">Program</option>
+                <option value="platform">Platform</option>
+                <option value="user">User</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="new-scope-id">Scope ID:</label>
+            <input type="text" id="new-scope-id" name="scope_id" placeholder="e.g., proj-123 or tenant-abc" required>
+        </div>
+        <div class="form-row">
+            <label for="new-template">Template:</label>
+            <select id="new-template" name="template">
+                <option value="">— No template (empty) —</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <button type="submit" class="btn btn-primary">Create Profile</button>
+        </div>
+        <div id="create-result" style="margin-top: 1rem;"></div>
+    </form>
+</div>
+
+<!-- Resolve Profile (cascade viewer) -->
+<div class="profile-section">
+    <h3>Resolve Cascade</h3>
+    <p>View the effective merged profile for a scope after 5-layer cascade resolution:</p>
+    <form id="resolve-form" onsubmit="resolveProfile(event)">
+        <div class="form-row">
+            <label for="resolve-scope">Scope:</label>
+            <select id="resolve-scope">
+                <option value="project">Project</option>
+                <option value="tenant">Tenant</option>
+                <option value="program">Program</option>
+                <option value="user">User</option>
+            </select>
+        </div>
+        <div class="form-row">
+            <label for="resolve-scope-id">Scope ID:</label>
+            <input type="text" id="resolve-scope-id" placeholder="e.g., proj-123" required>
+        </div>
+        <div class="form-row">
+            <button type="submit" class="btn">Resolve</button>
+        </div>
+    </form>
+    <div id="resolve-result" style="margin-top: 1rem;"></div>
+</div>
+
+<script>
+// Load templates on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadTemplates();
+    loadProfiles();
+});
+
+function loadTemplates() {
+    fetch('/dev-profiles/api/templates')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('templates-body');
+            const select = document.getElementById('new-template');
+            if (!data.templates || data.templates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4">No templates found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            data.templates.forEach(t => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${t.name}</strong></td>
+                    <td>${t.description || '—'}</td>
+                    <td>${(t.impact_levels || []).join(', ')}</td>
+                    <td><button class="btn btn-sm" onclick="useTemplate('${t.file.replace('_v1.yaml', '').replace('.yaml', '')}')">Use</button></td>
+                `;
+                tbody.appendChild(tr);
+                // Add to select
+                const opt = document.createElement('option');
+                opt.value = t.file.replace('_v1.yaml', '').replace('.yaml', '');
+                opt.textContent = t.name;
+                select.appendChild(opt);
+            });
+        })
+        .catch(() => {
+            document.getElementById('templates-body').innerHTML =
+                '<tr><td colspan="4">Error loading templates</td></tr>';
+        });
+}
+
+function loadProfiles() {
+    fetch('/dev-profiles/api/list')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('profiles-body');
+            if (!data.profiles || data.profiles.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7">No active profiles</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            data.profiles.forEach(p => {
+                const tr = document.createElement('tr');
+                const ts = p.created_at ? new Date(p.created_at).toLocaleDateString() : '—';
+                tr.innerHTML = `
+                    <td><span class="source-badge">${p.scope}</span></td>
+                    <td><code>${p.scope_id}</code></td>
+                    <td>v${p.version}</td>
+                    <td>${p.inherits_from || '—'}</td>
+                    <td>${p.created_by}</td>
+                    <td>${ts}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="viewProfile('${p.scope}', '${p.scope_id}')">View</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(() => {
+            document.getElementById('profiles-body').innerHTML =
+                '<tr><td colspan="7">Error loading profiles</td></tr>';
+        });
+}
+
+function useTemplate(templateName) {
+    document.getElementById('new-template').value = templateName;
+    document.getElementById('new-scope-id').focus();
+}
+
+function createProfile(event) {
+    event.preventDefault();
+    const scope = document.getElementById('new-scope').value;
+    const scopeId = document.getElementById('new-scope-id').value;
+    const template = document.getElementById('new-template').value;
+
+    fetch('/dev-profiles/api/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            scope: scope,
+            scope_id: scopeId,
+            template: template || undefined,
+            created_by: 'dashboard',
+        }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            const div = document.getElementById('create-result');
+            if (data.error) {
+                div.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+            } else {
+                div.innerHTML = `<div class="alert alert-success">Profile created: ${data.profile_id} (v${data.version})</div>`;
+                loadProfiles();
+            }
+        })
+        .catch(e => {
+            document.getElementById('create-result').innerHTML =
+                `<div class="alert alert-danger">Error: ${e.message}</div>`;
+        });
+}
+
+function viewProfile(scope, scopeId) {
+    document.getElementById('resolve-scope').value = scope;
+    document.getElementById('resolve-scope-id').value = scopeId;
+    resolveProfile(new Event('submit'));
+}
+
+function resolveProfile(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    const scope = document.getElementById('resolve-scope').value;
+    const scopeId = document.getElementById('resolve-scope-id').value;
+    if (!scopeId) return;
+
+    const div = document.getElementById('resolve-result');
+    div.innerHTML = '<p>Resolving cascade...</p>';
+
+    fetch(`/dev-profiles/api/resolve/${scope}/${scopeId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                div.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+                return;
+            }
+
+            let html = '<div class="resolved-profile">';
+
+            // Ancestry
+            html += '<h4>Cascade Ancestry</h4><ol>';
+            (data.ancestry || []).forEach(a => {
+                html += `<li><span class="source-badge">${a.scope}</span> &rarr; <code>${a.scope_id}</code></li>`;
+            });
+            html += '</ol>';
+
+            // Locks
+            if (data.locks && data.locks.length > 0) {
+                html += '<h4>Locked Dimensions</h4><ul>';
+                data.locks.forEach(l => {
+                    html += `<li><span class="badge badge-warning">${l} — LOCKED</span></li>`;
+                });
+                html += '</ul>';
+            }
+
+            // Resolved dimensions
+            const resolved = data.resolved || {};
+            const provenance = data.provenance || {};
+            Object.keys(resolved).forEach(dim => {
+                const prov = provenance[dim] || {};
+                const lockTag = prov.locked ? ' <span class="badge badge-warning">LOCKED</span>' : '';
+                html += `<h4>${dim.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}${lockTag}</h4>`;
+                html += `<p><small>Source: ${prov.source_scope || '—'} | Enforcement: ${prov.enforcement || 'advisory'}</small></p>`;
+                html += '<table class="data-table"><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody>';
+                const dimData = resolved[dim];
+                if (typeof dimData === 'object' && !Array.isArray(dimData)) {
+                    Object.keys(dimData).forEach(k => {
+                        const v = dimData[k];
+                        const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+                        html += `<tr><td>${k}</td><td><code>${display}</code></td></tr>`;
+                    });
+                }
+                html += '</tbody></table>';
+            });
+
+            html += '</div>';
+            div.innerHTML = html;
+        })
+        .catch(e => {
+            div.innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`;
+        });
+}
+</script>
+
+<style>
+.resolved-profile h4 { margin-top: 1.5rem; margin-bottom: 0.5rem; }
+.resolved-profile .data-table { margin-bottom: 1rem; }
+.form-row { margin-bottom: 0.75rem; display: flex; align-items: center; gap: 0.75rem; }
+.form-row label { min-width: 100px; font-weight: 600; }
+.form-row input, .form-row select { flex: 1; max-width: 400px; padding: 0.4rem 0.6rem; border: 1px solid #ccc; border-radius: 4px; }
+.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.85rem; }
+.alert { padding: 0.75rem 1rem; border-radius: 4px; margin-top: 0.5rem; }
+.alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.alert-danger { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.badge-warning { background: #fff3cd; color: #856404; padding: 0.15rem 0.4rem; border-radius: 3px; font-size: 0.8rem; }
+</style>
+{% endblock %}

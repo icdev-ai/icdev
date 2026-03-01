@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.compliance.ai_accountability_audit import (
+from icdev.tools.compliance.ai_accountability_audit import (
     ACCOUNTABILITY_CHECKS,
     get_accountability_gaps,
     run_accountability_audit,

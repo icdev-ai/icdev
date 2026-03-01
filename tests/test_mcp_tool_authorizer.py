@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.security.mcp_tool_authorizer import MCPToolAuthorizer
+from icdev.tools.security.mcp_tool_authorizer import MCPToolAuthorizer
 
 
 @pytest.fixture

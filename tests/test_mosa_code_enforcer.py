@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from tools.mosa.mosa_code_enforcer import (
+from icdev.tools.mosa.mosa_code_enforcer import (
     _build_module_map,
     _check_direct_coupling,
     _check_missing_openapi,

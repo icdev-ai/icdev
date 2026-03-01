@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from tools.mcp.context_indexer import ClaudeMdIndexer
+from icdev.tools.mcp.context_indexer import ClaudeMdIndexer
 
 
 SAMPLE_CLAUDE_MD = """# CLAUDE.md

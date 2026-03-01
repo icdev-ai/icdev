@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icdev"
-version = "0.2.0"
-description = "Intelligent Coding Development Environment — AI-powered SDLC platform with NIST 800-53 RMF compliance, multi-agent orchestration, and the GOTCHA framework."
+version = "1.0.0"
+description = "Intelligent Certified Development Environment — AI-powered SDLC platform with NIST 800-53 RMF compliance, multi-agent orchestration, and the GOTCHA framework."
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "Proprietary"}
+license = "AGPL-3.0-or-later"
 authors = [
-    {name = "ICDEV Team"},
+    {name = "Steven Chuo"},
 ]
 keywords = ["devops", "compliance", "nist", "fedramp", "govcloud", "llm", "agentic", "sdlc", "gotcha"]
 classifiers = [
@@ -18,7 +18,6 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
-    "License :: Other/Proprietary License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -42,10 +41,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/icdev-project/icdev"
-Documentation = "https://github.com/icdev-project/icdev/tree/master/docs"
-Repository = "https://github.com/icdev-project/icdev"
-Issues = "https://github.com/icdev-project/icdev/issues"
+Homepage = "https://github.com/icdev-ai/icdev"
+Documentation = "https://github.com/icdev-ai/icdev/tree/main/docs"
+Repository = "https://github.com/icdev-ai/icdev"
+Issues = "https://github.com/icdev-ai/icdev/issues"
+Changelog = "https://github.com/icdev-ai/icdev/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Core LLM providers (OpenAI, Anthropic/Bedrock, Gemini, Ollama)
@@ -81,14 +81,6 @@ search = [
     "numpy>=1.26",
     "rank_bm25>=0.2",
 ]
-# Multi-tenant SaaS platform
-saas = [
-    "psycopg2-binary>=2.9",
-    "PyJWT>=2.8",
-    "cryptography>=42.0",
-    "gunicorn>=22.0",
-    "redis>=5.0",
-]
 # Test suite
 testing = [
     "pytest>=8.0",
@@ -104,38 +96,56 @@ security = [
     "detect-secrets>=1.4",
     "cyclonedx-bom>=4.0",
 ]
+# Development
+dev = [
+    "icdev[testing,security]",
+    "build>=1.0",
+    "twine>=5.0",
+]
 # Everything
 full = [
-    "icdev[llm-all,search,saas,testing,security]",
+    "icdev[llm-all,search,testing,security]",
 ]
 
 [project.scripts]
-icdev-mcp-core = "tools.mcp.standalone.core:main"
-icdev-mcp-compliance = "tools.mcp.standalone.compliance:main"
-icdev-mcp-builder = "tools.mcp.standalone.builder:main"
-icdev-mcp-knowledge = "tools.mcp.standalone.knowledge:main"
-icdev-mcp-maintenance = "tools.mcp.standalone.maintenance:main"
-icdev-init-db = "tools.db.init_icdev_db:main"
+icdev-init-db = "icdev.tools.db.init_icdev_db:main"
+icdev-dashboard = "icdev.tools.dashboard.app:main"
+icdev-mcp = "icdev.tools.mcp.unified_server:main"
+icdev-mcp-core = "icdev.tools.mcp.standalone.core:main"
+icdev-mcp-compliance = "icdev.tools.mcp.standalone.compliance:main"
+icdev-mcp-builder = "icdev.tools.mcp.standalone.builder:main"
+icdev-mcp-knowledge = "icdev.tools.mcp.standalone.knowledge:main"
+icdev-mcp-maintenance = "icdev.tools.mcp.standalone.maintenance:main"
 
 [tool.setuptools.packages.find]
-include = [
-    "tools*",
-    "args*",
-    "context*",
-    "goals*",
-    "hardprompts*",
-    "features*",
-    "docs*",
-    "memory*",
+include = ["icdev*"]
+exclude = [
+    "icdev.tools.saas*",
+    "icdev.tools.govcon*",
+    "icdev.tools.rfx*",
+    "icdev.tools.marketplace*",
+    "icdev.tools.creative*",
+    "icdev.tools.gateway*",
+    "icdev.tools.playground*",
+    "tests*",
 ]
-exclude = ["tests*"]
 
 [tool.setuptools.package-data]
-"*" = [
-    "*.yaml", "*.yml", "*.json", "*.md", "*.j2", "*.txt",
-    "*.html", "*.css", "*.js", "*.sql", "*.feature",
-    "*.LICENSE", "*.cfg", "*.toml", "*.ini",
+"icdev" = ["py.typed"]
+"icdev.data" = [
+    "args/**/*.yaml", "args/**/*.yml", "args/**/*.json",
+    "context/**/*.json", "context/**/*.yaml", "context/**/*.md",
+    "context/**/*.j2", "context/**/*.txt",
+    "goals/**/*.md",
+    "hardprompts/**/*.md",
+    "features/**/*.feature", "features/**/*.py",
+    "docs/**/*.md",
 ]
+"icdev.tools.dashboard" = [
+    "templates/**/*.html",
+    "static/**/*.css", "static/**/*.js",
+]
+"icdev.tools.db" = ["migrations/**/*.sql", "migrations/**/*.py"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["__pycache__/*", "*.pyc", "*.pyo"]

@@ -1,0 +1,193 @@
+{% extends "base.html" %}
+{% block title %}{{ section.section_number }}: {{ section.title }} - Proposals - ICDEV{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/proposals">Proposals</a><span class="separator">/</span>
+    <a href="/proposals/{{ section.opportunity_id }}">{{ opp_title }}</a><span class="separator">/</span>
+    <span>{{ section.section_number }}: {{ section.title }}</span>
+</div>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+        <h1>{{ section.section_number }}: {{ section.title }}</h1>
+        <p class="subtitle">Volume {{ section.volume_number }}: {{ section.volume_title }}</p>
+        <div style="margin-top:4px;">
+            {% set sec_colors = {'not_started': 'info', 'outlining': 'info', 'drafting': 'warning', 'internal_review': 'warning', 'pink_team_ready': 'warning', 'pink_team_review': 'warning', 'rework_pink': 'error', 'red_team_ready': 'warning', 'red_team_review': 'warning', 'rework_red': 'error', 'gold_team_ready': 'warning', 'gold_team_review': 'warning', 'white_glove': 'info', 'final': 'success', 'submitted': 'success'} %}
+            <span class="badge badge-{{ sec_colors.get(section.status, 'info') }}">{{ section.status | replace('_', ' ') | title }}</span>
+            {% set pri_colors = {'critical_path': 'error', 'high': 'warning', 'standard': 'info', 'supporting': 'info'} %}
+            <span class="badge badge-{{ pri_colors.get(section.priority, 'info') }}">{{ section.priority | replace('_', ' ') | title }}</span>
+        </div>
+    </div>
+    <div>
+        {% if section.valid_transitions %}
+        <div style="display:flex; gap:8px; align-items:center;">
+            <label style="font-size:12px; color:var(--text-secondary);">Advance to:</label>
+            <select id="advance-status-select" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:6px 10px;border-radius:4px;">
+                {% for t in section.valid_transitions %}
+                <option value="{{ t }}">{{ t | replace('_', ' ') | title }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-primary" onclick="ICDEV.proposals.advanceStatus('{{ section.id }}', document.getElementById('advance-status-select').value)">
+                Advance
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Status Pipeline -->
+<div id="status-pipeline" style="margin:16px 0;"></div>
+
+<!-- Info Grid -->
+<div class="card" style="padding:16px; margin-top:16px;">
+    <div class="info-grid">
+        <div class="info-item"><div class="label">Writer</div><div class="value">{{ section.writer or '—' }}</div></div>
+        <div class="info-item"><div class="label">Reviewer</div><div class="value">{{ section.reviewer or '—' }}</div></div>
+        <div class="info-item"><div class="label">Word Count</div><div class="value">{{ section.current_word_count or 0 }}{% if section.word_limit %} / {{ section.word_limit }}{% endif %}</div></div>
+        <div class="info-item"><div class="label">Page Count</div><div class="value">{{ section.current_page_count or 0 }}{% if section.page_limit %} / {{ section.page_limit }}{% endif %}</div></div>
+        <div class="info-item"><div class="label">Due Date</div><div class="value {% if section.overdue %}text-danger{% endif %}">{{ section.due_date or '—' }}</div></div>
+        <div class="info-item"><div class="label">Priority</div><div class="value">{{ section.priority | replace('_', ' ') | title }}</div></div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" style="margin-top:20px;">
+    <button class="tab-btn active" data-tab="stab-notes">Notes</button>
+    <button class="tab-btn" data-tab="stab-compliance">Compliance ({{ section.compliance_items | length }})</button>
+    <button class="tab-btn" data-tab="stab-findings">Findings ({{ section.findings | length }})</button>
+    <button class="tab-btn" data-tab="stab-deps">Dependencies ({{ section.dependencies | length }})</button>
+    <button class="tab-btn" data-tab="stab-history">History ({{ section.history | length }})</button>
+</div>
+
+<!-- Notes Tab -->
+<div id="stab-notes" class="tab-content active">
+    <div class="card" style="padding:16px; margin-top:12px;">
+        <textarea id="section-notes" rows="8" style="width:100%; background:var(--bg-secondary); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary); padding:12px; border-radius:4px; resize:vertical; font-family:inherit;">{{ section.notes or '' }}</textarea>
+        <div style="margin-top:8px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary" onclick="ICDEV.proposals.saveNotes('{{ section.id }}')">Save Notes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Compliance Tab -->
+<div id="stab-compliance" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Ref</th><th>Requirement</th><th>Type</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for cm in section.compliance_items %}
+                <tr>
+                    <td>{{ cm.section_ref }}</td>
+                    <td>{{ cm.requirement_text[:120] }}{% if cm.requirement_text | length > 120 %}...{% endif %}</td>
+                    <td><span class="badge badge-info">{{ cm.requirement_type }}</span></td>
+                    <td>
+                        {% set cm_colors = {'compliant': 'success', 'partial': 'warning', 'non_compliant': 'error', 'not_applicable': 'info', 'not_addressed': 'error'} %}
+                        <span class="badge badge-{{ cm_colors.get(cm.compliance_status, 'info') }}">{{ cm.compliance_status | replace('_', ' ') | title }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted" style="text-align:center;">No compliance items linked to this section</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Findings Tab -->
+<div id="stab-findings" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Review</th><th>Type</th><th>Severity</th><th>Description</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for f in section.findings %}
+                <tr>
+                    <td><span class="badge badge-info">{{ f.review_type | replace('_', ' ') | title }}</span></td>
+                    <td>{{ f.finding_type | replace('_', ' ') | title }}</td>
+                    <td>
+                        {% set sev_colors = {'critical': 'error', 'major': 'warning', 'minor': 'info', 'observation': 'info'} %}
+                        <span class="badge badge-{{ sev_colors.get(f.severity, 'info') }}">{{ f.severity | title }}</span>
+                    </td>
+                    <td>{{ f.description[:120] }}{% if f.description | length > 120 %}...{% endif %}</td>
+                    <td>
+                        {% set fs_colors = {'open': 'error', 'in_progress': 'warning', 'resolved': 'success', 'deferred': 'info', 'wont_fix': 'info'} %}
+                        <span class="badge badge-{{ fs_colors.get(f.status, 'info') }}">{{ f.status | replace('_', ' ') | title }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-muted" style="text-align:center;">No findings for this section</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Dependencies Tab -->
+<div id="stab-deps" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Depends On</th><th>Current Status</th><th>Required Status</th><th>Type</th><th>Met?</th></tr></thead>
+            <tbody>
+                {% for d in section.dependencies %}
+                <tr>
+                    <td>{{ d.depends_on_title }}</td>
+                    <td><span class="badge badge-info">{{ d.depends_on_status | replace('_', ' ') | title }}</span></td>
+                    <td>{{ d.required_status | replace('_', ' ') | title }}</td>
+                    <td>{{ d.dependency_type | title }}</td>
+                    <td>
+                        {% if d.met %}<span class="badge badge-success">Yes</span>{% else %}<span class="badge badge-error">No</span>{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-muted" style="text-align:center;">No dependencies</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- History Tab -->
+<div id="stab-history" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Timestamp</th><th>From</th><th>To</th><th>Changed By</th><th>Reason</th></tr></thead>
+            <tbody>
+                {% for h in section.history %}
+                <tr>
+                    <td class="text-muted">{{ h.created_at }}</td>
+                    <td>{{ (h.old_status or '—') | replace('_', ' ') | title }}</td>
+                    <td><span class="badge badge-info">{{ h.new_status | replace('_', ' ') | title }}</span></td>
+                    <td>{{ h.changed_by or '—' }}</td>
+                    <td>{{ h.reason or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
+</style>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Tab switching
+    document.querySelectorAll(".tab-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.remove("active"); });
+            document.querySelectorAll(".tab-content").forEach(function(c) { c.style.display = "none"; c.classList.remove("active"); });
+            btn.classList.add("active");
+            var tab = document.getElementById(btn.getAttribute("data-tab"));
+            if (tab) { tab.style.display = "block"; tab.classList.add("active"); }
+        });
+    });
+
+    // Status pipeline
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.renderStatusPipeline("status-pipeline", "{{ section.status }}");
+    }
+});
+</script>
+{% endblock %}

@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.analysis.code_analyzer import (
+from icdev.tools.analysis.code_analyzer import (
     CodeAnalyzer,
     _CognitiveComplexityVisitor,
     _NestingDepthVisitor,

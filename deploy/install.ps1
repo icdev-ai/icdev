@@ -59,7 +59,7 @@ if ($Help) {
 Write-Host ""
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host "  ICDEV Modular Installer" -ForegroundColor Cyan
-Write-Host "  Intelligent Coding Development Platform" -ForegroundColor Cyan
+Write-Host "  Intelligent Certified Development Platform" -ForegroundColor Cyan
 Write-Host "================================================================" -ForegroundColor Cyan
 Write-Host ""
 

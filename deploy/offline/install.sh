@@ -38,7 +38,7 @@ banner() {
     echo -e "${CYAN}================================================================${NC}"
     echo -e "${CYAN}  CUI // SP-CTI${NC}"
     echo -e "${CYAN}  ICDEV On-Premises Installer v21.0.0${NC}"
-    echo -e "${CYAN}  Intelligent Coding Development Platform${NC}"
+    echo -e "${CYAN}  Intelligent Certified Development Platform${NC}"
     echo -e "${CYAN}================================================================${NC}"
     echo ""
 }

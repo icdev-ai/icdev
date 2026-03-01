@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from tools.mosa.modular_design_analyzer import (
+from icdev.tools.mosa.modular_design_analyzer import (
     _build_dependency_graph,
     _count_cycles,
     _detect_circular_deps,

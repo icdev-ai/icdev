@@ -87,6 +87,35 @@ ICDEV_PORTS = {
     "compliance": 8446, "security": 8447, "infrastructure": 8448,
     "knowledge": 8449, "monitor": 8450, "mbse": 8451,
     "modernization": 8452,
+    # D-CHILD-1: Enterprise agents
+    "requirements_analyst": 8453, "supply_chain": 8454,
+    "simulation": 8455, "devsecops_zta": 8457,
+}
+
+# D-CHILD-3: Parent-only directories — never copied to child apps
+PARENT_ONLY_DIRS = {
+    "tools/govcon", "tools/saas", "tools/creative", "tools/innovation",
+    "tools/marketplace", "tools/translation", "tools/gateway", "tools/rfx",
+}
+
+# D-CHILD-3: Parent-only Claude Code artifacts — excluded from child inheritance
+PARENT_ONLY_COMMANDS = {"icdev-agentic.md", "icdev-innovate.md", "icdev-translate.md"}
+PARENT_ONLY_SKILLS = {"icdev-innovate", "icdev-market"}
+PARENT_ONLY_E2E = {"saas_portal.md"}
+PARENT_ONLY_TEMPLATES = {"proposals", "cpmp", "govcon", "rfx"}
+PARENT_ONLY_API_MODULES = {"proposals.py", "cpmp.py", "govcon.py"}
+# D-CHILD-10: Parent-only context directories — excluded from bulk context/ copy
+PARENT_ONLY_CONTEXT = {
+    "govcon", "marketplace", "translation", "modernization",
+}
+# D-CHILD-10: Parent-only static JS files
+PARENT_ONLY_STATIC_JS = {"proposals.js"}
+# D-CHILD-10: Skill-to-capability mapping — skills excluded when capability is off
+SKILL_CAPABILITY_MAP = {
+    "icdev-mbse": "mbse",
+    "icdev-modernize": "modernization",
+    "icdev-secure": "security",
+    "icdev-query": "dashboard",
 }
 
 # Files that MUST NOT be copied to child apps (grandchild prevention D28)
@@ -109,6 +138,7 @@ DIRECTORY_TREE = [
     "tools/testing", "tools/ci/triggers", "tools/ci/workflows",
     "tools/infra", "tools/maintenance", "tools/mcp", "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
+    "tools/llm", "tools/compat", "tools/cli",  # D-CHILD-9: fundamental infra
     "args", "context/agentic", "context/compliance", "context/languages",
     "hardprompts/agent", "hardprompts/security",  # D-EPSEC-7
     "memory/logs", "data",
@@ -127,8 +157,19 @@ CONDITIONAL_DIRS = {
     "mbse": ["tools/mbse", "context/mbse", "hardprompts/mbse"],
     "dashboard": [
         "tools/dashboard", "tools/dashboard/templates",
-        "tools/dashboard/static",
+        "tools/dashboard/static", "tools/dashboard/api",
     ],
+    # D-CHILD-1: Enterprise capability directories
+    "ricoas": [
+        "tools/requirements", "tools/supply_chain", "tools/simulation",
+        "tools/integration", "context/requirements",
+    ],
+    "devsecops_zta": ["tools/devsecops", "context/devsecops"],
+    "observability": [
+        "tools/observability", "tools/observability/shap",
+        "tools/observability/provenance",
+    ],
+    "code_intelligence": ["tools/analysis"],
 }
 
 
@@ -214,10 +255,17 @@ def _copy_and_adapt_file(
 
 def _copy_directory(
     src_dir: Path, dest_dir: Path, adaptations: List[str], blueprint: dict,
-    exclude_files: Optional[set] = None
+    exclude_files: Optional[set] = None,
+    skip_subdirs: Optional[set] = None,
 ) -> Tuple[int, int]:
-    """Copy a directory tree with adaptations. Returns (copied, skipped)."""
+    """Copy a directory tree with adaptations. Returns (copied, skipped).
+
+    Args:
+        skip_subdirs: Set of immediate subdirectory names to skip entirely.
+                      E.g. {"govcon", "marketplace"} skips context/govcon/*.
+    """
     exclude_files = exclude_files or set()
+    skip_subdirs = skip_subdirs or set()
     copied = 0
     skipped = 0
 
@@ -234,6 +282,13 @@ def _copy_directory(
             continue
         if src_file.suffix == '.pyc' or '__pycache__' in str(src_file):
             continue
+        # D-CHILD-10: Skip files under parent-only subdirectories
+        if skip_subdirs:
+            rel_parts = src_file.relative_to(src_dir).parts
+            if rel_parts and rel_parts[0] in skip_subdirs:
+                logger.debug("Skipping parent-only subdir: %s", rel_parts[0])
+                skipped += 1
+                continue
 
         rel = src_file.relative_to(src_dir)
         dest_file = dest_dir / rel
@@ -291,6 +346,12 @@ def step_02_copy_and_adapt_tools(
         dest = entry.get("dest", source)
         adaptations = entry.get("adaptations", [])
 
+        # D-CHILD-3: Skip parent-only directories
+        if any(source == d or source.startswith(d + "/") for d in PARENT_ONLY_DIRS):
+            total_skipped += 1
+            results.append({"source": source, "status": "skipped_parent_only"})
+            continue
+
         src_path = icdev_root / source
         dest_path = child_root / dest
 
@@ -311,9 +372,15 @@ def step_02_copy_and_adapt_tools(
             if source == "tools/builder" or source.startswith("tools/builder"):
                 exclude = GENERATION_TOOLS
 
+            # D-CHILD-10: For context/ bulk copy, skip parent-only subdirs
+            skip_subdirs: set = set()
+            if source.rstrip("/") == "context":
+                skip_subdirs = PARENT_ONLY_CONTEXT
+
             copied, skipped = _copy_directory(
                 src_path, dest_path, adaptations, blueprint,
                 exclude_files=exclude,
+                skip_subdirs=skip_subdirs,
             )
             total_copied += copied
             total_skipped += skipped
@@ -783,10 +850,204 @@ def _generate_dashboard_stub(
     return True
 
 
+def _strip_govcon_from_dashboard(content: str) -> str:
+    """Remove GovProposal/CPMP/GovCon imports and registrations from app.py.
+
+    D-CHILD-3: Children never receive GovProposal functionality.
+
+    The parent's govcon init block looks like::
+
+        # D-CHILD-6: ...
+        import os as _os
+        _GOVCON_ENABLED = _os.environ.get(...)
+        _HAS_GOVCON = False
+        if _GOVCON_ENABLED:
+            try:
+                from tools.dashboard.api.proposals import proposals_api
+                ...
+                _HAS_GOVCON = True
+            except ImportError:
+                _HAS_GOVCON = False
+
+    This function replaces that entire block with a single constant::
+
+        _HAS_GOVCON = False  # D-CHILD-3: GovCon disabled in child apps
+    """
+    lines = content.split("\n")
+    filtered = []
+    # --- State: govcon init block removal ---
+    in_govcon_init = False
+    govcon_init_done = False
+    govcon_init_indent = 0
+    # --- State: inline route block removal ---
+    skip_route_block = False
+
+    for line in lines:
+        stripped = line.strip()
+
+        # ── Govcon init block: detect start ────────────────────────
+        if not govcon_init_done and not in_govcon_init:
+            if "_GOVCON_ENABLED" in stripped and "=" in stripped:
+                in_govcon_init = True
+                # Also retroactively remove the preceding comment + import _os
+                # that belong to this block
+                while filtered and filtered[-1].strip() in (
+                    "# D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded",
+                    "import os as _os",
+                    "",
+                ):
+                    filtered.pop()
+                # Emit the replacement constant
+                filtered.append(
+                    "_HAS_GOVCON = False  "
+                    "# D-CHILD-3: GovCon disabled in child apps"
+                )
+                continue
+
+        # ── Govcon init block: skip body ───────────────────────────
+        if in_govcon_init:
+            # The block ends when we hit a top-level statement (indent 0)
+            # that is NOT part of the if/try/except/else structure and is
+            # NOT a blank line.
+            if stripped == "":
+                continue  # skip blank lines inside the block
+            indent = len(line) - len(line.lstrip())
+            if indent == 0 and stripped not in ("", ) and not stripped.startswith(
+                ("if _GOVCON_ENABLED", "_HAS_GOVCON", "else:")
+            ):
+                # This line is the FIRST line AFTER the govcon init block
+                in_govcon_init = False
+                govcon_init_done = True
+                # fall through to normal processing for this line
+            else:
+                continue  # still inside the govcon init block
+
+        # ── Skip GovProposal blueprint imports and registrations ───
+        if any(mod in stripped for mod in (
+            "from tools.dashboard.api.proposals",
+            "from tools.dashboard.api.govcon",
+            "from tools.dashboard.api.cpmp",
+        )):
+            continue
+
+        if any(mod in stripped for mod in (
+            "proposals_api", "govcon_api", "cpmp_api",
+        )):
+            if "register_blueprint" in stripped or "import" in stripped:
+                continue
+
+        # ── Skip GovProposal/CPMP inline route blocks ─────────────
+        if any(pat in stripped for pat in (
+            'def proposals_', 'def cpmp_', 'def govcon_',
+            '@app.route("/proposals', '@app.route("/cpmp',
+            '@app.route("/govcon',
+            'SECTION_TRANSITIONS',
+        )):
+            skip_route_block = True
+            continue
+
+        # End skip block at next function/route decorator
+        if skip_route_block and (stripped.startswith("@app.route") or
+                                  stripped.startswith("def ") or
+                                  stripped.startswith("# ===")):
+            if not any(k in stripped for k in ("/proposals", "/cpmp", "/govcon",
+                                                "proposals_", "cpmp_", "govcon_")):
+                skip_route_block = False
+
+        if skip_route_block:
+            continue
+
+        filtered.append(line)
+
+    return "\n".join(filtered)
+
+
+def _copy_full_dashboard(
+    child_root: Path, blueprint: dict, icdev_root: Path,
+) -> dict:
+    """D-CHILD-4: Copy full 40+ page dashboard to child app.
+
+    Copies all dashboard components except GovProposal/CPMP/GovCon content.
+    Falls back to _generate_dashboard_stub() if source doesn't exist.
+    """
+    dash_src = icdev_root / "tools" / "dashboard"
+    if not dash_src.exists():
+        _generate_dashboard_stub(child_root, blueprint)
+        return {"mode": "stub", "reason": "dashboard source not found"}
+
+    dash_dst = child_root / "tools" / "dashboard"
+    dash_dst.mkdir(parents=True, exist_ok=True)
+    copied = 0
+
+    # 1. Copy app.py with GovProposal stripped
+    app_src = dash_src / "app.py"
+    if app_src.exists():
+        content = app_src.read_text(encoding="utf-8", errors="replace")
+        content = _strip_govcon_from_dashboard(content)
+        content = _apply_adaptations(content, ["app_name_replace", "db_rename"], blueprint)
+        (dash_dst / "app.py").write_text(content, encoding="utf-8")
+        copied += 1
+
+    # 2. Copy templates (excluding PARENT_ONLY_TEMPLATES)
+    tpl_src = dash_src / "templates"
+    if tpl_src.exists():
+        tpl_dst = dash_dst / "templates"
+        tpl_dst.mkdir(parents=True, exist_ok=True)
+        for item in sorted(tpl_src.rglob("*")):
+            if item.is_file():
+                rel = item.relative_to(tpl_src)
+                # Skip parent-only template directories
+                if any(rel.parts[0] == d for d in PARENT_ONLY_TEMPLATES
+                       if len(rel.parts) > 0):
+                    continue
+                dst_file = tpl_dst / rel
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(str(item), str(dst_file))
+                copied += 1
+
+    # 3. Copy API modules (excluding PARENT_ONLY_API_MODULES)
+    api_src = dash_src / "api"
+    if api_src.exists():
+        api_dst = dash_dst / "api"
+        api_dst.mkdir(parents=True, exist_ok=True)
+        for item in sorted(api_src.glob("*.py")):
+            if item.name in PARENT_ONLY_API_MODULES:
+                continue
+            dst_file = api_dst / item.name
+            content = item.read_text(encoding="utf-8", errors="replace")
+            content = _apply_adaptations(content, ["app_name_replace", "db_rename"], blueprint)
+            dst_file.write_text(content, encoding="utf-8")
+            copied += 1
+
+    # 4. Copy static assets (JS, CSS) — excluding parent-only JS
+    static_src = dash_src / "static"
+    if static_src.exists():
+        c, _ = _copy_directory(
+            static_src, dash_dst / "static", [], blueprint,
+            exclude_files=PARENT_ONLY_STATIC_JS,
+        )
+        copied += c
+
+    # 5. Copy helper modules (auth.py, ux_helpers.py, etc.)
+    for helper in ("auth.py", "ux_helpers.py", "__init__.py"):
+        helper_src = dash_src / helper
+        if helper_src.exists():
+            content = helper_src.read_text(encoding="utf-8", errors="replace")
+            content = _apply_adaptations(
+                content, ["app_name_replace", "db_rename"], blueprint
+            )
+            (dash_dst / helper).write_text(content, encoding="utf-8")
+            copied += 1
+
+    logger.info("Step 3: Full dashboard copied — %d files (GovProposal stripped)", copied)
+    return {"mode": "full", "files_copied": copied}
+
+
 def step_03_agent_infrastructure(
-    child_root: Path, blueprint: dict
+    child_root: Path, blueprint: dict, icdev_root: Optional[Path] = None
 ) -> dict:
     """Step 3: Generate agent cards, config, and MCP server stubs."""
+    icdev_root = icdev_root or BASE_DIR
     agents = blueprint.get("agents", [])
     app_name = blueprint["app_name"]
     cards_written = 0
@@ -828,20 +1089,20 @@ def step_03_agent_infrastructure(
     mcp_stubs_written = _generate_mcp_stubs(
         mcp_dir, agents, app_name, blueprint)
 
-    # Generate capability-driven dashboard stub (not copied from ICDEV)
-    dashboard_generated = False
+    # D-CHILD-4: Full dashboard copy (replaces minimal stub)
+    dashboard_result = {"mode": "none"}
     capabilities = blueprint.get("capabilities", {})
     if capabilities.get("dashboard", False):
-        dashboard_generated = _generate_dashboard_stub(child_root, blueprint)
+        dashboard_result = _copy_full_dashboard(child_root, blueprint, icdev_root)
 
     logger.info(
         "Step 3: %d agent cards, 1 config, %d MCP stubs, dashboard=%s",
-        cards_written, mcp_stubs_written, dashboard_generated,
+        cards_written, mcp_stubs_written, dashboard_result.get("mode"),
     )
     return {
         "agent_cards": cards_written,
         "mcp_stubs": mcp_stubs_written,
-        "dashboard_generated": dashboard_generated,
+        "dashboard": dashboard_result,
     }
 
 
@@ -1119,6 +1380,21 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
     ]
     if capabilities.get("compliance"):
         args_files.append(("args/cui_markings.yaml", ["classification_update"]))
+
+    # D-CHILD-1: Enterprise capability args files
+    if capabilities.get("ricoas"):
+        args_files.append(("args/ricoas_config.yaml", []))
+    if capabilities.get("devsecops_zta"):
+        args_files.append(("args/devsecops_config.yaml", []))
+        args_files.append(("args/zta_config.yaml", []))
+    if capabilities.get("ai_security"):
+        args_files.append(("args/owasp_agentic_config.yaml", []))
+    if capabilities.get("observability"):
+        args_files.append(("args/observability_tracing_config.yaml", []))
+    if capabilities.get("code_intelligence"):
+        args_files.append(("args/code_quality_config.yaml", []))
+    if capabilities.get("ai_governance"):
+        args_files.append(("args/ai_governance_config.yaml", []))
 
     for rel_path, adaptations in args_files:
         src = icdev_root / rel_path
@@ -1416,15 +1692,8 @@ def step_09_cicd_setup(child_root: Path, blueprint: dict, icdev_root: Path) -> d
             ["bot_identifier_replace", "app_name_replace"], blueprint)
         copied += c
 
-    # Copy .claude/commands/ (excluding icdev-agentic.md which is ICDEV-only)
-    cmd_src = icdev_root / ".claude" / "commands"
-    cmd_dest = child_root / ".claude" / "commands"
-    if cmd_src.exists():
-        c, _ = _copy_directory(
-            cmd_src, cmd_dest,
-            ["app_name_replace"], blueprint,
-            exclude_files={"icdev-agentic.md"})
-        copied += c
+    # NOTE: .claude/commands/ is handled by step_09c_claude_code_config()
+    # with proper PARENT_ONLY_COMMANDS and PARENT_ONLY_E2E filtering.
 
     # Generate .gitignore
     gitignore_content = """# Python
@@ -1562,15 +1831,214 @@ def _copy_license_files(
         )
         files_copied.append("data/license.json")
 
+    # D-CHILD-5: AGPL-3.0 license for government deliveries
+    license_type = blueprint.get("license", "AGPL-3.0")
+    if license_type == "AGPL-3.0":
+        agpl_text = (
+            f"GNU AFFERO GENERAL PUBLIC LICENSE\n"
+            f"Version 3, 19 November 2007\n\n"
+            f"Copyright (C) {datetime.now(tz=timezone.utc).year} "
+            f"{blueprint.get('customer_org', 'ICDEV Enterprise Delivery')}\n\n"
+            f"This program is free software: you can redistribute it and/or modify\n"
+            f"it under the terms of the GNU Affero General Public License as\n"
+            f"published by the Free Software Foundation, either version 3 of the\n"
+            f"License, or (at your option) any later version.\n\n"
+            f"This program is distributed in the hope that it will be useful,\n"
+            f"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
+            f"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the\n"
+            f"GNU Affero General Public License for more details.\n\n"
+            f"You should have received a copy of the GNU Affero General Public\n"
+            f"License along with this program. If not, see\n"
+            f"<https://www.gnu.org/licenses/>.\n\n"
+            f"---\n"
+            f"Application: {app_name}\n"
+            f"Generated by: ICDEV Enterprise Delivery (D374)\n"
+            f"License grants free internal use for government operations.\n"
+            f"Network use (SaaS) requires AGPL-3.0 source disclosure.\n"
+        )
+        lic_path = child_root / "LICENSE"
+        lic_path.write_text(agpl_text, encoding="utf-8")
+        files_copied.append("LICENSE (AGPL-3.0)")
+
     logger.info(
-        "Step 9b: License files copied: %s (demo=%s)",
-        files_copied, demo_mode
+        "Step 9b: License files copied: %s (demo=%s, license=%s)",
+        files_copied, demo_mode, license_type,
     )
     return {
         "files_copied": files_copied,
         "demo_mode": demo_mode,
         "license_info": license_info,
+        "license_type": license_type,
     }
+
+
+# ============================================================
+# STEP 9c: Claude Code Configuration Inheritance (D-CHILD-2)
+# ============================================================
+
+
+def step_09c_claude_code_config(
+    child_root: Path, blueprint: dict, icdev_root: Path,
+) -> dict:
+    """Step 9c: Copy .claude/ directory artifacts from parent to child.
+
+    D-CHILD-2: .claude/ is a first-class generation artifact.
+    D-CHILD-3: PARENT_ONLY_COMMANDS/SKILLS/E2E are excluded.
+    """
+    files_copied: List[str] = []
+    files_skipped: List[str] = []
+    claude_src = icdev_root / ".claude"
+
+    if not claude_src.exists():
+        logger.info("Step 9c: No .claude directory found in ICDEV root — skipping")
+        return {"files_copied": [], "files_skipped": [], "skipped": True}
+
+    claude_dst = child_root / ".claude"
+
+    # --- Hooks (copy all from .claude/hooks/) ---
+    hooks_src = claude_src / "hooks"
+    if hooks_src.exists():
+        hooks_dst = claude_dst / "hooks"
+        hooks_dst.mkdir(parents=True, exist_ok=True)
+        for hook_file in sorted(hooks_src.glob("*")):
+            if hook_file.is_file():
+                dst_file = hooks_dst / hook_file.name
+                content = hook_file.read_text(encoding="utf-8", errors="replace")
+                # Adapt pre_tool_use.py: filter APPEND_ONLY_TABLES to child's schema
+                if hook_file.name == "pre_tool_use.py":
+                    content = _adapt_pre_tool_use_for_child(content, blueprint)
+                dst_file.write_text(content, encoding="utf-8")
+                files_copied.append(f".claude/hooks/{hook_file.name}")
+
+    # --- Commands (exclude PARENT_ONLY_COMMANDS) ---
+    cmds_src = claude_src / "commands"
+    if cmds_src.exists():
+        cmds_dst = claude_dst / "commands"
+        cmds_dst.mkdir(parents=True, exist_ok=True)
+        for cmd_file in sorted(cmds_src.glob("*.md")):
+            if cmd_file.name in PARENT_ONLY_COMMANDS:
+                files_skipped.append(f".claude/commands/{cmd_file.name}")
+                continue
+            dst_file = cmds_dst / cmd_file.name
+            content = cmd_file.read_text(encoding="utf-8", errors="replace")
+            content = content.replace("ICDEV", blueprint["app_name"])
+            dst_file.write_text(content, encoding="utf-8")
+            files_copied.append(f".claude/commands/{cmd_file.name}")
+
+        # E2E specs (exclude PARENT_ONLY_E2E)
+        e2e_src = cmds_src / "e2e"
+        if e2e_src.exists():
+            e2e_dst = cmds_dst / "e2e"
+            e2e_dst.mkdir(parents=True, exist_ok=True)
+            for e2e_file in sorted(e2e_src.glob("*.md")):
+                if e2e_file.name in PARENT_ONLY_E2E:
+                    files_skipped.append(f".claude/commands/e2e/{e2e_file.name}")
+                    continue
+                dst_file = e2e_dst / e2e_file.name
+                content = e2e_file.read_text(encoding="utf-8", errors="replace")
+                dst_file.write_text(content, encoding="utf-8")
+                files_copied.append(f".claude/commands/e2e/{e2e_file.name}")
+
+    # --- Skills (exclude PARENT_ONLY_SKILLS + capability-gated, D-CHILD-10) ---
+    capabilities = blueprint.get("capabilities", {})
+    skills_src = claude_src / "skills"
+    if skills_src.exists():
+        skills_dst = claude_dst / "skills"
+        skills_dst.mkdir(parents=True, exist_ok=True)
+        for skill_dir in sorted(skills_src.iterdir()):
+            if not skill_dir.is_dir():
+                continue
+            # Check parent-only exclusion
+            if skill_dir.name in PARENT_ONLY_SKILLS:
+                files_skipped.append(f".claude/skills/{skill_dir.name}/")
+                continue
+            # Check capability-gated skills
+            required_cap = SKILL_CAPABILITY_MAP.get(skill_dir.name)
+            if required_cap and not capabilities.get(required_cap, False):
+                files_skipped.append(f".claude/skills/{skill_dir.name}/")
+                logger.debug(
+                    "Skipping skill %s — requires capability %s",
+                    skill_dir.name, required_cap,
+                )
+                continue
+            dst_skill = skills_dst / skill_dir.name
+            shutil.copytree(
+                str(skill_dir), str(dst_skill), dirs_exist_ok=True
+            )
+            files_copied.append(f".claude/skills/{skill_dir.name}/")
+
+    # --- settings.json ---
+    settings_src = claude_src / "settings.json"
+    if settings_src.exists():
+        settings_dst = claude_dst / "settings.json"
+        content = settings_src.read_text(encoding="utf-8", errors="replace")
+        content = content.replace("ICDEV", blueprint["app_name"])
+        settings_dst.write_text(content, encoding="utf-8")
+        files_copied.append(".claude/settings.json")
+
+    # --- file_access_tiers.yaml ---
+    tiers_src = icdev_root / "args" / "file_access_tiers.yaml"
+    if tiers_src.exists():
+        tiers_dst = child_root / "args" / "file_access_tiers.yaml"
+        tiers_dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(tiers_src), str(tiers_dst))
+        files_copied.append("args/file_access_tiers.yaml")
+
+    logger.info(
+        "Step 9c: Claude Code config — %d files copied, %d excluded (parent-only)",
+        len(files_copied), len(files_skipped)
+    )
+    return {
+        "files_copied": files_copied,
+        "files_skipped": files_skipped,
+    }
+
+
+def _adapt_pre_tool_use_for_child(content: str, blueprint: dict) -> str:
+    """Filter APPEND_ONLY_TABLES in pre_tool_use.py to child's DB schema.
+
+    Only keeps table names that exist in the child's enabled capability
+    table groups. This prevents the hook from referencing tables that
+    don't exist in the child's database.
+    """
+    # Ensure project root is in sys.path for deferred import
+    _project_root = str(Path(__file__).resolve().parent.parent.parent)
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
+    from tools.builder.db_init_generator import (
+        CORE_TABLES, CAPABILITY_TABLE_MAP,
+    )
+
+    # Collect all table names present in the child's schema
+    child_tables: set = set(CORE_TABLES.keys())
+    capabilities = blueprint.get("capabilities", {})
+    for cap_name, enabled in capabilities.items():
+        if enabled and cap_name in CAPABILITY_TABLE_MAP:
+            child_tables.update(CAPABILITY_TABLE_MAP[cap_name].keys())
+
+    # Find the APPEND_ONLY_TABLES set in the hook and filter it
+    # Pattern: APPEND_ONLY_TABLES = { ... }
+    import re as _re
+    pattern = _re.compile(
+        r"(APPEND_ONLY_TABLES\s*=\s*\{)(.*?)(\})",
+        _re.DOTALL,
+    )
+    match = pattern.search(content)
+    if not match:
+        return content  # Hook doesn't have the expected pattern — return as-is
+
+    # Parse existing table names from the set literal
+    raw_tables = match.group(2)
+    table_names = _re.findall(r'"([^"]+)"', raw_tables)
+
+    # Keep only tables in the child's schema
+    filtered = [t for t in table_names if t in child_tables]
+    filtered_str = ",\n    ".join(f'"{t}"' for t in sorted(filtered))
+
+    replacement = f"{match.group(1)}\n    {filtered_str},\n{match.group(3)}"
+    content = content[:match.start()] + replacement + content[match.end():]
+
+    return content
 
 
 # ============================================================
@@ -1595,6 +2063,11 @@ def step_10_csp_mcp_config(child_root: Path, blueprint: dict) -> dict:
         "builder": "builder_server", "compliance": "compliance_server",
         "security": "security_server", "knowledge": "knowledge_server",
         "monitor": "monitor_server",
+        # D-CHILD-1: Enterprise agent MCP servers
+        "requirements_analyst": "requirements_server",
+        "supply_chain": "supply_chain_server",
+        "simulation": "simulation_server",
+        "devsecops_zta": "devsecops_server",
     }
     added_servers = set()
     for agent in agents:
@@ -2203,8 +2676,8 @@ def generate_child_app(
 ) -> dict:
     """Generate a complete child application from a blueprint.
 
-    Executes 16 steps sequentially (12 core + 9b license + 11b README +
-    13 audit + 14 GOTCHA validation), collecting results from each.
+    Executes 17 steps sequentially (12 core + 9b license + 9c claude config +
+    11b README + 13 audit + 14 GOTCHA validation), collecting results from each.
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
@@ -2236,7 +2709,7 @@ def generate_child_app(
     steps: List[Tuple[str, Any]] = [
         ("01_directory_tree", lambda: step_01_create_directory_tree(child_root, blueprint)),
         ("02_copy_adapt_tools", lambda: step_02_copy_and_adapt_tools(child_root, blueprint, icdev_root)),
-        ("03_agent_infra", lambda: step_03_agent_infrastructure(child_root, blueprint)),
+        ("03_agent_infra", lambda: step_03_agent_infrastructure(child_root, blueprint, icdev_root)),
         ("04_memory_bootstrap", lambda: step_04_memory_bootstrap(child_root, blueprint)),
         ("05_db_init_script", lambda: step_05_db_init_script(child_root, blueprint)),
         ("06_goals_hardprompts", lambda: step_06_goals_and_hardprompts(child_root, blueprint, icdev_root)),
@@ -2244,6 +2717,7 @@ def generate_child_app(
         ("08_a2a_callback", lambda: step_08_a2a_callback_client(child_root, blueprint)),
         ("09_cicd_setup", lambda: step_09_cicd_setup(child_root, blueprint, icdev_root)),
         ("09b_license", lambda: _copy_license_files(child_root, blueprint, icdev_root)),
+        ("09c_claude_config", lambda: step_09c_claude_code_config(child_root, blueprint, icdev_root)),
         ("10_csp_mcp_config", lambda: step_10_csp_mcp_config(child_root, blueprint)),
         ("11_claude_md", lambda: step_11_dynamic_claude_md(child_root, blueprint)),
         ("11b_readme", lambda: _generate_readme(child_root, blueprint)),

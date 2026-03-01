@@ -53,6 +53,20 @@ GOAL_FILE_MAP: Dict[str, str] = {
     "dashboard": "dashboard.md",
     "code_review": "code_review.md",
     "mbse_integration": "mbse_integration.md",
+    # D-CHILD-1: Enterprise-grade goals
+    "maintenance_audit": "maintenance_audit.md",
+    "requirements_intake": "requirements_intake.md",
+    "boundary_supply_chain": "boundary_supply_chain.md",
+    "simulation_engine": "simulation_engine.md",
+    "devsecops_workflow": "devsecops_workflow.md",
+    "zero_trust_architecture": "zero_trust_architecture.md",
+    "mosa_workflow": "mosa_workflow.md",
+    "observability_traceability_xai": "observability_traceability_xai.md",
+    "ai_transparency": "ai_transparency.md",
+    "ai_accountability": "ai_accountability.md",
+    "owasp_agentic_security": "owasp_agentic_security.md",
+    "code_intelligence": "code_intelligence.md",
+    "ato_acceleration": "ato_acceleration.md",
 }
 
 # ============================================================
@@ -72,6 +86,20 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "dashboard": "Web UI for status monitoring",
     "code_review": "Enforced review gates",
     "mbse_integration": "Model-Based Systems Engineering",
+    # D-CHILD-1: Enterprise-grade goals
+    "maintenance_audit": "Dependency scanning, vulnerability checking, SLA enforcement",
+    "requirements_intake": "AI-driven conversational intake, gap detection, SAFe decomposition",
+    "boundary_supply_chain": "ATO boundary impact, supply chain dependency graph, CVE triage",
+    "simulation_engine": "Digital Program Twin, Monte Carlo estimation, COA generation",
+    "devsecops_workflow": "DevSecOps profile, pipeline security, policy-as-code",
+    "zero_trust_architecture": "ZTA 7-pillar maturity, NIST 800-207, service mesh",
+    "mosa_workflow": "DoD MOSA modularity analysis, ICD/TSP generation",
+    "observability_traceability_xai": "Distributed tracing, provenance, AgentSHAP, XAI assessment",
+    "ai_transparency": "AI model/system cards, inventory, fairness, confabulation detection",
+    "ai_accountability": "Oversight plans, CAIO, appeals, incident response, ethics reviews",
+    "owasp_agentic_security": "Behavioral drift, tool chain validation, trust scoring, RBAC",
+    "code_intelligence": "AST metrics, smell detection, maintainability scoring",
+    "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
 }
 
 # ============================================================
@@ -91,6 +119,20 @@ GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
     "dashboard": "Dashboard",
     "code_review": "Code Review",
     "mbse_integration": "MBSE Integration",
+    # D-CHILD-1: Enterprise-grade goals
+    "maintenance_audit": "Maintenance Audit",
+    "requirements_intake": "Requirements Intake (RICOAS)",
+    "boundary_supply_chain": "Boundary & Supply Chain",
+    "simulation_engine": "Digital Program Twin Simulation",
+    "devsecops_workflow": "DevSecOps Workflow",
+    "zero_trust_architecture": "Zero Trust Architecture",
+    "mosa_workflow": "MOSA Workflow",
+    "observability_traceability_xai": "Observability & XAI",
+    "ai_transparency": "AI Transparency",
+    "ai_accountability": "AI Accountability",
+    "owasp_agentic_security": "OWASP Agentic Security",
+    "code_intelligence": "Code Intelligence",
+    "ato_acceleration": "ATO Acceleration",
 }
 
 # ============================================================

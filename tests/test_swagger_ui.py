@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 from flask import Flask
 
-from tools.saas.swagger_ui import swagger_bp
+from icdev.tools.saas.swagger_ui import swagger_bp
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,57 @@
+{
+  "name": "ICDEV Simulation",
+  "description": "Digital Program Twin — 6-dimension what-if simulation (architecture, compliance, supply chain, schedule, cost, risk), scenario management, Monte Carlo.",
+  "url": "https://localhost:8455",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "create-scenario",
+      "name": "Create Scenario",
+      "description": "Create a what-if simulation scenario with modifications to project parameters.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "run-simulation",
+      "name": "Run Simulation",
+      "description": "Run 6-dimension simulation: architecture, compliance, supply chain, schedule, cost, risk.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "run-monte-carlo",
+      "name": "Run Monte Carlo",
+      "description": "PERT/Monte Carlo estimation for schedule, cost, or risk dimensions.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "generate-coas",
+      "name": "Generate COAs",
+      "description": "Generate 3 COAs (Speed/Balanced/Comprehensive) with simulation results.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "compare-coas",
+      "name": "Compare COAs",
+      "description": "Side-by-side comparison of generated COAs across all dimensions.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "manage-scenarios",
+      "name": "Manage Scenarios",
+      "description": "Save, fork, compare, export, and archive simulation scenarios.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

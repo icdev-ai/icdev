@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}COR Portal - ICDEV{% endblock %}
+
+{% block content %}
+<style>
+.gov-banner { background: #1a3a5c; color: white; padding: 8px 16px; text-align: center; font-size: 14px; border-radius: 4px; margin-bottom: 16px; }
+</style>
+
+<!-- Government Banner -->
+<div class="gov-banner" role="banner" aria-label="Government read-only notice">
+    [Shield] Government Read-Only View
+</div>
+
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>COR Portal</span></div>
+
+<div class="page-header">
+    <h1>COR Portal</h1>
+    <p class="subtitle">Contracting Officer Representative &mdash; contract oversight and deliverable status</p>
+</div>
+
+<!-- Stat Grid -->
+<div class="stat-grid" aria-label="COR portal summary statistics">
+    <div class="stat-card">
+        <div class="stat-value">{{ contracts | length }}</div>
+        <div class="stat-label">Total Contracts</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ contracts | selectattr('status', 'equalto', 'active') | list | length }}</div>
+        <div class="stat-label">Active</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">${{ contracts | sum(attribute='total_value') | default(0) | round(0) | int | string() }}</div>
+        <div class="stat-label">Total Value</div>
+    </div>
+</div>
+
+<!-- Contract Table -->
+<div class="table-container" style="margin-top:20px;">
+    <div class="table-header">
+        <h2>Contracts</h2>
+    </div>
+    <table aria-label="COR contract listing">
+        <thead>
+            <tr>
+                <th>Contract #</th>
+                <th>Title</th>
+                <th>Agency</th>
+                <th>Status</th>
+                <th>Health</th>
+                <th>POP End</th>
+                <th>Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for contract in contracts %}
+            <tr>
+                <td><a href="/cpmp/cor/{{ contract.id }}">{{ contract.contract_number | default('—') }}</a></td>
+                <td><a href="/cpmp/cor/{{ contract.id }}">{{ contract.title | default('—') }}</a></td>
+                <td>{{ contract.agency | default('—') }}</td>
+                <td>
+                    {% set cstatus = contract.status | default('unknown') %}
+                    {% set cstatus_colors = {'active': 'success', 'complete': 'info', 'at_risk': 'warning', 'overdue': 'error', 'closed': 'info', 'pending': 'warning'} %}
+                    <span class="badge badge-{{ cstatus_colors.get(cstatus, 'info') }}">{{ cstatus | replace('_', ' ') | title }}</span>
+                </td>
+                <td>
+                    {% set health = contract.health | default('unknown') %}
+                    {% if health == 'green' %}
+                    <span class="badge badge-success">Green</span>
+                    {% elif health == 'yellow' %}
+                    <span class="badge badge-warning">Yellow</span>
+                    {% elif health == 'red' %}
+                    <span class="badge badge-error">Red</span>
+                    {% else %}
+                    <span class="badge">{{ health | title }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ contract.pop_end | default('—') }}</td>
+                <td>${{ contract.total_value | default(0) | round(0) | int }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-muted" style="text-align:center;">No contracts available.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Footer Note -->
+<div style="margin-top:24px; padding:12px 16px; background:var(--bg-secondary, #1a1a2e); border-radius:4px; border-left:3px solid #1a3a5c; font-size:13px; color:var(--text-secondary, #a0a0b8);">
+    This portal provides read-only access. Contact your Contracting Officer{% if cor_email %} at <a href="mailto:{{ cor_email }}" style="color:var(--accent-blue-light, #4a90d9);">{{ cor_email }}</a>{% endif %} for changes.
+</div>
+{% endblock %}

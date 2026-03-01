@@ -1,0 +1,50 @@
+{
+  "name": "ICDEV Security",
+  "description": "Vulnerability scanning, SAST/DAST, dependency auditing, secret detection, and container scanning. Enforces security gates to block vulnerable code from deployment.",
+  "url": "https://localhost:8447",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "run-security-scan",
+      "name": "Run Security Scan",
+      "description": "Orchestrate all security scans (SAST, dependency audit, secret detection, container scan) and aggregate results.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "run-sast",
+      "name": "Run SAST",
+      "description": "Run static application security testing using Bandit (Python) and return structured findings.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "audit-dependencies",
+      "name": "Audit Dependencies",
+      "description": "Audit Python (pip-audit) and JavaScript (npm audit) dependencies for known vulnerabilities.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "detect-secrets",
+      "name": "Detect Secrets",
+      "description": "Scan codebase for accidentally committed secrets, API keys, passwords, and tokens.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "scan-container",
+      "name": "Scan Container",
+      "description": "Scan container images for OS and application vulnerabilities using Trivy.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

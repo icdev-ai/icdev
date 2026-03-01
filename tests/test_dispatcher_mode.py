@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.agent.dispatcher_mode import (
+from icdev.tools.agent.dispatcher_mode import (
     _ensure_table,
     _load_dispatcher_config,
     disable_for_project,
@@ -168,7 +168,7 @@ class TestConfigLoading:
 
     def test_defaults_when_no_config_file(self):
         """Returns defaults when agent_config.yaml does not exist."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent/config.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent/config.yaml")):
             config = _load_dispatcher_config()
 
         assert config["enabled"] is False
@@ -179,7 +179,7 @@ class TestConfigLoading:
 
     def test_defaults_when_yaml_missing(self):
         """Returns defaults when PyYAML is not importable."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent/config.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent/config.yaml")):
             config = _load_dispatcher_config()
 
         assert isinstance(config, dict)
@@ -189,7 +189,7 @@ class TestConfigLoading:
 
     def test_loads_yaml_config(self, yaml_config_file):
         """Loads configuration from YAML file."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             config = _load_dispatcher_config()
 
         assert config["enabled"] is True
@@ -200,7 +200,7 @@ class TestConfigLoading:
         """Returns defaults when YAML is malformed."""
         bad_yaml = tmp_path / "agent_config.yaml"
         bad_yaml.write_text(": invalid: [yaml: {broken")
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", bad_yaml):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", bad_yaml):
             config = _load_dispatcher_config()
 
         assert config["enabled"] is False
@@ -216,7 +216,7 @@ class TestConfigLoading:
         config_path = tmp_path / "agent_config.yaml"
         config_path.write_text(yaml.dump(config))
 
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", config_path):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", config_path):
             result = _load_dispatcher_config()
 
         assert result["enabled"] is False
@@ -230,30 +230,30 @@ class TestIsDispatcherMode:
 
     def test_disabled_by_default(self, dispatcher_db):
         """Dispatcher mode is disabled by default (no config override)."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             assert is_dispatcher_mode(db_path=dispatcher_db) is False
 
     def test_enabled_via_global_config(self, yaml_config_file, dispatcher_db):
         """Dispatcher mode enabled via global config."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_dispatcher_mode(db_path=dispatcher_db) is True
 
     def test_per_project_override_enabled(self, dispatcher_db):
         """Per-project override enables dispatcher mode even when global is off."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             enable_for_project("proj-test", created_by="admin", db_path=dispatcher_db)
             assert is_dispatcher_mode(project_id="proj-test", db_path=dispatcher_db) is True
 
     def test_per_project_override_disabled(self, yaml_config_file, dispatcher_db):
         """Per-project override can disable dispatcher mode for a specific project."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             enable_for_project("proj-test", created_by="admin", db_path=dispatcher_db)
             disable_for_project("proj-test", disabled_by="admin", db_path=dispatcher_db)
             assert is_dispatcher_mode(project_id="proj-test", db_path=dispatcher_db) is False
 
     def test_no_override_falls_back_to_global(self, yaml_config_file, dispatcher_db):
         """Without a per-project override, falls back to global config."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_dispatcher_mode(project_id="proj-no-override", db_path=dispatcher_db) is True
 
 
@@ -265,14 +265,14 @@ class TestIsToolAllowed:
 
     def test_all_tools_allowed_when_disabled(self, dispatcher_db):
         """All tools allowed when dispatcher mode is disabled."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             assert is_tool_allowed("scaffold", db_path=dispatcher_db) is True
             assert is_tool_allowed("task_dispatch", db_path=dispatcher_db) is True
             assert is_tool_allowed("random_tool", db_path=dispatcher_db) is True
 
     def test_dispatch_tools_allowed_when_enabled(self, yaml_config_file, dispatcher_db):
         """Dispatch-only tools are allowed in dispatcher mode."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_tool_allowed("task_dispatch", db_path=dispatcher_db) is True
             assert is_tool_allowed("agent_status", db_path=dispatcher_db) is True
             assert is_tool_allowed("agent_mailbox", db_path=dispatcher_db) is True
@@ -281,7 +281,7 @@ class TestIsToolAllowed:
 
     def test_blocked_tools_denied_when_enabled(self, yaml_config_file, dispatcher_db):
         """Blocked tools are denied in dispatcher mode."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_tool_allowed("scaffold", db_path=dispatcher_db) is False
             assert is_tool_allowed("generate_code", db_path=dispatcher_db) is False
             assert is_tool_allowed("ssp_generate", db_path=dispatcher_db) is False
@@ -289,12 +289,12 @@ class TestIsToolAllowed:
 
     def test_unknown_tools_denied_when_enabled(self, yaml_config_file, dispatcher_db):
         """Tools not in either list are denied (default deny in dispatcher mode)."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_tool_allowed("unknown_tool", db_path=dispatcher_db) is False
 
     def test_per_project_tool_check(self, dispatcher_db):
         """Tool check respects per-project overrides."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             enable_for_project("proj-test", created_by="admin", db_path=dispatcher_db)
             assert is_tool_allowed("scaffold", project_id="proj-test", db_path=dispatcher_db) is False
             assert is_tool_allowed("task_dispatch", project_id="proj-test", db_path=dispatcher_db) is True
@@ -308,14 +308,14 @@ class TestFilterTools:
 
     def test_no_filtering_when_disabled(self, dispatcher_db):
         """Full tool list returned when dispatcher mode is disabled."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             tools = ["scaffold", "task_dispatch", "generate_code", "agent_status"]
             result = filter_tools_for_dispatcher(tools, db_path=dispatcher_db)
             assert result == tools
 
     def test_filters_blocked_tools_when_enabled(self, yaml_config_file, dispatcher_db):
         """Blocked tools are removed when dispatcher mode is enabled."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             tools = ["scaffold", "task_dispatch", "generate_code", "agent_status"]
             result = filter_tools_for_dispatcher(tools, db_path=dispatcher_db)
             assert "scaffold" not in result
@@ -325,7 +325,7 @@ class TestFilterTools:
 
     def test_empty_list_returns_empty(self, yaml_config_file, dispatcher_db):
         """Empty tool list returns empty."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             result = filter_tools_for_dispatcher([], db_path=dispatcher_db)
             assert result == []
 
@@ -400,7 +400,7 @@ class TestProjectOverrides:
         assert result["enabled"] is False
 
         # Verify in DB
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             assert is_dispatcher_mode(project_id="proj-dis", db_path=dispatcher_db) is False
 
     def test_enable_upserts_on_conflict(self, dispatcher_db):
@@ -424,7 +424,7 @@ class TestProjectOverrides:
 
     def test_custom_tools_merged_into_lists(self, dispatcher_db):
         """Custom dispatch tools are merged with global dispatch tools."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             enable_for_project(
                 "proj-merge",
                 created_by="admin",
@@ -444,7 +444,7 @@ class TestToolLists:
 
     def test_get_dispatch_tools_defaults(self, dispatcher_db):
         """Returns default dispatch tools from config."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             tools = get_dispatch_tools(db_path=dispatcher_db)
             assert "task_dispatch" in tools
             assert "agent_status" in tools
@@ -452,7 +452,7 @@ class TestToolLists:
 
     def test_get_blocked_tools_defaults(self, dispatcher_db):
         """Returns default blocked tools from config."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             tools = get_blocked_tools(db_path=dispatcher_db)
             assert "scaffold" in tools
             assert "generate_code" in tools
@@ -460,7 +460,7 @@ class TestToolLists:
 
     def test_get_blocked_tools_with_project_custom(self, dispatcher_db):
         """Project custom blocked tools are merged."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             enable_for_project(
                 "proj-blk",
                 created_by="admin",
@@ -480,7 +480,7 @@ class TestGetStatus:
 
     def test_status_without_project(self, dispatcher_db):
         """Status report without project ID."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             status = get_status(db_path=dispatcher_db)
             assert "global_config" in status
             assert "project_override" in status
@@ -492,7 +492,7 @@ class TestGetStatus:
 
     def test_status_with_project_override(self, dispatcher_db):
         """Status report includes project override when present."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             enable_for_project("proj-status", created_by="admin", db_path=dispatcher_db)
             status = get_status(project_id="proj-status", db_path=dispatcher_db)
             assert status["project_override"] is not None
@@ -500,7 +500,7 @@ class TestGetStatus:
 
     def test_status_effective_mode_reflects_config(self, yaml_config_file, dispatcher_db):
         """Effective mode reflects global config when no project override."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             status = get_status(db_path=dispatcher_db)
             assert status["effective_dispatcher_mode"] is True
 
@@ -541,10 +541,10 @@ class TestCLI:
 
     def test_status_json_output(self, dispatcher_db, capsys):
         """--status --json produces valid JSON."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             with patch("sys.argv", ["dispatcher_mode.py", "--status", "--json",
                                      "--db-path", str(dispatcher_db)]):
-                from tools.agent.dispatcher_mode import main
+                from icdev.tools.agent.dispatcher_mode import main
                 main()
 
         captured = capsys.readouterr()
@@ -554,10 +554,10 @@ class TestCLI:
 
     def test_check_tool_json_output(self, dispatcher_db, capsys):
         """--check-tool --json produces valid JSON."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             with patch("sys.argv", ["dispatcher_mode.py", "--check-tool", "scaffold",
                                      "--json", "--db-path", str(dispatcher_db)]):
-                from tools.agent.dispatcher_mode import main
+                from icdev.tools.agent.dispatcher_mode import main
                 main()
 
         captured = capsys.readouterr()
@@ -569,17 +569,17 @@ class TestCLI:
         """--enable without --project-id fails with error."""
         with patch("sys.argv", ["dispatcher_mode.py", "--enable",
                                  "--db-path", str(dispatcher_db)]):
-            from tools.agent.dispatcher_mode import main
+            from icdev.tools.agent.dispatcher_mode import main
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
 
     def test_status_human_output(self, dispatcher_db, capsys):
         """--status without --json produces human-readable text."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             with patch("sys.argv", ["dispatcher_mode.py", "--status",
                                      "--db-path", str(dispatcher_db)]):
-                from tools.agent.dispatcher_mode import main
+                from icdev.tools.agent.dispatcher_mode import main
                 main()
 
         captured = capsys.readouterr()
@@ -596,7 +596,7 @@ class TestTeamOrchestratorIntegration:
     def test_subtask_redirect_when_dispatcher_enabled(self, yaml_config_file, dispatcher_db):
         """Blocked tool gets redirected to domain agent in _execute_subtask."""
         # Simulate the dispatcher mode check that team_orchestrator does
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_dispatcher_mode(db_path=dispatcher_db) is True
             assert is_tool_allowed("scaffold", db_path=dispatcher_db) is False
             redirect = get_redirect_agent("scaffold")
@@ -604,7 +604,7 @@ class TestTeamOrchestratorIntegration:
 
     def test_dispatch_tools_pass_through(self, yaml_config_file, dispatcher_db):
         """Dispatch tools pass through without redirection."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             assert is_tool_allowed("task_dispatch", db_path=dispatcher_db) is True
             # No redirect needed for allowed tools
             redirect = get_redirect_agent("task_dispatch")
@@ -616,7 +616,7 @@ class TestSkillRouterIntegration:
 
     def test_blocked_skill_redirected(self, yaml_config_file, dispatcher_db):
         """Skill router should redirect blocked skills to domain agents."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             # Simulate skill_router check
             skill_id = "ssp_generate"
             assert is_dispatcher_mode(db_path=dispatcher_db) is True
@@ -626,7 +626,7 @@ class TestSkillRouterIntegration:
 
     def test_allowed_skill_not_redirected(self, yaml_config_file, dispatcher_db):
         """Allowed skills should not be redirected."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", yaml_config_file):
             skill_id = "agent_mailbox"
             assert is_tool_allowed(skill_id, db_path=dispatcher_db) is True
 
@@ -639,12 +639,12 @@ class TestEdgeCases:
 
     def test_none_project_id_uses_global(self, dispatcher_db):
         """None project_id falls back to global config."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             assert is_dispatcher_mode(project_id=None, db_path=dispatcher_db) is False
 
     def test_empty_project_id_uses_global(self, dispatcher_db):
         """Empty string project_id falls back to global config."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             assert is_dispatcher_mode(project_id="", db_path=dispatcher_db) is False
 
     def test_all_14_blocked_tools_covered_by_redirect(self):
@@ -661,7 +661,7 @@ class TestEdgeCases:
 
     def test_concurrent_projects_isolated(self, dispatcher_db):
         """Different projects can have independent overrides."""
-        with patch("tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
+        with patch("icdev.tools.agent.dispatcher_mode.CONFIG_PATH", Path("/nonexistent.yaml")):
             enable_for_project("proj-A", created_by="admin", db_path=dispatcher_db)
             # proj-B has no override, so global (disabled) applies
             assert is_dispatcher_mode(project_id="proj-A", db_path=dispatcher_db) is True

@@ -19,7 +19,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 try:
-    from tools.compliance.compliance_exporter import (
+    from icdev.tools.compliance.compliance_exporter import (
         _build_recommendations,
         _STATUS_NORM,
         export_all,

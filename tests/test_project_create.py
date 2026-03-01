@@ -32,9 +32,9 @@ def _create_project(tmp_path, db_path, **kwargs):
     """Call create_project with DB_PATH and PROJECTS_DIR patched to tmp_path."""
     projects_dir = tmp_path / "projects"
     projects_dir.mkdir(parents=True, exist_ok=True)
-    with patch("tools.project.project_create.DB_PATH", db_path), \
-         patch("tools.project.project_create.PROJECTS_DIR", projects_dir):
-        from tools.project.project_create import create_project
+    with patch("icdev.tools.project.project_create.DB_PATH", db_path), \
+         patch("icdev.tools.project.project_create.PROJECTS_DIR", projects_dir):
+        from icdev.tools.project.project_create import create_project
         return create_project(**kwargs)
 
 

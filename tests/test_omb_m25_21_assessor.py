@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.compliance.omb_m25_21_assessor import OMBM2521Assessor
+from icdev.tools.compliance.omb_m25_21_assessor import OMBM2521Assessor
 
 
 # ============================================================

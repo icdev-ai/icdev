@@ -193,11 +193,11 @@ class TestCSPMonitorImport:
     """Test that CSP monitor can be imported."""
 
     def test_import_module(self):
-        from tools.cloud import csp_monitor
+        from icdev.tools.cloud import csp_monitor
         assert hasattr(csp_monitor, "CSPMonitor")
 
     def test_import_changelog(self):
-        from tools.cloud import csp_changelog
+        from icdev.tools.cloud import csp_changelog
         assert hasattr(csp_changelog, "generate_markdown_changelog")
 
 
@@ -205,37 +205,37 @@ class TestChangeClassification:
     """Test announcement classification logic."""
 
     def test_classify_deprecation(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("Service X deprecated", "This service is being retired") == "service_deprecation"
         assert _classify_change("End of Life notice", "Service will be decommissioned") == "service_deprecation"
 
     def test_classify_breaking_change(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("API v2 migration required", "Breaking change") == "api_breaking_change"
 
     def test_classify_compliance(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("Service now FedRAMP authorized", "In scope for FedRAMP") == "compliance_scope_change"
         assert _classify_change("HIPAA compliance added", "Now HIPAA compliant") == "compliance_scope_change"
 
     def test_classify_region(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("New region launch", "Now available in us-west-3") == "region_expansion"
 
     def test_classify_security(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("Security advisory", "CVE-2026-1234 patch") == "security_update"
 
     def test_classify_pricing(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("Price reduction", "30% cost savings") == "pricing_change"
 
     def test_classify_new_service_default(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("Amazon CloudFront now supports", "General availability") == "new_service"
 
     def test_classify_certification(self):
-        from tools.cloud.csp_monitor import _classify_change
+        from icdev.tools.cloud.csp_monitor import _classify_change
         assert _classify_change("New SOC report available", "SOC report audit") == "certification_change"
 
 
@@ -243,23 +243,23 @@ class TestGovernmentDetection:
     """Test government-specific announcement detection."""
 
     def test_detect_govcloud(self):
-        from tools.cloud.csp_monitor import _detect_government
+        from icdev.tools.cloud.csp_monitor import _detect_government
         assert _detect_government("AWS GovCloud update", "New feature") is True
 
     def test_detect_fedramp(self):
-        from tools.cloud.csp_monitor import _detect_government
+        from icdev.tools.cloud.csp_monitor import _detect_government
         assert _detect_government("Service achieves FedRAMP", "Authorization") is True
 
     def test_detect_azure_government(self):
-        from tools.cloud.csp_monitor import _detect_government
+        from icdev.tools.cloud.csp_monitor import _detect_government
         assert _detect_government("Azure Government availability", "") is True
 
     def test_detect_ic4g(self):
-        from tools.cloud.csp_monitor import _detect_government
+        from icdev.tools.cloud.csp_monitor import _detect_government
         assert _detect_government("IBM IC4G update", "") is True
 
     def test_detect_non_government(self):
-        from tools.cloud.csp_monitor import _detect_government
+        from icdev.tools.cloud.csp_monitor import _detect_government
         assert _detect_government("New pricing for S3", "Cost savings") is False
 
 
@@ -267,13 +267,13 @@ class TestContentHash:
     """Test deduplication hash generation."""
 
     def test_hash_consistency(self):
-        from tools.cloud.csp_monitor import _content_hash
+        from icdev.tools.cloud.csp_monitor import _content_hash
         h1 = _content_hash(["aws", "New S3 feature", "new_service"])
         h2 = _content_hash(["aws", "New S3 feature", "new_service"])
         assert h1 == h2
 
     def test_hash_different_inputs(self):
-        from tools.cloud.csp_monitor import _content_hash
+        from icdev.tools.cloud.csp_monitor import _content_hash
         h1 = _content_hash(["aws", "New S3 feature", "new_service"])
         h2 = _content_hash(["azure", "New Blob feature", "new_service"])
         assert h1 != h2
@@ -283,7 +283,7 @@ class TestSignalGeneration:
     """Test converting announcements to innovation signals."""
 
     def test_basic_signal(self):
-        from tools.cloud.csp_monitor import announcements_to_signals
+        from icdev.tools.cloud.csp_monitor import announcements_to_signals
         announcements = [{
             "csp": "aws",
             "title": "New S3 Intelligent Tiering",
@@ -304,7 +304,7 @@ class TestSignalGeneration:
         assert "[AWS]" in signals[0]["title"]
 
     def test_government_boost(self):
-        from tools.cloud.csp_monitor import announcements_to_signals
+        from icdev.tools.cloud.csp_monitor import announcements_to_signals
         announcements = [{
             "csp": "aws",
             "title": "GovCloud update",
@@ -320,7 +320,7 @@ class TestSignalGeneration:
         assert signals[0]["community_score"] == round(0.6 * 1.3, 4)
 
     def test_compliance_boost(self):
-        from tools.cloud.csp_monitor import announcements_to_signals
+        from icdev.tools.cloud.csp_monitor import announcements_to_signals
         announcements = [{
             "csp": "azure",
             "title": "New FedRAMP authorization",
@@ -337,7 +337,7 @@ class TestSignalGeneration:
         assert signals[0]["community_score"] == 1.0
 
     def test_signal_has_required_fields(self):
-        from tools.cloud.csp_monitor import announcements_to_signals
+        from icdev.tools.cloud.csp_monitor import announcements_to_signals
         announcements = [{
             "csp": "gcp",
             "title": "Test",
@@ -365,7 +365,7 @@ class TestRegistryDiff:
     """Test registry diffing logic."""
 
     def test_diff_new_service(self, tmp_registry):
-        from tools.cloud.csp_monitor import diff_registry, _load_registry
+        from icdev.tools.cloud.csp_monitor import diff_registry, _load_registry
         registry = _load_registry(tmp_registry)
         signals = [{
             "id": "sig-test1",
@@ -385,7 +385,7 @@ class TestRegistryDiff:
         assert changes[0]["action"] == "add_to_registry"
 
     def test_diff_known_service(self, tmp_registry):
-        from tools.cloud.csp_monitor import diff_registry, _load_registry
+        from icdev.tools.cloud.csp_monitor import diff_registry, _load_registry
         registry = _load_registry(tmp_registry)
         signals = [{
             "id": "sig-test2",
@@ -404,7 +404,7 @@ class TestRegistryDiff:
         assert len(changes) == 0
 
     def test_diff_deprecation(self, tmp_registry):
-        from tools.cloud.csp_monitor import diff_registry, _load_registry
+        from icdev.tools.cloud.csp_monitor import diff_registry, _load_registry
         registry = _load_registry(tmp_registry)
         signals = [{
             "id": "sig-test3",
@@ -423,7 +423,7 @@ class TestRegistryDiff:
         assert changes[0]["action"] == "mark_deprecated"
 
     def test_diff_compliance_change(self, tmp_registry):
-        from tools.cloud.csp_monitor import diff_registry, _load_registry
+        from icdev.tools.cloud.csp_monitor import diff_registry, _load_registry
         registry = _load_registry(tmp_registry)
         signals = [{
             "id": "sig-test4",
@@ -446,12 +446,12 @@ class TestCSPMonitorClass:
     """Test CSPMonitor class methods."""
 
     def test_init_with_defaults(self):
-        from tools.cloud.csp_monitor import CSPMonitor
+        from icdev.tools.cloud.csp_monitor import CSPMonitor
         monitor = CSPMonitor()
         assert monitor is not None
 
     def test_init_with_custom_paths(self, tmp_config, tmp_registry, tmp_db):
-        from tools.cloud.csp_monitor import CSPMonitor
+        from icdev.tools.cloud.csp_monitor import CSPMonitor
         monitor = CSPMonitor(
             config_path=str(tmp_config),
             registry_path=str(tmp_registry),
@@ -460,7 +460,7 @@ class TestCSPMonitorClass:
         assert monitor is not None
 
     def test_get_status_empty_db(self, tmp_config, tmp_registry, tmp_db):
-        from tools.cloud.csp_monitor import CSPMonitor
+        from icdev.tools.cloud.csp_monitor import CSPMonitor
         monitor = CSPMonitor(
             config_path=str(tmp_config),
             registry_path=str(tmp_registry),
@@ -472,7 +472,7 @@ class TestCSPMonitorClass:
         assert result["last_scan"] is None
 
     def test_diff_empty_db(self, tmp_config, tmp_registry, tmp_db):
-        from tools.cloud.csp_monitor import CSPMonitor
+        from icdev.tools.cloud.csp_monitor import CSPMonitor
         monitor = CSPMonitor(
             config_path=str(tmp_config),
             registry_path=str(tmp_registry),
@@ -484,7 +484,7 @@ class TestCSPMonitorClass:
         assert result["changes_detected"] == 0
 
     def test_generate_changelog_empty(self, tmp_config, tmp_registry, tmp_db):
-        from tools.cloud.csp_monitor import CSPMonitor
+        from icdev.tools.cloud.csp_monitor import CSPMonitor
         monitor = CSPMonitor(
             config_path=str(tmp_config),
             registry_path=str(tmp_registry),
@@ -499,7 +499,7 @@ class TestSignalStorage:
     """Test signal deduplication and storage."""
 
     def test_store_new_signal(self, tmp_db):
-        from tools.cloud.csp_monitor import _get_db, _store_signal
+        from icdev.tools.cloud.csp_monitor import _get_db, _store_signal
         conn = _get_db(tmp_db)
         signal = {
             "id": "sig-test001",
@@ -526,7 +526,7 @@ class TestSignalStorage:
         assert row["source"] == "csp_monitor"
 
     def test_dedup_same_hash(self, tmp_db):
-        from tools.cloud.csp_monitor import _get_db, _store_signal
+        from icdev.tools.cloud.csp_monitor import _get_db, _store_signal
         conn = _get_db(tmp_db)
         signal1 = {
             "id": "sig-test002",
@@ -574,12 +574,12 @@ class TestChangelogGenerator:
     """Test changelog generation."""
 
     def test_generate_markdown_empty(self):
-        from tools.cloud.csp_changelog import generate_markdown_changelog
+        from icdev.tools.cloud.csp_changelog import generate_markdown_changelog
         md = generate_markdown_changelog([], days=30)
         assert "No CSP changes detected" in md
 
     def test_generate_markdown_with_entries(self):
-        from tools.cloud.csp_changelog import generate_markdown_changelog
+        from icdev.tools.cloud.csp_changelog import generate_markdown_changelog
         entries = [
             {
                 "id": "sig-1",
@@ -615,7 +615,7 @@ class TestChangelogGenerator:
         assert "Recommended Action" in md
 
     def test_generate_markdown_no_recommendations(self):
-        from tools.cloud.csp_changelog import generate_markdown_changelog
+        from icdev.tools.cloud.csp_changelog import generate_markdown_changelog
         entries = [{
             "id": "sig-1",
             "date": "2026-02-20T12:00:00Z",
@@ -633,7 +633,7 @@ class TestChangelogGenerator:
         assert "Recommended Action" not in md
 
     def test_generate_summary(self):
-        from tools.cloud.csp_changelog import generate_summary
+        from icdev.tools.cloud.csp_changelog import generate_summary
         entries = [
             {"csp": "aws", "change_type": "new_service", "is_government": False},
             {"csp": "aws", "change_type": "service_deprecation", "is_government": True},
@@ -648,7 +648,7 @@ class TestChangelogGenerator:
         assert summary["by_urgency"]["critical"] >= 1  # compliance_scope_change
 
     def test_recommendations_exist(self):
-        from tools.cloud.csp_changelog import RECOMMENDATIONS
+        from icdev.tools.cloud.csp_changelog import RECOMMENDATIONS
         assert "new_service" in RECOMMENDATIONS
         assert "service_deprecation" in RECOMMENDATIONS
         assert "compliance_scope_change" in RECOMMENDATIONS
@@ -668,7 +668,7 @@ class TestRegistryLoader:
     """Test registry loading and saving."""
 
     def test_load_registry(self, tmp_registry):
-        from tools.cloud.csp_monitor import _load_registry
+        from icdev.tools.cloud.csp_monitor import _load_registry
         registry = _load_registry(tmp_registry)
         assert "_metadata" in registry
         assert "services" in registry
@@ -676,12 +676,12 @@ class TestRegistryLoader:
         assert "s3" in registry["services"]["aws"]
 
     def test_load_missing_registry(self, tmp_path):
-        from tools.cloud.csp_monitor import _load_registry
+        from icdev.tools.cloud.csp_monitor import _load_registry
         registry = _load_registry(tmp_path / "nonexistent.json")
         assert registry == {}
 
     def test_save_registry_backup(self, tmp_registry):
-        from tools.cloud.csp_monitor import _load_registry, _save_registry
+        from icdev.tools.cloud.csp_monitor import _load_registry, _save_registry
         registry = _load_registry(tmp_registry)
         _save_registry(registry, tmp_registry)
 
@@ -752,13 +752,13 @@ class TestConfigLoader:
     """Test config loading."""
 
     def test_load_config(self, tmp_config):
-        from tools.cloud.csp_monitor import _load_config
+        from icdev.tools.cloud.csp_monitor import _load_config
         config = _load_config(tmp_config)
         assert "sources" in config
         assert "aws" in config["sources"]
 
     def test_load_missing_config(self, tmp_path):
-        from tools.cloud.csp_monitor import _load_config
+        from icdev.tools.cloud.csp_monitor import _load_config
         config = _load_config(tmp_path / "nonexistent.yaml")
         assert config == {}
 

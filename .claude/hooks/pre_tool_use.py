@@ -80,6 +80,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     validator to detect drift: python tools/testing/claude_dir_validator.py --json
     """
     APPEND_ONLY_TABLES = [
+        # === CHILD-INHERITABLE (copied to child apps via step_09c) ===
         # Core audit
         "audit_trail",
         "hook_events",
@@ -150,6 +151,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "owasp_asi_assessments",
         # Phase 57 — EU AI Act (D349)
         "eu_ai_act_assessments",
+        # === PARENT-ONLY (excluded from child apps — D-CHILD-3) ===
         # Proposal Lifecycle (D-PROP-3 — reviews, findings, status history are immutable)
         "proposal_reviews",
         "proposal_review_findings",
@@ -177,9 +179,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_cdrl_generations",
         "cpmp_cor_access_log",
         # Phase 61 — ATLAS Critique (Feature 3)
+        "atlas_critique_sessions",
         "atlas_critique_findings",
         # Phase 61 — Prompt Chain Execution (Feature 2)
         "prompt_chain_executions",
+        # Phase 61 — Dispatcher Mode (Feature 1)
+        "dispatcher_mode_overrides",
     ]
 
     if tool_name == "Bash":

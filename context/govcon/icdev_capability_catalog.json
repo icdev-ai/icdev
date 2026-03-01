@@ -6,7 +6,7 @@
   "products": [
     {
       "id": "prod-icdev-platform",
-      "name": "ICDEV — Intelligent Coding Development Platform",
+      "name": "ICDEV — Intelligent Certified Development Platform",
       "type": "product",
       "category": "general",
       "description": "ICDEV is a meta-builder: a system that builds systems. It is a complete autonomous software development platform that generates ATO-ready government applications from natural language requirements. ICDEV orchestrates 15 specialized AI agents across a 6-layer GOTCHA framework (Goals, Orchestration, Tools, Context, Hard Prompts, Args) using the ATLAS workflow methodology. The platform supports 6 first-class programming languages (Python, Java, Go, Rust, C#, TypeScript), 42 compliance frameworks with dual-hub crosswalk (NIST 800-53 + ISO 27001), and deploys to 6 cloud service providers (AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government, IBM IC4G, and local/air-gapped environments). ICDEV handles the full SDLC with TDD/BDD, security scanning, IaC generation, OSCAL interoperability, and continuous ATO monitoring. Winning government contractors receive ICDEV free for on-premises deployment — the platform IS the delivery mechanism.",

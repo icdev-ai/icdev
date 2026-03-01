@@ -249,7 +249,7 @@ _DEFAULT_TEMPLATE = (
 
 _PRODUCT_TEMPLATES = {
     "icdev_platform": (
-        "The Contractor delivers the ICDEV (Intelligent Coding Development) platform — "
+        "The Contractor delivers the ICDEV (Intelligent Certified Development) platform — "
         "a complete autonomous software development system that generates ATO-ready "
         "government applications from natural language requirements. ICDEV orchestrates "
         "15 specialized AI agents across its 6-layer GOTCHA framework to handle the full "

@@ -20,7 +20,7 @@ from flask import Flask, g
 # ---------------------------------------------------------------------------
 # Schema SQL for temp DB setup
 # ---------------------------------------------------------------------------
-from tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
+from icdev.tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
 
 
 # ---------------------------------------------------------------------------
@@ -42,8 +42,8 @@ def tmp_db(tmp_path, monkeypatch):
     conn.close()
 
     # Monkeypatch DB_PATH in both config and auth modules
-    monkeypatch.setattr("tools.dashboard.config.DB_PATH", str(db_file))
-    monkeypatch.setattr("tools.dashboard.auth.DB_PATH", str(db_file))
+    monkeypatch.setattr("icdev.tools.dashboard.config.DB_PATH", str(db_file))
+    monkeypatch.setattr("icdev.tools.dashboard.auth.DB_PATH", str(db_file))
 
     return db_file
 
@@ -51,7 +51,7 @@ def tmp_db(tmp_path, monkeypatch):
 @pytest.fixture()
 def auth(tmp_db):
     """Import auth module after DB_PATH is patched."""
-    import tools.dashboard.auth as auth_mod
+    import icdev.tools.dashboard.auth as auth_mod
     return auth_mod
 
 
@@ -440,13 +440,13 @@ class TestBootstrapAdmin:
 
 class TestRegisterDashboardAuth:
     def test_sets_secret_key_from_config(self, auth, monkeypatch):
-        monkeypatch.setattr("tools.dashboard.auth.DASHBOARD_SECRET", "my-secret-123")
+        monkeypatch.setattr("icdev.tools.dashboard.auth.DASHBOARD_SECRET", "my-secret-123")
         app = Flask(__name__)
         auth.register_dashboard_auth(app)
         assert app.secret_key == "my-secret-123"
 
     def test_auto_generates_secret_when_empty(self, auth, monkeypatch):
-        monkeypatch.setattr("tools.dashboard.auth.DASHBOARD_SECRET", "")
+        monkeypatch.setattr("icdev.tools.dashboard.auth.DASHBOARD_SECRET", "")
         app = Flask(__name__)
         auth.register_dashboard_auth(app)
         assert app.secret_key is not None

@@ -55,7 +55,7 @@ fi
 echo ""
 echo -e "${CYAN}================================================================${NC}"
 echo -e "${CYAN}  ICDEV Modular Installer${NC}"
-echo -e "${CYAN}  Intelligent Coding Development Platform${NC}"
+echo -e "${CYAN}  Intelligent Certified Development Platform${NC}"
 echo -e "${CYAN}================================================================${NC}"
 echo ""
 

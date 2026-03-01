@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tools.agent.team_orchestrator import (
+from icdev.tools.agent.team_orchestrator import (
     Subtask,
     TeamOrchestrator,
     Workflow,
@@ -227,7 +227,7 @@ class TestEnsureTables:
 class TestDecompose:
     """decompose_task: LLM-based decomposition with fallback."""
 
-    @patch("tools.agent.team_orchestrator._audit_log")
+    @patch("icdev.tools.agent.team_orchestrator._audit_log")
     def test_decompose_via_llm(self, mock_audit, orchestrator):
         """When LLM succeeds, workflow has multiple subtasks from the response."""
         mock_router = MagicMock()
@@ -247,7 +247,7 @@ class TestDecompose:
         assert wf.subtasks["st-build"].depends_on == ["st-arch"]
         assert wf.subtasks["st-test"].depends_on == ["st-build"]
 
-    @patch("tools.agent.team_orchestrator._audit_log")
+    @patch("icdev.tools.agent.team_orchestrator._audit_log")
     def test_decompose_fallback_on_llm_failure(self, mock_audit, orchestrator):
         """When the LLM raises, fallback produces a single subtask."""
         mock_router = MagicMock()
@@ -266,7 +266,7 @@ class TestDecompose:
         assert st.depends_on == []
         assert "compliance report" in st.description.lower()
 
-    @patch("tools.agent.team_orchestrator._audit_log")
+    @patch("icdev.tools.agent.team_orchestrator._audit_log")
     def test_decompose_persists_to_db(self, mock_audit, orchestrator, orch_db):
         """After decompose, workflow and subtasks exist in the database."""
         mock_router = MagicMock()
@@ -295,7 +295,7 @@ class TestDecompose:
 class TestExecuteWorkflow:
     """execute_workflow: DAG-based parallel subtask execution."""
 
-    @patch("tools.agent.team_orchestrator._audit_log")
+    @patch("icdev.tools.agent.team_orchestrator._audit_log")
     def test_all_subtasks_completed(self, mock_audit, orchestrator):
         """When all subtasks succeed, workflow status is 'completed'."""
         wf = Workflow(id="wf-exec-1", name="Test exec", project_id="proj-1")
@@ -318,7 +318,7 @@ class TestExecuteWorkflow:
         assert result.aggregated_result["summary"]["completed"] == 2
         assert result.aggregated_result["summary"]["failed"] == 0
 
-    @patch("tools.agent.team_orchestrator._audit_log")
+    @patch("icdev.tools.agent.team_orchestrator._audit_log")
     def test_failed_subtask_marks_workflow_failed(self, mock_audit, orchestrator):
         """When all subtasks fail, workflow status is 'failed'."""
         wf = Workflow(id="wf-fail-1", name="Fail test", project_id="proj-1")
@@ -337,7 +337,7 @@ class TestExecuteWorkflow:
         assert result.status == "failed"
         assert result.aggregated_result["summary"]["failed"] == 1
 
-    @patch("tools.agent.team_orchestrator._audit_log")
+    @patch("icdev.tools.agent.team_orchestrator._audit_log")
     def test_partial_completion(self, mock_audit, orchestrator):
         """Mix of completed and failed subtasks yields partially_completed."""
         wf = Workflow(id="wf-part-1", name="Partial", project_id="proj-1")

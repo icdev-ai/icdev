@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from tools.dashboard.api.usage import (
+from icdev.tools.dashboard.api.usage import (
     DEFAULT_COST_PER_1K,
     _estimate_cost,
     usage_api,
 )
-from tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
+from icdev.tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
 
 try:
     from flask import Flask, g
@@ -80,7 +80,7 @@ def _seed_usage(db_path, rows):
 @pytest.fixture()
 def app(db_path, monkeypatch):
     """Create a Flask test app with the usage_api blueprint registered."""
-    monkeypatch.setattr("tools.dashboard.api.usage.DB_PATH", str(db_path))
+    monkeypatch.setattr("icdev.tools.dashboard.api.usage.DB_PATH", str(db_path))
 
     flask_app = Flask(__name__)
     flask_app.config["TESTING"] = True

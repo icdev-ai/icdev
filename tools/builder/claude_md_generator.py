@@ -138,6 +138,70 @@ python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "{{ app_name }}:latest"
 ```
 {% endif %}
+{% if capabilities.get("ai_security", False) %}
+
+### AI Security Commands
+```bash
+python tools/security/prompt_injection_detector.py --text "input" --json
+python tools/security/prompt_injection_detector.py --project-dir /path --gate --json
+python tools/security/ai_telemetry_logger.py --summary --json
+python tools/security/ai_telemetry_logger.py --anomalies --window-hours 24 --json
+python tools/security/ai_bom_generator.py --project-id "{{ app_name }}" --project-dir . --json
+python tools/compliance/atlas_assessor.py --project-id "{{ app_name }}" --json
+python tools/compliance/owasp_llm_assessor.py --project-id "{{ app_name }}" --json
+python tools/compliance/owasp_agentic_assessor.py --project-id "{{ app_name }}" --json
+python tools/security/agent_trust_scorer.py --all --json
+```
+{% endif %}
+{% if capabilities.get("ricoas", False) %}
+
+### Requirements Intake (RICOAS) Commands
+```bash
+python tools/requirements/intake_engine.py --project-id "{{ app_name }}" --customer-name "Name" --customer-org "Org" --impact-level {{ impact_level }} --json
+python tools/requirements/gap_detector.py --session-id "<id>" --check-security --check-compliance --json
+python tools/requirements/readiness_scorer.py --session-id "<id>" --json
+python tools/requirements/decomposition_engine.py --session-id "<id>" --level story --generate-bdd --json
+python tools/requirements/boundary_analyzer.py --project-id "{{ app_name }}" --list-assessments --json
+python tools/supply_chain/dependency_graph.py --project-id "{{ app_name }}" --build-graph --json
+python tools/supply_chain/scrm_assessor.py --project-id "{{ app_name }}" --aggregate --json
+python tools/supply_chain/cve_triager.py --project-id "{{ app_name }}" --sla-check --json
+python tools/simulation/simulation_engine.py --project-id "{{ app_name }}" --create-scenario --scenario-name "Scenario" --scenario-type what_if --json
+python tools/simulation/monte_carlo.py --scenario-id "<id>" --dimension schedule --iterations 10000 --json
+python tools/simulation/coa_generator.py --session-id "<id>" --generate-3-coas --simulate --json
+```
+{% endif %}
+{% if capabilities.get("devsecops_zta", False) %}
+
+### DevSecOps & ZTA Commands
+```bash
+python tools/devsecops/profile_manager.py --project-id "{{ app_name }}" --assess --json
+python tools/devsecops/pipeline_security_generator.py --project-id "{{ app_name }}" --json
+python tools/devsecops/policy_generator.py --project-id "{{ app_name }}" --engine kyverno --json
+python tools/devsecops/zta_maturity_scorer.py --project-id "{{ app_name }}" --all --json
+python tools/compliance/nist_800_207_assessor.py --project-id "{{ app_name }}" --json
+python tools/devsecops/service_mesh_generator.py --project-id "{{ app_name }}" --mesh istio --json
+```
+{% endif %}
+{% if capabilities.get("observability", False) %}
+
+### Observability & XAI Commands
+```bash
+python tools/observability/shap/agent_shap.py --project-id "{{ app_name }}" --last-n 10 --json
+python tools/observability/provenance/prov_query.py --entity-id "<id>" --direction backward --json
+python tools/observability/provenance/prov_export.py --project-id "{{ app_name }}" --json
+python tools/compliance/xai_assessor.py --project-id "{{ app_name }}" --json
+```
+{% endif %}
+{% if capabilities.get("code_intelligence", False) %}
+
+### Code Intelligence Commands
+```bash
+python tools/analysis/code_analyzer.py --project-dir tools/ --json
+python tools/analysis/code_analyzer.py --project-dir tools/ --store --json
+python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json
+python tools/analysis/runtime_feedback.py --health --function analyze_code --json
+```
+{% endif %}
 {% if capabilities.get("mbse", False) %}
 
 ### MBSE Commands
@@ -304,6 +368,65 @@ Model-Based Systems Engineering: SysML XMI import, DOORS NG ReqIF import, digita
 - Drift detection: `sync_engine.py`
 - DES compliance: `des_assessor.py`, `des_report_generator.py`
 {% endif %}
+{% if capabilities.get("ricoas", False) %}
+
+### RICOAS — Requirements Intake, COA & Approval System
+
+AI-driven conversational requirements intake with gap detection, SAFe decomposition, boundary impact assessment, supply chain intelligence, and Digital Program Twin simulation.
+
+- Requirements intake: `intake_engine.py` (5-stage pipeline)
+- Gap detection: `gap_detector.py`, `readiness_scorer.py` (7-dimension scoring)
+- Decomposition: `decomposition_engine.py` (SAFe hierarchy with BDD)
+- Boundary analysis: `boundary_analyzer.py` (4-tier ATO impact: GREEN/YELLOW/ORANGE/RED)
+- Supply chain: `dependency_graph.py`, `scrm_assessor.py`, `cve_triager.py`
+- Simulation: `simulation_engine.py`, `monte_carlo.py`, `coa_generator.py`
+{% endif %}
+{% if capabilities.get("devsecops_zta", False) %}
+
+### DevSecOps & Zero Trust Architecture
+
+DevSecOps pipeline security with policy-as-code (Kyverno/OPA), service mesh generation, and NIST SP 800-207 Zero Trust maturity scoring across 7 pillars.
+
+- Profile management: `profile_manager.py` (5 maturity levels)
+- Pipeline security: `pipeline_security_generator.py`
+- Policy-as-code: `policy_generator.py` (Kyverno/OPA)
+- ZTA maturity: `zta_maturity_scorer.py` (7-pillar DoD ZTA Strategy)
+- NIST 800-207: `nist_800_207_assessor.py`
+- Service mesh: `service_mesh_generator.py` (Istio/Linkerd)
+{% endif %}
+{% if capabilities.get("ai_security", False) %}
+
+### AI Security
+
+MITRE ATLAS threat defense, OWASP LLM Top 10, prompt injection detection, AI telemetry with privacy-preserving hashing, and agentic security (behavioral drift, tool chain validation, trust scoring).
+
+- Prompt injection: `prompt_injection_detector.py` (5 detection categories)
+- AI telemetry: `ai_telemetry_logger.py` (SHA-256 hashed prompts/responses)
+- ATLAS: `atlas_assessor.py`, `atlas_red_team.py`
+- OWASP: `owasp_llm_assessor.py`, `owasp_agentic_assessor.py`
+- Trust scoring: `agent_trust_scorer.py`, `tool_chain_validator.py`
+{% endif %}
+{% if capabilities.get("observability", False) %}
+
+### Observability & Explainable AI
+
+Distributed tracing (OTel+SQLite), W3C PROV provenance, AgentSHAP tool attribution, and XAI compliance assessment.
+
+- Tracing: Dual-mode tracer (OTel production, SQLite air-gapped)
+- Provenance: `prov_query.py`, `prov_export.py` (W3C PROV-AGENT)
+- Attribution: `agent_shap.py` (Monte Carlo Shapley values)
+- XAI assessment: `xai_assessor.py` (10 compliance checks)
+{% endif %}
+{% if capabilities.get("code_intelligence", False) %}
+
+### Code Intelligence
+
+AST-based code quality metrics, smell detection, deterministic maintainability scoring, and runtime feedback from test results.
+
+- Code analyzer: `code_analyzer.py` (cyclomatic/cognitive complexity, nesting, params)
+- Smell detection: 5 smell types (long function, deep nesting, high complexity, too many params, god class)
+- Runtime feedback: `runtime_feedback.py` (test-to-source mapping)
+{% endif %}
 
 ### ATLAS Workflow
 
@@ -331,7 +454,7 @@ Build process follows the ATLAS methodology:
 
 | Database | Purpose |
 |----------|---------|
-| `data/{{ db_name }}` | Main operational DB: projects, agents, audit trail{% if capabilities.get("compliance", False) %}, compliance{% endif %}{% if capabilities.get("mbse", False) %}, MBSE{% endif %} |
+| `data/{{ db_name }}` | Main operational DB: projects, agents, audit trail{% if capabilities.get("compliance", False) %}, compliance{% endif %}{% if capabilities.get("mbse", False) %}, MBSE{% endif %}{% if capabilities.get("ricoas", False) %}, RICOAS{% endif %}{% if capabilities.get("ai_security", False) %}, AI security{% endif %}{% if capabilities.get("ai_governance", False) %}, AI governance{% endif %}{% if capabilities.get("observability", False) %}, observability{% endif %}{% if capabilities.get("devsecops_zta", False) %}, DevSecOps/ZTA{% endif %}{% if capabilities.get("code_intelligence", False) %}, code intelligence{% endif %} |
 | `data/memory.db` | Memory system: entries, daily logs, access log |
 | `data/activity.db` | Task tracking |
 
@@ -363,6 +486,11 @@ Build process follows the ATLAS methodology:
 - SBOM must be regenerated on every build
 - When implementing a NIST 800-53 control, always call crosswalk engine to auto-populate FedRAMP/CMMC/800-171 status
 {% endif %}{% if capabilities.get("security", False) %}- Security gates block on: CAT1 STIG findings, critical/high vulnerabilities, failed tests, missing markings
+{% endif %}{% if capabilities.get("ai_security", False) %}- AI Security gates block on: prompt injection defense inactive, AI telemetry disabled, AI BOM missing, ATLAS coverage < 80%
+{% endif %}{% if capabilities.get("devsecops_zta", False) %}- ZTA gates block on: maturity < Advanced for IL4+, mTLS not enforced with service mesh, no default-deny NetworkPolicy
+{% endif %}{% if capabilities.get("ricoas", False) %}- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs
+{% endif %}{% if capabilities.get("observability", False) %}- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed
+{% endif %}{% if capabilities.get("code_intelligence", False) %}- Code Quality gates block on: average cyclomatic complexity > 25
 {% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 {% if parent_callback.get("enabled", False) %}
 
@@ -479,6 +607,51 @@ GOAL_METADATA: Dict[str, Dict[str, str]] = {
     "ato_acceleration": {
         "name": "ATO Acceleration",
         "purpose": "Multi-framework ATO: FedRAMP + CMMC + OSCAL + eMASS + cATO",
+    },
+    # D-CHILD-1: Enterprise-grade goal metadata
+    "requirements_intake": {
+        "name": "Requirements Intake (RICOAS)",
+        "purpose": "AI-driven conversational intake, gap detection, SAFe decomposition",
+    },
+    "boundary_supply_chain": {
+        "name": "Boundary & Supply Chain",
+        "purpose": "ATO boundary impact, supply chain dependency graph, CVE triage",
+    },
+    "simulation_engine": {
+        "name": "Digital Program Twin Simulation",
+        "purpose": "6-dimension what-if simulation, Monte Carlo, COA generation",
+    },
+    "devsecops_workflow": {
+        "name": "DevSecOps Workflow",
+        "purpose": "DevSecOps profile, pipeline security, policy-as-code",
+    },
+    "zero_trust_architecture": {
+        "name": "Zero Trust Architecture",
+        "purpose": "ZTA 7-pillar maturity, NIST 800-207, service mesh",
+    },
+    "mosa_workflow": {
+        "name": "MOSA Workflow",
+        "purpose": "DoD MOSA modularity analysis, ICD/TSP generation",
+    },
+    "observability_traceability_xai": {
+        "name": "Observability & XAI",
+        "purpose": "Distributed tracing, provenance, AgentSHAP, XAI assessment",
+    },
+    "ai_transparency": {
+        "name": "AI Transparency",
+        "purpose": "Model/system cards, AI inventory, fairness, confabulation detection",
+    },
+    "ai_accountability": {
+        "name": "AI Accountability",
+        "purpose": "Oversight plans, CAIO, appeals, incident response, ethics reviews",
+    },
+    "owasp_agentic_security": {
+        "name": "OWASP Agentic Security",
+        "purpose": "Behavioral drift, tool chain validation, trust scoring, RBAC",
+    },
+    "code_intelligence": {
+        "name": "Code Intelligence",
+        "purpose": "AST metrics, smell detection, maintainability scoring",
     },
 }
 
@@ -717,11 +890,30 @@ def _derive_mcp_servers(
         },
     }
 
-    # Only include MBSE server if the mbse capability is on
+    # Only include capability-specific MCP servers when enabled
     if capabilities.get("mbse", False):
         agent_mcp_map["mbse"] = {
             "name": "mbse",
             "tools": "import_xmi, import_reqif, trace_forward, trace_backward, detect_drift, sync_model",
+        }
+    # D-CHILD-1: Enterprise capability MCP servers
+    if capabilities.get("ricoas", False):
+        agent_mcp_map["requirements_analyst"] = {
+            "name": "requirements",
+            "tools": "create_intake_session, process_intake_turn, detect_gaps, score_readiness, decompose_requirements",
+        }
+        agent_mcp_map["supply_chain"] = {
+            "name": "supply-chain",
+            "tools": "add_vendor, build_dependency_graph, assess_scrm, triage_cve, manage_isa",
+        }
+        agent_mcp_map["simulation"] = {
+            "name": "simulation",
+            "tools": "create_scenario, run_simulation, run_monte_carlo, generate_coas, compare_coas",
+        }
+    if capabilities.get("devsecops_zta", False):
+        agent_mcp_map["devsecops_zta"] = {
+            "name": "devsecops",
+            "tools": "devsecops_profile_create, zta_maturity_score, pipeline_security_generate, policy_generate, service_mesh_generate",
         }
 
     servers: List[Dict[str, str]] = []
@@ -798,9 +990,60 @@ def _build_key_decisions(blueprint: Dict[str, Any]) -> List[Dict[str, str]]:
             "text": "N:M digital thread links (one block -> many code modules; one control -> many requirements)",
         })
 
+    # D-CHILD-1: Enterprise capability decisions
+    if capabilities.get("ricoas", False):
+        decisions.append({
+            "id": "D21",
+            "text": "Readiness scoring uses deterministic weighted average (reproducible, not probabilistic)",
+        })
+        decisions.append({
+            "id": "D22",
+            "text": "Monte Carlo uses Python stdlib random (zero deps, air-gap safe)",
+        })
+        decisions.append({
+            "id": "D27",
+            "text": "Supply chain graph stored as SQL adjacency list (no graph DB needed)",
+        })
+
+    if capabilities.get("devsecops_zta", False):
+        decisions.append({
+            "id": "D117",
+            "text": "DevSecOps/ZTA Agent with hard veto on pipeline_configuration and zero_trust_policy",
+        })
+        decisions.append({
+            "id": "D120",
+            "text": "ZTA maturity model uses DoD 7-pillar scoring (Traditional -> Advanced -> Optimal)",
+        })
+
+    if capabilities.get("ai_security", False):
+        decisions.append({
+            "id": "D215",
+            "text": "Prompt injection detector uses 5 detection categories",
+        })
+        decisions.append({
+            "id": "D216",
+            "text": "AI telemetry hashes prompts/responses with SHA-256 (privacy-preserving audit)",
+        })
+
+    if capabilities.get("observability", False):
+        decisions.append({
+            "id": "D280",
+            "text": "Pluggable Tracer ABC: OTelTracer (production), SQLiteTracer (air-gapped), NullTracer (fallback)",
+        })
+        decisions.append({
+            "id": "D287",
+            "text": "PROV-AGENT provenance in 3 append-only SQLite tables (W3C PROV standard)",
+        })
+
+    if capabilities.get("code_intelligence", False):
+        decisions.append({
+            "id": "D331",
+            "text": "Code quality metrics are read-only, advisory-only -- never modifies source files",
+        })
+
     # Grandchild prevention is always documented
     decisions.append({
-        "id": "D26",
+        "id": "D52",
         "text": "This is a generated child app -- grandchild app generation is disabled by design",
     })
 
@@ -1206,6 +1449,18 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
         purpose_parts.append("compliance")
     if caps.get("mbse", False):
         purpose_parts.append("MBSE")
+    if caps.get("ricoas", False):
+        purpose_parts.append("RICOAS")
+    if caps.get("ai_security", False):
+        purpose_parts.append("AI security")
+    if caps.get("ai_governance", False):
+        purpose_parts.append("AI governance")
+    if caps.get("observability", False):
+        purpose_parts.append("observability")
+    if caps.get("devsecops_zta", False):
+        purpose_parts.append("DevSecOps/ZTA")
+    if caps.get("code_intelligence", False):
+        purpose_parts.append("code intelligence")
     parts.append(f"| `data/{db_name}` | Main operational DB: {', '.join(purpose_parts)} |")
     parts.append("| `data/memory.db` | Memory system: entries, daily logs, access log |")
     parts.append("| `data/activity.db` | Task tracking |")
@@ -1270,6 +1525,16 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
 
     if caps.get("security", False):
         parts.append("- Security gates block on: CAT1 STIG findings, critical/high vulnerabilities, failed tests, missing markings")
+    if caps.get("ai_security", False):
+        parts.append("- AI Security gates block on: prompt injection defense inactive, AI telemetry disabled, AI BOM missing, ATLAS coverage < 80%")
+    if caps.get("devsecops_zta", False):
+        parts.append("- ZTA gates block on: maturity < Advanced for IL4+, mTLS not enforced with service mesh, no default-deny NetworkPolicy")
+    if caps.get("ricoas", False):
+        parts.append("- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs")
+    if caps.get("observability", False):
+        parts.append("- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed")
+    if caps.get("code_intelligence", False):
+        parts.append("- Code Quality gates block on: average cyclomatic complexity > 25")
 
     parts.append(
         "- **This application CANNOT generate child applications** -- it is a generated "

@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.security.atlas_red_team import ATLASRedTeamScanner, BEHAVIORAL_TECHNIQUES
+from icdev.tools.security.atlas_red_team import ATLASRedTeamScanner, BEHAVIORAL_TECHNIQUES
 
 
 @pytest.fixture

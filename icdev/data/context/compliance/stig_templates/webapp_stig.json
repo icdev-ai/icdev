@@ -1,0 +1,139 @@
+{
+  "metadata": {
+    "stig_id": "webapp",
+    "title": "Web Application Security STIG",
+    "description": "Security Technical Implementation Guide for Web Applications aligned with OWASP Top 10 and DISA Web Application SRG",
+    "version": "2.0",
+    "release_date": "2026-01-15",
+    "classification": "CUI // SP-CTI",
+    "source": "DISA STIG / OWASP Alignment"
+  },
+  "findings": [
+    {
+      "finding_id": "V-222602",
+      "rule_id": "SV-222602r879587",
+      "severity": "CAT1",
+      "title": "The application must not store sensitive information in URL parameters",
+      "description": "Web applications must not pass sensitive information such as session tokens, credentials, PII, or CUI data in URL parameters. URL parameters are logged in browser history, server logs, proxy logs, and referrer headers, creating multiple vectors for information disclosure.",
+      "check_content": "Review the application source code and configuration. Check that no sensitive data (session IDs, tokens, passwords, SSNs, CUI) is transmitted via GET parameters or URL query strings. Examine web server access logs for evidence of sensitive data in URLs. Test by navigating the application and examining URL parameters in the browser address bar. If sensitive information appears in URL parameters, this is a finding.",
+      "fix_text": "Modify the application to transmit sensitive information using POST request bodies, HTTP headers (e.g., Authorization header), or encrypted cookies. Ensure session tokens are transmitted via secure cookies with HttpOnly and Secure flags set. Implement server-side session management that does not rely on URL-based session tracking."
+    },
+    {
+      "finding_id": "V-222604",
+      "rule_id": "SV-222604r879589",
+      "severity": "CAT1",
+      "title": "The application must implement input validation on all user-controllable input",
+      "description": "Applications must validate all input received from users, external systems, and databases before processing. Failure to validate input can lead to SQL injection, cross-site scripting (XSS), command injection, path traversal, and other injection attacks that may compromise the confidentiality, integrity, and availability of the system.",
+      "check_content": "Review application source code for input validation routines. Verify that all user-controllable input (form fields, URL parameters, HTTP headers, cookies, file uploads) is validated against an allowlist of expected values. Check for parameterized queries or prepared statements for database interactions. Test with common injection payloads: SQL injection (e.g., ' OR 1=1--), XSS (e.g., <script>alert(1)</script>), command injection (e.g., ; ls -la). If unvalidated input reaches backend processing, this is a finding.",
+      "fix_text": "Implement comprehensive input validation using allowlist (positive) validation for all user-controllable input. Use parameterized queries or ORM frameworks for all database operations. Apply context-appropriate output encoding (HTML entity encoding, JavaScript encoding, URL encoding). Implement Content Security Policy (CSP) headers to mitigate XSS. Use a web application firewall (WAF) as defense-in-depth."
+    },
+    {
+      "finding_id": "V-222607",
+      "rule_id": "SV-222607r879592",
+      "severity": "CAT1",
+      "title": "The application must enforce approved authorizations for access to resources",
+      "description": "Access control failures are among the most critical web application vulnerabilities (OWASP A01:2021). The application must enforce server-side access control checks on every request to protected resources. Client-side access controls alone are insufficient as they can be bypassed.",
+      "check_content": "Review the application's authorization implementation. Verify that access control checks are performed server-side for all protected endpoints, files, and functions. Test for Insecure Direct Object References (IDOR) by modifying resource identifiers in requests. Test for forced browsing to administrative or unauthorized pages. Verify role-based access control (RBAC) is enforced consistently. If unauthorized access to protected resources is possible, this is a finding.",
+      "fix_text": "Implement server-side access control checks on every request to protected resources. Use a centralized authorization framework or middleware. Deny access by default and explicitly grant permissions. Use indirect object references rather than exposing internal database IDs. Log and alert on access control failures. Implement rate limiting on failed authorization attempts."
+    },
+    {
+      "finding_id": "V-222609",
+      "rule_id": "SV-222609r879594",
+      "severity": "CAT1",
+      "title": "The application must use FIPS 140-2/140-3 validated cryptographic modules",
+      "description": "All cryptographic operations within the application including encryption, hashing, digital signatures, and key management must use FIPS 140-2 or FIPS 140-3 validated cryptographic modules. Use of non-validated cryptographic implementations may result in data exposure and failure to meet DoD and federal security requirements.",
+      "check_content": "Review the application's cryptographic implementation. Verify that TLS 1.2 or higher is enforced for all communications. Check that cryptographic libraries used are FIPS 140-2/3 validated (check NIST CMVP validated modules list). Verify that deprecated algorithms (MD5, SHA-1, DES, 3DES, RC4) are not used. Ensure encryption keys are at least 256-bit for AES and 2048-bit for RSA. If non-FIPS-validated cryptographic modules or deprecated algorithms are in use, this is a finding.",
+      "fix_text": "Replace all cryptographic implementations with FIPS 140-2/3 validated modules. Enable FIPS mode in the operating system and cryptographic libraries. Use TLS 1.2 or higher with approved cipher suites. Replace deprecated algorithms: use SHA-256 or higher for hashing, AES-256 for symmetric encryption, RSA-2048+ or ECDSA P-256+ for asymmetric operations. Document all cryptographic use in the system security plan."
+    },
+    {
+      "finding_id": "V-222612",
+      "rule_id": "SV-222612r879597",
+      "severity": "CAT2",
+      "title": "The application must set the Secure and HttpOnly flags on session cookies",
+      "description": "Session cookies must be protected from interception and client-side script access. The Secure flag ensures cookies are only transmitted over HTTPS connections. The HttpOnly flag prevents client-side scripts from accessing the cookie, mitigating cross-site scripting (XSS) session hijacking attacks.",
+      "check_content": "Examine the application's session management configuration and source code. Review HTTP response headers for Set-Cookie directives. Verify that all session cookies include both the 'Secure' and 'HttpOnly' flags. Also verify the 'SameSite' attribute is set to 'Strict' or 'Lax'. Use browser developer tools or an intercepting proxy (e.g., Burp Suite, OWASP ZAP) to examine cookie attributes. If session cookies do not have Secure and HttpOnly flags, this is a finding.",
+      "fix_text": "Configure the application server or framework to set the Secure and HttpOnly flags on all session cookies. Set the SameSite attribute to 'Strict' or 'Lax' as appropriate. For common frameworks: Django (SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True), Express.js (cookie: {secure: true, httpOnly: true}), Spring (server.servlet.session.cookie.secure=true, server.servlet.session.cookie.http-only=true)."
+    },
+    {
+      "finding_id": "V-222614",
+      "rule_id": "SV-222614r879599",
+      "severity": "CAT2",
+      "title": "The application must implement security headers to prevent common attacks",
+      "description": "The application must include HTTP security headers to provide defense-in-depth against common web attacks. Required headers include Content-Security-Policy, X-Content-Type-Options, X-Frame-Options, Strict-Transport-Security, and Referrer-Policy. These headers instruct browsers to enable built-in security mechanisms.",
+      "check_content": "Examine HTTP response headers returned by the application. Verify the following headers are present and correctly configured:\n- Content-Security-Policy: Restrictive policy preventing inline scripts and unauthorized resource loading\n- X-Content-Type-Options: nosniff\n- X-Frame-Options: DENY or SAMEORIGIN\n- Strict-Transport-Security: max-age=31536000; includeSubDomains\n- Referrer-Policy: strict-origin-when-cross-origin or no-referrer\n- Permissions-Policy: Restrict access to browser features\nUse curl or browser developer tools to inspect response headers. If any required security headers are missing or misconfigured, this is a finding.",
+      "fix_text": "Configure the web server or application to return the required security headers on all responses. Implement a security headers middleware or use server configuration directives. For Apache: use Header directives in httpd.conf. For Nginx: use add_header directives. For application frameworks: use security middleware packages (e.g., django-csp, helmet.js for Express, Spring Security headers)."
+    },
+    {
+      "finding_id": "V-222617",
+      "rule_id": "SV-222617r879602",
+      "severity": "CAT2",
+      "title": "The application must protect against Cross-Site Request Forgery (CSRF)",
+      "description": "The application must implement protections against CSRF attacks on all state-changing operations. CSRF attacks trick authenticated users into performing unintended actions by exploiting the browser's automatic inclusion of credentials (cookies) in requests to the target domain.",
+      "check_content": "Review the application's CSRF protection mechanisms. Verify that all state-changing endpoints (POST, PUT, DELETE, PATCH) require a valid CSRF token. Check that CSRF tokens are unique per session, cryptographically random, and validated server-side. Verify that the application uses the SameSite cookie attribute as defense-in-depth. Test by intercepting a state-changing request, removing or modifying the CSRF token, and replaying the request. If the request succeeds without a valid CSRF token, this is a finding.",
+      "fix_text": "Implement CSRF protection using the Synchronizer Token Pattern or Double Submit Cookie pattern. Use framework-provided CSRF protection: Django ({% csrf_token %}), Spring Security (CsrfFilter), Express.js (csurf middleware). Ensure all forms and AJAX requests include the CSRF token. Set the SameSite attribute on session cookies to Strict or Lax."
+    },
+    {
+      "finding_id": "V-222620",
+      "rule_id": "SV-222620r879605",
+      "severity": "CAT2",
+      "title": "The application must generate audit records for security-relevant events",
+      "description": "The application must log all security-relevant events including authentication attempts (success and failure), authorization failures, input validation failures, session management events, administrative actions, data access to CUI, and error conditions. Audit records must contain sufficient information for after-the-fact investigation per NIST AU-2 and AU-3.",
+      "check_content": "Review the application's logging configuration and implementation. Verify that the following events are logged: successful/failed authentication, authorization failures, input validation failures, session creation/destruction, administrative actions, access to CUI data, application errors, and configuration changes. Verify that log records include: timestamp, event type, user identity, source IP, affected resource, and outcome. Verify that sensitive data (passwords, tokens, PII) is not included in log records. If security-relevant events are not logged with sufficient detail, this is a finding.",
+      "fix_text": "Implement comprehensive security event logging using a structured logging framework. Log all security-relevant events with required fields per NIST AU-3. Use a centralized logging solution (ELK, Splunk) for log aggregation and analysis. Implement log integrity protection (digital signatures or write-once storage). Ensure logs are retained per organizational policy (typically 1-6 years for DoD systems). Filter sensitive data from log records."
+    },
+    {
+      "finding_id": "V-222623",
+      "rule_id": "SV-222623r879608",
+      "severity": "CAT2",
+      "title": "The application must enforce password complexity requirements",
+      "description": "The application must enforce password complexity requirements consistent with DoD policy and NIST SP 800-63B guidelines. Passwords must meet minimum length requirements and be checked against known compromised password lists. Multi-factor authentication should be implemented for privileged and sensitive accounts.",
+      "check_content": "Review the application's password policy configuration and implementation. Verify minimum password length of 15 characters (or per organizational policy). Verify passwords are checked against known breached password databases. Verify that MFA is implemented for privileged access. Check that password storage uses a strong adaptive hashing algorithm (bcrypt, scrypt, Argon2id) with appropriate work factors. If password requirements do not meet organizational policy, this is a finding.",
+      "fix_text": "Configure the application to enforce the following password requirements: minimum 15 characters, checked against known compromised password lists (e.g., HIBP API, NIST bad password list), stored using Argon2id or bcrypt with appropriate cost factors. Implement MFA for all privileged accounts using FIDO2/WebAuthn, TOTP, or CAC/PIV. Do not enforce arbitrary complexity rules (uppercase, special characters) per NIST SP 800-63B guidance."
+    },
+    {
+      "finding_id": "V-222626",
+      "rule_id": "SV-222626r879611",
+      "severity": "CAT2",
+      "title": "The application must configure session timeout and management controls",
+      "description": "The application must enforce session timeout controls to limit the risk of session hijacking and unauthorized access from unattended workstations. Sessions must be invalidated after a period of inactivity and after a maximum absolute lifetime regardless of activity.",
+      "check_content": "Review the application's session management configuration. Verify that idle session timeout is set to 15 minutes or less for sensitive applications. Verify that absolute session timeout is configured (typically 8-12 hours). Verify that sessions are properly invalidated on logout (server-side session destruction). Check that session IDs are regenerated after authentication. Verify that concurrent session controls are implemented. If session timeout or management controls are not properly configured, this is a finding.",
+      "fix_text": "Configure session management with the following settings: idle timeout of 15 minutes (or per organizational policy), absolute timeout of 8 hours, server-side session invalidation on logout, session ID regeneration after authentication, and concurrent session limiting. For web frameworks: Django (SESSION_COOKIE_AGE, SESSION_SAVE_EVERY_REQUEST), Express.js (express-session with rolling and maxAge), Spring (server.servlet.session.timeout)."
+    },
+    {
+      "finding_id": "V-222629",
+      "rule_id": "SV-222629r879614",
+      "severity": "CAT2",
+      "title": "The application must protect CUI data at rest using encryption",
+      "description": "All Controlled Unclassified Information (CUI) stored by the application must be encrypted at rest using FIPS 140-2/3 validated cryptographic modules with approved algorithms. This includes data in databases, file systems, backups, and temporary storage. Encryption keys must be managed in accordance with NIST SP 800-57.",
+      "check_content": "Identify all locations where the application stores CUI data (databases, file systems, caches, backups, logs). Verify that data is encrypted at rest using AES-256 or equivalent FIPS-approved algorithm. Verify that encryption is provided by FIPS 140-2/3 validated modules. Check that encryption keys are stored separately from encrypted data, rotated per policy, and protected by access controls. If CUI data at rest is not encrypted with FIPS-validated cryptography, this is a finding.",
+      "fix_text": "Implement encryption at rest for all CUI data stores. Use Transparent Data Encryption (TDE) for databases or application-level encryption using FIPS 140-2/3 validated libraries. Use AWS KMS (FIPS validated) or equivalent for key management in cloud environments. Encrypt backup volumes and temporary storage. Document encryption implementation in the SSP including key management procedures per NIST SP 800-57."
+    },
+    {
+      "finding_id": "V-222632",
+      "rule_id": "SV-222632r879617",
+      "severity": "CAT3",
+      "title": "The application must display a DoD-approved banner before granting access",
+      "description": "The application must display an approved use notification banner before granting access to the system. The banner must inform users that they are accessing a U.S. Government information system, that system usage may be monitored, and that unauthorized use may result in criminal prosecution.",
+      "check_content": "Access the application login page. Verify that a DoD-approved use notification banner is displayed before authentication. Verify the banner includes: notice of U.S. Government system, consent to monitoring, warning about unauthorized use, and privacy act statement. Verify that the user must acknowledge the banner before proceeding. If the banner is not displayed or does not contain required language, this is a finding.",
+      "fix_text": "Implement a login banner that displays the DoD-approved Standard Mandatory Notice and Consent Banner (or organization-specific approved banner). Require the user to click 'I Accept' or equivalent before proceeding to the login form. The banner text should be configurable and stored separately from application code for easy updates."
+    },
+    {
+      "finding_id": "V-222635",
+      "rule_id": "SV-222635r879620",
+      "severity": "CAT3",
+      "title": "The application must not expose detailed error messages to users",
+      "description": "The application must handle errors gracefully and not expose stack traces, debug information, database error messages, internal paths, framework versions, or other technical details to end users. Detailed error information may reveal system architecture, configuration details, or vulnerabilities that could be exploited by attackers.",
+      "check_content": "Generate error conditions in the application (invalid input, non-existent pages, malformed requests, database errors). Verify that generic error pages are displayed to users without technical details. Check that stack traces, SQL error messages, framework details, and internal file paths are not exposed. Verify that detailed error information is logged server-side for troubleshooting while only generic messages are shown to users. Verify that debug mode is disabled in production. If detailed error information is exposed to users, this is a finding.",
+      "fix_text": "Implement custom error handling that returns generic error messages to users. Configure the application framework to disable debug mode in production: Django (DEBUG=False), Express.js (NODE_ENV=production), Spring (spring.profiles.active=production). Implement centralized exception handling middleware. Log detailed errors server-side with correlation IDs that can be referenced for troubleshooting."
+    },
+    {
+      "finding_id": "V-222638",
+      "rule_id": "SV-222638r879623",
+      "severity": "CAT3",
+      "title": "The application must implement file upload restrictions",
+      "description": "If the application accepts file uploads, it must implement restrictions to prevent malicious file upload attacks. Restrictions must include file type validation (both extension and content type), file size limits, storage outside the web root, malware scanning, and prevention of path traversal in filenames.",
+      "check_content": "Review the application's file upload functionality. Verify file type restrictions are enforced server-side by checking both file extension and MIME type/magic bytes. Verify file size limits are enforced. Verify uploaded files are stored outside the web root directory. Verify filenames are sanitized to prevent path traversal. Check that uploaded files are scanned for malware. Verify that uploaded files are not directly executable. If file upload restrictions are not properly implemented, this is a finding.",
+      "fix_text": "Implement comprehensive file upload security: validate file types using allowlist of permitted extensions and magic byte verification, enforce file size limits, generate random filenames for storage, store files outside web root, scan uploads with antivirus/malware detection, set Content-Disposition: attachment for downloads, configure the web server to not execute files in the upload directory. Consider using a CDN or object storage (S3) with restricted access for uploaded files."
+    }
+  ]
+}

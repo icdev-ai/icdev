@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.compliance.nist_ai_600_1_assessor import NISTAI6001Assessor
+from icdev.tools.compliance.nist_ai_600_1_assessor import NISTAI6001Assessor
 
 
 # ============================================================

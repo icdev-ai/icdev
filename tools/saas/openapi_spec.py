@@ -52,7 +52,7 @@ OPENAPI_BASE = {
         "title": "ICDEV SaaS API",
         "version": "1.0.0",
         "description": (
-            "CUI // SP-CTI -- ICDEV Intelligent Coding Development platform "
+            "CUI // SP-CTI -- ICDEV Intelligent Certified Development platform "
             "REST API for multi-tenant SaaS operations.  All endpoints require "
             "authentication via API key, OAuth 2.0 bearer token, or CAC/PIV "
             "client certificate.  Responses include CUI classification headers "

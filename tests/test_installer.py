@@ -20,14 +20,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 try:
-    from tools.installer.module_registry import ModuleRegistry, DEFAULT_MODULES
-    from tools.installer.compliance_configurator import (
+    from icdev.tools.installer.module_registry import ModuleRegistry, DEFAULT_MODULES
+    from icdev.tools.installer.compliance_configurator import (
         ComplianceConfigurator,
         FRAMEWORK_MODULE_MAP,
         DATA_CATEGORY_FRAMEWORK_MAP,
         POSTURE_DESCRIPTIONS,
     )
-    from tools.installer.installer import (
+    from icdev.tools.installer.installer import (
         ModularDBInitializer,
         install,
         add_module,
@@ -342,13 +342,13 @@ class TestInstaller:
     def test_dry_run_returns_plan_without_executing(self, tmp_path, monkeypatch):
         """install() with dry_run=True returns plan and does not create files."""
         monkeypatch.setattr(
-            "tools.installer.installer.DATA_DIR", tmp_path / "data"
+            "icdev.tools.installer.installer.DATA_DIR", tmp_path / "data"
         )
         monkeypatch.setattr(
-            "tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db"
+            "icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db"
         )
         monkeypatch.setattr(
-            "tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
+            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
         )
         result = install(
             modules=["core"],
@@ -379,12 +379,12 @@ class TestInstaller:
         }
         manifest_path.write_text(yaml.dump(manifest_data, default_flow_style=False))
 
-        monkeypatch.setattr("tools.installer.installer.DATA_DIR", tmp_path / "data")
-        monkeypatch.setattr("tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
+        monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
         monkeypatch.setattr(
-            "tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
+            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
         )
-        monkeypatch.setattr("tools.installer.installer.MANIFEST_PATH", manifest_path)
+        monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", manifest_path)
         result = install(
             modules=["core"],
             compliance_frameworks=[],
@@ -419,12 +419,12 @@ class TestInstaller:
         }
         manifest_path.write_text(yaml.dump(manifest_data, default_flow_style=False))
 
-        monkeypatch.setattr("tools.installer.installer.DATA_DIR", tmp_path / "data")
-        monkeypatch.setattr("tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
+        monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
         monkeypatch.setattr(
-            "tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
+            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
         )
-        monkeypatch.setattr("tools.installer.installer.MANIFEST_PATH", manifest_path)
+        monkeypatch.setattr("icdev.tools.installer.installer.MANIFEST_PATH", manifest_path)
         result = add_module("llm", dry_run=True)
         assert result["success"] is True
         assert result["dry_run"] is True
@@ -434,13 +434,13 @@ class TestInstaller:
 
     def test_add_module_unknown_fails(self, tmp_path, monkeypatch):
         """add_module for unknown module returns error."""
-        monkeypatch.setattr("tools.installer.installer.DATA_DIR", tmp_path / "data")
-        monkeypatch.setattr("tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
+        monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
         monkeypatch.setattr(
-            "tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
+            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
         )
         monkeypatch.setattr(
-            "tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
+            "icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
         )
         result = add_module("totally_fake_module_xyz", dry_run=True)
         assert result["success"] is False
@@ -448,13 +448,13 @@ class TestInstaller:
 
     def test_add_compliance_updates_posture(self, tmp_path, monkeypatch):
         """add_compliance with dry_run returns expected framework info."""
-        monkeypatch.setattr("tools.installer.installer.DATA_DIR", tmp_path / "data")
-        monkeypatch.setattr("tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
+        monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
         monkeypatch.setattr(
-            "tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
+            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
         )
         monkeypatch.setattr(
-            "tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
+            "icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
         )
         result = add_compliance("hipaa", dry_run=True)
         assert result["success"] is True
@@ -463,13 +463,13 @@ class TestInstaller:
 
     def test_add_compliance_unknown_framework_fails(self, tmp_path, monkeypatch):
         """add_compliance for unknown framework returns error."""
-        monkeypatch.setattr("tools.installer.installer.DATA_DIR", tmp_path / "data")
-        monkeypatch.setattr("tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
+        monkeypatch.setattr("icdev.tools.installer.installer.DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr("icdev.tools.installer.installer.DB_PATH", tmp_path / "data" / "icdev.db")
         monkeypatch.setattr(
-            "tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
+            "icdev.tools.installer.installer.REGISTRY_PATH", tmp_path / "data" / "installation.json"
         )
         monkeypatch.setattr(
-            "tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
+            "icdev.tools.installer.installer.MANIFEST_PATH", tmp_path / "nonexistent.yaml"
         )
         result = add_compliance("fake_framework_xyz", dry_run=True)
         assert result["success"] is False

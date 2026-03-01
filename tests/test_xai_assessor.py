@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.compliance.xai_assessor import XAIAssessor
+from icdev.tools.compliance.xai_assessor import XAIAssessor
 
 
 def _create_test_db(db_path: Path) -> None:

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 try:
-    from tools.saas.api_gateway import create_app, _format_uptime, GATEWAY_VERSION
+    from icdev.tools.saas.api_gateway import create_app, _format_uptime, GATEWAY_VERSION
 except ImportError:
     pytestmark = pytest.mark.skip("tools.saas.api_gateway not available")
 
@@ -256,7 +256,7 @@ class TestErrorHandling:
 
         # Also mark it as public so auth middleware lets it through
         try:
-            from tools.saas.auth.middleware import PUBLIC_ENDPOINTS
+            from icdev.tools.saas.auth.middleware import PUBLIC_ENDPOINTS
             PUBLIC_ENDPOINTS.add("/health-500-trigger")
         except ImportError:
             pass

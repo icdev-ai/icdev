@@ -248,7 +248,18 @@
       "Bash(do)",
       "Bash(if [ -f \"tools/govcon/$mod.py\" ])",
       "Bash(git -C /c/Users/schuo/Downloads/GovProposal status -s)",
-      "Bash(git -C /c/Users/schuo/Downloads/GovProposal status)"
+      "Bash(git -C /c/Users/schuo/Downloads/GovProposal status)",
+      "Bash(do test -d \".tmp/children3/govproposal/$d\")",
+      "Bash(do grep -l \"$grp\" tools/db/*.py)",
+      "Bash(git -C /c/Users/schuo/Downloads/ICDev log --oneline)",
+      "Bash(git -C /c/Users/schuo/Downloads/ICDev tag)",
+      "Bash(gh repo create icdev-ai/icdev-ai --public --description \"GitHub profile README for ICDEV — The System That Builds Systems\")",
+      "Bash(gh repo create icdev-ai/.github --public --description \"ICDEV organization profile and community health files\")",
+      "Bash(gh repo delete icdev-ai/icdev-ai --yes)",
+      "Bash(gh repo create icdev-ai --public --description \"GitHub profile README for ICDEV — The System That Builds Systems\" --add-readme)",
+      "Bash(gh repo clone icdev-ai/icdev-ai /tmp/icdev-ai-new)",
+      "WebFetch(domain:docs.github.com)",
+      "Bash(gh run list --workflow=pypi-publish.yml --limit 5)"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",

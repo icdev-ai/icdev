@@ -1,0 +1,235 @@
+# ICDEV Project Defaults
+# Change behavior without editing goals or tools
+
+project:
+  classification: "CUI"
+  distribution: "Distribution D: Authorized DoD Personnel Only"
+  cui_category: "CTI"
+  default_backend: "python"
+  default_frontend: "javascript"
+  default_database: "postgresql"
+  supported_languages:
+    - "python"
+    - "java"
+    - "javascript"
+    - "typescript"
+    - "go"
+    - "rust"
+    - "csharp"
+  language_registry_path: "context/languages/language_registry.json"
+
+tdd:
+  test_framework: "pytest"
+  bdd_framework: "behave"
+  feature_format: "gherkin"
+  coverage_threshold: 80
+  require_tests_first: true
+
+compliance:
+  framework: "NIST 800-53"
+  revision: "Rev 5"
+  impact_level: "Moderate"
+  sbom_format: "cyclonedx"
+  stig_severity_threshold: "CAT2"
+
+security:
+  sast_tools:
+    - "bandit"
+    - "eslint-plugin-security"
+  dependency_audit_tools:
+    - "pip-audit"
+    - "npm-audit"
+  secret_detection: "detect-secrets"
+  container_scanner: "trivy"
+  max_critical_vulns: 0
+  max_high_vulns: 0
+
+infrastructure:
+  cloud: "aws-govcloud"
+  region: "us-gov-west-1"
+  orchestrator: "kubernetes"
+  iac_tool: "terraform"
+  config_tool: "ansible"
+  secrets_manager: "aws-secrets-manager"
+  container_registry: "ecr"
+
+cicd:
+  platform: "gitlab"
+  stages:
+    - "lint"
+    - "test"
+    - "security-scan"
+    - "build"
+    - "compliance-check"
+    - "deploy-staging"
+    - "deploy-prod"
+  require_review: true
+  auto_rollback: true
+  rollback_on:
+    - "health_check_fail"
+    - "cat1_finding"
+    - "critical_vuln"
+
+monitoring:
+  log_aggregator:
+    - "elk"
+    - "splunk"
+  metrics: "prometheus"
+  dashboards: "grafana"
+  alert_channels:
+    - "slack"
+    - "email"
+  self_healing: true
+
+cssp:
+  framework: "DoD Instruction 8530.01"
+  auto_generate: true
+  siem_targets:
+    - "splunk"
+    - "elk"
+  vuln_scan_cadence_days: 30
+  ir_reporting_timelines:
+    critical: 1    # hours
+    high: 24
+    moderate: 72
+  certification_validity_years: 3
+  pki_required: true
+
+xacta:
+  api_base_url: "https://xacta.govcloud.local/api/v1"
+  auth_method: "pki"
+  client_cert_secret: "xacta/client-cert"
+  client_key_secret: "xacta/client-key"
+  ca_bundle_secret: "xacta/ca-bundle"
+  sync_mode: "hybrid"
+  export_format: "oscal"
+  export_dir: "compliance/xacta-exports"
+  auto_sync: true
+  sync_on_events:
+    - ssp_generated
+    - poam_generated
+    - stig_checked
+    - cssp_assessed
+    - sbom_generated
+
+sbd:
+  framework: "CISA Secure by Design"
+  dodi_reference: "DoDI 5000.87"
+  auto_assess: true
+  cisa_commitments_tracked: 7
+  memory_safe_languages:
+    - "rust"
+    - "go"
+    - "java"
+    - "python"
+    - "csharp"
+  required_security_headers:
+    - "Content-Security-Policy"
+    - "Strict-Transport-Security"
+    - "X-Frame-Options"
+    - "X-Content-Type-Options"
+  threat_model_methodology: "STRIDE"
+  sbom_freshness_days: 30
+  default_credential_patterns:
+    - "admin/admin"
+    - "root/root"
+    - "password123"
+
+ivv:
+  framework: "IEEE 1012-2016"
+  auto_assess: true
+  independence_authority: "ICDEV IV&V Engine"
+  min_test_coverage: 80
+  rtm_required: true
+  process_areas_tracked: 9
+  certification_validity_months: 12
+  tdd_strict: true
+  require_security_tests: true
+
+maintenance:
+  config_path: "args/maintenance_config.yaml"
+  auto_audit: true
+  audit_cadence_days: 7
+  sla_enforcement: true
+  auto_remediate: true
+  auto_remediate_max_severity: "medium"
+  report_format: "markdown"
+  cui_markings: true
+  trend_lookback_days: 90
+
+mbse:
+  xmi_import_dir: "./models/xmi"
+  reqif_import_dir: "./models/reqif"
+  export_dir: "./models/export"
+  auto_sync: false
+  sync_on_build: true
+  default_language: "python"
+  digital_thread_auto_link: true
+  pi_snapshot_on_pi_close: true
+  des_assessment_frequency: "per_pi"
+  des_gate_critical: true
+  thread_coverage_warn_threshold: 0.60
+
+modernization:
+  supported_legacy_languages:
+    - "python"
+    - "java"
+    - "csharp"
+  supported_legacy_frameworks:
+    python: ["django-1", "flask-0"]
+    java: ["struts", "ejb", "jsp", "spring-3"]
+    csharp: ["wcf", "webforms", "net-framework-4"]
+  target_frameworks:
+    python: ["django-4", "flask-3", "fastapi"]
+    java: ["spring-boot-3"]
+    csharp: ["aspnet-core", "blazor", "grpc"]
+  target_databases: ["postgresql", "aurora"]
+  default_migration_approach: "strangler_fig"
+  default_target_architecture: "microservices"
+  seven_r_weights:
+    technical_fitness: 0.25
+    business_value: 0.20
+    risk: 0.20
+    cost: 0.15
+    ato_impact: 0.10
+    timeline: 0.10
+  compliance_coverage_threshold: 0.95
+  pi_gate_required: true
+  read_only_analysis: true
+  max_complexity_threshold: 50
+  tech_debt_productivity_rate: 20
+
+agents:
+  bedrock_model: "anthropic.claude-3-5-sonnet-20241022-v2:0"
+  bedrock_region: "us-gov-west-1"
+  max_concurrent_tasks: 10
+  task_timeout_minutes: 30
+  heartbeat_interval_seconds: 30
+
+# Phase 19: Agentic generation defaults
+agentic:
+  default_port_offset: 1000
+  default_cloud_provider: aws
+  default_cloud_region: us-gov-west-1
+  default_impact_level: IL4
+  core_agents:
+    - orchestrator
+    - architect
+    - builder
+    - knowledge
+    - monitor
+  conditional_agents:
+    compliance:
+      trigger: ato_required
+    security:
+      trigger: overall_score >= 5
+  essential_goals:
+    - build_app
+    - tdd_workflow
+    - compliance_workflow
+    - security_scan
+    - deploy_workflow
+    - monitoring
+    - self_healing
+    - agent_management
+  grandchild_prevention: true

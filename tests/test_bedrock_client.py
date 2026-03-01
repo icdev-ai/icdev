@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from tools.agent.bedrock_client import (
+from icdev.tools.agent.bedrock_client import (
     AVAILABILITY_CACHE_TTL,
     BASE_RETRY_DELAY,
     DEFAULT_MODELS,
@@ -68,7 +68,7 @@ def _create_client(**kwargs):
     """Create a BedrockClient with boto3 and yaml mocked, suppressing deprecation."""
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
-        from tools.agent.bedrock_client import BedrockClient
+        from icdev.tools.agent.bedrock_client import BedrockClient
         return BedrockClient(**kwargs)
 
 
@@ -173,41 +173,41 @@ class TestBedrockResponse:
 class TestBedrockClientInit:
     """BedrockClient initialization, config loading, lazy boto3."""
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_init_loads_default_models_when_no_config(self):
         """Without a YAML config file, default model registry is used."""
-        with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-            with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                 client = _create_client()
         assert "opus" in client._models
         assert "sonnet-4-5" in client._models
         assert "sonnet-3-5" in client._models
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_init_emits_deprecation_warning(self):
-        with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-            with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                 with warnings.catch_warnings(record=True) as w:
                     warnings.simplefilter("always")
-                    from tools.agent.bedrock_client import BedrockClient
+                    from icdev.tools.agent.bedrock_client import BedrockClient
                     BedrockClient()
                     deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
                     assert len(deprecation_warnings) >= 1
                     assert "deprecated" in str(deprecation_warnings[0].message).lower()
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_region_from_env(self):
         with patch.dict("os.environ", {"AWS_DEFAULT_REGION": "us-east-1"}):
-            with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-                with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+                with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                     client = _create_client()
         assert client._region == "us-east-1"
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_default_region(self):
         with patch.dict("os.environ", {}, clear=True):
-            with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-                with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+                with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                     client = _create_client()
         assert client._region == "us-gov-west-1"
 
@@ -224,9 +224,9 @@ class TestBedrockClientInvoke:
         mock_boto3 = MagicMock()
         mock_runtime = MagicMock()
         mock_boto3.client.return_value = mock_runtime
-        with patch("tools.agent.bedrock_client.boto3", mock_boto3):
-            with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-                with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.boto3", mock_boto3):
+            with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+                with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                     client = _create_client()
                     client._client = mock_runtime
                     # Pre-fill availability cache so _resolve_model_id does not probe
@@ -235,7 +235,7 @@ class TestBedrockClientInvoke:
                     client._availability_cache_time = time.time()
         return client, mock_runtime
 
-    @patch("tools.agent.bedrock_client._track_tokens")
+    @patch("icdev.tools.agent.bedrock_client._track_tokens")
     def test_invoke_returns_content(self, mock_track):
         client, mock_runtime = self._make_client_with_mock()
         mock_runtime.invoke_model.return_value = _make_invoke_response(content_text="Answer is 42")
@@ -252,7 +252,7 @@ class TestBedrockClientInvoke:
         assert resp.stop_reason == "end_turn"
         assert resp.duration_ms >= 0
 
-    @patch("tools.agent.bedrock_client._track_tokens")
+    @patch("icdev.tools.agent.bedrock_client._track_tokens")
     def test_invoke_parses_tool_use(self, mock_track):
         client, mock_runtime = self._make_client_with_mock()
         tool_blocks = [{"id": "tu-1", "name": "search", "input": {"query": "test"}}]
@@ -271,7 +271,7 @@ class TestBedrockClientInvoke:
         assert resp.tool_calls[0]["input"] == {"query": "test"}
         assert resp.stop_reason == "tool_use"
 
-    @patch("tools.agent.bedrock_client._track_tokens")
+    @patch("icdev.tools.agent.bedrock_client._track_tokens")
     def test_invoke_parses_thinking_tokens(self, mock_track):
         client, mock_runtime = self._make_client_with_mock()
         thinking = [{"text": "Thinking about it...", "tokens": 150}]
@@ -285,7 +285,7 @@ class TestBedrockClientInvoke:
         resp = client.invoke(req)
         assert resp.thinking_tokens == 150
 
-    @patch("tools.agent.bedrock_client._track_tokens")
+    @patch("icdev.tools.agent.bedrock_client._track_tokens")
     def test_invoke_calls_track_tokens(self, mock_track):
         client, mock_runtime = self._make_client_with_mock()
         mock_runtime.invoke_model.return_value = _make_invoke_response()
@@ -298,7 +298,7 @@ class TestBedrockClientInvoke:
         client.invoke(req)
         mock_track.assert_called_once()
 
-    @patch("tools.agent.bedrock_client._track_tokens")
+    @patch("icdev.tools.agent.bedrock_client._track_tokens")
     def test_invoke_structured_output_parsed(self, mock_track):
         client, mock_runtime = self._make_client_with_mock()
         json_content = '{"result": "success", "count": 5}'
@@ -359,10 +359,10 @@ class TestFallbackChain:
     def test_sonnet_35_chain_is_self_only(self):
         assert FALLBACK_CHAIN["sonnet-3-5"] == ["sonnet-3-5"]
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_resolve_falls_back_when_primary_unavailable(self):
-        with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-            with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                 client = _create_client()
                 # Mark opus unavailable, sonnet-4-5 available
                 import time
@@ -379,12 +379,12 @@ class TestFallbackChain:
 class TestTokenTracking:
     """_track_tokens best-effort integration."""
 
-    @patch("tools.agent.bedrock_client.logger")
+    @patch("icdev.tools.agent.bedrock_client.logger")
     def test_track_tokens_handles_import_error(self, mock_logger):
         """When token_tracker is not importable, _track_tokens logs debug and continues."""
         resp = BedrockResponse(model_id="test", input_tokens=10, output_tokens=20)
-        with patch.dict("sys.modules", {"tools.agent.token_tracker": None}):
-            with patch("tools.agent.bedrock_client._track_tokens.__module__", create=True):
+        with patch.dict("sys.modules", {"icdev.tools.agent.token_tracker": None}):
+            with patch("icdev.tools.agent.bedrock_client._track_tokens.__module__", create=True):
                 # Force an ImportError path
                 _track_tokens(resp, "agent-1", "proj-1")
         # Should not raise
@@ -395,7 +395,7 @@ class TestTokenTracking:
         mock_tracker.estimate_cost.return_value = 0.005
         resp = BedrockResponse(model_id="test-model", input_tokens=100, output_tokens=200,
                                thinking_tokens=50, duration_ms=1000)
-        with patch.dict("sys.modules", {"tools.agent.token_tracker": mock_tracker}):
+        with patch.dict("sys.modules", {"icdev.tools.agent.token_tracker": mock_tracker}):
             _track_tokens(resp, "builder-agent", "proj-123")
         mock_tracker.log_usage.assert_called_once()
         call_kwargs = mock_tracker.log_usage.call_args
@@ -410,9 +410,9 @@ class TestBoto3Unavailable:
     """Graceful handling when boto3 is not installed."""
 
     def test_get_client_raises_import_error_without_boto3(self):
-        with patch("tools.agent.bedrock_client.boto3", None):
-            with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-                with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.boto3", None):
+            with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+                with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                     client = _create_client()
                     with pytest.raises(ImportError, match="boto3 is required"):
                         client._get_client()
@@ -425,22 +425,22 @@ class TestBoto3Unavailable:
 class TestEffortResolution:
     """Effort mapping and per-agent overrides."""
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_effort_to_budget_low(self):
-        from tools.agent.bedrock_client import BedrockClient
+        from icdev.tools.agent.bedrock_client import BedrockClient
         budget = BedrockClient._effort_to_budget("low", 8192)
         assert budget == max(int(8192 * 0.10), 1024)
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_effort_to_budget_max(self):
-        from tools.agent.bedrock_client import BedrockClient
+        from icdev.tools.agent.bedrock_client import BedrockClient
         budget = BedrockClient._effort_to_budget("max", 128000)
         assert budget == max(int(128000 * 1.0), 10240)
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_resolve_effort_uses_request_level(self):
-        with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-            with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                 client = _create_client()
                 req = BedrockRequest(effort="high", agent_id="builder-agent")
                 assert client._resolve_effort(req) == "high"
@@ -453,10 +453,10 @@ class TestEffortResolution:
 class TestProbe:
     """probe_model_availability caching and error handling."""
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_probe_caches_results(self):
-        with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-            with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                 client = _create_client()
                 mock_runtime = MagicMock()
                 mock_runtime.invoke_model.return_value = _make_invoke_response()
@@ -469,10 +469,10 @@ class TestProbe:
                 assert mock_runtime.invoke_model.call_count == 3
                 assert result1 == result2
 
-    @patch("tools.agent.bedrock_client.boto3", new=MagicMock())
+    @patch("icdev.tools.agent.bedrock_client.boto3", new=MagicMock())
     def test_probe_marks_unavailable_on_error(self):
-        with patch("tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
-            with patch("tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
+        with patch("icdev.tools.agent.bedrock_client.BEDROCK_MODELS_CONFIG", Path("/nonexistent/bedrock.yaml")):
+            with patch("icdev.tools.agent.bedrock_client.AGENT_CONFIG", Path("/nonexistent/agent.yaml")):
                 client = _create_client()
                 mock_runtime = MagicMock()
                 mock_runtime.invoke_model.side_effect = Exception("Model not found")
@@ -490,18 +490,18 @@ class TestRetryLogic:
     """_is_retryable and _backoff_delay static methods."""
 
     def test_throttling_is_retryable(self):
-        from tools.agent.bedrock_client import BedrockClient
+        from icdev.tools.agent.bedrock_client import BedrockClient
         exc = Exception("rate limited")
         exc.response = {"Error": {"Code": "ThrottlingException"}}
         assert BedrockClient._is_retryable(exc) is True
 
     def test_generic_error_not_retryable(self):
-        from tools.agent.bedrock_client import BedrockClient
+        from icdev.tools.agent.bedrock_client import BedrockClient
         exc = ValueError("bad input")
         assert BedrockClient._is_retryable(exc) is False
 
     def test_backoff_delay_increases_with_attempt(self):
-        from tools.agent.bedrock_client import BedrockClient
+        from icdev.tools.agent.bedrock_client import BedrockClient
         delays = [BedrockClient._backoff_delay(i) for i in range(5)]
         # Generally the max possible delay should increase with attempt
         # Due to jitter, we check the underlying exponential growth via ceiling

@@ -1,15 +1,16 @@
-include pyproject.toml README.md CHANGELOG.md CONTRIBUTING.md requirements.txt
-include CLAUDE.md .mcp.json ruff.toml .gitlab-ci.yml docker-compose.yml
+include pyproject.toml README.md CHANGELOG.md CONTRIBUTING.md LICENSE NOTICE
+include CLAUDE.md .mcp.json ruff.toml requirements.txt
 
-recursive-include tools *.py *.html *.css *.js *.json *.yaml *.sql *.md *.txt *.LICENSE
-recursive-include args *.yaml *.json
-recursive-include context *.json *.yaml *.md *.j2 *.txt
-recursive-include goals *.md
-recursive-include hardprompts *.md
-recursive-include features *.feature *.py
-recursive-include docs *.md
-recursive-include memory *.md
-recursive-include tests *.py *.json *.yaml
+recursive-include icdev *.py *.html *.css *.js *.json *.yaml *.yml
+recursive-include icdev *.sql *.md *.txt *.LICENSE *.feature *.j2 *.toml *.ini
+
+recursive-exclude icdev/tools/saas *
+recursive-exclude icdev/tools/govcon *
+recursive-exclude icdev/tools/rfx *
+recursive-exclude icdev/tools/marketplace *
+recursive-exclude icdev/tools/creative *
+recursive-exclude icdev/tools/gateway *
+recursive-exclude icdev/tools/playground *
 
 recursive-exclude * __pycache__ *.py[cod] *.so *.egg-info
 
@@ -27,8 +28,9 @@ prune node_modules
 prune playwright
 prune projects
 prune specs
+prune vendor
 prune videos
+prune tools
 
 exclude .env .env.local .secrets.baseline
 exclude package.json package-lock.json playwright-mcp-config.json playwright.config.ts
-exclude _pdb_b64_1.txt

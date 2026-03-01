@@ -133,9 +133,9 @@ def client(db_path):
     """Flask test client with activity_api blueprint registered and DB_PATH
     monkeypatched to the temporary database."""
     from flask import Flask
-    from tools.dashboard.api.activity import activity_api
+    from icdev.tools.dashboard.api.activity import activity_api
 
-    with patch("tools.dashboard.api.activity.DB_PATH", str(db_path)):
+    with patch("icdev.tools.dashboard.api.activity.DB_PATH", str(db_path)):
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.register_blueprint(activity_api)
@@ -149,9 +149,9 @@ def empty_client(tmp_path):
     _create_tables(p)
 
     from flask import Flask
-    from tools.dashboard.api.activity import activity_api
+    from icdev.tools.dashboard.api.activity import activity_api
 
-    with patch("tools.dashboard.api.activity.DB_PATH", str(p)):
+    with patch("icdev.tools.dashboard.api.activity.DB_PATH", str(p)):
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.register_blueprint(activity_api)

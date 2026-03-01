@@ -32,12 +32,12 @@ class TestATLASRedTeamScanner(unittest.TestCase):
             pass
 
     def _get_scanner(self):
-        from tools.security.atlas_red_team import ATLASRedTeamScanner
+        from icdev.tools.security.atlas_red_team import ATLASRedTeamScanner
         return ATLASRedTeamScanner(db_path=Path(self.db_path))
 
     def test_import(self):
         """ATLASRedTeamScanner class should be importable."""
-        from tools.security.atlas_red_team import ATLASRedTeamScanner
+        from icdev.tools.security.atlas_red_team import ATLASRedTeamScanner
         self.assertTrue(callable(ATLASRedTeamScanner))
 
     def test_init_creates_tables(self):
@@ -108,13 +108,13 @@ class TestATLASRedTeamScanner(unittest.TestCase):
     def test_opt_in_flag(self):
         """D219: Red teaming should be opt-in only."""
         # The scanner should exist but requires explicit invocation
-        from tools.security.atlas_red_team import ATLASRedTeamScanner
+        from icdev.tools.security.atlas_red_team import ATLASRedTeamScanner
         # Verify CLI has --atlas-red-team flag by checking module
         import inspect
         source = inspect.getsource(
-            sys.modules.get("tools.security.atlas_red_team",
+            sys.modules.get("icdev.tools.security.atlas_red_team",
                            type(sys)("dummy"))
-        ) if "tools.security.atlas_red_team" in sys.modules else ""
+        ) if "icdev.tools.security.atlas_red_team" in sys.modules else ""
         # Just verify the scanner doesn't auto-execute on import
         self.assertTrue(callable(ATLASRedTeamScanner))
 

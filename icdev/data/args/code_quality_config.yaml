@@ -1,0 +1,47 @@
+# Code Quality Intelligence Configuration (Phase 52 — D331-D337)
+# CUI // SP-CTI
+
+smell_thresholds:
+  max_function_loc: 50
+  max_nesting: 4
+  max_complexity: 10
+  max_params: 5
+  max_methods_per_class: 10
+
+maintainability_weights:
+  complexity: 0.30
+  smell_density: 0.20
+  test_health: 0.20
+  coupling: 0.15
+  coverage: 0.15
+
+audit_thresholds:
+  max_avg_complexity: 10
+  max_avg_complexity_critical: 25
+  max_high_cc_pct: 5.0
+  max_smell_density_per_kloc: 10.0
+  max_smell_density_critical: 20.0
+
+innovation_engine:
+  min_complexity_for_signal: 10
+  min_pass_rate_threshold: 0.8
+  signal_source_type: code_quality_introspective
+
+scan:
+  exclude_dirs:
+    - venv
+    - .venv
+    - env
+    - node_modules
+    - .git
+    - __pycache__
+    - build
+    - dist
+    - .tox
+    - .eggs
+    - vendor
+    - target
+    - bin
+    - obj
+    - .tmp
+  max_file_size_bytes: 1048576

@@ -8,7 +8,7 @@ extraction plans, anti-corruption layers, API facades, effort estimates, and
 persists migration plans/tasks to the ICDEV database.
 
 Classification: CUI // SP-CTI
-System: ICDEV Intelligent Coding Development Framework
+System: ICDEV Intelligent Certified Development Framework
 NIST: SC-7 (Boundary Protection), SA-8 (Security Engineering Principles)
 """
 

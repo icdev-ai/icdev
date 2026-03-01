@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.observability.provenance.prov_recorder import ProvRecorder
+from icdev.tools.observability.provenance.prov_recorder import ProvRecorder
 
 
 def _create_test_db(db_path: Path) -> None:

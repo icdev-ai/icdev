@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.analysis.runtime_feedback import RuntimeFeedbackCollector
+from icdev.tools.analysis.runtime_feedback import RuntimeFeedbackCollector
 
 
 # ---------------------------------------------------------------------------

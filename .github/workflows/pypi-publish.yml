@@ -1,0 +1,133 @@
+name: Build & Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Publish target"
+        required: true
+        default: "testpypi"
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+permissions:
+  contents: read
+  id-token: write  # Required for Trusted Publisher OIDC
+
+jobs:
+  build:
+    name: Build sdist & wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Verify excluded modules absent from wheel
+        run: |
+          python -c "
+          import zipfile, sys
+          whl = list(__import__('pathlib').Path('dist').glob('*.whl'))[0]
+          with zipfile.ZipFile(whl) as z:
+              names = z.namelist()
+          excluded = ['icdev/tools/saas/', 'icdev/tools/govcon/', 'icdev/tools/rfx/',
+                      'icdev/tools/marketplace/', 'icdev/tools/creative/',
+                      'icdev/tools/gateway/', 'icdev/tools/playground/']
+          found = [e for e in excluded if any(n.startswith(e) for n in names)]
+          if found:
+              print(f'ERROR: Excluded modules found in wheel: {found}')
+              sys.exit(1)
+          print('OK: No excluded modules in wheel')
+          "
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  test-install:
+    name: Test install (Python ${{ matrix.python }} / ${{ matrix.os }})
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install wheel
+        run: pip install dist/*.whl
+        shell: bash
+
+      - name: Verify import
+        run: |
+          python -c "import icdev; print(f'icdev {icdev.__version__}')"
+          python -c "from icdev._paths import get_project_root; print(get_project_root())"
+
+      - name: Verify excluded modules absent
+        run: |
+          python -c "
+          try:
+              import icdev.tools.saas
+              raise AssertionError('saas should not be importable')
+          except (ImportError, ModuleNotFoundError):
+              print('OK: icdev.tools.saas not found')
+          try:
+              import icdev.tools.govcon
+              raise AssertionError('govcon should not be importable')
+          except (ImportError, ModuleNotFoundError):
+              print('OK: icdev.tools.govcon not found')
+          "
+
+  publish-testpypi:
+    name: Publish to TestPyPI
+    needs: [build, test-install]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: [build, test-install]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

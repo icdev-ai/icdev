@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from tools.simulation.simulation_engine import (
+from icdev.tools.simulation.simulation_engine import (
     ALL_DIMENSIONS,
     DEFAULT_HOURLY_RATE,
     INFRA_COST_PER_COMPONENT,

@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TaskDecomposition",
+  "description": "Schema for ICDEV multi-agent task decomposition DAG. Defines a workflow composed of subtasks assigned to specialized agents with explicit dependency edges for parallel execution.",
+  "type": "object",
+  "required": ["workflow_name", "subtasks"],
+  "additionalProperties": false,
+  "properties": {
+    "workflow_name": {
+      "type": "string",
+      "description": "Short kebab-case name for the workflow",
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+      "minLength": 3,
+      "maxLength": 64,
+      "examples": ["build-auth-module", "deploy-inventory-service", "modernize-payroll-app"]
+    },
+    "subtasks": {
+      "type": "array",
+      "description": "Ordered list of subtasks forming a DAG. Dependencies define execution order; independent subtasks execute in parallel.",
+      "minItems": 2,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["id", "agent_id", "skill_id", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique kebab-case identifier for this subtask. Must be descriptive of the work performed.",
+            "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+            "minLength": 3,
+            "maxLength": 48,
+            "examples": ["design-api", "implement-auth", "security-scan", "generate-ssp"]
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "The agent responsible for executing this subtask.",
+            "enum": [
+              "orchestrator-agent",
+              "architect-agent",
+              "builder-agent",
+              "compliance-agent",
+              "security-agent",
+              "infra-agent",
+              "knowledge-agent",
+              "monitor-agent",
+              "mbse-agent",
+              "modernization-agent",
+              "requirements-analyst-agent",
+              "supply-chain-agent",
+              "simulation-agent"
+            ]
+          },
+          "skill_id": {
+            "type": "string",
+            "description": "The specific skill the agent should invoke for this subtask.",
+            "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$",
+            "minLength": 2,
+            "maxLength": 48,
+            "examples": ["api-design", "code-generation", "sast-scan", "ssp-generation", "aggregation"]
+          },
+          "description": {
+            "type": "string",
+            "description": "Clear description of what this subtask accomplishes, including expected inputs and outputs.",
+            "minLength": 10,
+            "maxLength": 500
+          },
+          "depends_on": {
+            "type": "array",
+            "description": "List of subtask IDs that must complete before this subtask can start. Empty array means no dependencies (can start immediately).",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9]$"
+            },
+            "uniqueItems": true,
+            "default": []
+          }
+        }
+      }
+    }
+  }
+}

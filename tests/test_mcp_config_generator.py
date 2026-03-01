@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.dx.mcp_config_generator import generate_mcp_config
+from icdev.tools.dx.mcp_config_generator import generate_mcp_config
 
 
 def _write_mcp_json(tmp_dir):

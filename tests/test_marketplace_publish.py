@@ -13,7 +13,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from tools.marketplace.publish_pipeline import (
+from icdev.tools.marketplace.publish_pipeline import (
     parse_skill_md,
     validate_asset_structure,
     publish_asset,
@@ -168,7 +168,7 @@ def mock_scan_pass():
         "gates_scanned": 7,
         "gate_results": [],
     }
-    with patch("tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
+    with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
         yield scan_result
 
 
@@ -182,7 +182,7 @@ def mock_scan_fail():
         "gates_scanned": 7,
         "gate_results": [{"gate": "sast_scan", "status": "fail"}],
     }
-    with patch("tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
+    with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
         yield scan_result
 
 
@@ -402,7 +402,7 @@ class TestILValidation:
             "passed": True, "overall_status": "pass",
             "blocking_gates_pass": True, "gates_scanned": 7, "gate_results": [],
         }
-        with patch("tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
+        with patch("icdev.tools.marketplace.publish_pipeline.run_full_scan", return_value=scan_result):
             result = publish_asset(
                 asset_path=str(asset_dir),
                 asset_type="skill",

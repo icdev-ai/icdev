@@ -29,7 +29,7 @@ class TestLearningCollectorImport:
     def test_learning_collector_import(self):
         """LearningCollector can be imported."""
         try:
-            from tools.registry.learning_collector import LearningCollector
+            from icdev.tools.registry.learning_collector import LearningCollector
             assert LearningCollector is not None
         except ImportError:
             pytest.skip("LearningCollector not available")
@@ -37,7 +37,7 @@ class TestLearningCollectorImport:
     def test_learning_collector_has_ingest_behavior(self):
         """LearningCollector exposes ingest_behavior method."""
         try:
-            from tools.registry.learning_collector import LearningCollector
+            from icdev.tools.registry.learning_collector import LearningCollector
         except ImportError:
             pytest.skip("LearningCollector not available")
         assert hasattr(LearningCollector, "ingest_behavior")
@@ -50,7 +50,7 @@ class TestLearningCollectorImport:
         this test is skipped rather than failed.
         """
         try:
-            from tools.registry.learning_collector import LearningCollector
+            from icdev.tools.registry.learning_collector import LearningCollector
         except ImportError:
             pytest.skip("LearningCollector not available")
 
@@ -74,7 +74,7 @@ class TestLearningCollectorImport:
         behavior sources. Skipped if not yet applied.
         """
         try:
-            from tools.registry.learning_collector import LearningCollector
+            from icdev.tools.registry.learning_collector import LearningCollector
         except ImportError:
             pytest.skip("LearningCollector not available")
 
@@ -95,7 +95,7 @@ class TestCrossPollinatorIntegration:
     def test_cross_pollinator_import(self):
         """CrossPollinator can be imported."""
         try:
-            from tools.registry.cross_pollinator import CrossPollinator
+            from icdev.tools.registry.cross_pollinator import CrossPollinator
             assert CrossPollinator is not None
         except ImportError:
             pytest.skip("CrossPollinator not available")
@@ -103,7 +103,7 @@ class TestCrossPollinatorIntegration:
     def test_cross_pollinator_has_find_candidates(self):
         """CrossPollinator exposes find_candidates method."""
         try:
-            from tools.registry.cross_pollinator import CrossPollinator
+            from icdev.tools.registry.cross_pollinator import CrossPollinator
         except ImportError:
             pytest.skip("CrossPollinator not available")
         assert hasattr(CrossPollinator, "find_candidates")
@@ -115,7 +115,7 @@ class TestCrossPollinatorIntegration:
         capabilities between children. Skipped if not yet applied.
         """
         try:
-            from tools.registry.cross_pollinator import CrossPollinator
+            from icdev.tools.registry.cross_pollinator import CrossPollinator
         except ImportError:
             pytest.skip("CrossPollinator not available")
 
@@ -142,7 +142,7 @@ class TestCapabilityEvaluatorDimensions:
     def test_capability_evaluator_import(self):
         """CapabilityEvaluator can be imported."""
         try:
-            from tools.registry.capability_evaluator import CapabilityEvaluator
+            from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
             assert CapabilityEvaluator is not None
         except ImportError:
             pytest.skip("CapabilityEvaluator not available")
@@ -150,7 +150,7 @@ class TestCapabilityEvaluatorDimensions:
     def test_capability_evaluator_has_dimensions(self):
         """CapabilityEvaluator has DIMENSIONS dict."""
         try:
-            from tools.registry.capability_evaluator import CapabilityEvaluator
+            from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         except ImportError:
             pytest.skip("CapabilityEvaluator not available")
         assert hasattr(CapabilityEvaluator, "DIMENSIONS")
@@ -159,7 +159,7 @@ class TestCapabilityEvaluatorDimensions:
     def test_capability_evaluator_weights_sum_to_one(self):
         """All dimension weights sum to approximately 1.0."""
         try:
-            from tools.registry.capability_evaluator import CapabilityEvaluator
+            from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         except ImportError:
             pytest.skip("CapabilityEvaluator not available")
 
@@ -173,7 +173,7 @@ class TestCapabilityEvaluatorDimensions:
         If only 6 dimensions exist, the integration is pending.
         """
         try:
-            from tools.registry.capability_evaluator import CapabilityEvaluator
+            from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         except ImportError:
             pytest.skip("CapabilityEvaluator not available")
 
@@ -191,7 +191,7 @@ class TestCapabilityEvaluatorDimensions:
         Phase 37 adds this dimension for ATLAS AI security scoring.
         """
         try:
-            from tools.registry.capability_evaluator import CapabilityEvaluator
+            from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         except ImportError:
             pytest.skip("CapabilityEvaluator not available")
 
@@ -214,7 +214,7 @@ class TestPropagationManagerTelemetry:
     def test_propagation_manager_import(self):
         """PropagationManager can be imported."""
         try:
-            from tools.registry.propagation_manager import PropagationManager
+            from icdev.tools.registry.propagation_manager import PropagationManager
             assert PropagationManager is not None
         except ImportError:
             pytest.skip("PropagationManager not available")
@@ -226,7 +226,7 @@ class TestPropagationManagerTelemetry:
         events. Skipped if not yet applied.
         """
         try:
-            from tools.registry import propagation_manager
+            from icdev.tools.registry import propagation_manager
         except ImportError:
             pytest.skip("propagation_manager not available")
 
@@ -270,7 +270,7 @@ class TestInjectionScanning:
     def test_injection_scan_blocks_malicious(self):
         """PromptInjectionDetector flags text with injection patterns."""
         try:
-            from tools.security.prompt_injection_detector import (
+            from icdev.tools.security.prompt_injection_detector import (
                 PromptInjectionDetector,
             )
         except ImportError:
@@ -286,7 +286,7 @@ class TestInjectionScanning:
     def test_injection_scan_allows_clean(self):
         """PromptInjectionDetector passes clean text."""
         try:
-            from tools.security.prompt_injection_detector import (
+            from icdev.tools.security.prompt_injection_detector import (
                 PromptInjectionDetector,
             )
         except ImportError:

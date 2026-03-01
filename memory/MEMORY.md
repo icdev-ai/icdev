@@ -15,7 +15,7 @@
 
 - **Project initialized:** 2026-02-14
 - **Framework:** GOTCHA (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
-- **System:** ICDEV — Intelligent Coding Development meta-builder for Gov/DoD (IL4+)
+- **System:** ICDEV — Intelligent Certified Development meta-builder for Gov/DoD (IL4+)
 - **Database:** SQLite (data/icdev.db) with 32 tables across 7 domains
 - **MCP Servers:** 5 stdio servers (core, compliance, builder, infra, knowledge) — all operational
 - **A2A Agents:** 8 agents across 3 tiers (Core, Domain, Support) — ports 8443-8450

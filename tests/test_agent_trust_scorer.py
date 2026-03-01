@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.security.agent_trust_scorer import AgentTrustScorer
+from icdev.tools.security.agent_trust_scorer import AgentTrustScorer
 
 
 @pytest.fixture

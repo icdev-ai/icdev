@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
 </p>
 
-# ICDEV — Intelligent Coding Development Platform
+# ICDEV — Intelligent Certified Development Platform
 
 **A system that builds systems.**
 

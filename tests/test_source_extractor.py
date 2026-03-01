@@ -13,7 +13,7 @@ import pytest
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.translation.source_extractor import (
+from icdev.tools.translation.source_extractor import (
     extract_source,
     build_dependency_graph,
     _extract_python,

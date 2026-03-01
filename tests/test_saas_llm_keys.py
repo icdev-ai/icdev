@@ -18,7 +18,7 @@ from unittest.mock import patch
 import pytest
 
 try:
-    from tools.saas.tenant_llm_keys import VALID_PROVIDERS
+    from icdev.tools.saas.tenant_llm_keys import VALID_PROVIDERS
     _IMPORT_OK = True
 except ImportError:
     _IMPORT_OK = False
@@ -121,11 +121,11 @@ def platform_db(tmp_path, monkeypatch):
         return c
 
     monkeypatch.setattr(
-        "tools.saas.platform_db.get_platform_connection", _mock_conn
+        "icdev.tools.saas.platform_db.get_platform_connection", _mock_conn
     )
     # Silence audit logging in tests
     monkeypatch.setattr(
-        "tools.saas.platform_db.log_platform_audit",
+        "icdev.tools.saas.platform_db.log_platform_audit",
         lambda **kw: None,
     )
 
@@ -139,7 +139,7 @@ class TestStoreTenantLlmKey:
     """Test storing LLM provider keys."""
 
     def test_store_creates_entry(self, platform_db):
-        from tools.saas.tenant_llm_keys import store_tenant_llm_key
+        from icdev.tools.saas.tenant_llm_keys import store_tenant_llm_key
 
         result = store_tenant_llm_key(
             TENANT_PRO, "anthropic", TEST_KEY, "My Claude Key", USER_ID,
@@ -151,7 +151,7 @@ class TestStoreTenantLlmKey:
         assert result["key_prefix"] == TEST_KEY[:12]
 
     def test_store_encrypts_key(self, platform_db):
-        from tools.saas.tenant_llm_keys import store_tenant_llm_key
+        from icdev.tools.saas.tenant_llm_keys import store_tenant_llm_key
 
         store_tenant_llm_key(TENANT_PRO, "openai", TEST_KEY, "Test")
 
@@ -166,13 +166,13 @@ class TestStoreTenantLlmKey:
         assert row[0] != TEST_KEY  # Must be encrypted
 
     def test_store_rejects_invalid_provider(self, platform_db):
-        from tools.saas.tenant_llm_keys import store_tenant_llm_key
+        from icdev.tools.saas.tenant_llm_keys import store_tenant_llm_key
 
         with pytest.raises(ValueError, match="Invalid provider"):
             store_tenant_llm_key(TENANT_PRO, "google_ai", TEST_KEY, "Bad")
 
     def test_store_rejects_starter_tier(self, platform_db):
-        from tools.saas.tenant_llm_keys import store_tenant_llm_key
+        from icdev.tools.saas.tenant_llm_keys import store_tenant_llm_key
 
         with pytest.raises(ValueError, match="Professional or Enterprise"):
             store_tenant_llm_key(
@@ -187,7 +187,7 @@ class TestListTenantLlmKeys:
     """Test listing LLM provider keys."""
 
     def test_list_returns_keys_without_secrets(self, platform_db):
-        from tools.saas.tenant_llm_keys import (
+        from icdev.tools.saas.tenant_llm_keys import (
             list_tenant_llm_keys,
             store_tenant_llm_key,
         )
@@ -200,7 +200,7 @@ class TestListTenantLlmKeys:
         assert keys[0]["key_prefix"] == TEST_KEY[:12]
 
     def test_list_returns_empty_for_no_keys(self, platform_db):
-        from tools.saas.tenant_llm_keys import list_tenant_llm_keys
+        from icdev.tools.saas.tenant_llm_keys import list_tenant_llm_keys
 
         keys = list_tenant_llm_keys(TENANT_PRO)
         assert keys == []
@@ -213,7 +213,7 @@ class TestRevokeTenantLlmKey:
     """Test revoking LLM provider keys."""
 
     def test_revoke_changes_status(self, platform_db):
-        from tools.saas.tenant_llm_keys import (
+        from icdev.tools.saas.tenant_llm_keys import (
             list_tenant_llm_keys,
             revoke_tenant_llm_key,
             store_tenant_llm_key,
@@ -228,7 +228,7 @@ class TestRevokeTenantLlmKey:
         assert keys[0]["status"] == "revoked"
 
     def test_revoke_returns_false_for_wrong_tenant(self, platform_db):
-        from tools.saas.tenant_llm_keys import (
+        from icdev.tools.saas.tenant_llm_keys import (
             revoke_tenant_llm_key,
             store_tenant_llm_key,
         )
@@ -247,7 +247,7 @@ class TestGetActiveKeyForProvider:
     """Test retrieving decrypted active keys."""
 
     def test_returns_decrypted_key(self, platform_db):
-        from tools.saas.tenant_llm_keys import (
+        from icdev.tools.saas.tenant_llm_keys import (
             get_active_key_for_provider,
             store_tenant_llm_key,
         )
@@ -257,7 +257,7 @@ class TestGetActiveKeyForProvider:
         assert key == TEST_KEY
 
     def test_returns_empty_for_revoked(self, platform_db):
-        from tools.saas.tenant_llm_keys import (
+        from icdev.tools.saas.tenant_llm_keys import (
             get_active_key_for_provider,
             revoke_tenant_llm_key,
             store_tenant_llm_key,
@@ -271,7 +271,7 @@ class TestGetActiveKeyForProvider:
         assert key == ""
 
     def test_returns_empty_for_missing(self, platform_db):
-        from tools.saas.tenant_llm_keys import get_active_key_for_provider
+        from icdev.tools.saas.tenant_llm_keys import get_active_key_for_provider
 
         key = get_active_key_for_provider(TENANT_PRO, "ollama")
         assert key == ""
@@ -284,7 +284,7 @@ class TestResolveTenantLlmKey:
     """Test key resolution chain."""
 
     def test_resolve_tenant_byok(self, platform_db):
-        from tools.saas.tenant_llm_keys import (
+        from icdev.tools.saas.tenant_llm_keys import (
             resolve_tenant_llm_key,
             store_tenant_llm_key,
         )
@@ -295,7 +295,7 @@ class TestResolveTenantLlmKey:
         assert source == "tenant_byok"
 
     def test_resolve_shared_pool_fallback(self, platform_db, monkeypatch):
-        from tools.saas.tenant_llm_keys import resolve_tenant_llm_key
+        from icdev.tools.saas.tenant_llm_keys import resolve_tenant_llm_key
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-shared-pool-key")
         key, source = resolve_tenant_llm_key(TENANT_PRO, "anthropic")
@@ -303,7 +303,7 @@ class TestResolveTenantLlmKey:
         assert source == "shared_pool"
 
     def test_resolve_empty_when_no_key(self, platform_db, monkeypatch):
-        from tools.saas.tenant_llm_keys import resolve_tenant_llm_key
+        from icdev.tools.saas.tenant_llm_keys import resolve_tenant_llm_key
 
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         key, source = resolve_tenant_llm_key(TENANT_PRO, "anthropic")

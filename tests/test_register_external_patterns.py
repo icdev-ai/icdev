@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from tools.innovation.register_external_patterns import (
+from icdev.tools.innovation.register_external_patterns import (
     EXTERNAL_PATTERNS,
     SCORING_WEIGHTS,
     register_pattern,

@@ -1,0 +1,57 @@
+{
+  "name": "ICDEV MBSE",
+  "description": "Model-Based Systems Engineering — SysML parsing, DOORS NG integration, digital thread, model-code sync, DES compliance.",
+  "url": "https://localhost:8451",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "import-xmi",
+      "name": "Import SysML XMI",
+      "description": "Parse Cameo SysML v1.6 XMI exports into sysml_elements and relationships.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "import-reqif",
+      "name": "Import DOORS ReqIF",
+      "description": "Parse DOORS NG ReqIF 1.2 exports into doors_requirements.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "auto-link-thread",
+      "name": "Auto-Link Digital Thread",
+      "description": "Build end-to-end traceability links: requirement → model → code → test → control.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "detect-drift",
+      "name": "Detect Model-Code Drift",
+      "description": "SHA-256 content hashing to detect when model and code diverge.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "generate-code-from-model",
+      "name": "Generate Code from Model",
+      "description": "Generate code scaffolding from SysML models (blocks → classes, activities → functions).",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "des-assess",
+      "name": "DES Compliance Assessment",
+      "description": "DoDI 5000.87 Digital Engineering Strategy compliance assessment.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

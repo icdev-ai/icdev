@@ -10,7 +10,7 @@ from unittest import mock
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.compat.db_utils import (
+from icdev.tools.compat.db_utils import (
     get_icdev_db_path,
     get_memory_db_path,
     get_platform_db_path,

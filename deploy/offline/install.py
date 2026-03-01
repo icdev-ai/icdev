@@ -143,7 +143,7 @@ def banner():
     print(_cyan("================================================================"))
     print(_cyan("  CUI // SP-CTI"))
     print(_cyan("  ICDEV On-Premises Installer v{}".format(VERSION)))
-    print(_cyan("  Intelligent Coding Development Platform"))
+    print(_cyan("  Intelligent Certified Development Platform"))
     print(_cyan("================================================================"))
     print()
 

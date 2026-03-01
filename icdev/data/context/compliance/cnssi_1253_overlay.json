@@ -1,0 +1,109 @@
+{
+  "metadata": {
+    "title": "CNSSI 1253 Security Categorization for National Security Systems",
+    "source": "CNSS Instruction 1253, March 2014 (updated 2023)",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-17",
+    "description": "Extends FIPS 199 categorization for national security systems with additional controls and overlays"
+  },
+  "applicability": {
+    "impact_levels": ["IL6"],
+    "classifications": ["SECRET", "TOP SECRET", "TOP SECRET//SCI"],
+    "system_types": ["national_security_system"]
+  },
+  "cia_baseline": {
+    "description": "CNSSI 1253 requires all three security objectives to be assessed independently. NSS systems have elevated minimums.",
+    "default_nss_minimum": {
+      "confidentiality": "High",
+      "integrity": "High",
+      "availability": "Moderate"
+    }
+  },
+  "additional_overlays": [
+    {
+      "id": "CNSSI-CLASSIFIED",
+      "name": "Classified Information Overlay",
+      "description": "Additional controls for systems processing classified information",
+      "applicable_when": "system processes SECRET or higher data",
+      "controls": [
+        "AC-3(3)", "AC-4(4)", "AC-6(3)", "AU-5(1)", "AU-5(2)",
+        "PE-2(3)", "PE-3(1)", "PE-3(2)", "PE-6(1)",
+        "SC-7(13)", "SC-8(1)", "SC-12(1)", "SC-13", "SC-28(1)",
+        "SI-4(12)", "SI-7(1)", "SI-7(6)"
+      ]
+    },
+    {
+      "id": "CNSSI-INTEL",
+      "name": "Intelligence Systems Overlay",
+      "description": "Controls for intelligence community systems processing SCI",
+      "applicable_when": "system processes SCI data",
+      "controls": [
+        "AC-2(5)", "AC-2(13)", "AC-3(10)", "AC-4(15)",
+        "IA-2(12)", "IA-5(2)", "IA-5(7)",
+        "SC-7(15)", "SC-7(18)", "SC-16", "SC-28(2)"
+      ]
+    },
+    {
+      "id": "CNSSI-CROSSDOMAIN",
+      "name": "Cross-Domain Solution Overlay",
+      "description": "Controls for cross-domain transfer between classification levels",
+      "applicable_when": "system transfers data across security domains",
+      "controls": [
+        "AC-4(4)", "AC-4(8)", "AC-4(12)", "AC-4(15)",
+        "SC-7(13)", "SC-7(18)", "SC-7(21)", "SC-7(22)",
+        "SI-4(18)", "SI-4(19)"
+      ]
+    },
+    {
+      "id": "CNSSI-SPACE",
+      "name": "Space Platform Overlay",
+      "description": "Controls for satellite and space-based systems",
+      "applicable_when": "system operates on space platforms",
+      "controls": [
+        "PE-20", "SC-40", "SC-40(1)", "SC-40(2)",
+        "SC-43", "SI-17"
+      ]
+    }
+  ],
+  "control_elevation_rules": [
+    {
+      "condition": "system processes SECRET data",
+      "minimum_cia": {
+        "confidentiality": "High",
+        "integrity": "High",
+        "availability": "Moderate"
+      },
+      "additional_controls_overlay": "CNSSI-CLASSIFIED",
+      "encryption_requirement": "NSA Type 1 or Suite B"
+    },
+    {
+      "condition": "system processes TOP SECRET or SCI data",
+      "minimum_cia": {
+        "confidentiality": "High",
+        "integrity": "High",
+        "availability": "High"
+      },
+      "additional_controls_overlay": "CNSSI-INTEL",
+      "encryption_requirement": "NSA Type 1"
+    },
+    {
+      "condition": "system transfers data between classification levels",
+      "minimum_cia": {
+        "confidentiality": "High",
+        "integrity": "High",
+        "availability": "High"
+      },
+      "additional_controls_overlay": "CNSSI-CROSSDOMAIN",
+      "encryption_requirement": "NSA Type 1, HAIPE compliant"
+    }
+  ],
+  "impact_level_mapping": {
+    "IL6": {
+      "classification": "SECRET",
+      "default_overlay": "CNSSI-CLASSIFIED",
+      "minimum_baseline": "High",
+      "fips_140_level": "FIPS 140-3 Level 3 or NSA Type 1"
+    }
+  }
+}

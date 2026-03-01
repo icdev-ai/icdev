@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Activity Feed — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<h1>Activity Feed</h1>
+<p class="text-muted">Merged audit trail and hook events. Real-time updates via WebSocket when available.</p>
+
+<!-- Stats -->
+<div class="activity-stat-cards" id="activity-stats">
+    <div class="activity-stat-card">
+        <div class="stat-value" id="stat-total">-</div>
+        <div class="stat-label">Total Events</div>
+    </div>
+    <div class="activity-stat-card">
+        <div class="stat-value" id="stat-today">-</div>
+        <div class="stat-label">Today</div>
+    </div>
+    <div class="activity-stat-card">
+        <div class="stat-value" id="stat-hour">-</div>
+        <div class="stat-label">Last Hour</div>
+    </div>
+    <div class="activity-stat-card">
+        <div class="stat-value" id="stat-audit">-</div>
+        <div class="stat-label">Audit Events</div>
+    </div>
+    <div class="activity-stat-card">
+        <div class="stat-value" id="stat-hook">-</div>
+        <div class="stat-label">Hook Events</div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="activity-filters">
+    <select id="filter-source" aria-label="Filter by source">
+        <option value="">All Sources</option>
+        <option value="audit">Audit Trail</option>
+        <option value="hook">Hook Events</option>
+    </select>
+    <select id="filter-event-type" aria-label="Filter by event type">
+        <option value="">All Event Types</option>
+    </select>
+    <select id="filter-actor" aria-label="Filter by actor">
+        <option value="">All Actors</option>
+    </select>
+    <input type="text" id="filter-search" placeholder="Search..." aria-label="Search events" style="min-width: 160px;">
+    <button id="btn-export-csv" class="btn-sm" title="Export as CSV">Export CSV</button>
+    <div class="ws-status" id="ws-status">
+        <span class="ws-dot disconnected" id="ws-dot"></span>
+        <span id="ws-label">Disconnected</span>
+    </div>
+</div>
+
+<!-- Events table -->
+<div class="table-container">
+    <table class="data-table" id="activity-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Event Type</th>
+                <th>Actor</th>
+                <th>Summary</th>
+                <th>Project</th>
+            </tr>
+        </thead>
+        <tbody id="activity-body">
+            <tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Load more -->
+<div style="text-align:center; margin: 1rem 0;">
+    <button id="btn-load-more" class="btn-sm" style="display:none;">Load More</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script defer src="{{ url_for('static', filename='js/activity.js') }}"></script>
+{% endblock %}

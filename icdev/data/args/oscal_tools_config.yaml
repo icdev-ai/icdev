@@ -1,0 +1,43 @@
+# OSCAL Ecosystem Tools Configuration (D302-D306)
+# Used by tools/compliance/oscal_tools.py
+#
+# All three integrations are independently optional with graceful degradation.
+# Zero external dependencies required for basic operation (air-gap safe).
+
+oscal_cli:
+  # Path to oscal-cli JAR (overridden by OSCAL_CLI_PATH env var)
+  jar_path: "vendor/oscal-cli/oscal-cli.jar"
+  # Java command (overridden by JAVA_HOME/bin/java)
+  java_cmd: "java"
+  # Minimum Java version required
+  min_java_version: 11
+  # Subprocess timeout in seconds
+  timeout: 120
+  # JVM memory flags
+  jvm_args: ["-Xmx512m"]
+
+oscal_pydantic:
+  # Enable pydantic model validation after generation
+  validate_after_generation: true
+  # Artifact types to validate (empty list = all)
+  validate_types: ["ssp", "poam", "assessment_results", "component_definition"]
+
+nist_catalog:
+  # Priority order for catalog resolution (first found wins)
+  catalog_sources:
+    - "context/oscal/NIST_SP-800-53_rev5_catalog.json"     # Official NIST OSCAL
+    - "context/compliance/nist_800_53.json"                  # ICDEV custom (fallback)
+  # Baseline profile paths (official NIST OSCAL profiles)
+  baseline_profiles:
+    low: "context/oscal/NIST_SP-800-53_rev5_LOW-baseline_profile.json"
+    moderate: "context/oscal/NIST_SP-800-53_rev5_MODERATE-baseline_profile.json"
+    high: "context/oscal/NIST_SP-800-53_rev5_HIGH-baseline_profile.json"
+
+validation:
+  # Validation pipeline layers (in execution order)
+  pipeline:
+    - "icdev_structural"        # Always runs (built-in validate_oscal())
+    - "oscal_pydantic"          # Runs if oscal-pydantic installed
+    - "oscal_cli_metaschema"    # Runs if oscal-cli + Java available
+  # Max errors per validator before early-stopping that layer
+  max_errors_per_validator: 50

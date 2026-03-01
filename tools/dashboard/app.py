@@ -61,9 +61,18 @@ from tools.dashboard.api.code_quality import code_quality_api
 from tools.dashboard.api.fedramp_20x import fedramp_20x_api
 from tools.dashboard.api.evidence import evidence_api
 from tools.dashboard.api.lineage import lineage_api
-from tools.dashboard.api.proposals import proposals_api
-from tools.dashboard.api.govcon import govcon_api
-from tools.dashboard.api.cpmp import cpmp_api
+# D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
+import os as _os
+_GOVCON_ENABLED = _os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
+_HAS_GOVCON = False
+if _GOVCON_ENABLED:
+    try:
+        from tools.dashboard.api.proposals import proposals_api
+        from tools.dashboard.api.govcon import govcon_api
+        from tools.dashboard.api.cpmp import cpmp_api
+        _HAS_GOVCON = True
+    except ImportError:
+        _HAS_GOVCON = False
 from tools.dashboard.api.orchestration import orchestration_api
 try:
     from tools.dashboard.api.chat import chat_api
@@ -71,6 +80,529 @@ try:
 except ImportError:
     _HAS_CHAT_API = False
 from tools.dashboard.ux_helpers import register_ux_filters
+
+# ---------------------------------------------------------------------------
+# GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
+# ---------------------------------------------------------------------------
+
+
+def _register_govcon_pages(app: "Flask", _get_db):
+    """Register GovProposal/CPMP/GovCon SSR page routes on the Flask app.
+
+    Called only when _HAS_GOVCON is True.  Extracted from create_app() so that
+    child apps (and parent apps with ICDEV_GOVCON_ENABLED=false) never register
+    these routes.
+    """
+
+    @app.route("/cpmp")
+    def cpmp_portfolio_page():
+        """CPMP Portfolio — contract performance overview, health scoring."""
+        try:
+            from tools.govcon.portfolio_manager import get_portfolio_summary
+            portfolio_data = get_portfolio_summary()
+            pf = portfolio_data.get("portfolio", {})
+            contracts = pf.get("contracts", [])
+            upcoming = pf.get("upcoming_deliverables", [])
+            portfolio = {
+                "total_contracts": pf.get("total_contracts", 0),
+                "active_contracts": pf.get("active_contracts", 0),
+                "total_value": pf.get("total_value", 0),
+                "burn_rate": pf.get("burn_rate_pct", 0),
+                "overdue_deliverables": pf.get("overdue_deliverables", 0),
+                "at_risk": pf.get("at_risk_contracts", 0),
+                "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
+            }
+            return render_template("cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("cpmp/portfolio.html", portfolio={"total_contracts": 0, "active_contracts": 0, "total_value": 0, "burn_rate": 0, "overdue_deliverables": 0, "health_distribution": {"green": 0, "yellow": 0, "red": 0}}, contracts=[], upcoming_deliverables=[], error=str(e))
+
+    @app.route("/cpmp/<contract_id>")
+    def cpmp_detail_page(contract_id):
+        """CPMP Contract Detail — 7-tab view."""
+        try:
+            from tools.govcon.contract_manager import get_contract, list_clins, list_wbs, list_deliverables
+            contract_result = get_contract(contract_id)
+            if contract_result.get("status") == "error":
+                return render_template("404.html", message="Contract not found"), 404
+            contract = contract_result.get("contract", contract_result)
+            clins = list_clins(contract_id).get("clins", [])
+            wbs_elements = list_wbs(contract_id).get("wbs_elements", [])
+            deliverables = list_deliverables(contract_id).get("deliverables", [])
+            try:
+                from tools.govcon.subcontractor_tracker import list_subcontractors
+                subcontractors = list_subcontractors(contract_id).get("subcontractors", [])
+            except Exception:
+                subcontractors = []
+            try:
+                from tools.govcon.evm_engine import aggregate_contract_evm
+                evm = aggregate_contract_evm(contract_id)
+                if "indicators" in evm and isinstance(evm["indicators"], dict):
+                    evm.update(evm["indicators"])
+            except Exception:
+                evm = {}
+            try:
+                from tools.govcon.cpars_predictor import predict_cpars, list_assessments
+                cpars_prediction = predict_cpars(contract_id)
+                if "dimension_scores" in cpars_prediction:
+                    cpars_prediction["dimensions"] = {
+                        k: round(v * 5, 2) for k, v in cpars_prediction["dimension_scores"].items()
+                    }
+                cpars_assessments = list_assessments(contract_id).get("assessments", [])
+            except Exception:
+                cpars_prediction = {}
+                cpars_assessments = []
+            return render_template("cpmp/detail.html",
+                                   contract=contract, clins=clins, wbs_elements=wbs_elements,
+                                   deliverables=deliverables, subcontractors=subcontractors,
+                                   evm=evm, cpars_prediction=cpars_prediction,
+                                   cpars_assessments=cpars_assessments)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("404.html", message=f"Error loading contract: {e}"), 500
+
+    @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
+    def cpmp_deliverable_detail_page(contract_id, deliverable_id):
+        """CPMP Deliverable Detail — status pipeline, CDRL generation."""
+        try:
+            from tools.govcon.contract_manager import get_contract, get_deliverable
+            contract_result = get_contract(contract_id)
+            contract = contract_result.get("contract", contract_result) if contract_result.get("status") == "ok" else {}
+            deliv_result = get_deliverable(deliverable_id)
+            if deliv_result.get("status") == "error":
+                return render_template("404.html", message="Deliverable not found"), 404
+            deliverable = deliv_result.get("deliverable", deliv_result)
+            generations = deliverable.get("generations", []) if isinstance(deliverable, dict) else []
+            status_history = deliverable.get("status_history", []) if isinstance(deliverable, dict) else []
+            return render_template("cpmp/deliverable_detail.html",
+                                   contract=contract, deliverable=deliverable,
+                                   generations=generations, status_history=status_history)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("404.html", message=f"Error loading deliverable: {e}"), 500
+
+    @app.route("/cpmp/cor")
+    def cpmp_cor_portal_page():
+        """COR Portal — read-only government view of assigned contracts."""
+        user = getattr(g, "current_user", None)
+        cor_email = user.get("email", "") if user else ""
+        conn = _get_db()
+        try:
+            if cor_email:
+                rows = conn.execute(
+                    "SELECT * FROM cpmp_contracts WHERE cor_email = ? ORDER BY created_at DESC",
+                    (cor_email,),
+                ).fetchall()
+                contracts = [dict(r) for r in rows]
+            else:
+                contracts = []
+            return render_template("cpmp/cor_portal.html", contracts=contracts, cor_email=cor_email)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("cpmp/cor_portal.html", contracts=[], cor_email=cor_email)
+        finally:
+            conn.close()
+
+    @app.route("/cpmp/cor/<contract_id>")
+    def cpmp_cor_detail_page(contract_id):
+        """COR Contract Detail — read-only, no internal cost data."""
+        user = getattr(g, "current_user", None)
+        cor_email = user.get("email", "") if user else ""
+        conn = _get_db()
+        try:
+            from tools.govcon.contract_manager import get_contract, list_deliverables
+            contract_result = get_contract(contract_id)
+            if contract_result.get("status") == "error":
+                return render_template("404.html", message="Contract not found"), 404
+            contract = contract_result.get("contract", contract_result)
+            deliverables = list_deliverables(contract_id).get("deliverables", [])
+            try:
+                from tools.govcon.evm_engine import aggregate_contract_evm
+                evm = aggregate_contract_evm(contract_id)
+                if "indicators" in evm and isinstance(evm["indicators"], dict):
+                    evm.update(evm["indicators"])
+                if "total_bac" in evm:
+                    evm.setdefault("bac", evm["total_bac"])
+                if "total_pv" in evm:
+                    evm.setdefault("pv", evm["total_pv"])
+                if "total_ev" in evm:
+                    evm.setdefault("ev", evm["total_ev"])
+                if "percent_complete" in evm:
+                    evm.setdefault("percent_complete_schedule", evm["percent_complete"] / 100 if evm["percent_complete"] > 1 else evm["percent_complete"])
+            except Exception:
+                evm = {}
+            try:
+                from tools.govcon.cpars_predictor import list_assessments
+                cpars_assessments = list_assessments(contract_id).get("assessments", [])
+            except Exception:
+                cpars_assessments = []
+            try:
+                conn.execute(
+                    "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), cor_email, contract_id, "view_contract", datetime.now(timezone.utc).isoformat(), "CUI // SP-CTI"),
+                )
+                conn.commit()
+            except Exception:
+                pass
+            return render_template("cpmp/cor_detail.html",
+                                   contract=contract, deliverables=deliverables,
+                                   evm=evm, cpars_assessments=cpars_assessments, cor_email=cor_email)
+        except Exception as e:
+            return render_template("404.html", message=f"Error: {e}"), 500
+        finally:
+            conn.close()
+
+    @app.route("/proposals")
+    def proposals_list_page():
+        """Proposal Opportunities — GovCon proposal writing lifecycle tracker."""
+        conn = _get_db()
+        try:
+            rows = conn.execute("SELECT * FROM proposal_opportunities ORDER BY due_date ASC").fetchall()
+            opportunities = [dict(r) for r in rows]
+            from datetime import date
+            today = date.today()
+            nearest_deadline = None
+            for opp in opportunities:
+                if opp.get("due_date") and opp["status"] not in ("submitted", "won", "lost", "cancelled", "no_bid"):
+                    try:
+                        dd = date.fromisoformat(opp["due_date"])
+                        days_left = (dd - today).days
+                        opp["days_left"] = days_left
+                        if nearest_deadline is None or days_left < nearest_deadline:
+                            nearest_deadline = days_left
+                    except (ValueError, TypeError):
+                        opp["days_left"] = None
+                else:
+                    opp["days_left"] = None
+            return render_template("proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline)
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>")
+    def proposals_detail_page(opp_id):
+        """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
+        conn = _get_db()
+        try:
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            if not opp:
+                return render_template("404.html", message="Opportunity not found"), 404
+            opp = dict(opp)
+            sections = [dict(r) for r in conn.execute(
+                """SELECT s.*, v.volume_number, v.title as volume_title
+                   FROM proposal_sections s
+                   LEFT JOIN proposal_volumes v ON s.volume_id = v.id
+                   WHERE s.opportunity_id = ?
+                   ORDER BY v.volume_number, s.section_number""", (opp_id,)
+            ).fetchall()]
+            from datetime import date
+            today = date.today()
+            for s in sections:
+                s["overdue"] = False
+                if s.get("due_date") and s["status"] not in ("final", "submitted"):
+                    try:
+                        s["overdue"] = date.fromisoformat(s["due_date"]) < today
+                    except (ValueError, TypeError):
+                        pass
+            volumes = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
+            ).fetchall()]
+            compliance_items = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+            ).fetchall()]
+            reviews = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
+            ).fetchall()]
+            findings = [dict(r) for r in conn.execute(
+                """SELECT f.*, r.review_type FROM proposal_review_findings f
+                   JOIN proposal_reviews r ON f.review_id = r.id
+                   WHERE r.opportunity_id = ?""", (opp_id,)
+            ).fetchall()]
+            total_sections = len(sections)
+            completed_sections = len([s for s in sections if s["status"] in ("final", "submitted")])
+            total_compliance = len(compliance_items)
+            compliant_count = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
+            coverage_pct = (compliant_count / total_compliance * 100) if total_compliance > 0 else 0
+            open_findings = len([f for f in findings if f.get("status") in ("open", "in_progress")])
+            critical_findings = len([f for f in findings if f.get("severity") == "critical" and f.get("status") in ("open", "in_progress")])
+            section_status_dist = {}
+            for s in sections:
+                st = s.get("status", "not_started")
+                section_status_dist[st] = section_status_dist.get(st, 0) + 1
+            finding_severity_dist = {}
+            for f in findings:
+                if f.get("status") in ("open", "in_progress"):
+                    sev = f.get("severity", "minor")
+                    finding_severity_dist[sev] = finding_severity_dist.get(sev, 0) + 1
+            cm_compliant = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
+            cm_partial = len([c for c in compliance_items if c.get("compliance_status") == "partial"])
+            cm_non_compliant = len([c for c in compliance_items if c.get("compliance_status") == "non_compliant"])
+            cm_not_addressed = len([c for c in compliance_items if c.get("compliance_status") == "not_addressed"])
+            cm_not_applicable = len([c for c in compliance_items if c.get("compliance_status") == "not_applicable"])
+            cm_gap_pct = round(cm_not_addressed / total_compliance * 100) if total_compliance > 0 else 0
+            compliance_stats = {
+                "total": total_compliance, "compliant": cm_compliant, "partial": cm_partial,
+                "non_compliant": cm_non_compliant, "not_addressed": cm_not_addressed,
+                "not_applicable": cm_not_applicable, "gap_pct": cm_gap_pct,
+            }
+            findings_by_review = {}
+            for f in findings:
+                rid = f.get("review_id")
+                if rid:
+                    findings_by_review.setdefault(rid, []).append(f)
+            reviews_data = []
+            for rev in reviews:
+                rd = dict(rev)
+                rd["findings"] = findings_by_review.get(rev["id"], [])
+                reviews_data.append(rd)
+            days_left = None
+            if opp.get("due_date"):
+                try:
+                    days_left = (date.fromisoformat(opp["due_date"]) - today).days
+                except (ValueError, TypeError):
+                    pass
+            stats = {
+                "sections_total": total_sections, "sections_complete": completed_sections,
+                "compliance_coverage_pct": round(coverage_pct), "open_findings": open_findings,
+                "critical_findings": critical_findings, "section_status_distribution": section_status_dist,
+                "finding_severity_distribution": finding_severity_dist,
+            }
+            questions = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC", (opp_id,),
+            ).fetchall()]
+            question_stats = {
+                "total": len(questions),
+                "high_priority": len([q for q in questions if q.get("priority") == "high"]),
+                "draft": len([q for q in questions if q.get("status") == "draft"]),
+                "approved": len([q for q in questions if q.get("status") == "approved"]),
+                "submitted": len([q for q in questions if q.get("status") == "submitted"]),
+                "answered": len([q for q in questions if q.get("status") == "answered"]),
+            }
+            questions_days_left = None
+            if opp.get("questions_due_date"):
+                try:
+                    questions_days_left = (date.fromisoformat(opp["questions_due_date"]) - today).days
+                except (ValueError, TypeError):
+                    pass
+            amendments = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC", (opp_id,),
+            ).fetchall()]
+            responses = {}
+            for q in questions:
+                if q.get("status") == "answered":
+                    resp = conn.execute(
+                        "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at DESC LIMIT 1",
+                        (q["id"],),
+                    ).fetchone()
+                    if resp:
+                        responses[q["id"]] = dict(resp)
+            return render_template("proposals/detail.html",
+                opp=opp, sections=sections, volumes=volumes,
+                compliance_items=compliance_items, reviews=reviews_data, findings=findings,
+                stats=stats, compliance_stats=compliance_stats,
+                reviews_data=reviews_data, days_left=days_left,
+                questions=questions, question_stats=question_stats,
+                questions_days_left=questions_days_left,
+                amendments=amendments, responses=responses)
+        finally:
+            conn.close()
+
+    @app.route("/proposals/<opp_id>/sections/<sec_id>")
+    def proposals_section_detail_page(opp_id, sec_id):
+        """Proposal Section Detail — status pipeline, notes, compliance, findings, history."""
+        conn = _get_db()
+        try:
+            section = conn.execute(
+                """SELECT s.*, v.volume_number, v.title as volume_title
+                   FROM proposal_sections s
+                   LEFT JOIN proposal_volumes v ON s.volume_id = v.id
+                   WHERE s.id = ? AND s.opportunity_id = ?""",
+                (sec_id, opp_id)).fetchone()
+            if not section:
+                return render_template("404.html", message="Section not found"), 404
+            section = dict(section)
+            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp_title = opp["title"] if opp else "Unknown"
+            from tools.dashboard.api.proposals import SECTION_TRANSITIONS
+            section["valid_transitions"] = SECTION_TRANSITIONS.get(section["status"], [])
+            from datetime import date
+            section["overdue"] = False
+            if section.get("due_date") and section["status"] not in ("final", "submitted"):
+                try:
+                    section["overdue"] = date.fromisoformat(section["due_date"]) < date.today()
+                except (ValueError, TypeError):
+                    pass
+            section["compliance_items"] = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
+            ).fetchall()]
+            section["findings"] = [dict(r) for r in conn.execute(
+                """SELECT f.*, r.review_type FROM proposal_review_findings f
+                   JOIN proposal_reviews r ON f.review_id = r.id
+                   WHERE f.section_id = ?""", (sec_id,)
+            ).fetchall()]
+            deps = conn.execute(
+                """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
+                   FROM proposal_section_dependencies d
+                   JOIN proposal_sections s ON d.depends_on_section_id = s.id
+                   WHERE d.section_id = ?""", (sec_id,)
+            ).fetchall()
+            dep_list = []
+            for d in deps:
+                d = dict(d)
+                from tools.dashboard.api.proposals import SECTION_STATUS_ORDER
+                req_idx = SECTION_STATUS_ORDER.index(d["required_status"]) if d["required_status"] in SECTION_STATUS_ORDER else 0
+                cur_idx = SECTION_STATUS_ORDER.index(d["depends_on_status"]) if d["depends_on_status"] in SECTION_STATUS_ORDER else 0
+                d["met"] = cur_idx >= req_idx
+                dep_list.append(d)
+            section["dependencies"] = dep_list
+            section["history"] = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
+            ).fetchall()]
+            return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
+        finally:
+            conn.close()
+
+    @app.route("/govcon")
+    def govcon_pipeline_page():
+        """GovCon Intelligence — pipeline status, recent opportunities, domain distribution."""
+        conn = _get_db()
+        try:
+            from tools.govcon.govcon_engine import get_status
+            stats = get_status()
+            try:
+                opps = conn.execute("SELECT * FROM sam_gov_opportunities ORDER BY posted_date DESC LIMIT 25").fetchall()
+                opportunities = [dict(r) for r in opps]
+            except Exception:
+                opportunities = []
+            linked_opp_ids = set()
+            try:
+                linked = conn.execute("SELECT sam_gov_opportunity_id FROM proposal_opportunities WHERE sam_gov_opportunity_id IS NOT NULL").fetchall()
+                linked_opp_ids = {r["sam_gov_opportunity_id"] for r in linked}
+            except Exception:
+                pass
+            return render_template("govcon/pipeline.html", stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids)
+        except Exception:
+            stats = {"total_opportunities": 0, "total_requirements": 0, "total_patterns": 0,
+                     "total_capability_maps": 0, "total_drafts": 0, "total_awards": 0,
+                     "knowledge_blocks": 0, "linked_proposals": 0, "domain_distribution": {},
+                     "last_pipeline_run": None}
+            return render_template("govcon/pipeline.html", stats=stats, opportunities=[], linked_opp_ids=set())
+        finally:
+            conn.close()
+
+    @app.route("/govcon/requirements")
+    def govcon_requirements_page():
+        """GovCon Requirements — pattern frequency, domain heatmap, statement types."""
+        conn = _get_db()
+        try:
+            total_requirements = 0
+            try:
+                r = conn.execute("SELECT COUNT(*) as cnt FROM rfp_shall_statements").fetchone()
+                total_requirements = r["cnt"] if r else 0
+            except Exception:
+                pass
+            total_patterns = 0
+            try:
+                r = conn.execute("SELECT COUNT(*) as cnt FROM rfp_requirement_patterns").fetchone()
+                total_patterns = r["cnt"] if r else 0
+            except Exception:
+                pass
+            domain_stats = {}
+            try:
+                rows = conn.execute("SELECT domain_category, COUNT(*) as cnt FROM rfp_shall_statements GROUP BY domain_category ORDER BY cnt DESC").fetchall()
+                domain_stats = {r["domain_category"]: {"count": r["cnt"]} for r in rows}
+            except Exception:
+                pass
+            domain_count = len(domain_stats)
+            patterns = []
+            min_frequency = 3
+            try:
+                rows = conn.execute("SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30", (min_frequency,)).fetchall()
+                patterns = [dict(r) for r in rows]
+            except Exception:
+                pass
+            top_frequency = patterns[0]["frequency"] if patterns else 0
+            type_stats = {}
+            try:
+                rows = conn.execute("SELECT statement_type, COUNT(*) as cnt FROM rfp_shall_statements GROUP BY statement_type ORDER BY cnt DESC").fetchall()
+                type_stats = {r["statement_type"]: r["cnt"] for r in rows}
+            except Exception:
+                pass
+            return render_template("govcon/requirements.html",
+                total_requirements=total_requirements, total_patterns=total_patterns,
+                domain_stats=domain_stats, domain_count=domain_count,
+                patterns=patterns, top_frequency=top_frequency,
+                type_stats=type_stats, min_frequency=min_frequency)
+        finally:
+            conn.close()
+
+    @app.route("/govcon/capabilities")
+    def govcon_capabilities_page():
+        """GovCon Capabilities — coverage by domain, gap list, enhancement recommendations."""
+        conn = _get_db()
+        try:
+            coverage = {"L": 0, "M": 0, "N": 0, "rate": 0}
+            try:
+                rows = conn.execute(
+                    """SELECT
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N,
+                        COUNT(*) as total
+                    FROM rfp_shall_statements s
+                    LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id"""
+                ).fetchone()
+                if rows and rows["total"] > 0:
+                    coverage["L"] = rows["L"] or 0
+                    coverage["M"] = rows["M"] or 0
+                    coverage["N"] = rows["N"] or 0
+                    coverage["rate"] = round(coverage["L"] / rows["total"] * 100)
+            except Exception:
+                pass
+            domain_coverage = []
+            try:
+                rows = conn.execute(
+                    """SELECT s.domain_category as domain, COUNT(*) as total,
+                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
+                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
+                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N
+                    FROM rfp_shall_statements s
+                    LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id
+                    GROUP BY s.domain_category ORDER BY total DESC"""
+                ).fetchall()
+                domain_coverage = [dict(r) for r in rows]
+            except Exception:
+                pass
+            gaps = []
+            total_gaps = 0
+            try:
+                rows = conn.execute(
+                    """SELECT p.pattern_name as requirement, p.domain_category as domain,
+                        p.frequency, COALESCE(m.coverage_score, 0) as coverage,
+                        p.frequency * (1 - COALESCE(m.coverage_score, 0)) as priority
+                    FROM rfp_requirement_patterns p
+                    LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
+                    WHERE COALESCE(m.coverage_score, 0) < 0.40
+                    ORDER BY priority DESC LIMIT 20"""
+                ).fetchall()
+                gaps = [dict(r) for r in rows]
+                total_gaps = len(gaps)
+            except Exception:
+                pass
+            recommendations = []
+            try:
+                from tools.govcon.gap_analyzer import generate_recommendations
+                rec_result = generate_recommendations()
+                recommendations = rec_result.get("recommendations", [])[:15]
+            except Exception:
+                pass
+            return render_template("govcon/capabilities.html",
+                coverage=coverage, domain_coverage=domain_coverage,
+                gaps=gaps, total_gaps=total_gaps,
+                recommendations=recommendations)
+        finally:
+            conn.close()
+
 
 # ---------------------------------------------------------------------------
 # App factory
@@ -170,6 +702,7 @@ def create_app() -> Flask:
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
+            "govcon_enabled": _HAS_GOVCON,
         }
 
     # ---- Auto-register A2A agents from card files ----
@@ -207,9 +740,10 @@ def create_app() -> Flask:
     app.register_blueprint(fedramp_20x_api)
     app.register_blueprint(evidence_api)
     app.register_blueprint(lineage_api)
-    app.register_blueprint(proposals_api)
-    app.register_blueprint(govcon_api)
-    app.register_blueprint(cpmp_api)
+    if _HAS_GOVCON:
+        app.register_blueprint(proposals_api)
+        app.register_blueprint(govcon_api)
+        app.register_blueprint(cpmp_api)
     app.register_blueprint(orchestration_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
@@ -1385,607 +1919,9 @@ def create_app() -> Flask:
         """Artifact Lineage — unified DAG visualization of digital thread, provenance, audit trail, SBOM (Phase 56, D348)."""
         return render_template("lineage.html")
 
-    # ---- CPMP Pages (Phase 60 — D-CPMP) ----
-
-    @app.route("/cpmp")
-    def cpmp_portfolio_page():
-        """CPMP Portfolio — contract performance overview, health scoring."""
-        try:
-            from tools.govcon.portfolio_manager import get_portfolio_summary
-            portfolio_data = get_portfolio_summary()
-            pf = portfolio_data.get("portfolio", {})
-            contracts = pf.get("contracts", [])
-            upcoming = pf.get("upcoming_deliverables", [])
-            portfolio = {
-                "total_contracts": pf.get("total_contracts", 0),
-                "active_contracts": pf.get("active_contracts", 0),
-                "total_value": pf.get("total_value", 0),
-                "burn_rate": pf.get("burn_rate_pct", 0),
-                "overdue_deliverables": pf.get("overdue_deliverables", 0),
-                "at_risk": pf.get("at_risk_contracts", 0),
-                "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
-            }
-            return render_template("cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            return render_template("cpmp/portfolio.html", portfolio={"total_contracts": 0, "active_contracts": 0, "total_value": 0, "burn_rate": 0, "overdue_deliverables": 0, "health_distribution": {"green": 0, "yellow": 0, "red": 0}}, contracts=[], upcoming_deliverables=[], error=str(e))
-
-    @app.route("/cpmp/<contract_id>")
-    def cpmp_detail_page(contract_id):
-        """CPMP Contract Detail — 7-tab view with CLINs, WBS, EVM, CPARS, etc."""
-        try:
-            from tools.govcon.contract_manager import get_contract, list_clins, list_wbs, list_deliverables
-            contract_result = get_contract(contract_id)
-            if contract_result.get("status") == "error":
-                return render_template("404.html", message="Contract not found"), 404
-            contract = contract_result.get("contract", contract_result)
-            clins = list_clins(contract_id).get("clins", [])
-            wbs_elements = list_wbs(contract_id).get("wbs_elements", [])
-            deliverables = list_deliverables(contract_id).get("deliverables", [])
-            # Subcontractors
-            try:
-                from tools.govcon.subcontractor_tracker import list_subcontractors
-                subcontractors = list_subcontractors(contract_id).get("subcontractors", [])
-            except Exception:
-                subcontractors = []
-            # EVM — flatten indicators into top-level for template access
-            try:
-                from tools.govcon.evm_engine import aggregate_contract_evm
-                evm = aggregate_contract_evm(contract_id)
-                if "indicators" in evm and isinstance(evm["indicators"], dict):
-                    evm.update(evm["indicators"])
-            except Exception:
-                evm = {}
-            # CPARS prediction + assessments
-            try:
-                from tools.govcon.cpars_predictor import predict_cpars, list_assessments
-                cpars_prediction = predict_cpars(contract_id)
-                # Map dimension_scores to dimensions (0-1 → 0-5 for template bar charts)
-                if "dimension_scores" in cpars_prediction:
-                    cpars_prediction["dimensions"] = {
-                        k: round(v * 5, 2) for k, v in cpars_prediction["dimension_scores"].items()
-                    }
-                cpars_assessments = list_assessments(contract_id).get("assessments", [])
-            except Exception:
-                cpars_prediction = {}
-                cpars_assessments = []
-            return render_template("cpmp/detail.html",
-                                   contract=contract, clins=clins, wbs_elements=wbs_elements,
-                                   deliverables=deliverables, subcontractors=subcontractors,
-                                   evm=evm, cpars_prediction=cpars_prediction,
-                                   cpars_assessments=cpars_assessments)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            return render_template("404.html", message=f"Error loading contract: {e}"), 500
-
-    @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
-    def cpmp_deliverable_detail_page(contract_id, deliverable_id):
-        """CPMP Deliverable Detail — status pipeline, CDRL generation."""
-        try:
-            from tools.govcon.contract_manager import get_contract, get_deliverable
-            contract_result = get_contract(contract_id)
-            contract = contract_result.get("contract", contract_result) if contract_result.get("status") == "ok" else {}
-            deliv_result = get_deliverable(deliverable_id)
-            if deliv_result.get("status") == "error":
-                return render_template("404.html", message="Deliverable not found"), 404
-            deliverable = deliv_result.get("deliverable", deliv_result)
-            generations = deliverable.get("generations", []) if isinstance(deliverable, dict) else []
-            status_history = deliverable.get("status_history", []) if isinstance(deliverable, dict) else []
-            return render_template("cpmp/deliverable_detail.html",
-                                   contract=contract, deliverable=deliverable,
-                                   generations=generations, status_history=status_history)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            return render_template("404.html", message=f"Error loading deliverable: {e}"), 500
-
-    @app.route("/cpmp/cor")
-    def cpmp_cor_portal_page():
-        """COR Portal — read-only government view of assigned contracts."""
-        user = getattr(g, "current_user", None)
-        cor_email = user.get("email", "") if user else ""
-        conn = _get_db()
-        try:
-            if cor_email:
-                rows = conn.execute(
-                    "SELECT * FROM cpmp_contracts WHERE cor_email = ? ORDER BY created_at DESC",
-                    (cor_email,),
-                ).fetchall()
-                contracts = [dict(r) for r in rows]
-            else:
-                contracts = []
-            return render_template("cpmp/cor_portal.html", contracts=contracts, cor_email=cor_email)
-        except Exception as e:
-            import traceback; traceback.print_exc()
-            print(f"[COR Portal] ERROR: {e}")
-            return render_template("cpmp/cor_portal.html", contracts=[], cor_email=cor_email)
-        finally:
-            conn.close()
-
-    @app.route("/cpmp/cor/<contract_id>")
-    def cpmp_cor_detail_page(contract_id):
-        """COR Contract Detail — read-only, no internal cost data."""
-        user = getattr(g, "current_user", None)
-        cor_email = user.get("email", "") if user else ""
-        conn = _get_db()
-        try:
-            from tools.govcon.contract_manager import get_contract, list_deliverables
-            contract_result = get_contract(contract_id)
-            if contract_result.get("status") == "error":
-                return render_template("404.html", message="Contract not found"), 404
-            contract = contract_result.get("contract", contract_result)
-            deliverables = list_deliverables(contract_id).get("deliverables", [])
-            try:
-                from tools.govcon.evm_engine import aggregate_contract_evm
-                evm = aggregate_contract_evm(contract_id)
-                if "indicators" in evm and isinstance(evm["indicators"], dict):
-                    evm.update(evm["indicators"])
-                # Map aggregate fields for template
-                if "total_bac" in evm:
-                    evm.setdefault("bac", evm["total_bac"])
-                if "total_pv" in evm:
-                    evm.setdefault("pv", evm["total_pv"])
-                if "total_ev" in evm:
-                    evm.setdefault("ev", evm["total_ev"])
-                if "percent_complete" in evm:
-                    evm.setdefault("percent_complete_schedule", evm["percent_complete"] / 100 if evm["percent_complete"] > 1 else evm["percent_complete"])
-            except Exception:
-                evm = {}
-            try:
-                from tools.govcon.cpars_predictor import list_assessments
-                cpars_assessments = list_assessments(contract_id).get("assessments", [])
-            except Exception:
-                cpars_assessments = []
-            # Log COR access
-            try:
-                conn.execute(
-                    "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (str(uuid.uuid4()), cor_email, contract_id, "view_contract", datetime.now(timezone.utc).isoformat(), "CUI // SP-CTI"),
-                )
-                conn.commit()
-            except Exception:
-                pass
-            return render_template("cpmp/cor_detail.html",
-                                   contract=contract, deliverables=deliverables,
-                                   evm=evm, cpars_assessments=cpars_assessments, cor_email=cor_email)
-        except Exception as e:
-            return render_template("404.html", message=f"Error: {e}"), 500
-        finally:
-            conn.close()
-
-    # ---- Proposal Lifecycle Pages (D-PROP) ----
-
-    @app.route("/proposals")
-    def proposals_list_page():
-        """Proposal Opportunities — GovCon proposal writing lifecycle tracker."""
-        conn = _get_db()
-        try:
-            rows = conn.execute("SELECT * FROM proposal_opportunities ORDER BY due_date ASC").fetchall()
-            opportunities = [dict(r) for r in rows]
-            from datetime import date
-            today = date.today()
-            nearest_deadline = None
-            for opp in opportunities:
-                if opp.get("due_date") and opp["status"] not in ("submitted", "won", "lost", "cancelled", "no_bid"):
-                    try:
-                        dd = date.fromisoformat(opp["due_date"])
-                        days_left = (dd - today).days
-                        opp["days_left"] = days_left
-                        if nearest_deadline is None or days_left < nearest_deadline:
-                            nearest_deadline = days_left
-                    except (ValueError, TypeError):
-                        opp["days_left"] = None
-                else:
-                    opp["days_left"] = None
-            return render_template("proposals/list.html", opportunities=opportunities, nearest_deadline=nearest_deadline)
-        finally:
-            conn.close()
-
-    @app.route("/proposals/<opp_id>")
-    def proposals_detail_page(opp_id):
-        """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
-        conn = _get_db()
-        try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
-            if not opp:
-                return render_template("404.html", message="Opportunity not found"), 404
-            opp = dict(opp)
-            # Sections (JOIN volumes for volume_number/title)
-            sections = [dict(r) for r in conn.execute(
-                """SELECT s.*, v.volume_number, v.title as volume_title
-                   FROM proposal_sections s
-                   LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-                   WHERE s.opportunity_id = ?
-                   ORDER BY v.volume_number, s.section_number""", (opp_id,)
-            ).fetchall()]
-            # Overdue flag
-            from datetime import date
-            today = date.today()
-            for s in sections:
-                s["overdue"] = False
-                if s.get("due_date") and s["status"] not in ("final", "submitted"):
-                    try:
-                        s["overdue"] = date.fromisoformat(s["due_date"]) < today
-                    except (ValueError, TypeError):
-                        pass
-            # Volumes
-            volumes = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
-            ).fetchall()]
-            # Compliance items
-            compliance_items = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
-            ).fetchall()]
-            # Reviews
-            reviews = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
-            ).fetchall()]
-            # Findings
-            findings = [dict(r) for r in conn.execute(
-                """SELECT f.*, r.review_type FROM proposal_review_findings f
-                   JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE r.opportunity_id = ?""", (opp_id,)
-            ).fetchall()]
-            # Stats
-            total_sections = len(sections)
-            completed_sections = len([s for s in sections if s["status"] in ("final", "submitted")])
-            total_compliance = len(compliance_items)
-            compliant_count = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
-            coverage_pct = (compliant_count / total_compliance * 100) if total_compliance > 0 else 0
-            open_findings = len([f for f in findings if f.get("status") in ("open", "in_progress")])
-            critical_findings = len([f for f in findings if f.get("severity") == "critical" and f.get("status") in ("open", "in_progress")])
-            # Section status distribution (for donut chart)
-            section_status_dist = {}
-            for s in sections:
-                st = s.get("status", "not_started")
-                section_status_dist[st] = section_status_dist.get(st, 0) + 1
-            # Finding severity distribution (for bar chart)
-            finding_severity_dist = {}
-            for f in findings:
-                if f.get("status") in ("open", "in_progress"):
-                    sev = f.get("severity", "minor")
-                    finding_severity_dist[sev] = finding_severity_dist.get(sev, 0) + 1
-            # Compliance stats
-            cm_compliant = len([c for c in compliance_items if c.get("compliance_status") == "compliant"])
-            cm_partial = len([c for c in compliance_items if c.get("compliance_status") == "partial"])
-            cm_non_compliant = len([c for c in compliance_items if c.get("compliance_status") == "non_compliant"])
-            cm_not_addressed = len([c for c in compliance_items if c.get("compliance_status") == "not_addressed"])
-            cm_not_applicable = len([c for c in compliance_items if c.get("compliance_status") == "not_applicable"])
-            cm_gap_pct = round(cm_not_addressed / total_compliance * 100) if total_compliance > 0 else 0
-            compliance_stats = {
-                "total": total_compliance,
-                "compliant": cm_compliant,
-                "partial": cm_partial,
-                "non_compliant": cm_non_compliant,
-                "not_addressed": cm_not_addressed,
-                "not_applicable": cm_not_applicable,
-                "gap_pct": cm_gap_pct,
-            }
-            # Reviews with nested findings (for template iteration and JS)
-            findings_by_review = {}
-            for f in findings:
-                rid = f.get("review_id")
-                if rid:
-                    findings_by_review.setdefault(rid, []).append(f)
-            reviews_data = []
-            for rev in reviews:
-                rd = dict(rev)
-                rd["findings"] = findings_by_review.get(rev["id"], [])
-                reviews_data.append(rd)
-            # Days left
-            days_left = None
-            if opp.get("due_date"):
-                try:
-                    days_left = (date.fromisoformat(opp["due_date"]) - today).days
-                except (ValueError, TypeError):
-                    pass
-
-            stats = {
-                "sections_total": total_sections,
-                "sections_complete": completed_sections,
-                "compliance_coverage_pct": round(coverage_pct),
-                "open_findings": open_findings,
-                "critical_findings": critical_findings,
-                "section_status_distribution": section_status_dist,
-                "finding_severity_distribution": finding_severity_dist,
-            }
-
-            # Questions to Government
-            questions = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC",
-                (opp_id,),
-            ).fetchall()]
-            question_stats = {
-                "total": len(questions),
-                "high_priority": len([q for q in questions if q.get("priority") == "high"]),
-                "draft": len([q for q in questions if q.get("status") == "draft"]),
-                "approved": len([q for q in questions if q.get("status") == "approved"]),
-                "submitted": len([q for q in questions if q.get("status") == "submitted"]),
-                "answered": len([q for q in questions if q.get("status") == "answered"]),
-            }
-            # Q&A deadline countdown
-            questions_days_left = None
-            if opp.get("questions_due_date"):
-                try:
-                    questions_days_left = (date.fromisoformat(opp["questions_due_date"]) - today).days
-                except (ValueError, TypeError):
-                    pass
-
-            # Amendments
-            amendments = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC",
-                (opp_id,),
-            ).fetchall()]
-
-            # Responses (for answered questions)
-            responses = {}
-            for q in questions:
-                if q.get("status") == "answered":
-                    resp = conn.execute(
-                        "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at DESC LIMIT 1",
-                        (q["id"],),
-                    ).fetchone()
-                    if resp:
-                        responses[q["id"]] = dict(resp)
-
-            return render_template("proposals/detail.html",
-                opp=opp, sections=sections, volumes=volumes,
-                compliance_items=compliance_items, reviews=reviews_data, findings=findings,
-                stats=stats, compliance_stats=compliance_stats,
-                reviews_data=reviews_data, days_left=days_left,
-                questions=questions, question_stats=question_stats,
-                questions_days_left=questions_days_left,
-                amendments=amendments, responses=responses)
-        finally:
-            conn.close()
-
-    @app.route("/proposals/<opp_id>/sections/<sec_id>")
-    def proposals_section_detail_page(opp_id, sec_id):
-        """Proposal Section Detail — status pipeline, notes, compliance, findings, history."""
-        conn = _get_db()
-        try:
-            section = conn.execute(
-                """SELECT s.*, v.volume_number, v.title as volume_title
-                   FROM proposal_sections s
-                   LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-                   WHERE s.id = ? AND s.opportunity_id = ?""",
-                (sec_id, opp_id)).fetchone()
-            if not section:
-                return render_template("404.html", message="Section not found"), 404
-            section = dict(section)
-            # Opp title for breadcrumb
-            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
-            opp_title = opp["title"] if opp else "Unknown"
-            # Valid transitions
-            from tools.dashboard.api.proposals import SECTION_TRANSITIONS
-            section["valid_transitions"] = SECTION_TRANSITIONS.get(section["status"], [])
-            # Overdue flag
-            from datetime import date
-            section["overdue"] = False
-            if section.get("due_date") and section["status"] not in ("final", "submitted"):
-                try:
-                    section["overdue"] = date.fromisoformat(section["due_date"]) < date.today()
-                except (ValueError, TypeError):
-                    pass
-            # Compliance items linked to this section
-            section["compliance_items"] = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
-            ).fetchall()]
-            # Findings for this section
-            section["findings"] = [dict(r) for r in conn.execute(
-                """SELECT f.*, r.review_type FROM proposal_review_findings f
-                   JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE f.section_id = ?""", (sec_id,)
-            ).fetchall()]
-            # Dependencies
-            deps = conn.execute(
-                """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
-                   FROM proposal_section_dependencies d
-                   JOIN proposal_sections s ON d.depends_on_section_id = s.id
-                   WHERE d.section_id = ?""", (sec_id,)
-            ).fetchall()
-            dep_list = []
-            for d in deps:
-                d = dict(d)
-                from tools.dashboard.api.proposals import SECTION_STATUS_ORDER
-                req_idx = SECTION_STATUS_ORDER.index(d["required_status"]) if d["required_status"] in SECTION_STATUS_ORDER else 0
-                cur_idx = SECTION_STATUS_ORDER.index(d["depends_on_status"]) if d["depends_on_status"] in SECTION_STATUS_ORDER else 0
-                d["met"] = cur_idx >= req_idx
-                dep_list.append(d)
-            section["dependencies"] = dep_list
-            # Status history
-            section["history"] = [dict(r) for r in conn.execute(
-                "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
-            ).fetchall()]
-
-            return render_template("proposals/section_detail.html", section=section, opp_title=opp_title)
-        finally:
-            conn.close()
-
-    # ---- GovCon Intelligence Pages (Phase 59E) ----
-
-    @app.route("/govcon")
-    def govcon_pipeline_page():
-        """GovCon Intelligence — pipeline status, recent opportunities, domain distribution."""
-        conn = _get_db()
-        try:
-            from tools.govcon.govcon_engine import get_status
-            stats = get_status()
-
-            # Recent opportunities
-            try:
-                opps = conn.execute(
-                    "SELECT * FROM sam_gov_opportunities ORDER BY posted_date DESC LIMIT 25"
-                ).fetchall()
-                opportunities = [dict(r) for r in opps]
-            except Exception:
-                opportunities = []
-
-            # Which SAM opps are linked to proposals
-            linked_opp_ids = set()
-            try:
-                linked = conn.execute(
-                    "SELECT sam_gov_opportunity_id FROM proposal_opportunities WHERE sam_gov_opportunity_id IS NOT NULL"
-                ).fetchall()
-                linked_opp_ids = {r["sam_gov_opportunity_id"] for r in linked}
-            except Exception:
-                pass
-
-            return render_template("govcon/pipeline.html",
-                stats=stats, opportunities=opportunities, linked_opp_ids=linked_opp_ids)
-        except Exception:
-            stats = {"total_opportunities": 0, "total_requirements": 0, "total_patterns": 0,
-                     "total_capability_maps": 0, "total_drafts": 0, "total_awards": 0,
-                     "knowledge_blocks": 0, "linked_proposals": 0, "domain_distribution": {},
-                     "last_pipeline_run": None}
-            return render_template("govcon/pipeline.html",
-                stats=stats, opportunities=[], linked_opp_ids=set())
-        finally:
-            conn.close()
-
-    @app.route("/govcon/requirements")
-    def govcon_requirements_page():
-        """GovCon Requirements — pattern frequency, domain heatmap, statement types."""
-        conn = _get_db()
-        try:
-            # Total requirements
-            total_requirements = 0
-            try:
-                r = conn.execute("SELECT COUNT(*) as cnt FROM rfp_shall_statements").fetchone()
-                total_requirements = r["cnt"] if r else 0
-            except Exception:
-                pass
-
-            # Total patterns
-            total_patterns = 0
-            try:
-                r = conn.execute("SELECT COUNT(*) as cnt FROM rfp_requirement_patterns").fetchone()
-                total_patterns = r["cnt"] if r else 0
-            except Exception:
-                pass
-
-            # Domain stats
-            domain_stats = {}
-            try:
-                rows = conn.execute(
-                    "SELECT domain_category, COUNT(*) as cnt FROM rfp_shall_statements "
-                    "GROUP BY domain_category ORDER BY cnt DESC"
-                ).fetchall()
-                domain_stats = {r["domain_category"]: {"count": r["cnt"]} for r in rows}
-            except Exception:
-                pass
-
-            domain_count = len(domain_stats)
-
-            # Top patterns
-            patterns = []
-            min_frequency = 3
-            try:
-                rows = conn.execute(
-                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30",
-                    (min_frequency,)
-                ).fetchall()
-                patterns = [dict(r) for r in rows]
-            except Exception:
-                pass
-
-            top_frequency = patterns[0]["frequency"] if patterns else 0
-
-            # Statement type distribution
-            type_stats = {}
-            try:
-                rows = conn.execute(
-                    "SELECT statement_type, COUNT(*) as cnt FROM rfp_shall_statements "
-                    "GROUP BY statement_type ORDER BY cnt DESC"
-                ).fetchall()
-                type_stats = {r["statement_type"]: r["cnt"] for r in rows}
-            except Exception:
-                pass
-
-            return render_template("govcon/requirements.html",
-                total_requirements=total_requirements, total_patterns=total_patterns,
-                domain_stats=domain_stats, domain_count=domain_count,
-                patterns=patterns, top_frequency=top_frequency,
-                type_stats=type_stats, min_frequency=min_frequency)
-        finally:
-            conn.close()
-
-    @app.route("/govcon/capabilities")
-    def govcon_capabilities_page():
-        """GovCon Capabilities — coverage by domain, gap list, enhancement recommendations."""
-        conn = _get_db()
-        try:
-            # Overall coverage
-            coverage = {"L": 0, "M": 0, "N": 0, "rate": 0}
-            try:
-                rows = conn.execute(
-                    """SELECT
-                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
-                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
-                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N,
-                        COUNT(*) as total
-                    FROM rfp_shall_statements s
-                    LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id"""
-                ).fetchone()
-                if rows and rows["total"] > 0:
-                    coverage["L"] = rows["L"] or 0
-                    coverage["M"] = rows["M"] or 0
-                    coverage["N"] = rows["N"] or 0
-                    coverage["rate"] = round(coverage["L"] / rows["total"] * 100)
-            except Exception:
-                pass
-
-            # Domain coverage
-            domain_coverage = []
-            try:
-                rows = conn.execute(
-                    """SELECT s.domain_category as domain,
-                        COUNT(*) as total,
-                        SUM(CASE WHEN m.coverage_score >= 0.80 THEN 1 ELSE 0 END) as L,
-                        SUM(CASE WHEN m.coverage_score >= 0.40 AND m.coverage_score < 0.80 THEN 1 ELSE 0 END) as M,
-                        SUM(CASE WHEN m.coverage_score < 0.40 OR m.coverage_score IS NULL THEN 1 ELSE 0 END) as N
-                    FROM rfp_shall_statements s
-                    LEFT JOIN icdev_capability_map m ON s.id = m.pattern_id
-                    GROUP BY s.domain_category
-                    ORDER BY total DESC"""
-                ).fetchall()
-                domain_coverage = [dict(r) for r in rows]
-            except Exception:
-                pass
-
-            # Gaps (coverage < 0.40)
-            gaps = []
-            total_gaps = 0
-            try:
-                rows = conn.execute(
-                    """SELECT p.pattern_name as requirement, p.domain_category as domain,
-                        p.frequency, COALESCE(m.coverage_score, 0) as coverage,
-                        p.frequency * (1 - COALESCE(m.coverage_score, 0)) as priority
-                    FROM rfp_requirement_patterns p
-                    LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
-                    WHERE COALESCE(m.coverage_score, 0) < 0.40
-                    ORDER BY priority DESC LIMIT 20"""
-                ).fetchall()
-                gaps = [dict(r) for r in rows]
-                total_gaps = len(gaps)
-            except Exception:
-                pass
-
-            # Enhancement recommendations
-            recommendations = []
-            try:
-                from tools.govcon.gap_analyzer import generate_recommendations
-                rec_result = generate_recommendations()
-                recommendations = rec_result.get("recommendations", [])[:15]
-            except Exception:
-                pass
-
-            return render_template("govcon/capabilities.html",
-                coverage=coverage, domain_coverage=domain_coverage,
-                gaps=gaps, total_gaps=total_gaps,
-                recommendations=recommendations)
-        finally:
-            conn.close()
+    # ---- CPMP / Proposals / GovCon Pages (D-CHILD-6: guarded) ----
+    if _HAS_GOVCON:
+        _register_govcon_pages(app, _get_db)
 
     # ---- Phase 61: Orchestration Dashboard ----
 

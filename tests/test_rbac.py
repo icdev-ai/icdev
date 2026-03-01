@@ -12,7 +12,7 @@ OWN permission logic, and the require_permission convenience function.
 import pytest
 
 try:
-    from tools.saas.auth.rbac import (
+    from icdev.tools.saas.auth.rbac import (
         PERMISSIONS,
         ENDPOINT_CATEGORY_MAP,
         check_permission,

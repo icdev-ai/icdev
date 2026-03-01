@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}COR Contract Detail - ICDEV{% endblock %}
+
+{% block content %}
+<style>
+.gov-banner { background: #1a3a5c; color: white; padding: 8px 16px; text-align: center; font-size: 14px; border-radius: 4px; margin-bottom: 16px; }
+.gauge-container { display: inline-block; text-align: center; margin: 12px 16px; }
+.gauge-ring { width: 100px; height: 100px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; margin: 0 auto 6px; }
+.gauge-label { font-size: 12px; color: var(--text-secondary, #a0a0b8); }
+.cpars-row { display: flex; align-items: center; margin-bottom: 8px; }
+.cpars-label { min-width: 140px; font-size: 13px; color: var(--text-secondary, #a0a0b8); }
+.cpars-bar-bg { flex: 1; background: var(--bg-secondary, #1a1a2e); border-radius: 4px; height: 20px; overflow: hidden; margin: 0 12px; }
+.cpars-bar { height: 100%; border-radius: 4px; transition: width 0.3s; }
+.cpars-value { min-width: 80px; font-size: 13px; font-weight: bold; }
+</style>
+
+<!-- Government Banner -->
+<div class="gov-banner" role="banner" aria-label="Government read-only notice">
+    [Shield] Government Read-Only View
+</div>
+
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/cpmp/cor">COR Portal</a><span class="separator">/</span>
+    <span>{{ contract.contract_number }}</span>
+</div>
+
+<div class="page-header">
+    <h1>{{ contract.title | default(contract.contract_number) }}</h1>
+    <div style="margin-top:4px;">
+        {% set cstatus = contract.status | default('unknown') %}
+        {% set cstatus_colors = {'active': 'success', 'complete': 'info', 'at_risk': 'warning', 'overdue': 'error', 'closed': 'info', 'pending': 'warning'} %}
+        <span class="badge badge-{{ cstatus_colors.get(cstatus, 'info') }}">{{ cstatus | replace('_', ' ') | title }}</span>
+        {% set health = contract.health | default('unknown') %}
+        {% if health == 'green' %}
+        <span class="badge badge-success">Green</span>
+        {% elif health == 'yellow' %}
+        <span class="badge badge-warning">Yellow</span>
+        {% elif health == 'red' %}
+        <span class="badge badge-error">Red</span>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Info Grid (excludes internal cost fields) -->
+<div class="card" style="padding:16px; margin-top:16px;">
+    <div class="info-grid">
+        <div class="info-item"><div class="label">Contract #</div><div class="value">{{ contract.contract_number | default('—') }}</div></div>
+        <div class="info-item"><div class="label">Agency</div><div class="value">{{ contract.agency | default('—') }}</div></div>
+        <div class="info-item"><div class="label">Type</div><div class="value">{{ (contract.contract_type or '—') | replace('_', ' ') | title }}</div></div>
+        <div class="info-item"><div class="label">Status</div><div class="value">{{ (contract.status or '—') | replace('_', ' ') | title }}</div></div>
+        <div class="info-item"><div class="label">POP Start</div><div class="value">{{ contract.pop_start | default('—') }}</div></div>
+        <div class="info-item"><div class="label">POP End</div><div class="value">{{ contract.pop_end | default('—') }}</div></div>
+        <div class="info-item"><div class="label">COR Name</div><div class="value">{{ contract.cor_name | default('—') }}</div></div>
+        <div class="info-item"><div class="label">COR Email</div><div class="value">{{ contract.cor_email | default('—') }}</div></div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" style="margin-top:20px;">
+    <button class="tab-btn active" data-tab="cor-tab-deliverables">Deliverables</button>
+    <button class="tab-btn" data-tab="cor-tab-evm">EVM</button>
+    <button class="tab-btn" data-tab="cor-tab-cpars">CPARS</button>
+</div>
+
+<!-- ===================== Deliverables Tab ===================== -->
+<div id="cor-tab-deliverables" class="tab-content active">
+    <div class="table-container" style="margin-top:12px;">
+        <table aria-label="Contract deliverables">
+            <thead>
+                <tr>
+                    <th>CDRL #</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Due Date</th>
+                    <th>Submitted Date</th>
+                    <th>Accepted Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in deliverables %}
+                <tr>
+                    <td>{{ d.cdrl_number | default('—') }}</td>
+                    <td>{{ d.title | default('—') }}</td>
+                    <td>
+                        {% set dstatus = d.status | default('not_started') %}
+                        {% set dstatus_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error'} %}
+                        <span class="badge badge-{{ dstatus_colors.get(dstatus, 'info') }}">{{ dstatus | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>{{ d.due_date or '—' }}</td>
+                    <td>{{ d.submitted_date or '—' }}</td>
+                    <td>{{ d.accepted_date or '—' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-muted" style="text-align:center;">No deliverables for this contract.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== EVM Tab ===================== -->
+<div id="cor-tab-evm" class="tab-content" style="display:none;">
+    <div style="margin-top:16px;">
+        {% if evm %}
+        <!-- CPI / SPI Gauges -->
+        <div style="display:flex; justify-content:center; flex-wrap:wrap; margin-bottom:20px;">
+            <!-- CPI Gauge -->
+            {% set cpi = evm.cpi | default(0) %}
+            {% set cpi_color = '#28a745' if cpi >= 0.95 else ('#ffc107' if cpi >= 0.85 else '#dc3545') %}
+            <div class="gauge-container">
+                <div class="gauge-ring" style="border: 6px solid {{ cpi_color }}; color: {{ cpi_color }};">
+                    {{ cpi | round(2) }}
+                </div>
+                <div class="gauge-label">CPI (Cost Performance)</div>
+            </div>
+
+            <!-- SPI Gauge -->
+            {% set spi = evm.spi | default(0) %}
+            {% set spi_color = '#28a745' if spi >= 0.95 else ('#ffc107' if spi >= 0.85 else '#dc3545') %}
+            <div class="gauge-container">
+                <div class="gauge-ring" style="border: 6px solid {{ spi_color }}; color: {{ spi_color }};">
+                    {{ spi | round(2) }}
+                </div>
+                <div class="gauge-label">SPI (Schedule Performance)</div>
+            </div>
+        </div>
+
+        <!-- EVM Summary (no AC/cost data shown) -->
+        <div class="card" style="padding:16px;">
+            <div class="info-grid">
+                <div class="info-item"><div class="label">Budget at Completion (BAC)</div><div class="value">${{ evm.bac | default(0) | round(0) | int }}</div></div>
+                <div class="info-item"><div class="label">% Complete (Schedule)</div><div class="value">{{ (evm.percent_complete_schedule | default(0) * 100) | round(0) | int }}%</div></div>
+                <div class="info-item"><div class="label">Planned Value (PV)</div><div class="value">${{ evm.pv | default(0) | round(0) | int }}</div></div>
+                <div class="info-item"><div class="label">Earned Value (EV)</div><div class="value">${{ evm.ev | default(0) | round(0) | int }}</div></div>
+                <div class="info-item"><div class="label">Schedule Variance (SV)</div><div class="value {% if (evm.schedule_variance | default(0)) < 0 %}text-danger{% endif %}">${{ evm.schedule_variance | default(0) | round(0) | int }}</div></div>
+                <div class="info-item"><div class="label">Estimate at Completion (EAC)</div><div class="value">${{ evm.eac | default(0) | round(0) | int }}</div></div>
+            </div>
+        </div>
+
+        <!-- S-Curve Placeholder -->
+        <div class="card" style="padding:16px; margin-top:16px; text-align:center;">
+            <div class="card-label">S-Curve (PV vs EV)</div>
+            <div style="min-height:200px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary, #a0a0b8); font-style:italic;">
+                S-Curve visualization available in full dashboard view
+            </div>
+        </div>
+        {% else %}
+        <div class="card" style="padding:24px; text-align:center; color:var(--text-secondary, #a0a0b8);">
+            No EVM data available for this contract.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- ===================== CPARS Tab ===================== -->
+<div id="cor-tab-cpars" class="tab-content" style="display:none;">
+    <div style="margin-top:16px;">
+        {% if cpars_assessments and cpars_assessments | length > 0 %}
+        {% for cpars in cpars_assessments %}
+        <div class="card" style="padding:16px; margin-bottom:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <strong>Assessment Period: {{ cpars.period_start | default('—') }} to {{ cpars.period_end | default('—') }}</strong>
+                <span class="badge badge-info">{{ cpars.assessment_status | default('draft') | replace('_', ' ') | title }}</span>
+            </div>
+
+            {% set rating_labels = {'exceptional': 'Exceptional', 'very_good': 'Very Good', 'satisfactory': 'Satisfactory', 'marginal': 'Marginal', 'unsatisfactory': 'Unsatisfactory'} %}
+            {% set rating_colors = {'exceptional': '#28a745', 'very_good': '#4caf50', 'satisfactory': '#ffc107', 'marginal': '#ff9800', 'unsatisfactory': '#dc3545'} %}
+            {% set rating_pcts = {'exceptional': 100, 'very_good': 80, 'satisfactory': 60, 'marginal': 40, 'unsatisfactory': 20} %}
+
+            {% set cpars_fields = [
+                ('Quality', cpars.quality_rating),
+                ('Schedule', cpars.schedule_rating),
+                ('Cost Control', cpars.cost_rating),
+                ('Management', cpars.management_rating),
+                ('Small Business', cpars.small_business_rating),
+                ('Overall', cpars.overall_rating)
+            ] %}
+
+            {% for label, rating in cpars_fields %}
+            {% if rating %}
+            <div class="cpars-row">
+                <div class="cpars-label">{{ label }}</div>
+                <div class="cpars-bar-bg">
+                    <div class="cpars-bar" style="width:{{ rating_pcts.get(rating, 0) }}%; background:{{ rating_colors.get(rating, '#666') }};"></div>
+                </div>
+                <div class="cpars-value" style="color:{{ rating_colors.get(rating, 'inherit') }};">{{ rating_labels.get(rating, rating | replace('_', ' ') | title) }}</div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="card" style="padding:24px; text-align:center; color:var(--text-secondary, #a0a0b8);">
+            No CPARS assessments available for this contract.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Footer Note -->
+<div style="margin-top:24px; padding:12px 16px; background:var(--bg-secondary, #1a1a2e); border-radius:4px; border-left:3px solid #1a3a5c; font-size:13px; color:var(--text-secondary, #a0a0b8);">
+    This portal provides read-only access. Contact your Contracting Officer for changes.
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Tab switching
+    document.querySelectorAll(".tab-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.remove("active"); });
+            document.querySelectorAll(".tab-content").forEach(function(c) { c.style.display = "none"; c.classList.remove("active"); });
+            btn.classList.add("active");
+            var tab = document.getElementById(btn.getAttribute("data-tab"));
+            if (tab) { tab.style.display = "block"; tab.classList.add("active"); }
+        });
+    });
+});
+</script>
+{% endblock %}

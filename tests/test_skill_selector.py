@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from tools.agent.skill_selector import (
+from icdev.tools.agent.skill_selector import (
     load_config,
     match_keywords,
     detect_from_files,

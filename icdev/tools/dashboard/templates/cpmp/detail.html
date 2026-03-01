@@ -1,0 +1,578 @@
+{% extends "base.html" %}
+{% block title %}Contract Detail - ICDEV{% endblock %}
+
+{% block content %}
+<style>
+.tab-nav { display:flex; gap:0; border-bottom:2px solid var(--border-color, #2a2a4a); margin-top:20px; }
+.tab-btn { background:none; border:none; color:var(--text-secondary, #a0a0b8); padding:10px 18px; font-size:14px; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.2s, border-color 0.2s; }
+.tab-btn:hover { color:var(--text-primary, #e0e0e0); }
+.tab-btn.active { color:var(--text-primary, #e0e0e0); border-bottom-color:var(--accent-color, #4a90d9); font-weight:600; }
+.tab-panel { display:none; padding-top:16px; }
+.tab-panel.active { display:block; }
+.info-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+.info-item .label { font-size:11px; color:var(--text-secondary, #a0a0b8); text-transform:uppercase; letter-spacing:0.5px; }
+.info-item .value { font-size:14px; color:var(--text-primary, #e0e0e0); margin-top:2px; }
+.health-badge { display:inline-block; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:600; text-transform:uppercase; }
+.health-green { background:rgba(40,167,69,0.2); color:#28a745; }
+.health-yellow { background:rgba(255,193,7,0.2); color:#ffc107; }
+.health-red { background:rgba(220,53,69,0.2); color:#dc3545; }
+.funding-gauge { background:var(--bg-secondary, #1a1a2e); border-radius:6px; height:24px; overflow:hidden; position:relative; margin-top:8px; }
+.funding-gauge-fill { height:100%; border-radius:6px; transition:width 0.4s ease; }
+.funding-gauge-label { position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; color:var(--text-primary, #e0e0e0); }
+.evm-card { text-align:center; }
+.evm-card .evm-value { font-size:28px; font-weight:bold; }
+.evm-card .evm-label { font-size:11px; color:var(--text-secondary, #a0a0b8); text-transform:uppercase; margin-top:4px; }
+.status-pipeline { display:flex; align-items:center; gap:4px; margin:8px 0; }
+.status-dot { width:12px; height:12px; border-radius:50%; background:var(--bg-secondary, #1a1a2e); border:2px solid var(--border-color, #2a2a4a); }
+.status-dot.completed { background:var(--status-green, #28a745); border-color:var(--status-green, #28a745); }
+.status-dot.current { background:var(--accent-color, #4a90d9); border-color:var(--accent-color, #4a90d9); box-shadow:0 0 6px var(--accent-color, #4a90d9); }
+.status-connector { width:20px; height:2px; background:var(--border-color, #2a2a4a); }
+.status-connector.completed { background:var(--status-green, #28a745); }
+.cpars-dimension { display:flex; align-items:center; gap:8px; margin:4px 0; }
+.cpars-dimension .dim-label { width:100px; font-size:12px; color:var(--text-secondary, #a0a0b8); }
+.cpars-dimension .dim-bar { flex:1; height:8px; background:var(--bg-secondary, #1a1a2e); border-radius:4px; overflow:hidden; }
+.cpars-dimension .dim-fill { height:100%; border-radius:4px; }
+.cpars-dimension .dim-score { width:40px; text-align:right; font-size:12px; font-weight:600; }
+</style>
+
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/cpmp">CPMP Portfolio</a><span class="separator">/</span>
+    <span>{{ contract.contract_number }}</span>
+</div>
+
+<!-- Page Header -->
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+        <h1>{{ contract.contract_number }}
+            {% set health = contract.health or 'green' %}
+            <span class="health-badge health-{{ health }}">{{ health | upper }}</span>
+        </h1>
+        <p class="subtitle">{{ contract.title }}</p>
+    </div>
+</div>
+
+<!-- Info Grid -->
+<div class="card" style="padding:16px; margin-top:16px;">
+    <div class="info-grid">
+        <div class="info-item">
+            <div class="label">Contract #</div>
+            <div class="value">{{ contract.contract_number }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Agency</div>
+            <div class="value">{{ contract.agency or '---' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Type</div>
+            <div class="value">
+                {% set type_colors = {'FFP': 'success', 'T&M': 'warning', 'CPFF': 'info', 'CPIF': 'info', 'IDIQ': 'warning'} %}
+                <span class="badge badge-{{ type_colors.get(contract.contract_type, 'info') }}">{{ contract.contract_type or '---' }}</span>
+            </div>
+        </div>
+        <div class="info-item">
+            <div class="label">Status</div>
+            <div class="value">
+                {% set status_colors = {'active': 'success', 'awarded': 'success', 'pending': 'warning', 'closeout': 'warning', 'closed': 'info', 'terminated': 'error'} %}
+                <span class="badge badge-{{ status_colors.get(contract.status, 'info') }}">{{ (contract.status or 'unknown') | replace('_', ' ') | title }}</span>
+            </div>
+        </div>
+        <div class="info-item">
+            <div class="label">POP Start</div>
+            <div class="value">{{ contract.pop_start or '---' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">POP End</div>
+            <div class="value">{{ contract.pop_end or '---' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">COR Name</div>
+            <div class="value">{{ contract.cor_name or '---' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">COR Email</div>
+            <div class="value">{{ contract.cor_email or '---' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">NAICS</div>
+            <div class="value">{{ contract.naics_code or '---' }}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Total Value</div>
+            <div class="value">{% if contract.total_value %}${{ contract.total_value|round(0)|int|string }}{% else %}---{% endif %}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Funded Value</div>
+            <div class="value">{% if contract.funded_value %}${{ contract.funded_value|round(0)|int|string }}{% else %}---{% endif %}</div>
+        </div>
+        <div class="info-item">
+            <div class="label">Ceiling Value</div>
+            <div class="value">{% if contract.ceiling_value %}${{ contract.ceiling_value|round(0)|int|string }}{% else %}---{% endif %}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
+    <button class="tab-btn" onclick="switchTab('clins')">CLINs</button>
+    <button class="tab-btn" onclick="switchTab('wbs')">WBS</button>
+    <button class="tab-btn" onclick="switchTab('deliverables')">Deliverables</button>
+    <button class="tab-btn" onclick="switchTab('evm')">EVM</button>
+    <button class="tab-btn" onclick="switchTab('subcontractors')">Subcontractors</button>
+    <button class="tab-btn" onclick="switchTab('cpars')">CPARS</button>
+</div>
+
+<!-- ===================== Overview Tab ===================== -->
+<div id="tab-overview" class="tab-panel active">
+    <!-- Funding Gauge -->
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Funding Status</div>
+        {% set funded = contract.funded_value or 0 %}
+        {% set total = contract.total_value or 1 %}
+        {% set fund_pct = ((funded / total) * 100)|round(1) if total > 0 else 0 %}
+        {% set gauge_color = '#28a745' if fund_pct >= 75 else ('#ffc107' if fund_pct >= 50 else '#dc3545') %}
+        <div class="funding-gauge">
+            <div class="funding-gauge-fill" style="width:{{ fund_pct }}%; background:{{ gauge_color }};"></div>
+            <div class="funding-gauge-label">${{ funded|round(0)|int }} / ${{ total|round(0)|int }} ({{ fund_pct }}%)</div>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="stat-grid" style="margin-top:16px;">
+        <div class="stat-card">
+            <div class="stat-value">{{ clins|length }}</div>
+            <div class="stat-label">CLINs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ wbs_elements|length }}</div>
+            <div class="stat-label">WBS Elements</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ deliverables|length }}
+                {% set overdue_count = deliverables|selectattr('days_overdue', 'defined')|selectattr('days_overdue', 'gt', 0)|list|length %}
+                {% if overdue_count > 0 %}
+                <span class="text-danger" style="font-size:14px;">({{ overdue_count }} overdue)</span>
+                {% endif %}
+            </div>
+            <div class="stat-label">Deliverables</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ subcontractors|length }}</div>
+            <div class="stat-label">Subcontractors</div>
+        </div>
+    </div>
+
+    <!-- Status Timeline -->
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Contract Status Timeline</div>
+        {% set statuses = ['awarded', 'active', 'closeout', 'closed'] %}
+        {% set current_status = contract.status or 'active' %}
+        {% set current_idx = statuses.index(current_status) if current_status in statuses else 1 %}
+        <div class="status-pipeline" style="margin-top:12px; justify-content:center;">
+            {% for s in statuses %}
+                {% if not loop.first %}
+                    <div class="status-connector {% if current_idx >= loop.index0 %}completed{% endif %}"></div>
+                {% endif %}
+                <div style="text-align:center;">
+                    <div class="status-dot {% if current_idx > loop.index0 %}completed{% elif current_idx == loop.index0 %}current{% endif %}"></div>
+                    <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">{{ s|title }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- ===================== CLINs Tab ===================== -->
+<div id="tab-clins" class="tab-panel">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>CLIN #</th>
+                    <th>Description</th>
+                    <th>Type</th>
+                    <th>Total Value</th>
+                    <th>Funded</th>
+                    <th>Billed</th>
+                    <th>Remaining</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for clin in clins %}
+                <tr>
+                    <td><strong>{{ clin.clin_number }}</strong></td>
+                    <td>{{ clin.description or '---' }}</td>
+                    <td><span class="badge badge-info">{{ clin.type or '---' }}</span></td>
+                    <td>{% if clin.total_value %}${{ clin.total_value|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>{% if clin.funded_value is defined %}${{ clin.funded_value|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>{% if clin.billed_value is defined %}${{ clin.billed_value|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>
+                        {% if clin.total_value is defined and clin.billed_value is defined %}
+                            {% set remaining = (clin.total_value or 0) - (clin.billed_value or 0) %}
+                            <span class="{% if remaining < 0 %}text-danger{% endif %}">${{ remaining|round(0)|int }}</span>
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">No CLINs defined.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== WBS Tab ===================== -->
+<div id="tab-wbs" class="tab-panel">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>WBS #</th>
+                    <th>Title</th>
+                    <th>Level</th>
+                    <th>BAC</th>
+                    <th>% Complete</th>
+                    <th>CPI</th>
+                    <th>SPI</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for wbs in wbs_elements %}
+                <tr>
+                    <td><strong>{{ wbs.wbs_number }}</strong></td>
+                    <td>{{ wbs.title or '---' }}</td>
+                    <td>---</td>
+                    <td>{% if wbs.budget_at_completion %}${{ wbs.budget_at_completion|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>{% if wbs.percent_complete is not none %}{{ wbs.percent_complete|round(1) }}%{% else %}---{% endif %}</td>
+                    <td>
+                        {% set wbs_ev = wbs.ev_cumulative or 0 %}
+                        {% set wbs_ac = wbs.ac_cumulative or 0 %}
+                        {% if wbs_ac > 0 %}
+                            {% set wbs_cpi = wbs_ev / wbs_ac %}
+                            {% set cpi_color = 'text-danger' if wbs_cpi < 0.9 else ('text-warning' if wbs_cpi < 1.0 else '') %}
+                            <span class="{{ cpi_color }}">{{ wbs_cpi|round(2) }}</span>
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% set wbs_pv = wbs.pv_cumulative or 0 %}
+                        {% if wbs_pv > 0 %}
+                            {% set wbs_spi = wbs_ev / wbs_pv %}
+                            {% set spi_color = 'text-danger' if wbs_spi < 0.9 else ('text-warning' if wbs_spi < 1.0 else '') %}
+                            <span class="{{ spi_color }}">{{ wbs_spi|round(2) }}</span>
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">No WBS elements defined.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== Deliverables Tab ===================== -->
+<div id="tab-deliverables" class="tab-panel">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>CDRL #</th>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Due Date</th>
+                    <th>Status</th>
+                    <th>Days Overdue</th>
+                    <th>Generated By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in deliverables %}
+                <tr>
+                    <td><strong>{{ d.cdrl_number or '---' }}</strong></td>
+                    <td>{{ d.title or '---' }}</td>
+                    <td><span class="badge badge-info">{{ d.type or '---' }}</span></td>
+                    <td>{{ d.due_date or '---' }}</td>
+                    <td>
+                        {% set del_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft': 'warning', 'in_review': 'warning', 'submitted': 'success', 'accepted': 'success', 'rejected': 'error', 'overdue': 'error'} %}
+                        <span class="badge badge-{{ del_colors.get(d.status, 'info') }}">{{ (d.status or 'unknown') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        {% if d.days_overdue is defined and d.days_overdue > 0 %}
+                            <span class="text-danger">{{ d.days_overdue }}</span>
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                    <td>{{ d.generated_by_tool or '---' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">No deliverables defined.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Deliverable Status Pipeline -->
+    {% if deliverables|length > 0 %}
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Deliverable Status Pipeline</div>
+        {% set pipeline_statuses = ['not_started', 'in_progress', 'draft', 'in_review', 'submitted', 'accepted'] %}
+        {% for d in deliverables[:5] %}
+        {% set d_status = d.status or 'not_started' %}
+        {% set d_idx = pipeline_statuses.index(d_status) if d_status in pipeline_statuses else 0 %}
+        <div style="margin-top:12px;">
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">{{ d.cdrl_number or d.title }}</div>
+            <div class="status-pipeline">
+                {% for ps in pipeline_statuses %}
+                    {% if not loop.first %}
+                        <div class="status-connector {% if d_idx >= loop.index0 %}completed{% endif %}"></div>
+                    {% endif %}
+                    <div title="{{ ps | replace('_', ' ') | title }}" class="status-dot {% if d_idx > loop.index0 %}completed{% elif d_status == ps %}current{% endif %}"></div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- ===================== EVM Tab ===================== -->
+<div id="tab-evm" class="tab-panel">
+    <!-- EVM Indicator Cards -->
+    <div class="stat-grid" style="margin-top:16px;">
+        <div class="stat-card evm-card">
+            {% set cpi_val = evm.cpi if evm.cpi is defined else 0 %}
+            {% set cpi_color = '#dc3545' if cpi_val < 0.9 else ('#ffc107' if cpi_val < 1.0 else '#28a745') %}
+            <div class="evm-value" style="color:{{ cpi_color }};">{{ evm.cpi|round(2) if evm.cpi is defined else '---' }}</div>
+            <div class="evm-label">CPI</div>
+        </div>
+        <div class="stat-card evm-card">
+            {% set spi_val = evm.spi if evm.spi is defined else 0 %}
+            {% set spi_color = '#dc3545' if spi_val < 0.9 else ('#ffc107' if spi_val < 1.0 else '#28a745') %}
+            <div class="evm-value" style="color:{{ spi_color }};">{{ evm.spi|round(2) if evm.spi is defined else '---' }}</div>
+            <div class="evm-label">SPI</div>
+        </div>
+        <div class="stat-card evm-card">
+            <div class="evm-value">{% if evm.eac is defined %}${{ evm.eac|round(0)|int }}{% else %}---{% endif %}</div>
+            <div class="evm-label">EAC</div>
+        </div>
+        <div class="stat-card evm-card">
+            <div class="evm-value">{% if evm.etc is defined %}${{ evm.etc|round(0)|int }}{% else %}---{% endif %}</div>
+            <div class="evm-label">ETC</div>
+        </div>
+        <div class="stat-card evm-card">
+            {% set vac_val = evm.vac if evm.vac is defined else 0 %}
+            {% set vac_color = '#dc3545' if vac_val < 0 else '#28a745' %}
+            <div class="evm-value" style="color:{{ vac_color }};">{% if evm.vac is defined %}${{ evm.vac|round(0)|int }}{% else %}---{% endif %}</div>
+            <div class="evm-label">VAC</div>
+        </div>
+        <div class="stat-card evm-card">
+            {% set tcpi_val = evm.tcpi if evm.tcpi is defined else 0 %}
+            {% set tcpi_color = '#dc3545' if tcpi_val > 1.1 else ('#ffc107' if tcpi_val > 1.0 else '#28a745') %}
+            <div class="evm-value" style="color:{{ tcpi_color }};">{{ evm.tcpi|round(2) if evm.tcpi is defined else '---' }}</div>
+            <div class="evm-label">TCPI</div>
+        </div>
+    </div>
+
+    <!-- S-Curve Chart Placeholder -->
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Earned Value S-Curve</div>
+        <div id="evm-scurve-chart" data-contract-id="{{ contract.id }}" style="min-height:300px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary);">
+            S-curve chart will render here
+        </div>
+    </div>
+
+    <!-- Monte Carlo Button -->
+    <div style="margin-top:16px;">
+        <button class="btn btn-primary" onclick="runMonteCarlo('{{ contract.id }}')">Run Monte Carlo Forecast</button>
+        <span id="mc-status" style="margin-left:12px; font-size:12px; color:var(--text-secondary);"></span>
+    </div>
+</div>
+
+<!-- ===================== Subcontractors Tab ===================== -->
+<div id="tab-subcontractors" class="tab-panel">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Company</th>
+                    <th>CAGE</th>
+                    <th>UEI</th>
+                    <th>Size</th>
+                    <th>Value</th>
+                    <th>Performance Rating</th>
+                    <th>Flow-down</th>
+                    <th>Cyber Compliant</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sub in subcontractors %}
+                <tr>
+                    <td><strong>{{ sub.company_name or '---' }}</strong></td>
+                    <td>{{ sub.cage_code or '---' }}</td>
+                    <td>{{ sub.uei or '---' }}</td>
+                    <td>
+                        {% set size_colors = {'small': 'success', 'large': 'info', 'small_disadvantaged': 'warning', 'wosb': 'warning', 'hubzone': 'warning', 'sdvosb': 'warning'} %}
+                        <span class="badge badge-{{ size_colors.get(sub.business_size, 'info') }}">{{ (sub.business_size or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>{% if sub.subcontract_value is defined %}${{ sub.subcontract_value|round(0)|int }}{% else %}---{% endif %}</td>
+                    <td>
+                        {% if sub.performance_rating is defined %}
+                            {% set perf_colors = {'exceptional': 'success', 'very_good': 'success', 'satisfactory': 'info', 'marginal': 'warning', 'unsatisfactory': 'error'} %}
+                            <span class="badge badge-{{ perf_colors.get(sub.performance_rating, 'info') }}">{{ (sub.performance_rating or '---') | replace('_', ' ') | title }}</span>
+                        {% else %}
+                            ---
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if sub.flow_down_complete %}
+                            <span class="badge badge-success">Complete</span>
+                        {% else %}
+                            <span class="badge badge-error">Incomplete</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if sub.cybersecurity_compliant %}
+                            <span class="badge badge-success">Yes</span>
+                        {% else %}
+                            <span class="badge badge-error">No</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">No subcontractors defined.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== CPARS Tab ===================== -->
+<div id="tab-cpars" class="tab-panel">
+    <!-- Current Prediction -->
+    {% if cpars_prediction %}
+    <div class="card" style="padding:16px; margin-top:16px;">
+        <div class="card-label">Current CPARS Prediction</div>
+        <div style="display:flex; align-items:center; gap:24px; margin-top:12px;">
+            <div style="text-align:center;">
+                {% set rating_colors = {'exceptional': '#28a745', 'very_good': '#28a745', 'satisfactory': '#4a90d9', 'marginal': '#ffc107', 'unsatisfactory': '#dc3545'} %}
+                {% set pred_rating = cpars_prediction.predicted_rating or 'satisfactory' %}
+                <div style="font-size:32px; font-weight:bold; color:{{ rating_colors.get(pred_rating, '#4a90d9') }};">
+                    {{ pred_rating | replace('_', ' ') | title }}
+                </div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">Predicted Overall Rating</div>
+            </div>
+            <div style="flex:1;">
+                {% set dimensions = cpars_prediction.dimensions or {} %}
+                {% for dim_name in ['quality', 'schedule', 'cost', 'management', 'small_business'] %}
+                    {% set dim_score = dimensions.get(dim_name, 0) %}
+                    {% set dim_pct = (dim_score / 5 * 100)|round(0)|int if dim_score is not none else 0 %}
+                    {% set dim_color = '#dc3545' if dim_score < 2 else ('#ffc107' if dim_score < 3 else ('#4a90d9' if dim_score < 4 else '#28a745')) %}
+                    <div class="cpars-dimension">
+                        <div class="dim-label">{{ dim_name | replace('_', ' ') | title }}</div>
+                        <div class="dim-bar">
+                            <div class="dim-fill" style="width:{{ dim_pct }}%; background:{{ dim_color }};"></div>
+                        </div>
+                        <div class="dim-score" style="color:{{ dim_color }};">{{ dim_score|round(1) if dim_score is not none else '---' }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Assessment History -->
+    <div class="table-container" style="margin-top:16px;">
+        <div class="table-header"><h2>Assessment History</h2></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th>Quality</th>
+                    <th>Schedule</th>
+                    <th>Cost</th>
+                    <th>Management</th>
+                    <th>Small Business</th>
+                    <th>Overall</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in cpars_assessments %}
+                <tr>
+                    <td>{{ a.period_start or '---' }} — {{ a.period_end or '' }}</td>
+                    <td>
+                        {% set q_colors = {'exceptional': 'success', 'very_good': 'success', 'satisfactory': 'info', 'marginal': 'warning', 'unsatisfactory': 'error'} %}
+                        <span class="badge badge-{{ q_colors.get(a.quality_rating, 'info') }}">{{ (a.quality_rating or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ q_colors.get(a.schedule_rating, 'info') }}">{{ (a.schedule_rating or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ q_colors.get(a.cost_rating, 'info') }}">{{ (a.cost_rating or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ q_colors.get(a.management_rating, 'info') }}">{{ (a.management_rating or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ q_colors.get(a.small_business_rating, 'info') }}">{{ (a.small_business_rating or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        <span class="badge badge-{{ q_colors.get(a.overall_rating, 'info') }}">{{ (a.overall_rating or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                    <td>
+                        {% set as_colors = {'draft': 'warning', 'submitted': 'info', 'acknowledged': 'success', 'contested': 'error', 'final': 'success'} %}
+                        <span class="badge badge-{{ as_colors.get(a.status, 'info') }}">{{ (a.status or '---') | replace('_', ' ') | title }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">No CPARS assessments recorded.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function switchTab(tabName) {
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.style.display = 'none'; p.classList.remove('active'); });
+    document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+    var panel = document.getElementById('tab-' + tabName);
+    if (panel) { panel.style.display = 'block'; panel.classList.add('active'); }
+    event.target.classList.add('active');
+}
+
+function runMonteCarlo(contractId) {
+    var statusEl = document.getElementById('mc-status');
+    statusEl.textContent = 'Running Monte Carlo simulation...';
+    statusEl.style.color = 'var(--accent-color, #4a90d9)';
+
+    fetch('/api/cpmp/contracts/' + contractId + '/monte-carlo', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({iterations: 10000})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            statusEl.textContent = 'Error: ' + data.error;
+            statusEl.style.color = 'var(--status-red, #dc3545)';
+        } else {
+            statusEl.textContent = 'Forecast complete. P50: $' + (data.p50 || '---') + ' | P80: $' + (data.p80 || '---');
+            statusEl.style.color = 'var(--status-green, #28a745)';
+        }
+    })
+    .catch(function(err) {
+        statusEl.textContent = 'Network error: ' + err;
+        statusEl.style.color = 'var(--status-red, #dc3545)';
+    });
+}
+</script>
+{% endblock %}

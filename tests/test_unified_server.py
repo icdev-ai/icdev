@@ -21,7 +21,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.mcp.tool_registry import RESOURCE_REGISTRY, TOOL_REGISTRY
+from icdev.tools.mcp.tool_registry import RESOURCE_REGISTRY, TOOL_REGISTRY
 
 
 # ── Registry Completeness ────────────────────────────────────────
@@ -226,7 +226,7 @@ class TestGapHandlerCoverage:
                           "security_agentic", "testing", "installer", "misc"}
         for name, entry in TOOL_REGISTRY.items():
             if entry["category"] in gap_categories:
-                assert entry["module"] == "tools.mcp.gap_handlers", \
+                assert entry["module"] == "icdev.tools.mcp.gap_handlers", \
                     f"Tool '{name}' should reference gap_handlers, got {entry['module']}"
 
 
@@ -237,32 +237,32 @@ class TestUnifiedServerLifecycle:
 
     def test_server_creation(self):
         """create_server() must return a valid UnifiedMCPServer."""
-        from tools.mcp.unified_server import UnifiedMCPServer, create_server
+        from icdev.tools.mcp.unified_server import UnifiedMCPServer, create_server
         server = create_server()
         assert isinstance(server, UnifiedMCPServer)
         assert server.name == "icdev-unified"
 
     def test_server_registers_all_tools(self):
         """Server must register all tools from the registry."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
         assert len(server._tools) == len(TOOL_REGISTRY)
 
     def test_server_registers_all_resources(self):
         """Server must register all 6 resources."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
         assert len(server._resources) == 6
 
     def test_handler_cache_empty_at_startup(self):
         """No handlers should be imported at startup (lazy loading)."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
         assert len(server._handler_cache) == 0
 
     def test_resolve_handler_caches(self):
         """Calling _resolve_handler twice should return same object."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
         entry = TOOL_REGISTRY["project_list"]
         h1 = server._resolve_handler("project_list", entry)
@@ -272,7 +272,7 @@ class TestUnifiedServerLifecycle:
 
     def test_resolve_handler_stub_on_bad_module(self):
         """Bad module path should return a graceful stub handler."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
         bad_entry = {
             "module": "nonexistent.module",
@@ -285,7 +285,7 @@ class TestUnifiedServerLifecycle:
 
     def test_lazy_tool_handler_calls_through(self):
         """Calling a registered tool handler should lazy-load and invoke the real handler."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
 
         # Find the lazy handler for project_list
@@ -294,7 +294,7 @@ class TestUnifiedServerLifecycle:
         handler = tool_entry["handler"]
 
         # Patch the real handler to verify it gets called
-        with patch("tools.mcp.core_server.handle_project_list") as mock_fn:
+        with patch("icdev.tools.mcp.core_server.handle_project_list") as mock_fn:
             mock_fn.return_value = {"projects": [], "count": 0}
             result = handler({})
             mock_fn.assert_called_once_with({})
@@ -302,7 +302,7 @@ class TestUnifiedServerLifecycle:
 
     def test_tools_list_response_format(self):
         """Simulated tools/list should return properly formatted tool list."""
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         server = create_server()
         tools_list = []
         for name, entry in server._tools.items():
@@ -324,7 +324,7 @@ class TestModulePathValidation:
         existing_modules = set()
         for entry in TOOL_REGISTRY.values():
             mod = entry["module"]
-            if mod != "tools.mcp.gap_handlers":
+            if mod != "icdev.tools.mcp.gap_handlers":
                 existing_modules.add(mod)
         for mod_path in existing_modules:
             try:
@@ -334,11 +334,11 @@ class TestModulePathValidation:
 
     def test_gap_handlers_module_exists(self):
         """gap_handlers module should be importable."""
-        import tools.mcp.gap_handlers  # noqa: F401
+        import icdev.tools.mcp.gap_handlers  # noqa: F401
 
     def test_gap_handler_functions_exist(self):
         """All referenced handler functions must exist in gap_handlers."""
-        import tools.mcp.gap_handlers as gh
+        import icdev.tools.mcp.gap_handlers as gh
         gap_categories = {"translation", "dx", "cloud", "registry",
                           "security_agentic", "testing", "installer", "misc"}
         for name, entry in TOOL_REGISTRY.items():
@@ -355,13 +355,13 @@ class TestRepresentativeToolCalls:
 
     @pytest.fixture
     def server(self):
-        from tools.mcp.unified_server import create_server
+        from icdev.tools.mcp.unified_server import create_server
         return create_server()
 
     def test_core_project_list(self, server):
         """Core: project_list should return without error."""
         handler = server._tools["project_list"]["handler"]
-        with patch("tools.mcp.core_server.handle_project_list",
+        with patch("icdev.tools.mcp.core_server.handle_project_list",
                     return_value={"projects": [], "count": 0}):
             result = handler({})
             assert "projects" in result
@@ -369,7 +369,7 @@ class TestRepresentativeToolCalls:
     def test_compliance_nist_lookup(self, server):
         """Compliance: nist_lookup should return without error."""
         handler = server._tools["nist_lookup"]["handler"]
-        with patch("tools.mcp.compliance_server.handle_nist_lookup",
+        with patch("icdev.tools.mcp.compliance_server.handle_nist_lookup",
                     return_value={"control": "AC-2", "title": "Account Management"}):
             result = handler({"control_id": "AC-2"})
             assert "control" in result
@@ -377,7 +377,7 @@ class TestRepresentativeToolCalls:
     def test_gateway_status(self, server):
         """Gateway: gateway_status should return without error."""
         handler = server._tools["gateway_status"]["handler"]
-        with patch("tools.mcp.gateway_server.handle_gateway_status",
+        with patch("icdev.tools.mcp.gateway_server.handle_gateway_status",
                     return_value={"environment_mode": "connected", "channels": []}):
             result = handler({})
             assert "environment_mode" in result
@@ -385,7 +385,7 @@ class TestRepresentativeToolCalls:
     def test_context_list_sections(self, server):
         """Context: list_sections should return without error."""
         handler = server._tools["list_sections"]["handler"]
-        with patch("tools.mcp.context_server.handle_list_sections",
+        with patch("icdev.tools.mcp.context_server.handle_list_sections",
                     return_value={"sections": [], "total": 0}):
             result = handler({})
             assert "sections" in result
@@ -393,7 +393,7 @@ class TestRepresentativeToolCalls:
     def test_innovation_get_status(self, server):
         """Innovation: get_status should return without error."""
         handler = server._tools["get_status"]["handler"]
-        with patch("tools.mcp.innovation_server.handle_get_status",
+        with patch("icdev.tools.mcp.innovation_server.handle_get_status",
                     return_value={"signals": 0, "status": "idle"}):
             result = handler({})
             assert "status" in result
@@ -401,7 +401,7 @@ class TestRepresentativeToolCalls:
     def test_observability_trace_summary(self, server):
         """Observability: trace_summary should return without error."""
         handler = server._tools["trace_summary"]["handler"]
-        with patch("tools.mcp.observability_server.trace_summary_handler",
+        with patch("icdev.tools.mcp.observability_server.trace_summary_handler",
                     return_value={"total_spans": 0, "total_traces": 0}):
             result = handler({})
             assert "total_spans" in result

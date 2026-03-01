@@ -1,0 +1,149 @@
+{
+  "_comment": "CUI // SP-CTI — Cross-language type system mappings (D253). Used by type_checker.py.",
+  "version": "1.0.0",
+  "primitives": {
+    "python": {
+      "int": {"java": "int", "go": "int", "rust": "i64", "csharp": "int", "typescript": "number"},
+      "float": {"java": "double", "go": "float64", "rust": "f64", "csharp": "double", "typescript": "number"},
+      "str": {"java": "String", "go": "string", "rust": "String", "csharp": "string", "typescript": "string"},
+      "bool": {"java": "boolean", "go": "bool", "rust": "bool", "csharp": "bool", "typescript": "boolean"},
+      "bytes": {"java": "byte[]", "go": "[]byte", "rust": "Vec<u8>", "csharp": "byte[]", "typescript": "Buffer"},
+      "None": {"java": "void", "go": "", "rust": "()", "csharp": "void", "typescript": "void"},
+      "complex": {"java": "Complex", "go": "complex128", "rust": "num::Complex<f64>", "csharp": "System.Numerics.Complex", "typescript": "number"}
+    },
+    "java": {
+      "int": {"python": "int", "go": "int32", "rust": "i32", "csharp": "int", "typescript": "number"},
+      "long": {"python": "int", "go": "int64", "rust": "i64", "csharp": "long", "typescript": "number"},
+      "short": {"python": "int", "go": "int16", "rust": "i16", "csharp": "short", "typescript": "number"},
+      "byte": {"python": "int", "go": "byte", "rust": "u8", "csharp": "byte", "typescript": "number"},
+      "float": {"python": "float", "go": "float32", "rust": "f32", "csharp": "float", "typescript": "number"},
+      "double": {"python": "float", "go": "float64", "rust": "f64", "csharp": "double", "typescript": "number"},
+      "char": {"python": "str", "go": "rune", "rust": "char", "csharp": "char", "typescript": "string"},
+      "boolean": {"python": "bool", "go": "bool", "rust": "bool", "csharp": "bool", "typescript": "boolean"},
+      "String": {"python": "str", "go": "string", "rust": "String", "csharp": "string", "typescript": "string"},
+      "void": {"python": "None", "go": "", "rust": "()", "csharp": "void", "typescript": "void"}
+    },
+    "go": {
+      "int": {"python": "int", "java": "long", "rust": "isize", "csharp": "long", "typescript": "number"},
+      "int8": {"python": "int", "java": "byte", "rust": "i8", "csharp": "sbyte", "typescript": "number"},
+      "int16": {"python": "int", "java": "short", "rust": "i16", "csharp": "short", "typescript": "number"},
+      "int32": {"python": "int", "java": "int", "rust": "i32", "csharp": "int", "typescript": "number"},
+      "int64": {"python": "int", "java": "long", "rust": "i64", "csharp": "long", "typescript": "number"},
+      "float32": {"python": "float", "java": "float", "rust": "f32", "csharp": "float", "typescript": "number"},
+      "float64": {"python": "float", "java": "double", "rust": "f64", "csharp": "double", "typescript": "number"},
+      "string": {"python": "str", "java": "String", "rust": "String", "csharp": "string", "typescript": "string"},
+      "bool": {"python": "bool", "java": "boolean", "rust": "bool", "csharp": "bool", "typescript": "boolean"},
+      "byte": {"python": "int", "java": "byte", "rust": "u8", "csharp": "byte", "typescript": "number"},
+      "rune": {"python": "str", "java": "char", "rust": "char", "csharp": "char", "typescript": "string"},
+      "error": {"python": "Exception", "java": "Exception", "rust": "Box<dyn Error>", "csharp": "Exception", "typescript": "Error"}
+    },
+    "rust": {
+      "i8": {"python": "int", "java": "byte", "go": "int8", "csharp": "sbyte", "typescript": "number"},
+      "i16": {"python": "int", "java": "short", "go": "int16", "csharp": "short", "typescript": "number"},
+      "i32": {"python": "int", "java": "int", "go": "int32", "csharp": "int", "typescript": "number"},
+      "i64": {"python": "int", "java": "long", "go": "int64", "csharp": "long", "typescript": "number"},
+      "u8": {"python": "int", "java": "byte", "go": "byte", "csharp": "byte", "typescript": "number"},
+      "u16": {"python": "int", "java": "int", "go": "uint16", "csharp": "ushort", "typescript": "number"},
+      "u32": {"python": "int", "java": "long", "go": "uint32", "csharp": "uint", "typescript": "number"},
+      "u64": {"python": "int", "java": "long", "go": "uint64", "csharp": "ulong", "typescript": "number"},
+      "f32": {"python": "float", "java": "float", "go": "float32", "csharp": "float", "typescript": "number"},
+      "f64": {"python": "float", "java": "double", "go": "float64", "csharp": "double", "typescript": "number"},
+      "bool": {"python": "bool", "java": "boolean", "go": "bool", "csharp": "bool", "typescript": "boolean"},
+      "char": {"python": "str", "java": "char", "go": "rune", "csharp": "char", "typescript": "string"},
+      "String": {"python": "str", "java": "String", "go": "string", "csharp": "string", "typescript": "string"},
+      "&str": {"python": "str", "java": "String", "go": "string", "csharp": "string", "typescript": "string"}
+    },
+    "csharp": {
+      "int": {"python": "int", "java": "int", "go": "int32", "rust": "i32", "typescript": "number"},
+      "long": {"python": "int", "java": "long", "go": "int64", "rust": "i64", "typescript": "number"},
+      "short": {"python": "int", "java": "short", "go": "int16", "rust": "i16", "typescript": "number"},
+      "byte": {"python": "int", "java": "byte", "go": "byte", "rust": "u8", "typescript": "number"},
+      "float": {"python": "float", "java": "float", "go": "float32", "rust": "f32", "typescript": "number"},
+      "double": {"python": "float", "java": "double", "go": "float64", "rust": "f64", "typescript": "number"},
+      "decimal": {"python": "Decimal", "java": "BigDecimal", "go": "big.Float", "rust": "rust_decimal::Decimal", "typescript": "number"},
+      "char": {"python": "str", "java": "char", "go": "rune", "rust": "char", "typescript": "string"},
+      "bool": {"python": "bool", "java": "boolean", "go": "bool", "rust": "bool", "typescript": "boolean"},
+      "string": {"python": "str", "java": "String", "go": "string", "rust": "String", "typescript": "string"},
+      "void": {"python": "None", "java": "void", "go": "", "rust": "()", "typescript": "void"},
+      "object": {"python": "object", "java": "Object", "go": "interface{}", "rust": "Box<dyn Any>", "typescript": "any"}
+    },
+    "typescript": {
+      "number": {"python": "float", "java": "double", "go": "float64", "rust": "f64", "csharp": "double"},
+      "string": {"python": "str", "java": "String", "go": "string", "rust": "String", "csharp": "string"},
+      "boolean": {"python": "bool", "java": "boolean", "go": "bool", "rust": "bool", "csharp": "bool"},
+      "void": {"python": "None", "java": "void", "go": "", "rust": "()", "csharp": "void"},
+      "any": {"python": "Any", "java": "Object", "go": "interface{}", "rust": "Box<dyn Any>", "csharp": "object"},
+      "null": {"python": "None", "java": "null", "go": "nil", "rust": "None", "csharp": "null"},
+      "undefined": {"python": "None", "java": "null", "go": "nil", "rust": "None", "csharp": "null"}
+    }
+  },
+  "collections": {
+    "python": {
+      "list": {"java": "List", "go": "[]", "rust": "Vec", "csharp": "List", "typescript": "Array"},
+      "dict": {"java": "Map", "go": "map", "rust": "HashMap", "csharp": "Dictionary", "typescript": "Record"},
+      "set": {"java": "Set", "go": "map[K]struct{}", "rust": "HashSet", "csharp": "HashSet", "typescript": "Set"},
+      "tuple": {"java": "record", "go": "struct", "rust": "tuple", "csharp": "ValueTuple", "typescript": "tuple"},
+      "deque": {"java": "ArrayDeque", "go": "container/list", "rust": "VecDeque", "csharp": "Queue", "typescript": "Array"}
+    },
+    "java": {
+      "List": {"python": "list", "go": "[]", "rust": "Vec", "csharp": "List", "typescript": "Array"},
+      "Map": {"python": "dict", "go": "map", "rust": "HashMap", "csharp": "Dictionary", "typescript": "Map"},
+      "Set": {"python": "set", "go": "map[K]struct{}", "rust": "HashSet", "csharp": "HashSet", "typescript": "Set"},
+      "Queue": {"python": "collections.deque", "go": "container/list", "rust": "VecDeque", "csharp": "Queue", "typescript": "Array"}
+    }
+  },
+  "nullable": {
+    "python": "Optional[T]",
+    "java": "Optional<T>",
+    "go": "*T",
+    "rust": "Option<T>",
+    "csharp": "T?",
+    "typescript": "T | null | undefined"
+  },
+  "error_handling": {
+    "python": "try/except",
+    "java": "try/catch",
+    "go": "(value, error)",
+    "rust": "Result<T, E>",
+    "csharp": "try/catch",
+    "typescript": "try/catch"
+  },
+  "type_system_warnings": {
+    "python_to_rust": [
+      "Python is dynamically typed; Rust requires explicit types with ownership semantics.",
+      "Python None -> Rust Option<T>. Every nullable value must be wrapped in Option.",
+      "Python mutable-by-default -> Rust immutable-by-default. Use mut keyword explicitly."
+    ],
+    "python_to_go": [
+      "Python exceptions -> Go (value, error) returns. Every fallible function must return error.",
+      "Python classes -> Go structs + interfaces. Use composition, not inheritance."
+    ],
+    "python_to_java": [
+      "Python dynamic typing -> Java static typing. All types must be explicit.",
+      "Python duck typing -> Java interfaces. Define interfaces for polymorphism."
+    ],
+    "java_to_rust": [
+      "Java null references -> Rust Option<T>. No null in Rust.",
+      "Java GC -> Rust ownership/borrowing. Memory managed at compile time.",
+      "Java class hierarchy -> Rust traits + generics."
+    ],
+    "java_to_go": [
+      "Java class hierarchy -> Go interfaces (implicit) + struct embedding.",
+      "Java checked exceptions -> Go (value, error) multi-return."
+    ],
+    "go_to_rust": [
+      "Go goroutines -> Rust async/await or std::thread with ownership transfer.",
+      "Go channels -> Rust mpsc channels.",
+      "Go error returns -> Rust Result<T, E>. Use ? operator."
+    ],
+    "csharp_to_java": [
+      "C# properties -> Java getters/setters.",
+      "C# LINQ -> Java Stream API.",
+      "C# async/await -> Java CompletableFuture."
+    ],
+    "typescript_to_python": [
+      "TypeScript interfaces -> Python Protocol or ABC.",
+      "TypeScript generics -> Python TypeVar/Generic."
+    ]
+  }
+}

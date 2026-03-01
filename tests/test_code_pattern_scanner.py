@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from tools.security.code_pattern_scanner import CodePatternScanner, EXTENSION_MAP, SKIP_DIRS
+from icdev.tools.security.code_pattern_scanner import CodePatternScanner, EXTENSION_MAP, SKIP_DIRS
 
 
 @pytest.fixture

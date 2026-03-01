@@ -81,11 +81,11 @@ def evo_db(tmp_path):
 # ============================================================
 class TestGenomeManager:
     def test_import(self):
-        from tools.registry.genome_manager import GenomeManager
+        from icdev.tools.registry.genome_manager import GenomeManager
         assert GenomeManager is not None
 
     def test_create_version(self, evo_db):
-        from tools.registry.genome_manager import GenomeManager
+        from icdev.tools.registry.genome_manager import GenomeManager
         gm = GenomeManager(db_path=evo_db)
         result = gm.create_version(
             genome_data={"capabilities": ["prompt_injection_defense", "ai_telemetry"]},
@@ -97,7 +97,7 @@ class TestGenomeManager:
         assert "content_hash" in result
 
     def test_get_current(self, evo_db):
-        from tools.registry.genome_manager import GenomeManager
+        from icdev.tools.registry.genome_manager import GenomeManager
         gm = GenomeManager(db_path=evo_db)
         gm.create_version(genome_data={"capabilities": ["cap1"]}, created_by="test")
         current = gm.get_current()
@@ -105,7 +105,7 @@ class TestGenomeManager:
         assert "capabilities" in json.loads(current["genome_data"]) if isinstance(current["genome_data"], str) else current["genome_data"]
 
     def test_version_history(self, evo_db):
-        from tools.registry.genome_manager import GenomeManager
+        from icdev.tools.registry.genome_manager import GenomeManager
         gm = GenomeManager(db_path=evo_db)
         gm.create_version(genome_data={"v": 1}, created_by="test")
         gm.create_version(genome_data={"v": 2}, created_by="test")
@@ -113,7 +113,7 @@ class TestGenomeManager:
         assert len(history) >= 2
 
     def test_verify_integrity(self, evo_db):
-        from tools.registry.genome_manager import GenomeManager
+        from icdev.tools.registry.genome_manager import GenomeManager
         gm = GenomeManager(db_path=evo_db)
         v = gm.create_version(genome_data={"test": True}, created_by="test")
         result = gm.verify_integrity(version_id=v["id"])
@@ -125,11 +125,11 @@ class TestGenomeManager:
 # ============================================================
 class TestCapabilityEvaluator:
     def test_import(self):
-        from tools.registry.capability_evaluator import CapabilityEvaluator
+        from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         assert CapabilityEvaluator is not None
 
     def test_evaluate_high_score(self, evo_db):
-        from tools.registry.capability_evaluator import CapabilityEvaluator
+        from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         ce = CapabilityEvaluator(db_path=evo_db)
         result = ce.evaluate({
             "name": "security_compliance_capability",
@@ -150,7 +150,7 @@ class TestCapabilityEvaluator:
         assert result["score"] >= 0.7
 
     def test_evaluate_low_score(self, evo_db):
-        from tools.registry.capability_evaluator import CapabilityEvaluator
+        from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         ce = CapabilityEvaluator(db_path=evo_db)
         result = ce.evaluate({
             "name": "weak_capability",
@@ -170,7 +170,7 @@ class TestCapabilityEvaluator:
         assert result["score"] < 0.5
 
     def test_outcome_determination(self, evo_db):
-        from tools.registry.capability_evaluator import CapabilityEvaluator
+        from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         ce = CapabilityEvaluator(db_path=evo_db)
         result = ce.evaluate({
             "name": "mid_capability",
@@ -184,7 +184,7 @@ class TestCapabilityEvaluator:
         assert result["outcome"] in ("auto_queue", "recommend", "log", "archive")
 
     def test_dimensions_returned(self, evo_db):
-        from tools.registry.capability_evaluator import CapabilityEvaluator
+        from icdev.tools.registry.capability_evaluator import CapabilityEvaluator
         ce = CapabilityEvaluator(db_path=evo_db)
         result = ce.evaluate({"name": "test"})
         assert "dimensions" in result
@@ -195,11 +195,11 @@ class TestCapabilityEvaluator:
 # ============================================================
 class TestStagingManager:
     def test_import(self):
-        from tools.registry.staging_manager import StagingManager
+        from icdev.tools.registry.staging_manager import StagingManager
         assert StagingManager is not None
 
     def test_list_empty(self, evo_db):
-        from tools.registry.staging_manager import StagingManager
+        from icdev.tools.registry.staging_manager import StagingManager
         sm = StagingManager(db_path=evo_db)
         result = sm.list_staging()
         assert isinstance(result, list)
@@ -211,18 +211,18 @@ class TestStagingManager:
 # ============================================================
 class TestPropagationManager:
     def test_import(self):
-        from tools.registry.propagation_manager import PropagationManager
+        from icdev.tools.registry.propagation_manager import PropagationManager
         assert PropagationManager is not None
 
     def test_list_empty(self, evo_db):
-        from tools.registry.propagation_manager import PropagationManager
+        from icdev.tools.registry.propagation_manager import PropagationManager
         pm = PropagationManager(db_path=evo_db)
         result = pm.list_propagations()
         assert isinstance(result, list)
         assert len(result) == 0
 
     def test_prepare_propagation(self, evo_db):
-        from tools.registry.propagation_manager import PropagationManager
+        from icdev.tools.registry.propagation_manager import PropagationManager
         pm = PropagationManager(db_path=evo_db)
         # Register a child first
         conn = sqlite3.connect(str(evo_db))
@@ -244,7 +244,7 @@ class TestPropagationManager:
 
     def test_hitl_required(self, evo_db):
         """Verify propagation cannot execute without approval (HITL)."""
-        from tools.registry.propagation_manager import PropagationManager
+        from icdev.tools.registry.propagation_manager import PropagationManager
         pm = PropagationManager(db_path=evo_db)
         # Try to execute without preparing/approving
         result = pm.execute_propagation("nonexistent-id")
@@ -259,15 +259,15 @@ class TestMarketplaceGate8:
     """Gate 8: Prompt Injection Scan."""
 
     def test_gate_in_all_gates(self):
-        from tools.marketplace.asset_scanner import ALL_GATES
+        from icdev.tools.marketplace.asset_scanner import ALL_GATES
         assert "prompt_injection_scan" in ALL_GATES
 
     def test_gate_is_blocking(self):
-        from tools.marketplace.asset_scanner import BLOCKING_GATES
+        from icdev.tools.marketplace.asset_scanner import BLOCKING_GATES
         assert "prompt_injection_scan" in BLOCKING_GATES
 
     def test_scan_clean_asset(self, tmp_path, evo_db):
-        from tools.marketplace.asset_scanner import scan_prompt_injection
+        from icdev.tools.marketplace.asset_scanner import scan_prompt_injection
         # Create clean asset
         asset_dir = tmp_path / "clean_asset"
         asset_dir.mkdir()
@@ -280,7 +280,7 @@ class TestMarketplaceGate8:
         assert result["status"] == "pass"
 
     def test_scan_malicious_asset(self, tmp_path, evo_db):
-        from tools.marketplace.asset_scanner import scan_prompt_injection
+        from icdev.tools.marketplace.asset_scanner import scan_prompt_injection
         # Create asset with injection attempts
         asset_dir = tmp_path / "bad_asset"
         asset_dir.mkdir()
@@ -299,17 +299,17 @@ class TestMarketplaceGate9:
     """Gate 9: Behavioral Sandbox."""
 
     def test_gate_in_all_gates(self):
-        from tools.marketplace.asset_scanner import ALL_GATES
+        from icdev.tools.marketplace.asset_scanner import ALL_GATES
         assert "behavioral_sandbox" in ALL_GATES
 
     def test_gate_is_not_blocking(self):
         """Behavioral sandbox is a warning gate, not blocking."""
-        from tools.marketplace.asset_scanner import BLOCKING_GATES
+        from icdev.tools.marketplace.asset_scanner import BLOCKING_GATES
         # behavioral_sandbox should NOT be in BLOCKING_GATES
         assert "behavioral_sandbox" not in BLOCKING_GATES
 
     def test_scan_safe_asset(self, tmp_path, evo_db):
-        from tools.marketplace.asset_scanner import scan_behavioral_sandbox
+        from icdev.tools.marketplace.asset_scanner import scan_behavioral_sandbox
         asset_dir = tmp_path / "safe_asset"
         asset_dir.mkdir()
         (asset_dir / "main.py").write_text(
@@ -322,7 +322,7 @@ class TestMarketplaceGate9:
         assert result["status"] == "pass"
 
     def test_detect_dangerous_patterns(self, tmp_path, evo_db):
-        from tools.marketplace.asset_scanner import scan_behavioral_sandbox
+        from icdev.tools.marketplace.asset_scanner import scan_behavioral_sandbox
         asset_dir = tmp_path / "danger_asset"
         asset_dir.mkdir()
         (asset_dir / "exploit.py").write_text(
@@ -344,7 +344,7 @@ class TestMarketplaceGate9:
 # ============================================================
 class TestTerraformDispatcher:
     def test_detect_csp_default(self):
-        from tools.infra.terraform_generator import _detect_csp
+        from icdev.tools.infra.terraform_generator import _detect_csp
         # Without env var or config, should default to aws
         old = os.environ.pop("ICDEV_CLOUD_PROVIDER", None)
         try:
@@ -355,7 +355,7 @@ class TestTerraformDispatcher:
                 os.environ["ICDEV_CLOUD_PROVIDER"] = old
 
     def test_detect_csp_from_env(self):
-        from tools.infra.terraform_generator import _detect_csp
+        from icdev.tools.infra.terraform_generator import _detect_csp
         os.environ["ICDEV_CLOUD_PROVIDER"] = "azure"
         try:
             assert _detect_csp() == "azure"
@@ -364,7 +364,7 @@ class TestTerraformDispatcher:
 
     def test_generate_for_csp_aws(self, tmp_path):
         """generate_for_csp should delegate to AWS generator. Skipped: pre-existing Jinja2 var bug."""
-        from tools.infra.terraform_generator import generate_for_csp
+        from icdev.tools.infra.terraform_generator import generate_for_csp
         try:
             files = generate_for_csp(str(tmp_path), {"project_name": "test", "environment": "dev", "db_name": "testdb"}, csp="aws")
             assert len(files) > 0

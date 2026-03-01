@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 try:
-    from tools.infra.terraform_generator import (
+    from icdev.tools.infra.terraform_generator import (
         generate_base,
         generate_rds,
         generate_ecr,
@@ -46,7 +46,7 @@ def _fallback_render(template_str: str, ctx: dict) -> str:
 
 
 _RENDER_PATCH = patch(
-    "tools.infra.terraform_generator._render",
+    "icdev.tools.infra.terraform_generator._render",
     side_effect=_fallback_render,
 )
 

@@ -35,7 +35,7 @@ class TestCreateProfile:
 
     def test_create_from_explicit_data(self, icdev_db):
         """Creating a profile with explicit data stores it correctly."""
-        from tools.builder.dev_profile_manager import create_profile, get_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, get_profile
 
         result = create_profile(
             scope="tenant",
@@ -57,7 +57,7 @@ class TestCreateProfile:
 
     def test_create_from_template(self, icdev_db):
         """Creating a profile from a template loads defaults."""
-        from tools.builder.dev_profile_manager import create_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile
 
         result = create_profile(
             scope="tenant",
@@ -73,7 +73,7 @@ class TestCreateProfile:
 
     def test_create_version_increment(self, icdev_db):
         """Creating a second profile increments the version."""
-        from tools.builder.dev_profile_manager import create_profile, get_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, get_profile
 
         create_profile(
             scope="project", scope_id="proj-1",
@@ -95,7 +95,7 @@ class TestCreateProfile:
 
     def test_create_invalid_scope(self, icdev_db):
         """Creating with an invalid scope returns an error."""
-        from tools.builder.dev_profile_manager import create_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile
 
         result = create_profile(
             scope="invalid", scope_id="test",
@@ -105,7 +105,7 @@ class TestCreateProfile:
 
     def test_create_missing_template(self, icdev_db):
         """Creating from a non-existent template returns an error."""
-        from tools.builder.dev_profile_manager import create_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile
 
         result = create_profile(
             scope="tenant", scope_id="t1",
@@ -123,7 +123,7 @@ class TestGetProfile:
 
     def test_get_current(self, icdev_db):
         """Get returns the current active version."""
-        from tools.builder.dev_profile_manager import create_profile, get_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, get_profile
 
         create_profile(
             scope="project", scope_id="proj-get",
@@ -137,7 +137,7 @@ class TestGetProfile:
 
     def test_get_specific_version(self, icdev_db):
         """Get with version number returns that specific version."""
-        from tools.builder.dev_profile_manager import create_profile, get_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, get_profile
 
         create_profile(
             scope="project", scope_id="proj-ver",
@@ -158,7 +158,7 @@ class TestGetProfile:
 
     def test_get_nonexistent(self, icdev_db):
         """Get for a non-existent profile returns an error."""
-        from tools.builder.dev_profile_manager import get_profile
+        from icdev.tools.builder.dev_profile_manager import get_profile
 
         result = get_profile("project", "no-such-project", db_path=icdev_db)
         assert "error" in result
@@ -172,7 +172,7 @@ class TestResolveProfile:
 
     def test_single_scope(self, icdev_db):
         """Resolve with a single platform profile returns it."""
-        from tools.builder.dev_profile_manager import create_profile, resolve_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, resolve_profile
 
         create_profile(
             scope="platform", scope_id="default",
@@ -187,7 +187,7 @@ class TestResolveProfile:
 
     def test_two_layer_override(self, icdev_db):
         """Project profile overrides platform for override dimensions."""
-        from tools.builder.dev_profile_manager import create_profile, resolve_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, resolve_profile
 
         # Platform defaults
         create_profile(
@@ -219,7 +219,7 @@ class TestResolveProfile:
 
     def test_provenance_tracking(self, icdev_db):
         """Provenance shows which scope set each dimension."""
-        from tools.builder.dev_profile_manager import create_profile, resolve_profile
+        from icdev.tools.builder.dev_profile_manager import create_profile, resolve_profile
 
         create_profile(
             scope="platform", scope_id="default",
@@ -234,7 +234,7 @@ class TestResolveProfile:
 
     def test_empty_resolve(self, icdev_db):
         """Resolve with no profiles returns empty resolved dict."""
-        from tools.builder.dev_profile_manager import resolve_profile
+        from icdev.tools.builder.dev_profile_manager import resolve_profile
 
         result = resolve_profile("project", "nonexistent", db_path=icdev_db)
         assert result["status"] == "resolved"
@@ -249,7 +249,7 @@ class TestLockDimension:
 
     def test_lock_by_isso(self, icdev_db):
         """ISSO can lock the security dimension."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, lock_dimension,
         )
 
@@ -270,7 +270,7 @@ class TestLockDimension:
 
     def test_lock_prevents_override(self, icdev_db):
         """Locked dimension prevents update at same scope."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, lock_dimension, update_profile,
         )
 
@@ -297,7 +297,7 @@ class TestLockDimension:
 
     def test_unlock_requires_role(self, icdev_db):
         """Unlock requires matching role or admin."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, lock_dimension, unlock_dimension,
         )
 
@@ -331,7 +331,7 @@ class TestLockDimension:
 
     def test_duplicate_lock(self, icdev_db):
         """Locking an already-locked dimension returns error."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, lock_dimension,
         )
 
@@ -363,7 +363,7 @@ class TestVersioning:
 
     def test_diff_between_versions(self, icdev_db):
         """Diff shows changes between two versions."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, diff_versions,
         )
 
@@ -383,7 +383,7 @@ class TestVersioning:
 
     def test_rollback_creates_new_version(self, icdev_db):
         """Rollback creates a new version (not revert)."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, get_profile, rollback_to_version,
         )
 
@@ -409,7 +409,7 @@ class TestVersioning:
 
     def test_history(self, icdev_db):
         """History returns all versions."""
-        from tools.builder.dev_profile_manager import (
+        from icdev.tools.builder.dev_profile_manager import (
             create_profile, get_profile_history,
         )
 
@@ -437,10 +437,10 @@ class TestDetection:
 
     def test_detect_python_signals(self):
         """Text with Python keywords detects language dimension."""
-        from tools.requirements.intake_engine import _detect_dev_profile_signals
+        from icdev.tools.requirements.intake_engine import _detect_dev_profile_signals
 
         # Patch the import so we test the inline fallback
-        with patch.dict("sys.modules", {"tools.builder.profile_detector": None}):
+        with patch.dict("sys.modules", {"icdev.tools.builder.profile_detector": None}):
             result = _detect_dev_profile_signals(
                 "We use Python 3.12 with Flask and pytest for TDD. "
                 "Our code follows snake_case naming."
@@ -452,9 +452,9 @@ class TestDetection:
 
     def test_detect_dod_template_suggestion(self):
         """DoD keywords suggest dod_baseline template."""
-        from tools.requirements.intake_engine import _detect_dev_profile_signals
+        from icdev.tools.requirements.intake_engine import _detect_dev_profile_signals
 
-        with patch.dict("sys.modules", {"tools.builder.profile_detector": None}):
+        with patch.dict("sys.modules", {"icdev.tools.builder.profile_detector": None}):
             result = _detect_dev_profile_signals(
                 "This is a Department of Defense project at IL5 with CMMC Level 2 and STIG requirements."
             )
@@ -464,9 +464,9 @@ class TestDetection:
 
     def test_detect_no_signals(self):
         """Generic text produces no detection."""
-        from tools.requirements.intake_engine import _detect_dev_profile_signals
+        from icdev.tools.requirements.intake_engine import _detect_dev_profile_signals
 
-        with patch.dict("sys.modules", {"tools.builder.profile_detector": None}):
+        with patch.dict("sys.modules", {"icdev.tools.builder.profile_detector": None}):
             result = _detect_dev_profile_signals("Hello, I would like to build an app.")
 
         assert result["profile_detected"] is False
@@ -474,7 +474,7 @@ class TestDetection:
 
     def test_detect_via_profile_detector(self):
         """When profile_detector is available, returns normalized shape."""
-        from tools.requirements.intake_engine import _detect_dev_profile_signals
+        from icdev.tools.requirements.intake_engine import _detect_dev_profile_signals
 
         result = _detect_dev_profile_signals(
             "We use Python with snake_case naming convention"
@@ -494,7 +494,7 @@ class TestInjection:
 
     def test_inject_for_code_generation(self, icdev_db):
         """Injection for code_generation returns relevant dimensions."""
-        from tools.builder.dev_profile_manager import create_profile, inject_for_task
+        from icdev.tools.builder.dev_profile_manager import create_profile, inject_for_task
 
         create_profile(
             scope="platform", scope_id="default",
@@ -524,14 +524,14 @@ class TestInjection:
 
     def test_inject_empty_profile(self, icdev_db):
         """Injection with no profile returns empty string."""
-        from tools.builder.dev_profile_manager import inject_for_task
+        from icdev.tools.builder.dev_profile_manager import inject_for_task
 
         text = inject_for_task("nonexistent-project", "code_generation", db_path=icdev_db)
         assert text == ""
 
     def test_inject_unknown_task_type(self, icdev_db):
         """Injection with unknown task type returns empty string."""
-        from tools.builder.dev_profile_manager import inject_for_task
+        from icdev.tools.builder.dev_profile_manager import inject_for_task
 
         text = inject_for_task("anything", "unknown_task", db_path=icdev_db)
         assert text == ""
@@ -545,7 +545,7 @@ class TestProfileMdGeneration:
 
     def test_generate_from_resolved(self):
         """Generator produces PROFILE.md from resolved profile data."""
-        from tools.builder.profile_md_generator import generate_profile_md
+        from icdev.tools.builder.profile_md_generator import generate_profile_md
 
         resolved_profile = {
             "status": "resolved",
@@ -577,14 +577,14 @@ class TestProfileMdGeneration:
 
     def test_generate_error_profile(self):
         """Generator handles error profile gracefully."""
-        from tools.builder.profile_md_generator import generate_profile_md
+        from icdev.tools.builder.profile_md_generator import generate_profile_md
 
         md = generate_profile_md({"error": "No profile found"})
         assert "Error" in md
 
     def test_generate_empty_profile(self):
         """Generator handles empty resolved profile."""
-        from tools.builder.profile_md_generator import generate_profile_md
+        from icdev.tools.builder.profile_md_generator import generate_profile_md
 
         md = generate_profile_md({
             "status": "resolved",
@@ -607,7 +607,7 @@ class TestMergeBehaviors:
 
     def test_deep_merge(self):
         """Deep merge combines nested dicts correctly."""
-        from tools.builder.dev_profile_manager import _deep_merge
+        from icdev.tools.builder.dev_profile_manager import _deep_merge
 
         base = {"a": {"x": 1, "y": 2}, "b": 3}
         override = {"a": {"y": 5, "z": 6}, "c": 7}
@@ -621,21 +621,21 @@ class TestMergeBehaviors:
 
     def test_pick_stricter_numeric(self):
         """Stricter numeric: higher value wins."""
-        from tools.builder.dev_profile_manager import _pick_stricter
+        from icdev.tools.builder.dev_profile_manager import _pick_stricter
 
         assert _pick_stricter(80, 90) == 90
         assert _pick_stricter(90, 80) == 90
 
     def test_pick_stricter_duration(self):
         """Stricter duration: shorter SLA wins."""
-        from tools.builder.dev_profile_manager import _pick_stricter
+        from icdev.tools.builder.dev_profile_manager import _pick_stricter
 
         assert _pick_stricter("48h", "24h") == "24h"
         assert _pick_stricter("7d", "14d") == "7d"
 
     def test_merge_dimension_union(self):
         """Union merge combines lists without duplicates."""
-        from tools.builder.dev_profile_manager import _merge_dimension
+        from icdev.tools.builder.dev_profile_manager import _merge_dimension
 
         parent = ["nist_800_53", "fedramp_moderate"]
         child = ["fedramp_moderate", "cmmc_level_2"]

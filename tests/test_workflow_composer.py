@@ -68,7 +68,7 @@ class TestTemplates:
             assert "description" in data, f"Template {f.name} missing description"
 
     def test_no_circular_dependencies(self):
-        from tools.orchestration.workflow_composer import _resolve_dag
+        from icdev.tools.orchestration.workflow_composer import _resolve_dag
         for f in TEMPLATE_DIR.glob("*.yaml"):
             data = yaml.safe_load(f.read_text(encoding="utf-8"))
             # Should not raise CycleError
@@ -84,7 +84,7 @@ class TestWorkflowComposer:
     """Test workflow composition logic."""
 
     def test_list_templates(self):
-        from tools.orchestration.workflow_composer import list_templates
+        from icdev.tools.orchestration.workflow_composer import list_templates
         templates = list_templates()
         assert len(templates) >= 4
         names = [t["name"] for t in templates]
@@ -92,7 +92,7 @@ class TestWorkflowComposer:
         assert "security_hardening" in names
 
     def test_compose_workflow(self):
-        from tools.orchestration.workflow_composer import compose_workflow
+        from icdev.tools.orchestration.workflow_composer import compose_workflow
         plan = compose_workflow("ato_acceleration", "proj-test")
         assert plan["template"] == "ato_acceleration"
         assert plan["project_id"] == "proj-test"
@@ -101,7 +101,7 @@ class TestWorkflowComposer:
         assert plan["workflow_id"].startswith("wf-")
 
     def test_compose_respects_dag_order(self):
-        from tools.orchestration.workflow_composer import compose_workflow
+        from icdev.tools.orchestration.workflow_composer import compose_workflow
         plan = compose_workflow("ato_acceleration", "proj-test")
         step_ids = [s["id"] for s in plan["steps"]]
         # categorize must come before assess
@@ -110,14 +110,14 @@ class TestWorkflowComposer:
         assert step_ids.index("assess") < step_ids.index("ssp")
 
     def test_compose_with_overrides(self):
-        from tools.orchestration.workflow_composer import compose_workflow
+        from icdev.tools.orchestration.workflow_composer import compose_workflow
         overrides = {"categorize": {"method": "cnssi_1253"}}
         plan = compose_workflow("ato_acceleration", "proj-test", overrides=overrides)
         cat_step = next(s for s in plan["steps"] if s["id"] == "categorize")
         assert "--method" in " ".join(cat_step["command"])
 
     def test_execute_dry_run(self):
-        from tools.orchestration.workflow_composer import compose_workflow, execute_workflow
+        from icdev.tools.orchestration.workflow_composer import compose_workflow, execute_workflow
         plan = compose_workflow("ato_acceleration", "proj-test")
         result = execute_workflow(plan, dry_run=True)
         assert result["dry_run"] is True
@@ -126,7 +126,7 @@ class TestWorkflowComposer:
             assert step["status"] == "dry_run"
 
     def test_missing_template_raises(self):
-        from tools.orchestration.workflow_composer import compose_workflow
+        from icdev.tools.orchestration.workflow_composer import compose_workflow
         with pytest.raises(FileNotFoundError):
             compose_workflow("nonexistent_template", "proj-test")
 
@@ -139,7 +139,7 @@ class TestDAGResolution:
     """Test topological sort and DAG handling."""
 
     def test_simple_dag(self):
-        from tools.orchestration.workflow_composer import _resolve_dag
+        from icdev.tools.orchestration.workflow_composer import _resolve_dag
         steps = [
             {"id": "a", "depends_on": []},
             {"id": "b", "depends_on": ["a"]},
@@ -150,7 +150,7 @@ class TestDAGResolution:
         assert order.index("b") < order.index("c")
 
     def test_parallel_dag(self):
-        from tools.orchestration.workflow_composer import _resolve_dag
+        from icdev.tools.orchestration.workflow_composer import _resolve_dag
         steps = [
             {"id": "a"},
             {"id": "b"},
@@ -162,7 +162,7 @@ class TestDAGResolution:
 
     def test_cycle_detection(self):
         from graphlib import CycleError
-        from tools.orchestration.workflow_composer import _resolve_dag
+        from icdev.tools.orchestration.workflow_composer import _resolve_dag
         steps = [
             {"id": "a", "depends_on": ["c"]},
             {"id": "b", "depends_on": ["a"]},

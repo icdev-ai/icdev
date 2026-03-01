@@ -1,0 +1,50 @@
+{
+  "name": "ICDEV Modernization",
+  "description": "Application modernization — legacy analysis, 7R assessment, migration planning, code generation, compliance bridge.",
+  "url": "https://localhost:8452",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "analyze-legacy",
+      "name": "Analyze Legacy Application",
+      "description": "Static analysis of legacy codebases — components, dependencies, APIs, frameworks, complexity.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "assess-seven-r",
+      "name": "7R Assessment",
+      "description": "Score all 7 Rs with weighted decision matrix and recommend migration strategy.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "create-migration-plan",
+      "name": "Create Migration Plan",
+      "description": "Strangler fig planning with bounded context detection and service boundary suggestion.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "generate-migration-code",
+      "name": "Generate Migration Code",
+      "description": "Generate adapters, facades, service scaffolds, DAL, tests, and rollback scripts.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "check-compliance-bridge",
+      "name": "Check Compliance Bridge",
+      "description": "ATO-aware migration — control inheritance, distribution, gap analysis, coverage validation.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

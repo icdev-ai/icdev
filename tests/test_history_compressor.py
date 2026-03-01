@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from tools.memory.history_compressor import (
+from icdev.tools.memory.history_compressor import (
     HistoryCompressor,
     TopicBoundary,
     DEFAULT_BUDGET,

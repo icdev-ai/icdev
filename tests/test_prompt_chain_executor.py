@@ -27,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.agent.prompt_chain_executor import (
+from icdev.tools.agent.prompt_chain_executor import (
     AGENT_FUNCTION_MAP,
     VALID_AGENTS,
     ChainDefinition,
@@ -470,7 +470,7 @@ class TestDryRun:
 class TestChainExecution:
     """Test full chain execution with mocked LLM."""
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_simple_chain_completes(self, mock_get_router, executor, mock_llm_response):
         """Two-step chain completes successfully."""
         mock_router = MagicMock()
@@ -490,7 +490,7 @@ class TestChainExecution:
         assert result.final_output == "Step 2 output"
         assert result.final_output_hash == _sha256("Step 2 output")
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_three_step_chain_with_refs(self, mock_get_router, executor, mock_llm_response):
         """Three-step chain with $STEP{} references executes correctly."""
         # Reload executor with three_step_chain
@@ -515,7 +515,7 @@ class TestChainExecution:
         assert "review" in result.step_results
         assert "refine" in result.step_results
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_step_failure_aborts_chain(self, mock_get_router, executor, mock_llm_response):
         """If a step fails, the chain aborts with 'failed' status."""
         mock_router = MagicMock()
@@ -535,7 +535,7 @@ class TestChainExecution:
         assert result.step_results["step_one"].status == "completed"
         assert result.step_results["step_two"].status == "failed"
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_first_step_failure(self, mock_get_router, executor, mock_llm_response):
         """If the first step fails, chain aborts with 0 steps completed."""
         mock_router = MagicMock()
@@ -555,7 +555,7 @@ class TestChainExecution:
         with pytest.raises(ValueError, match="not found"):
             executor.execute_chain("nonexistent", "input")
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_execution_id_format(self, mock_get_router, executor, mock_llm_response):
         """Execution ID starts with 'pce-' prefix."""
         mock_router = MagicMock()
@@ -567,7 +567,7 @@ class TestChainExecution:
         )
         assert result.id.startswith("pce-")
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_token_tracking(self, mock_get_router, executor, mock_llm_response):
         """Total tokens are accumulated across steps."""
         mock_router = MagicMock()
@@ -583,7 +583,7 @@ class TestChainExecution:
 
         assert result.total_tokens_used == 100 + 50 + 200 + 75
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_step_duration_tracked(self, mock_get_router, executor, mock_llm_response):
         """Each step has a non-negative duration_ms."""
         mock_router = MagicMock()
@@ -597,7 +597,7 @@ class TestChainExecution:
         step = result.step_results["only_step"]
         assert step.duration_ms >= 0
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_total_duration_tracked(self, mock_get_router, executor, mock_llm_response):
         """Total chain duration is tracked."""
         mock_router = MagicMock()
@@ -618,7 +618,7 @@ class TestChainExecution:
 class TestDBStorage:
     """Test database persistence of execution results."""
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_execution_persisted(self, mock_get_router, executor, db_path, mock_llm_response):
         """Completed execution is stored in the database."""
         mock_router = MagicMock()
@@ -645,7 +645,7 @@ class TestDBStorage:
         assert row["steps_total"] == 1
         assert row["project_id"] == "proj-test"
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_step_results_stored_as_json(self, mock_get_router, executor, db_path, mock_llm_response):
         """Step results are stored as valid JSON."""
         mock_router = MagicMock()
@@ -668,7 +668,7 @@ class TestDBStorage:
         assert parsed["only_step"]["agent"] == "builder"
         assert parsed["only_step"]["status"] == "completed"
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_failed_execution_persisted(self, mock_get_router, executor, db_path, mock_llm_response):
         """Failed execution is also stored in the database."""
         mock_router = MagicMock()
@@ -713,7 +713,7 @@ class TestDBStorage:
 class TestHistory:
     """Test execution history retrieval."""
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_get_history(self, mock_get_router, executor, mock_llm_response):
         """History returns completed executions."""
         mock_router = MagicMock()
@@ -726,7 +726,7 @@ class TestHistory:
         history = executor.get_history(project_id="proj-1")
         assert len(history) == 2
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_history_filter_by_chain(self, mock_get_router, executor, mock_llm_response):
         """History can be filtered by chain name."""
         mock_router = MagicMock()
@@ -739,7 +739,7 @@ class TestHistory:
         assert len(history) >= 1
         assert all(h["chain_name"] == "single_step_chain" for h in history)
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_history_limit(self, mock_get_router, executor, mock_llm_response):
         """History respects the limit parameter."""
         mock_router = MagicMock()
@@ -752,7 +752,7 @@ class TestHistory:
         history = executor.get_history(limit=3)
         assert len(history) == 3
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_get_execution_by_id(self, mock_get_router, executor, mock_llm_response):
         """Retrieve a specific execution by ID."""
         mock_router = MagicMock()
@@ -839,8 +839,8 @@ class TestAgentMapping:
 class TestAuditTrail:
     """Test audit trail recording during chain execution."""
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
-    @patch("tools.agent.prompt_chain_executor._audit")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor._audit")
     def test_audit_on_chain_start(self, mock_audit, mock_get_router, executor, mock_llm_response):
         """Audit event is logged when chain starts."""
         mock_router = MagicMock()
@@ -857,8 +857,8 @@ class TestAuditTrail:
         ]
         assert len(start_calls) >= 1
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
-    @patch("tools.agent.prompt_chain_executor._audit")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor._audit")
     def test_audit_on_chain_complete(self, mock_audit, mock_get_router, executor, mock_llm_response):
         """Audit event is logged when chain completes."""
         mock_router = MagicMock()
@@ -874,8 +874,8 @@ class TestAuditTrail:
         ]
         assert len(completed_calls) >= 1
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
-    @patch("tools.agent.prompt_chain_executor._audit")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor._audit")
     def test_audit_on_step_complete(self, mock_audit, mock_get_router, executor, mock_llm_response):
         """Audit event is logged for each step completion."""
         mock_router = MagicMock()
@@ -936,7 +936,7 @@ class TestDataClasses:
 class TestEdgeCases:
     """Test edge cases and boundary conditions."""
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_empty_llm_response(self, mock_get_router, executor, mock_llm_response):
         """Empty LLM response content is handled gracefully."""
         mock_router = MagicMock()
@@ -955,7 +955,7 @@ class TestEdgeCases:
         with pytest.raises(ValueError, match="validation failed"):
             executor.execute_chain("bad_agent_chain", "test")
 
-    @patch("tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
+    @patch("icdev.tools.agent.prompt_chain_executor.PromptChainExecutor._get_llm_router")
     def test_input_hash_consistency(self, mock_get_router, executor, mock_llm_response):
         """Same input produces same hash across executions."""
         mock_router = MagicMock()

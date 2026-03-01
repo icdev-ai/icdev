@@ -535,12 +535,766 @@ MBSE_TABLES: Dict[str, str] = {
 
 
 # ============================================================
+# D-CHILD-1: RICOAS TABLES
+# ============================================================
+
+RICOAS_TABLES: Dict[str, str] = {
+    "intake_sessions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS intake_sessions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT REFERENCES projects(id),
+            customer_name TEXT NOT NULL,
+            customer_org TEXT,
+            session_status TEXT DEFAULT 'active'
+                CHECK(session_status IN ('active', 'paused', 'completed', 'abandoned', 'approved')),
+            classification TEXT DEFAULT 'CUI',
+            impact_level TEXT DEFAULT 'IL5'
+                CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+            readiness_score REAL DEFAULT 0.0,
+            readiness_breakdown TEXT,
+            gap_count INTEGER DEFAULT 0,
+            ambiguity_count INTEGER DEFAULT 0,
+            total_requirements INTEGER DEFAULT 0,
+            decomposed_count INTEGER DEFAULT 0,
+            context_summary TEXT,
+            source_documents TEXT,
+            resumed_from TEXT REFERENCES intake_sessions(id),
+            created_by TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "intake_requirements": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS intake_requirements (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+            project_id TEXT REFERENCES projects(id),
+            source_turn INTEGER,
+            raw_text TEXT NOT NULL,
+            refined_text TEXT,
+            requirement_type TEXT DEFAULT 'functional'
+                CHECK(requirement_type IN ('functional', 'non_functional', 'interface',
+                    'security', 'performance', 'compliance', 'data', 'constraint',
+                    'operational', 'transitional')),
+            priority TEXT DEFAULT 'medium'
+                CHECK(priority IN ('critical', 'high', 'medium', 'low')),
+            status TEXT DEFAULT 'draft'
+                CHECK(status IN ('draft', 'clarified', 'validated', 'approved', 'rejected',
+                    'decomposed', 'deferred')),
+            clarity_score REAL DEFAULT 0.0,
+            completeness_score REAL DEFAULT 0.0,
+            testability_score REAL DEFAULT 0.0,
+            feasibility_score REAL DEFAULT 0.0,
+            compliance_impact TEXT,
+            gaps TEXT,
+            ambiguities TEXT,
+            acceptance_criteria TEXT,
+            source_document TEXT,
+            source_section TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "safe_decomposition": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS safe_decomposition (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+            project_id TEXT REFERENCES projects(id),
+            parent_id TEXT REFERENCES safe_decomposition(id),
+            level TEXT NOT NULL
+                CHECK(level IN ('epic', 'capability', 'feature', 'story', 'enabler')),
+            title TEXT NOT NULL,
+            description TEXT,
+            acceptance_criteria TEXT,
+            story_points INTEGER,
+            t_shirt_size TEXT CHECK(t_shirt_size IN ('XS', 'S', 'M', 'L', 'XL', 'XXL')),
+            pi_target TEXT,
+            team TEXT,
+            wsjf_score REAL,
+            source_requirement_ids TEXT,
+            nist_controls TEXT,
+            ato_impact_tier TEXT CHECK(ato_impact_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+            status TEXT DEFAULT 'draft'
+                CHECK(status IN ('draft', 'refined', 'approved', 'committed', 'in_progress', 'done', 'rejected')),
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "readiness_scores": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS readiness_scores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+            turn_number INTEGER,
+            overall_score REAL NOT NULL,
+            completeness REAL NOT NULL,
+            clarity REAL NOT NULL,
+            feasibility REAL NOT NULL,
+            compliance REAL NOT NULL,
+            testability REAL NOT NULL,
+            gap_count INTEGER DEFAULT 0,
+            ambiguity_count INTEGER DEFAULT 0,
+            requirement_count INTEGER DEFAULT 0,
+            scored_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ato_system_registry": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ato_system_registry (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            system_name TEXT NOT NULL,
+            system_acronym TEXT,
+            ato_type TEXT CHECK(ato_type IN ('ato', 'iato', 'dato', 'cato')),
+            ato_date TEXT,
+            ato_expiry TEXT,
+            authorizing_official TEXT,
+            accreditation_boundary TEXT,
+            impact_level TEXT CHECK(impact_level IN ('IL2', 'IL4', 'IL5', 'IL6')),
+            data_types TEXT,
+            interconnections TEXT,
+            baseline_controls TEXT,
+            component_inventory TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(project_id, system_name)
+        );"""),
+
+    "boundary_impact_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS boundary_impact_assessments (
+            id TEXT PRIMARY KEY,
+            session_id TEXT REFERENCES intake_sessions(id),
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            system_id TEXT NOT NULL REFERENCES ato_system_registry(id),
+            requirement_id TEXT REFERENCES intake_requirements(id),
+            impact_tier TEXT NOT NULL CHECK(impact_tier IN ('GREEN', 'YELLOW', 'ORANGE', 'RED')),
+            impact_category TEXT NOT NULL,
+            impact_description TEXT NOT NULL,
+            affected_controls TEXT,
+            affected_components TEXT,
+            remediation_required TEXT,
+            alternative_approach TEXT,
+            risk_score REAL DEFAULT 0.0,
+            assessed_by TEXT DEFAULT 'icdev-requirements-analyst',
+            assessed_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "supply_chain_vendors": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS supply_chain_vendors (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            vendor_name TEXT NOT NULL,
+            vendor_type TEXT CHECK(vendor_type IN ('cots', 'gots', 'oss', 'saas', 'paas', 'iaas', 'contractor', 'subcontractor')),
+            country_of_origin TEXT,
+            scrm_risk_tier TEXT CHECK(scrm_risk_tier IN ('low', 'moderate', 'high', 'critical')),
+            section_889_status TEXT CHECK(section_889_status IN ('compliant', 'under_review', 'prohibited', 'exempt')),
+            dod_approved INTEGER DEFAULT 0,
+            contact_info TEXT,
+            isa_required INTEGER DEFAULT 0,
+            last_assessed TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(project_id, vendor_name)
+        );"""),
+
+    "supply_chain_dependencies": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS supply_chain_dependencies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            source_type TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            target_type TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            dependency_type TEXT NOT NULL,
+            criticality TEXT DEFAULT 'medium'
+                CHECK(criticality IN ('critical', 'high', 'medium', 'low')),
+            isa_id TEXT,
+            metadata TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "isa_agreements": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS isa_agreements (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            agreement_type TEXT NOT NULL CHECK(agreement_type IN ('isa', 'mou', 'moa', 'sla', 'ila')),
+            partner_system TEXT NOT NULL,
+            partner_org TEXT,
+            status TEXT DEFAULT 'draft'
+                CHECK(status IN ('draft', 'review', 'signed', 'active', 'expiring', 'expired', 'terminated')),
+            signed_date TEXT,
+            expiry_date TEXT,
+            data_types_shared TEXT,
+            ports_protocols TEXT,
+            security_controls TEXT,
+            poc_name TEXT,
+            poc_email TEXT,
+            review_cadence_days INTEGER DEFAULT 365,
+            next_review_date TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "scrm_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS scrm_assessments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            vendor_id TEXT REFERENCES supply_chain_vendors(id),
+            package_name TEXT,
+            assessment_type TEXT NOT NULL
+                CHECK(assessment_type IN ('vendor', 'component', 'aggregate', 'supply_chain_event')),
+            risk_score REAL DEFAULT 0.0,
+            likelihood TEXT CHECK(likelihood IN ('very_low', 'low', 'moderate', 'high', 'very_high')),
+            impact TEXT CHECK(impact IN ('very_low', 'low', 'moderate', 'high', 'very_high')),
+            mitigations TEXT,
+            residual_risk TEXT CHECK(residual_risk IN ('low', 'moderate', 'high', 'critical')),
+            assessed_by TEXT DEFAULT 'icdev-supply-chain-agent',
+            assessed_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "cve_triage": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS cve_triage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            cve_id TEXT NOT NULL,
+            package_name TEXT NOT NULL,
+            package_version TEXT,
+            severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+            cvss_score REAL,
+            triage_decision TEXT CHECK(triage_decision IN ('remediate', 'mitigate', 'accept_risk', 'defer', 'false_positive', 'not_applicable')),
+            triage_rationale TEXT,
+            sla_deadline TEXT,
+            triaged_by TEXT,
+            triaged_at TEXT DEFAULT (datetime('now')),
+            remediated_at TEXT,
+            UNIQUE(project_id, cve_id, package_name)
+        );"""),
+
+    "simulation_scenarios": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS simulation_scenarios (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            session_id TEXT REFERENCES intake_sessions(id),
+            scenario_name TEXT NOT NULL,
+            scenario_type TEXT DEFAULT 'what_if'
+                CHECK(scenario_type IN ('what_if', 'trade_study', 'risk_analysis', 'optimization', 'baseline')),
+            modifications TEXT,
+            status TEXT DEFAULT 'draft'
+                CHECK(status IN ('draft', 'running', 'completed', 'failed', 'archived')),
+            results TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "coa_records": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS coa_records (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES intake_sessions(id),
+            project_id TEXT REFERENCES projects(id),
+            coa_type TEXT NOT NULL
+                CHECK(coa_type IN ('speed', 'balanced', 'comprehensive', 'alternative')),
+            title TEXT NOT NULL,
+            description TEXT,
+            scope TEXT,
+            estimated_pis TEXT,
+            estimated_cost TEXT,
+            risk_level TEXT CHECK(risk_level IN ('low', 'moderate', 'high', 'very_high')),
+            simulation_results TEXT,
+            selected INTEGER DEFAULT 0,
+            selected_by TEXT,
+            selection_rationale TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+}
+
+
+# ============================================================
+# D-CHILD-1: AI SECURITY TABLES
+# ============================================================
+
+AI_SECURITY_TABLES: Dict[str, str] = {
+    "prompt_injection_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS prompt_injection_log (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            text_hash TEXT NOT NULL,
+            detected INTEGER NOT NULL DEFAULT 0,
+            confidence REAL DEFAULT 0.0,
+            action TEXT CHECK(action IN ('allow', 'warn', 'flag', 'block')),
+            findings TEXT,
+            project_id TEXT,
+            user_id TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_telemetry": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_telemetry (
+            id TEXT PRIMARY KEY,
+            model_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            prompt_hash TEXT NOT NULL,
+            response_hash TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            latency_ms INTEGER DEFAULT 0,
+            agent_id TEXT,
+            user_id TEXT,
+            project_id TEXT,
+            function TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_bom": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_bom (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            model_id TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            version TEXT,
+            purpose TEXT,
+            risk_classification TEXT,
+            data_categories TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );"""),
+
+    "atlas_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS atlas_assessments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            framework_version TEXT DEFAULT 'v5.4.0',
+            overall_score REAL,
+            total_requirements INTEGER DEFAULT 0,
+            satisfied INTEGER DEFAULT 0,
+            partial INTEGER DEFAULT 0,
+            not_satisfied INTEGER DEFAULT 0,
+            not_applicable INTEGER DEFAULT 0,
+            results_json TEXT,
+            assessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            assessed_by TEXT DEFAULT 'automated',
+            classification TEXT DEFAULT 'CUI'
+        );"""),
+
+    "atlas_red_team_results": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS atlas_red_team_results (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            technique_id TEXT NOT NULL,
+            technique_name TEXT,
+            test_name TEXT NOT NULL,
+            result TEXT CHECK(result IN ('pass', 'fail', 'partial', 'error')),
+            severity TEXT CHECK(severity IN ('critical', 'high', 'medium', 'low', 'info')),
+            details TEXT,
+            evidence TEXT,
+            remediation TEXT,
+            tested_at TEXT NOT NULL DEFAULT (datetime('now')),
+            tested_by TEXT DEFAULT 'automated'
+        );"""),
+
+    "owasp_llm_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS owasp_llm_assessments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            framework_version TEXT DEFAULT 'v2025',
+            overall_score REAL,
+            total_requirements INTEGER DEFAULT 0,
+            satisfied INTEGER DEFAULT 0,
+            partial INTEGER DEFAULT 0,
+            not_satisfied INTEGER DEFAULT 0,
+            not_applicable INTEGER DEFAULT 0,
+            results_json TEXT,
+            assessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+            assessed_by TEXT DEFAULT 'automated',
+            classification TEXT DEFAULT 'CUI'
+        );"""),
+}
+
+
+# ============================================================
+# D-CHILD-1: AI GOVERNANCE TABLES
+# ============================================================
+
+AI_GOVERNANCE_TABLES: Dict[str, str] = {
+    "model_cards": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS model_cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            model_name TEXT NOT NULL,
+            card_data TEXT NOT NULL,
+            card_hash TEXT,
+            version INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(project_id, model_name, version)
+        );"""),
+
+    "system_cards": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS system_cards (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            card_data TEXT NOT NULL,
+            card_hash TEXT,
+            version INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_use_case_inventory": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_use_case_inventory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            purpose TEXT,
+            risk_level TEXT DEFAULT 'minimal_risk'
+                CHECK(risk_level IN ('minimal_risk', 'high_impact', 'safety_impacting')),
+            classification TEXT DEFAULT 'CUI',
+            deployment_status TEXT DEFAULT 'development',
+            responsible_official TEXT,
+            oversight_role TEXT,
+            last_assessed TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(project_id, name)
+        );"""),
+
+    "fairness_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS fairness_assessments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            assessment_data TEXT NOT NULL,
+            overall_score REAL DEFAULT 0.0,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_oversight_plans": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_oversight_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            plan_name TEXT NOT NULL,
+            plan_data TEXT NOT NULL,
+            approval_status TEXT DEFAULT 'draft'
+                CHECK(approval_status IN ('draft', 'submitted', 'approved', 'rejected')),
+            approved_by TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_caio_registry": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_caio_registry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            official_name TEXT NOT NULL,
+            official_role TEXT NOT NULL DEFAULT 'CAIO',
+            organization TEXT,
+            designation_date TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_incident_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_incident_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            incident_type TEXT NOT NULL,
+            ai_system TEXT,
+            severity TEXT DEFAULT 'medium'
+                CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+            description TEXT NOT NULL,
+            corrective_action TEXT,
+            status TEXT DEFAULT 'open'
+                CHECK(status IN ('open', 'investigating', 'mitigated', 'resolved', 'closed')),
+            reported_by TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_ethics_reviews": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_ethics_reviews (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            review_type TEXT NOT NULL,
+            ai_system TEXT,
+            findings TEXT,
+            opt_out_policy INTEGER DEFAULT 0,
+            legal_compliance_matrix INTEGER DEFAULT 0,
+            pre_deployment_review INTEGER DEFAULT 0,
+            reviewer TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "ai_reassessment_schedule": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ai_reassessment_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            ai_system TEXT NOT NULL,
+            frequency TEXT NOT NULL DEFAULT 'annual'
+                CHECK(frequency IN ('quarterly', 'semi_annual', 'annual', 'biennial')),
+            next_due TEXT,
+            last_completed TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            UNIQUE(project_id, ai_system)
+        );"""),
+}
+
+
+# ============================================================
+# D-CHILD-1: OBSERVABILITY & XAI TABLES
+# ============================================================
+
+OBSERVABILITY_TABLES: Dict[str, str] = {
+    "otel_spans": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS otel_spans (
+            id TEXT PRIMARY KEY,
+            trace_id TEXT NOT NULL,
+            parent_span_id TEXT,
+            name TEXT NOT NULL,
+            kind TEXT DEFAULT 'INTERNAL',
+            start_time TEXT NOT NULL,
+            end_time TEXT,
+            duration_ms INTEGER DEFAULT 0,
+            status_code TEXT DEFAULT 'UNSET',
+            status_message TEXT,
+            attributes TEXT,
+            events TEXT,
+            agent_id TEXT,
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "prov_entities": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS prov_entities (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            label TEXT,
+            content_hash TEXT,
+            content TEXT,
+            attributes TEXT,
+            trace_id TEXT,
+            span_id TEXT,
+            agent_id TEXT,
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "prov_activities": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS prov_activities (
+            id TEXT PRIMARY KEY,
+            activity_type TEXT NOT NULL,
+            label TEXT,
+            start_time TEXT,
+            end_time TEXT,
+            attributes TEXT,
+            trace_id TEXT,
+            span_id TEXT,
+            agent_id TEXT,
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "prov_relations": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS prov_relations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            relation_type TEXT NOT NULL,
+            subject_id TEXT NOT NULL,
+            object_id TEXT NOT NULL,
+            attributes TEXT,
+            trace_id TEXT,
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "shap_attributions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS shap_attributions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trace_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            shapley_value REAL NOT NULL,
+            coalition_size INTEGER,
+            confidence_low REAL,
+            confidence_high REAL,
+            outcome_metric TEXT DEFAULT 'success',
+            outcome_value REAL,
+            analysis_params TEXT,
+            agent_id TEXT,
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "xai_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS xai_assessments (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            assessment_date TEXT NOT NULL,
+            overall_status TEXT NOT NULL DEFAULT 'not_assessed',
+            overall_score REAL DEFAULT 0.0,
+            checks_json TEXT,
+            findings_json TEXT,
+            recommendations_json TEXT,
+            framework_crosswalk TEXT,
+            assessor_version TEXT,
+            agent_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
+# D-CHILD-1: CODE INTELLIGENCE TABLES
+# ============================================================
+
+CODE_INTELLIGENCE_TABLES: Dict[str, str] = {
+    "code_quality_metrics": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS code_quality_metrics (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            file_path TEXT NOT NULL,
+            function_name TEXT,
+            class_name TEXT,
+            language TEXT NOT NULL,
+            cyclomatic_complexity INTEGER DEFAULT 0,
+            cognitive_complexity INTEGER DEFAULT 0,
+            loc INTEGER DEFAULT 0,
+            loc_code INTEGER DEFAULT 0,
+            loc_comment INTEGER DEFAULT 0,
+            parameter_count INTEGER DEFAULT 0,
+            nesting_depth INTEGER DEFAULT 0,
+            import_count INTEGER DEFAULT 0,
+            class_count INTEGER DEFAULT 0,
+            function_count INTEGER DEFAULT 0,
+            smells_json TEXT DEFAULT '[]',
+            smell_count INTEGER DEFAULT 0,
+            maintainability_score REAL DEFAULT 0.0,
+            content_hash TEXT,
+            scan_id TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+
+    "runtime_feedback": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS runtime_feedback (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            source_file TEXT NOT NULL,
+            source_function TEXT,
+            test_file TEXT,
+            test_function TEXT,
+            test_passed INTEGER,
+            test_duration_ms REAL,
+            error_type TEXT,
+            error_message TEXT,
+            coverage_pct REAL,
+            run_id TEXT,
+            created_at TEXT DEFAULT (datetime('now'))
+        );"""),
+}
+
+
+# ============================================================
+# D-CHILD-1: DEVSECOPS/ZTA TABLES
+# ============================================================
+
+DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
+    "devsecops_profiles": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS devsecops_profiles (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            maturity_level TEXT CHECK(maturity_level IN (
+                'level_1_initial', 'level_2_managed', 'level_3_defined',
+                'level_4_measured', 'level_5_optimized'
+            )),
+            active_stages TEXT,
+            stage_configs TEXT,
+            detected_at TEXT,
+            confirmed_by TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id)
+        );"""),
+
+    "zta_maturity_scores": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS zta_maturity_scores (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            pillar TEXT NOT NULL CHECK(pillar IN (
+                'user_identity', 'device', 'network', 'application_workload',
+                'data', 'visibility_analytics', 'automation_orchestration', 'overall'
+            )),
+            score REAL CHECK(score >= 0.0 AND score <= 1.0),
+            maturity_level TEXT CHECK(maturity_level IN ('traditional', 'advanced', 'optimal')),
+            evidence TEXT,
+            assessed_by TEXT DEFAULT 'icdev-devsecops-agent',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "zta_posture_evidence": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS zta_posture_evidence (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id),
+            evidence_type TEXT NOT NULL,
+            evidence_data TEXT,
+            status TEXT CHECK(status IN ('current', 'stale', 'expired', 'not_collected')),
+            collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP
+        );"""),
+
+    "nist_800_207_assessments": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS nist_800_207_assessments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            assessment_date TEXT,
+            assessor TEXT DEFAULT 'icdev-devsecops-agent',
+            requirement_id TEXT NOT NULL,
+            requirement_title TEXT,
+            family TEXT,
+            status TEXT DEFAULT 'not_assessed' CHECK(status IN (
+                'not_assessed', 'satisfied', 'partially_satisfied',
+                'not_satisfied', 'not_applicable', 'risk_accepted'
+            )),
+            evidence_description TEXT,
+            nist_800_53_crosswalk TEXT,
+            automation_result TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(project_id, requirement_id)
+        );"""),
+
+    "devsecops_pipeline_audit": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS devsecops_pipeline_audit (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            pipeline_run_id TEXT,
+            stage TEXT NOT NULL,
+            tool TEXT NOT NULL,
+            status TEXT CHECK(status IN ('passed', 'failed', 'skipped', 'warning')),
+            findings_count INTEGER DEFAULT 0,
+            findings_data TEXT,
+            duration_seconds REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
 # CAPABILITY → TABLE GROUP MAPPING
 # ============================================================
 
 CAPABILITY_TABLE_MAP: Dict[str, Dict[str, str]] = {
     "compliance": COMPLIANCE_TABLES,
     "mbse": MBSE_TABLES,
+    # D-CHILD-1: Enterprise capability table groups
+    "ricoas": RICOAS_TABLES,
+    "supply_chain": RICOAS_TABLES,  # Supply chain uses RICOAS tables (shared schema)
+    "simulation": RICOAS_TABLES,  # Simulation uses RICOAS tables (shared schema)
+    "ai_security": AI_SECURITY_TABLES,
+    "ai_governance": AI_GOVERNANCE_TABLES,
+    "observability": OBSERVABILITY_TABLES,
+    "code_intelligence": CODE_INTELLIGENCE_TABLES,
+    "devsecops_zta": DEVSECOPS_ZTA_TABLES,
 }
 
 

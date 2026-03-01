@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.security.agent_output_validator import AgentOutputValidator
+from icdev.tools.security.agent_output_validator import AgentOutputValidator
 
 
 @pytest.fixture

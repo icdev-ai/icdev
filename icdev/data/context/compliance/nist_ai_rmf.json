@@ -1,0 +1,206 @@
+{
+  "metadata": {
+    "title": "NIST AI Risk Management Framework 1.0",
+    "source": "National Institute of Standards and Technology, AI Risk Management Framework (AI RMF 1.0), January 2023",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-21",
+    "description": "NIST AI RMF 1.0 requirements catalog covering 4 core functions (Govern, Map, Measure, Manage) for managing risks associated with AI systems. Each subcategory maps to NIST 800-53 Rev 5 controls via crosswalk for multi-regime deduplication (D113)."
+  },
+  "functions": [
+    {
+      "id": "GOVERN",
+      "title": "Govern",
+      "description": "Cultivate and implement a culture of risk management within organizations designing, developing, deploying, evaluating, or acquiring AI systems",
+      "subcategory_count": 3
+    },
+    {
+      "id": "MAP",
+      "title": "Map",
+      "description": "Establish context to frame risks related to an AI system, including understanding the intended purpose, potential harms, and operational environment",
+      "subcategory_count": 3
+    },
+    {
+      "id": "MEASURE",
+      "title": "Measure",
+      "description": "Employ quantitative, qualitative, or mixed-method tools, techniques, and methodologies to analyze, assess, benchmark, and monitor AI risk and related impacts",
+      "subcategory_count": 3
+    },
+    {
+      "id": "MANAGE",
+      "title": "Manage",
+      "description": "Allocate risk resources to mapped and measured risks on a regular basis and as defined by the Govern function",
+      "subcategory_count": 3
+    }
+  ],
+  "requirements": [
+    {
+      "id": "GOVERN-1",
+      "family": "Govern",
+      "title": "AI Governance Policies and Procedures",
+      "description": "Policies, processes, procedures, and practices across the organization related to the mapping, measuring, and managing of AI risks are in place, transparent, and implemented effectively. Organizations shall establish documented AI governance policies that define roles, responsibilities, and accountability for AI risk management throughout the AI system lifecycle.",
+      "evidence_required": "Documented AI governance policy, defined AI risk management roles and responsibilities, evidence of policy distribution and acknowledgment.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-1", "PM-9", "PL-1"],
+      "key_actions": [
+        "Establish AI governance policy",
+        "Define AI risk management roles and responsibilities",
+        "Document AI risk management procedures"
+      ]
+    },
+    {
+      "id": "GOVERN-2",
+      "family": "Govern",
+      "title": "AI Risk Management Accountability",
+      "description": "Accountability structures are in place so that the appropriate teams and individuals are empowered, responsible, and trained for mapping, measuring, and managing AI risks. Senior leadership shall designate accountability for AI risk outcomes and ensure adequate resources are allocated for AI risk management activities including training, tooling, and personnel.",
+      "evidence_required": "Accountability matrix for AI risk management, evidence of senior leadership designation, AI risk management training records, resource allocation documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-2", "PM-10", "AT-3"],
+      "key_actions": [
+        "Designate AI risk management accountability",
+        "Allocate resources for AI risk management",
+        "Train personnel on AI risk practices"
+      ]
+    },
+    {
+      "id": "GOVERN-3",
+      "family": "Govern",
+      "title": "AI Workforce Diversity and Interdisciplinary Teams",
+      "description": "Workforce diversity, equity, inclusion, and accessibility processes are prioritized in the mapping, measuring, and managing of AI risks throughout the lifecycle. Interdisciplinary teams that include domain experts, ethicists, legal counsel, and affected communities shall be engaged in AI system design, development, and deployment decisions.",
+      "evidence_required": "Evidence of diverse team composition, stakeholder engagement records, documentation of interdisciplinary review processes.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-13", "PM-15", "SA-8"],
+      "key_actions": [
+        "Engage diverse and interdisciplinary teams",
+        "Include affected community representatives",
+        "Document stakeholder engagement processes"
+      ]
+    },
+    {
+      "id": "MAP-1",
+      "family": "Map",
+      "title": "AI System Context and Purpose Documentation",
+      "description": "Context is established and understood. The intended purposes, potentially beneficial uses, context-specific laws, norms and expectations, and prospective settings in which the AI system will be deployed are understood and documented. Organizations shall document the AI system's purpose, intended users, operational environment, and applicable legal and regulatory requirements.",
+      "evidence_required": "AI system purpose documentation, intended use specification, operational environment description, legal and regulatory requirements mapping.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PL-2", "RA-1", "SA-3"],
+      "key_actions": [
+        "Document AI system purpose and context",
+        "Identify intended users and stakeholders",
+        "Map applicable laws and regulations"
+      ]
+    },
+    {
+      "id": "MAP-2",
+      "family": "Map",
+      "title": "AI System Categorization and Classification",
+      "description": "Categorization of the AI system is performed. AI systems are classified based on their risk level, considering factors such as the criticality of the decision domain, potential for harm, autonomy level, data sensitivity, and reversibility of outcomes. Classification informs the rigor and depth of risk management activities applied throughout the lifecycle.",
+      "evidence_required": "AI system risk categorization documentation, classification criteria and rationale, data sensitivity assessment, decision domain criticality analysis.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-2", "RA-3", "PM-7"],
+      "key_actions": [
+        "Categorize AI system by risk level",
+        "Assess data sensitivity for AI inputs and outputs",
+        "Document classification rationale"
+      ]
+    },
+    {
+      "id": "MAP-3",
+      "family": "Map",
+      "title": "AI-Specific Risk Identification",
+      "description": "AI risks and benefits are mapped for all components of the AI system including third-party data and models. Risks specific to AI systems are identified, including bias and fairness risks, explainability limitations, data quality risks, adversarial attack vectors (prompt injection, data poisoning, model extraction), drift and degradation risks, and unintended emergent behaviors.",
+      "evidence_required": "AI risk register, bias and fairness assessment, adversarial threat analysis, data quality assessment, third-party component risk analysis.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "RA-5", "SA-9", "SI-10"],
+      "key_actions": [
+        "Identify AI-specific risks (bias, adversarial, drift)",
+        "Assess third-party AI component risks",
+        "Document AI risk register"
+      ]
+    },
+    {
+      "id": "MEASURE-1",
+      "family": "Measure",
+      "title": "AI System Performance Monitoring",
+      "description": "Appropriate methods and metrics are identified and applied. AI system performance is monitored using appropriate quantitative and qualitative metrics including accuracy, fairness, robustness, reliability, and safety metrics. Monitoring is continuous and includes detection of model drift, performance degradation, and anomalous behavior in production environments.",
+      "evidence_required": "AI performance metrics definition, monitoring dashboards or logs, model drift detection configuration, anomaly detection evidence, periodic performance review records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "AU-6"],
+      "key_actions": [
+        "Define AI performance metrics",
+        "Implement continuous monitoring",
+        "Detect and alert on model drift"
+      ]
+    },
+    {
+      "id": "MEASURE-2",
+      "family": "Measure",
+      "title": "AI Trustworthiness Characteristics Assessment",
+      "description": "AI systems are evaluated for trustworthy characteristics. Assessment addresses the seven AI trustworthiness characteristics: valid and reliable, safe, secure and resilient, accountable and transparent, explainable and interpretable, privacy-enhanced, and fair with harmful bias managed. Assessments shall be conducted at key lifecycle stages and documented.",
+      "evidence_required": "Trustworthiness assessment reports covering all seven characteristics, lifecycle stage assessment records, bias evaluation results, explainability analysis.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["CA-2", "CA-5", "SA-11"],
+      "key_actions": [
+        "Assess all seven trustworthiness characteristics",
+        "Evaluate at key lifecycle stages",
+        "Document bias and fairness evaluations"
+      ]
+    },
+    {
+      "id": "MEASURE-3",
+      "family": "Measure",
+      "title": "AI Risk Tracking and Token Usage Metrics",
+      "description": "Mechanisms for tracking identified AI risks over time are in place. AI system resource utilization, including computational costs, token usage, and API call volumes, are tracked and reported. Risk metrics are aggregated, trended over time, and reported to stakeholders at appropriate intervals to support informed risk management decisions.",
+      "evidence_required": "AI risk tracking dashboard or reports, token and resource usage logs, trend analysis documentation, stakeholder reporting evidence.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-4", "AU-2", "AU-12"],
+      "key_actions": [
+        "Track AI risk metrics over time",
+        "Monitor token usage and computational costs",
+        "Report AI risk trends to stakeholders"
+      ]
+    },
+    {
+      "id": "MANAGE-1",
+      "family": "Manage",
+      "title": "AI Risk Treatment and Mitigation",
+      "description": "AI risks based on assessments and other analytical output from the Map and Measure functions are prioritized, responded to, and managed. Risk treatment strategies including mitigation, transfer, avoidance, or acceptance are documented and implemented. Prompt injection detection, input validation, output filtering, and other AI-specific security controls are implemented to manage identified AI risks.",
+      "evidence_required": "AI risk treatment plan, mitigation control implementation evidence, prompt injection detection configuration, input/output validation documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-4", "SI-10", "SI-3", "SC-7"],
+      "key_actions": [
+        "Prioritize AI risks for treatment",
+        "Implement AI-specific security controls",
+        "Deploy prompt injection detection and input validation"
+      ]
+    },
+    {
+      "id": "MANAGE-2",
+      "family": "Manage",
+      "title": "AI Incident Response and Escalation",
+      "description": "Strategies to maximize AI benefits and minimize negative impacts are planned, prepared, implemented, documented, and informed by input from relevant AI actors. AI-specific incident response procedures address model failures, adversarial attacks, data breaches involving AI training data, bias incidents, and unexpected AI behaviors. Escalation paths for AI incidents are defined and tested.",
+      "evidence_required": "AI incident response plan, escalation procedures, incident response test results, AI-specific incident log.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IR-1", "IR-4", "IR-8", "CP-2"],
+      "key_actions": [
+        "Develop AI-specific incident response procedures",
+        "Define escalation paths for AI incidents",
+        "Test AI incident response capabilities"
+      ]
+    },
+    {
+      "id": "MANAGE-3",
+      "family": "Manage",
+      "title": "AI System Decommissioning and Lifecycle Management",
+      "description": "AI risks and benefits from third-party entities are managed. AI systems have defined lifecycle management procedures including versioning, rollback, retraining, and decommissioning. End-of-life procedures ensure AI models and associated data are securely decommissioned, training data is handled per retention policies, and dependent systems are transitioned to replacement capabilities.",
+      "evidence_required": "AI lifecycle management procedures, model versioning records, decommissioning plan, data retention policy for AI training data, rollback capability documentation.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SA-22", "CM-3", "MP-6", "SI-12"],
+      "key_actions": [
+        "Define AI system lifecycle management procedures",
+        "Implement model versioning and rollback",
+        "Plan AI system decommissioning"
+      ]
+    }
+  ]
+}

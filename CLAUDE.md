@@ -128,7 +128,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 
 ---
 
-## ICDEV System — Intelligent Coding Development
+## ICDEV System — Intelligent Certified Development
 
 ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the GOTCHA framework and ATLAS workflow. It handles the full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing capabilities.
 
@@ -1859,6 +1859,12 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D-ORCH-5:** Session purpose declaration for NIST AU-3 event detail traceability — purpose injected into agent system prompts as guardrail
 - **D-ORCH-7:** Async result injection via high-priority mailbox messages (priority 9) — fire-and-forget pattern for background agent results
 - **D-ORCH-8:** Tiered file access control — three tiers (zero_access, read_only, no_delete) with glob-style pattern matching in pre_tool_use.py hook
+- **D-CHILD-1:** Enterprise-grade child apps with 10-12 agents, 21 goals — children inherit all core ICDEV components (TDD, BDD, MBSE, DevSecOps/ZTA, AI Security, Observability, RICOAS, Code Intelligence)
+- **D-CHILD-2:** `.claude/` directory is a first-class generation artifact — hooks, commands, skills, E2E specs copied from parent with parent-only exclusions
+- **D-CHILD-3:** `PARENT_ONLY_DIRS/COMMANDS/SKILLS` exclusion lists prevent internal tools from leaking to child apps (SaaS, GovProposal, Creative Engine, Innovation Engine, Marketplace, Translation, Gateway)
+- **D-CHILD-4:** Full 40+ page dashboard replaces minimal stub in child apps — GovProposal/CPMP/GovCon routes stripped via `_strip_govcon_from_dashboard()`
+- **D-CHILD-5:** AGPL-3.0 default license for government deliveries — dual licensing (AGPL-3.0 for open-source obligations, commercial license available)
+- **D-CHILD-6:** GovProposal/CPMP/GovCon routes feature-flag isolated via `ICDEV_GOVCON_ENABLED` env var — child apps and non-govcon deployments exclude these modules cleanly
 
 ### Innovation Security Gates
 | Gate | Condition |

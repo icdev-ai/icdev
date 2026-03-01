@@ -10,7 +10,7 @@ import sqlite3
 
 import pytest
 
-from tools.dashboard import byok
+from icdev.tools.dashboard import byok
 
 
 # ---------------------------------------------------------------------------
@@ -83,9 +83,9 @@ def byok_db(tmp_path, monkeypatch):
     """Provide a temporary DB and patch byok.DB_PATH + force base64 fallback."""
     db_path = str(tmp_path / "test_byok.db")
     _init_db(Path(db_path))
-    monkeypatch.setattr("tools.dashboard.byok.DB_PATH", db_path)
-    monkeypatch.setattr("tools.dashboard.byok.BYOK_ENABLED", True)
-    monkeypatch.setattr("tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
+    monkeypatch.setattr("icdev.tools.dashboard.byok.DB_PATH", db_path)
+    monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENABLED", True)
+    monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
     return db_path
 
 
@@ -98,7 +98,7 @@ class TestEncryptDecrypt:
 
     def test_encrypt_decrypt_roundtrip_b64_fallback(self, monkeypatch):
         """encrypt_key -> decrypt_key should return original text (b64 fallback)."""
-        monkeypatch.setattr("tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
+        monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
         encrypted = byok.encrypt_key(TEST_KEY)
         assert encrypted.startswith("b64:")
         decrypted = byok.decrypt_key(encrypted)
@@ -106,20 +106,20 @@ class TestEncryptDecrypt:
 
     def test_b64_prefix_detection_in_decrypt(self, monkeypatch):
         """decrypt_key should detect 'b64:' prefix and base64-decode."""
-        monkeypatch.setattr("tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
+        monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
         import base64
         manual = "b64:" + base64.b64encode(b"hello-world").decode("utf-8")
         assert byok.decrypt_key(manual) == "hello-world"
 
     def test_encrypt_returns_different_from_plaintext(self, monkeypatch):
         """Encrypted output should never equal the plaintext."""
-        monkeypatch.setattr("tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
+        monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
         encrypted = byok.encrypt_key("my-secret")
         assert encrypted != "my-secret"
 
     def test_decrypt_without_fernet_raises_for_non_b64(self, monkeypatch):
         """decrypt_key should raise ValueError for non-b64 ciphertext when Fernet unavailable."""
-        monkeypatch.setattr("tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
+        monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENCRYPTION_KEY", "")
         with pytest.raises(ValueError, match="Cannot decrypt"):
             byok.decrypt_key("not-a-b64-prefixed-string")
 
@@ -303,7 +303,7 @@ class TestResolveApiKey:
     def test_resolve_byok_disabled_skips_user_and_dept(self, byok_db, monkeypatch):
         """When BYOK_ENABLED is False, user and department keys are skipped."""
         byok.store_llm_key(TEST_USER_ID, TEST_PROVIDER, TEST_KEY)
-        monkeypatch.setattr("tools.dashboard.byok.BYOK_ENABLED", False)
+        monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENABLED", False)
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         api_key, source = byok.resolve_api_key(TEST_USER_ID, TEST_PROVIDER)
@@ -313,7 +313,7 @@ class TestResolveApiKey:
 
     def test_resolve_byok_disabled_falls_to_env(self, byok_db, monkeypatch):
         """When BYOK_ENABLED is False, env var still works."""
-        monkeypatch.setattr("tools.dashboard.byok.BYOK_ENABLED", False)
+        monkeypatch.setattr("icdev.tools.dashboard.byok.BYOK_ENABLED", False)
         monkeypatch.setenv("OPENAI_API_KEY", "sk-openai-env-val")
 
         api_key, source = byok.resolve_api_key(TEST_USER_ID, "openai")
