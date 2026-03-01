@@ -297,12 +297,12 @@ def reactivate_user(user_id, reactivated_by=None):
 # Maps page/action to allowed roles
 RBAC_MATRIX = {
     # Pages accessible to all authenticated users
-    "home": {"admin", "pm", "developer", "isso", "co"},
+    "home": {"admin", "pm", "developer", "isso", "co", "cor"},
     "projects": {"admin", "pm", "developer", "isso", "co"},
     "agents": {"admin", "pm", "developer", "isso", "co"},
     "monitoring": {"admin", "pm", "developer", "isso", "co"},
     "activity": {"admin", "pm", "developer", "isso", "co"},
-    "profile": {"admin", "pm", "developer", "isso", "co"},
+    "profile": {"admin", "pm", "developer", "isso", "co", "cor"},
     # Pages with restricted access
     "batch": {"admin", "isso", "pm", "developer"},
     "chat": {"admin", "isso", "pm", "developer"},
@@ -314,6 +314,9 @@ RBAC_MATRIX = {
     "admin": {"admin"},
     # Usage: admin sees all, others see own
     "usage": {"admin", "pm", "developer", "isso", "co"},
+    # CPMP (Phase 60)
+    "cpmp": {"admin", "pm", "developer", "isso", "co"},
+    "cpmp_cor": {"admin", "pm", "isso", "co", "cor"},
 }
 
 

@@ -1,7 +1,74 @@
 {
   "_comment": "CUI // SP-CTI — ICDEV Capability Catalog for GovCon Requirement Mapping (D363)",
-  "_version": "1.0.0",
+  "_version": "1.1.0",
   "_updated": "2026-02-28",
+  "_note": "Product-level entries (prod-*) describe whole products delivered to customers. Component-level entries (cap-*) describe individual capabilities.",
+  "products": [
+    {
+      "id": "prod-icdev-platform",
+      "name": "ICDEV — Intelligent Coding Development Platform",
+      "type": "product",
+      "category": "general",
+      "description": "ICDEV is a meta-builder: a system that builds systems. It is a complete autonomous software development platform that generates ATO-ready government applications from natural language requirements. ICDEV orchestrates 15 specialized AI agents across a 6-layer GOTCHA framework (Goals, Orchestration, Tools, Context, Hard Prompts, Args) using the ATLAS workflow methodology. The platform supports 6 first-class programming languages (Python, Java, Go, Rust, C#, TypeScript), 42 compliance frameworks with dual-hub crosswalk (NIST 800-53 + ISO 27001), and deploys to 6 cloud service providers (AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government, IBM IC4G, and local/air-gapped environments). ICDEV handles the full SDLC with TDD/BDD, security scanning, IaC generation, OSCAL interoperability, and continuous ATO monitoring. Winning government contractors receive ICDEV free for on-premises deployment — the platform IS the delivery mechanism.",
+      "key_capabilities": [
+        "15 specialized AI agents with A2A protocol (JSON-RPC 2.0 over mTLS)",
+        "42 compliance frameworks with dual-hub crosswalk (implement once, cascade everywhere)",
+        "500+ deterministic tools — no probabilistic business logic",
+        "6 first-class languages with TDD/BDD and 9-step testing pipeline",
+        "Multi-cloud IaC generation (6 CSPs) with STIG-hardened containers",
+        "AI governance (NIST AI RMF, OMB M-25-21/M-26-04, EU AI Act, GAO accountability)",
+        "RICOAS requirements intake with 7-dimension readiness scoring",
+        "Digital Program Twin with Monte Carlo simulation and COA generation",
+        "OSCAL-native output with 3-layer deep validation",
+        "Modular Open Systems Approach (MOSA, 10 U.S.C. §4401) enforcement",
+        "Zero Trust Architecture with 7-pillar maturity scoring (DoD ZTA Strategy)",
+        "Innovation Engine for autonomous self-improvement",
+        "Creative Engine for customer-centric feature discovery",
+        "GovCon Intelligence for SAM.gov opportunity capture and requirement analysis"
+      ],
+      "customer_value": [
+        "Reduces ATO timeline from 12-18 months to weeks through automated artifact generation",
+        "Eliminates compliance drift with continuous authorization monitoring (cATO)",
+        "Accelerates software delivery with true TDD/BDD across 6 languages",
+        "Provides complete audit trail (append-only, NIST AU compliant) for every action",
+        "Reduces human error in compliance with deterministic, reproducible tool execution",
+        "Supports air-gapped (IL6/SIPR) through on-premises deployment with no internet dependency",
+        "Lowers total cost of ownership — one platform replaces 10+ point solutions"
+      ],
+      "compliance_controls": ["PL-2", "SA-3", "SA-11", "CA-2", "CA-7", "CM-3", "AU-2", "AU-6", "RA-5", "SI-4", "AC-2", "SC-7"],
+      "keywords": ["ICDEV", "intelligent coding development", "meta-builder", "autonomous development", "GOTCHA", "ATLAS", "multi-agent", "compliance automation", "ATO automation", "DevSecOps", "government software", "DoD", "FedRAMP", "CMMC", "air-gapped", "on-premises", "software factory", "platform", "SDLC", "continuous authorization"],
+      "evidence": "59 development phases, 15 agents, 42 compliance frameworks, 500+ tools, 30+ dashboard pages, 6 languages, 6 CSPs, modular installation (10 deployment profiles)"
+    },
+    {
+      "id": "prod-contract-management-portal",
+      "name": "Contract Performance Management Portal (CPMP)",
+      "type": "product",
+      "category": "management",
+      "description": "The Contract Performance Management Portal (CPMP) is a post-award delivery tracking system that provides real-time visibility into contract execution, CDRL compliance, SOW obligation fulfillment, and CPARS risk. CPMP closes the loop on the Shipley proposal lifecycle by automatically importing CDRLs from Section H (DD Form 1423), tracking SOW shall/must/will obligations from Sections C/F/H, and computing CPARS risk scores using a weighted formula (35% overdue CDRLs + 25% rejected CDRLs + 25% non-compliant obligations + 15% late deliveries). The portal generates proactive reminders at 30/14/7/1 day intervals before due dates, auto-marks overdue items, and provides a contract-level dashboard with compliance bars, CPARS gauges, and upcoming timelines. Government CORs and program managers gain transparency into contractor performance without requiring separate reporting systems.",
+      "key_capabilities": [
+        "Automatic CDRL import from Section H (DD Form 1423) with frequency tracking (Monthly/Quarterly/Semi-annual/Annual/As Required/One-time)",
+        "SOW obligation extraction and compliance tracking (shall/must/will statements from Sections C/F/H)",
+        "CPARS risk scoring (0.0-1.0) with 4-factor weighted formula and 4 risk levels (Low/Moderate/High/Critical)",
+        "Proactive deliverable reminders at 30/14/7/1 day intervals with severity escalation",
+        "Contract lifecycle management with COR/CO contacts, POP dates, and classification (CUI // SP-PROPIN)",
+        "Dashboard visualization: contracts list with CPARS color coding, contract detail with compliance bars and risk gauges",
+        "Traceability from original proposal to contract to deliverables — full Shipley lifecycle closure",
+        "Knowledge base feedback loop — delivery performance metrics inform pricing and win/loss analysis for future proposals"
+      ],
+      "customer_value": [
+        "Eliminates manual CDRL tracking spreadsheets with automated due date calculation and reminders",
+        "Reduces CPARS risk through proactive early warning on overdue or at-risk deliverables",
+        "Provides government CORs with transparent, real-time visibility into contractor performance",
+        "Closes the Shipley lifecycle — connects proposal promises to actual delivery outcomes",
+        "Improves future win rates by learning from delivery performance and feeding back to proposals",
+        "Reduces administrative burden with automated SOW obligation extraction from contract documents",
+        "Supports FAR 42.302 contract administration with structured obligation tracking"
+      ],
+      "compliance_controls": ["CM-3", "AU-2", "AU-6", "PL-2", "PM-4", "SA-4"],
+      "keywords": ["contract management", "CDRL", "contract data requirements list", "CPARS", "contractor performance", "post-award", "deliverable tracking", "SOW compliance", "obligation tracking", "DD Form 1423", "Section H", "contract administration", "COR", "contracting officer representative", "period of performance", "delivery management", "Shipley lifecycle"],
+      "evidence": "GovProposal Phase 6-7: automated CDRL import, SOW obligation tracking, CPARS risk scoring, 4-tier reminder system, contract dashboard with compliance visualization"
+    }
+  ],
   "capabilities": [
     {
       "id": "cap-devsecops-pipeline",

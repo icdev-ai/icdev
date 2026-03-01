@@ -1,3 +1,4 @@
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """Generate tool_registry.py by reading all 18 MCP server files.
 

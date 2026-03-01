@@ -435,7 +435,8 @@ def format_json_human(
                 lines.append(f"{pad}  {C.wrap(f'[{i}]', 'dim')}")
                 lines.append(format_json_human(item, _indent=_indent + 1))
             else:
-                lines.append(f"{pad}  {C.wrap('\u2022', 'dim')} {_auto_color_value(str(item))}")
+                bullet = '\u2022'
+                lines.append(f"{pad}  {C.wrap(bullet, 'dim')} {_auto_color_value(str(item))}")
     else:
         lines.append(f"{pad}  {_auto_color_value(str(data))}")
 

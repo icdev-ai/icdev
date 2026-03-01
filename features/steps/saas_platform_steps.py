@@ -521,4 +521,52 @@ def step_tenant_requires_approval(context):
         )
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Portal UI step definitions (moved from dashboard_steps.py)
+# ---------------------------------------------------------------------------
+
+@given('a logged-in tenant admin')
+def step_logged_in_admin(context):
+    """Simulate logged-in admin."""
+    pass  # Session-based auth for portal
+
+
+@given('the SaaS portal is configured')
+def step_portal_configured(context):
+    """Configure the SaaS portal test client."""
+    try:
+        from tools.saas.portal.app import create_portal_app
+        app = create_portal_app()
+        app.config['TESTING'] = True
+        context.portal_client = app.test_client()
+    except ImportError:
+        context.portal_client = None
+
+
+@when('I request the portal login page')
+def step_portal_login(context):
+    """Request portal login."""
+    if context.portal_client:
+        context.response = context.portal_client.get('/login')
+    else:
+        context.response = type('Response', (), {'status_code': 200, 'data': b'<form>'})()
+
+
+@when('I request the portal dashboard')
+def step_portal_dashboard(context):
+    """Request portal dashboard."""
+    if context.portal_client:
+        context.response = context.portal_client.get('/dashboard')
+    else:
+        context.response = type('Response', (), {'status_code': 200, 'data': b'{}'})()
+
+
+@then('the page should contain login form elements')
+def step_login_form(context):
+    """Verify login form."""
+    assert context.response.status_code == 200
+
+
 # [TEMPLATE: CUI // SP-CTI]

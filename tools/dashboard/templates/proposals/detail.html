@@ -61,6 +61,22 @@
     <div id="govcon-status" style="margin-top:8px; font-size:12px; color:var(--text-secondary); display:none;"></div>
 </div>
 
+{% if opp.status == 'won' %}
+<!-- CPMP Transition Banner (D-CPMP-9) -->
+<div class="card" style="padding:12px; margin-top:16px; border-left:3px solid #27ae60; background:rgba(39,174,96,0.06);">
+    <div style="display:flex; align-items:center; justify-content:space-between;">
+        <div>
+            <strong style="color:#27ae60;">Contract Transition Available</strong>
+            <span style="font-size:12px; color:var(--text-secondary); margin-left:8px;">This proposal was won &mdash; create a CPMP contract to begin post-award management</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="createContract('{{ opp.id }}')" title="Create CPMP contract from this won proposal">
+            Create Contract &rarr;
+        </button>
+    </div>
+    <div id="cpmp-transition-status" style="margin-top:8px; font-size:12px; color:var(--text-secondary); display:none;"></div>
+</div>
+{% endif %}
+
 <!-- Tabs -->
 <div class="tabs" style="margin-top:20px;">
     <button class="tab-btn active" data-tab="tab-overview">Overview</button>
@@ -70,6 +86,8 @@
     <button class="tab-btn" data-tab="tab-timeline">Timeline</button>
     <button class="tab-btn" data-tab="tab-reviews">Reviews</button>
     <button class="tab-btn" data-tab="tab-drafts">AI Drafts</button>
+    <button class="tab-btn" data-tab="tab-questions">Questions <span class="badge badge-info" style="font-size:10px; vertical-align:middle;">{{ question_stats.total }}</span></button>
+    <button class="tab-btn" data-tab="tab-amendments">Amendments <span class="badge badge-info" style="font-size:10px; vertical-align:middle;">{{ amendments|length }}</span></button>
 </div>
 
 <!-- ===================== Overview Tab ===================== -->
@@ -265,7 +283,338 @@
     </div>
 </div>
 
+<!-- ===================== Questions Tab ===================== -->
+<div id="tab-questions" class="tab-content" style="display:none;">
+    <!-- Q&A Deadline -->
+    {% if opp.questions_due_date %}
+    <div class="card" style="padding:10px; margin:16px 0; border-left:3px solid {% if questions_days_left is not none and questions_days_left < 0 %}var(--status-red){% elif questions_days_left is not none and questions_days_left <= 3 %}var(--status-yellow, #ffc107){% else %}var(--accent-color){% endif %};">
+        <strong>Q&A Deadline:</strong> {{ opp.questions_due_date }}
+        {% if questions_days_left is not none %}
+            {% if questions_days_left < 0 %}<span style="color:var(--status-red); font-weight:bold;"> ({{ questions_days_left|abs }} days overdue)</span>
+            {% elif questions_days_left == 0 %}<span style="color:var(--status-red); font-weight:bold;"> (TODAY)</span>
+            {% elif questions_days_left <= 3 %}<span style="color:var(--status-yellow, #ffc107); font-weight:bold;"> ({{ questions_days_left }} days left)</span>
+            {% else %}<span style="color:var(--text-secondary);"> ({{ questions_days_left }} days left)</span>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Actions bar -->
+    <div style="margin:16px 0; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-primary" onclick="generateQuestions('{{ opp.id }}')">Generate Questions</button>
+        <button class="btn btn-secondary" onclick="ICDEV.proposals.openModal('add-question-modal')">+ Add Question</button>
+        <button class="btn btn-secondary" onclick="exportQuestions('{{ opp.id }}')">Export to HTML</button>
+        <button class="btn btn-secondary" onclick="bulkStatusChange('{{ opp.id }}', 'approved')" id="btn-bulk-approve" style="display:none;">Approve Selected</button>
+        <button class="btn btn-secondary" onclick="bulkStatusChange('{{ opp.id }}', 'submitted')" id="btn-bulk-submit" style="display:none;">Submit Selected</button>
+        <span id="questions-action-status" style="font-size:12px; color:var(--text-secondary); margin-left:8px;"></span>
+    </div>
+
+    <!-- Mini stats -->
+    <div class="stat-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom:12px;">
+        <div class="stat-card"><div class="stat-value">{{ question_stats.total }}</div><div class="stat-label">Total</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--status-red);">{{ question_stats.high_priority }}</div><div class="stat-label">High Priority</div></div>
+        <div class="stat-card"><div class="stat-value">{{ question_stats.draft }}</div><div class="stat-label">Draft</div></div>
+        <div class="stat-card"><div class="stat-value">{{ question_stats.submitted }}</div><div class="stat-label">Submitted</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--status-green);">{{ question_stats.answered }}</div><div class="stat-label">Answered</div></div>
+    </div>
+
+    <!-- Filters -->
+    <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+        <select id="q-filter-category" onchange="filterQuestions()" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:6px;border-radius:4px;">
+            <option value="">All Categories</option>
+            <option value="scope">Scope</option>
+            <option value="evaluation_criteria">Evaluation Criteria</option>
+            <option value="technical_requirements">Technical Requirements</option>
+            <option value="contract_terms">Contract Terms</option>
+            <option value="compliance_security">Compliance / Security</option>
+            <option value="small_business">Small Business</option>
+        </select>
+        <select id="q-filter-status" onchange="filterQuestions()" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:6px;border-radius:4px;">
+            <option value="">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="approved">Approved</option>
+            <option value="submitted">Submitted</option>
+            <option value="answered">Answered</option>
+        </select>
+        <select id="q-filter-priority" onchange="filterQuestions()" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:6px;border-radius:4px;">
+            <option value="">All Priorities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text-secondary);">
+            <input type="checkbox" id="q-select-all" onchange="toggleSelectAll()"> Select All
+        </label>
+    </div>
+
+    <!-- Questions table -->
+    <div class="table-container">
+        <table id="questions-table">
+            <thead>
+                <tr>
+                    <th style="width:30px;"><input type="checkbox" id="q-header-check" onchange="toggleSelectAll()"></th>
+                    <th>#</th>
+                    <th>Category</th>
+                    <th>Priority</th>
+                    <th>Question</th>
+                    <th>RFP Ref</th>
+                    <th>Source</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="questions-tbody">
+                {% for q in questions %}
+                <tr class="q-row" data-category="{{ q.category }}" data-status="{{ q.status }}" data-priority="{{ q.priority }}" data-qid="{{ q.id }}">
+                    <td><input type="checkbox" class="q-checkbox" value="{{ q.id }}"></td>
+                    <td>{{ q.question_number }}</td>
+                    <td>
+                        {% set cat_labels = {'scope': 'Scope', 'evaluation_criteria': 'Eval Criteria', 'technical_requirements': 'Technical', 'contract_terms': 'Contract', 'compliance_security': 'Compliance', 'small_business': 'Small Biz'} %}
+                        <span class="badge badge-info">{{ cat_labels.get(q.category, q.category) }}</span>
+                    </td>
+                    <td>
+                        {% set pri_colors = {'high': 'error', 'medium': 'warning', 'low': 'success'} %}
+                        <span class="badge badge-{{ pri_colors.get(q.priority, 'info') }}">{{ q.priority | title }}</span>
+                    </td>
+                    <td title="{{ q.question_text }}">{{ q.question_text[:100] }}{% if q.question_text|length > 100 %}...{% endif %}</td>
+                    <td>{{ q.rfp_section_ref or '—' }}</td>
+                    <td><span class="badge badge-{% if q.source == 'auto' %}info{% else %}warning{% endif %}">{{ q.source }}</span></td>
+                    <td>
+                        {% set qs_colors = {'draft': 'warning', 'approved': 'info', 'submitted': 'info', 'answered': 'success'} %}
+                        <span class="badge badge-{{ qs_colors.get(q.status, 'info') }}">{{ q.status | title }}</span>
+                    </td>
+                    <td style="white-space:nowrap;">
+                        {% if q.status == 'draft' %}
+                        <button class="btn btn-sm btn-success" onclick="changeQuestionStatus('{{ q.id }}', 'approved')">Approve</button>
+                        {% elif q.status == 'approved' %}
+                        <button class="btn btn-sm btn-primary" onclick="changeQuestionStatus('{{ q.id }}', 'submitted')">Submit</button>
+                        <button class="btn btn-sm btn-secondary" onclick="changeQuestionStatus('{{ q.id }}', 'draft')">Back</button>
+                        {% elif q.status == 'submitted' %}
+                        <button class="btn btn-sm btn-success" onclick="openResponseModal('{{ q.id }}')">Record Response</button>
+                        {% elif q.status == 'answered' %}
+                        {% if responses.get(q.id) %}
+                        <button class="btn btn-sm btn-secondary" onclick="viewResponse('{{ q.id }}')" title="{{ responses[q.id].response_text[:100] if responses.get(q.id) else '' }}">View Response</button>
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not questions %}
+                <tr><td colspan="9" style="text-align:center; color:var(--text-secondary);">No questions yet. Click "Generate Questions" or "+ Add Question".</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- ===================== Amendments Tab ===================== -->
+<div id="tab-amendments" class="tab-content" style="display:none;">
+    <div style="margin:16px 0; display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="ICDEV.proposals.openModal('upload-amendment-modal')">Upload File</button>
+        <button class="btn btn-secondary" onclick="ICDEV.proposals.openModal('paste-amendment-modal')">Paste Text</button>
+        <span id="amendment-action-status" style="font-size:12px; color:var(--text-secondary); margin-left:8px;"></span>
+    </div>
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Title</th>
+                    <th>Date</th>
+                    <th>Source</th>
+                    <th>Changes</th>
+                    <th>Diff Summary</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in amendments %}
+                <tr>
+                    <td><strong>v{{ a.version_number }}</strong></td>
+                    <td>{{ a.title }}</td>
+                    <td>{{ a.amendment_date or a.created_at[:10] }}</td>
+                    <td><span class="badge badge-{% if a.source_type == 'file' %}info{% else %}warning{% endif %}">{{ a.source_type }}</span></td>
+                    <td>{{ a.changes_detected or 0 }}</td>
+                    <td>{{ a.diff_summary or '—' }}</td>
+                    <td>
+                        {% if a.version_number > 1 %}
+                        <button class="btn btn-sm btn-secondary" onclick="viewDiff('{{ a.id }}')">View Diff</button>
+                        {% else %}
+                        <span class="text-muted">Initial</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not amendments %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">No amendments uploaded yet.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Inline diff viewer -->
+    <div id="diff-viewer" style="display:none; margin-top:16px;">
+        <div class="card" style="padding:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <strong id="diff-title">Diff</strong>
+                <button class="btn btn-sm btn-secondary" onclick="document.getElementById('diff-viewer').style.display='none'">Close</button>
+            </div>
+            <pre id="diff-content" style="background:var(--bg-primary, #0a0a1a); border:1px solid var(--border-color); padding:12px; border-radius:4px; overflow-x:auto; font-size:12px; line-height:1.6; max-height:500px; overflow-y:auto;"></pre>
+        </div>
+    </div>
+</div>
+
 <!-- ===================== Modals ===================== -->
+
+<!-- Add Question Modal -->
+<div id="add-question-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Add Question</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('add-question-modal')">&times;</button>
+        </div>
+        <form id="add-question-form" onsubmit="return submitQuestion(event, '{{ opp.id }}')">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Question Text *</label>
+                    <textarea name="question_text" required rows="3" placeholder="Enter your question to the government..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select name="category">
+                        <option value="scope">Scope</option>
+                        <option value="evaluation_criteria">Evaluation Criteria</option>
+                        <option value="technical_requirements">Technical Requirements</option>
+                        <option value="contract_terms">Contract Terms</option>
+                        <option value="compliance_security">Compliance / Security</option>
+                        <option value="small_business">Small Business</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Priority</label>
+                    <select name="priority">
+                        <option value="high">High</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>RFP Section Reference</label>
+                    <input type="text" name="rfp_section_ref" placeholder="e.g., Section L.3.1">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('add-question-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Add Question</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Upload Amendment Modal -->
+<div id="upload-amendment-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Upload Amendment</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('upload-amendment-modal')">&times;</button>
+        </div>
+        <form id="upload-amendment-form" onsubmit="return submitAmendment(event, '{{ opp.id }}', 'file')">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Title *</label>
+                    <input type="text" name="title" required placeholder="e.g., Amendment 001">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>File Path *</label>
+                    <input type="text" name="file_path" required placeholder="/path/to/amendment.pdf or .txt">
+                </div>
+                <div class="form-group">
+                    <label>Amendment Date</label>
+                    <input type="date" name="amendment_date">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" name="description" placeholder="Brief description">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('upload-amendment-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Paste Amendment Modal -->
+<div id="paste-amendment-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Paste Amendment Text</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('paste-amendment-modal')">&times;</button>
+        </div>
+        <form id="paste-amendment-form" onsubmit="return submitAmendment(event, '{{ opp.id }}', 'text')">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Title *</label>
+                    <input type="text" name="title" required placeholder="e.g., Amendment 001">
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Amendment Text *</label>
+                    <textarea name="text" required rows="8" placeholder="Paste the full amendment text here..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Amendment Date</label>
+                    <input type="date" name="amendment_date">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" name="description" placeholder="Brief description">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('paste-amendment-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Upload</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Record Response Modal -->
+<div id="record-response-modal" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>Record Government Response</h2>
+            <button class="modal-close" onclick="ICDEV.proposals.closeModal('record-response-modal')">&times;</button>
+        </div>
+        <form id="record-response-form" onsubmit="return submitResponse(event)">
+            <input type="hidden" name="question_id" id="response-question-id">
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Government Response *</label>
+                    <textarea name="response_text" required rows="4" placeholder="Paste the government's response..." style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px;border-radius:4px;width:100%;resize:vertical;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Response Date</label>
+                    <input type="date" name="response_date">
+                </div>
+                <div class="form-group">
+                    <label style="display:flex; align-items:center; gap:8px; margin-top:18px;">
+                        <input type="checkbox" name="impacts_requirements"> Impacts Requirements
+                    </label>
+                </div>
+                <div class="form-group" style="grid-column:span 2;">
+                    <label>Impact Notes</label>
+                    <input type="text" name="impact_notes" placeholder="Describe the impact on requirements">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="ICDEV.proposals.closeModal('record-response-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Record Response</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- Create Section Modal -->
 <div id="create-section-modal" class="modal-overlay" style="display:none;">
@@ -563,6 +912,36 @@ function govconAction(action, oppId) {
     });
 }
 
+// ── CPMP Transition (D-CPMP-9) ──────────────────────────────────
+function createContract(oppId) {
+    var statusEl = document.getElementById("cpmp-transition-status");
+    if (!statusEl) return;
+    statusEl.style.display = "block";
+    statusEl.textContent = "Creating contract...";
+    statusEl.style.color = "var(--accent-color, #4a90d9)";
+
+    fetch("/api/proposals/opportunities/" + oppId + "/create-contract", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({}),
+    })
+    .then(function(r) { return r.json().then(function(d) { return {ok: r.ok, data: d}; }); })
+    .then(function(res) {
+        if (!res.ok || res.data.status === "error") {
+            statusEl.textContent = "Error: " + (res.data.error || res.data.message || "Unknown error");
+            statusEl.style.color = "var(--status-red, #dc3545)";
+        } else {
+            var cid = res.data.contract_id || "";
+            statusEl.innerHTML = 'Contract created. <a href="/cpmp/' + cid + '" style="font-weight:bold;">View in CPMP &rarr;</a>';
+            statusEl.style.color = "var(--status-green, #28a745)";
+        }
+    })
+    .catch(function(err) {
+        statusEl.textContent = "Network error: " + err;
+        statusEl.style.color = "var(--status-red, #dc3545)";
+    });
+}
+
 // ── AI Drafts Tab ────────────────────────────────────────────────
 function loadDrafts(oppId) {
     var tbody = document.getElementById("drafts-tbody");
@@ -615,5 +994,214 @@ function rejectDraft(draftId) {
         body: JSON.stringify({reviewed_by: "dashboard_user", review_notes: notes})
     }).then(function() { loadDrafts("{{ opp.id }}"); });
 }
+
+// ── Questions to Government ─────────────────────────────────────
+
+function generateQuestions(oppId) {
+    var st = document.getElementById("questions-action-status");
+    st.textContent = "Generating questions...";
+    st.style.color = "var(--accent-color)";
+    fetch("/api/govcon/opportunities/" + oppId + "/generate-questions", {
+        method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.error) { st.textContent = "Error: " + data.error; st.style.color = "var(--status-red)"; }
+        else { st.textContent = (data.generated || 0) + " questions generated."; st.style.color = "var(--status-green)"; setTimeout(function(){ location.reload(); }, 1500); }
+    }).catch(function(e) { st.textContent = "Error: " + e; st.style.color = "var(--status-red)"; });
+}
+
+function changeQuestionStatus(qId, newStatus) {
+    fetch("/api/govcon/questions/" + qId + "/status", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({status: newStatus, changed_by: "dashboard_user"})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.error) { alert(data.error); } else { location.reload(); }
+    });
+}
+
+function filterQuestions() {
+    var cat = document.getElementById("q-filter-category").value;
+    var st = document.getElementById("q-filter-status").value;
+    var pri = document.getElementById("q-filter-priority").value;
+    var rows = document.querySelectorAll(".q-row");
+    rows.forEach(function(row) {
+        var show = true;
+        if (cat && row.getAttribute("data-category") !== cat) show = false;
+        if (st && row.getAttribute("data-status") !== st) show = false;
+        if (pri && row.getAttribute("data-priority") !== pri) show = false;
+        row.style.display = show ? "" : "none";
+    });
+}
+
+function toggleSelectAll() {
+    var checked = document.getElementById("q-header-check").checked;
+    document.querySelectorAll(".q-checkbox").forEach(function(cb) { cb.checked = checked; });
+    var bulkApprove = document.getElementById("btn-bulk-approve");
+    var bulkSubmit = document.getElementById("btn-bulk-submit");
+    bulkApprove.style.display = checked ? "inline-block" : "none";
+    bulkSubmit.style.display = checked ? "inline-block" : "none";
+}
+
+// Show bulk buttons when any checkbox is toggled
+document.addEventListener("change", function(e) {
+    if (e.target.classList.contains("q-checkbox")) {
+        var any = document.querySelector(".q-checkbox:checked");
+        document.getElementById("btn-bulk-approve").style.display = any ? "inline-block" : "none";
+        document.getElementById("btn-bulk-submit").style.display = any ? "inline-block" : "none";
+    }
+});
+
+function bulkStatusChange(oppId, newStatus) {
+    var ids = [];
+    document.querySelectorAll(".q-checkbox:checked").forEach(function(cb) { ids.push(cb.value); });
+    if (ids.length === 0) return;
+    fetch("/api/govcon/opportunities/" + oppId + "/questions/bulk-status", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({question_ids: ids, status: newStatus, changed_by: "dashboard_user"})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.error) { alert(data.error); } else { location.reload(); }
+    });
+}
+
+function exportQuestions(oppId) {
+    var st = document.getElementById("questions-action-status");
+    st.textContent = "Exporting...";
+    st.style.color = "var(--accent-color)";
+    fetch("/api/govcon/opportunities/" + oppId + "/questions/export", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({status_filter: "approved"})
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.error) { st.textContent = "Error: " + data.error; st.style.color = "var(--status-red)"; return; }
+        if (data.html) {
+            var w = window.open("", "_blank");
+            w.document.write(data.html);
+            w.document.close();
+            st.textContent = data.count + " questions exported.";
+            st.style.color = "var(--status-green)";
+        } else if (data.output_path) {
+            st.textContent = "Exported to " + data.output_path;
+            st.style.color = "var(--status-green)";
+        } else {
+            st.textContent = data.message || "No questions to export.";
+            st.style.color = "var(--text-secondary)";
+        }
+    }).catch(function(e) { st.textContent = "Error: " + e; st.style.color = "var(--status-red)"; });
+}
+
+function submitQuestion(e, oppId) {
+    e.preventDefault();
+    var form = document.getElementById("add-question-form");
+    var data = {};
+    new FormData(form).forEach(function(v, k) { data[k] = v; });
+    fetch("/api/govcon/opportunities/" + oppId + "/questions", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(res) {
+        if (res.error) { alert(res.error); } else {
+            ICDEV.proposals.closeModal("add-question-modal");
+            location.reload();
+        }
+    });
+    return false;
+}
+
+function openResponseModal(qId) {
+    document.getElementById("response-question-id").value = qId;
+    ICDEV.proposals.openModal("record-response-modal");
+}
+
+function submitResponse(e) {
+    e.preventDefault();
+    var form = document.getElementById("record-response-form");
+    var fd = new FormData(form);
+    var qId = fd.get("question_id");
+    var data = {
+        response_text: fd.get("response_text"),
+        response_date: fd.get("response_date") || undefined,
+        impacts_requirements: fd.get("impacts_requirements") === "on",
+        impact_notes: fd.get("impact_notes") || "",
+        recorded_by: "dashboard_user"
+    };
+    fetch("/api/govcon/questions/" + qId + "/response", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(res) {
+        if (res.error) { alert(res.error); } else {
+            ICDEV.proposals.closeModal("record-response-modal");
+            location.reload();
+        }
+    });
+    return false;
+}
+
+function viewResponse(qId) {
+    var responses = {{ responses | tojson }};
+    var r = responses[qId];
+    if (r) { alert("Government Response:\n\n" + r.response_text + "\n\nDate: " + (r.response_date || r.created_at) + "\nImpacts Requirements: " + (r.impacts_requirements ? "Yes" : "No") + (r.impact_notes ? "\nNotes: " + r.impact_notes : "")); }
+}
+
+// ── Amendments ──────────────────────────────────────────────────
+
+function submitAmendment(e, oppId, sourceType) {
+    e.preventDefault();
+    var formId = sourceType === "file" ? "upload-amendment-form" : "paste-amendment-form";
+    var modalId = sourceType === "file" ? "upload-amendment-modal" : "paste-amendment-modal";
+    var form = document.getElementById(formId);
+    var data = {};
+    new FormData(form).forEach(function(v, k) { data[k] = v; });
+    fetch("/api/govcon/opportunities/" + oppId + "/amendments", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    }).then(function(r) { return r.json(); }).then(function(res) {
+        if (res.error || res.status === "error") {
+            alert(res.error || res.message || "Upload failed");
+        } else {
+            ICDEV.proposals.closeModal(modalId);
+            location.reload();
+        }
+    });
+    return false;
+}
+
+function viewDiff(amendmentId) {
+    var viewer = document.getElementById("diff-viewer");
+    var content = document.getElementById("diff-content");
+    var title = document.getElementById("diff-title");
+    viewer.style.display = "block";
+    content.textContent = "Loading diff...";
+    title.textContent = "Loading...";
+
+    fetch("/api/govcon/amendments/" + amendmentId + "/diff")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error || data.status === "error") {
+            content.textContent = data.error || data.message || "Error loading diff";
+            return;
+        }
+        title.textContent = "Amendment v" + data.version_number + " — " + (data.diff_summary || "");
+        var diffData = data.diff_data || {};
+        var unified = diffData.unified_diff || "";
+        if (!unified) { content.textContent = "No changes detected."; return; }
+        // Color-coded diff
+        var lines = unified.split("\n");
+        var html = "";
+        lines.forEach(function(line) {
+            if (line.startsWith("+++") || line.startsWith("---")) {
+                html += '<span style="color:#4a90d9; font-weight:bold;">' + escHtml(line) + '</span>\n';
+            } else if (line.startsWith("@@")) {
+                html += '<span style="color:#a0a0b8;">' + escHtml(line) + '</span>\n';
+            } else if (line.startsWith("+")) {
+                html += '<span style="color:#28a745; background:rgba(40,167,69,0.1);">' + escHtml(line) + '</span>\n';
+            } else if (line.startsWith("-")) {
+                html += '<span style="color:#dc3545; background:rgba(220,53,69,0.1);">' + escHtml(line) + '</span>\n';
+            } else {
+                html += escHtml(line) + '\n';
+            }
+        });
+        content.innerHTML = html;
+    })
+    .catch(function(err) { content.textContent = "Error: " + err; });
+}
+
+function escHtml(t) { return t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 </script>
 {% endblock %}

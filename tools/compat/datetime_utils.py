@@ -1,3 +1,4 @@
+# [TEMPLATE: CUI // SP-CTI]
 """Timezone-aware datetime utilities for ICDEV.
 
 Replaces deprecated datetime.utcnow() with timezone-aware alternatives.

@@ -11,9 +11,10 @@ Usage:
 Pipeline:
     1. icdev_plan   — Planning phase
     2. icdev_build  — Implementation phase
-    3. icdev_test   — Testing phase (--skip-e2e)
-    4. icdev_review — Code review phase
-    5. icdev_comply — Compliance artifacts (if applicable)
+    3. icdev_test   — Testing phase (unit + BDD + security)
+    4. icdev_e2e    — E2E browser verification (Playwright)
+    5. icdev_review — Code review phase
+    6. icdev_comply — Compliance artifacts (if applicable)
 
 Flags:
     --orchestrated  Use multi-agent DAG orchestration (parallel execution)
@@ -226,10 +227,17 @@ def main():
         print("Pipeline aborted at Build phase")
         sys.exit(1)
 
-    # Phase 3: Test (skip E2E in SDLC for speed)
-    if not run_phase("Test", "icdev_test", issue_number, run_id, ["--skip-e2e"]):
+    # Phase 3: Test (unit + BDD + security gates)
+    if not run_phase("Test", "icdev_test", issue_number, run_id):
         print("Pipeline aborted at Test phase")
         sys.exit(1)
+
+    # Phase 3b: E2E — Playwright browser verification (dashboard + UI pages)
+    # E2E runs AFTER unit/BDD pass to catch visual regressions, missing pages,
+    # broken navigation, and CUI banner issues that API tests cannot detect.
+    if not run_phase("E2E", "icdev_e2e", issue_number, run_id):
+        # E2E failure is non-blocking warning — log but continue
+        print("WARNING: E2E phase had failures — review screenshots before merge")
 
     # Phase 4: Review
     if not run_phase("Review", "icdev_review", issue_number, run_id):

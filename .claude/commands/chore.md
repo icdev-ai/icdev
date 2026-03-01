@@ -148,12 +148,46 @@ These gates apply to every commit regardless of project type.
     python -m behave features/
     ```
 
-14. **E2E Test** (if UI changes) — If an E2E test was created in `.claude/commands/e2e/`, execute it per `.claude/commands/test_e2e.md`.
-    **Prefer playwright-cli** over MCP Playwright for screenshots — it is faster and more token-efficient:
-    ```bash
-    npx playwright screenshot http://localhost:5000/ .tmp/e2e-screenshot.png --full-page
-    ```
-    Then run **vision validation** on the screenshot (see step 20b).
+14. **E2E Browser Verification** (MANDATORY — auto-detected) —
+    **Auto-detect UI changes**: Check if ANY of these were created/modified in this task:
+    - `tools/dashboard/templates/**` (Jinja2 templates)
+    - `tools/dashboard/static/**` (CSS/JS assets)
+    - `tools/dashboard/app.py` (routes)
+    - `tools/dashboard/api/**` (API blueprints)
+    - `tools/saas/portal/**` (SaaS portal)
+    - Any file containing `@app.route` or `@blueprint.route`
+
+    **If UI changes detected** (or chore explicitly involves dashboard/web pages):
+    1. **Start the dashboard** (if not already running):
+       ```bash
+       python tools/dashboard/app.py &
+       ```
+       Wait for it to be ready (check `http://localhost:5000/`).
+
+    2. **Run ALL existing E2E test specs** — discover and execute every spec in `.claude/commands/e2e/`:
+       ```bash
+       python tools/testing/e2e_runner.py --run-all --validate-screenshots
+       ```
+
+    3. **Interactive User Verification** — Open the affected page(s) with Playwright MCP and verify the change works:
+       - `browser_navigate` to each affected page
+       - Interact as the user would — click buttons, submit forms, trigger workflows
+       - Take screenshots (`browser_take_screenshot`, filename: `playwright/screenshots/<descriptive-name>.png`)
+       - Verify NO error pages (500s, tracebacks, TemplateNotFound, JS errors)
+
+    4. **Vision Validation** on screenshots:
+       ```bash
+       python tools/testing/screenshot_validator.py \
+           --image playwright/screenshots/<name>.png \
+           --assert "<resolved vision_assertion>" \
+           --assert "No error dialogs or stack traces visible" \
+           --json
+       ```
+
+    **GATE: Do NOT proceed to commit if ANY of these fail.**
+    API/CLI validation alone is insufficient — the user interacts through the browser, so that's where V&V must happen.
+
+    **If NO UI changes detected**: Mark E2E as N/A in the validation report with reason "No dashboard/template/route files modified".
 
 15. **SAST Security Scan**:
     ```bash

@@ -27,7 +27,8 @@ def main():
     phases = [
         ("Plan", "icdev_plan.py", []),
         ("Build", "icdev_build.py", []),
-        ("Test", "icdev_test.py", ["--skip-e2e"]),
+        ("Test", "icdev_test.py", []),
+        ("E2E", "icdev_e2e.py", []),
     ]
 
     for phase, script, extra in phases:

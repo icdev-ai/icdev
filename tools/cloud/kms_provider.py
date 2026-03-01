@@ -8,7 +8,7 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 
 import os
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 
 class KMSProvider(ABC):

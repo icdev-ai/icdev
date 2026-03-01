@@ -7,6 +7,7 @@ compliance matrix (L/M/N), color team reviews, findings, and status history.
 """
 
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -19,7 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 proposals_api = Blueprint("proposals_api", __name__, url_prefix="/api/proposals")
 
@@ -228,6 +229,7 @@ def update_opportunity(opp_id):
             "estimated_value_high", "proposal_type", "rfp_document_path",
             "rfp_url", "capture_manager", "proposal_manager",
             "bid_decision", "bid_decision_date", "bid_decision_rationale",
+            "questions_due_date",
         ]
         sets = []
         params = []
@@ -1057,3 +1059,25 @@ def get_status_history(entity_type, entity_id):
         return jsonify({"history": [dict(r) for r in rows]})
     finally:
         conn.close()
+
+
+# =====================================================================
+# Proposal → Contract Transition (Phase 60 — D-CPMP-9)
+# =====================================================================
+
+@proposals_api.route("/opportunities/<opp_id>/create-contract", methods=["POST"])
+def create_contract_from_opportunity(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/create-contract
+
+    Create a CPMP contract from a won proposal opportunity.
+    Delegates to portfolio_manager.transition_from_opportunity().
+    """
+    try:
+        from tools.govcon.portfolio_manager import transition_from_opportunity
+        data = request.get_json(silent=True) or {}
+        result = transition_from_opportunity(opp_id, created_by=data.get("created_by"))
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500

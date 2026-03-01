@@ -165,6 +165,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "govcon_awards",
         # Customer Delivery Tracking (D374)
         "customer_deliveries",
+        # Phase 59 — Questions to Government (D-QTG-2)
+        "proposal_question_responses",
+        # Phase 60 — CPMP (D-CPMP-7)
+        "cpmp_status_history",
+        "cpmp_negative_events",
+        "cpmp_evm_periods",
+        "cpmp_cdrl_generations",
+        "cpmp_cor_access_log",
     ]
 
     if tool_name == "Bash":

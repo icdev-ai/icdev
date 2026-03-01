@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Deliverable Detail - ICDEV{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/cpmp">CPMP Portfolio</a><span class="separator">/</span>
+    <a href="/cpmp/{{ contract.id }}">{{ contract.contract_number }}</a><span class="separator">/</span>
+    <span>{{ deliverable.cdrl_number or deliverable.title }}</span>
+</div>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+        <h1>{{ deliverable.title }}</h1>
+        <div style="margin-top:4px;">
+            {% set dstatus_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error'} %}
+            <span class="badge badge-{{ dstatus_colors.get(deliverable.status, 'info') }}">{{ deliverable.status | replace('_', ' ') | title }}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Status Pipeline -->
+<style>
+.status-pipeline { display: flex; align-items: center; gap: 0; margin: 20px 0; flex-wrap: wrap; }
+.pipeline-step { display: flex; flex-direction: column; align-items: center; }
+.pipeline-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #666; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.pipeline-dot.completed { background: #4caf50; border-color: #4caf50; color: white; }
+.pipeline-dot.current { background: #2196f3; border-color: #2196f3; color: white; }
+.pipeline-connector { width: 24px; height: 2px; background: #ccc; }
+.pipeline-connector.completed { background: #4caf50; }
+.pipeline-label { font-size: 10px; text-align: center; margin-top: 4px; }
+.pipeline-row { display: flex; align-items: center; }
+.pipeline-branch { display: flex; flex-direction: column; align-items: flex-start; margin-top: 8px; padding-left: 40px; }
+.pipeline-branch-row { display: flex; align-items: center; margin-top: 4px; }
+</style>
+
+{% set main_states = ['not_started', 'in_progress', 'draft_complete', 'internal_review', 'submitted', 'government_review', 'accepted'] %}
+{% set branch_states = ['rejected', 'resubmitted', 'overdue'] %}
+{% set state_labels = {
+    'not_started': 'Not Started',
+    'in_progress': 'In Progress',
+    'draft_complete': 'Draft Complete',
+    'internal_review': 'Internal Review',
+    'submitted': 'Submitted',
+    'government_review': 'Gov Review',
+    'accepted': 'Accepted',
+    'rejected': 'Rejected',
+    'resubmitted': 'Resubmitted',
+    'overdue': 'Overdue'
+} %}
+
+<div class="status-pipeline" role="img" aria-label="Deliverable lifecycle: {{ deliverable.status | replace('_', ' ') | title }}">
+    <!-- Main pipeline row -->
+    <div class="pipeline-row">
+        {% set current_status = deliverable.status %}
+        {% set found_current = {'val': false} %}
+        {% for state in main_states %}
+            {% if not loop.first %}
+            {% set cs_idx = main_states.index(current_status) if current_status in main_states else -1 %}
+            {% set st_idx = main_states.index(state) if state in main_states else -1 %}
+            <div class="pipeline-connector {% if cs_idx >= 0 and st_idx <= cs_idx %}completed{% endif %}"></div>
+            {% endif %}
+            <div class="pipeline-step">
+                {% if current_status in main_states %}
+                    {% if main_states.index(state) < main_states.index(current_status) %}
+                <div class="pipeline-dot completed" title="{{ state_labels[state] }}">&#10003;</div>
+                    {% elif state == current_status %}
+                <div class="pipeline-dot current" title="{{ state_labels[state] }} (current)">&#9679;</div>
+                    {% else %}
+                <div class="pipeline-dot" title="{{ state_labels[state] }}"></div>
+                    {% endif %}
+                {% elif current_status in branch_states %}
+                    {# When in a branch state, mark up to 'submitted' or 'government_review' as completed #}
+                    {% if state in ['not_started', 'in_progress', 'draft_complete', 'internal_review', 'submitted'] %}
+                <div class="pipeline-dot completed" title="{{ state_labels[state] }}">&#10003;</div>
+                    {% elif state == 'government_review' and current_status == 'rejected' %}
+                <div class="pipeline-dot completed" title="{{ state_labels[state] }}">&#10003;</div>
+                    {% else %}
+                <div class="pipeline-dot" title="{{ state_labels[state] }}"></div>
+                    {% endif %}
+                {% else %}
+                <div class="pipeline-dot" title="{{ state_labels[state] }}"></div>
+                {% endif %}
+                <div class="pipeline-label">{{ state_labels[state] }}</div>
+            </div>
+        {% endfor %}
+    </div>
+
+    <!-- Branch states -->
+    {% if current_status in branch_states %}
+    <div class="pipeline-branch">
+        {% for bstate in branch_states %}
+            {% if bstate == current_status %}
+        <div class="pipeline-branch-row">
+            <div class="pipeline-connector"></div>
+            <div class="pipeline-step">
+                <div class="pipeline-dot current" title="{{ state_labels[bstate] }} (current)">&#9679;</div>
+                <div class="pipeline-label">{{ state_labels[bstate] }}</div>
+            </div>
+        </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Info Grid -->
+<div class="card" style="padding:16px; margin-top:16px;">
+    <div class="info-grid">
+        <div class="info-item"><div class="label">CDRL #</div><div class="value">{{ deliverable.cdrl_number or '—' }}</div></div>
+        <div class="info-item"><div class="label">DID #</div><div class="value">{{ deliverable.did_number or '—' }}</div></div>
+        <div class="info-item"><div class="label">Type</div><div class="value">{{ deliverable.type or '—' }}</div></div>
+        <div class="info-item"><div class="label">Frequency</div><div class="value">{{ (deliverable.frequency or '—') | replace('_', ' ') | title }}</div></div>
+        <div class="info-item"><div class="label">Contract</div><div class="value"><a href="/cpmp/{{ contract.id }}">{{ contract.contract_number }}</a></div></div>
+        <div class="info-item"><div class="label">Due Date</div><div class="value {% if deliverable.status == 'overdue' %}text-danger{% endif %}">{{ deliverable.due_date or '—' }}</div></div>
+        <div class="info-item"><div class="label">Submitted Date</div><div class="value">{{ deliverable.submitted_date or '—' }}</div></div>
+        <div class="info-item"><div class="label">Accepted Date</div><div class="value">{{ deliverable.accepted_date or '—' }}</div></div>
+    </div>
+</div>
+
+<!-- CDRL Generation -->
+<div class="table-container" style="margin-top:20px;">
+    <div class="table-header" style="display:flex; justify-content:space-between; align-items:center;">
+        <h2>CDRL Generation</h2>
+        <form method="POST" action="/api/cpmp/contracts/{{ contract.id }}/generate-cdrl/{{ deliverable.id }}" style="margin:0;">
+            <button type="submit" class="btn btn-primary">Generate CDRL</button>
+        </form>
+    </div>
+    <table aria-label="CDRL generation history">
+        <thead>
+            <tr>
+                <th>Generation ID</th>
+                <th>CDRL Type</th>
+                <th>Tool</th>
+                <th>Status</th>
+                <th>Output Path</th>
+                <th>Created At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for gen in generations %}
+            <tr>
+                <td class="text-muted">{{ gen.id[:12] if gen.id else '—' }}...</td>
+                <td>{{ gen.cdrl_type or '—' }}</td>
+                <td>{{ gen.tool or '—' }}</td>
+                <td>
+                    {% set gen_colors = {'pending': 'warning', 'running': 'info', 'completed': 'success', 'failed': 'error'} %}
+                    <span class="badge badge-{{ gen_colors.get(gen.status, 'info') }}">{{ gen.status | replace('_', ' ') | title }}</span>
+                </td>
+                <td class="text-muted">{{ gen.output_path or '—' }}</td>
+                <td class="text-muted">{{ gen.created_at or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-muted" style="text-align:center;">No CDRL generations yet. Click "Generate CDRL" to create one.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Status History -->
+<div class="table-container" style="margin-top:20px;">
+    <div class="table-header">
+        <h2>Status History</h2>
+    </div>
+    <table aria-label="Deliverable status history">
+        <thead>
+            <tr>
+                <th>Timestamp</th>
+                <th>Old Status</th>
+                <th>New Status</th>
+                <th>Changed By</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for h in status_history %}
+            <tr>
+                <td class="text-muted">{{ h.created_at or h.timestamp or '—' }}</td>
+                <td>{{ (h.old_status or '—') | replace('_', ' ') | title }}</td>
+                <td>
+                    {% set h_colors = {'not_started': 'info', 'in_progress': 'warning', 'draft_complete': 'info', 'internal_review': 'warning', 'submitted': 'success', 'government_review': 'warning', 'accepted': 'success', 'rejected': 'error', 'resubmitted': 'warning', 'overdue': 'error'} %}
+                    <span class="badge badge-{{ h_colors.get(h.new_status, 'info') }}">{{ h.new_status | replace('_', ' ') | title }}</span>
+                </td>
+                <td>{{ h.changed_by or '—' }}</td>
+                <td>{{ h.reason or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-muted" style="text-align:center;">No status changes recorded.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+.text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
+</style>
+{% endblock %}

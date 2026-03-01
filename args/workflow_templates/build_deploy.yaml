@@ -28,10 +28,20 @@ steps:
     inject_project_id: false
     args:
       project-dir: "."
-      skip-e2e: true
     depends_on: [lint]
     required: false
-    description: "Run full test suite (unit + BDD)"
+    description: "Run full test suite (unit + BDD + E2E)"
+
+  - id: e2e
+    name: "E2E Browser Verification"
+    tool: "tools/testing/e2e_runner.py"
+    inject_project_id: false
+    args:
+      run-all: true
+      validate-screenshots: true
+    depends_on: [test]
+    required: false
+    description: "Run Playwright E2E tests with screenshot validation"
 
   - id: terraform
     name: "Generate Terraform IaC"

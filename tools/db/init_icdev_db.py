@@ -1859,6 +1859,7 @@ CREATE TABLE IF NOT EXISTS hook_events (
         'pre_tool_use', 'post_tool_use', 'notification', 'stop', 'subagent_stop'
     )),
     tool_name TEXT,
+    project_id TEXT,
     payload TEXT,
     classification TEXT DEFAULT 'CUI',
     signature TEXT,
@@ -3010,7 +3011,7 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     email TEXT UNIQUE NOT NULL,
     display_name TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'developer'
-        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co')),
+        CHECK(role IN ('admin', 'pm', 'developer', 'isso', 'co', 'cor')),
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
@@ -4332,33 +4333,45 @@ CREATE INDEX IF NOT EXISTS idx_rf_project ON runtime_feedback(project_id);
 CREATE INDEX IF NOT EXISTS idx_rf_run ON runtime_feedback(run_id);
 CREATE INDEX IF NOT EXISTS idx_rf_source_fn ON runtime_feedback(source_function);
 
--- Phase 53: OWASP ASI01-ASI10 Assessments (D339)
+-- Phase 53: OWASP ASI01-ASI10 Assessments (D339) — BaseAssessor per-requirement schema
 CREATE TABLE IF NOT EXISTS owasp_asi_assessments (
-    id TEXT PRIMARY KEY,
-    project_id TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
     assessment_date TEXT DEFAULT (datetime('now')),
-    results_json TEXT,
-    total_controls INTEGER DEFAULT 0,
-    satisfied_count INTEGER DEFAULT 0,
-    not_satisfied_count INTEGER DEFAULT 0,
-    coverage_pct REAL DEFAULT 0.0,
-    assessor_version TEXT DEFAULT '1.0',
-    created_at TEXT DEFAULT (datetime('now'))
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    family TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted','not_assessed')),
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    notes TEXT,
+    nist_800_53_crosswalk TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, requirement_id)
 );
 CREATE INDEX IF NOT EXISTS idx_owasp_asi_project ON owasp_asi_assessments(project_id);
 
--- Phase 57: EU AI Act Assessments (D349)
+-- Phase 57: EU AI Act Assessments (D349) — BaseAssessor per-requirement schema
 CREATE TABLE IF NOT EXISTS eu_ai_act_assessments (
-    id TEXT PRIMARY KEY,
-    project_id TEXT,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT NOT NULL,
     assessment_date TEXT DEFAULT (datetime('now')),
-    results_json TEXT,
-    total_controls INTEGER DEFAULT 0,
-    satisfied_count INTEGER DEFAULT 0,
-    not_satisfied_count INTEGER DEFAULT 0,
-    coverage_pct REAL DEFAULT 0.0,
-    assessor_version TEXT DEFAULT '1.0',
-    created_at TEXT DEFAULT (datetime('now'))
+    assessor TEXT DEFAULT 'icdev-compliance-engine',
+    requirement_id TEXT NOT NULL,
+    requirement_title TEXT,
+    family TEXT,
+    status TEXT DEFAULT 'not_assessed' CHECK(status IN ('satisfied','partially_satisfied','not_satisfied','not_applicable','risk_accepted','not_assessed')),
+    evidence_description TEXT,
+    evidence_path TEXT,
+    automation_result TEXT,
+    notes TEXT,
+    nist_800_53_crosswalk TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(project_id, requirement_id)
 );
 CREATE INDEX IF NOT EXISTS idx_eu_ai_act_project ON eu_ai_act_assessments(project_id);
 
@@ -4536,10 +4549,19 @@ CREATE TABLE IF NOT EXISTS proposal_opportunities (
     rfp_url TEXT,
     capture_manager TEXT,
     proposal_manager TEXT,
+    domain TEXT DEFAULT 'general' CHECK(domain IN (
+        'devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
+        'compliance', 'agile', 'data', 'management', 'general')),
     classification TEXT DEFAULT 'CUI',
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    licensing_model TEXT,
+    sam_gov_opportunity_id TEXT,
+    questions_due_date TEXT,
+    amendment_count INTEGER DEFAULT 0,
+    question_count INTEGER DEFAULT 0,
+    contract_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prop_opp_status ON proposal_opportunities(status);
 CREATE INDEX IF NOT EXISTS idx_prop_opp_due ON proposal_opportunities(due_date);
@@ -4551,6 +4573,8 @@ CREATE TABLE IF NOT EXISTS proposal_volumes (
     id TEXT PRIMARY KEY,
     opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
     volume_number INTEGER NOT NULL,
+    volume_type TEXT CHECK(volume_type IS NULL OR volume_type IN (
+        'technical', 'management', 'past_performance', 'cost', 'staffing')),
     title TEXT NOT NULL,
     description TEXT,
     page_limit INTEGER,
@@ -4691,7 +4715,7 @@ CREATE INDEX IF NOT EXISTS idx_prop_find_severity ON proposal_review_findings(se
 CREATE TABLE IF NOT EXISTS proposal_status_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL CHECK(entity_type IN (
-        'opportunity', 'volume', 'section', 'review', 'finding', 'compliance_item')),
+        'opportunity', 'volume', 'section', 'review', 'finding', 'compliance_item', 'question', 'amendment')),
     entity_id TEXT NOT NULL,
     old_status TEXT,
     new_status TEXT NOT NULL,
@@ -4808,20 +4832,26 @@ CREATE INDEX IF NOT EXISTS idx_capmap_capability ON icdev_capability_map(capabil
 -- AI-generated proposal section drafts (append-only, D6/D373)
 CREATE TABLE IF NOT EXISTS proposal_section_drafts (
     id TEXT PRIMARY KEY,
-    section_id TEXT NOT NULL REFERENCES proposal_sections(id),
+    section_id TEXT REFERENCES proposal_sections(id),
     opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
     shall_statement_id TEXT REFERENCES rfp_shall_statements(id),
     capability_ids TEXT DEFAULT '[]',
-    draft_content TEXT NOT NULL,
-    confidence REAL DEFAULT 0.0,
-    generation_model TEXT,
     knowledge_block_ids TEXT DEFAULT '[]',
+    draft_content TEXT NOT NULL,
+    draft_method TEXT,
+    confidence_score REAL DEFAULT 0.0,
+    confidence REAL DEFAULT 0.0,
+    domain_category TEXT,
+    generation_model TEXT,
     status TEXT NOT NULL DEFAULT 'draft'
         CHECK(status IN ('draft', 'reviewed', 'approved', 'rejected')),
     reviewed_by TEXT,
     reviewed_at TEXT,
     review_notes TEXT,
-    created_at TEXT NOT NULL,
+    reviewer_notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
     classification TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_draft_section ON proposal_section_drafts(section_id);
@@ -4836,14 +4866,17 @@ CREATE TABLE IF NOT EXISTS proposal_knowledge_base (
     category TEXT NOT NULL
         CHECK(category IN ('capability_description', 'approach', 'staffing',
                            'tools_used', 'past_performance', 'risk_mitigation',
-                           'transition_plan', 'quality_assurance', 'other')),
+                           'transition_plan', 'quality_assurance',
+                           'management_approach', 'product_overview',
+                           'integrated_solution', 'customer_value',
+                           'differentiator', 'other')),
     domain TEXT NOT NULL
         CHECK(domain IN ('devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
                          'compliance', 'agile', 'data', 'management', 'general')),
     naics_codes TEXT DEFAULT '[]',
     volume_type TEXT
         CHECK(volume_type IS NULL OR volume_type IN
-            ('technical', 'management', 'past_performance', 'cost')),
+            ('technical', 'management', 'past_performance', 'cost', 'staffing')),
     keywords TEXT NOT NULL DEFAULT '[]',
     usage_count INTEGER DEFAULT 0,
     win_rate REAL,
@@ -4920,6 +4953,495 @@ CREATE INDEX IF NOT EXISTS idx_cust_delivery_opp ON customer_deliveries(opportun
 CREATE INDEX IF NOT EXISTS idx_cust_delivery_customer ON customer_deliveries(customer_name);
 CREATE INDEX IF NOT EXISTS idx_cust_delivery_status ON customer_deliveries(status);
 CREATE INDEX IF NOT EXISTS idx_cust_delivery_tier ON customer_deliveries(delivery_tier);
+
+-- =========================================================================
+-- Contract Performance Management Portal — Phase 60 (D-CPMP-1 through D-CPMP-10)
+-- Post-award contract lifecycle: EVM, CPARS, CDRL, subcontractors, COR portal
+-- =========================================================================
+
+-- ── Phase A: Foundation ─────────────────────────────────────────────
+
+-- Core contract entity, linked from proposal_opportunities when won
+-- Allows UPDATE for status, health, and value changes
+CREATE TABLE IF NOT EXISTS cpmp_contracts (
+    id TEXT PRIMARY KEY,
+    contract_number TEXT NOT NULL,
+    title TEXT NOT NULL,
+    agency TEXT NOT NULL,
+    agency_hierarchy TEXT,
+    contracting_officer TEXT,
+    co_email TEXT,
+    cor_name TEXT,
+    cor_email TEXT,
+    cor_phone TEXT,
+    contract_type TEXT NOT NULL CHECK(contract_type IN (
+        'FFP', 'T&M', 'CPFF', 'CPIF', 'IDIQ', 'BPA', 'BOA')),
+    idiq_contract_id TEXT REFERENCES cpmp_contracts(id),
+    task_order_number TEXT,
+    naics_code TEXT,
+    total_value REAL DEFAULT 0.0,
+    funded_value REAL DEFAULT 0.0,
+    ceiling_value REAL,
+    billed_value REAL DEFAULT 0.0,
+    pop_start TEXT,
+    pop_end TEXT,
+    pop_base_end TEXT,
+    option_years INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'draft' CHECK(status IN (
+        'draft', 'active', 'option_pending', 'complete', 'closed', 'terminated')),
+    health TEXT DEFAULT 'green' CHECK(health IN ('green', 'yellow', 'red')),
+    health_score REAL,
+    cpars_rating_current TEXT,
+    opportunity_id TEXT,
+    customer_delivery_id TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    created_by TEXT,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_number ON cpmp_contracts(contract_number);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_agency ON cpmp_contracts(agency);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_status ON cpmp_contracts(status);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_health ON cpmp_contracts(health);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_opp ON cpmp_contracts(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_idiq ON cpmp_contracts(idiq_contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_contract_cor ON cpmp_contracts(cor_email);
+
+-- Contract Line Items with funding tracking
+CREATE TABLE IF NOT EXISTS cpmp_clins (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    clin_number TEXT NOT NULL,
+    description TEXT,
+    clin_type TEXT NOT NULL CHECK(clin_type IN (
+        'labor', 'materials', 'travel', 'odc', 'subcontract', 'fixed_price')),
+    total_value REAL DEFAULT 0.0,
+    funded_value REAL DEFAULT 0.0,
+    billed_value REAL DEFAULT 0.0,
+    pop_start TEXT,
+    pop_end TEXT,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'fully_funded', 'expended', 'deobligated')),
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_clin_contract ON cpmp_clins(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_clin_number ON cpmp_clins(clin_number);
+
+-- Work Breakdown Structure (hierarchical, for EVM)
+CREATE TABLE IF NOT EXISTS cpmp_wbs (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    parent_id TEXT REFERENCES cpmp_wbs(id),
+    wbs_number TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    level INTEGER DEFAULT 1,
+    budget_at_completion REAL DEFAULT 0.0,
+    pv_cumulative REAL DEFAULT 0.0,
+    ev_cumulative REAL DEFAULT 0.0,
+    ac_cumulative REAL DEFAULT 0.0,
+    percent_complete REAL DEFAULT 0.0,
+    planned_start TEXT,
+    planned_finish TEXT,
+    actual_start TEXT,
+    actual_finish TEXT,
+    responsible_person TEXT,
+    status TEXT DEFAULT 'not_started' CHECK(status IN (
+        'not_started', 'in_progress', 'complete', 'on_hold', 'cancelled')),
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_wbs_contract ON cpmp_wbs(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_wbs_parent ON cpmp_wbs(parent_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_wbs_number ON cpmp_wbs(wbs_number);
+
+-- CDRLs and deliverables with status pipeline
+CREATE TABLE IF NOT EXISTS cpmp_deliverables (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    clin_id TEXT REFERENCES cpmp_clins(id),
+    wbs_id TEXT REFERENCES cpmp_wbs(id),
+    cdrl_number TEXT,
+    did_number TEXT,
+    title TEXT NOT NULL,
+    description TEXT,
+    deliverable_type TEXT NOT NULL CHECK(deliverable_type IN (
+        'cdrl', 'report', 'software', 'documentation', 'test_result', 'plan', 'data', 'other')),
+    frequency TEXT CHECK(frequency IN (
+        'one_time', 'weekly', 'biweekly', 'monthly', 'quarterly', 'semi_annual', 'annual', 'as_needed', 'event_driven')),
+    due_date TEXT,
+    submitted_date TEXT,
+    accepted_date TEXT,
+    rejected_date TEXT,
+    rejection_reason TEXT,
+    status TEXT DEFAULT 'not_started' CHECK(status IN (
+        'not_started', 'in_progress', 'draft_complete', 'internal_review',
+        'submitted', 'government_review', 'accepted', 'rejected', 'resubmitted', 'overdue')),
+    days_overdue INTEGER DEFAULT 0,
+    generated_by_tool TEXT,
+    output_path TEXT,
+    reviewer TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_contract ON cpmp_deliverables(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_status ON cpmp_deliverables(status);
+CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_due ON cpmp_deliverables(due_date);
+CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_type ON cpmp_deliverables(deliverable_type);
+CREATE INDEX IF NOT EXISTS idx_cpmp_deliv_cdrl ON cpmp_deliverables(cdrl_number);
+
+-- Append-only status change log (NIST AU-2, D6)
+CREATE TABLE IF NOT EXISTS cpmp_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL CHECK(entity_type IN (
+        'contract', 'clin', 'wbs', 'deliverable', 'subcontractor',
+        'evm_baseline', 'cpars_assessment', 'negative_event')),
+    entity_id TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT NOT NULL,
+    changed_by TEXT,
+    reason TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_hist_entity ON cpmp_status_history(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_hist_created ON cpmp_status_history(created_at);
+
+-- ── Phase B: Intelligence ───────────────────────────────────────────
+
+-- Monthly EVM snapshots per WBS element (append-only time-series, D6)
+CREATE TABLE IF NOT EXISTS cpmp_evm_periods (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    wbs_id TEXT REFERENCES cpmp_wbs(id),
+    period_date TEXT NOT NULL,
+    budget_at_completion REAL DEFAULT 0.0,
+    bac REAL DEFAULT 0.0,
+    planned_value REAL DEFAULT 0.0,
+    pv REAL DEFAULT 0.0,
+    earned_value REAL DEFAULT 0.0,
+    ev REAL DEFAULT 0.0,
+    actual_cost REAL DEFAULT 0.0,
+    ac REAL DEFAULT 0.0,
+    bcws REAL DEFAULT 0.0,
+    bcwp REAL DEFAULT 0.0,
+    acwp REAL DEFAULT 0.0,
+    cpi REAL,
+    spi REAL,
+    cost_variance REAL,
+    cv REAL,
+    schedule_variance REAL,
+    sv REAL,
+    eac REAL,
+    etc REAL,
+    vac REAL,
+    tcpi REAL,
+    source TEXT DEFAULT 'manual' CHECK(source IN ('manual', 'calculated', 'imported')),
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_evm_contract ON cpmp_evm_periods(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_evm_wbs ON cpmp_evm_periods(wbs_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_evm_period ON cpmp_evm_periods(period_date);
+
+-- Subcontractor tracking with FAR 52.219-9 compliance
+CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    company_name TEXT NOT NULL,
+    cage_code TEXT,
+    uei TEXT,
+    business_size TEXT CHECK(business_size IN (
+        'large', 'small', 'sdb', 'wosb', 'hubzone', 'sdvosb', '8a')),
+    business_type TEXT,
+    subcontract_type TEXT CHECK(subcontract_type IN ('labor', 'materials', 'services', 'other')),
+    subcontract_value REAL DEFAULT 0.0,
+    billed_value REAL DEFAULT 0.0,
+    performance_rating TEXT CHECK(performance_rating IN (
+        'exceptional', 'very_good', 'satisfactory', 'marginal', 'unsatisfactory')),
+    flow_down_complete INTEGER DEFAULT 0,
+    cybersecurity_compliant INTEGER DEFAULT 0,
+    cmmc_level INTEGER,
+    isr_ssr_current INTEGER DEFAULT 0,
+    contact_name TEXT,
+    contact_email TEXT,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'terminated', 'pending')),
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sub_contract ON cpmp_subcontractors(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sub_name ON cpmp_subcontractors(company_name);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sub_size ON cpmp_subcontractors(business_size);
+
+-- CPARS assessment per evaluation period
+CREATE TABLE IF NOT EXISTS cpmp_cpars_assessments (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    quality_rating REAL,
+    schedule_rating REAL,
+    cost_rating REAL,
+    management_rating REAL,
+    small_business_rating REAL,
+    overall_rating TEXT CHECK(overall_rating IN (
+        'exceptional', 'very_good', 'satisfactory', 'marginal', 'unsatisfactory')),
+    overall_score REAL,
+    predicted_overall TEXT,
+    predicted_score REAL,
+    narrative TEXT,
+    government_narrative TEXT,
+    negative_event_count INTEGER DEFAULT 0,
+    corrective_actions_completed INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'draft' CHECK(status IN (
+        'draft', 'submitted', 'government_review', 'contested', 'final')),
+    submitted_date TEXT,
+    finalized_date TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cpars_contract ON cpmp_cpars_assessments(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cpars_status ON cpmp_cpars_assessments(status);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cpars_period ON cpmp_cpars_assessments(period_end);
+
+-- NDAA negative-event tracking (append-only, D6, D-CPMP-7)
+CREATE TABLE IF NOT EXISTS cpmp_negative_events (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    event_type TEXT NOT NULL CHECK(event_type IN (
+        'delinquent_delivery', 'cost_overrun', 'quality_rejection',
+        'cybersecurity_breach', 'flowdown_failure', 'safety_violation',
+        'compliance_violation', 'cure_notice', 'show_cause',
+        'stop_work', 'termination_default', 'fraud_waste_abuse')),
+    severity TEXT NOT NULL CHECK(severity IN ('low', 'medium', 'high', 'critical')),
+    description TEXT NOT NULL,
+    evidence TEXT,
+    deliverable_id TEXT REFERENCES cpmp_deliverables(id),
+    subcontractor_id TEXT REFERENCES cpmp_subcontractors(id),
+    corrective_action TEXT,
+    corrective_action_status TEXT DEFAULT 'open' CHECK(corrective_action_status IN (
+        'open', 'in_progress', 'completed', 'verified')),
+    corrective_action_due TEXT,
+    cpars_impact REAL DEFAULT 0.0,
+    detected_by TEXT,
+    reported_by TEXT,
+    reported_date TEXT DEFAULT (datetime('now')),
+    resolved_date TEXT,
+    source_entity_type TEXT,
+    source_entity_id TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_neg_contract ON cpmp_negative_events(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_neg_type ON cpmp_negative_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_cpmp_neg_severity ON cpmp_negative_events(severity);
+CREATE INDEX IF NOT EXISTS idx_cpmp_neg_status ON cpmp_negative_events(corrective_action_status);
+
+-- FAR 52.219-9 Small Business Subcontracting Plan (ISR/SSR)
+CREATE TABLE IF NOT EXISTS cpmp_small_business_plan (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    reporting_period TEXT NOT NULL,
+    report_type TEXT NOT NULL CHECK(report_type IN ('isr', 'ssr')),
+    total_subcontract_dollars REAL DEFAULT 0.0,
+    sb_goal_pct REAL DEFAULT 0.0,
+    sb_actual_pct REAL DEFAULT 0.0,
+    sb_actual_dollars REAL DEFAULT 0.0,
+    sdb_goal_pct REAL DEFAULT 0.0,
+    sdb_actual_pct REAL DEFAULT 0.0,
+    sdb_actual_dollars REAL DEFAULT 0.0,
+    wosb_goal_pct REAL DEFAULT 0.0,
+    wosb_actual_pct REAL DEFAULT 0.0,
+    wosb_actual_dollars REAL DEFAULT 0.0,
+    hubzone_goal_pct REAL DEFAULT 0.0,
+    hubzone_actual_pct REAL DEFAULT 0.0,
+    hubzone_actual_dollars REAL DEFAULT 0.0,
+    sdvosb_goal_pct REAL DEFAULT 0.0,
+    sdvosb_actual_pct REAL DEFAULT 0.0,
+    sdvosb_actual_dollars REAL DEFAULT 0.0,
+    compliant INTEGER DEFAULT 0,
+    submitted_date TEXT,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'submitted', 'accepted', 'rejected')),
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sb_contract ON cpmp_small_business_plan(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sb_period ON cpmp_small_business_plan(reporting_period);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sb_type ON cpmp_small_business_plan(report_type);
+
+-- ── Phase C: Automation ─────────────────────────────────────────────
+
+-- CDRL auto-generation audit trail (append-only, D6)
+CREATE TABLE IF NOT EXISTS cpmp_cdrl_generations (
+    id TEXT PRIMARY KEY,
+    deliverable_id TEXT NOT NULL REFERENCES cpmp_deliverables(id),
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    cdrl_type TEXT NOT NULL,
+    generation_tool TEXT NOT NULL,
+    tool_args TEXT DEFAULT '{}',
+    output_path TEXT,
+    output_hash TEXT,
+    file_size_bytes INTEGER,
+    status TEXT DEFAULT 'generated' CHECK(status IN (
+        'generated', 'reviewed', 'approved', 'submitted', 'failed')),
+    error_message TEXT,
+    generated_by TEXT,
+    reviewed_by TEXT,
+    approved_by TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_deliv ON cpmp_cdrl_generations(deliverable_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_contract ON cpmp_cdrl_generations(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cdrl_gen_status ON cpmp_cdrl_generations(status);
+
+-- SAM.gov Contract Awards API cache
+CREATE TABLE IF NOT EXISTS cpmp_sam_contract_awards (
+    id TEXT PRIMARY KEY,
+    sam_award_id TEXT NOT NULL UNIQUE,
+    piid TEXT,
+    referenced_idv_piid TEXT,
+    award_type TEXT,
+    awardee_name TEXT,
+    awardee_uei TEXT,
+    awardee_cage TEXT,
+    awarding_agency TEXT,
+    awarding_sub_agency TEXT,
+    funding_agency TEXT,
+    naics_code TEXT,
+    psc_code TEXT,
+    obligation_amount REAL,
+    base_exercised_options_value REAL,
+    total_dollars_obligated REAL,
+    award_date TEXT,
+    pop_start TEXT,
+    pop_end TEXT,
+    place_of_performance TEXT,
+    linked_contract_id TEXT REFERENCES cpmp_contracts(id),
+    content_hash TEXT NOT NULL,
+    raw_json TEXT,
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sam_award_id ON cpmp_sam_contract_awards(sam_award_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sam_piid ON cpmp_sam_contract_awards(piid);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sam_awardee ON cpmp_sam_contract_awards(awardee_name);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sam_linked ON cpmp_sam_contract_awards(linked_contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_sam_hash ON cpmp_sam_contract_awards(content_hash);
+
+-- COR portal access audit trail (append-only, NIST AU-2)
+CREATE TABLE IF NOT EXISTS cpmp_cor_access_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    user_email TEXT,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    action TEXT NOT NULL CHECK(action IN (
+        'view_contract', 'view_deliverables', 'view_evm',
+        'view_cpars', 'view_subcontractors', 'export_report')),
+    ip_address TEXT,
+    user_agent TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cor_user ON cpmp_cor_access_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cor_contract ON cpmp_cor_access_log(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cor_action ON cpmp_cor_access_log(action);
+CREATE INDEX IF NOT EXISTS idx_cpmp_cor_created ON cpmp_cor_access_log(created_at);
+
+-- =========================================================================
+-- Questions to Government (Phase 59, D-QTG-1 through D-QTG-5)
+-- =========================================================================
+
+-- Questions to Government: auto-generated + manual questions
+CREATE TABLE IF NOT EXISTS proposal_questions (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    question_number INTEGER,
+    question_text TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN (
+        'scope', 'evaluation_criteria', 'technical_requirements',
+        'contract_terms', 'compliance_security', 'small_business')),
+    priority TEXT NOT NULL DEFAULT 'medium' CHECK(priority IN ('high', 'medium', 'low')),
+    source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('auto', 'manual')),
+    rfp_section_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN (
+        'draft', 'approved', 'submitted', 'answered')),
+    ambiguity_trigger TEXT,
+    content_hash TEXT,
+    created_by TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    submitted_at TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_q_opp ON proposal_questions(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_q_status ON proposal_questions(status);
+CREATE INDEX IF NOT EXISTS idx_prop_q_category ON proposal_questions(category);
+CREATE INDEX IF NOT EXISTS idx_prop_q_priority ON proposal_questions(priority);
+
+-- RFP amendments/revisions (allows UPDATE for diff_data, D-QTG-3)
+CREATE TABLE IF NOT EXISTS proposal_amendments (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    version_number INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    amendment_date TEXT,
+    source_type TEXT NOT NULL DEFAULT 'file' CHECK(source_type IN ('file', 'text')),
+    file_path TEXT,
+    amendment_text TEXT,
+    diff_summary TEXT,
+    diff_data TEXT DEFAULT '{}',
+    changes_detected INTEGER DEFAULT 0,
+    uploaded_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_amend_opp ON proposal_amendments(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_amend_version ON proposal_amendments(opportunity_id, version_number);
+
+-- Government Q&A responses (append-only, D6/NIST AU-2)
+CREATE TABLE IF NOT EXISTS proposal_question_responses (
+    id TEXT PRIMARY KEY,
+    question_id TEXT NOT NULL REFERENCES proposal_questions(id),
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    amendment_id TEXT REFERENCES proposal_amendments(id),
+    response_text TEXT NOT NULL,
+    response_date TEXT,
+    impacts_requirements INTEGER DEFAULT 0,
+    impact_notes TEXT,
+    recorded_by TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(question_id);
+CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
 """
 
 
@@ -5045,9 +5567,23 @@ DASHBOARD_AUTH_ALTER_SQL = [
     "ALTER TABLE agent_token_usage ADD COLUMN api_key_source TEXT DEFAULT 'config'",
 ]
 
+# Phase 59: Questions to Government columns (D-QTG-1)
+QTG_ALTER_SQL = [
+    "ALTER TABLE proposal_opportunities ADD COLUMN questions_due_date TEXT",
+    "ALTER TABLE proposal_opportunities ADD COLUMN amendment_count INTEGER DEFAULT 0",
+    "ALTER TABLE proposal_opportunities ADD COLUMN question_count INTEGER DEFAULT 0",
+]
+
+# Phase 60: CPMP — link proposal_opportunities and customer_deliveries to contracts (D-CPMP-9)
+CPMP_ALTER_SQL = [
+    "ALTER TABLE proposal_opportunities ADD COLUMN contract_id TEXT",
+    "ALTER TABLE customer_deliveries ADD COLUMN contract_id TEXT",
+]
+
 
 def _has_migration_system(path):
     """Check if the database is managed by the migration framework (D150)."""
+    path = Path(path) if not isinstance(path, Path) else path
     if not path.exists():
         return False
     try:
@@ -5068,7 +5604,7 @@ def init_db(db_path=None):
     If the migration system (schema_migrations table) is detected, redirects
     to the migration runner instead of re-running the monolithic init script.
     """
-    path = db_path or DB_PATH
+    path = Path(db_path) if db_path and not isinstance(db_path, Path) else (db_path or DB_PATH)
 
     # D150: Detect migration system — if active, delegate to migration runner
     if _has_migration_system(path):
@@ -5188,6 +5724,18 @@ def init_db(db_path=None):
             pass
     # Phase 59: GovCon Intelligence columns (D361-D373)
     for sql in GOVCON_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 59: Questions to Government columns (D-QTG-1)
+    for sql in QTG_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 60: CPMP — link proposals/deliveries to contracts (D-CPMP-9)
+    for sql in CPMP_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

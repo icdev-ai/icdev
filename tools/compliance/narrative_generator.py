@@ -1,3 +1,4 @@
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """Generate compliance narratives for ATO packages.
 

@@ -112,7 +112,7 @@ _TOKEN_PATTERN = re.compile(r'\b[a-z][a-z0-9/_-]{2,}\b')
 # DATABASE HELPERS
 # =========================================================================
 def _get_db(db_path=None):
-    path = db_path or DB_PATH
+    path = Path(db_path) if db_path and not isinstance(db_path, Path) else (db_path or DB_PATH)
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
     conn = sqlite3.connect(str(path))

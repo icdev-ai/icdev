@@ -74,11 +74,17 @@ def run_test_suite(run_id: str, logger: logging.Logger, skip_e2e: bool = False) 
     if not skip_e2e:
         logger.info("Running E2E tests...")
         try:
-            e2e_results = run_e2e_tests_with_resolution(max_attempts=MAX_E2E_RETRY)
+            e2e_results, e2e_passed, e2e_failed = run_e2e_tests_with_resolution(
+                run_id, logger, max_attempts=MAX_E2E_RETRY,
+            )
             results["e2e_tests"] = e2e_results
+            if e2e_failed > 0:
+                results["all_passed"] = False
+                logger.warning(f"E2E tests: {e2e_passed} passed, {e2e_failed} failed")
         except Exception as e:
-            logger.warning(f"E2E tests skipped: {e}")
-            results["e2e_tests"] = {"skipped": True, "reason": str(e)}
+            logger.error(f"E2E tests failed: {e}")
+            results["e2e_tests"] = {"error": True, "reason": str(e)}
+            results["all_passed"] = False
 
     # Security gate
     logger.info("Evaluating security gate...")

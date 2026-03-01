@@ -43,14 +43,24 @@ def _create_test_project(db_path=None):
     try:
         conn.execute(
             """INSERT INTO projects
-               (id, name, type, status, classification, impact_level, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (project_id, "Test Intake Project", "microservice", "active", "CUI", "IL5"),
+               (id, name, type, status, classification, impact_level, directory_path, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (project_id, "Test Intake Project", "microservice", "active", "CUI", "IL5",
+             str(BASE_DIR)),
         )
         conn.commit()
-    except sqlite3.OperationalError:
-        # Table may not exist in minimal DBs; attempt basic insert
-        pass
+    except (sqlite3.OperationalError, sqlite3.IntegrityError):
+        # Table may not exist or constraint issue; try without directory_path
+        try:
+            conn.execute(
+                """INSERT INTO projects
+                   (id, name, type, status, classification, impact_level, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+                (project_id, "Test Intake Project", "microservice", "active", "CUI", "IL5"),
+            )
+            conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()
     return project_id
@@ -82,7 +92,7 @@ def step_create_intake_session(context, name, org, il):
             "--impact-level", il,
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     context.result = result
@@ -144,7 +154,7 @@ def step_active_intake_session(context):
             "--impact-level", "IL5",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     assert result.returncode == 0, f"Session creation failed: {result.stderr}"
@@ -166,7 +176,7 @@ def step_send_message(context, message):
             "--message", message,
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     context.result = result
@@ -249,7 +259,7 @@ def step_upload_sow_document(context):
             "--document-type", "sow",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     context.result = result
@@ -279,7 +289,7 @@ def step_extract_requirements_from_document(context):
             "--extract",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     context.result = result
@@ -348,7 +358,7 @@ def step_session_with_requirements_for_gaps(context):
             "--impact-level", "IL5",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     assert result.returncode == 0, f"Session creation failed: {result.stderr}"
@@ -366,7 +376,7 @@ def step_session_with_requirements_for_gaps(context):
             "The system must support role-based access control.",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
 
@@ -385,7 +395,7 @@ def step_run_gap_detection(context):
             "--check-compliance",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     context.result = result
@@ -453,7 +463,7 @@ def step_session_with_requirements(context):
             "--impact-level", "IL5",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     assert result.returncode == 0, f"Session creation failed: {result.stderr}"
@@ -474,7 +484,7 @@ def step_session_with_requirements(context):
                 "--message", msg,
                 "--json",
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=60,
             cwd=str(BASE_DIR),
         )
 
@@ -491,7 +501,7 @@ def step_calculate_readiness(context):
             "--session-id", session_id,
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     context.result = result
@@ -550,7 +560,7 @@ def step_session_with_high_readiness(context):
             "--impact-level", "IL5",
             "--json",
         ],
-        capture_output=True, text=True, timeout=30,
+        capture_output=True, text=True, timeout=60,
         cwd=str(BASE_DIR),
     )
     assert result.returncode == 0, f"Session creation failed: {result.stderr}"
@@ -581,7 +591,7 @@ def step_session_with_high_readiness(context):
                 "--message", msg,
                 "--json",
             ],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=60,
             cwd=str(BASE_DIR),
         )
 

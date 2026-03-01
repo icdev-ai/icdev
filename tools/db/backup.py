@@ -16,6 +16,7 @@ ADR D152: Backup/restore with SHA-256 integrity, optional AES-256-CBC encryption
 
 import argparse
 import json
+import subprocess
 import sys
 from pathlib import Path
 

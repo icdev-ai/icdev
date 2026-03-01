@@ -26,6 +26,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -33,7 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_DB_PATH = _ROOT / "data" / "icdev.db"
+_DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 
 
@@ -91,10 +92,31 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
             for kb in knowledge_blocks[:3]
         )
 
+        # Check for product-level context
+        product_key = _detect_product_template(shall_text, domain)
+        product_context = ""
+        if product_key == "icdev_platform":
+            product_context = (
+                "\nPRODUCT CONTEXT: This response should describe ICDEV as a complete "
+                "integrated platform — a system that builds systems. Emphasize that ICDEV is "
+                "delivered on-premises to the customer as a unified platform with 15 agents, "
+                "42 compliance frameworks, 500+ tools, and 6-language support. It is NOT a "
+                "collection of point tools — it is an integrated autonomous development system.\n"
+            )
+        elif product_key == "contract_management_portal":
+            product_context = (
+                "\nPRODUCT CONTEXT: This response should describe the Contract Performance "
+                "Management Portal (CPMP) as a complete post-award delivery tracking system. "
+                "Emphasize CDRL tracking (DD Form 1423), SOW obligation monitoring, CPARS risk "
+                "scoring (4-factor formula), proactive reminders, and COR visibility. The portal "
+                "closes the Shipley lifecycle from proposal to contract delivery.\n"
+            )
+
         prompt = (
             f"Draft a concise proposal response (~400 words) to this requirement:\n\n"
             f"REQUIREMENT: {shall_text}\n\n"
-            f"DOMAIN: {domain}\n\n"
+            f"DOMAIN: {domain}\n"
+            f"{product_context}\n"
             f"OUR CAPABILITIES:\n{cap_descriptions}\n\n"
             f"SUPPORTING EVIDENCE:\n{kb_content}\n\n"
             f"INSTRUCTIONS:\n"
@@ -223,10 +245,116 @@ _DEFAULT_TEMPLATE = (
     "Evidence: {evidence}"
 )
 
+# ── Product-level templates (whole-product descriptions) ──────────
+
+_PRODUCT_TEMPLATES = {
+    "icdev_platform": (
+        "The Contractor delivers the ICDEV (Intelligent Coding Development) platform — "
+        "a complete autonomous software development system that generates ATO-ready "
+        "government applications from natural language requirements. ICDEV orchestrates "
+        "15 specialized AI agents across its 6-layer GOTCHA framework to handle the full "
+        "SDLC with TDD/BDD, multi-framework compliance automation, and continuous "
+        "authorization monitoring.\n\n"
+        "Platform Capabilities Delivered On-Premises:\n"
+        "- 42 compliance frameworks with dual-hub crosswalk (NIST 800-53 + ISO 27001) — "
+        "implement a control once, cascade everywhere\n"
+        "- 500+ deterministic tools for reproducible, auditable execution — no probabilistic "
+        "business logic\n"
+        "- 6 first-class programming languages (Python, Java, Go, Rust, C#, TypeScript) with "
+        "9-step testing pipeline and TDD/BDD\n"
+        "- Multi-cloud IaC generation for 6 CSPs (AWS GovCloud, Azure Government, GCP Assured "
+        "Workloads, OCI Government, IBM IC4G, and local/air-gapped)\n"
+        "- OSCAL-native compliance output with 3-layer deep validation\n"
+        "- Zero Trust Architecture with 7-pillar maturity scoring (DoD ZTA Strategy)\n"
+        "- AI governance (NIST AI RMF, OMB M-25-21/M-26-04, EU AI Act, GAO accountability)\n"
+        "- Complete audit trail (append-only, NIST AU compliant) for every action\n\n"
+        "Customer Value:\n"
+        "- Reduces ATO timeline from 12-18 months to weeks through automated artifact generation\n"
+        "- Eliminates compliance drift with continuous authorization monitoring (cATO)\n"
+        "- Supports air-gapped (IL6/SIPR) deployment with no internet dependency\n"
+        "- One platform replaces 10+ point solutions, lowering total cost of ownership\n\n"
+        "NIST Controls: {controls}\n\n"
+        "Evidence: {evidence}"
+    ),
+    "contract_management_portal": (
+        "The Contractor provides the Contract Performance Management Portal (CPMP) — "
+        "a post-award delivery tracking system that provides real-time visibility into "
+        "contract execution, CDRL compliance, SOW obligation fulfillment, and CPARS risk.\n\n"
+        "Portal Capabilities:\n"
+        "- Automatic CDRL import from Section H (DD Form 1423) with frequency-based due date "
+        "calculation (Monthly, Quarterly, Semi-annual, Annual, As Required, One-time)\n"
+        "- SOW obligation extraction and tracking from Sections C, F, and H "
+        "(shall/must/will statements with compliance status)\n"
+        "- CPARS risk scoring (0.0-1.0) using weighted formula: 35% overdue CDRLs + "
+        "25% rejected CDRLs + 25% non-compliant obligations + 15% late deliveries\n"
+        "- Proactive deliverable reminders at 30/14/7/1 day intervals with severity escalation\n"
+        "- Contract dashboard with CPARS risk gauges, compliance bars, and upcoming timelines\n"
+        "- Full traceability from original proposal to contract to individual deliverables\n\n"
+        "Customer Value:\n"
+        "- Eliminates manual CDRL tracking spreadsheets with automated reminders\n"
+        "- Reduces CPARS risk through proactive early warning on at-risk deliverables\n"
+        "- Provides government CORs with transparent, real-time contractor performance visibility\n"
+        "- Closes the Shipley lifecycle — connects proposal promises to actual delivery outcomes\n"
+        "- Delivery performance feeds back into future proposals for continuous improvement\n\n"
+        "NIST Controls: {controls}\n\n"
+        "Evidence: {evidence}"
+    ),
+}
+
+# Keywords that trigger product-level responses instead of component-level
+_PRODUCT_TRIGGER_KEYWORDS = {
+    "icdev_platform": [
+        "integrated platform", "complete solution", "end-to-end", "full lifecycle",
+        "software factory", "autonomous development", "unified platform", "meta-builder",
+        "system that builds", "development platform", "coding platform", "SDLC platform",
+        "all-in-one", "comprehensive platform", "integrated development",
+    ],
+    "contract_management_portal": [
+        "contract management", "CDRL", "contract data requirements", "CPARS",
+        "post-award", "deliverable tracking", "contract performance", "obligation tracking",
+        "contract administration", "delivery management", "DD Form 1423",
+        "contract monitoring", "performance monitoring", "COR visibility",
+    ],
+}
+
+
+def _detect_product_template(shall_text, domain):
+    """Detect if a shall statement should use a product-level template.
+
+    Returns product key or None.
+    """
+    text_lower = shall_text.lower()
+    best_product = None
+    best_score = 0
+
+    for product_key, triggers in _PRODUCT_TRIGGER_KEYWORDS.items():
+        score = sum(1 for t in triggers if t.lower() in text_lower)
+        if score > best_score:
+            best_score = score
+            best_product = product_key
+
+    # Require at least 2 keyword matches to trigger product template
+    if best_score >= 2:
+        return best_product
+
+    # Also trigger for management domain + contract/deliverable keywords
+    if domain == "management" and best_score >= 1:
+        return best_product
+
+    return None
+
 
 def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
-    """Generate template-based draft (air-gap fallback)."""
-    template = _RESPONSE_TEMPLATES.get(domain, _DEFAULT_TEMPLATE)
+    """Generate template-based draft (air-gap fallback).
+
+    Checks for product-level template first, then falls back to domain template.
+    """
+    # Check if this requirement maps to a whole-product response
+    product_key = _detect_product_template(shall_text, domain)
+    if product_key and product_key in _PRODUCT_TEMPLATES:
+        template = _PRODUCT_TEMPLATES[product_key]
+    else:
+        template = _RESPONSE_TEMPLATES.get(domain, _DEFAULT_TEMPLATE)
 
     tools_list = []
     controls_list = []
@@ -316,10 +444,22 @@ def draft_response(shall_id):
             })
     capabilities.sort(key=lambda x: x["score"], reverse=True)
 
-    # Find knowledge blocks
+    # Find knowledge blocks — include product-level blocks when applicable
     from tools.govcon.knowledge_base import search_blocks
     kb_result = search_blocks(f"{domain} {shall_text[:100]}", domain=domain, top_k=3)
     knowledge_blocks = kb_result.get("results", [])
+
+    # Also search for product-level blocks if requirement is cross-domain
+    product_key = _detect_product_template(shall_text, domain)
+    if product_key:
+        product_search = "ICDEV platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
+        product_kb = search_blocks(product_search, top_k=2)
+        # Prepend product blocks (higher priority)
+        product_results = product_kb.get("results", [])
+        existing_ids = {kb.get("id") for kb in knowledge_blocks}
+        for pkb in product_results:
+            if pkb.get("id") not in existing_ids:
+                knowledge_blocks.insert(0, pkb)
 
     # Try LLM draft, fall back to template
     cfg = _load_config().get("response_drafting", {})
@@ -372,7 +512,7 @@ def draft_response(shall_id):
     }
 
 
-def draft_all_for_opportunity(opportunity_id):
+def draft_all_for_opportunity(opportunity_id, method="auto"):
     """Draft responses for all shall statements of an opportunity."""
     conn = _get_db()
     stmts = conn.execute(

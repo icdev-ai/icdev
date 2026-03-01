@@ -690,9 +690,13 @@ def _generate_bom_ref(component):
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def _build_cyclonedx_sbom(project, components, serial_number=None):
-    """Build a CycloneDX 1.4 JSON SBOM document."""
+def _build_cyclonedx_sbom(project, components, serial_number=None,
+                          spec_version=None, schema=None):
+    """Build a CycloneDX JSON SBOM document."""
     now = datetime.now(timezone.utc)
+    active_spec_version = spec_version or CYCLONEDX_SPEC_VERSION
+    active_schema = schema or CYCLONEDX_SUPPORTED_VERSIONS.get(
+        active_spec_version, CYCLONEDX_SUPPORTED_VERSIONS[CYCLONEDX_SPEC_VERSION])
 
     if serial_number is None:
         serial_number = f"urn:uuid:{uuid.uuid4()}"
@@ -894,7 +898,9 @@ def generate_sbom(
                     print(f"  Warning: Failed to parse {ptype}: {e}")
 
         # Build CycloneDX SBOM
-        sbom, component_count = _build_cyclonedx_sbom(project, all_components)
+        sbom, component_count = _build_cyclonedx_sbom(
+            project, all_components,
+            spec_version=active_spec_version, schema=active_schema)
 
         # Determine output path
         if output_path:

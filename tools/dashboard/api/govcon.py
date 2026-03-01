@@ -19,6 +19,7 @@ Integration points:
 """
 
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -31,7 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-DB_PATH = BASE_DIR / "data" / "icdev.db"
+DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 govcon_api = Blueprint("govcon_api", __name__, url_prefix="/api/govcon")
 
@@ -75,11 +76,10 @@ def scan_sam_gov():
     Auto-creates proposal_opportunities for each new find.
     """
     try:
-        from tools.govcon.sam_scanner import scan_opportunities
+        from tools.govcon.sam_scanner import scan_sam_gov as _scan_sam
         data = request.get_json(silent=True) or {}
-        result = scan_opportunities(
-            naics=data.get("naics"),
-            days=data.get("days", 30),
+        result = _scan_sam(
+            naics_filter=data.get("naics"),
         )
         return jsonify(result)
     except Exception as e:
@@ -645,8 +645,8 @@ def run_pipeline():
     try:
         if "discover" in stages:
             try:
-                from tools.govcon.sam_scanner import scan_opportunities
-                results["stages"]["discover"] = scan_opportunities()
+                from tools.govcon.sam_scanner import scan_sam_gov as _scan_sam
+                results["stages"]["discover"] = _scan_sam()
             except Exception as e:
                 results["stages"]["discover"] = {"status": "error", "error": str(e)}
 
@@ -675,6 +675,364 @@ def run_pipeline():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# =====================================================================
+# Questions to Government (D-QTG-1 through D-QTG-5)
+# =====================================================================
+
+@govcon_api.route("/opportunities/<opp_id>/generate-questions", methods=["POST"])
+def generate_questions(opp_id):
+    """POST /api/govcon/opportunities/<id>/generate-questions
+
+    Auto-generate strategic questions from RFP analysis (D-QTG-1).
+    Deterministic regex/keyword extraction — no LLM needed.
+    """
+    try:
+        from tools.govcon.question_generator import generate_and_store
+        data = request.get_json(silent=True) or {}
+        result = generate_and_store(
+            opp_id=opp_id,
+            created_by=data.get("created_by", "govcon_api"),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@govcon_api.route("/opportunities/<opp_id>/questions", methods=["GET"])
+def list_questions(opp_id):
+    """GET /api/govcon/opportunities/<id>/questions
+
+    List questions with optional filters: category, status, priority, source.
+    """
+    conn = _get_db()
+    try:
+        query = "SELECT * FROM proposal_questions WHERE opportunity_id = ?"
+        params = [opp_id]
+
+        category = request.args.get("category")
+        status = request.args.get("status")
+        priority = request.args.get("priority")
+        source = request.args.get("source")
+
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if priority:
+            query += " AND priority = ?"
+            params.append(priority)
+        if source:
+            query += " AND source = ?"
+            params.append(source)
+
+        query += " ORDER BY question_number ASC"
+        rows = conn.execute(query, params).fetchall()
+        questions = [dict(r) for r in rows]
+
+        # Stats
+        stats = {
+            "total": len(questions),
+            "by_category": {},
+            "by_status": {},
+            "by_priority": {},
+        }
+        for q in questions:
+            cat = q.get("category", "other")
+            stats["by_category"][cat] = stats["by_category"].get(cat, 0) + 1
+            st = q.get("status", "draft")
+            stats["by_status"][st] = stats["by_status"].get(st, 0) + 1
+            pr = q.get("priority", "medium")
+            stats["by_priority"][pr] = stats["by_priority"].get(pr, 0) + 1
+
+        return jsonify({"questions": questions, "stats": stats})
+    finally:
+        conn.close()
+
+
+@govcon_api.route("/opportunities/<opp_id>/questions", methods=["POST"])
+def create_question(opp_id):
+    """POST /api/govcon/opportunities/<id>/questions — Add a manual question."""
+    conn = _get_db()
+    try:
+        data = request.get_json(silent=True) or {}
+        if not data.get("question_text"):
+            return jsonify({"error": "question_text is required"}), 400
+
+        # Get next question number
+        row = conn.execute(
+            "SELECT MAX(question_number) as mx FROM proposal_questions WHERE opportunity_id = ?",
+            (opp_id,),
+        ).fetchone()
+        next_num = (row["mx"] or 0) + 1
+
+        q_id = _uuid()
+        now = _now()
+        conn.execute(
+            """INSERT INTO proposal_questions
+               (id, opportunity_id, question_number, question_text, category, priority,
+                source, rfp_section_ref, status, created_by, classification, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, 'draft', ?, 'CUI', ?, ?)""",
+            (
+                q_id, opp_id, next_num,
+                data["question_text"],
+                data.get("category", "scope"),
+                data.get("priority", "medium"),
+                data.get("rfp_section_ref", ""),
+                data.get("created_by", "govcon_api"),
+                now, now,
+            ),
+        )
+
+        # Update question_count
+        total = conn.execute(
+            "SELECT COUNT(*) as c FROM proposal_questions WHERE opportunity_id = ?",
+            (opp_id,),
+        ).fetchone()["c"]
+        conn.execute(
+            "UPDATE proposal_opportunities SET question_count = ?, updated_at = ? WHERE id = ?",
+            (total, now, opp_id),
+        )
+
+        _audit(conn, "create_question", f"opp={opp_id}, manual, #{next_num}")
+        conn.commit()
+        return jsonify({"status": "ok", "question_id": q_id, "question_number": next_num})
+    finally:
+        conn.close()
+
+
+@govcon_api.route("/questions/<q_id>", methods=["PUT"])
+def update_question(q_id):
+    """PUT /api/govcon/questions/<id> — Update question fields (text, category, priority, rfp_section_ref)."""
+    conn = _get_db()
+    try:
+        data = request.get_json(silent=True) or {}
+        allowed = {"question_text", "category", "priority", "rfp_section_ref"}
+        updates = {k: v for k, v in data.items() if k in allowed and v is not None}
+        if not updates:
+            return jsonify({"error": "No valid fields to update"}), 400
+
+        sets = ", ".join(f"{k} = ?" for k in updates)
+        vals = list(updates.values()) + [_now(), q_id]
+        conn.execute(
+            f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?", vals
+        )
+        _audit(conn, "update_question", f"question={q_id}, fields={list(updates.keys())}")
+        conn.commit()
+        return jsonify({"status": "ok", "question_id": q_id, "updated_fields": list(updates.keys())})
+    finally:
+        conn.close()
+
+
+@govcon_api.route("/questions/<q_id>/status", methods=["PUT"])
+def change_question_status(q_id):
+    """PUT /api/govcon/questions/<id>/status — Status transition with validation.
+
+    Valid transitions: draft→approved, approved→submitted, approved→draft, submitted→answered
+    """
+    conn = _get_db()
+    try:
+        data = request.get_json(silent=True) or {}
+        new_status = data.get("status")
+        if not new_status:
+            return jsonify({"error": "status is required"}), 400
+
+        q = conn.execute("SELECT * FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        if not q:
+            return jsonify({"error": "Question not found"}), 404
+
+        old_status = q["status"]
+
+        # Enforce valid transitions
+        valid_transitions = {
+            "draft": ["approved"],
+            "approved": ["submitted", "draft"],
+            "submitted": ["answered"],
+            "answered": [],
+        }
+        allowed = valid_transitions.get(old_status, [])
+        if new_status not in allowed:
+            return jsonify({
+                "error": f"Invalid transition: {old_status} → {new_status}. Allowed: {allowed}"
+            }), 400
+
+        now = _now()
+        extra_fields = ""
+        extra_vals = []
+
+        if new_status == "approved":
+            extra_fields = ", approved_by = ?, approved_at = ?"
+            extra_vals = [data.get("changed_by", "govcon_api"), now]
+        elif new_status == "submitted":
+            extra_fields = ", submitted_at = ?"
+            extra_vals = [now]
+
+        conn.execute(
+            f"UPDATE proposal_questions SET status = ?, updated_at = ?{extra_fields} WHERE id = ?",
+            [new_status, now] + extra_vals + [q_id],
+        )
+
+        # Status history (id is AUTOINCREMENT, created_at has default)
+        conn.execute(
+            "INSERT INTO proposal_status_history "
+            "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            ("question", q_id, old_status, new_status,
+             data.get("changed_by", "govcon_api"), data.get("notes", "")),
+        )
+
+        _audit(conn, "change_question_status", f"question={q_id}, {old_status}→{new_status}")
+        conn.commit()
+        return jsonify({"status": "ok", "question_id": q_id,
+                        "old_status": old_status, "new_status": new_status})
+    finally:
+        conn.close()
+
+
+@govcon_api.route("/opportunities/<opp_id>/questions/bulk-status", methods=["PUT"])
+def bulk_status_change(opp_id):
+    """PUT /api/govcon/opportunities/<id>/questions/bulk-status — Bulk status change."""
+    conn = _get_db()
+    try:
+        data = request.get_json(silent=True) or {}
+        question_ids = data.get("question_ids", [])
+        new_status = data.get("status")
+        changed_by = data.get("changed_by", "govcon_api")
+
+        if not question_ids or not new_status:
+            return jsonify({"error": "question_ids and status are required"}), 400
+
+        valid_transitions = {
+            "draft": ["approved"],
+            "approved": ["submitted", "draft"],
+            "submitted": ["answered"],
+            "answered": [],
+        }
+
+        now = _now()
+        changed = 0
+        skipped = 0
+
+        for qid in question_ids:
+            q = conn.execute(
+                "SELECT id, status FROM proposal_questions WHERE id = ? AND opportunity_id = ?",
+                (qid, opp_id),
+            ).fetchone()
+            if not q:
+                skipped += 1
+                continue
+
+            old = q["status"]
+            if new_status not in valid_transitions.get(old, []):
+                skipped += 1
+                continue
+
+            conn.execute(
+                "UPDATE proposal_questions SET status = ?, updated_at = ? WHERE id = ?",
+                (new_status, now, qid),
+            )
+            conn.execute(
+                "INSERT INTO proposal_status_history "
+                "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                ("question", qid, old, new_status, changed_by, "Bulk status change"),
+            )
+            changed += 1
+
+        _audit(conn, "bulk_status_change", f"opp={opp_id}, changed={changed}, skipped={skipped}")
+        conn.commit()
+        return jsonify({"status": "ok", "changed": changed, "skipped": skipped})
+    finally:
+        conn.close()
+
+
+@govcon_api.route("/opportunities/<opp_id>/questions/export", methods=["POST"])
+def export_questions_endpoint(opp_id):
+    """POST /api/govcon/opportunities/<id>/questions/export — Export to HTML document."""
+    try:
+        from tools.govcon.question_exporter import export_questions
+        data = request.get_json(silent=True) or {}
+        result = export_questions(
+            opp_id=opp_id,
+            status_filter=data.get("status_filter"),
+            output_path=data.get("output_path"),
+            company_name=data.get("company_name"),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@govcon_api.route("/opportunities/<opp_id>/amendments", methods=["POST"])
+def upload_amendment_endpoint(opp_id):
+    """POST /api/govcon/opportunities/<id>/amendments — Upload amendment (file or text)."""
+    try:
+        from tools.govcon.amendment_tracker import upload_amendment
+        data = request.get_json(silent=True) or {}
+        result = upload_amendment(
+            opp_id=opp_id,
+            title=data.get("title", "Untitled Amendment"),
+            file_path=data.get("file_path"),
+            text=data.get("text"),
+            description=data.get("description"),
+            amendment_date=data.get("amendment_date"),
+            uploaded_by=data.get("uploaded_by", "govcon_api"),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@govcon_api.route("/opportunities/<opp_id>/amendments", methods=["GET"])
+def list_amendments_endpoint(opp_id):
+    """GET /api/govcon/opportunities/<id>/amendments — List amendments."""
+    try:
+        from tools.govcon.amendment_tracker import list_amendments
+        result = list_amendments(opp_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@govcon_api.route("/amendments/<amendment_id>/diff", methods=["GET"])
+def get_amendment_diff(amendment_id):
+    """GET /api/govcon/amendments/<id>/diff — Get diff data for amendment."""
+    try:
+        from tools.govcon.amendment_tracker import compute_diff
+        result = compute_diff(amendment_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@govcon_api.route("/questions/<q_id>/response", methods=["POST"])
+def record_response_endpoint(q_id):
+    """POST /api/govcon/questions/<id>/response — Record government Q&A response."""
+    try:
+        from tools.govcon.amendment_tracker import record_response
+        data = request.get_json(silent=True) or {}
+        if not data.get("response_text"):
+            return jsonify({"error": "response_text is required"}), 400
+
+        result = record_response(
+            question_id=q_id,
+            response_text=data["response_text"],
+            amendment_id=data.get("amendment_id"),
+            response_date=data.get("response_date"),
+            impacts_requirements=data.get("impacts_requirements", False),
+            impact_notes=data.get("impact_notes"),
+            recorded_by=data.get("recorded_by", "govcon_api"),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =====================================================================
+# Pipeline — Full GovCon Intelligence Pipeline
+# =====================================================================
 
 @govcon_api.route("/pipeline/status", methods=["GET"])
 def pipeline_status():

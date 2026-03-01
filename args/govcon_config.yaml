@@ -115,6 +115,15 @@ response_drafting:
   include_tool_references: true
   confidence_threshold: 0.70
   max_knowledge_blocks_per_draft: 3
+  # Product-level response detection: when a requirement mentions 2+ product
+  # trigger keywords, the drafter uses whole-product templates/context instead
+  # of individual capability templates
+  product_detection:
+    enabled: true
+    min_keyword_matches: 2
+    products:
+      - icdev_platform
+      - contract_management_portal
 
 # =========================================================================
 # Award Tracking (D367)
@@ -132,6 +141,18 @@ knowledge_base:
   max_blocks_per_draft: 3
   keyword_search_top_k: 5
   track_usage: true
+  categories:
+    - capability_description   # Individual capability technical description
+    - approach                 # Implementation methodology
+    - staffing                 # Team structure and qualifications
+    - tools_used               # Specific tools within a capability
+    - past_performance         # Client reference / performance evidence
+    - differentiator           # Competitive advantage
+    - management_approach      # Project management methodology
+    - transition_plan          # Deployment / transition approach
+    - product_overview         # Whole-product description (ICDEV, CPMP)
+    - integrated_solution      # How products integrate end-to-end
+    - customer_value           # Benefits and ROI for government customers
 
 # =========================================================================
 # Business Model (D372)
@@ -198,3 +219,177 @@ scheduling:
     start: "02:00"
     end: "06:00"
     timezone: UTC
+
+# =========================================================================
+# Contract Performance Management Portal — Phase 60 (D-CPMP-1 through D-CPMP-10)
+# Post-award contract lifecycle: EVM, CPARS, CDRL, subcontractors, COR portal
+# =========================================================================
+cpmp:
+  # Contract health scoring weights (D-CPMP-8 — deterministic weighted average, D21)
+  health_weights:
+    evm: 0.30
+    deliverables: 0.25
+    cpars: 0.20
+    negative_events: 0.15
+    funding: 0.10
+
+  # Contract status transitions (state machine)
+  contract_transitions:
+    draft: [active]
+    active: [option_pending, complete, terminated]
+    option_pending: [active, complete, terminated]
+    complete: [closed]
+    closed: []
+    terminated: [closed]
+
+  # Deliverable status transitions (state machine)
+  deliverable_transitions:
+    not_started: [in_progress]
+    in_progress: [draft_complete, overdue]
+    draft_complete: [internal_review]
+    internal_review: [submitted, in_progress]
+    submitted: [government_review]
+    government_review: [accepted, rejected]
+    accepted: []
+    rejected: [resubmitted]
+    resubmitted: [government_review]
+    overdue: [in_progress, submitted]
+
+  # EVM configuration (ANSI/EIA-748, D-CPMP-2)
+  evm:
+    cpi_yellow_threshold: 0.95
+    cpi_red_threshold: 0.85
+    spi_yellow_threshold: 0.95
+    spi_red_threshold: 0.85
+    monte_carlo_iterations: 10000
+    forecast_confidence_levels: [0.50, 0.80, 0.95]
+
+  # CPARS prediction (D-CPMP-3 — deterministic weighted scoring)
+  cpars:
+    prediction_weights:
+      quality: 0.25
+      schedule: 0.25
+      cost: 0.20
+      management: 0.15
+      small_business: 0.15
+    rating_thresholds:
+      exceptional: 0.90
+      very_good: 0.75
+      satisfactory: 0.60
+      marginal: 0.40
+      # below 0.40 = unsatisfactory
+    corrective_action_discount: 0.50   # completed corrective actions reduce penalty by 50%
+
+  # NDAA negative-event auto-detection rules
+  negative_events:
+    auto_detect:
+      delinquent_delivery:
+        enabled: true
+        trigger: "deliverable.days_overdue > 0"
+      cost_overrun:
+        enabled: true
+        trigger: "evm.cpi < 0.85 for 3 consecutive periods"
+      quality_rejection:
+        enabled: true
+        trigger: "deliverable.rejection_count >= 2"
+      flowdown_failure:
+        enabled: true
+        trigger: "subcontractor.subcontract_value > 100000 AND flow_down_complete = 0"
+      cybersecurity_breach:
+        enabled: true
+        trigger: "subcontractor.cybersecurity_compliant = 0 AND days_since_flag > 30"
+    # NDAA penalty table (per-event-type CPARS impact)
+    penalty_table:
+      delinquent_delivery: 0.05
+      cost_overrun: 0.08
+      quality_rejection: 0.06
+      cybersecurity_breach: 0.10
+      flowdown_failure: 0.04
+      safety_violation: 0.12
+      compliance_violation: 0.06
+      cure_notice: 0.15
+      show_cause: 0.20
+      stop_work: 0.25
+      termination_default: 0.50
+      fraud_waste_abuse: 0.50
+
+  # CDRL auto-generation (D-CPMP-5 — dispatches to ICDEV tools)
+  cdrl:
+    output_dir: data/cdrl_output
+    auto_generate_days_before_due: 14
+    tool_mapping:
+      ssp: tools/compliance/ssp_generator.py
+      sbom: tools/compliance/sbom_generator.py
+      poam: tools/compliance/poam_generator.py
+      stig_checklist: tools/compliance/stig_checker.py
+      evm_report: tools/govcon/evm_engine.py
+      icd: tools/mosa/icd_generator.py
+      tsp: tools/mosa/tsp_generator.py
+      test_report: tools/testing/test_orchestrator.py
+      security_scan: tools/security/sast_runner.py
+
+  # SAM.gov Contract Awards API (D-CPMP-6)
+  sam_awards:
+    api_url: https://api.sam.gov/opportunities/v1/search
+    api_key_env: SAM_GOV_API_KEY
+    poll_interval_hours: 24
+    rate_limit:
+      requests_per_second: 10
+      delay_between_requests: 0.15
+    lookback_days: 90
+
+  # COR Portal (D-CPMP-4)
+  cor_portal:
+    enabled: true
+    session_timeout_minutes: 30
+    hidden_fields:
+      - subcontractor_pricing
+      - internal_cost_details
+      - internal_notes
+      - corrective_action_details
+      - billed_value
+      - ac_cumulative
+
+# =========================================================================
+# Questions to Government (D-QTG-1 through D-QTG-5)
+# Strategic question generation, amendment tracking, Q&A lifecycle
+# =========================================================================
+questions_to_government:
+  # Category weights for priority scoring (D-QTG-1, D21 pattern)
+  category_weights:
+    scope: 3.0
+    evaluation_criteria: 2.8
+    technical_requirements: 2.5
+    contract_terms: 2.0
+    compliance_security: 1.8
+    small_business: 1.5
+
+  # Priority thresholds (score = category_weight * ambiguity_level * strategic_value)
+  priority_thresholds:
+    high: 7.0       # score >= 7.0
+    medium: 4.0     # score >= 4.0 and < 7.0
+    # below 4.0 = low
+
+  # Auto-generation limits
+  max_auto_questions: 50
+  dedup_similarity_threshold: 0.85    # SHA-256 content hash dedup
+
+  # Question status transitions (state machine)
+  question_transitions:
+    draft: [approved]
+    approved: [submitted, draft]
+    submitted: [answered]
+    answered: []
+
+  # Export settings (D-QTG-4 — HTML for government submission)
+  export:
+    format: html
+    include_cui_banner: true
+    include_priority: true
+    include_rfp_reference: true
+    default_company_name: "ICDEV"
+
+  # Amendment diff settings (D-QTG-3 — Python stdlib difflib)
+  amendment_diff:
+    context_lines: 3
+    ignore_whitespace: false

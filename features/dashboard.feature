@@ -68,5 +68,5 @@ Feature: ICDEV Dashboard
 
   Scenario: API events endpoint returns JSON
     Given the dashboard Flask app is configured
-    When I request "/api/events"
+    When I request "/api/events/recent"
     Then the response should be valid JSON

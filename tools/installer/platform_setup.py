@@ -1,3 +1,4 @@
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """ICDEV Platform Setup — generates deployment artifacts for selected modules.
 

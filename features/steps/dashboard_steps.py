@@ -12,10 +12,35 @@ sys.path.insert(0, os.getcwd())
 
 @given('the dashboard Flask app is configured')
 def step_dashboard_configured(context):
-    """Configure the Flask test client."""
-    from tools.dashboard.app import app
+    """Configure the Flask test client with an authenticated session."""
+    import sqlite3
+    from tools.dashboard.app import create_app
+    from tools.dashboard.auth import create_user
+    from tools.dashboard.config import DB_PATH
+    app = create_app()
     app.config['TESTING'] = True
     context.client = app.test_client()
+    # Create a test admin user and set session to bypass auth redirect
+    user_id = None
+    try:
+        user = create_user("bdd-test@icdev.local", "BDD Tester", role="admin")
+        user_id = user["id"]
+    except Exception:
+        # User already exists — look up by email
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        try:
+            row = conn.execute(
+                "SELECT id FROM dashboard_users WHERE email = ?",
+                ("bdd-test@icdev.local",),
+            ).fetchone()
+            if row:
+                user_id = row["id"]
+        finally:
+            conn.close()
+    if user_id:
+        with context.client.session_transaction() as sess:
+            sess["user_id"] = user_id
 
 
 @when('I request the home page "/"')
@@ -59,43 +84,5 @@ def step_valid_json(context):
     assert isinstance(data, (dict, list))
 
 
-@given('a logged-in tenant admin')
-def step_logged_in_admin(context):
-    """Simulate logged-in admin."""
-    pass  # Session-based auth for portal
 
-
-@given('the SaaS portal is configured')
-def step_portal_configured(context):
-    """Configure the SaaS portal test client."""
-    try:
-        from tools.saas.portal.app import create_portal_app
-        app = create_portal_app()
-        app.config['TESTING'] = True
-        context.portal_client = app.test_client()
-    except ImportError:
-        context.portal_client = None
-
-
-@when('I request the portal login page')
-def step_portal_login(context):
-    """Request portal login."""
-    if context.portal_client:
-        context.response = context.portal_client.get('/login')
-    else:
-        context.response = type('Response', (), {'status_code': 200, 'data': b'<form>'})()
-
-
-@when('I request the portal dashboard')
-def step_portal_dashboard(context):
-    """Request portal dashboard."""
-    if context.portal_client:
-        context.response = context.portal_client.get('/dashboard')
-    else:
-        context.response = type('Response', (), {'status_code': 200, 'data': b'{}'})()
-
-
-@then('the page should contain login form elements')
-def step_login_form(context):
-    """Verify login form."""
-    assert context.response.status_code == 200
+# Portal-specific steps moved to saas_platform_steps.py

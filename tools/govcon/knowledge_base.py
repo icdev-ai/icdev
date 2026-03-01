@@ -23,6 +23,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -30,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_DB_PATH = _ROOT / "data" / "icdev.db"
+_DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 _CATALOG_PATH = _ROOT / "context" / "govcon" / "icdev_capability_catalog.json"
 
 _CATEGORIES = [
@@ -42,6 +43,9 @@ _CATEGORIES = [
     "differentiator",
     "management_approach",
     "transition_plan",
+    "product_overview",
+    "integrated_solution",
+    "customer_value",
 ]
 
 _DOMAINS = [
@@ -216,7 +220,9 @@ def increment_usage(block_id):
 def seed_from_catalog():
     """Seed knowledge base from ICDEV capability catalog.
 
-    Creates one 'capability_description' and one 'tools_used' block per capability.
+    Creates:
+    - Product-level blocks: product_overview, customer_value, integrated_solution per product
+    - Capability-level blocks: capability_description, tools_used per capability
     """
     if not _CATALOG_PATH.exists():
         return {"status": "error", "message": "Capability catalog not found"}
@@ -224,9 +230,106 @@ def seed_from_catalog():
     with open(_CATALOG_PATH) as f:
         catalog = json.load(f)
 
-    capabilities = catalog.get("capabilities", [])
     conn = _get_db()
     created = 0
+
+    # ── Seed product-level blocks ────────────────────────────────────
+    products = catalog.get("products", [])
+    for prod in products:
+        prod_name = prod["name"]
+        prod_cat = prod.get("category", "general")
+        keywords = prod.get("keywords", [])
+
+        # Product overview block
+        existing = conn.execute(
+            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'product_overview'",
+            (prod_name,),
+        ).fetchone()
+        if not existing:
+            overview = (
+                f"{prod.get('description', '')}\n\n"
+                f"Key Capabilities:\n"
+                + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", [])) + "\n\n"
+                f"NIST 800-53 Controls: {', '.join(prod.get('compliance_controls', []))}\n\n"
+                f"Evidence: {prod.get('evidence', '')}"
+            )
+            conn.execute(
+                "INSERT INTO proposal_knowledge_base "
+                "(id, title, content, category, domain, volume_type, keywords, "
+                "naics_codes, usage_count, status, created_at, updated_at, classification) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()), prod_name, overview, "product_overview",
+                    prod_cat if prod_cat in _DOMAINS else "general",
+                    "technical",
+                    json.dumps(keywords[:10]),
+                    json.dumps([]),
+                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                ),
+            )
+            created += 1
+
+        # Customer value block
+        existing_cv = conn.execute(
+            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'customer_value'",
+            (f"{prod_name} — Customer Value",),
+        ).fetchone()
+        if not existing_cv and prod.get("customer_value"):
+            cv_content = (
+                f"Customer Benefits of {prod_name}:\n\n"
+                + "\n".join(f"- {v}" for v in prod.get("customer_value", []))
+            )
+            conn.execute(
+                "INSERT INTO proposal_knowledge_base "
+                "(id, title, content, category, domain, volume_type, keywords, "
+                "naics_codes, usage_count, status, created_at, updated_at, classification) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()), f"{prod_name} — Customer Value",
+                    cv_content, "customer_value",
+                    prod_cat if prod_cat in _DOMAINS else "general",
+                    "management",
+                    json.dumps(keywords[:5]),
+                    json.dumps([]),
+                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                ),
+            )
+            created += 1
+
+        # Integrated solution block (how this product works end-to-end)
+        existing_is = conn.execute(
+            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND category = 'integrated_solution'",
+            (f"{prod_name} — Integrated Solution",),
+        ).fetchone()
+        if not existing_is and prod.get("key_capabilities"):
+            is_content = (
+                f"{prod_name} provides an integrated, end-to-end solution that unifies "
+                f"multiple capabilities into a single platform. Rather than point solutions "
+                f"for individual requirements, the platform delivers:\n\n"
+                + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", [])) + "\n\n"
+                f"These capabilities are not standalone tools — they are deeply integrated "
+                f"through shared databases, unified audit trails, cross-domain compliance "
+                f"crosswalks, and orchestrated agent collaboration."
+            )
+            conn.execute(
+                "INSERT INTO proposal_knowledge_base "
+                "(id, title, content, category, domain, volume_type, keywords, "
+                "naics_codes, usage_count, status, created_at, updated_at, classification) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()), f"{prod_name} — Integrated Solution",
+                    is_content, "integrated_solution",
+                    prod_cat if prod_cat in _DOMAINS else "general",
+                    "technical",
+                    json.dumps(keywords[:5]),
+                    json.dumps([]),
+                    0, "active", _now(), _now(), "CUI // SP-CTI",
+                ),
+            )
+            created += 1
+
+    # ── Seed capability-level blocks ─────────────────────────────────
+    capabilities = catalog.get("capabilities", [])
 
     for cap in capabilities:
         cap_id = cap["id"]

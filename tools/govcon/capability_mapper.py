@@ -30,6 +30,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -37,7 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
-_DB_PATH = _ROOT / "data" / "icdev.db"
+_DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 _CATALOG_PATH = _ROOT / "context" / "govcon" / "icdev_capability_catalog.json"
 _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 

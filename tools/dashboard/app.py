@@ -13,6 +13,8 @@ Usage:
 import argparse
 import sqlite3
 import sys
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -61,6 +63,7 @@ from tools.dashboard.api.evidence import evidence_api
 from tools.dashboard.api.lineage import lineage_api
 from tools.dashboard.api.proposals import proposals_api
 from tools.dashboard.api.govcon import govcon_api
+from tools.dashboard.api.cpmp import cpmp_api
 try:
     from tools.dashboard.api.chat import chat_api
     _HAS_CHAT_API = True
@@ -143,6 +146,11 @@ def create_app() -> Flask:
             "show_tabs": ["overview", "compliance", "deployments"],
             "hide_columns": ["stig_id", "finding_id", "source"],
         },
+        "cor": {
+            "label": "Contracting Officer Representative",
+            "show_tabs": ["overview", "compliance"],
+            "hide_columns": ["stig_id", "finding_id", "source", "internal_cost_details"],
+        },
     }
 
     # Make CUI config, role, and user info available in all templates
@@ -200,6 +208,7 @@ def create_app() -> Flask:
     app.register_blueprint(lineage_api)
     app.register_blueprint(proposals_api)
     app.register_blueprint(govcon_api)
+    app.register_blueprint(cpmp_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
 
@@ -1374,6 +1383,172 @@ def create_app() -> Flask:
         """Artifact Lineage — unified DAG visualization of digital thread, provenance, audit trail, SBOM (Phase 56, D348)."""
         return render_template("lineage.html")
 
+    # ---- CPMP Pages (Phase 60 — D-CPMP) ----
+
+    @app.route("/cpmp")
+    def cpmp_portfolio_page():
+        """CPMP Portfolio — contract performance overview, health scoring."""
+        try:
+            from tools.govcon.portfolio_manager import get_portfolio_summary
+            portfolio_data = get_portfolio_summary()
+            pf = portfolio_data.get("portfolio", {})
+            contracts = pf.get("contracts", [])
+            upcoming = pf.get("upcoming_deliverables", [])
+            portfolio = {
+                "total_contracts": pf.get("total_contracts", 0),
+                "active_contracts": pf.get("active_contracts", 0),
+                "total_value": pf.get("total_value", 0),
+                "burn_rate": pf.get("burn_rate_pct", 0),
+                "overdue_deliverables": pf.get("overdue_deliverables", 0),
+                "at_risk": pf.get("at_risk_contracts", 0),
+                "health_distribution": pf.get("health_distribution", {"green": 0, "yellow": 0, "red": 0}),
+            }
+            return render_template("cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("cpmp/portfolio.html", portfolio={"total_contracts": 0, "active_contracts": 0, "total_value": 0, "burn_rate": 0, "overdue_deliverables": 0, "health_distribution": {"green": 0, "yellow": 0, "red": 0}}, contracts=[], upcoming_deliverables=[], error=str(e))
+
+    @app.route("/cpmp/<contract_id>")
+    def cpmp_detail_page(contract_id):
+        """CPMP Contract Detail — 7-tab view with CLINs, WBS, EVM, CPARS, etc."""
+        try:
+            from tools.govcon.contract_manager import get_contract, list_clins, list_wbs, list_deliverables
+            contract_result = get_contract(contract_id)
+            if contract_result.get("status") == "error":
+                return render_template("404.html", message="Contract not found"), 404
+            contract = contract_result.get("contract", contract_result)
+            clins = list_clins(contract_id).get("clins", [])
+            wbs_elements = list_wbs(contract_id).get("wbs_elements", [])
+            deliverables = list_deliverables(contract_id).get("deliverables", [])
+            # Subcontractors
+            try:
+                from tools.govcon.subcontractor_tracker import list_subcontractors
+                subcontractors = list_subcontractors(contract_id).get("subcontractors", [])
+            except Exception:
+                subcontractors = []
+            # EVM — flatten indicators into top-level for template access
+            try:
+                from tools.govcon.evm_engine import aggregate_contract_evm
+                evm = aggregate_contract_evm(contract_id)
+                if "indicators" in evm and isinstance(evm["indicators"], dict):
+                    evm.update(evm["indicators"])
+            except Exception:
+                evm = {}
+            # CPARS prediction + assessments
+            try:
+                from tools.govcon.cpars_predictor import predict_cpars, list_assessments
+                cpars_prediction = predict_cpars(contract_id)
+                # Map dimension_scores to dimensions (0-1 → 0-5 for template bar charts)
+                if "dimension_scores" in cpars_prediction:
+                    cpars_prediction["dimensions"] = {
+                        k: round(v * 5, 2) for k, v in cpars_prediction["dimension_scores"].items()
+                    }
+                cpars_assessments = list_assessments(contract_id).get("assessments", [])
+            except Exception:
+                cpars_prediction = {}
+                cpars_assessments = []
+            return render_template("cpmp/detail.html",
+                                   contract=contract, clins=clins, wbs_elements=wbs_elements,
+                                   deliverables=deliverables, subcontractors=subcontractors,
+                                   evm=evm, cpars_prediction=cpars_prediction,
+                                   cpars_assessments=cpars_assessments)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("404.html", message=f"Error loading contract: {e}"), 500
+
+    @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
+    def cpmp_deliverable_detail_page(contract_id, deliverable_id):
+        """CPMP Deliverable Detail — status pipeline, CDRL generation."""
+        try:
+            from tools.govcon.contract_manager import get_contract, get_deliverable
+            contract_result = get_contract(contract_id)
+            contract = contract_result.get("contract", contract_result) if contract_result.get("status") == "ok" else {}
+            deliv_result = get_deliverable(deliverable_id)
+            if deliv_result.get("status") == "error":
+                return render_template("404.html", message="Deliverable not found"), 404
+            deliverable = deliv_result.get("deliverable", deliv_result)
+            generations = deliverable.get("generations", []) if isinstance(deliverable, dict) else []
+            status_history = deliverable.get("status_history", []) if isinstance(deliverable, dict) else []
+            return render_template("cpmp/deliverable_detail.html",
+                                   contract=contract, deliverable=deliverable,
+                                   generations=generations, status_history=status_history)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("404.html", message=f"Error loading deliverable: {e}"), 500
+
+    @app.route("/cpmp/cor")
+    def cpmp_cor_portal_page():
+        """COR Portal — read-only government view of assigned contracts."""
+        cor_email = flask_request.args.get("cor_email", "")
+        conn = _get_db()
+        try:
+            if cor_email:
+                rows = conn.execute(
+                    "SELECT * FROM cpmp_contracts WHERE cor_email = ? ORDER BY created_at DESC",
+                    (cor_email,),
+                ).fetchall()
+                contracts = [dict(r) for r in rows]
+            else:
+                contracts = []
+            return render_template("cpmp/cor_portal.html", contracts=contracts, cor_email=cor_email)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            print(f"[COR Portal] ERROR: {e}")
+            return render_template("cpmp/cor_portal.html", contracts=[], cor_email=cor_email)
+        finally:
+            conn.close()
+
+    @app.route("/cpmp/cor/<contract_id>")
+    def cpmp_cor_detail_page(contract_id):
+        """COR Contract Detail — read-only, no internal cost data."""
+        cor_email = flask_request.args.get("cor_email", "")
+        conn = _get_db()
+        try:
+            from tools.govcon.contract_manager import get_contract, list_deliverables
+            contract_result = get_contract(contract_id)
+            if contract_result.get("status") == "error":
+                return render_template("404.html", message="Contract not found"), 404
+            contract = contract_result.get("contract", contract_result)
+            deliverables = list_deliverables(contract_id).get("deliverables", [])
+            try:
+                from tools.govcon.evm_engine import aggregate_contract_evm
+                evm = aggregate_contract_evm(contract_id)
+                if "indicators" in evm and isinstance(evm["indicators"], dict):
+                    evm.update(evm["indicators"])
+                # Map aggregate fields for template
+                if "total_bac" in evm:
+                    evm.setdefault("bac", evm["total_bac"])
+                if "total_pv" in evm:
+                    evm.setdefault("pv", evm["total_pv"])
+                if "total_ev" in evm:
+                    evm.setdefault("ev", evm["total_ev"])
+                if "percent_complete" in evm:
+                    evm.setdefault("percent_complete_schedule", evm["percent_complete"] / 100 if evm["percent_complete"] > 1 else evm["percent_complete"])
+            except Exception:
+                evm = {}
+            try:
+                from tools.govcon.cpars_predictor import list_assessments
+                cpars_assessments = list_assessments(contract_id).get("assessments", [])
+            except Exception:
+                cpars_assessments = []
+            # Log COR access
+            try:
+                conn.execute(
+                    "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), cor_email, contract_id, "view_contract", datetime.now(timezone.utc).isoformat(), "CUI // SP-CTI"),
+                )
+                conn.commit()
+            except Exception:
+                pass
+            return render_template("cpmp/cor_detail.html",
+                                   contract=contract, deliverables=deliverables,
+                                   evm=evm, cpars_assessments=cpars_assessments, cor_email=cor_email)
+        except Exception as e:
+            return render_template("404.html", message=f"Error: {e}"), 500
+        finally:
+            conn.close()
+
     # ---- Proposal Lifecycle Pages (D-PROP) ----
 
     @app.route("/proposals")
@@ -1511,11 +1686,52 @@ def create_app() -> Flask:
                 "finding_severity_distribution": finding_severity_dist,
             }
 
+            # Questions to Government
+            questions = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC",
+                (opp_id,),
+            ).fetchall()]
+            question_stats = {
+                "total": len(questions),
+                "high_priority": len([q for q in questions if q.get("priority") == "high"]),
+                "draft": len([q for q in questions if q.get("status") == "draft"]),
+                "approved": len([q for q in questions if q.get("status") == "approved"]),
+                "submitted": len([q for q in questions if q.get("status") == "submitted"]),
+                "answered": len([q for q in questions if q.get("status") == "answered"]),
+            }
+            # Q&A deadline countdown
+            questions_days_left = None
+            if opp.get("questions_due_date"):
+                try:
+                    questions_days_left = (date.fromisoformat(opp["questions_due_date"]) - today).days
+                except (ValueError, TypeError):
+                    pass
+
+            # Amendments
+            amendments = [dict(r) for r in conn.execute(
+                "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC",
+                (opp_id,),
+            ).fetchall()]
+
+            # Responses (for answered questions)
+            responses = {}
+            for q in questions:
+                if q.get("status") == "answered":
+                    resp = conn.execute(
+                        "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at DESC LIMIT 1",
+                        (q["id"],),
+                    ).fetchone()
+                    if resp:
+                        responses[q["id"]] = dict(resp)
+
             return render_template("proposals/detail.html",
                 opp=opp, sections=sections, volumes=volumes,
                 compliance_items=compliance_items, reviews=reviews_data, findings=findings,
                 stats=stats, compliance_stats=compliance_stats,
-                reviews_data=reviews_data, days_left=days_left)
+                reviews_data=reviews_data, days_left=days_left,
+                questions=questions, question_stats=question_stats,
+                questions_days_left=questions_days_left,
+                amendments=amendments, responses=responses)
         finally:
             conn.close()
 

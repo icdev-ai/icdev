@@ -1,3 +1,4 @@
+# [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """ICDEV Modular Installer — central CLI for configuring and installing ICDEV.
 

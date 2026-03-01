@@ -190,4 +190,4 @@ class EUAIActClassifier(BaseAssessor):
 # CLI
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
-    EUAIActClassifier.run_cli()
+    EUAIActClassifier().run_cli()

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}CPMP Portfolio - ICDEV{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs"><a href="/">Home</a><span class="separator">/</span><span>CPMP Portfolio</span></div>
+
+<div class="page-header">
+    <h1>Contract Portfolio</h1>
+    <p class="subtitle">Contract Performance Management Portal &mdash; active contracts, health, and deliverable tracking</p>
+</div>
+
+<!-- Stat Grid -->
+<div class="stat-grid" aria-label="Portfolio summary statistics">
+    <div class="stat-card">
+        <div class="stat-value">{{ portfolio.total_contracts | default(0) }}</div>
+        <div class="stat-label">Total Contracts</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ portfolio.active_contracts | default(0) }}</div>
+        <div class="stat-label">Active</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">${{ '{:,.0f}'.format(portfolio.total_value | default(0)) }}</div>
+        <div class="stat-label">Total Value</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">${{ '{:,.0f}'.format(portfolio.burn_rate | default(0)) }}</div>
+        <div class="stat-label">Burn Rate</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value {% if portfolio.overdue_deliverables | default(0) > 0 %}text-danger{% endif %}">{{ portfolio.overdue_deliverables | default(0) }}</div>
+        <div class="stat-label">Overdue Deliverables</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value {% if (portfolio.health_distribution.yellow | default(0)) + (portfolio.health_distribution.red | default(0)) > 0 %}text-warning{% endif %}">
+            {{ (portfolio.health_distribution.yellow | default(0)) + (portfolio.health_distribution.red | default(0)) }}
+        </div>
+        <div class="stat-label">At-Risk</div>
+    </div>
+</div>
+
+<!-- Health Distribution -->
+<div class="table-container" style="margin-top: 20px;">
+    <div class="table-header">
+        <h2>Health Distribution</h2>
+    </div>
+    <div style="padding: 16px;" role="img" aria-label="Contract health distribution: {{ portfolio.health_distribution.green | default(0) }} green, {{ portfolio.health_distribution.yellow | default(0) }} yellow, {{ portfolio.health_distribution.red | default(0) }} red">
+        {% set green_count = portfolio.health_distribution.green | default(0) %}
+        {% set yellow_count = portfolio.health_distribution.yellow | default(0) %}
+        {% set red_count = portfolio.health_distribution.red | default(0) %}
+        {% set health_total = green_count + yellow_count + red_count %}
+
+        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span class="badge badge-success" style="min-width: 60px; text-align: center;">Green</span>
+                    <div style="flex: 1; margin: 0 12px; background: var(--bg-secondary, #1a1a2e); border-radius: 4px; height: 24px; overflow: hidden;">
+                        <div style="width: {{ ((green_count / health_total * 100) | round(0) | int) if health_total > 0 else 0 }}%; height: 100%; background: var(--status-green, #28a745); border-radius: 4px; transition: width 0.3s;"></div>
+                    </div>
+                    <span style="min-width: 30px; text-align: right; font-weight: bold;">{{ green_count }}</span>
+                </div>
+                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                    <span class="badge badge-warning" style="min-width: 60px; text-align: center;">Yellow</span>
+                    <div style="flex: 1; margin: 0 12px; background: var(--bg-secondary, #1a1a2e); border-radius: 4px; height: 24px; overflow: hidden;">
+                        <div style="width: {{ ((yellow_count / health_total * 100) | round(0) | int) if health_total > 0 else 0 }}%; height: 100%; background: var(--status-yellow, #ffc107); border-radius: 4px; transition: width 0.3s;"></div>
+                    </div>
+                    <span style="min-width: 30px; text-align: right; font-weight: bold;">{{ yellow_count }}</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <span class="badge badge-error" style="min-width: 60px; text-align: center;">Red</span>
+                    <div style="flex: 1; margin: 0 12px; background: var(--bg-secondary, #1a1a2e); border-radius: 4px; height: 24px; overflow: hidden;">
+                        <div style="width: {{ ((red_count / health_total * 100) | round(0) | int) if health_total > 0 else 0 }}%; height: 100%; background: var(--status-red, #dc3545); border-radius: 4px; transition: width 0.3s;"></div>
+                    </div>
+                    <span style="min-width: 30px; text-align: right; font-weight: bold;">{{ red_count }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Contract Table -->
+<div class="table-container" style="margin-top: 20px;">
+    <div class="table-header">
+        <h2>Contracts</h2>
+    </div>
+    <table aria-label="Contract portfolio listing">
+        <thead>
+            <tr>
+                <th>Contract #</th>
+                <th>Title</th>
+                <th>Agency</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Health</th>
+                <th>POP End</th>
+                <th>Value</th>
+                <th>CPI</th>
+                <th>SPI</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for contract in contracts %}
+            <tr>
+                <td><a href="/cpmp/{{ contract.id }}">{{ contract.contract_number | default('—') }}</a></td>
+                <td><a href="/cpmp/{{ contract.id }}">{{ contract.title | default('—') }}</a></td>
+                <td>{{ contract.agency | default('—') }}</td>
+                <td>{{ contract.contract_type | default('—') }}</td>
+                <td>
+                    {% set cstatus = contract.status | default('unknown') %}
+                    {% set cstatus_colors = {'active': 'success', 'complete': 'info', 'at_risk': 'warning', 'overdue': 'error', 'closed': 'info', 'pending': 'warning'} %}
+                    <span class="badge badge-{{ cstatus_colors.get(cstatus, 'info') }}">{{ cstatus | replace('_', ' ') | title }}</span>
+                </td>
+                <td>
+                    {% set health = contract.health | default('unknown') %}
+                    {% if health == 'green' %}
+                    <span class="badge badge-success">Green</span>
+                    {% elif health == 'yellow' %}
+                    <span class="badge badge-warning">Yellow</span>
+                    {% elif health == 'red' %}
+                    <span class="badge badge-error">Red</span>
+                    {% else %}
+                    <span class="badge">{{ health | title }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ contract.pop_end | default('—') }}</td>
+                <td>${{ '{:,.0f}'.format(contract.value | default(0)) }}</td>
+                <td>
+                    {% set cpi = contract.cpi %}
+                    {% if cpi is not none %}
+                    <span class="{% if cpi < 0.85 %}text-danger{% elif cpi < 0.95 %}text-warning{% endif %}" style="font-weight: bold;">
+                        {{ cpi | round(2) }}
+                    </span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% set spi = contract.spi %}
+                    {% if spi is not none %}
+                    <span class="{% if spi < 0.85 %}text-danger{% elif spi < 0.95 %}text-warning{% endif %}" style="font-weight: bold;">
+                        {{ spi | round(2) }}
+                    </span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="text-muted" style="text-align: center;">No contracts in portfolio.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Upcoming Deliverables -->
+<div class="table-container" style="margin-top: 20px;">
+    <div class="table-header">
+        <h2>Upcoming Deliverables</h2>
+    </div>
+    <table aria-label="Upcoming contract deliverables">
+        <thead>
+            <tr>
+                <th>CDRL #</th>
+                <th>Title</th>
+                <th>Contract</th>
+                <th>Due Date</th>
+                <th>Days Until Due</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in upcoming_deliverables %}
+            <tr>
+                <td>{{ d.cdrl_number | default('—') }}</td>
+                <td>{{ d.title | default('—') }}</td>
+                <td>{{ d.contract_number | default('—') }}</td>
+                <td>{{ d.due_date | default('—') }}</td>
+                <td class="{% if d.days_until_due is not none and d.days_until_due <= 7 %}text-danger{% elif d.days_until_due is not none and d.days_until_due <= 14 %}text-warning{% endif %}">
+                    {% if d.days_until_due is not none %}
+                        {{ d.days_until_due | round(0) | int }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% set dstatus = d.status | default('pending') %}
+                    {% set dstatus_colors = {'submitted': 'success', 'approved': 'success', 'in_progress': 'info', 'pending': 'warning', 'overdue': 'error', 'rejected': 'error', 'draft': 'info'} %}
+                    <span class="badge badge-{{ dstatus_colors.get(dstatus, 'info') }}">{{ dstatus | replace('_', ' ') | title }}</span>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-muted" style="text-align: center;">No upcoming deliverables.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+.text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
+.text-warning { color: var(--status-yellow, #ffc107) !important; }
+</style>
+{% endblock %}

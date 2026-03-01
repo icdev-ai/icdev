@@ -339,7 +339,7 @@ class TestAuthEventLogging:
 
 class TestRBACMatrix:
     def test_all_roles_can_access_home(self, auth):
-        expected_roles = {"admin", "pm", "developer", "isso", "co"}
+        expected_roles = {"admin", "pm", "developer", "isso", "co", "cor"}
         assert auth.RBAC_MATRIX["home"] == expected_roles
 
     def test_gateway_is_admin_and_isso_only(self, auth):
@@ -349,7 +349,7 @@ class TestRBACMatrix:
         assert auth.RBAC_MATRIX["admin"] == {"admin"}
 
     def test_all_matrix_entries_have_valid_roles(self, auth):
-        valid_roles = {"admin", "pm", "developer", "isso", "co"}
+        valid_roles = {"admin", "pm", "developer", "isso", "co", "cor"}
         for page, roles in auth.RBAC_MATRIX.items():
             assert roles.issubset(valid_roles), f"Page '{page}' has invalid roles: {roles - valid_roles}"
 
