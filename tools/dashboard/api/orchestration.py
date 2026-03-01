@@ -284,8 +284,11 @@ def get_mailbox():
 @orchestration_api.route("/mailbox/stream")
 def stream_mailbox():
     """SSE stream for real-time mailbox updates (D29 — SSE over WebSocket)."""
+    # Capture request args before entering generator (avoid request context error)
+    initial_since = request.args.get("since", "")
+
     def generate():
-        last_id = request.args.get("since", "")
+        last_id = initial_since
         while True:
             try:
                 conn = _get_db()
