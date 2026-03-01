@@ -10,6 +10,8 @@ Resolution order:
   3. Fall back to icdev/data/ (pip install)
 """
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
