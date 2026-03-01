@@ -825,6 +825,12 @@ def cor_get_contract(contract_id):
     """GET /api/cpmp/cor/contracts/<id> — COR: view contract detail."""
     try:
         cor_email = request.args.get("cor_email", "")
+        if not cor_email:
+            return jsonify({"status": "error", "message": "cor_email required"}), 400
+        # Verify COR is assigned to this contract
+        cor_contracts = _get_cor_contracts(cor_email)
+        if not any(c.get("id") == contract_id for c in cor_contracts):
+            return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.contract_manager import get_contract as _get
         result = _get(contract_id)
         if result.get("status") == "error":
@@ -843,6 +849,11 @@ def cor_list_deliverables(contract_id):
     """GET /api/cpmp/cor/contracts/<id>/deliverables — COR: view deliverables."""
     try:
         cor_email = request.args.get("cor_email", "")
+        if not cor_email:
+            return jsonify({"status": "error", "message": "cor_email required"}), 400
+        cor_contracts = _get_cor_contracts(cor_email)
+        if not any(c.get("id") == contract_id for c in cor_contracts):
+            return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.contract_manager import list_deliverables as _list
         result = _list(contract_id)
         conn = _get_db()
@@ -859,6 +870,11 @@ def cor_get_evm(contract_id):
     """GET /api/cpmp/cor/contracts/<id>/evm — COR: view EVM data."""
     try:
         cor_email = request.args.get("cor_email", "")
+        if not cor_email:
+            return jsonify({"status": "error", "message": "cor_email required"}), 400
+        cor_contracts = _get_cor_contracts(cor_email)
+        if not any(c.get("id") == contract_id for c in cor_contracts):
+            return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.evm_engine import aggregate_contract_evm
         result = aggregate_contract_evm(contract_id)
         conn = _get_db()
@@ -875,6 +891,11 @@ def cor_get_cpars(contract_id):
     """GET /api/cpmp/cor/contracts/<id>/cpars — COR: view CPARS ratings."""
     try:
         cor_email = request.args.get("cor_email", "")
+        if not cor_email:
+            return jsonify({"status": "error", "message": "cor_email required"}), 400
+        cor_contracts = _get_cor_contracts(cor_email)
+        if not any(c.get("id") == contract_id for c in cor_contracts):
+            return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
         from tools.govcon.cpars_predictor import list_assessments as _list
         result = _list(contract_id)
         conn = _get_db()

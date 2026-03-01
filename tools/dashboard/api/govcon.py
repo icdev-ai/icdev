@@ -971,10 +971,18 @@ def upload_amendment_endpoint(opp_id):
     try:
         from tools.govcon.amendment_tracker import upload_amendment
         data = request.get_json(silent=True) or {}
+        # Validate file_path to prevent path traversal — restrict to data/ and .tmp/
+        file_path = data.get("file_path")
+        if file_path:
+            safe_bases = [BASE_DIR / "data", BASE_DIR / ".tmp"]
+            resolved = Path(file_path).resolve()
+            if not any(str(resolved).startswith(str(sb.resolve())) for sb in safe_bases):
+                return jsonify({"error": "file_path must be within data/ or .tmp/"}), 400
+            file_path = str(resolved)
         result = upload_amendment(
             opp_id=opp_id,
             title=data.get("title", "Untitled Amendment"),
-            file_path=data.get("file_path"),
+            file_path=file_path,
             text=data.get("text"),
             description=data.get("description"),
             amendment_date=data.get("amendment_date"),

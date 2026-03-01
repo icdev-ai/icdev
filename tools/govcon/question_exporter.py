@@ -355,7 +355,10 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
 
         # Write to file if output_path provided
         if output_path:
-            out = Path(output_path)
+            safe_base = BASE_DIR / ".tmp" / "exports"
+            out = (safe_base / Path(output_path).name).resolve()
+            if not str(out).startswith(str(safe_base.resolve())):
+                return {"status": "error", "message": "Invalid output path"}
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_text(html, encoding="utf-8")
             _audit(conn, "questions_exported",

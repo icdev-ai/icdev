@@ -962,18 +962,62 @@ function loadDrafts(oppId) {
             var conf = d.confidence ? (d.confidence * 100).toFixed(0) + "%" : "—";
             var confColor = (d.confidence || 0) >= 0.7 ? "success" : ((d.confidence || 0) >= 0.4 ? "warning" : "error");
             var statusColor = {"draft": "warning", "approved": "success", "rejected": "error", "reviewed": "info"}[d.status] || "info";
-            var actions = d.status === "draft"
-                ? '<button class="btn btn-sm btn-success" onclick="approveDraft(\'' + d.id + '\')">Approve</button> '
-                  + '<button class="btn btn-sm btn-error" onclick="rejectDraft(\'' + d.id + '\')">Reject</button>'
-                : '<span class="text-muted">' + d.status + '</span>';
-            tbody.innerHTML += '<tr>'
-                + '<td title="' + (d.shall_text || d.draft_content || '').substring(0, 200).replace(/"/g, '&quot;') + '">'
-                + (d.shall_text || d.draft_content || '—').substring(0, 80) + '...</td>'
-                + '<td><span class="badge badge-info">' + (d.domain || '—') + '</span></td>'
-                + '<td><span class="badge badge-' + confColor + '">' + conf + '</span></td>'
-                + '<td>' + (d.generation_model || '—') + '</td>'
-                + '<td><span class="badge badge-' + statusColor + '">' + d.status + '</span></td>'
-                + '<td>' + actions + '</td></tr>';
+            var tr = document.createElement("tr");
+
+            var tdText = document.createElement("td");
+            tdText.title = (d.shall_text || d.draft_content || '').substring(0, 200);
+            tdText.textContent = (d.shall_text || d.draft_content || '—').substring(0, 80) + '...';
+            tr.appendChild(tdText);
+
+            var tdDomain = document.createElement("td");
+            var badgeDomain = document.createElement("span");
+            badgeDomain.className = "badge badge-info";
+            badgeDomain.textContent = d.domain || '—';
+            tdDomain.appendChild(badgeDomain);
+            tr.appendChild(tdDomain);
+
+            var tdConf = document.createElement("td");
+            var badgeConf = document.createElement("span");
+            badgeConf.className = "badge badge-" + confColor;
+            badgeConf.textContent = conf;
+            tdConf.appendChild(badgeConf);
+            tr.appendChild(tdConf);
+
+            var tdModel = document.createElement("td");
+            tdModel.textContent = d.generation_model || '—';
+            tr.appendChild(tdModel);
+
+            var tdStatus = document.createElement("td");
+            var badgeStatus = document.createElement("span");
+            badgeStatus.className = "badge badge-" + statusColor;
+            badgeStatus.textContent = d.status;
+            tdStatus.appendChild(badgeStatus);
+            tr.appendChild(tdStatus);
+
+            var tdActions = document.createElement("td");
+            if (d.status === "draft") {
+                var btnApprove = document.createElement("button");
+                btnApprove.className = "btn btn-sm btn-success";
+                btnApprove.textContent = "Approve";
+                btnApprove.setAttribute("data-draft-id", d.id);
+                btnApprove.addEventListener("click", function() { approveDraft(this.getAttribute("data-draft-id")); });
+                tdActions.appendChild(btnApprove);
+                tdActions.appendChild(document.createTextNode(" "));
+                var btnReject = document.createElement("button");
+                btnReject.className = "btn btn-sm btn-error";
+                btnReject.textContent = "Reject";
+                btnReject.setAttribute("data-draft-id", d.id);
+                btnReject.addEventListener("click", function() { rejectDraft(this.getAttribute("data-draft-id")); });
+                tdActions.appendChild(btnReject);
+            } else {
+                var spanStatus = document.createElement("span");
+                spanStatus.className = "text-muted";
+                spanStatus.textContent = d.status;
+                tdActions.appendChild(spanStatus);
+            }
+            tr.appendChild(tdActions);
+
+            tbody.appendChild(tr);
         });
     })
     .catch(function() { loading.textContent = "Failed to load drafts."; });
@@ -1072,9 +1116,11 @@ function exportQuestions(oppId) {
     }).then(function(r) { return r.json(); }).then(function(data) {
         if (data.error) { st.textContent = "Error: " + data.error; st.style.color = "var(--status-red)"; return; }
         if (data.html) {
-            var w = window.open("", "_blank");
-            w.document.write(data.html);
-            w.document.close();
+            var blob = new Blob([data.html], {type: "text/html; charset=utf-8"});
+            var url = URL.createObjectURL(blob);
+            var w = window.open(url, "_blank");
+            if (w) { w.addEventListener("load", function() { URL.revokeObjectURL(url); }); }
+            else { URL.revokeObjectURL(url); }
             st.textContent = data.count + " questions exported.";
             st.style.color = "var(--status-green)";
         } else if (data.output_path) {
