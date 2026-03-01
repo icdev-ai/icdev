@@ -393,13 +393,51 @@ The **dual-hub crosswalk engine** eliminates duplicate assessments:
 
 ## Quick Start
 
+### Option 1: Install from PyPI (recommended)
+
+```bash
+# Install ICDEV
+pip install icdev
+
+# Add LLM providers (pick what you need)
+pip install icdev[llm]          # OpenAI, Anthropic, Bedrock, Gemini, Ollama
+pip install icdev[full]         # Everything: all LLM providers + search + testing + security
+
+# Initialize databases (234 tables)
+icdev-init-db
+
+# Start the dashboard
+icdev-dashboard
+# → http://localhost:5000
+
+# Start the unified MCP server (241 tools for Claude Code / AI IDEs)
+icdev-mcp
+```
+
+**Available extras:**
+
+| Extra | What it adds |
+|-------|-------------|
+| `icdev[llm]` | OpenAI, Anthropic, Bedrock, Google GenAI, Ollama |
+| `icdev[llm-azure]` | Azure OpenAI |
+| `icdev[llm-vertex]` | Google Vertex AI |
+| `icdev[llm-oci]` | Oracle Cloud GenAI |
+| `icdev[llm-ibm]` | IBM watsonx.ai |
+| `icdev[llm-all]` | All LLM providers |
+| `icdev[search]` | Semantic + keyword search (numpy, rank_bm25) |
+| `icdev[testing]` | pytest, behave, ruff, pydantic |
+| `icdev[security]` | bandit, pip-audit, detect-secrets, cyclonedx-bom |
+| `icdev[full]` | Everything above |
+
+### Option 2: Install from source
+
 ```bash
 # Clone and install
 git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
 
-# Initialize databases (229 tables)
+# Initialize databases (234 tables)
 python tools/db/init_icdev_db.py
 
 # Start the dashboard
@@ -407,7 +445,7 @@ python tools/dashboard/app.py
 # → http://localhost:5000
 ```
 
-### Or use modular installation:
+### Option 3: Modular installation
 
 ```bash
 # Interactive wizard
