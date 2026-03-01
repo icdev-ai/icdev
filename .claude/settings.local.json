@@ -246,7 +246,9 @@
       "Bash(PYTHONPATH=. PYTHONIOENCODING=utf-8 python -m behave features/security_scanning.feature features/testing_pipeline.feature features/compliance_gates.feature --no-capture)",
       "Bash(PYTHONPATH=. PYTHONIOENCODING=utf-8 python -m pytest tests/ -v --tb=short -q)",
       "Bash(do)",
-      "Bash(if [ -f \"tools/govcon/$mod.py\" ])"
+      "Bash(if [ -f \"tools/govcon/$mod.py\" ])",
+      "Bash(git -C /c/Users/schuo/Downloads/GovProposal status -s)",
+      "Bash(git -C /c/Users/schuo/Downloads/GovProposal status)"
     ],
     "additionalDirectories": [
       "C:\\Users\\schuo\\Downloads\\ICDev\\tools",
