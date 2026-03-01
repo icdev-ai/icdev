@@ -780,6 +780,42 @@ def check_owasp_asi() -> AuditCheck:
         )
 
 
+def check_endpoint_security() -> AuditCheck:
+    """SEC-008: Endpoint security scan — detect routes missing auth/validation."""
+    scanner = PROJECT_ROOT / "tools" / "security" / "endpoint_security_scanner.py"
+    if not scanner.exists():
+        return AuditCheck(
+            check_id="SEC-008", check_name="Endpoint Security Scan",
+            category="security", status="skip", severity="blocking",
+            message="endpoint_security_scanner.py not found", details={},
+        )
+    rc, stdout, stderr = _run_subprocess(
+        [sys.executable, str(scanner), "--dir", str(PROJECT_ROOT / "tools"), "--json"],
+        timeout=120,
+    )
+    if rc == 0:
+        try:
+            data = json.loads(stdout)
+            critical = data.get("critical", 0)
+            high = data.get("high", 0)
+            ok = critical == 0 and high == 0
+            return AuditCheck(
+                check_id="SEC-008", check_name="Endpoint Security Scan",
+                category="security", status="pass" if ok else "fail",
+                severity="blocking",
+                message=f"routes={data.get('routes_found', 0)}, critical={critical}, high={high}",
+                details=data,
+            )
+        except json.JSONDecodeError:
+            pass
+    return AuditCheck(
+        check_id="SEC-008", check_name="Endpoint Security Scan",
+        category="security", status="warn" if rc == 0 else "fail",
+        severity="blocking",
+        message=f"Scanner exit {rc}", details={"stderr": stderr[:500]},
+    )
+
+
 def check_fedramp_20x_ksi() -> AuditCheck:
     """CMP-008: FedRAMP 20x KSI generator and schema present (Phase 53, D338)."""
     generator = PROJECT_ROOT / "tools" / "compliance" / "fedramp_ksi_generator.py"
@@ -1579,6 +1615,7 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "SEC-005": (check_owasp_agentic, "security", "warning"),
     "SEC-006": (check_code_pattern_scan, "security", "blocking"),
     "SEC-007": (check_owasp_asi, "security", "warning"),
+    "SEC-008": (check_endpoint_security, "security", "blocking"),
     # Compliance
     "CMP-001": (check_cui_markings, "compliance", "warning"),
     "CMP-002": (check_claude_governance, "compliance", "blocking"),

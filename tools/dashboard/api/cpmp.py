@@ -24,7 +24,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+from tools.dashboard.auth import require_role
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -804,12 +806,13 @@ def _sanitize_for_cor(data):
 
 
 @cpmp_api.route("/cor/contracts", methods=["GET"])
+@require_role("admin", "pm", "isso", "co", "cor")
 def cor_list_contracts():
     """GET /api/cpmp/cor/contracts — COR: list assigned contracts."""
     try:
-        cor_email = request.args.get("cor_email", "")
+        cor_email = g.current_user.get("email", "")
         if not cor_email:
-            return jsonify({"status": "error", "message": "cor_email required"}), 400
+            return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
         conn = _get_db()
         _cor_access_log(conn, cor_email, "all", "view_contracts")
         conn.commit()
@@ -821,12 +824,13 @@ def cor_list_contracts():
 
 
 @cpmp_api.route("/cor/contracts/<contract_id>", methods=["GET"])
+@require_role("admin", "pm", "isso", "co", "cor")
 def cor_get_contract(contract_id):
     """GET /api/cpmp/cor/contracts/<id> — COR: view contract detail."""
     try:
-        cor_email = request.args.get("cor_email", "")
+        cor_email = g.current_user.get("email", "")
         if not cor_email:
-            return jsonify({"status": "error", "message": "cor_email required"}), 400
+            return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
         # Verify COR is assigned to this contract
         cor_contracts = _get_cor_contracts(cor_email)
         if not any(c.get("id") == contract_id for c in cor_contracts):
@@ -845,12 +849,13 @@ def cor_get_contract(contract_id):
 
 
 @cpmp_api.route("/cor/contracts/<contract_id>/deliverables", methods=["GET"])
+@require_role("admin", "pm", "isso", "co", "cor")
 def cor_list_deliverables(contract_id):
     """GET /api/cpmp/cor/contracts/<id>/deliverables — COR: view deliverables."""
     try:
-        cor_email = request.args.get("cor_email", "")
+        cor_email = g.current_user.get("email", "")
         if not cor_email:
-            return jsonify({"status": "error", "message": "cor_email required"}), 400
+            return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
         cor_contracts = _get_cor_contracts(cor_email)
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
@@ -866,12 +871,13 @@ def cor_list_deliverables(contract_id):
 
 
 @cpmp_api.route("/cor/contracts/<contract_id>/evm", methods=["GET"])
+@require_role("admin", "pm", "isso", "co", "cor")
 def cor_get_evm(contract_id):
     """GET /api/cpmp/cor/contracts/<id>/evm — COR: view EVM data."""
     try:
-        cor_email = request.args.get("cor_email", "")
+        cor_email = g.current_user.get("email", "")
         if not cor_email:
-            return jsonify({"status": "error", "message": "cor_email required"}), 400
+            return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
         cor_contracts = _get_cor_contracts(cor_email)
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403
@@ -887,12 +893,13 @@ def cor_get_evm(contract_id):
 
 
 @cpmp_api.route("/cor/contracts/<contract_id>/cpars", methods=["GET"])
+@require_role("admin", "pm", "isso", "co", "cor")
 def cor_get_cpars(contract_id):
     """GET /api/cpmp/cor/contracts/<id>/cpars — COR: view CPARS ratings."""
     try:
-        cor_email = request.args.get("cor_email", "")
+        cor_email = g.current_user.get("email", "")
         if not cor_email:
-            return jsonify({"status": "error", "message": "cor_email required"}), 400
+            return jsonify({"status": "error", "message": "Authenticated user has no email"}), 400
         cor_contracts = _get_cor_contracts(cor_email)
         if not any(c.get("id") == contract_id for c in cor_contracts):
             return jsonify({"status": "error", "message": "Access denied: not assigned COR for this contract"}), 403

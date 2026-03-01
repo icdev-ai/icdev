@@ -108,8 +108,9 @@ DIRECTORY_TREE = [
     "tools/knowledge", "tools/monitor", "tools/db", "tools/project",
     "tools/testing", "tools/ci/triggers", "tools/ci/workflows",
     "tools/infra", "tools/maintenance", "tools/mcp", "tools/builder",
+    "tools/security",  # D-EPSEC-7: security is always-on, not conditional
     "args", "context/agentic", "context/compliance", "context/languages",
-    "hardprompts/agent",
+    "hardprompts/agent", "hardprompts/security",  # D-EPSEC-7
     "memory/logs", "data",
     ".claude/commands/e2e", ".tmp",
     "k8s", "docker", "features/steps", "tests",
@@ -122,7 +123,7 @@ CONDITIONAL_DIRS = {
         "tools/compliance/emass", "hardprompts/compliance",
         "context/compliance",
     ],
-    "security": ["tools/security"],
+    # "security" removed — now always-on via DIRECTORY_TREE (D-EPSEC-7)
     "mbse": ["tools/mbse", "context/mbse", "hardprompts/mbse"],
     "dashboard": [
         "tools/dashboard", "tools/dashboard/templates",
@@ -1111,10 +1112,13 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
     args_files = [
         ("args/project_defaults.yaml", ["app_name_replace", "port_remap"]),
         ("args/monitoring_config.yaml", ["endpoint_remap", "app_name_replace"]),
+        # D-EPSEC-7: Security config always copied (not conditional on compliance)
+        ("args/security_gates.yaml", []),
+        ("args/endpoint_security_config.yaml", []),
+        ("args/code_pattern_config.yaml", []),
     ]
     if capabilities.get("compliance"):
         args_files.append(("args/cui_markings.yaml", ["classification_update"]))
-        args_files.append(("args/security_gates.yaml", []))
 
     for rel_path, adaptations in args_files:
         src = icdev_root / rel_path

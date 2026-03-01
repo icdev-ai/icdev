@@ -456,6 +456,15 @@ code_patterns:
     max_high: 0
     max_medium: 10
 
+# Endpoint Security Gates (D-EPSEC-2)
+endpoint_security:
+  blocking:
+    - api_route_without_auth_decorator
+    - write_route_without_input_validation
+  thresholds:
+    max_critical: 0
+    max_high: 0
+
 # Production Readiness Audit Gates (D293)
 production_readiness:
   blocking:

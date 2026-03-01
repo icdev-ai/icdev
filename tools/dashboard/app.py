@@ -1481,7 +1481,8 @@ def create_app() -> Flask:
     @app.route("/cpmp/cor")
     def cpmp_cor_portal_page():
         """COR Portal — read-only government view of assigned contracts."""
-        cor_email = flask_request.args.get("cor_email", "")
+        user = getattr(g, "current_user", None)
+        cor_email = user.get("email", "") if user else ""
         conn = _get_db()
         try:
             if cor_email:
@@ -1503,7 +1504,8 @@ def create_app() -> Flask:
     @app.route("/cpmp/cor/<contract_id>")
     def cpmp_cor_detail_page(contract_id):
         """COR Contract Detail — read-only, no internal cost data."""
-        cor_email = flask_request.args.get("cor_email", "")
+        user = getattr(g, "current_user", None)
+        cor_email = user.get("email", "") if user else ""
         conn = _get_db()
         try:
             from tools.govcon.contract_manager import get_contract, list_deliverables

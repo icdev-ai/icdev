@@ -129,9 +129,64 @@ def _extract_entity_name(spec: str) -> str:
     return _slugify(spec)[:20] or "module"
 
 
-def _generate_api_code(entity: str, spec: str) -> str:
-    """Generate a Flask/FastAPI API endpoint module."""
+def _generate_api_code(entity: str, spec: str, secure: bool = True) -> str:
+    """Generate a Flask/FastAPI API endpoint module.
+
+    Args:
+        entity: Resource name (e.g. "user", "contract").
+        spec: Specification text.
+        secure: Include auth decorators and input validation (D-EPSEC-5).
+                Set to False only via --no-auth CLI flag.
+    """
     class_name = entity.capitalize()
+
+    # Auth decorator and validation helper — self-contained (no external import)
+    auth_block = ""
+    if secure:
+        auth_block = '''
+from functools import wraps
+
+
+def require_auth(f):
+    """Require authenticated user (NIST AC-3). Self-contained decorator."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        from flask import g
+        user = getattr(g, "current_user", None)
+        if not user:
+            return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+def _validate_fields(data, required=None):
+    """Validate input fields (NIST SI-10). Returns error message or None."""
+    if not isinstance(data, dict):
+        return "Request body must be a JSON object"
+    if required:
+        missing = [f for f in required if f not in data or data[f] is None]
+        if missing:
+            return f"Missing required fields: {', '.join(missing)}"
+    return None
+
+'''
+
+    # Route decorators
+    auth_dec = "\n    @require_auth" if secure else ""
+
+    # Validation on write methods
+    validate_create = ""
+    validate_update = ""
+    if secure:
+        validate_create = '''
+        err = _validate_fields(data)
+        if err:
+            return jsonify({{"error": err}}), 400'''
+        validate_update = '''
+        err = _validate_fields(data)
+        if err:
+            return jsonify({{"error": err}}), 400'''
+
     return f'''{CUI_HEADER}
 """API endpoints for {entity} resource.
 
@@ -148,7 +203,7 @@ try:
     from flask import Blueprint, jsonify, request
 except ImportError:
     Blueprint = None
-
+{auth_block}
 
 def create_blueprint() -> "Blueprint":
     """Create and return the {entity} API blueprint."""
@@ -157,7 +212,7 @@ def create_blueprint() -> "Blueprint":
     # In-memory store (replace with database in production)
     _store: Dict[str, dict] = {{}}
 
-    @bp.route("", methods=["GET"])
+    @bp.route("", methods=["GET"]){auth_dec}
     def list_{entity}():
         """List all {entity} records.
 
@@ -167,7 +222,7 @@ def create_blueprint() -> "Blueprint":
         items = list(_store.values())
         return jsonify({{"data": items, "count": len(items)}})
 
-    @bp.route("/<item_id>", methods=["GET"])
+    @bp.route("/<item_id>", methods=["GET"]){auth_dec}
     def get_{entity}(item_id: str):
         """Get a single {entity} by ID.
 
@@ -182,7 +237,7 @@ def create_blueprint() -> "Blueprint":
             return jsonify({{"error": f"{class_name} not found: {{item_id}}"}}), 404
         return jsonify(item)
 
-    @bp.route("", methods=["POST"])
+    @bp.route("", methods=["POST"]){auth_dec}
     def create_{entity}():
         """Create a new {entity} record.
 
@@ -192,7 +247,7 @@ def create_blueprint() -> "Blueprint":
         Returns:
             Created {entity} record with generated ID.
         """
-        data = request.get_json(silent=True) or {{}}
+        data = request.get_json(silent=True) or {{}}{validate_create}
         item_id = str(uuid.uuid4())
         record = {{
             "id": item_id,
@@ -203,7 +258,7 @@ def create_blueprint() -> "Blueprint":
         _store[item_id] = record
         return jsonify(record), 201
 
-    @bp.route("/<item_id>", methods=["PUT"])
+    @bp.route("/<item_id>", methods=["PUT"]){auth_dec}
     def update_{entity}(item_id: str):
         """Update an existing {entity} record.
 
@@ -215,12 +270,12 @@ def create_blueprint() -> "Blueprint":
         """
         if item_id not in _store:
             return jsonify({{"error": f"{class_name} not found: {{item_id}}"}}), 404
-        data = request.get_json(silent=True) or {{}}
+        data = request.get_json(silent=True) or {{}}{validate_update}
         _store[item_id].update(data)
         _store[item_id]["updated_at"] = datetime.now(timezone.utc).isoformat() + "Z"
         return jsonify(_store[item_id])
 
-    @bp.route("/<item_id>", methods=["DELETE"])
+    @bp.route("/<item_id>", methods=["DELETE"]){auth_dec}
     def delete_{entity}(item_id: str):
         """Delete a {entity} record.
 
@@ -665,16 +720,23 @@ class {class_name}:
 # Java code generators
 # ---------------------------------------------------------------------------
 
-def _generate_java_api_code(entity: str, spec: str) -> str:
+def _generate_java_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate a Spring Boot REST controller (Java)."""
     class_name = entity.capitalize()
+    auth_import = ""
+    auth_ann = ""
+    valid_ann = ""
+    if secure:
+        auth_import = "\nimport org.springframework.security.access.prepost.PreAuthorize;\nimport jakarta.validation.Valid;"
+        auth_ann = '\n    @PreAuthorize("isAuthenticated()")'
+        valid_ann = "@Valid "
     return f'''{CUI_HEADER_C_STYLE}
 package com.icdev.api;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
+{auth_import}
 import java.util.*;
 
 /**
@@ -693,13 +755,13 @@ public class {class_name}Controller {{
         this.service = service;
     }}
 
-    @GetMapping
+    @GetMapping{auth_ann}
     public ResponseEntity<List<Map<String, Object>>> list() {{
         List<Map<String, Object>> items = service.listAll();
         return ResponseEntity.ok(items);
     }}
 
-    @GetMapping("/{{id}}")
+    @GetMapping("/{{id}}"){auth_ann}
     public ResponseEntity<Map<String, Object>> get(@PathVariable String id) {{
         Map<String, Object> item = service.getById(id);
         if (item == null) {{
@@ -708,14 +770,14 @@ public class {class_name}Controller {{
         return ResponseEntity.ok(item);
     }}
 
-    @PostMapping
-    public ResponseEntity<Map<String, Object>> create(@RequestBody Map<String, Object> data) {{
+    @PostMapping{auth_ann}
+    public ResponseEntity<Map<String, Object>> create({valid_ann}@RequestBody Map<String, Object> data) {{
         Map<String, Object> created = service.create(data);
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }}
 
-    @PutMapping("/{{id}}")
-    public ResponseEntity<Map<String, Object>> update(@PathVariable String id, @RequestBody Map<String, Object> data) {{
+    @PutMapping("/{{id}}"){auth_ann}
+    public ResponseEntity<Map<String, Object>> update(@PathVariable String id, {valid_ann}@RequestBody Map<String, Object> data) {{
         Map<String, Object> updated = service.update(id, data);
         if (updated == null) {{
             return ResponseEntity.notFound().build();
@@ -723,7 +785,7 @@ public class {class_name}Controller {{
         return ResponseEntity.ok(updated);
     }}
 
-    @DeleteMapping("/{{id}}")
+    @DeleteMapping("/{{id}}"){auth_ann}
     public ResponseEntity<Void> delete(@PathVariable String id) {{
         boolean deleted = service.delete(id);
         if (!deleted) {{
@@ -877,8 +939,29 @@ public class {class_name}Service {{
 # Go code generators
 # ---------------------------------------------------------------------------
 
-def _generate_go_api_code(entity: str, spec: str) -> str:
+def _generate_go_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate a net/http handler (Go)."""
+    auth_check = ""
+    if secure:
+        auth_check = """
+    // Auth middleware check (NIST AC-3)
+    if !authMiddleware(w, r) {{
+        return
+    }}"""
+    auth_func = ""
+    if secure:
+        auth_func = """
+// authMiddleware verifies the request is authenticated (NIST AC-3).
+// Replace with your actual auth mechanism.
+func authMiddleware(w http.ResponseWriter, r *http.Request) bool {{
+    token := r.Header.Get("Authorization")
+    if token == "" {{
+        http.Error(w, `{{"error":"authentication required"}}`, http.StatusUnauthorized)
+        return false
+    }}
+    return true
+}}
+"""
     return f'''{CUI_HEADER_C_STYLE}
 package api
 
@@ -893,7 +976,7 @@ import (
     "strings"
     "sync"
 )
-
+{auth_func}
 type {entity.capitalize()}Handler struct {{
     mu    sync.RWMutex
     store map[string]map[string]interface{{}}
@@ -906,7 +989,7 @@ func New{entity.capitalize()}Handler() *{entity.capitalize()}Handler {{
 }}
 
 func (h *{entity.capitalize()}Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {{
-    w.Header().Set("Content-Type", "application/json")
+    w.Header().Set("Content-Type", "application/json"){auth_check}
     switch r.Method {{
     case http.MethodGet:
         h.handleGet(w, r)
@@ -1147,9 +1230,33 @@ func (s *{class_name}Service) validate(data map[string]interface{{}}) error {{
 # TypeScript code generators
 # ---------------------------------------------------------------------------
 
-def _generate_typescript_api_code(entity: str, spec: str) -> str:
+def _generate_typescript_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate an Express router (TypeScript)."""
     class_name = entity.capitalize()
+    auth_import = ""
+    auth_mw = ""
+    validate_import = ""
+    validate_post = ""
+    validate_put = ""
+    if secure:
+        auth_import = "\nimport { authMiddleware } from './middleware/auth';"
+        auth_mw = ", authMiddleware"
+        validate_import = """
+
+/**
+ * Validate required fields in request body (NIST SI-10).
+ */
+function validateBody(body: Record<string, unknown>, required: string[]): string | null {{
+    if (!body || typeof body !== 'object') return 'Request body must be a JSON object';
+    const missing = required.filter(f => !(f in body));
+    return missing.length ? `Missing required fields: ${{missing.join(', ')}}` : null;
+}}"""
+        validate_post = """
+        const err = validateBody(req.body, []);
+        if (err) return res.status(400).json({{ error: err }});"""
+        validate_put = """
+        const err = validateBody(req.body, []);
+        if (err) return res.status(400).json({{ error: err }});"""
     return f'''{CUI_HEADER_C_STYLE}
 /**
  * API routes for {entity}.
@@ -1159,15 +1266,16 @@ def _generate_typescript_api_code(entity: str, spec: str) -> str:
  */
 
 import {{ Router, Request, Response }} from 'express';
-import {{ {class_name}Service }} from './{entity}.service';
+import {{ {class_name}Service }} from './{entity}.service';{auth_import}
 
 const router = Router();
 const service = new {class_name}Service();
+{validate_import}
 
 /**
  * GET /api/{entity} - List all {entity} records.
  */
-router.get('/', async (req: Request, res: Response) => {{
+router.get('/'{auth_mw}, async (req: Request, res: Response) => {{
     try {{
         const items = await service.listAll();
         res.json({{ data: items, count: items.length }});
@@ -1179,7 +1287,7 @@ router.get('/', async (req: Request, res: Response) => {{
 /**
  * GET /api/{entity}/:id - Get a single {entity} by ID.
  */
-router.get('/:id', async (req: Request, res: Response) => {{
+router.get('/:id'{auth_mw}, async (req: Request, res: Response) => {{
     try {{
         const item = await service.getById(req.params.id);
         if (!item) {{
@@ -1194,8 +1302,8 @@ router.get('/:id', async (req: Request, res: Response) => {{
 /**
  * POST /api/{entity} - Create a new {entity}.
  */
-router.post('/', async (req: Request, res: Response) => {{
-    try {{
+router.post('/'{auth_mw}, async (req: Request, res: Response) => {{
+    try {{{validate_post}
         const created = await service.create(req.body);
         res.status(201).json(created);
     }} catch (err) {{
@@ -1206,8 +1314,8 @@ router.post('/', async (req: Request, res: Response) => {{
 /**
  * PUT /api/{entity}/:id - Update an existing {entity}.
  */
-router.put('/:id', async (req: Request, res: Response) => {{
-    try {{
+router.put('/:id'{auth_mw}, async (req: Request, res: Response) => {{
+    try {{{validate_put}
         const updated = await service.update(req.params.id, req.body);
         if (!updated) {{
             return res.status(404).json({{ error: '{class_name} not found' }});
@@ -1221,7 +1329,7 @@ router.put('/:id', async (req: Request, res: Response) => {{
 /**
  * DELETE /api/{entity}/:id - Delete a {entity}.
  */
-router.delete('/:id', async (req: Request, res: Response) => {{
+router.delete('/:id'{auth_mw}, async (req: Request, res: Response) => {{
     try {{
         const deleted = await service.delete(req.params.id);
         if (!deleted) {{
@@ -1393,9 +1501,43 @@ class InMemory{class_name}Repository implements I{class_name}Repository {{
 # Rust code generators
 # ---------------------------------------------------------------------------
 
-def _generate_rust_api_code(entity: str, spec: str) -> str:
+def _generate_rust_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate Actix-web handlers (Rust)."""
     class_name = entity.capitalize()
+    auth_use = ""
+    auth_guard = ""
+    if secure:
+        auth_use = "\nuse actix_web::HttpRequest;"
+        auth_guard = """
+
+/// Auth guard — verify request has valid authorization (NIST AC-3).
+fn require_auth(req: &HttpRequest) -> Result<(), HttpResponse> {{
+    match req.headers().get("Authorization") {{
+        Some(_) => Ok(()),
+        None => Err(HttpResponse::Unauthorized().json(json!({{ "error": "Authentication required" }}))),
+    }}
+}}
+"""
+
+    auth_check_list = ""
+    auth_check_get = ""
+    auth_check_create = ""
+    auth_check_delete = ""
+    if secure:
+        auth_check_list = """
+    if let Err(resp) = require_auth(&req) {{ return resp; }}"""
+        auth_check_get = """
+    if let Err(resp) = require_auth(&req) {{ return resp; }}"""
+        auth_check_create = """
+    if let Err(resp) = require_auth(&req) {{ return resp; }}"""
+        auth_check_delete = """
+    if let Err(resp) = require_auth(&req) {{ return resp; }}"""
+
+    req_param_list = ", req: HttpRequest" if secure else ""
+    req_param_get = "\n    req: HttpRequest," if secure else ""
+    req_param_create = "\n    req: HttpRequest," if secure else ""
+    req_param_delete = "\n    req: HttpRequest," if secure else ""
+
     return f'''{CUI_HEADER_C_STYLE}
 //! API handlers for {entity}.
 //!
@@ -1405,7 +1547,7 @@ def _generate_rust_api_code(entity: str, spec: str) -> str:
 use actix_web::{{web, HttpResponse, Responder}};
 use serde_json::json;
 use std::sync::Mutex;
-use std::collections::HashMap;
+use std::collections::HashMap;{auth_use}
 
 pub struct {class_name}State {{
     pub store: Mutex<HashMap<String, serde_json::Value>>,
@@ -1418,8 +1560,8 @@ impl {class_name}State {{
         }}
     }}
 }}
-
-pub async fn list_{entity}(data: web::Data<{class_name}State>) -> impl Responder {{
+{auth_guard}
+pub async fn list_{entity}(data: web::Data<{class_name}State>{req_param_list}) -> impl Responder {{{auth_check_list}
     let store = data.store.lock().unwrap();
     let items: Vec<&serde_json::Value> = store.values().collect();
     HttpResponse::Ok().json(json!({{ "data": items, "count": items.len() }}))
@@ -1427,8 +1569,8 @@ pub async fn list_{entity}(data: web::Data<{class_name}State>) -> impl Responder
 
 pub async fn get_{entity}(
     data: web::Data<{class_name}State>,
-    path: web::Path<String>,
-) -> impl Responder {{
+    path: web::Path<String>,{req_param_get}
+) -> impl Responder {{{auth_check_get}
     let id = path.into_inner();
     let store = data.store.lock().unwrap();
     match store.get(&id) {{
@@ -1439,8 +1581,8 @@ pub async fn get_{entity}(
 
 pub async fn create_{entity}(
     data: web::Data<{class_name}State>,
-    body: web::Json<serde_json::Value>,
-) -> impl Responder {{
+    body: web::Json<serde_json::Value>,{req_param_create}
+) -> impl Responder {{{auth_check_create}
     let mut store = data.store.lock().unwrap();
     let id = uuid::Uuid::new_v4().to_string();
     let mut record = body.into_inner();
@@ -1451,8 +1593,8 @@ pub async fn create_{entity}(
 
 pub async fn delete_{entity}(
     data: web::Data<{class_name}State>,
-    path: web::Path<String>,
-) -> impl Responder {{
+    path: web::Path<String>,{req_param_delete}
+) -> impl Responder {{{auth_check_delete}
     let id = path.into_inner();
     let mut store = data.store.lock().unwrap();
     match store.remove(&id) {{
@@ -1605,12 +1747,17 @@ impl {class_name}Service {{
 # C# code generators
 # ---------------------------------------------------------------------------
 
-def _generate_csharp_api_code(entity: str, spec: str) -> str:
+def _generate_csharp_api_code(entity: str, spec: str, secure: bool = True) -> str:
     """Generate an ASP.NET controller (C#)."""
     class_name = entity.capitalize()
+    auth_using = ""
+    auth_attr = ""
+    if secure:
+        auth_using = "\nusing Microsoft.AspNetCore.Authorization;"
+        auth_attr = "\n    [Authorize]"
     return f'''{CUI_HEADER_C_STYLE}
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
+using System.Collections.Generic;{auth_using}
 
 namespace ICDev.Controllers
 {{
@@ -1621,7 +1768,7 @@ namespace ICDev.Controllers
     /// Generated by ICDEV Builder - code_generator.py
     /// </summary>
     [ApiController]
-    [Route("api/{entity}")]
+    [Route("api/{entity}")]{auth_attr}
     public class {class_name}Controller : ControllerBase
     {{
         private readonly {class_name}Service _service;
@@ -1650,6 +1797,8 @@ namespace ICDev.Controllers
         [HttpPost]
         public ActionResult<Dictionary<string, object>> Create([FromBody] Dictionary<string, object> data)
         {{
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
             var created = _service.Create(data);
             return CreatedAtAction(nameof(Get), new {{ id = created["id"] }}, created);
         }}
@@ -1657,6 +1806,8 @@ namespace ICDev.Controllers
         [HttpPut("{{id}}")]
         public ActionResult<Dictionary<string, object>> Update(string id, [FromBody] Dictionary<string, object> data)
         {{
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
             var updated = _service.Update(id, data);
             if (updated == null)
                 return NotFound(new {{ error = "{class_name} not found" }});
@@ -3403,6 +3554,7 @@ def generate_from_spec(
     force_type: Optional[str] = None,
     language: str = "python",
     project_id: Optional[str] = None,
+    secure: bool = True,
 ) -> List[str]:
     """Generate implementation code from a specification.
 
@@ -3413,6 +3565,8 @@ def generate_from_spec(
         force_type: Force a specific code type (api, model, service, cli, module).
         language: Target language (python, java, go, typescript, rust, csharp).
         project_id: Optional project ID for dev profile injection (Phase 34, D187).
+        secure: Include auth decorators and input validation (D-EPSEC-5).
+                Default True. Use --no-auth CLI flag to disable.
 
     Returns:
         List of paths to generated files.
@@ -3455,7 +3609,12 @@ def generate_from_spec(
                 f"Available types for {language}: {available}"
             )
 
-    code = generator(entity, spec)
+    # Pass secure flag to API generators (D-EPSEC-5)
+    import inspect
+    if "secure" in inspect.signature(generator).parameters:
+        code = generator(entity, spec, secure=secure)
+    else:
+        code = generator(entity, spec)
 
     # Write the file with appropriate extension
     ext = _LANGUAGE_EXTENSIONS.get(language, ".py")
@@ -3518,6 +3677,11 @@ def main():
         "--project-id", default=None,
         help="Project ID for dev profile injection (Phase 34, D187)",
     )
+    parser.add_argument(
+        "--no-auth", action="store_true",
+        help="Disable auth decorators and validation in generated API code (D-EPSEC-5). "
+             "WARNING: Generated code will fail endpoint_security gate.",
+    )
     args = parser.parse_args()
 
     files = generate_from_spec(
@@ -3527,6 +3691,7 @@ def main():
         force_type=args.type,
         language=args.language,
         project_id=args.project_id,
+        secure=not args.no_auth,
     )
     print(f"\nGenerated {len(files)} file(s) [{args.language}]:")
     for f in files:
