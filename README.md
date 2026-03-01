@@ -42,7 +42,7 @@ ICDEV generated GovProposal the same way it generates any application — throug
 |-------------|--------------|
 | **6-layer GOTCHA framework** | Goals, Orchestration, Tools, Args, Context, Hard Prompts — separating deterministic logic from AI |
 | **Multi-agent architecture** | 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) + 2 ATO agents |
-| **210-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
+| **229-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
 | **42 compliance frameworks** | Dual-hub crosswalk engine — implement a control once, map to FedRAMP, CMMC, CJIS, HIPAA, and 38 more |
 | **9-step testing pipeline** | Syntax → lint → unit → BDD → SAST → E2E → vision → acceptance → security gates |
 | **CI/CD integration** | GitHub + GitLab dual-platform, webhook-triggered workflows |
@@ -223,7 +223,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 ┌─ GENERATE ────────────────────────────────────────────┐
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
-│  → 210-table database with append-only audit trail     │
+│  → 229-table database with append-only audit trail     │
 │  → GOTCHA framework + ATLAS workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
@@ -338,8 +338,10 @@ Score ≥ 6.0 → full agent architecture. 4.0–5.9 → hybrid. < 4.0 → tradi
 Every feature is built using the ATLAS workflow with true TDD:
 
 ```
-[Model] → Architect → Trace → Link → Assemble → Stress-test
+[Model] → Architect → Trace → Link → Assemble → [Critique] → Stress-test
 ```
+
+The optional **ATLAS Critique** phase runs multi-agent adversarial review between Assemble and Stress-test. Security, Compliance, and Knowledge agents independently critique the plan in parallel, producing GO/NOGO/CONDITIONAL consensus before stress-testing begins.
 
 The 9-step testing pipeline runs automatically:
 
@@ -397,7 +399,7 @@ git clone https://github.com/icdev-ai/icdev.git
 cd icdev
 pip install -r requirements.txt
 
-# Initialize databases (210 tables)
+# Initialize databases (229 tables)
 python tools/db/init_icdev_db.py
 
 # Start the dashboard
@@ -474,6 +476,13 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 
 Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publishes an Agent Card at `/.well-known/agent.json`. Workflows use DAG-based parallel execution with domain authority vetoes.
 
+**Orchestration Controls:**
+- **Dispatcher mode** — Orchestrator delegates only, never executes tools directly (GOTCHA enforcement)
+- **Declarative prompt chains** — YAML-driven sequential LLM-to-LLM reasoning (plan → critique → refine)
+- **Session purpose tracking** — NIST AU-3 audit traceability for every agent session
+- **Async result injection** — high-priority mailbox delivery for completed background tasks
+- **Tiered file access** — zero_access / read_only / no_delete defense-in-depth for sensitive files
+
 ---
 
 ## 6 First-Class Languages — Build New or Modernize Legacy
@@ -527,12 +536,12 @@ ICDEV's core architecture separates deterministic tools from probabilistic AI:
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Goals         →  What to achieve (47 workflows)      │
+│  Goals         →  What to achieve (48 workflows)      │
 │  Orchestration →  AI decides tool order (LLM layer)   │
 │  Tools         →  Deterministic scripts (500+ tools)  │
 │  Context       →  Static reference (42 catalogs)      │
 │  Hard Prompts  →  Reusable LLM templates              │
-│  Args          →  YAML/JSON config (35+ files)        │
+│  Args          →  YAML/JSON config (40+ files)        │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -547,7 +556,7 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                  Claude Code / AI IDE                      │
-│            (39 slash commands, 250+ MCP tools)              │
+│            (39 slash commands, 250+ MCP tools)             │
 ├──────────────────────────────────────────────────────────┤
 │                 Unified MCP Gateway                        │
 │          (single server, all 250+ tools, lazy-loaded)       │
@@ -594,12 +603,15 @@ python tools/dashboard/app.py
 | `/ai-transparency` | AI Transparency: model cards, system cards, AI inventory, fairness, GAO readiness |
 | `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
 | `/code-quality` | Code Quality Intelligence: AST metrics, smell detection, maintainability trend, runtime feedback |
+| `/orchestration` | Real-time orchestration: agent grid, workflow DAG, SSE mailbox feed, prompt chains, ATLAS critiques |
+| `/cpmp` | Contract Performance Management: EVM, CPARS prediction, deliverables, subcontractors, portfolio health |
+| `/cpmp/cor` | COR portal: government read-only contract oversight (deliverables, EVM, CPARS) |
 | `/proposals` | GovProposal lifecycle: opportunities, sections, compliance matrix, timeline, reviews |
 | `/govcon` | GovCon Intelligence: SAM.gov scanning, pipeline status, domain distribution |
 | `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
 | `/govcon/capabilities` | ICDEV capability coverage: L/M/N grading, gaps, enhancement recommendations |
 
-Auth: per-user API keys (SHA-256 hashed), 5 RBAC roles (admin, pm, developer, isso, co). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
+Auth: per-user API keys (SHA-256 hashed), 6 RBAC roles (admin, pm, developer, isso, co, cor). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
 ---
 
@@ -637,6 +649,10 @@ Defense-in-depth by default:
 - **MCP RBAC** — per-tool, per-role deny-first authorization
 - **AI transparency** — model cards, system cards, AI use case inventory, confabulation detection, fairness assessment per OMB M-25-21/M-26-04, NIST AI 600-1, and GAO-21-519SP
 - **AI accountability** — human oversight plans, CAIO designation, appeal tracking, AI incident response, ethics reviews, reassessment scheduling, cross-framework accountability audit
+- **Dispatcher mode** — Orchestrator agent enforced as delegate-only, cannot execute tools directly
+- **Tiered file access control** — zero_access (`.env`, `*.pem`, `*.tfstate`), read_only (lock files, catalogs), no_delete (`CLAUDE.md`, goals, IaC)
+- **Session purpose tracking** — NIST AU-3 compliant session intent declaration with SHA-256 integrity hashing
+- **ATLAS adversarial critique** — multi-agent plan review with GO/NOGO/CONDITIONAL consensus before stress-testing
 - **Self-healing** — confidence-based remediation (≥0.7 auto-fix, 0.3–0.7 suggest, <0.3 escalate)
 
 ---
@@ -688,8 +704,8 @@ icdev/
 │   ├── builder/          # TDD, scaffolding, app generation, 6 languages
 │   ├── requirements/     # RICOAS intake, gap detection, SAFe decomposition
 │   ├── simulation/       # Digital Program Twin, Monte Carlo, COA generation
-│   ├── dashboard/        # Flask web UI, auth, RBAC, real-time events
-│   ├── agent/            # Multi-agent orchestration, DAG workflows
+│   ├── dashboard/        # Flask web UI, auth, RBAC, real-time events, orchestration dashboard
+│   ├── agent/            # Multi-agent orchestration, DAG workflows, prompt chains, ATLAS critique
 │   ├── cloud/            # 6 CSP abstractions, region validation
 │   ├── saas/             # Multi-tenant platform layer
 │   ├── mcp/              # Unified MCP gateway (250+ tools)
