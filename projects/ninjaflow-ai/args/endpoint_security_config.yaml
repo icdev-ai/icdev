@@ -1,0 +1,137 @@
+# CUI // SP-CTI
+# Endpoint Security Scanner Configuration (D-EPSEC-2)
+# Detects API routes missing security safeguards (auth, validation, IDOR).
+# Declarative YAML — add new patterns without code changes (D26).
+---
+
+# Route detection patterns (per language)
+route_patterns:
+  python:
+    - '@\w+\.(route|get|post|put|delete|patch)\s*\('
+    - '@app\.route\s*\('
+    - '@bp\.route\s*\('
+    - '@blueprint\.route\s*\('
+  java:
+    - '@(Get|Post|Put|Delete|Patch)Mapping'
+    - '@RequestMapping'
+  go:
+    - 'http\.HandleFunc\s*\('
+    - '\.(GET|POST|PUT|DELETE|PATCH)\s*\('
+    - 'router\.(Handle|HandleFunc|Get|Post|Put|Delete)\s*\('
+  typescript:
+    - 'router\.(get|post|put|delete|patch)\s*\('
+    - 'app\.(get|post|put|delete|patch)\s*\('
+  rust:
+    - '#\[actix_web::(get|post|put|delete)\('
+    - '\.route\s*\('
+  csharp:
+    - '\[Http(Get|Post|Put|Delete|Patch)\]'
+    - '\[Route\('
+
+# Auth patterns — presence means endpoint is secured
+auth_patterns:
+  python:
+    - '@require_role'
+    - '@require_auth'
+    - '@login_required'
+    - '@jwt_required'
+    - '@auth_required'
+    - 'g\.current_user'
+    - '@token_required'
+  java:
+    - '@PreAuthorize'
+    - '@Secured'
+    - '@RolesAllowed'
+    - 'SecurityContext'
+  go:
+    - 'authMiddleware'
+    - 'requireAuth'
+    - 'AuthRequired'
+  typescript:
+    - 'authMiddleware'
+    - 'requireAuth'
+    - 'passport\.authenticate'
+    - 'isAuthenticated'
+  rust:
+    - '#\[authorize\]'
+    - 'AuthGuard'
+  csharp:
+    - '\[Authorize\]'
+    - '\[AllowAnonymous\]'
+
+# Input validation patterns — presence means input is validated
+validation_patterns:
+  python:
+    - 'isinstance\s*\('
+    - 'validate\s*\('
+    - 'schema\.\w+\s*\('
+    - '_validate_fields\s*\('
+    - 'if\s+not\s+data'
+    - 'if\s+["\x27]\w+["\x27]\s+not\s+in\s+data'
+    - 'pydantic'
+  java:
+    - '@Valid'
+    - '@NotNull'
+    - '@NotBlank'
+    - 'Validator'
+  go:
+    - 'validate\.Struct'
+    - 'binding:"required"'
+  typescript:
+    - 'Joi\.'
+    - 'zod\.'
+    - 'class-validator'
+  rust:
+    - '#\[validate\]'
+    - 'serde::Deserialize'
+  csharp:
+    - '\[Required\]'
+    - 'ModelState\.IsValid'
+
+# HTTP methods that require input validation
+write_methods:
+  - POST
+  - PUT
+  - PATCH
+
+# Endpoints exempt from auth checks (health/metrics)
+exempt_patterns:
+  - '/health'
+  - '/ready'
+  - '/metrics'
+  - '/ping'
+  - '/favicon'
+  - '/static'
+  - '/login'
+  - '/api_events'
+
+# Severity assignment
+severity:
+  missing_auth: critical
+  missing_validation_on_write: high
+  missing_idor_check: medium
+
+# Scan settings
+scan:
+  skip_dirs:
+    - node_modules
+    - .git
+    - __pycache__
+    - .tox
+    - .venv
+    - venv
+    - .tmp
+    - vendor
+    - build
+    - dist
+  exclude_file_patterns:
+    - 'test_*.py'
+    - '*_test.py'
+    - 'conftest.py'
+    - '*_test.go'
+    - '*Test.java'
+    - '*.spec.ts'
+    - '*.test.ts'
+  # Lines above/below route to search for auth/validation
+  context_window_lines: 20
+  max_file_size_kb: 500

@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block title %}CI/CD Pipelines — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
+    <a href="/">Home</a> &rsaquo; <span>CI/CD Pipelines</span>
+</div>
+
+<h1>CI/CD Pipeline Status</h1>
+
+<!-- Connector Health Indicators -->
+<div class="card" style="margin-bottom: 1.5rem;">
+    <h2 style="margin-top: 0;">Channel Connectors</h2>
+    <div id="connector-status" style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+        <span class="text-muted">Loading connector status...</span>
+    </div>
+</div>
+
+<!-- Pipeline Summary -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <div class="card stat-card" id="stat-running">
+        <div class="stat-label">Running</div>
+        <div class="stat-value" style="color: var(--accent-blue-light);">—</div>
+    </div>
+    <div class="card stat-card" id="stat-completed">
+        <div class="stat-label">Completed</div>
+        <div class="stat-value" style="color: var(--status-healthy);">—</div>
+    </div>
+    <div class="card stat-card" id="stat-failed">
+        <div class="stat-label">Failed</div>
+        <div class="stat-value" style="color: var(--status-critical);">—</div>
+    </div>
+    <div class="card stat-card" id="stat-recovering">
+        <div class="stat-label">Recovering</div>
+        <div class="stat-value" style="color: var(--status-warning);">—</div>
+    </div>
+</div>
+
+<!-- Pipeline Filter -->
+<div style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center;">
+    <label for="status-filter" style="font-size: 0.85rem;">Filter:</label>
+    <select id="status-filter" onchange="loadPipelines()" style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px;">
+        <option value="">All</option>
+        <option value="running">Running</option>
+        <option value="completed">Completed</option>
+        <option value="failed">Failed</option>
+        <option value="recovering">Recovering</option>
+        <option value="queued">Queued</option>
+    </select>
+    <button onclick="loadPipelines()" style="background: var(--accent-blue); color: white; border: none; border-radius: 4px; padding: 4px 12px; cursor: pointer;">Refresh</button>
+</div>
+
+<!-- Pipeline Table -->
+<div class="card table-container">
+    <table id="pipeline-table" role="grid" aria-label="CI/CD Pipeline runs">
+        <thead>
+            <tr>
+                <th>Issue</th>
+                <th>Workflow</th>
+                <th>Platform</th>
+                <th>Status</th>
+                <th>Trigger</th>
+                <th>Started</th>
+                <th>Completed</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="pipeline-body">
+            <tr><td colspan="8" class="text-muted" style="text-align: center;">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Conversation Thread (shown when a pipeline is selected) -->
+<div class="card" id="conversation-panel" style="display: none; margin-top: 1.5rem;">
+    <h2 style="margin-top: 0;">Conversation Thread</h2>
+    <div id="conversation-body" style="max-height: 400px; overflow-y: auto;">
+    </div>
+</div>
+
+<script>
+(function() {
+    const API_BASE = '/api/cicd';
+
+    function statusBadge(status) {
+        const colors = {
+            running: 'var(--accent-blue-light)',
+            completed: 'var(--status-healthy)',
+            failed: 'var(--status-critical)',
+            recovering: 'var(--status-warning)',
+            queued: 'var(--text-muted)',
+        };
+        const color = colors[status] || 'var(--text-muted)';
+        return `<span style="color:${color};font-weight:600;">${status || '—'}</span>`;
+    }
+
+    function connectorIndicator(name, info) {
+        const color = info.enabled ? (info.registered ? 'var(--status-healthy)' : 'var(--status-warning)') : 'var(--text-muted)';
+        const icon = info.enabled ? '●' : '○';
+        const label = info.enabled ? 'Enabled' : 'Disabled';
+        return `<div style="display:flex;align-items:center;gap:6px;">
+            <span style="color:${color};font-size:1.2rem;">${icon}</span>
+            <span><strong>${name}</strong><br><small class="text-muted">${label}</small></span>
+        </div>`;
+    }
+
+    window.loadPipelines = function() {
+        const filter = document.getElementById('status-filter').value;
+        const url = filter ? `${API_BASE}/pipelines?status=${filter}` : `${API_BASE}/pipelines`;
+
+        fetch(url)
+            .then(r => r.json())
+            .then(data => {
+                // Update summary stats
+                const summary = data.summary || {};
+                ['running', 'completed', 'failed', 'recovering'].forEach(s => {
+                    const el = document.querySelector(`#stat-${s} .stat-value`);
+                    if (el) el.textContent = summary[s] || 0;
+                });
+
+                // Update table
+                const tbody = document.getElementById('pipeline-body');
+                if (!data.pipelines || data.pipelines.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-muted" style="text-align:center;">No pipelines found</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.pipelines.map(p => `
+                    <tr>
+                        <td><a href="#" onclick="showConversation('${p.session_key}');return false;">#${p.session_key}</a></td>
+                        <td>${p.workflow || '—'}</td>
+                        <td>${p.platform || '—'}</td>
+                        <td>${statusBadge(p.status)}</td>
+                        <td>${p.trigger_source || '—'}</td>
+                        <td><small>${p.created_at || '—'}</small></td>
+                        <td><small>${p.completed_at || '—'}</small></td>
+                        <td><a href="#" onclick="showDetail('${p.run_id}');return false;">Detail</a></td>
+                    </tr>
+                `).join('');
+            })
+            .catch(err => {
+                document.getElementById('pipeline-body').innerHTML =
+                    `<tr><td colspan="8" class="text-muted" style="text-align:center;">Error loading: ${err}</td></tr>`;
+            });
+    };
+
+    window.showConversation = function(sessionKey) {
+        fetch(`${API_BASE}/conversations/${sessionKey}`)
+            .then(r => r.json())
+            .then(data => {
+                const panel = document.getElementById('conversation-panel');
+                const body = document.getElementById('conversation-body');
+
+                if (data.error) {
+                    body.innerHTML = `<p class="text-muted">${data.error}</p>`;
+                } else {
+                    const turns = data.turns || [];
+                    if (turns.length === 0) {
+                        body.innerHTML = '<p class="text-muted">No conversation turns yet.</p>';
+                    } else {
+                        body.innerHTML = turns.map(t => {
+                            const isAgent = t.role === 'agent';
+                            const bg = isAgent ? 'var(--bg-tertiary)' : 'var(--bg-secondary)';
+                            const label = isAgent ? 'Agent' : (t.role === 'system' ? 'System' : 'Developer');
+                            return `<div style="background:${bg};border-radius:6px;padding:8px 12px;margin-bottom:8px;">
+                                <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                                    <strong style="font-size:0.85rem;">${label}</strong>
+                                    <small class="text-muted">Turn ${t.turn_number} | ${t.content_type || 'text'}</small>
+                                </div>
+                                <div style="font-size:0.9rem;white-space:pre-wrap;">${t.content || ''}</div>
+                                ${t.action_taken ? `<div style="margin-top:4px;"><small class="text-muted">Action: ${t.action_taken}</small></div>` : ''}
+                            </div>`;
+                        }).join('');
+                    }
+                }
+                panel.style.display = 'block';
+                panel.scrollIntoView({behavior: 'smooth'});
+            })
+            .catch(() => {
+                document.getElementById('conversation-body').innerHTML = '<p class="text-muted">Could not load conversation.</p>';
+                document.getElementById('conversation-panel').style.display = 'block';
+            });
+    };
+
+    window.showDetail = function(runId) {
+        fetch(`${API_BASE}/pipelines/${runId}`)
+            .then(r => r.json())
+            .then(data => {
+                const panel = document.getElementById('conversation-panel');
+                const body = document.getElementById('conversation-body');
+
+                let html = `<h3 style="margin-top:0;">Pipeline: ${data.run_id || runId}</h3>`;
+                html += `<p>Workflow: <strong>${data.workflow || '—'}</strong> | Status: ${statusBadge(data.status)}</p>`;
+
+                // Recovery attempts
+                if (data.recovery_attempts && data.recovery_attempts.length > 0) {
+                    html += '<h4>Recovery Attempts</h4>';
+                    html += data.recovery_attempts.map(r => {
+                        let details = {};
+                        try { details = JSON.parse(r.details || '{}'); } catch(e) {}
+                        return `<div style="background:var(--bg-secondary);border-radius:6px;padding:8px 12px;margin-bottom:8px;">
+                            <strong>${details.status || r.action}</strong> — Attempt ${details.attempt || '?'}
+                            <br><small class="text-muted">${details.message || ''}</small>
+                            <br><small>${r.created_at || ''}</small>
+                        </div>`;
+                    }).join('');
+                }
+
+                // Conversation
+                if (data.conversation && data.conversation.turns) {
+                    html += '<h4>Conversation</h4>';
+                    html += data.conversation.turns.map(t => {
+                        const isAgent = t.role === 'agent';
+                        const bg = isAgent ? 'var(--bg-tertiary)' : 'var(--bg-secondary)';
+                        return `<div style="background:${bg};border-radius:6px;padding:8px 12px;margin-bottom:8px;">
+                            <strong>${t.role}</strong> (turn ${t.turn_number}): ${t.content || ''}
+                        </div>`;
+                    }).join('');
+                }
+
+                body.innerHTML = html;
+                panel.style.display = 'block';
+                panel.scrollIntoView({behavior: 'smooth'});
+            })
+            .catch(() => {
+                document.getElementById('conversation-body').innerHTML = '<p class="text-muted">Could not load pipeline detail.</p>';
+                document.getElementById('conversation-panel').style.display = 'block';
+            });
+    };
+
+    // Load connector status
+    fetch(`${API_BASE}/connectors`)
+        .then(r => r.json())
+        .then(data => {
+            const el = document.getElementById('connector-status');
+            const connectors = data.connectors || {};
+            el.innerHTML = Object.entries(connectors)
+                .map(([name, info]) => connectorIndicator(name, info))
+                .join('');
+        })
+        .catch(() => {
+            document.getElementById('connector-status').innerHTML = '<span class="text-muted">Could not load connector status.</span>';
+        });
+
+    // Initial load
+    loadPipelines();
+
+    // Auto-refresh every 10 seconds
+    setInterval(loadPipelines, 10000);
+})();
+</script>
+{% endblock %}

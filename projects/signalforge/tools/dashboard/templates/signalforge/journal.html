@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}SignalForge — Trade Journal{% endblock %}
+
+{% block content %}
+<div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
+    <a href="/">Home</a> &gt; <a href="/signalforge">SignalForge</a> &gt; <span>Journal</span>
+</div>
+
+<h1>Trade Journal</h1>
+<p class="subtitle">Append-only trade log with SHA-256 tamper detection (CFTC Reg AT compliant)</p>
+
+<!-- Sub-navigation -->
+<div style="margin: 20px 0; display: flex; gap: 12px;">
+    <a href="/signalforge" class="btn btn-secondary btn-sm">Dashboard</a>
+    <a href="/signalforge/backtest" class="btn btn-secondary btn-sm">Backtest</a>
+    <a href="/signalforge/journal" class="btn btn-primary btn-sm">Journal</a>
+    <a href="/signalforge/model" class="btn btn-secondary btn-sm">Model</a>
+</div>
+
+{% if trades %}
+<div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Trade ID</th>
+                <th>Timestamp</th>
+                <th>Direction</th>
+                <th>Entry</th>
+                <th>TP</th>
+                <th>SL</th>
+                <th>Exit</th>
+                <th>PnL ($)</th>
+                <th>Bars</th>
+                <th>Exit Reason</th>
+                <th>Confidence</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in trades %}
+            <tr>
+                <td>{{ t.id }}</td>
+                <td><code>{{ t.trade_id[:12] }}</code></td>
+                <td>{{ t.timestamp[:19] if t.timestamp else '' }}</td>
+                <td>
+                    <span class="badge {% if t.direction == 'LONG' %}badge-green{% else %}badge-red{% endif %}">
+                        {{ t.direction }}
+                    </span>
+                </td>
+                <td>{{ t.entry_price }}</td>
+                <td>{{ t.take_profit|round(2) if t.take_profit else '—' }}</td>
+                <td>{{ t.stop_loss|round(2) if t.stop_loss else '—' }}</td>
+                <td>{{ t.exit_price|round(2) if t.exit_price else '—' }}</td>
+                <td class="{% if (t.pnl_dollars or 0) > 0 %}text-green{% elif (t.pnl_dollars or 0) < 0 %}text-red{% endif %}">
+                    {{ t.pnl_dollars|round(2) if t.pnl_dollars else '—' }}
+                </td>
+                <td>{{ t.bars_held if t.bars_held else '—' }}</td>
+                <td>{{ t.exit_reason if t.exit_reason else '—' }}</td>
+                <td>{{ (t.confidence * 100)|round(1) if t.confidence else '—' }}%</td>
+                <td>
+                    <span class="badge {% if t.status == 'closed' %}badge-blue{% elif t.status == 'open' %}badge-yellow{% else %}badge-secondary{% endif %}">
+                        {{ t.status }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card" style="margin: 20px 0;">
+    <p style="color: var(--text-secondary); padding: 20px;">
+        No trades recorded yet. Generate signals using the CLI:
+    </p>
+    <pre style="background: var(--bg-secondary); padding: 12px; border-radius: 4px;"><code>python tools/trading/signal_generator.py --model models/best_model.json --bar data/raw/latest_bar.csv --json</code></pre>
+</div>
+{% endif %}
+{% endblock %}

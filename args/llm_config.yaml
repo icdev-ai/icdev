@@ -488,6 +488,8 @@ two_tier:
     - intake_persona_response
     - collaboration
     - dependency_suggestion
+    - research_forecast
+    - research_youtube_summarize
     - default
 
   scanner_functions:

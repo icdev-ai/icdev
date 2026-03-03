@@ -1,0 +1,30 @@
+{
+  "app_name": "signalforge",
+  "child_root": "projects\\signalforge",
+  "blueprint_hash": "b0dee81b0de102526c5c0a7017816319088813b8d632cb0ea0a225db6b5c304e",
+  "agents": 11,
+  "capabilities": {
+    "core": true,
+    "compliance": true,
+    "security": true,
+    "cicd": true,
+    "testing": true,
+    "dashboard": true,
+    "knowledge": true,
+    "memory": true,
+    "infrastructure": true,
+    "maintenance": true,
+    "ricoas": true,
+    "supply_chain": true,
+    "simulation": true,
+    "devsecops_zta": true,
+    "ai_security": true,
+    "observability": true,
+    "code_intelligence": true
+  },
+  "cloud_provider": "aws",
+  "classification": "CUI",
+  "genome_version": null,
+  "generated_at": "2026-03-03T02:35:54.772124+00:00",
+  "generated_by": "icdev/child_app_generator"
+}

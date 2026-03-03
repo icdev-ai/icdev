@@ -1,0 +1,8 @@
+# [TEMPLATE: CUI // SP-CTI]
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ninjaflow_ai
+  labels:
+    app.kubernetes.io/part-of: ninjaflow_ai
+    classification: CUI

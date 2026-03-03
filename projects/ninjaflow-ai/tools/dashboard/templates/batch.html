@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Batch Operations - ICDEV{% endblock %}
+
+{% block content %}
+<!-- Breadcrumbs -->
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a>
+    <span class="separator" aria-hidden="true">/</span>
+    <span class="current">Batch Operations</span>
+</nav>
+
+<div class="page-header">
+    <h1>Batch Operations</h1>
+    <p class="subtitle">Run multi-tool workflows directly from the dashboard
+        <span class="help-icon" title="Each batch chains multiple CLI tools in sequence. Results are tracked per step.">?</span>
+    </p>
+</div>
+
+<!-- Batch operations content rendered by batch.js -->
+<div id="batch-container">
+    <p class="text-muted" style="text-align: center; padding: 40px 0;">Loading batch operations catalog&hellip;</p>
+</div>
+{% endblock %}

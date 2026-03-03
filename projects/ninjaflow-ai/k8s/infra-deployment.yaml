@@ -1,0 +1,105 @@
+# [TEMPLATE: CUI // SP-CTI]
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ninjaflow_ai-infra
+  namespace: ninjaflow_ai
+  labels:
+    app.kubernetes.io/name: infra
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: ninjaflow_ai
+    classification: CUI
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: infra
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: infra
+        app.kubernetes.io/component: agent
+        app.kubernetes.io/part-of: ninjaflow_ai
+        classification: CUI
+    spec:
+      serviceAccountName: ninjaflow_ai-agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: infra
+          image: ${ECR_REGISTRY}/ninjaflow_ai-agent:latest
+          args: ["tools/a2a/agent_server.py", "--agent-id", "infra-agent", "--port", "8448"]
+          ports:
+            - containerPort: 8448
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: ninjaflow_ai-config
+            - secretRef:
+                name: ninjaflow_ai-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8448
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8448
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: infra
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: infra
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ninjaflow_ai-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ninjaflow_ai-infra
+  namespace: ninjaflow_ai
+  labels:
+    classification: CUI
+spec:
+  selector:
+    app.kubernetes.io/name: infra
+  ports:
+    - port: 8448
+      targetPort: 8448
+      protocol: TCP
+  type: ClusterIP

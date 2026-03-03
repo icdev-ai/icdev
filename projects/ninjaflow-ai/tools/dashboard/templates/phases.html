@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}ICDEV — Phase Roadmap{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: 1.5rem;">
+    <h1 style="margin: 0; font-size: 1.5rem;">Phase Roadmap</h1>
+    <p class="text-muted" style="margin: 0.25rem 0 0;">All ICDEV phases — Foundation through Cloud-Agnostic Architecture, plus RICOAS and Operations.</p>
+</div>
+
+<!-- Stat Cards -->
+<div class="stat-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+    <div class="stat-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 2rem; font-weight: 700; color: var(--text-primary);">{{ summary.total }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary);">Total Phases</div>
+    </div>
+    <div class="stat-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 2rem; font-weight: 700; color: #3fb950;">{{ summary.completed }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary);">Completed</div>
+    </div>
+    <div class="stat-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 2rem; font-weight: 700; color: #58a6ff;">{{ summary.active }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary);">Active</div>
+    </div>
+    <div class="stat-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 2rem; font-weight: 700; color: #8b949e;">{{ summary.planned }}</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary);">Planned</div>
+    </div>
+    <div class="stat-card" style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; text-align: center;">
+        <div style="font-size: 2rem; font-weight: 700; color: var(--accent-blue);">{{ summary.progress_pct }}%</div>
+        <div style="font-size: 0.8rem; color: var(--text-secondary);">Progress</div>
+    </div>
+</div>
+
+<!-- Progress Bar -->
+<div style="margin-bottom: 1.5rem;">
+    <div style="background: var(--bg-tertiary, #21262d); border-radius: 8px; height: 12px; overflow: hidden; border: 1px solid var(--border-color);">
+        <div style="background: linear-gradient(90deg, #3fb950, #58a6ff); height: 100%; width: {{ summary.progress_pct }}%; transition: width 0.3s;" role="progressbar" aria-valuenow="{{ summary.progress_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Phase completion progress"></div>
+    </div>
+</div>
+
+<!-- Category Filter Chips -->
+<div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.5rem;" role="group" aria-label="Filter by category">
+    <a href="/phases" class="chip {% if not category_filter %}chip-active{% endif %}" style="display: inline-block; padding: 4px 12px; border-radius: 16px; font-size: 0.8rem; text-decoration: none; border: 1px solid var(--border-color); {% if not category_filter %}background: var(--accent-blue); color: #fff;{% else %}background: var(--bg-secondary); color: var(--text-secondary);{% endif %}">
+        All ({{ summary.total }})
+    </a>
+    {% for cat_id, cat_info in categories.items() %}
+    {% set cat_count = summary.by_category.get(cat_id, {}).get('total', 0) %}
+    {% if cat_count > 0 %}
+    <a href="/phases?category={{ cat_id }}" class="chip {% if category_filter == cat_id %}chip-active{% endif %}" style="display: inline-block; padding: 4px 12px; border-radius: 16px; font-size: 0.8rem; text-decoration: none; border: 1px solid {{ cat_info.color }}40; {% if category_filter == cat_id %}background: {{ cat_info.color }}; color: #fff;{% else %}background: {{ cat_info.color }}20; color: {{ cat_info.color }};{% endif %}">
+        {{ cat_info.label }} ({{ cat_count }})
+    </a>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<!-- Phase Table -->
+<div class="table-container" style="margin-bottom: 2rem;">
+    <table class="table" aria-label="ICDEV Phase Registry">
+        <thead>
+            <tr>
+                <th style="width: 60px;">#</th>
+                <th>Phase Name</th>
+                <th style="width: 120px;">Category</th>
+                <th style="width: 100px;">Status</th>
+                <th>Agents</th>
+                <th style="width: 120px;">Min Tier</th>
+                <th style="width: 100px;">ILs</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for phase in phases %}
+            <tr>
+                <td style="font-weight: 600; color: var(--text-secondary);">{{ phase.number }}</td>
+                <td>
+                    <div style="font-weight: 600;">{{ phase.name }}</div>
+                    <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px;">{{ phase.description }}</div>
+                    {% if phase.goal_file %}
+                    <div style="font-size: 0.7rem; margin-top: 2px;">
+                        <span style="color: var(--text-secondary);">Goal:</span>
+                        <code style="font-size: 0.7rem; background: var(--bg-secondary); padding: 1px 4px; border-radius: 3px;">{{ phase.goal_file }}</code>
+                    </div>
+                    {% endif %}
+                    {% if phase.dependencies %}
+                    <div style="font-size: 0.7rem; margin-top: 2px;">
+                        <span style="color: var(--text-secondary);">Deps:</span>
+                        {% for dep in phase.dependencies %}
+                        <code style="font-size: 0.7rem; background: var(--bg-secondary); padding: 1px 4px; border-radius: 3px;">{{ dep }}</code>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </td>
+                <td>
+                    {% set cat = categories.get(phase.category, {}) %}
+                    <span style="display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; background: {{ cat.get('color', '#8b949e') }}20; color: {{ cat.get('color', '#8b949e') }}; border: 1px solid {{ cat.get('color', '#8b949e') }}40;">
+                        {{ cat.get('label', phase.category) }}
+                    </span>
+                </td>
+                <td>
+                    {% set st = statuses.get(phase.status, {}) %}
+                    <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; background: {{ st.get('color', '#8b949e') }}20; color: {{ st.get('color', '#8b949e') }};">
+                        <span>{{ st.get('icon', '') | safe }}</span> {{ st.get('label', phase.status) }}
+                    </span>
+                </td>
+                <td>
+                    {% if phase.agents %}
+                    <div style="display: flex; flex-wrap: wrap; gap: 2px;">
+                        {% for agent in phase.agents %}
+                        <span style="font-size: 0.7rem; background: var(--bg-secondary); padding: 1px 6px; border-radius: 10px; border: 1px solid var(--border-color);">{{ agent }}</span>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <span style="color: var(--text-secondary); font-size: 0.75rem;">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span style="font-size: 0.75rem; text-transform: capitalize;">{{ phase.tier_minimum }}</span>
+                </td>
+                <td>
+                    <span style="font-size: 0.7rem; color: var(--text-secondary);">
+                        {{ phase.impact_levels | join(', ') }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Category Summary Cards -->
+<h2 style="font-size: 1.1rem; margin-bottom: 1rem;">Category Breakdown</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+    {% for cat_id, cat_info in categories.items() %}
+    {% set cat_stats = summary.by_category.get(cat_id, {'total': 0, 'completed': 0}) %}
+    {% if cat_stats.total > 0 %}
+    {% set cat_pct = ((cat_stats.completed / cat_stats.total) * 100) | round | int if cat_stats.total > 0 else 0 %}
+    <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; border-left: 4px solid {{ cat_info.color }};">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <span style="font-weight: 600; color: {{ cat_info.color }};">{{ cat_info.label }}</span>
+            <span style="font-size: 0.8rem; color: var(--text-secondary);">{{ cat_stats.completed }}/{{ cat_stats.total }}</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-secondary); margin-bottom: 0.5rem;">{{ cat_info.description }}</div>
+        <div style="background: var(--bg-tertiary, #21262d); border-radius: 4px; height: 6px; overflow: hidden;">
+            <div style="background: {{ cat_info.color }}; height: 100%; width: {{ cat_pct }}%;"></div>
+        </div>
+        <div style="font-size: 0.7rem; color: var(--text-secondary); margin-top: 4px; text-align: right;">{{ cat_pct }}%</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endblock %}

@@ -96,6 +96,7 @@ ICDEV_PORTS = {
 PARENT_ONLY_DIRS = {
     "tools/govcon", "tools/saas", "tools/creative", "tools/innovation",
     "tools/marketplace", "tools/translation", "tools/gateway", "tools/rfx",
+    "tools/research",
 }
 
 # D-CHILD-3: Parent-only Claude Code artifacts — excluded from child inheritance

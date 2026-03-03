@@ -1,0 +1,129 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "ISA/MOU lifecycle templates for interconnection security agreements",
+  "isa_types": {
+    "ISA": {
+      "full_name": "Interconnection Security Agreement",
+      "description": "Governs the security requirements for connecting two or more IT systems owned or operated by different organizations",
+      "required_sections": [
+        "system_identification",
+        "security_controls",
+        "data_types",
+        "ports_protocols",
+        "incident_response"
+      ],
+      "review_cadence_days": 365,
+      "template_fields": {
+        "system_identification": {
+          "description": "Identifies the systems being interconnected",
+          "fields": ["system_name", "system_owner", "authorizing_official", "classification_level", "impact_level"]
+        },
+        "security_controls": {
+          "description": "Security controls governing the interconnection",
+          "fields": ["encryption_standard", "authentication_method", "access_control_policy", "audit_logging", "monitoring_requirements"]
+        },
+        "data_types": {
+          "description": "Types of data transmitted across the interconnection",
+          "fields": ["data_classification", "data_categories", "pii_indicator", "cui_indicator", "volume_estimate"]
+        },
+        "ports_protocols": {
+          "description": "Network ports, protocols, and services allowed",
+          "fields": ["allowed_ports", "allowed_protocols", "allowed_services", "firewall_rules", "network_diagram_ref"]
+        },
+        "incident_response": {
+          "description": "Incident response procedures for the interconnection",
+          "fields": ["notification_timeline", "escalation_contacts", "isolation_procedures", "recovery_procedures", "joint_exercises"]
+        }
+      }
+    },
+    "MOU": {
+      "full_name": "Memorandum of Understanding",
+      "description": "High-level agreement establishing mutual understanding for information sharing and system interconnection",
+      "required_sections": [
+        "purpose",
+        "responsibilities",
+        "data_sharing",
+        "security_requirements"
+      ],
+      "review_cadence_days": 365,
+      "template_fields": {
+        "purpose": {
+          "description": "Purpose and scope of the agreement",
+          "fields": ["agreement_purpose", "scope", "effective_date", "duration", "renewal_terms"]
+        },
+        "responsibilities": {
+          "description": "Responsibilities of each party",
+          "fields": ["party_a_responsibilities", "party_b_responsibilities", "shared_responsibilities", "governance_structure"]
+        },
+        "data_sharing": {
+          "description": "Data sharing terms and conditions",
+          "fields": ["data_types", "data_classification", "sharing_frequency", "retention_period", "destruction_requirements"]
+        },
+        "security_requirements": {
+          "description": "Security requirements for all parties",
+          "fields": ["baseline_controls", "incident_notification", "audit_rights", "compliance_verification", "breach_liability"]
+        }
+      }
+    },
+    "SLA": {
+      "full_name": "Service Level Agreement",
+      "description": "Defines the service levels and performance metrics for interconnected services",
+      "required_sections": [
+        "service_description",
+        "performance_metrics",
+        "availability",
+        "support"
+      ],
+      "review_cadence_days": 180,
+      "template_fields": {
+        "service_description": {
+          "description": "Description of the service being provided",
+          "fields": ["service_name", "service_scope", "service_hours", "maintenance_windows"]
+        },
+        "performance_metrics": {
+          "description": "Performance metrics and thresholds",
+          "fields": ["latency_threshold", "throughput_threshold", "error_rate_threshold", "measurement_method"]
+        },
+        "availability": {
+          "description": "Availability targets and disaster recovery",
+          "fields": ["uptime_target", "rto", "rpo", "failover_procedure", "dr_testing_cadence"]
+        },
+        "support": {
+          "description": "Support structure and escalation",
+          "fields": ["support_tiers", "response_times", "escalation_path", "poc_contacts"]
+        }
+      }
+    }
+  },
+  "status_transitions": {
+    "draft": ["pending_review"],
+    "pending_review": ["active", "revoked"],
+    "active": ["pending_review", "expired", "revoked"],
+    "expired": ["pending_review", "revoked"],
+    "revoked": []
+  },
+  "status_descriptions": {
+    "draft": "Initial creation, not yet submitted for review",
+    "pending_review": "Submitted for review by both parties and security team",
+    "active": "Signed, authorized, and in effect",
+    "expired": "Past expiry date, requires re-authorization to continue",
+    "revoked": "Terminated, no longer valid, interconnection must be severed"
+  },
+  "compliance_checks": {
+    "pre_activation": [
+      "Both system ATOs are current",
+      "Security controls are implemented and verified",
+      "Incident response procedures tested",
+      "Network architecture reviewed by ISSM",
+      "Data classification markings confirmed"
+    ],
+    "annual_review": [
+      "All data flows still required and authorized",
+      "Security controls still adequate for current threat landscape",
+      "Incident response contacts current",
+      "No unauthorized changes to interconnection",
+      "Both system ATOs still valid"
+    ]
+  }
+}

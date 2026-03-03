@@ -1,0 +1,33 @@
+{
+  "safe_to_gitlab_mapping": {
+    "epic": {"type": "epic", "labels": ["SAFe::Epic"]},
+    "capability": {"type": "epic", "labels": ["SAFe::Capability"]},
+    "feature": {"type": "issue", "labels": ["SAFe::Feature"]},
+    "story": {"type": "issue", "labels": ["SAFe::Story"]},
+    "enabler": {"type": "issue", "labels": ["SAFe::Enabler"]}
+  },
+  "field_mapping": {
+    "title": "title",
+    "description": "description",
+    "story_points": "weight",
+    "pi_target": "milestone",
+    "priority": "labels"
+  },
+  "priority_to_label": {
+    "P1": "priority::critical",
+    "P2": "priority::high",
+    "P3": "priority::medium",
+    "P4": "priority::low"
+  },
+  "status_mapping": {
+    "pending": "opened",
+    "in_progress": "opened",
+    "completed": "closed",
+    "blocked": "opened"
+  },
+  "merge_request_template": {
+    "title_prefix": "[RICOAS]",
+    "description_sections": ["requirements_summary", "compliance_impact", "boundary_tier", "test_plan"],
+    "labels": ["ICDEV", "RICOAS"]
+  }
+}

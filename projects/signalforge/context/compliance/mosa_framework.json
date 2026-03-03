@@ -1,0 +1,250 @@
+{
+  "metadata": {
+    "title": "Modular Open Systems Approach (MOSA) Requirements Catalog",
+    "source": "10 U.S.C. Section 4401, DoDI 5000.87",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "description": "Modular Open Systems Approach (MOSA) requirements catalog covering 6 families: modular architecture design, open standards adoption, open interfaces, data rights and licensing, competitive sourcing, and continuous assessment. MOSA is mandated by 10 U.S.C. Section 4401 for major defense acquisition programs to ensure systems are designed with modular, open architectures that promote competition, innovation, and rapid technology insertion. Each requirement maps to NIST 800-53 Rev 5 controls via crosswalk, enabling integration with the ICDEV dual-hub compliance model (ADR D111)."
+  },
+  "families": [
+    {
+      "code": "MOSA-ARCH",
+      "name": "Modular Architecture Design",
+      "requirement_count": 5,
+      "description": "Foundational modular architecture requirements governing module boundary definition, loose coupling, high cohesion, dependency management, and module registry to ensure systems are decomposed into well-defined, independently deployable and replaceable components"
+    },
+    {
+      "code": "MOSA-STD",
+      "name": "Open Standards Adoption",
+      "requirement_count": 4,
+      "description": "Open standards requirements ensuring that systems adopt and maintain profiles of consensus-based technical standards for APIs, data formats, and communication protocols to enable interoperability and reduce vendor lock-in"
+    },
+    {
+      "code": "MOSA-INT",
+      "name": "Open Interfaces",
+      "requirement_count": 4,
+      "description": "Interface management requirements covering interface control documentation, semantic versioning, backward compatibility, and interface testing to ensure all external-facing interfaces are well-documented, stable, and independently verifiable"
+    },
+    {
+      "code": "MOSA-DR",
+      "name": "Data Rights & Licensing",
+      "requirement_count": 4,
+      "description": "Data rights and intellectual property requirements ensuring the Government secures appropriate rights to interfaces, documentation, and source code to enable competitive sustainment, reuse, and future modification of modular components"
+    },
+    {
+      "code": "MOSA-CS",
+      "name": "Competitive Sourcing",
+      "requirement_count": 4,
+      "description": "Competitive sourcing requirements governing component replaceability assessment, vendor lock-in risk analysis, alternative identification, and build-versus-buy analysis to ensure modular components can be competed and sourced from multiple vendors"
+    },
+    {
+      "code": "MOSA-CA",
+      "name": "Continuous Assessment",
+      "requirement_count": 4,
+      "description": "Continuous assessment requirements for tracking modularity design metrics, monitoring interface compliance, validating standards conformance, and maintaining an architecture evolution plan to ensure MOSA objectives are sustained throughout the system lifecycle"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "MOSA-ARCH-1",
+      "family": "MOSA-ARCH",
+      "title": "Module Boundary Definition",
+      "description": "The system architecture must formally define module boundaries that decompose the system into discrete, functionally cohesive components with clearly documented responsibilities, inputs, outputs, and dependencies. Each module boundary must be specified in an architecture description document that identifies the module's purpose, the services it provides, the interfaces it exposes, and the data it owns. Evidence of compliance includes an approved modular architecture document, interface control documents (ICDs) for each module boundary, and a dependency matrix showing inter-module relationships are minimized and well-understood.",
+      "nist_800_53_crosswalk": ["SA-3", "SA-8", "SA-17"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-ARCH-2",
+      "family": "MOSA-ARCH",
+      "title": "Loose Coupling Enforcement",
+      "description": "Modules must be designed with loose coupling such that changes to one module's internal implementation do not require changes to other modules. Inter-module communication must occur exclusively through defined interfaces, and no module may depend on another module's internal data structures, implementation details, or runtime state. Evidence of compliance includes architecture review findings confirming interface-only communication, coupling metrics (afferent and efferent coupling) within documented thresholds, and demonstration that a module can be replaced or updated without modifying dependent modules.",
+      "nist_800_53_crosswalk": ["SA-8", "SA-17"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-ARCH-3",
+      "family": "MOSA-ARCH",
+      "title": "High Cohesion Design",
+      "description": "Each module must exhibit high internal cohesion, meaning all elements within the module are functionally related and contribute to a single, well-defined responsibility. Modules must not aggregate unrelated functionality or serve as catch-all containers for miscellaneous capabilities. Evidence of compliance includes cohesion metrics (e.g., LCOM4) within documented thresholds, architecture review findings confirming single-responsibility adherence, and documentation showing each module's purpose can be described in a single sentence without conjunctions.",
+      "nist_800_53_crosswalk": ["SA-8", "SA-17"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-ARCH-4",
+      "family": "MOSA-ARCH",
+      "title": "Dependency Management",
+      "description": "All inter-module and third-party dependencies must be explicitly declared, version-controlled, and managed through a formal dependency management process. Circular dependencies between modules are prohibited and must be detected by automated tooling in the CI/CD pipeline. Third-party dependencies must be tracked in a Software Bill of Materials (SBOM) and reviewed for license compatibility, security vulnerabilities, and vendor viability. Evidence of compliance includes an up-to-date dependency graph, SBOM, zero circular dependencies in static analysis reports, and documented dependency review records.",
+      "nist_800_53_crosswalk": ["SA-4", "CM-7"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-ARCH-5",
+      "family": "MOSA-ARCH",
+      "title": "Module Registry & Catalog",
+      "description": "The program must maintain a module registry that catalogs all system modules with their current version, owner, classification, interfaces, dependencies, deployment status, and replacement candidates. The registry must be the authoritative source for module metadata and must be updated as part of the configuration management process whenever modules are added, modified, or deprecated. Evidence of compliance includes a populated module registry accessible to all program stakeholders, documented update procedures tied to the CM process, and registry entries showing version history and interface specifications for each module.",
+      "nist_800_53_crosswalk": ["CM-8", "SA-4"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-STD-1",
+      "family": "MOSA-STD",
+      "title": "Technical Standard Profile Maintenance",
+      "description": "The program must establish and maintain a Technical Standard Profile (TSP) that identifies the consensus-based open standards, specifications, and protocols adopted for all module interfaces, data formats, and communication mechanisms. The TSP must be reviewed at least annually and updated to reflect evolving standards, deprecated specifications, and new technology adoption decisions. Evidence of compliance includes a published TSP document referencing specific standard versions (e.g., OpenAPI 3.1, HTTP/2, JSON Schema), review records with disposition of changes, and traceability from each interface to its governing standard in the TSP.",
+      "nist_800_53_crosswalk": ["SA-4", "SA-4(1)"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-STD-2",
+      "family": "MOSA-STD",
+      "title": "API-First Design (OpenAPI/gRPC)",
+      "description": "All module interfaces must be designed API-first, with machine-readable API specifications (OpenAPI 3.x for REST, Protocol Buffers for gRPC, or equivalent open specification formats) authored and approved before implementation begins. API specifications must serve as the contract between module teams and must be version-controlled alongside source code. Evidence of compliance includes OpenAPI or gRPC specification files in the source repository for every external module interface, code generation or validation tooling integrated into the CI/CD pipeline that enforces specification conformance, and design review records showing API specifications were approved prior to implementation.",
+      "nist_800_53_crosswalk": ["SA-4(1)", "SA-9"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-STD-3",
+      "family": "MOSA-STD",
+      "title": "Standard Data Formats",
+      "description": "All data exchanged between modules and with external systems must use open, standards-based data formats such as JSON, XML, Protocol Buffers, or other widely adopted serialization formats. Proprietary or vendor-specific data formats are prohibited for inter-module communication unless a documented waiver with a migration plan to an open format is approved. Evidence of compliance includes interface specifications referencing open data format standards, automated schema validation in the CI/CD pipeline, and zero proprietary format usage in inter-module data exchange without an approved waiver.",
+      "nist_800_53_crosswalk": ["SA-4(1)", "SC-8"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-STD-4",
+      "family": "MOSA-STD",
+      "title": "Standard Protocol Adoption",
+      "description": "All inter-module and external communications must use open, standards-based network protocols such as HTTPS/TLS, gRPC, AMQP, MQTT, or other widely adopted communication protocols appropriate to the operational environment. Custom or proprietary communication protocols are prohibited unless a documented waiver with a migration timeline is approved by the program office. Evidence of compliance includes the Technical Standard Profile listing approved protocols for each communication pattern, network architecture diagrams showing protocol usage, and automated checks confirming no unauthorized protocol usage in deployment configurations.",
+      "nist_800_53_crosswalk": ["SA-4", "SA-9"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-INT-1",
+      "family": "MOSA-INT",
+      "title": "ICD for All External Interfaces",
+      "description": "Every external interface between modules and between the system and external systems must be documented in an Interface Control Document (ICD) that specifies the interface's purpose, data elements, message formats, protocols, error handling, security requirements, performance characteristics, and responsible parties. ICDs must be maintained under configuration management and must be updated whenever the interface changes. Evidence of compliance includes a complete set of ICDs covering all external interfaces identified in the system architecture, CM records showing ICD version history, and traceability from architecture interface definitions to corresponding ICDs.",
+      "nist_800_53_crosswalk": ["SA-4(1)", "SA-4(2)"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-INT-2",
+      "family": "MOSA-INT",
+      "title": "Interface Versioning (SemVer)",
+      "description": "All module interfaces must follow Semantic Versioning (SemVer 2.0.0) conventions where the version number MAJOR.MINOR.PATCH communicates the nature of changes: MAJOR for breaking changes, MINOR for backward-compatible additions, and PATCH for backward-compatible fixes. Interface version numbers must be embedded in API endpoints or message headers and must be tracked in the module registry. Evidence of compliance includes interface version numbers conforming to SemVer in all API specifications, version history records in the module registry, and CI/CD checks that enforce version increment rules when interface changes are detected.",
+      "nist_800_53_crosswalk": ["SA-4(2)", "CM-3"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-INT-3",
+      "family": "MOSA-INT",
+      "title": "Backward Compatibility Policy",
+      "description": "The program must establish and enforce a backward compatibility policy that defines the minimum support window for deprecated interface versions, the process for announcing breaking changes, and the migration support provided to consumers of deprecated interfaces. Breaking changes (MAJOR version increments) must include a minimum deprecation notice period, a migration guide, and a parallel-run period where both old and new interface versions are available. Evidence of compliance includes a published backward compatibility policy, deprecation notices in release notes and API documentation, and monitoring data showing deprecated interface usage trends during migration periods.",
+      "nist_800_53_crosswalk": ["SA-4(2)", "SC-7"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-INT-4",
+      "family": "MOSA-INT",
+      "title": "Interface Testing & Validation",
+      "description": "All module interfaces must be validated through automated contract testing, integration testing, and conformance testing that verifies the interface implementation matches its specification. Contract tests must run in the CI/CD pipeline on every code change and must fail the build if the implementation deviates from the published API specification. Integration tests must verify end-to-end communication between modules across their defined interfaces. Evidence of compliance includes contract test suites for each interface, CI/CD pipeline logs showing contract tests execute on every build, integration test results demonstrating cross-module communication, and test coverage metrics for interface endpoints.",
+      "nist_800_53_crosswalk": ["SA-11", "SA-11(1)"],
+      "priority": "P1"
+    },
+    {
+      "id": "MOSA-DR-1",
+      "family": "MOSA-DR",
+      "title": "Data Rights Strategy Documented",
+      "description": "The program must develop and maintain a comprehensive data rights strategy that identifies the intellectual property (IP) deliverables required for each module, the rights the Government needs to enable competition and sustainment, and the acquisition approach for securing those rights. The strategy must address technical data, computer software, and computer software documentation rights in accordance with DFARS 252.227 and must be coordinated with the program's competitive sourcing strategy. Evidence of compliance includes an approved data rights strategy document, IP deliverable requirements in contract data requirements lists (CDRLs), and traceability from each module to its required data rights category (unlimited, government purpose, limited, or restricted).",
+      "nist_800_53_crosswalk": ["SA-4(9)", "PM-30"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-DR-2",
+      "family": "MOSA-DR",
+      "title": "Government Purpose Rights on Interfaces",
+      "description": "The Government must secure at minimum Government Purpose Rights (GPR) to all interface specifications, interface control documents, and API definitions to ensure that interfaces can be shared with alternative vendors for competitive sustainment, integration, and module replacement. Unlimited rights to interface specifications are preferred. Contractors may not assert restricted or limited rights on interface specifications without a documented waiver from the program executive officer. Evidence of compliance includes contract clauses asserting GPR or unlimited rights on all interface deliverables, a rights assertion table listing each interface and its rights category, and legal review confirming rights are sufficient for competitive re-procurement.",
+      "nist_800_53_crosswalk": ["SA-4(9)", "SR-1"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-DR-3",
+      "family": "MOSA-DR",
+      "title": "Third-Party Component Licensing Tracked",
+      "description": "All third-party components, open-source libraries, and commercial off-the-shelf (COTS) products used within any module must have their license terms formally documented, reviewed for compatibility with Government use and redistribution requirements, and tracked in the module registry. License obligations such as copyleft provisions, attribution requirements, and distribution restrictions must be identified and compliance procedures must be established. Evidence of compliance includes a license inventory in the SBOM covering all third-party components, legal review records for each license type, and documented procedures for meeting license obligations during build, deployment, and distribution.",
+      "nist_800_53_crosswalk": ["SA-4(9)", "PM-30"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-DR-4",
+      "family": "MOSA-DR",
+      "title": "Source Code Delivery or Escrow",
+      "description": "For modules where the Government does not hold unlimited rights to source code, the program must establish a source code escrow arrangement or negotiate delivery of source code under specified trigger conditions (e.g., contractor default, contract termination, or failure to maintain the software). Escrow agreements must specify release conditions, update frequency (at minimum quarterly deposits), and verification procedures to ensure deposited code is buildable and complete. Evidence of compliance includes executed escrow agreements or source code delivery clauses in contracts, escrow deposit receipts showing regular updates, and verification test results confirming deposited source code can be independently compiled and deployed.",
+      "nist_800_53_crosswalk": ["SA-4(9)", "SR-1"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CS-1",
+      "family": "MOSA-CS",
+      "title": "Component Replaceability Assessment",
+      "description": "Each module must be assessed for replaceability — the ability to substitute an alternative implementation from a different vendor without requiring changes to other modules or to the overall system architecture. The assessment must evaluate interface standardization, data format openness, dependency isolation, deployment independence, and availability of alternative implementations. Replaceability scores must be tracked in the module registry and modules scoring below a defined threshold must have remediation plans. Evidence of compliance includes replaceability assessment reports for each module, scores recorded in the module registry, and remediation plans for low-scoring modules with target dates for improvement.",
+      "nist_800_53_crosswalk": ["SA-4", "SR-5"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CS-2",
+      "family": "MOSA-CS",
+      "title": "Vendor Lock-In Risk Analysis",
+      "description": "The program must conduct a vendor lock-in risk analysis for each module that identifies proprietary technologies, vendor-specific APIs, single-source dependencies, and switching costs that could impede future competition. The analysis must quantify lock-in risk across dimensions including technical switching cost, data portability, interface proprietary, and vendor financial viability. High lock-in risk modules must have documented mitigation strategies such as abstraction layers, open standard wrappers, or planned migration to open alternatives. Evidence of compliance includes a vendor lock-in risk register with quantified risk scores per module, approved mitigation strategies for high-risk modules, and periodic review records showing risk evolution.",
+      "nist_800_53_crosswalk": ["SA-4", "SR-1"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CS-3",
+      "family": "MOSA-CS",
+      "title": "Alternative Component Identification",
+      "description": "For each critical module, the program must identify and document at least one alternative implementation or vendor capable of providing equivalent functionality through the module's defined open interfaces. Alternative identification must include a technical feasibility assessment, estimated integration effort, and timeline for qualification. Alternatives must be refreshed at least annually or whenever a module's primary vendor undergoes a significant event (acquisition, financial distress, or performance failure). Evidence of compliance includes an alternatives register listing at least one qualified alternative per critical module, feasibility assessment reports, and annual review records confirming alternatives remain viable.",
+      "nist_800_53_crosswalk": ["SA-4", "SR-5"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CS-4",
+      "family": "MOSA-CS",
+      "title": "Build vs Buy Analysis Documented",
+      "description": "For each module, the program must conduct and document a build-versus-buy analysis that evaluates the total cost of ownership, schedule impact, technical risk, data rights implications, sustainment burden, and competitive sourcing impact of developing custom software versus procuring a commercial or government off-the-shelf solution. The analysis must consider MOSA principles — preferring solutions that use open standards and open interfaces even when custom development is selected. Evidence of compliance includes build-versus-buy analysis documents for each module or module category, decision records with rationale, and traceability from the analysis to acquisition strategy documents.",
+      "nist_800_53_crosswalk": ["SA-4", "PM-7"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CA-1",
+      "family": "MOSA-CA",
+      "title": "Modularity Design Metrics Tracked",
+      "description": "The program must define, collect, and track quantitative modularity metrics throughout the system lifecycle to measure adherence to MOSA architectural principles. Metrics must include at minimum: coupling (afferent and efferent), cohesion (LCOM), module size distribution, interface-to-implementation ratio, dependency depth, and circular dependency count. Metrics must be collected automatically from source code analysis tools integrated into the CI/CD pipeline and reported at least quarterly to program leadership. Evidence of compliance includes a defined modularity metrics baseline, automated metric collection tool configuration, trend reports showing metric evolution, and documented actions taken when metrics exceed thresholds.",
+      "nist_800_53_crosswalk": ["CA-7", "PM-4"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CA-2",
+      "family": "MOSA-CA",
+      "title": "Interface Compliance Monitoring",
+      "description": "The program must continuously monitor that deployed module interfaces conform to their published specifications and that interface usage patterns remain within documented parameters. Monitoring must detect specification drift (implementation deviating from the ICD), unauthorized interface usage (modules communicating through undocumented channels), and performance degradation below specified service level objectives. Evidence of compliance includes interface monitoring dashboards showing real-time conformance status, automated alerts for specification drift or unauthorized usage, incident records for interface compliance violations, and trend reports demonstrating sustained conformance over time.",
+      "nist_800_53_crosswalk": ["CA-7", "SA-11"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CA-3",
+      "family": "MOSA-CA",
+      "title": "Standard Conformance Validation",
+      "description": "The program must validate that all implementations conform to the standards specified in the Technical Standard Profile through automated conformance testing, manual review, or third-party certification as appropriate. Conformance validation must occur during development (CI/CD pipeline checks), at milestone reviews, and periodically in production. Non-conformances must be tracked as defects with remediation timelines. Evidence of compliance includes conformance test results for each standard in the TSP, non-conformance tracking records with disposition, CI/CD pipeline configurations showing automated standard validation checks, and milestone review records confirming standards compliance was assessed.",
+      "nist_800_53_crosswalk": ["CA-7", "SA-11"],
+      "priority": "P2"
+    },
+    {
+      "id": "MOSA-CA-4",
+      "family": "MOSA-CA",
+      "title": "Architecture Evolution Plan",
+      "description": "The program must maintain an architecture evolution plan that documents the roadmap for evolving the modular architecture over the system's planned lifecycle, including technology refresh cycles, planned standard migrations, module replacement schedules, and interface evolution timelines. The plan must align with the program's acquisition strategy, technology maturation roadmap, and threat environment evolution. The plan must be reviewed and updated at least annually or at each major milestone. Evidence of compliance includes an approved architecture evolution plan with versioned roadmap, annual review records, traceability from evolution milestones to acquisition events, and stakeholder coordination records confirming alignment across engineering, program management, and contracting.",
+      "nist_800_53_crosswalk": ["PM-4", "SA-3"],
+      "priority": "P2"
+    }
+  ]
+}

@@ -108,6 +108,8 @@ VALID_EVENT_TYPES = (
     "critique_revision_requested",
     # Session Purpose (Phase 61 — D-ORCH-5)
     "session.purpose_declared",
+    # Child App Generation (Phase 19/36)
+    "child_app_generated", "child_app_registered",
 )
 
 

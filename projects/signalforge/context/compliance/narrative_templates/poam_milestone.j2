@@ -1,0 +1,19 @@
+### POA&M Item: {{ poam_id }}
+
+**Control:** {{ control_id }} — {{ control_name }}
+**Status:** {{ status | title }}
+**Risk Level:** {{ risk_level | default("Moderate") }}
+
+**Weakness Description:**
+{{ weakness_description }}
+
+**Remediation Plan:**
+{{ remediation_plan }}
+
+**Milestones:**
+{% for milestone in milestones %}
+- {{ milestone.description }} (Target: {{ milestone.target_date }})
+{% endfor %}
+
+**Responsible Party:** {{ responsible_party }}
+**Scheduled Completion:** {{ scheduled_completion }}

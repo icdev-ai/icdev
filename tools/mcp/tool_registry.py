@@ -1277,6 +1277,86 @@ TOOL_REGISTRY = {
         "input_schema": {"type": "object", "properties": {"body": {"type": "string", "description": "Standards body: nist, cisa, dod, fedramp, iso, or omit for all"}}},
     },
     # ============================================================
+    # RESEARCH (10 tools)
+    # ============================================================
+    "research_create_session": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_create_session",
+        "description": "Create a new industry research session for a vertical (trading, healthcare, defense, fintech, cybersecurity, logistics)",
+        "input_schema": {"type": "object", "properties": {"vertical": {"type": "string", "description": "Vertical slug"}, "name": {"type": "string", "description": "Session name"}, "focus_areas": {"type": "array", "items": {"type": "string"}, "description": "Focus area keywords"}}, "required": ["vertical"]},
+    },
+    "research_run_stage": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_run_stage",
+        "description": "Run a specific pipeline stage (SCOPE, LANDSCAPE, REGULATE, COMMUNITY, ACADEMIC, BUILD_BUY, SYNTHESIZE, DOSSIER)",
+        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Research session ID"}, "stage": {"type": "string", "description": "Pipeline stage to run"}}, "required": ["session_id", "stage"]},
+    },
+    "research_run_pipeline": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_run_pipeline",
+        "description": "Run full 8-stage research pipeline: SCOPE → LANDSCAPE → REGULATE → COMMUNITY → ACADEMIC → BUILD_BUY → SYNTHESIZE → DOSSIER",
+        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Existing session ID"}, "vertical": {"type": "string", "description": "Vertical slug (required if no session_id)"}}},
+    },
+    "research_get_status": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_get_status",
+        "description": "Get research engine status or specific session status",
+        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Session ID or omit for engine overview"}}},
+    },
+    "research_list_sessions": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_list_sessions",
+        "description": "List all industry research sessions with status and signal counts",
+        "input_schema": {"type": "object", "properties": {"status": {"type": "string", "description": "Filter by session status"}}},
+    },
+    "research_get_dossier": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_get_dossier",
+        "description": "Get a generated industry research dossier with full rendered Markdown",
+        "input_schema": {"type": "object", "properties": {"dossier_id": {"type": "string", "description": "Specific dossier ID"}, "session_id": {"type": "string", "description": "Get latest dossier for session"}}},
+    },
+    "research_review_dossier": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_review_dossier",
+        "description": "Submit HITL review for a research dossier (approve or reject)",
+        "input_schema": {"type": "object", "properties": {"dossier_id": {"type": "string", "description": "Dossier ID to review"}, "reviewer": {"type": "string", "description": "Reviewer name/email"}, "decision": {"type": "string", "enum": ["approved", "rejected"], "description": "Review decision"}, "notes": {"type": "string", "description": "Review notes"}}, "required": ["dossier_id", "reviewer", "decision"]},
+    },
+    "research_list_verticals": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_list_verticals",
+        "description": "List all available industry verticals with their configuration",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "research_get_challenges": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_get_challenges",
+        "description": "Get scored challenges for a research session, ranked by composite score",
+        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Research session ID"}, "severity": {"type": "string", "description": "Filter: critical, notable, appendix"}, "limit": {"type": "integer", "description": "Max results (default 50)"}}, "required": ["session_id"]},
+    },
+    "research_get_forecasts": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_get_forecasts",
+        "description": "Get AI-generated predictions and surprise recommendations for a research session (D-RES-17)",
+        "input_schema": {"type": "object", "properties": {"session_id": {"type": "string", "description": "Research session ID"}, "limit": {"type": "integer", "description": "Max predictions to return (default 10)"}}, "required": ["session_id"]},
+    },
+    "research_trigger_fitness": {
+        "category": "research",
+        "module": "tools.mcp.research_server",
+        "handler": "handle_research_trigger_fitness",
+        "description": "Trigger child app fitness assessment from an approved research dossier (requires prior HITL review)",
+        "input_schema": {"type": "object", "properties": {"dossier_id": {"type": "string", "description": "Approved dossier ID"}}, "required": ["dossier_id"]},
+    },
+    # ============================================================
     # OBSERVABILITY (6 tools)
     # ============================================================
     "trace_query": {

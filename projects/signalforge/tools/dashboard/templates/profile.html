@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Profile — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<h1>My Profile</h1>
+
+<!-- User info -->
+<div class="profile-section">
+    <h3>Account Details</h3>
+    <div class="profile-field">
+        <label>Email:</label>
+        <span class="field-value">{{ current_user.email }}</span>
+    </div>
+    <div class="profile-field">
+        <label>Display Name:</label>
+        <span class="field-value">{{ current_user.display_name }}</span>
+    </div>
+    <div class="profile-field">
+        <label>Role:</label>
+        <span class="field-value source-badge">{{ current_user.role }}</span>
+    </div>
+</div>
+
+<!-- API Keys -->
+<div class="profile-section">
+    <h3>My API Keys</h3>
+    <div class="table-container">
+        <table class="data-table" id="my-keys-table">
+            <thead>
+                <tr>
+                    <th>Prefix</th>
+                    <th>Label</th>
+                    <th>Status</th>
+                    <th>Last Used</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody id="my-keys-body">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- BYOK Section (D175-D178) -->
+{% if byok_enabled %}
+<div class="profile-section">
+    <h3>LLM API Keys (BYOK)</h3>
+    <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        Add your own API keys for LLM providers. Your keys are encrypted at rest (AES-256).
+        When set, your keys take priority over system defaults for cost tracking purposes.
+    </p>
+
+    <form id="byok-form" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 1rem;">
+        <div class="form-group" style="width: 140px;">
+            <label for="byok-provider">Provider</label>
+            <select id="byok-provider" class="form-control">
+                <option value="anthropic">Anthropic</option>
+                <option value="openai">OpenAI</option>
+                <option value="bedrock">AWS Bedrock</option>
+                <option value="ollama">Ollama</option>
+            </select>
+        </div>
+        <div class="form-group" style="flex: 1; min-width: 200px;">
+            <label for="byok-key">API Key</label>
+            <input type="password" id="byok-key" class="form-control" placeholder="sk-..." required>
+        </div>
+        <div class="form-group" style="width: 160px;">
+            <label for="byok-label">Label (optional)</label>
+            <input type="text" id="byok-label" class="form-control" placeholder="My key">
+        </div>
+        <button type="submit" class="btn-primary" style="padding: 6px 16px; height: fit-content;">Add Key</button>
+    </form>
+    <div id="byok-result" style="margin-bottom: 10px;"></div>
+
+    <div class="table-container">
+        <table class="data-table" id="byok-table">
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Label</th>
+                    <th>Status</th>
+                    <th>Added</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="byok-body">
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var userId = '{{ current_user.id if current_user else "" }}';
+
+    // Load API keys
+    function loadMyKeys() {
+        fetch('/profile/api/keys')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var body = document.getElementById('my-keys-body');
+            if (!body) return;
+            body.innerHTML = '';
+            (data.keys || []).forEach(function(k) {
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td><code>' + (k.key_prefix || '') + '...</code></td>' +
+                    '<td>' + (k.label || '-') + '</td>' +
+                    '<td>' + k.status + '</td>' +
+                    '<td>' + (k.last_used_at || 'Never') + '</td>' +
+                    '<td>' + (k.created_at || '') + '</td>';
+                body.appendChild(tr);
+            });
+        });
+    }
+    loadMyKeys();
+
+    // BYOK
+    var byokEnabled = {{ 'true' if byok_enabled else 'false' }};
+    if (byokEnabled) {
+        function loadByokKeys() {
+            fetch('/profile/api/llm-keys')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var body = document.getElementById('byok-body');
+                if (!body) return;
+                body.innerHTML = '';
+                (data.keys || []).forEach(function(k) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td><span class="source-badge">' + k.provider + '</span></td>' +
+                        '<td>' + (k.key_label || '-') + '</td>' +
+                        '<td>' + k.status + '</td>' +
+                        '<td>' + (k.created_at || '') + '</td>' +
+                        '<td>' + (k.status === 'active' ?
+                            '<button class="btn-sm btn-danger" onclick="revokeByokKey(\'' + k.id + '\')">Revoke</button>'
+                            : '<span style="color:#a0a0b8;">Revoked</span>') + '</td>';
+                    body.appendChild(tr);
+                });
+            });
+        }
+        loadByokKeys();
+
+        var form = document.getElementById('byok-form');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                var provider = document.getElementById('byok-provider').value;
+                var key = document.getElementById('byok-key').value;
+                var label = document.getElementById('byok-label').value;
+                fetch('/profile/api/llm-keys', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({provider: provider, api_key: key, label: label})
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.error) {
+                        document.getElementById('byok-result').innerHTML =
+                            '<span style="color:#f88;">' + data.error + '</span>';
+                    } else {
+                        document.getElementById('byok-key').value = '';
+                        document.getElementById('byok-label').value = '';
+                        document.getElementById('byok-result').innerHTML =
+                            '<span style="color:#8f8;">Key added for ' + provider + '</span>';
+                        loadByokKeys();
+                    }
+                });
+            });
+        }
+
+        window.revokeByokKey = function(keyId) {
+            if (!confirm('Revoke this LLM key?')) return;
+            fetch('/profile/api/llm-keys/' + keyId + '/revoke', {method: 'POST'})
+            .then(function() { loadByokKeys(); });
+        };
+    }
+})();
+</script>
+{% endblock %}

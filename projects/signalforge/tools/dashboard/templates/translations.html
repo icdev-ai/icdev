@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Translations — ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="breadcrumb" role="navigation" aria-label="Breadcrumb">
+    <a href="/">Home</a> &gt; <span>Translations</span>
+</div>
+
+<h1>Cross-Language Translation <span class="badge badge-info" data-glossary="phase43">Phase 43</span></h1>
+<p class="text-muted">LLM-assisted code translation across 30 language pairs with ATO compliance preservation.</p>
+
+<!-- Stat Cards -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-value">{{ total }}</div>
+        <div class="stat-label">Total Jobs</div>
+    </div>
+    <div class="stat-card stat-card--success">
+        <div class="stat-value">{{ completed }}</div>
+        <div class="stat-label">Completed</div>
+    </div>
+    <div class="stat-card stat-card--warning">
+        <div class="stat-value">{{ in_progress }}</div>
+        <div class="stat-label">In Progress</div>
+    </div>
+    <div class="stat-card stat-card--danger">
+        <div class="stat-value">{{ failed }}</div>
+        <div class="stat-label">Failed / Partial</div>
+    </div>
+    {% if avg_api_score is not none %}
+    <div class="stat-card">
+        <div class="stat-value">{{ avg_api_score }}%</div>
+        <div class="stat-label">Avg API Surface Match</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Charts Row -->
+<div class="chart-row" style="display: flex; gap: 1.5rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <div class="card" style="flex: 1; min-width: 300px;">
+        <h3>Job Status Distribution</h3>
+        <div id="chart-status" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+            <span class="text-muted">Loading chart...</span>
+        </div>
+    </div>
+    <div class="card" style="flex: 1; min-width: 300px;">
+        <h3>Language Pair Frequency</h3>
+        <div id="chart-pairs" style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+            <span class="text-muted">Loading chart...</span>
+        </div>
+    </div>
+</div>
+
+<!-- Jobs Table -->
+<div class="table-container">
+    <h3>Translation Jobs</h3>
+    {% if jobs %}
+    <table class="data-table" aria-label="Translation jobs">
+        <thead>
+            <tr>
+                <th>Job ID</th>
+                <th>Language Pair</th>
+                <th>Status</th>
+                <th>Units</th>
+                <th>Gate</th>
+                <th>Model</th>
+                <th>Duration</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for job in jobs %}
+            <tr>
+                <td><a href="/translations/{{ job.id }}">{{ job.id[:8] }}…</a></td>
+                <td>{{ job.source_language }} → {{ job.target_language }}</td>
+                <td>
+                    {% if job.status == 'completed' %}
+                    <span class="badge badge-success">Completed</span>
+                    {% elif job.status in ('pending', 'extracting', 'translating', 'assembling', 'validating') %}
+                    <span class="badge badge-warning">{{ job.status|capitalize }}</span>
+                    {% elif job.status == 'partial' %}
+                    <span class="badge badge-warning">Partial</span>
+                    {% else %}
+                    <span class="badge badge-danger">{{ job.status|capitalize }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ job.translated_units or 0 }}/{{ job.total_units or 0 }}
+                    {% if job.mocked_units %}<small class="text-muted">({{ job.mocked_units }} mocked)</small>{% endif %}
+                </td>
+                <td>
+                    {% if job.gate_result == 'pass' %}
+                    <span class="badge badge-success">Pass</span>
+                    {% elif job.gate_result == 'warn' %}
+                    <span class="badge badge-warning">Warn</span>
+                    {% elif job.gate_result == 'fail' %}
+                    <span class="badge badge-danger">Fail</span>
+                    {% else %}
+                    <span class="text-muted">—</span>
+                    {% endif %}
+                </td>
+                <td>{{ job.llm_model or '—' }}</td>
+                <td>{% if job.elapsed_seconds %}{{ "%.1f"|format(job.elapsed_seconds) }}s{% else %}—{% endif %}</td>
+                <td class="friendly-timestamp">{{ job.created_at or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <h3>No Translation Jobs Yet</h3>
+        <p>Run your first translation with:</p>
+        <pre><code>python tools/translation/translation_manager.py \
+  --source-path /path/to/source \
+  --source-language python \
+  --target-language java \
+  --output-dir /path/to/output \
+  --project-id "proj-123" --json</code></pre>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// Load charts
+fetch('/api/charts/translations')
+    .then(r => r.json())
+    .then(data => {
+        // Status donut
+        const statusEl = document.getElementById('chart-status');
+        if (data.status_distribution && Object.keys(data.status_distribution).length > 0) {
+            if (typeof ICDEV !== 'undefined' && ICDEV.donutChart) {
+                statusEl.innerHTML = '';
+                ICDEV.donutChart(statusEl, data.status_distribution, {
+                    colors: { completed: '#22c55e', failed: '#ef4444', partial: '#f59e0b',
+                              pending: '#6b7280', extracting: '#3b82f6', translating: '#8b5cf6',
+                              assembling: '#06b6d4', validating: '#14b8a6' }
+                });
+            } else {
+                statusEl.innerHTML = '<pre>' + JSON.stringify(data.status_distribution, null, 2) + '</pre>';
+            }
+        } else {
+            statusEl.innerHTML = '<span class="text-muted">No data yet</span>';
+        }
+
+        // Language pair bar chart
+        const pairsEl = document.getElementById('chart-pairs');
+        if (data.language_pair_frequency && Object.keys(data.language_pair_frequency).length > 0) {
+            if (typeof ICDEV !== 'undefined' && ICDEV.barChart) {
+                pairsEl.innerHTML = '';
+                ICDEV.barChart(pairsEl, data.language_pair_frequency);
+            } else {
+                pairsEl.innerHTML = '<pre>' + JSON.stringify(data.language_pair_frequency, null, 2) + '</pre>';
+            }
+        } else {
+            pairsEl.innerHTML = '<span class="text-muted">No data yet</span>';
+        }
+    })
+    .catch(() => {
+        document.getElementById('chart-status').innerHTML = '<span class="text-muted">Chart unavailable</span>';
+        document.getElementById('chart-pairs').innerHTML = '<span class="text-muted">Chart unavailable</span>';
+    });
+</script>
+{% endblock %}

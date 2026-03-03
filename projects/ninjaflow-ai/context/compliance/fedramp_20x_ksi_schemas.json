@@ -1,0 +1,133 @@
+{
+  "metadata": {
+    "title": "FedRAMP 20x Key Security Indicators (KSIs)",
+    "source": "FedRAMP 20x Program — Phase 2 (2026), NIST 800-53 Rev 5 crosswalk",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-24",
+    "description": "Machine-readable KSI definitions for FedRAMP 20x continuous authorization. Each KSI maps to NIST 800-53 control families and defines evidence sources that ICDEV can generate automatically.",
+    "total_ksis": 43,
+    "phases": {
+      "phase_1": "Foundational policies and procedures",
+      "phase_2": "Technical controls and automation (current)",
+      "phase_3": "Continuous monitoring and real-time reporting (Q3-Q4 2026)"
+    }
+  },
+  "ksi_families": [
+    {
+      "family_id": "AC",
+      "family_name": "Access Control",
+      "ksis": [
+        {"ksi_id": "KSI-AC-01", "title": "Least Privilege Enforcement", "nist_controls": ["AC-6"], "evidence_sources": ["rbac_config", "mcp_tool_authorizer", "agent_trust_scores"], "maturity_levels": {"basic": "RBAC configured", "intermediate": "Per-tool authorization active", "advanced": "Dynamic trust scoring operational"}},
+        {"ksi_id": "KSI-AC-02", "title": "Account Management", "nist_controls": ["AC-2"], "evidence_sources": ["dashboard_users", "dashboard_api_keys", "dashboard_auth_log"], "maturity_levels": {"basic": "User accounts defined", "intermediate": "API key rotation policy", "advanced": "Automated access review"}},
+        {"ksi_id": "KSI-AC-03", "title": "Session Management", "nist_controls": ["AC-12"], "evidence_sources": ["dashboard_auth_log", "session_config"], "maturity_levels": {"basic": "Session timeout configured", "intermediate": "Session signing active", "advanced": "Session anomaly detection"}},
+        {"ksi_id": "KSI-AC-04", "title": "Remote Access Control", "nist_controls": ["AC-17"], "evidence_sources": ["remote_user_bindings", "remote_command_log"], "maturity_levels": {"basic": "User binding required", "intermediate": "Command allowlist enforced", "advanced": "Channel-level IL filtering"}},
+        {"ksi_id": "KSI-AC-05", "title": "Information Flow Enforcement", "nist_controls": ["AC-4"], "evidence_sources": ["network_policies", "classification_config"], "maturity_levels": {"basic": "Network policies defined", "intermediate": "IL-based flow control", "advanced": "Cross-boundary monitoring"}}
+      ]
+    },
+    {
+      "family_id": "AU",
+      "family_name": "Audit and Accountability",
+      "ksis": [
+        {"ksi_id": "KSI-AU-01", "title": "Audit Event Generation", "nist_controls": ["AU-2", "AU-3", "AU-12"], "evidence_sources": ["audit_trail", "hook_events"], "maturity_levels": {"basic": "Audit trail exists", "intermediate": "All tool calls logged", "advanced": "HMAC-signed audit entries"}},
+        {"ksi_id": "KSI-AU-02", "title": "Audit Review and Analysis", "nist_controls": ["AU-6"], "evidence_sources": ["audit_trail", "ai_telemetry", "production_audits"], "maturity_levels": {"basic": "Manual audit review", "intermediate": "Automated anomaly detection", "advanced": "AI-driven audit analysis"}},
+        {"ksi_id": "KSI-AU-03", "title": "Audit Storage Protection", "nist_controls": ["AU-9"], "evidence_sources": ["append_only_tables", "pre_tool_use_hook"], "maturity_levels": {"basic": "Append-only tables defined", "intermediate": "Hook enforcement active", "advanced": "Cryptographic integrity verification"}},
+        {"ksi_id": "KSI-AU-04", "title": "Non-Repudiation", "nist_controls": ["AU-10"], "evidence_sources": ["audit_trail", "hmac_config"], "maturity_levels": {"basic": "Timestamped audit entries", "intermediate": "HMAC signing configured", "advanced": "Digital signature on audit records"}}
+      ]
+    },
+    {
+      "family_id": "CA",
+      "family_name": "Assessment and Authorization",
+      "ksis": [
+        {"ksi_id": "KSI-CA-01", "title": "Security Assessment", "nist_controls": ["CA-2"], "evidence_sources": ["production_audits", "xai_assessments"], "maturity_levels": {"basic": "Annual assessment conducted", "intermediate": "Quarterly automated assessment", "advanced": "Continuous assessment pipeline"}},
+        {"ksi_id": "KSI-CA-02", "title": "Continuous Monitoring", "nist_controls": ["CA-7"], "evidence_sources": ["heartbeat_checks", "cato_monitor"], "maturity_levels": {"basic": "Health checks configured", "intermediate": "Automated alerting active", "advanced": "Self-healing with HITL gates"}},
+        {"ksi_id": "KSI-CA-03", "title": "Plan of Action and Milestones", "nist_controls": ["CA-5"], "evidence_sources": ["poam_records", "remediation_audit_log"], "maturity_levels": {"basic": "POAM generated", "intermediate": "POAM tracked with deadlines", "advanced": "Automated remediation pipeline"}}
+      ]
+    },
+    {
+      "family_id": "CM",
+      "family_name": "Configuration Management",
+      "ksis": [
+        {"ksi_id": "KSI-CM-01", "title": "Baseline Configuration", "nist_controls": ["CM-2"], "evidence_sources": ["icdev_yaml", "cloud_config", "agent_config"], "maturity_levels": {"basic": "Configuration files documented", "intermediate": "Version-controlled configs", "advanced": "Drift detection active"}},
+        {"ksi_id": "KSI-CM-02", "title": "Change Control", "nist_controls": ["CM-3"], "evidence_sources": ["claude_dir_validator", "schema_migrations"], "maturity_levels": {"basic": "Change tracking exists", "intermediate": "Governance validator active", "advanced": "Automated change impact analysis"}},
+        {"ksi_id": "KSI-CM-03", "title": "Least Functionality", "nist_controls": ["CM-7"], "evidence_sources": ["security_gates", "code_pattern_config"], "maturity_levels": {"basic": "Security gates defined", "intermediate": "Pattern blocking active", "advanced": "Dynamic function restriction"}},
+        {"ksi_id": "KSI-CM-04", "title": "Software Inventory", "nist_controls": ["CM-8"], "evidence_sources": ["sbom_records", "ai_bom"], "maturity_levels": {"basic": "SBOM generated", "intermediate": "AI-BOM included", "advanced": "Real-time dependency tracking"}}
+      ]
+    },
+    {
+      "family_id": "IA",
+      "family_name": "Identification and Authentication",
+      "ksis": [
+        {"ksi_id": "KSI-IA-01", "title": "User Identification", "nist_controls": ["IA-2"], "evidence_sources": ["dashboard_users", "remote_user_bindings"], "maturity_levels": {"basic": "Unique user accounts", "intermediate": "Multi-factor authentication", "advanced": "CAC/PIV integration"}},
+        {"ksi_id": "KSI-IA-02", "title": "Device/Service Identification", "nist_controls": ["IA-3"], "evidence_sources": ["agent_config", "a2a_agent_cards"], "maturity_levels": {"basic": "Agent cards published", "intermediate": "mTLS certificates", "advanced": "Certificate rotation automated"}},
+        {"ksi_id": "KSI-IA-03", "title": "Credential Management", "nist_controls": ["IA-5"], "evidence_sources": ["secrets_config", "api_key_management"], "maturity_levels": {"basic": "No hardcoded secrets", "intermediate": "Secrets manager configured", "advanced": "Key rotation automated"}}
+      ]
+    },
+    {
+      "family_id": "IR",
+      "family_name": "Incident Response",
+      "ksis": [
+        {"ksi_id": "KSI-IR-01", "title": "Incident Response Plan", "nist_controls": ["IR-1", "IR-8"], "evidence_sources": ["ir_plan", "ai_incident_log"], "maturity_levels": {"basic": "IR plan documented", "intermediate": "AI incident logging active", "advanced": "Automated incident detection and triage"}},
+        {"ksi_id": "KSI-IR-02", "title": "Incident Detection", "nist_controls": ["IR-4", "IR-5"], "evidence_sources": ["ai_incident_log", "auto_resolution_log"], "maturity_levels": {"basic": "Manual incident logging", "intermediate": "Automated detection active", "advanced": "Auto-resolution with HITL"}}
+      ]
+    },
+    {
+      "family_id": "RA",
+      "family_name": "Risk Assessment",
+      "ksis": [
+        {"ksi_id": "KSI-RA-01", "title": "Risk Assessment", "nist_controls": ["RA-3"], "evidence_sources": ["atlas_assessments", "owasp_asi_assessments", "nist_ai_rmf_assessments"], "maturity_levels": {"basic": "Risk assessment conducted", "intermediate": "Multi-framework assessment", "advanced": "Continuous risk scoring"}},
+        {"ksi_id": "KSI-RA-02", "title": "Vulnerability Scanning", "nist_controls": ["RA-5"], "evidence_sources": ["sast_results", "dependency_audit", "marketplace_scan_results"], "maturity_levels": {"basic": "SAST scanning active", "intermediate": "Dependency audit active", "advanced": "Container scanning + marketplace gates"}}
+      ]
+    },
+    {
+      "family_id": "SA",
+      "family_name": "System and Services Acquisition",
+      "ksis": [
+        {"ksi_id": "KSI-SA-01", "title": "Security Engineering Principles", "nist_controls": ["SA-8"], "evidence_sources": ["sbd_assessments", "mosa_assessments"], "maturity_levels": {"basic": "SbD principles documented", "intermediate": "SbD assessment conducted", "advanced": "MOSA modularity enforced"}},
+        {"ksi_id": "KSI-SA-02", "title": "Developer Security Testing", "nist_controls": ["SA-11"], "evidence_sources": ["test_results", "bdd_results", "e2e_results"], "maturity_levels": {"basic": "Unit tests exist", "intermediate": "BDD + E2E testing", "advanced": "Full 9-step pipeline"}},
+        {"ksi_id": "KSI-SA-03", "title": "Supply Chain Risk Management", "nist_controls": ["SA-12"], "evidence_sources": ["scrm_assessments", "sbom_records", "ai_bom"], "maturity_levels": {"basic": "SBOM generated", "intermediate": "SCRM assessment conducted", "advanced": "AI supply chain monitoring"}},
+        {"ksi_id": "KSI-SA-04", "title": "Development Process", "nist_controls": ["SA-3"], "evidence_sources": ["devsecops_profiles", "pipeline_config"], "maturity_levels": {"basic": "SDLC documented", "intermediate": "DevSecOps profile active", "advanced": "Automated pipeline security"}}
+      ]
+    },
+    {
+      "family_id": "SC",
+      "family_name": "System and Communications Protection",
+      "ksis": [
+        {"ksi_id": "KSI-SC-01", "title": "Boundary Protection", "nist_controls": ["SC-7"], "evidence_sources": ["network_policies", "k8s_manifests"], "maturity_levels": {"basic": "Network policies defined", "intermediate": "Default-deny enforced", "advanced": "Microsegmentation active"}},
+        {"ksi_id": "KSI-SC-02", "title": "Transmission Confidentiality", "nist_controls": ["SC-8"], "evidence_sources": ["agent_config", "a2a_tls_config"], "maturity_levels": {"basic": "TLS configured", "intermediate": "mTLS for A2A", "advanced": "FIPS 140-2 validated crypto"}},
+        {"ksi_id": "KSI-SC-03", "title": "Cryptographic Protection", "nist_controls": ["SC-13"], "evidence_sources": ["hmac_config", "encryption_config"], "maturity_levels": {"basic": "Encryption at rest", "intermediate": "HMAC signing active", "advanced": "KMS-managed keys"}},
+        {"ksi_id": "KSI-SC-04", "title": "Denial of Service Protection", "nist_controls": ["SC-5"], "evidence_sources": ["resilience_config", "hpa_config", "rate_limiter"], "maturity_levels": {"basic": "Rate limiting configured", "intermediate": "Circuit breakers active", "advanced": "Auto-scaling with HPA"}}
+      ]
+    },
+    {
+      "family_id": "SI",
+      "family_name": "System and Information Integrity",
+      "ksis": [
+        {"ksi_id": "KSI-SI-01", "title": "Flaw Remediation", "nist_controls": ["SI-2"], "evidence_sources": ["remediation_audit_log", "vulnerability_records"], "maturity_levels": {"basic": "Vulnerability tracking", "intermediate": "Auto-remediation pipeline", "advanced": "SLA-driven remediation"}},
+        {"ksi_id": "KSI-SI-02", "title": "Malicious Code Protection", "nist_controls": ["SI-3"], "evidence_sources": ["sast_results", "code_pattern_scan", "prompt_injection_log"], "maturity_levels": {"basic": "SAST scanning active", "intermediate": "Pattern detection active", "advanced": "Prompt injection defense"}},
+        {"ksi_id": "KSI-SI-03", "title": "Information Input Validation", "nist_controls": ["SI-10"], "evidence_sources": ["agent_output_violations", "tool_chain_events"], "maturity_levels": {"basic": "Input validation defined", "intermediate": "Output validation active", "advanced": "Tool chain validation"}},
+        {"ksi_id": "KSI-SI-04", "title": "Software Integrity Verification", "nist_controls": ["SI-7"], "evidence_sources": ["sbom_records", "attestation_config"], "maturity_levels": {"basic": "SBOM integrity checks", "intermediate": "Attestation verification", "advanced": "SLSA provenance"}}
+      ]
+    },
+    {
+      "family_id": "SR",
+      "family_name": "Supply Chain Risk Management",
+      "ksis": [
+        {"ksi_id": "KSI-SR-01", "title": "Supply Chain Controls", "nist_controls": ["SR-3", "SR-5"], "evidence_sources": ["scrm_assessments", "vendor_records"], "maturity_levels": {"basic": "Vendor inventory", "intermediate": "SCRM assessment conducted", "advanced": "Continuous vendor monitoring"}},
+        {"ksi_id": "KSI-SR-02", "title": "Component Authenticity", "nist_controls": ["SR-11"], "evidence_sources": ["marketplace_scan_results", "sbom_records"], "maturity_levels": {"basic": "Component tracking", "intermediate": "Marketplace 7-gate pipeline", "advanced": "Cryptographic verification"}}
+      ]
+    },
+    {
+      "family_id": "AI",
+      "family_name": "AI-Specific Controls",
+      "ksis": [
+        {"ksi_id": "KSI-AI-01", "title": "AI Inventory and Classification", "nist_controls": ["PM-7"], "evidence_sources": ["ai_use_case_inventory", "model_cards", "system_cards"], "maturity_levels": {"basic": "AI inventory maintained", "intermediate": "Model cards generated", "advanced": "System cards with lifecycle tracking"}},
+        {"ksi_id": "KSI-AI-02", "title": "AI Transparency", "nist_controls": ["AC-3", "AU-2"], "evidence_sources": ["xai_assessments", "shap_attributions", "confabulation_checks"], "maturity_levels": {"basic": "XAI assessment conducted", "intermediate": "SHAP attribution active", "advanced": "Confabulation detection operational"}},
+        {"ksi_id": "KSI-AI-03", "title": "AI Risk Management", "nist_controls": ["RA-3"], "evidence_sources": ["nist_ai_rmf_assessments", "atlas_assessments", "owasp_asi_assessments"], "maturity_levels": {"basic": "One AI framework assessed", "intermediate": "Multi-framework AI assessment", "advanced": "Continuous AI risk monitoring"}},
+        {"ksi_id": "KSI-AI-04", "title": "AI Accountability", "nist_controls": ["AU-6", "PM-7"], "evidence_sources": ["ai_oversight_plans", "ai_caio_registry", "ai_ethics_reviews"], "maturity_levels": {"basic": "Oversight plan exists", "intermediate": "CAIO designated", "advanced": "Full accountability framework"}},
+        {"ksi_id": "KSI-AI-05", "title": "AI Fairness and Bias", "nist_controls": ["SI-4"], "evidence_sources": ["fairness_assessments", "gao_ai_assessments"], "maturity_levels": {"basic": "Fairness assessment conducted", "intermediate": "GAO evidence collected", "advanced": "Continuous bias monitoring"}},
+        {"ksi_id": "KSI-AI-06", "title": "Agentic Security", "nist_controls": ["SI-4", "AC-6", "SC-8"], "evidence_sources": ["owasp_asi_assessments", "agent_trust_scores", "behavioral_drift"], "maturity_levels": {"basic": "OWASP ASI assessment", "intermediate": "Agent trust scoring active", "advanced": "Behavioral red teaming conducted"}}
+      ]
+    }
+  ]
+}

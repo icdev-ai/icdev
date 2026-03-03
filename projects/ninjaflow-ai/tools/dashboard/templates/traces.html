@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Traces - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Trace Explorer</h1>
+    <p class="text-muted">Distributed tracing across all MCP servers, A2A protocol, and LLM calls (Phase 46).</p>
+
+    <!-- Stat grid -->
+    <div class="stat-grid" id="trace-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-traces" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Traces</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-spans" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Spans</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-mcp" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">MCP Tool Calls</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-errors" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Errors</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" id="stat-avg-dur" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Avg Duration (ms)</div>
+        </div>
+    </div>
+
+    <!-- Trace list -->
+    <h2>Recent Traces</h2>
+    <div class="table-container">
+        <table id="traces-table" aria-label="Trace listing">
+            <thead>
+                <tr>
+                    <th>Trace ID</th>
+                    <th>Spans</th>
+                    <th>Duration (ms)</th>
+                    <th>Started</th>
+                    <th>Span Types</th>
+                    <th>Project</th>
+                </tr>
+            </thead>
+            <tbody id="traces-body">
+                <tr><td colspan="6" style="text-align:center;color:#999;">Loading traces...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Span waterfall (shown when trace selected) -->
+    <div id="waterfall-container" style="display:none;margin-top:2rem;">
+        <h2>Span Waterfall — <span id="waterfall-trace-id"></span></h2>
+        <div id="waterfall-svg" style="overflow-x:auto;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    // Load stats
+    fetch('/api/traces/stats')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-traces').textContent = data.total_traces || 0;
+            document.getElementById('stat-spans').textContent = data.total_spans || 0;
+            document.getElementById('stat-mcp').textContent = data.mcp_tool_calls || 0;
+            document.getElementById('stat-errors').textContent = data.error_spans || 0;
+            document.getElementById('stat-avg-dur').textContent = data.avg_duration_ms || 0;
+        })
+        .catch(() => {});
+
+    // Load trace list
+    fetch('/api/traces/?limit=50')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('traces-body');
+            if (!data.traces || data.traces.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#999;">No traces recorded yet. Enable tracing to see data.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.traces.map(t => `
+                <tr style="cursor:pointer;" onclick="showWaterfall('${t.trace_id}')">
+                    <td><code>${(t.trace_id || '').substring(0, 16)}...</code></td>
+                    <td>${t.span_count}</td>
+                    <td>${t.total_duration_ms || 0}</td>
+                    <td>${t.first_span || ''}</td>
+                    <td>${(t.span_names || '').substring(0, 60)}</td>
+                    <td>${t.project_id || ''}</td>
+                </tr>
+            `).join('');
+        })
+        .catch(() => {});
+
+    // Waterfall view
+    window.showWaterfall = function(traceId) {
+        fetch('/api/traces/' + traceId)
+            .then(r => r.json())
+            .then(data => {
+                const container = document.getElementById('waterfall-container');
+                const svgDiv = document.getElementById('waterfall-svg');
+                document.getElementById('waterfall-trace-id').textContent = traceId.substring(0, 16) + '...';
+                container.style.display = 'block';
+
+                if (!data.spans || data.spans.length === 0) {
+                    svgDiv.innerHTML = '<p>No spans found.</p>';
+                    return;
+                }
+
+                // Build waterfall SVG
+                const spans = data.spans;
+                const barH = 28, padY = 4, labelW = 240;
+                const svgH = spans.length * (barH + padY) + 40;
+                const svgW = 900;
+                const barArea = svgW - labelW - 20;
+
+                // Find time range
+                let minT = Infinity, maxT = -Infinity;
+                spans.forEach(s => {
+                    const st = new Date(s.start_time).getTime();
+                    const et = s.end_time ? new Date(s.end_time).getTime() : st + (s.duration_ms || 1);
+                    if (st < minT) minT = st;
+                    if (et > maxT) maxT = et;
+                });
+                const range = maxT - minT || 1;
+
+                let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" role="img" aria-label="Span waterfall">`;
+                svg += `<style>text{font-family:monospace;font-size:12px;} .bar-ok{fill:#4caf50;} .bar-err{fill:#f44336;} .bar-unset{fill:#2196f3;}</style>`;
+
+                spans.forEach((s, i) => {
+                    const y = i * (barH + padY) + 20;
+                    const st = new Date(s.start_time).getTime();
+                    const dur = s.duration_ms || 1;
+                    const x = labelW + ((st - minT) / range) * barArea;
+                    const w = Math.max(2, (dur / range) * barArea);
+                    const cls = s.status_code === 'ERROR' ? 'bar-err' : s.status_code === 'OK' ? 'bar-ok' : 'bar-unset';
+                    const label = (s.name || 'span').substring(0, 30);
+
+                    svg += `<text x="4" y="${y + 18}" fill="#333">${label}</text>`;
+                    svg += `<rect class="${cls}" x="${x}" y="${y}" width="${w}" height="${barH}" rx="3"/>`;
+                    svg += `<text x="${x + w + 4}" y="${y + 18}" fill="#666">${dur}ms</text>`;
+                });
+
+                svg += '</svg>';
+                svgDiv.innerHTML = svg;
+            })
+            .catch(() => {});
+    };
+})();
+</script>
+{% endblock %}

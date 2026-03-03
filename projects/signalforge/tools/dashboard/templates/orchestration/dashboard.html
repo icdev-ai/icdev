@@ -1,0 +1,545 @@
+{% extends "base.html" %}
+{% block title %}Orchestration - ICDEV Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <span class="current">Orchestration</span>
+    </div>
+    <h1>Multi-Agent Orchestration</h1>
+    <p class="subtitle">Real-time <span data-glossary="A2A">A2A</span> agent grid, workflow DAG, and mailbox feed (Phase 61)</p>
+</div>
+
+<!-- Stat Grid -->
+<div class="stat-grid" id="orch-stats">
+    <div class="stat-card">
+        <div class="stat-value text-blue" id="stat-active-wf">--</div>
+        <div class="stat-label">Active Workflows</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total-agents">--</div>
+        <div class="stat-label">Total Agents</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-green" id="stat-agents-running">--</div>
+        <div class="stat-label">Agents Running</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-warning" id="stat-pending">--</div>
+        <div class="stat-label">Subtasks Pending</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-green" id="stat-completed">--</div>
+        <div class="stat-label">Subtasks Completed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-red" id="stat-failed">--</div>
+        <div class="stat-label">Subtasks Failed</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-blue" id="stat-unread">--</div>
+        <div class="stat-label">Mailbox Unread</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-avg-ms">--</div>
+        <div class="stat-label">Avg Response (ms)</div>
+    </div>
+</div>
+
+<!-- Agent Grid -->
+<h2 style="margin-top:24px;">Agent Grid</h2>
+<p class="text-muted" style="margin-bottom:12px;">Live status of all 15 <span data-glossary="A2A">A2A</span> agents. Auto-refreshes every 3 seconds.</p>
+<div id="agent-grid" class="agent-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px;">
+    <div class="card" style="padding:16px; text-align:center; color:var(--text-secondary);">Loading agents...</div>
+</div>
+
+<!-- Workflow Section -->
+<h2 style="margin-top:32px;">Workflows</h2>
+<div style="display:flex; gap:8px; margin-bottom:12px; align-items:center;">
+    <label for="wf-filter" class="text-muted" style="font-size:0.85rem;">Filter:</label>
+    <select id="wf-filter" onchange="loadWorkflows()" style="background:var(--bg-secondary); color:var(--text-primary); border:1px solid var(--border-color); border-radius:4px; padding:4px 8px; font-size:0.85rem;">
+        <option value="">All</option>
+        <option value="running">Running</option>
+        <option value="completed">Completed</option>
+        <option value="failed">Failed</option>
+        <option value="pending">Pending</option>
+    </select>
+</div>
+<div class="table-container">
+    <table id="tbl-workflows">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Failed</th>
+                <th>Duration</th>
+                <th>Created</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="wf-body">
+            <tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- DAG Visualization -->
+<h2 style="margin-top:32px;">Workflow DAG</h2>
+<p class="text-muted" style="margin-bottom:8px;">Select a workflow above to visualize its task dependency graph.</p>
+<div id="dag-container" style="min-height:200px; border:1px solid var(--border-color); border-radius:8px; padding:16px; background:var(--bg-secondary); overflow-x:auto;">
+    <p style="color:var(--text-secondary); text-align:center;">No workflow selected. Click "View DAG" on a workflow row above.</p>
+</div>
+
+<!-- Two-column: Mailbox + Activity -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:32px;">
+    <!-- Mailbox Feed -->
+    <div>
+        <h2>Mailbox Feed</h2>
+        <p class="text-muted" style="margin-bottom:8px;">Recent inter-agent messages. Auto-refreshes every 5 seconds.</p>
+        <div id="mailbox-feed" style="max-height:400px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px;">
+            <table id="tbl-mailbox">
+                <thead>
+                    <tr>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Subject</th>
+                        <th>Type</th>
+                        <th>Priority</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody id="mailbox-body">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Collaboration History -->
+    <div>
+        <h2>Collaboration History</h2>
+        <p class="text-muted" style="margin-bottom:8px;">Recent agent-to-agent collaboration events.</p>
+        <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px;">
+            <table id="tbl-collab">
+                <thead>
+                    <tr>
+                        <th>Agent A</th>
+                        <th>Agent B</th>
+                        <th>Type</th>
+                        <th>Outcome</th>
+                        <th>Duration</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody id="collab-body">
+                    <tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs: Prompt Chains / Critiques -->
+<div class="tabs" style="margin-top:32px;">
+    <button class="tab-btn active" data-tab="tab-chains" onclick="switchTab(this, 'tab-chains')">Prompt Chains</button>
+    <button class="tab-btn" data-tab="tab-critiques" onclick="switchTab(this, 'tab-critiques')">ATLAS Critiques</button>
+</div>
+
+<div id="tab-chains" class="tab-content active">
+    <div class="table-container" style="margin-top:12px;">
+        <table id="tbl-chains">
+            <thead>
+                <tr>
+                    <th>Chain Name</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody id="chains-body">
+                <tr><td colspan="4" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div id="tab-critiques" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table id="tbl-critiques">
+            <thead>
+                <tr>
+                    <th>Session ID</th>
+                    <th>Status</th>
+                    <th>Consensus</th>
+                    <th>Total Findings</th>
+                    <th>Critical</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody id="critiques-body">
+                <tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    'use strict';
+    var API = '/api/orchestration';
+
+    // ---- Helpers ----
+    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    function shortId(id) { return id ? id.substring(0, 8) : '--'; }
+    function fmtMs(ms) {
+        if (ms === null || ms === undefined) return '--';
+        if (ms < 1000) return ms + 'ms';
+        if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+        return (ms / 60000).toFixed(1) + 'm';
+    }
+    function fmtTime(ts) {
+        if (!ts) return '--';
+        try { var d = new Date(ts); return d.toLocaleTimeString(); } catch(e) { return ts; }
+    }
+    function statusBadge(status) {
+        var colors = {
+            'running': 'success', 'completed': 'success', 'active': 'success',
+            'pending': 'warning', 'queued': 'warning', 'working': 'info',
+            'failed': 'error', 'error': 'error', 'canceled': 'warning',
+            'blocked': 'error', 'inactive': 'warning',
+            'partially_completed': 'warning'
+        };
+        var cls = colors[status] || 'info';
+        return '<span class="badge badge-' + cls + '">' + esc(status || 'unknown') + '</span>';
+    }
+    function priorityBadge(p) {
+        if (p === null || p === undefined) return '';
+        var color = p >= 8 ? 'error' : p >= 5 ? 'warning' : 'info';
+        return '<span class="badge badge-' + color + '">' + p + '</span>';
+    }
+    function tierBadge(tier) {
+        var colors = { 'Core': '#e91e63', 'Domain': '#1976d2', 'Support': '#607d8b' };
+        var c = colors[tier] || '#999';
+        return '<span style="display:inline-block; padding:2px 6px; border-radius:3px; font-size:10px; color:#fff; background:' + c + ';">' + esc(tier) + '</span>';
+    }
+    function statusDot(status) {
+        var colors = { 'active': '#4caf50', 'running': '#4caf50', 'working': '#2196f3', 'idle': '#9e9e9e', 'inactive': '#9e9e9e', 'error': '#f44336' };
+        var c = colors[status] || '#9e9e9e';
+        return '<span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:' + c + '; margin-right:6px;"></span>';
+    }
+
+    // ---- Stats ----
+    function loadStats() {
+        fetch(API + '/stats').then(function(r) { return r.json(); }).then(function(d) {
+            if (d.status !== 'ok') return;
+            document.getElementById('stat-active-wf').textContent = d.active_workflows || 0;
+            document.getElementById('stat-total-agents').textContent = d.total_agents || 0;
+            document.getElementById('stat-agents-running').textContent = d.agents_running || 0;
+            document.getElementById('stat-pending').textContent = d.subtasks_pending || 0;
+            document.getElementById('stat-completed').textContent = d.subtasks_completed || 0;
+            document.getElementById('stat-failed').textContent = d.subtasks_failed || 0;
+            document.getElementById('stat-unread').textContent = d.mailbox_unread || 0;
+            document.getElementById('stat-avg-ms').textContent = d.avg_response_ms ? fmtMs(d.avg_response_ms) : '0';
+        }).catch(function() {});
+    }
+
+    // ---- Agent Grid ----
+    function loadAgentGrid() {
+        fetch(API + '/agents').then(function(r) { return r.json(); }).then(function(d) {
+            var container = document.getElementById('agent-grid');
+            if (!d.agents || !d.agents.length) {
+                container.innerHTML = '<div class="card" style="padding:16px; text-align:center; color:var(--text-secondary); grid-column:1/-1;">No agents registered. Register agents via the A2A protocol.</div>';
+                return;
+            }
+            container.innerHTML = d.agents.map(function(a) {
+                var hasTask = a.active_task ? true : false;
+                var borderColor = a.status === 'active' ? (hasTask ? '#4caf50' : '#1976d2') : (a.status === 'error' ? '#f44336' : 'var(--border-color)');
+                return '<div class="agent-card" style="border:1px solid var(--border-color); border-left:4px solid ' + borderColor + '; border-radius:6px; padding:12px; background:var(--bg-primary);">' +
+                    '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">' +
+                        '<div style="display:flex; align-items:center;">' +
+                            statusDot(a.status) +
+                            '<strong style="font-size:0.9rem;">' + esc(a.name) + '</strong>' +
+                        '</div>' +
+                        tierBadge(a.tier) +
+                    '</div>' +
+                    '<div style="font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">' +
+                        (hasTask
+                            ? '<span style="color:var(--accent-color, #4caf50);">' + esc(a.active_task) + '</span>'
+                            : '<span>Idle</span>') +
+                    '</div>' +
+                    '<div style="display:flex; justify-content:space-between; font-size:0.75rem; color:var(--text-secondary);">' +
+                        '<span title="Elapsed time">' + (hasTask ? fmtMs(a.elapsed_ms) : '--') + '</span>' +
+                        '<span title="Completed tool calls">' + (a.tool_calls || 0) + ' calls</span>' +
+                        '<span title="Estimated context usage">' + (a.context_pct || 0) + '%</span>' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+        }).catch(function() {});
+    }
+
+    // ---- Workflows ----
+    window.loadWorkflows = function() {
+        var filter = document.getElementById('wf-filter').value;
+        var url = API + '/workflows' + (filter ? '?status=' + filter : '');
+        fetch(url).then(function(r) { return r.json(); }).then(function(d) {
+            var tbody = document.getElementById('wf-body');
+            if (!d.workflows || !d.workflows.length) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">No workflows found.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.workflows.map(function(wf) {
+                var progress = (wf.completed_subtasks || 0) + '/' + (wf.total_subtasks || 0);
+                return '<tr>' +
+                    '<td><code>' + shortId(wf.id) + '</code></td>' +
+                    '<td>' + esc(wf.name) + '</td>' +
+                    '<td>' + statusBadge(wf.status) + '</td>' +
+                    '<td>' + esc(progress) + '</td>' +
+                    '<td style="color:' + ((wf.failed_subtasks || 0) > 0 ? '#f44336' : 'inherit') + ';">' + (wf.failed_subtasks || 0) + '</td>' +
+                    '<td>' + fmtMs(wf.duration_ms) + '</td>' +
+                    '<td>' + fmtTime(wf.created_at) + '</td>' +
+                    '<td><button class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem;" onclick="loadDAG(\'' + esc(wf.id) + '\')">View DAG</button></td>' +
+                '</tr>';
+            }).join('');
+        }).catch(function() {});
+    };
+
+    // ---- DAG Visualization (D94 — zero-dependency SVG) ----
+    window.loadDAG = function(workflowId) {
+        fetch(API + '/workflows/' + workflowId + '/dag').then(function(r) { return r.json(); }).then(function(d) {
+            var container = document.getElementById('dag-container');
+            if (!d.nodes || !d.nodes.length) {
+                container.innerHTML = '<p style="color:var(--text-secondary); text-align:center;">No subtasks in this workflow.</p>';
+                return;
+            }
+            renderDAG(container, d.nodes, d.edges);
+        }).catch(function() {
+            document.getElementById('dag-container').innerHTML = '<p style="color:#f44336; text-align:center;">Failed to load DAG.</p>';
+        });
+    };
+
+    function renderDAG(container, nodes, edges) {
+        // Simple left-to-right topological layout
+        // 1. Build adjacency and compute levels via BFS
+        var inDeg = {};
+        var adj = {};
+        var nodeMap = {};
+        nodes.forEach(function(n) {
+            inDeg[n.id] = 0;
+            adj[n.id] = [];
+            nodeMap[n.id] = n;
+        });
+        edges.forEach(function(e) {
+            if (adj[e.from] !== undefined && inDeg[e.to] !== undefined) {
+                adj[e.from].push(e.to);
+                inDeg[e.to] = (inDeg[e.to] || 0) + 1;
+            }
+        });
+
+        // Topological sort with level assignment
+        var levels = {};
+        var queue = [];
+        nodes.forEach(function(n) {
+            if ((inDeg[n.id] || 0) === 0) { queue.push(n.id); levels[n.id] = 0; }
+        });
+        while (queue.length) {
+            var curr = queue.shift();
+            (adj[curr] || []).forEach(function(next) {
+                levels[next] = Math.max(levels[next] || 0, (levels[curr] || 0) + 1);
+                inDeg[next]--;
+                if (inDeg[next] === 0) queue.push(next);
+            });
+        }
+        // Any remaining nodes (cycles) get max level + 1
+        var maxLevel = 0;
+        for (var k in levels) { if (levels[k] > maxLevel) maxLevel = levels[k]; }
+        nodes.forEach(function(n) { if (levels[n.id] === undefined) levels[n.id] = maxLevel + 1; });
+
+        // 2. Group nodes by level
+        var levelGroups = {};
+        nodes.forEach(function(n) {
+            var lv = levels[n.id] || 0;
+            if (!levelGroups[lv]) levelGroups[lv] = [];
+            levelGroups[lv].push(n);
+        });
+
+        // 3. Compute positions
+        var nodeW = 140, nodeH = 50, gapX = 60, gapY = 20;
+        var maxNodesInLevel = 0;
+        for (var lv in levelGroups) { if (levelGroups[lv].length > maxNodesInLevel) maxNodesInLevel = levelGroups[lv].length; }
+        var svgW = (maxLevel + 2) * (nodeW + gapX);
+        var svgH = Math.max(200, (maxNodesInLevel + 1) * (nodeH + gapY) + 40);
+
+        var positions = {};
+        for (var lv in levelGroups) {
+            var group = levelGroups[lv];
+            var totalH = group.length * nodeH + (group.length - 1) * gapY;
+            var startY = (svgH - totalH) / 2;
+            group.forEach(function(n, i) {
+                positions[n.id] = {
+                    x: 30 + parseInt(lv) * (nodeW + gapX),
+                    y: startY + i * (nodeH + gapY)
+                };
+            });
+        }
+
+        // 4. Render SVG
+        var statusColors = {
+            'completed': '#4caf50', 'working': '#2196f3', 'pending': '#ff9800',
+            'queued': '#ff9800', 'failed': '#f44336', 'blocked': '#9c27b0',
+            'canceled': '#9e9e9e'
+        };
+
+        var svg = '<svg width="' + svgW + '" height="' + svgH + '" role="img" aria-label="Workflow DAG" style="font-family:sans-serif;">';
+        // Draw edges
+        edges.forEach(function(e) {
+            var fromPos = positions[e.from];
+            var toPos = positions[e.to];
+            if (fromPos && toPos) {
+                var x1 = fromPos.x + nodeW;
+                var y1 = fromPos.y + nodeH / 2;
+                var x2 = toPos.x;
+                var y2 = toPos.y + nodeH / 2;
+                var cpx = (x1 + x2) / 2;
+                svg += '<path d="M' + x1 + ',' + y1 + ' C' + cpx + ',' + y1 + ' ' + cpx + ',' + y2 + ' ' + x2 + ',' + y2 + '" fill="none" stroke="#999" stroke-width="1.5" marker-end="url(#arrowhead)"/>';
+            }
+        });
+        // Arrowhead marker
+        svg += '<defs><marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#999"/></marker></defs>';
+        // Draw nodes
+        nodes.forEach(function(n) {
+            var pos = positions[n.id];
+            if (!pos) return;
+            var fill = statusColors[n.status] || '#607d8b';
+            var textColor = '#fff';
+            svg += '<rect x="' + pos.x + '" y="' + pos.y + '" width="' + nodeW + '" height="' + nodeH + '" rx="6" fill="' + fill + '" opacity="0.9"/>';
+            svg += '<text x="' + (pos.x + nodeW/2) + '" y="' + (pos.y + 18) + '" text-anchor="middle" font-size="11" fill="' + textColor + '" font-weight="bold">' + esc(n.label).substring(0, 18) + '</text>';
+            svg += '<text x="' + (pos.x + nodeW/2) + '" y="' + (pos.y + 33) + '" text-anchor="middle" font-size="9" fill="' + textColor + '" opacity="0.8">' + esc(n.agent).substring(0, 20) + '</text>';
+            if (n.duration_ms) {
+                svg += '<text x="' + (pos.x + nodeW/2) + '" y="' + (pos.y + 45) + '" text-anchor="middle" font-size="8" fill="' + textColor + '" opacity="0.7">' + fmtMs(n.duration_ms) + '</text>';
+            }
+        });
+        svg += '</svg>';
+        container.innerHTML = svg;
+    }
+
+    // ---- Mailbox ----
+    function loadMailbox() {
+        fetch(API + '/mailbox?limit=20').then(function(r) { return r.json(); }).then(function(d) {
+            var tbody = document.getElementById('mailbox-body');
+            if (!d.messages || !d.messages.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">No mailbox messages.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.messages.map(function(m) {
+                var typeColors = { 'veto': 'error', 'escalation': 'error', 'request': 'info', 'notification': 'warning', 'response': 'success', 'collaboration_invite': 'info', 'memory_share': 'info' };
+                return '<tr>' +
+                    '<td><code style="font-size:0.8rem;">' + esc(m.from_agent_id).substring(0, 16) + '</code></td>' +
+                    '<td><code style="font-size:0.8rem;">' + esc(m.to_agent_id).substring(0, 16) + '</code></td>' +
+                    '<td>' + esc(m.subject).substring(0, 40) + '</td>' +
+                    '<td><span class="badge badge-' + (typeColors[m.message_type] || 'info') + '">' + esc(m.message_type) + '</span></td>' +
+                    '<td>' + priorityBadge(m.priority) + '</td>' +
+                    '<td>' + fmtTime(m.created_at) + '</td>' +
+                '</tr>';
+            }).join('');
+        }).catch(function() {});
+    }
+
+    // ---- Collaboration ----
+    function loadCollaboration() {
+        fetch(API + '/collaboration?limit=15').then(function(r) { return r.json(); }).then(function(d) {
+            var tbody = document.getElementById('collab-body');
+            if (!d.collaborations || !d.collaborations.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">No collaboration events.</td></tr>';
+                return;
+            }
+            var outcomeColors = { 'agreement': 'success', 'disagreement': 'warning', 'veto': 'error', 'escalation': 'error', 'timeout': 'warning' };
+            tbody.innerHTML = d.collaborations.map(function(c) {
+                return '<tr>' +
+                    '<td><code style="font-size:0.8rem;">' + esc(c.agent_a_id).substring(0, 16) + '</code></td>' +
+                    '<td><code style="font-size:0.8rem;">' + esc(c.agent_b_id).substring(0, 16) + '</code></td>' +
+                    '<td><span class="badge badge-info">' + esc(c.collaboration_type) + '</span></td>' +
+                    '<td>' + (c.outcome ? '<span class="badge badge-' + (outcomeColors[c.outcome] || 'info') + '">' + esc(c.outcome) + '</span>' : '--') + '</td>' +
+                    '<td>' + fmtMs(c.duration_ms) + '</td>' +
+                    '<td>' + fmtTime(c.created_at) + '</td>' +
+                '</tr>';
+            }).join('');
+        }).catch(function() {});
+    }
+
+    // ---- Prompt Chains ----
+    function loadChains() {
+        fetch(API + '/chains?limit=15').then(function(r) { return r.json(); }).then(function(d) {
+            var tbody = document.getElementById('chains-body');
+            if (!d.chains || !d.chains.length) {
+                var note = d.note ? d.note : 'No prompt chain executions recorded.';
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-secondary);">' + esc(note) + '</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.chains.map(function(ch) {
+                var progress = (ch.steps_completed || 0) + '/' + (ch.steps_total || 0);
+                return '<tr>' +
+                    '<td>' + esc(ch.chain_name) + '</td>' +
+                    '<td>' + statusBadge(ch.status) + '</td>' +
+                    '<td>' + esc(progress) + '</td>' +
+                    '<td>' + fmtTime(ch.created_at) + '</td>' +
+                '</tr>';
+            }).join('');
+        }).catch(function() {});
+    }
+
+    // ---- Critiques ----
+    function loadCritiques() {
+        fetch(API + '/critiques?limit=15').then(function(r) { return r.json(); }).then(function(d) {
+            var tbody = document.getElementById('critiques-body');
+            if (!d.critiques || !d.critiques.length) {
+                var note = d.note ? d.note : 'No ATLAS critique sessions recorded.';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">' + esc(note) + '</td></tr>';
+                return;
+            }
+            tbody.innerHTML = d.critiques.map(function(cr) {
+                var consensusBadge = cr.consensus ? '<span class="badge badge-success">consensus</span>' : '<span class="badge badge-warning">no consensus</span>';
+                return '<tr>' +
+                    '<td><code>' + shortId(cr.id) + '</code></td>' +
+                    '<td>' + statusBadge(cr.status) + '</td>' +
+                    '<td>' + consensusBadge + '</td>' +
+                    '<td>' + (cr.total_findings || 0) + '</td>' +
+                    '<td style="color:' + ((cr.critical_count || 0) > 0 ? '#f44336' : 'inherit') + ';">' + (cr.critical_count || 0) + '</td>' +
+                    '<td>' + fmtTime(cr.created_at) + '</td>' +
+                '</tr>';
+            }).join('');
+        }).catch(function() {});
+    }
+
+    // ---- Tab Switching ----
+    window.switchTab = function(btn, tabId) {
+        // Deactivate all tabs and tab-content
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        document.querySelectorAll('.tab-content').forEach(function(tc) { tc.style.display = 'none'; tc.classList.remove('active'); });
+        btn.classList.add('active');
+        var el = document.getElementById(tabId);
+        if (el) { el.style.display = 'block'; el.classList.add('active'); }
+    };
+
+    // ---- Initial Load ----
+    loadStats();
+    loadAgentGrid();
+    loadWorkflows();
+    loadMailbox();
+    loadCollaboration();
+    loadChains();
+    loadCritiques();
+
+    // ---- Auto-refresh (D29, D99 — 3s batches) ----
+    setInterval(function() { loadStats(); loadAgentGrid(); }, 3000);
+    setInterval(function() { loadMailbox(); }, 5000);
+    setInterval(function() { loadWorkflows(); loadCollaboration(); }, 10000);
+})();
+</script>
+{% endblock %}

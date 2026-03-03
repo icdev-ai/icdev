@@ -1930,6 +1930,166 @@ def create_app() -> Flask:
         """Real-time multi-agent orchestration dashboard — agent grid, DAG, mailbox (Phase 61)."""
         return render_template("orchestration/dashboard.html")
 
+    # ---- Phase 63: Industry Research Engine ----
+
+    @app.route("/research")
+    def research_page():
+        """Industry Research Engine — vertical research sessions, scored dossiers (Phase 63, D-RES-1 through D-RES-13)."""
+        stats = {"total_sessions": 0, "active_sessions": 0, "verticals_loaded": 0, "dossiers_generated": 0}
+        sessions = []
+        verticals = []
+        try:
+            conn = _get_db()
+            stats["total_sessions"] = conn.execute("SELECT COUNT(*) FROM research_sessions").fetchone()[0]
+            stats["active_sessions"] = conn.execute(
+                "SELECT COUNT(*) FROM research_sessions WHERE status NOT IN ('archived', 'child_app_triggered')"
+            ).fetchone()[0]
+            stats["verticals_loaded"] = conn.execute("SELECT COUNT(*) FROM research_verticals").fetchone()[0]
+            stats["dossiers_generated"] = conn.execute("SELECT COUNT(*) FROM research_dossiers").fetchone()[0]
+            sessions = [dict(r) for r in conn.execute(
+                """SELECT s.*, (SELECT COUNT(*) FROM research_challenges c WHERE c.session_id = s.id) as challenge_count
+                   FROM research_sessions s ORDER BY s.created_at DESC LIMIT 50"""
+            ).fetchall()]
+            verticals = [dict(r) for r in conn.execute(
+                "SELECT * FROM research_verticals ORDER BY name"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("research.html", stats=stats, sessions=sessions, verticals=verticals)
+
+    @app.route("/api/research/sessions", methods=["POST"])
+    def api_research_create_session():
+        """Create a new research session."""
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            from tools.research.session_manager import create_session
+            result = create_session(
+                name=data.get("name", ""),
+                vertical_slug=data.get("vertical", ""),
+                focus_areas=data.get("focus_areas", []),
+            )
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions")
+    def api_research_list_sessions():
+        """List research sessions."""
+        try:
+            from tools.research.session_manager import list_sessions
+            status = flask_request.args.get("status")
+            return jsonify(list_sessions(status=status))
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions/<session_id>/run", methods=["POST"])
+    def api_research_run_pipeline(session_id):
+        """Run research pipeline for a session."""
+        try:
+            from tools.research.research_engine import run_pipeline
+            result = run_pipeline(session_id=session_id)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions/<session_id>/status")
+    def api_research_session_status(session_id):
+        """Get session status."""
+        try:
+            from tools.research.research_engine import get_status
+            return jsonify(get_status(session_id=session_id))
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions/<session_id>/dossier")
+    def api_research_session_dossier(session_id):
+        """Get dossier by session ID."""
+        try:
+            from tools.research.dossier_generator import get_dossier
+            return jsonify(get_dossier(session_id=session_id))
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions/<session_id>/run-stage", methods=["POST"])
+    def api_research_run_stage(session_id):
+        """Run a single pipeline stage for a session."""
+        data = flask_request.get_json(silent=True) or {}
+        stage = data.get("stage", "").upper()
+        if not stage:
+            return jsonify({"ok": False, "error": "Missing 'stage' parameter"}), 400
+        try:
+            from tools.research.research_engine import run_stage
+            result = run_stage(session_id=session_id, stage=stage)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions/<session_id>/regulatory")
+    def api_research_regulatory_landscape(session_id):
+        """Get regulatory landscape for a session."""
+        try:
+            from tools.research.regulatory_mapper import get_regulatory_landscape
+            return jsonify(get_regulatory_landscape(session_id=session_id))
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/sessions/<session_id>/retry", methods=["POST"])
+    def api_research_retry_session(session_id):
+        """Retry a failed research session pipeline."""
+        try:
+            import threading
+            from tools.research.research_engine import run_pipeline
+            t = threading.Thread(target=run_pipeline, kwargs={"session_id": session_id}, daemon=True)
+            t.start()
+            return jsonify({"ok": True, "message": "Pipeline retry started"})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/dossiers/<dossier_id>")
+    def api_research_get_dossier(dossier_id):
+        """Get a dossier by dossier ID."""
+        try:
+            from tools.research.dossier_generator import get_dossier
+            return jsonify(get_dossier(dossier_id=dossier_id))
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/dossiers/<dossier_id>/review", methods=["POST"])
+    def api_research_review_dossier(dossier_id):
+        """Review a dossier."""
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            from tools.research.dossier_generator import review_dossier
+            result = review_dossier(
+                dossier_id=dossier_id,
+                reviewer=data.get("reviewer", "dashboard"),
+                status=data.get("decision", "approved"),
+                review_notes=data.get("notes", ""),
+            )
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/verticals")
+    def api_research_list_verticals():
+        """List available verticals."""
+        try:
+            from tools.research.vertical_loader import list_verticals
+            return jsonify(list_verticals())
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+    @app.route("/api/research/verticals/load", methods=["POST"])
+    def api_research_load_verticals():
+        """Load verticals from config files into DB."""
+        try:
+            from tools.research.vertical_loader import load_verticals_to_db
+            result = load_verticals_to_db()
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
     @app.errorhandler(401)
     def unauthorized(e):
         if flask_request.is_json or flask_request.path.startswith("/api/"):

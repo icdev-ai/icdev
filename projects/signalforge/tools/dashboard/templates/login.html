@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — ICDEV Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
+</head>
+<body>
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+    {% endif %}
+
+    <div class="login-container" role="main">
+        <div class="login-card">
+            <h1 class="login-title">ICDEV Dashboard</h1>
+            <p class="login-subtitle">Enter your API key to continue</p>
+
+            {% if error %}
+            <div class="alert alert-danger" role="alert">{{ error }}</div>
+            {% endif %}
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="{{ url_for('login_page') }}">
+                <div class="form-group">
+                    <label for="api_key">API Key</label>
+                    <input type="password" id="api_key" name="api_key"
+                           class="form-control"
+                           placeholder="icdev_dash_..."
+                           autocomplete="off"
+                           required autofocus>
+                    <small class="form-help">Paste the API key provided by your administrator.</small>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    {% if cui_banner_enabled %}
+    <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
+    {% endif %}
+</body>
+</html>

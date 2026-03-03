@@ -1,0 +1,279 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "description": "ICDEV Language Registry — master profiles for supported programming languages",
+    "languages_count": 7,
+    "last_updated": "2026-02-15"
+  },
+  "languages": {
+    "python": {
+      "display_name": "Python",
+      "file_extensions": [".py", ".pyx", ".pyi", ".pyw"],
+      "config_indicators": ["pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", "Pipfile", "tox.ini"],
+      "dependency_files": ["requirements.txt", "pyproject.toml", "Pipfile.lock", "poetry.lock", "setup.py"],
+      "package_manager": "pip",
+      "package_manager_alternatives": ["poetry", "pipenv", "conda"],
+      "build_tool": "setuptools",
+      "linter": {
+        "tool": "flake8",
+        "command": ["python", "-m", "flake8"],
+        "config_file": ".flake8",
+        "alternatives": ["ruff", "pylint"]
+      },
+      "formatter": {
+        "tool": "black",
+        "command": ["python", "-m", "black"],
+        "secondary": {
+          "tool": "isort",
+          "command": ["python", "-m", "isort"]
+        }
+      },
+      "sast": {
+        "tool": "bandit",
+        "command": ["python", "-m", "bandit", "-r", "-f", "json"]
+      },
+      "dependency_auditor": {
+        "tool": "pip-audit",
+        "command": ["python", "-m", "pip_audit", "--format=json"]
+      },
+      "test_framework": "pytest",
+      "bdd_framework": "behave",
+      "bdd_step_language": "python",
+      "container_base_image": "python:3.11-slim",
+      "purl_type": "pypi",
+      "registry_url": "https://pypi.org/pypi/{package}/json",
+      "cui_comment_style": "hash",
+      "memory_safe": true,
+      "scaffold_types": ["backend", "api", "cli", "data-pipeline", "microservice"]
+    },
+    "java": {
+      "display_name": "Java",
+      "file_extensions": [".java", ".jar", ".war", ".ear"],
+      "config_indicators": ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", ".mvn"],
+      "dependency_files": ["pom.xml", "build.gradle", "build.gradle.kts", "gradle.lockfile"],
+      "package_manager": "maven",
+      "package_manager_alternatives": ["gradle"],
+      "build_tool": "maven",
+      "linter": {
+        "tool": "checkstyle",
+        "command": ["mvn", "checkstyle:check"],
+        "config_file": "checkstyle.xml",
+        "alternatives": ["pmd", "spotbugs"]
+      },
+      "formatter": {
+        "tool": "google-java-format",
+        "command": ["java", "-jar", "google-java-format.jar", "--replace"],
+        "secondary": null
+      },
+      "sast": {
+        "tool": "spotbugs",
+        "command": ["mvn", "com.github.spotbugs:spotbugs-maven-plugin:check"]
+      },
+      "dependency_auditor": {
+        "tool": "dependency-check",
+        "command": ["mvn", "org.owasp:dependency-check-maven:check", "-DfailBuildOnCVSS=7"]
+      },
+      "test_framework": "junit5",
+      "bdd_framework": "cucumber-jvm",
+      "bdd_step_language": "java",
+      "container_base_image": "eclipse-temurin:17-jre-alpine",
+      "purl_type": "maven",
+      "registry_url": "https://search.maven.org/solrsearch/select?q=g:{group}+AND+a:{artifact}&rows=1&wt=json",
+      "cui_comment_style": "c-style",
+      "memory_safe": true,
+      "scaffold_types": ["backend", "api", "microservice", "spring-boot", "library"]
+    },
+    "javascript": {
+      "display_name": "JavaScript",
+      "file_extensions": [".js", ".mjs", ".cjs", ".jsx"],
+      "config_indicators": ["package.json", ".eslintrc.js", ".eslintrc.json", "babel.config.js", "webpack.config.js"],
+      "dependency_files": ["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"],
+      "package_manager": "npm",
+      "package_manager_alternatives": ["yarn", "pnpm"],
+      "build_tool": "webpack",
+      "linter": {
+        "tool": "eslint",
+        "command": ["npx", "eslint", "--format=json"],
+        "config_file": ".eslintrc.json",
+        "alternatives": ["biome", "standard"]
+      },
+      "formatter": {
+        "tool": "prettier",
+        "command": ["npx", "prettier", "--write"],
+        "secondary": null
+      },
+      "sast": {
+        "tool": "eslint-plugin-security",
+        "command": ["npx", "eslint", "--plugin", "security", "--format=json"]
+      },
+      "dependency_auditor": {
+        "tool": "npm-audit",
+        "command": ["npm", "audit", "--json"]
+      },
+      "test_framework": "jest",
+      "bdd_framework": "cucumber-js",
+      "bdd_step_language": "javascript",
+      "container_base_image": "node:20-alpine",
+      "purl_type": "npm",
+      "registry_url": "https://registry.npmjs.org/{package}",
+      "cui_comment_style": "c-style",
+      "memory_safe": true,
+      "scaffold_types": ["frontend", "api", "cli", "fullstack", "microservice"]
+    },
+    "typescript": {
+      "display_name": "TypeScript",
+      "file_extensions": [".ts", ".tsx", ".mts", ".cts"],
+      "config_indicators": ["tsconfig.json", "tsconfig.build.json", "package.json"],
+      "dependency_files": ["package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"],
+      "package_manager": "npm",
+      "package_manager_alternatives": ["yarn", "pnpm"],
+      "build_tool": "tsc",
+      "linter": {
+        "tool": "eslint",
+        "command": ["npx", "eslint", "--format=json"],
+        "config_file": ".eslintrc.json",
+        "alternatives": ["biome"],
+        "type_checker": {
+          "tool": "tsc",
+          "command": ["npx", "tsc", "--noEmit"]
+        }
+      },
+      "formatter": {
+        "tool": "prettier",
+        "command": ["npx", "prettier", "--write"],
+        "secondary": null
+      },
+      "sast": {
+        "tool": "eslint-plugin-security",
+        "command": ["npx", "eslint", "--plugin", "security", "--format=json"]
+      },
+      "dependency_auditor": {
+        "tool": "npm-audit",
+        "command": ["npm", "audit", "--json"]
+      },
+      "test_framework": "jest",
+      "bdd_framework": "cucumber-js",
+      "bdd_step_language": "typescript",
+      "container_base_image": "node:20-alpine",
+      "purl_type": "npm",
+      "registry_url": "https://registry.npmjs.org/{package}",
+      "cui_comment_style": "c-style",
+      "memory_safe": true,
+      "scaffold_types": ["frontend", "api", "cli", "fullstack", "microservice"]
+    },
+    "go": {
+      "display_name": "Go",
+      "file_extensions": [".go"],
+      "config_indicators": ["go.mod", "go.sum"],
+      "dependency_files": ["go.mod", "go.sum"],
+      "package_manager": "go-modules",
+      "package_manager_alternatives": [],
+      "build_tool": "go-build",
+      "linter": {
+        "tool": "golangci-lint",
+        "command": ["golangci-lint", "run", "--out-format=json"],
+        "config_file": ".golangci.yml",
+        "alternatives": ["staticcheck", "go-vet"]
+      },
+      "formatter": {
+        "tool": "gofmt",
+        "command": ["gofmt", "-w"],
+        "secondary": {
+          "tool": "goimports",
+          "command": ["goimports", "-w"]
+        }
+      },
+      "sast": {
+        "tool": "gosec",
+        "command": ["gosec", "-fmt=json", "./..."]
+      },
+      "dependency_auditor": {
+        "tool": "govulncheck",
+        "command": ["govulncheck", "-json", "./..."]
+      },
+      "test_framework": "go-test",
+      "bdd_framework": "godog",
+      "bdd_step_language": "go",
+      "container_base_image": "golang:1.22-alpine",
+      "purl_type": "golang",
+      "registry_url": "https://proxy.golang.org/{module}/@v/list",
+      "cui_comment_style": "c-style",
+      "memory_safe": true,
+      "scaffold_types": ["backend", "api", "cli", "microservice", "grpc-service"]
+    },
+    "rust": {
+      "display_name": "Rust",
+      "file_extensions": [".rs"],
+      "config_indicators": ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"],
+      "dependency_files": ["Cargo.toml", "Cargo.lock"],
+      "package_manager": "cargo",
+      "package_manager_alternatives": [],
+      "build_tool": "cargo",
+      "linter": {
+        "tool": "clippy",
+        "command": ["cargo", "clippy", "--message-format=json", "--", "-D", "warnings"],
+        "config_file": "clippy.toml",
+        "alternatives": []
+      },
+      "formatter": {
+        "tool": "rustfmt",
+        "command": ["cargo", "fmt"],
+        "secondary": null
+      },
+      "sast": {
+        "tool": "cargo-audit",
+        "command": ["cargo", "audit", "--json"]
+      },
+      "dependency_auditor": {
+        "tool": "cargo-audit",
+        "command": ["cargo", "audit", "--json"]
+      },
+      "test_framework": "cargo-test",
+      "bdd_framework": "cucumber-rs",
+      "bdd_step_language": "rust",
+      "container_base_image": "rust:1.77-slim",
+      "purl_type": "cargo",
+      "registry_url": "https://crates.io/api/v1/crates/{package}",
+      "cui_comment_style": "c-style",
+      "memory_safe": true,
+      "scaffold_types": ["backend", "api", "cli", "microservice", "wasm"]
+    },
+    "csharp": {
+      "display_name": "C#",
+      "file_extensions": [".cs", ".csx", ".csproj", ".sln"],
+      "config_indicators": ["*.csproj", "*.sln", "Directory.Build.props", "global.json", "nuget.config"],
+      "dependency_files": ["*.csproj", "packages.lock.json", "Directory.Packages.props"],
+      "package_manager": "nuget",
+      "package_manager_alternatives": ["dotnet"],
+      "build_tool": "dotnet-build",
+      "linter": {
+        "tool": "dotnet-analyzers",
+        "command": ["dotnet", "build", "/p:TreatWarningsAsErrors=true", "/p:EnforceCodeStyleInBuild=true"],
+        "config_file": ".editorconfig",
+        "alternatives": ["roslynator"]
+      },
+      "formatter": {
+        "tool": "dotnet-format",
+        "command": ["dotnet", "format"],
+        "secondary": null
+      },
+      "sast": {
+        "tool": "security-code-scan",
+        "command": ["dotnet", "build", "/p:EnableNETAnalyzers=true"]
+      },
+      "dependency_auditor": {
+        "tool": "dotnet-list-vulnerable",
+        "command": ["dotnet", "list", "package", "--vulnerable", "--include-transitive", "--format", "json"]
+      },
+      "test_framework": "xunit",
+      "bdd_framework": "specflow",
+      "bdd_step_language": "csharp",
+      "container_base_image": "mcr.microsoft.com/dotnet/aspnet:8.0-alpine",
+      "purl_type": "nuget",
+      "registry_url": "https://api.nuget.org/v3-flatcontainer/{package}/index.json",
+      "cui_comment_style": "c-style",
+      "memory_safe": true,
+      "scaffold_types": ["backend", "api", "microservice", "blazor", "library"]
+    }
+  }
+}

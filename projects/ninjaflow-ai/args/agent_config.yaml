@@ -1,0 +1,113 @@
+application: ninjaflow-ai
+classification: CUI
+agents:
+  orchestrator:
+    port: 9443
+    role: Task routing, workflow management
+    health_endpoint: https://localhost:9443/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-orchestrator.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  architect:
+    port: 9444
+    role: ATLAS A/T phases, system design
+    health_endpoint: https://localhost:9444/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-architect.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  builder:
+    port: 9445
+    role: TDD code gen (RED->GREEN->REFACTOR)
+    health_endpoint: https://localhost:9445/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-builder.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  knowledge:
+    port: 9449
+    role: Self-healing patterns, recommendations
+    health_endpoint: https://localhost:9449/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-knowledge.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  monitor:
+    port: 9450
+    role: Log analysis, metrics, alerts, health checks
+    health_endpoint: https://localhost:9450/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-monitor.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  compliance:
+    port: 9446
+    role: ATO artifacts, 9-framework compliance
+    health_endpoint: https://localhost:9446/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-compliance.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  security:
+    port: 9447
+    role: SAST, dep audit, secret detection
+    health_endpoint: https://localhost:9447/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-security.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  requirements_analyst:
+    port: 9453
+    role: Conversational intake, gap detection, SAFe decomposition
+    health_endpoint: https://localhost:9453/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-requirements_analyst.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  supply_chain:
+    port: 9454
+    role: Dependency graph, SBOM aggregation, ISA lifecycle, CVE triage
+    health_endpoint: https://localhost:9454/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-supply_chain.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  simulation:
+    port: 9455
+    role: Digital Program Twin, Monte Carlo, COA generation
+    health_endpoint: https://localhost:9455/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-simulation.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest
+  devsecops_zta:
+    port: 9457
+    role: DevSecOps pipeline security, Zero Trust, policy-as-code
+    health_endpoint: https://localhost:9457/health
+    tls:
+      enabled: true
+      cert_path: /etc/ssl/certs/ninjaflow-ai-devsecops_zta.crt
+    model:
+      provider: openai
+      model_id: qwen3:latest

@@ -1,0 +1,28 @@
+# [TEMPLATE: CUI // SP-CTI]
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ninjaflow_ai-dashboard
+  namespace: ninjaflow_ai
+  labels:
+    app.kubernetes.io/part-of: ninjaflow_ai
+    classification: CUI
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - ninjaflow_ai.internal
+      secretName: ninjaflow_ai-tls
+  rules:
+    - host: ninjaflow_ai.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ninjaflow_ai-dashboard
+                port:
+                  number: 5000

@@ -1,0 +1,274 @@
+{
+  "metadata": {
+    "title": "OWASP Top 10 for Large Language Model Applications",
+    "source": "OWASP Foundation, OWASP Top 10 for LLM Applications v2025 (2025-01-15)",
+    "classification": "CUI // SP-CTI",
+    "version": "2025",
+    "last_updated": "2026-02-21",
+    "description": "OWASP Top 10 security risks specific to Large Language Model (LLM) applications. Each risk maps to NIST 800-53 Rev 5 controls via crosswalk and references MITRE ATLAS adversarial ML techniques. Systems deploying LLMs in Gov/DoD environments must assess against all 10 risk categories to satisfy AI-specific security requirements under EO 14110, NIST AI RMF, and DoD Responsible AI principles."
+  },
+  "risk_categories": [
+    {
+      "code": "prompt_injection",
+      "name": "Prompt Injection",
+      "requirement_count": 1,
+      "description": "Manipulating LLM inputs to alter model behavior, bypass safety controls, or exfiltrate data"
+    },
+    {
+      "code": "sensitive_info_disclosure",
+      "name": "Sensitive Information Disclosure",
+      "requirement_count": 1,
+      "description": "LLM revealing confidential, PII, or classified data through responses"
+    },
+    {
+      "code": "supply_chain",
+      "name": "Supply Chain Vulnerabilities",
+      "requirement_count": 1,
+      "description": "Compromised models, datasets, plugins, or dependencies introducing risk"
+    },
+    {
+      "code": "data_model_poisoning",
+      "name": "Data and Model Poisoning",
+      "requirement_count": 1,
+      "description": "Corrupted training or fine-tuning data causing biased or malicious outputs"
+    },
+    {
+      "code": "improper_output_handling",
+      "name": "Improper Output Handling",
+      "requirement_count": 1,
+      "description": "Failure to validate, sanitize, or constrain LLM-generated outputs"
+    },
+    {
+      "code": "excessive_agency",
+      "name": "Excessive Agency",
+      "requirement_count": 1,
+      "description": "LLM agents granted excessive permissions, functions, or autonomy"
+    },
+    {
+      "code": "system_prompt_leakage",
+      "name": "System Prompt Leakage",
+      "requirement_count": 1,
+      "description": "Exposure of system-level instructions, secrets, or configuration through LLM interactions"
+    },
+    {
+      "code": "vector_embedding_weaknesses",
+      "name": "Vector and Embedding Weaknesses",
+      "requirement_count": 1,
+      "description": "Manipulation of vector stores, RAG pipelines, or embedding spaces"
+    },
+    {
+      "code": "misinformation",
+      "name": "Misinformation",
+      "requirement_count": 1,
+      "description": "LLM producing false, misleading, or fabricated information (hallucinations)"
+    },
+    {
+      "code": "unbounded_consumption",
+      "name": "Unbounded Consumption",
+      "requirement_count": 1,
+      "description": "Resource exhaustion through uncontrolled LLM inference, token consumption, or API abuse"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "LLM01",
+      "title": "Prompt Injection",
+      "family": "prompt_injection",
+      "description": "Prompt injection occurs when an attacker manipulates an LLM through crafted inputs or external content that alter the model's intended behavior. Direct prompt injection overwrites or augments system prompts, while indirect injection embeds malicious instructions in external data sources (documents, web pages, tool outputs) consumed by the LLM. Successful prompt injection can lead to unauthorized actions, data exfiltration, social engineering, privilege escalation, and safety bypass. In Gov/DoD contexts, prompt injection against AI-powered decision systems could compromise mission-critical workflows or leak classified context.",
+      "risk_level": "critical",
+      "evidence_required": "Input validation and sanitization rules for LLM prompts, prompt injection detection mechanisms (pattern matching, classifier-based), evidence of privilege separation between user input and system instructions, output filtering for sensitive data, and red-team testing results for injection resistance.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-10", "SI-10(5)", "SC-18", "AC-3", "AC-6"],
+      "atlas_techniques": ["AML.T0051", "AML.T0054", "AML.T0043"],
+      "mitigations": [
+        "Implement input validation and sanitization on all LLM inputs",
+        "Enforce privilege separation between system prompts and user input",
+        "Apply output filtering to detect and redact sensitive data leakage",
+        "Deploy prompt injection detection classifiers (rule-based and ML-based)",
+        "Limit LLM permissions to least-privilege for tool/function calls",
+        "Red-team test prompt injection resistance periodically",
+        "Use structured output schemas to constrain response format"
+      ]
+    },
+    {
+      "id": "LLM02",
+      "title": "Sensitive Information Disclosure",
+      "family": "sensitive_info_disclosure",
+      "description": "LLMs may inadvertently reveal sensitive information including PII, PHI, financial data, classified content, proprietary business logic, system architecture details, API keys, or training data through their responses. This occurs through memorization of training data, context window leakage, or insufficient output filtering. In Gov/DoD environments, information disclosure risks are amplified by the presence of CUI, classified data, and mission-critical intelligence in prompts or RAG context. Data classification marking enforcement at the output layer is essential to prevent cross-domain spillage.",
+      "risk_level": "critical",
+      "evidence_required": "Data classification enforcement on LLM outputs, output filtering and redaction mechanisms, PII/PHI/CUI detection in responses, data loss prevention (DLP) integration, evidence of training data decontamination, and access control on context windows and RAG sources.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-4", "SC-28", "SI-12", "SC-7", "PM-11", "SC-8"],
+      "atlas_techniques": ["AML.T0024", "AML.T0025", "AML.T0035"],
+      "mitigations": [
+        "Apply data classification markings to all LLM outputs",
+        "Implement output DLP scanning for PII, PHI, CUI patterns",
+        "Enforce access controls on RAG data sources and context windows",
+        "Use differential privacy techniques in fine-tuning",
+        "Redact sensitive data from prompts before model processing",
+        "Monitor and audit LLM responses for information leakage",
+        "Apply cross-domain guards for multi-level security environments"
+      ]
+    },
+    {
+      "id": "LLM03",
+      "title": "Supply Chain Vulnerabilities",
+      "family": "supply_chain",
+      "description": "LLM supply chain risks encompass compromised pre-trained models, poisoned fine-tuning datasets, malicious plugins or extensions, vulnerable third-party libraries, and untrusted model registries. Attackers may introduce backdoors through model weights, compromise model cards or documentation, or inject malicious code through LLM tool integrations. In Gov/DoD environments, supply chain integrity is governed by NIST 800-161 and Section 889 restrictions. All AI components (models, datasets, embeddings, plugins) must have a verifiable provenance chain and undergo security scanning before deployment.",
+      "risk_level": "critical",
+      "evidence_required": "AI Bill of Materials (AI-BOM) listing all model components and dependencies, model provenance verification, SBOM for software dependencies, supply chain risk management (SCRM) assessment for AI vendors, evidence of model integrity verification (checksums, signatures), and marketplace security scanning results for plugins/extensions.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-12", "SR-3", "SR-4", "SR-5", "SR-11", "SA-9", "SA-22"],
+      "atlas_techniques": ["AML.T0010", "AML.T0018", "AML.T0042"],
+      "mitigations": [
+        "Maintain an AI Bill of Materials (AI-BOM) for all model components",
+        "Verify model provenance through cryptographic signatures",
+        "Scan all plugins and extensions through marketplace security gates",
+        "Audit third-party model providers against SCRM requirements",
+        "Generate SBOM for all software dependencies",
+        "Enforce Section 889 and ITAR restrictions on AI component sourcing",
+        "Pin model versions and verify checksums before deployment"
+      ]
+    },
+    {
+      "id": "LLM04",
+      "title": "Data and Model Poisoning",
+      "family": "data_model_poisoning",
+      "description": "Data and model poisoning attacks corrupt training data, fine-tuning datasets, or embedding stores to manipulate LLM behavior. Poisoning can introduce backdoors, bias model outputs, degrade performance on specific inputs, or cause targeted misclassification. Training data poisoning is particularly dangerous because it persists across model versions and is difficult to detect post-deployment. In Gov/DoD environments, poisoned models could provide incorrect intelligence analysis, biased risk assessments, or compromised decision support. Data validation gates at every ingestion point are essential.",
+      "risk_level": "high",
+      "evidence_required": "Training data validation and provenance tracking, data quality gates for fine-tuning pipelines, anomaly detection on training data distributions, evidence of data sanitization procedures, model behavior monitoring for drift, and red-team testing for backdoor detection.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-7", "SI-7(1)", "SI-10", "SA-15", "CM-3"],
+      "atlas_techniques": ["AML.T0020", "AML.T0019", "AML.T0039"],
+      "mitigations": [
+        "Implement data validation gates for all training data ingestion",
+        "Track provenance of training and fine-tuning datasets",
+        "Apply statistical anomaly detection on data distributions",
+        "Use data sanitization to remove outliers and adversarial samples",
+        "Monitor model behavior for performance drift post-deployment",
+        "Maintain reproducible training pipelines with versioned datasets",
+        "Conduct periodic red-team testing for backdoor detection"
+      ]
+    },
+    {
+      "id": "LLM05",
+      "title": "Improper Output Handling",
+      "family": "improper_output_handling",
+      "description": "Improper output handling occurs when LLM-generated content is passed to downstream systems, APIs, or rendered in user interfaces without adequate validation, sanitization, or encoding. This enables secondary attacks including cross-site scripting (XSS), server-side request forgery (SSRF), SQL injection, command injection, and path traversal when LLM output is used in code generation, database queries, system commands, or web rendering. In Gov/DoD systems, improper output handling can compromise system integrity, enable privilege escalation, or introduce vulnerabilities into production code generated by AI assistants.",
+      "risk_level": "high",
+      "evidence_required": "Output validation and sanitization rules for all LLM-generated content, evidence of output encoding before rendering, parameterized queries for any LLM-generated SQL, command sandboxing for LLM-generated system commands, and SAST scanning results on AI-generated code.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-10", "SI-10(5)", "SC-18", "SI-3", "SA-11"],
+      "atlas_techniques": ["AML.T0048", "AML.T0043"],
+      "mitigations": [
+        "Validate and sanitize all LLM outputs before downstream consumption",
+        "Apply output encoding appropriate to the rendering context (HTML, SQL, shell)",
+        "Use parameterized queries for any LLM-generated database operations",
+        "Sandbox command execution for LLM-generated system commands",
+        "Run SAST scanning on all AI-generated code before integration",
+        "Implement structured output schemas (JSON Schema) to constrain format",
+        "Apply content security policies for rendered LLM output"
+      ]
+    },
+    {
+      "id": "LLM06",
+      "title": "Excessive Agency",
+      "family": "excessive_agency",
+      "description": "Excessive agency arises when LLM agents are granted excessive functionality, permissions, or autonomy to act on behalf of users. This includes access to unnecessary tools or APIs, overly permissive function calling, ability to perform irreversible actions without confirmation, unrestricted access to sensitive data stores, and insufficient human-in-the-loop controls. In Gov/DoD environments, excessive agency risks are magnified by the potential for unauthorized system changes, data modification, deployment actions, or compliance violations performed by autonomous AI agents without human oversight.",
+      "risk_level": "critical",
+      "evidence_required": "Command allowlist configuration for AI agents, human-in-the-loop gate configuration, least-privilege access controls for agent service accounts, evidence of destructive action confirmation requirements, function call audit logging, and agent permission boundary documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-6", "AC-6(1)", "AC-6(5)", "AC-3", "CM-7", "AU-2"],
+      "atlas_techniques": ["AML.T0086", "AML.T0040"],
+      "mitigations": [
+        "Enforce least-privilege permissions for all AI agent service accounts",
+        "Implement command allowlists restricting agent-callable functions",
+        "Require human-in-the-loop confirmation for destructive or irreversible actions",
+        "Log all agent function calls and tool invocations to audit trail",
+        "Define and enforce agent permission boundaries per environment",
+        "Implement rate limiting on agent actions per time window",
+        "Block deployment and infrastructure-modifying commands from AI agents by default"
+      ]
+    },
+    {
+      "id": "LLM07",
+      "title": "System Prompt Leakage",
+      "family": "system_prompt_leakage",
+      "description": "System prompt leakage occurs when attackers extract system-level instructions, safety guidelines, persona definitions, API keys, or configuration data embedded in LLM system prompts through conversational manipulation. Leaked system prompts reveal the application's logic, safety boundaries, tool configurations, and potentially sensitive credentials. In Gov/DoD environments, system prompts may contain classification handling rules, security policy enforcement logic, mission parameters, or references to classified systems. Prompt leakage can enable targeted attacks against application-specific safety mechanisms.",
+      "risk_level": "high",
+      "evidence_required": "Evidence that system prompts do not contain secrets or credentials, prompt injection testing targeting system prompt extraction, monitoring for system prompt content in LLM outputs, architectural separation of system configuration from prompt context, and evidence of prompt obfuscation or protection mechanisms.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-28", "SC-8", "AC-3", "SC-4", "SI-11"],
+      "atlas_techniques": ["AML.T0051.001", "AML.T0054"],
+      "mitigations": [
+        "Never embed secrets, API keys, or credentials in system prompts",
+        "Implement system prompt protection mechanisms (instruction hierarchy)",
+        "Monitor LLM outputs for system prompt content leakage",
+        "Separate sensitive configuration from conversational prompt context",
+        "Apply output filtering to detect and suppress system prompt echoing",
+        "Red-team test system prompt extraction resistance",
+        "Use instruction hierarchy to prevent user-level override of system instructions"
+      ]
+    },
+    {
+      "id": "LLM08",
+      "title": "Vector and Embedding Weaknesses",
+      "family": "vector_embedding_weaknesses",
+      "description": "Vector and embedding weaknesses arise from vulnerabilities in Retrieval-Augmented Generation (RAG) systems, vector databases, and embedding pipelines. Attacks include embedding inversion (recovering source documents from vectors), poisoning vector stores with adversarial documents, manipulating retrieval relevance through crafted embeddings, and unauthorized access to vector databases containing sensitive document representations. In Gov/DoD environments, vector stores may contain embeddings of CUI, classified intelligence, or mission-critical documents. Compromise of these stores can enable data reconstruction, relevance manipulation, or information leakage.",
+      "risk_level": "high",
+      "evidence_required": "Access controls on vector databases and embedding stores, evidence of input validation for RAG document ingestion, monitoring for anomalous retrieval patterns, data classification enforcement on RAG sources, embedding store integrity verification, and evidence of authorization checks before vector search results are returned.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-28", "AC-3", "SI-7", "AC-4", "AU-6"],
+      "atlas_techniques": ["AML.T0025", "AML.T0020", "AML.T0049"],
+      "mitigations": [
+        "Implement access controls on vector databases matching source document classification",
+        "Validate and sanitize documents before embedding and ingestion into RAG stores",
+        "Monitor retrieval patterns for anomalous access or relevance manipulation",
+        "Enforce data classification markings on all RAG source documents",
+        "Apply authorization checks before returning vector search results",
+        "Periodically audit vector store contents for unauthorized or stale data",
+        "Use separate vector stores for different classification levels"
+      ]
+    },
+    {
+      "id": "LLM09",
+      "title": "Misinformation",
+      "family": "misinformation",
+      "description": "LLMs can generate false, misleading, or fabricated information (hallucinations) that appears authoritative and plausible. This includes fabricated citations, incorrect technical specifications, false legal or regulatory references, and confidently stated inaccuracies. In Gov/DoD environments, misinformation from AI systems can lead to flawed intelligence assessments, incorrect compliance determinations, bad engineering decisions, or compromised mission planning. Human oversight, output verification, and confidence scoring are essential to prevent reliance on unverified AI-generated content.",
+      "risk_level": "high",
+      "evidence_required": "Human-in-the-loop review gates for AI-generated content, output verification mechanisms (citation checking, fact validation), confidence scoring or uncertainty quantification, evidence of user training on AI limitations, and documentation of AI content labeling (marking content as AI-generated).",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-4", "SI-5", "PM-13", "AT-2", "SI-12"],
+      "atlas_techniques": ["AML.T0048", "AML.T0047"],
+      "mitigations": [
+        "Implement human-in-the-loop review for all AI-generated decisions and content",
+        "Apply confidence scoring or uncertainty quantification to LLM outputs",
+        "Verify AI-generated citations and references against authoritative sources",
+        "Label all AI-generated content to distinguish from human-authored material",
+        "Provide user training on AI limitations and hallucination risks",
+        "Implement grounding mechanisms (RAG with authoritative sources)",
+        "Use structured output with source attribution for verifiability"
+      ]
+    },
+    {
+      "id": "LLM10",
+      "title": "Unbounded Consumption",
+      "family": "unbounded_consumption",
+      "description": "Unbounded consumption occurs when LLM applications allow uncontrolled resource usage through excessive token consumption, recursive or infinite loop prompts, denial-of-wallet attacks via API abuse, computational resource exhaustion through complex queries, and absence of rate limiting or usage quotas. In Gov/DoD environments, unbounded consumption threatens mission availability, exhausts cloud compute budgets (especially for Bedrock/SageMaker inference), and can be weaponized as a denial-of-service vector against AI-powered operational systems. Token tracking, rate limiting, and cost controls are essential for operational resilience.",
+      "risk_level": "high",
+      "evidence_required": "Rate limiting configuration for LLM API endpoints, token consumption tracking and budget controls, evidence of recursion detection and loop prevention, usage quotas per user and per tenant, cost alerting and automatic throttling, and evidence of query complexity limits.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SC-5", "SC-6", "AU-2", "SI-4", "AC-3"],
+      "atlas_techniques": ["AML.T0029", "AML.T0034"],
+      "mitigations": [
+        "Implement rate limiting on all LLM API endpoints (per-user, per-tenant)",
+        "Track token consumption with per-project and per-user budgets",
+        "Set maximum token limits per request and per session",
+        "Implement recursion detection and loop prevention for agent workflows",
+        "Configure cost alerting with automatic throttling at budget thresholds",
+        "Apply query complexity analysis before LLM invocation",
+        "Implement circuit breakers for LLM provider endpoints"
+      ]
+    }
+  ]
+}

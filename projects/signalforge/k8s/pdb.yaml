@@ -1,0 +1,288 @@
+# [TEMPLATE: CUI // SP-CTI]
+# SIGNALFORGE Pod Disruption Budgets
+# D143: minAvailable=1 for core/dashboard/gateway, maxUnavailable=1 for domain/support
+
+# ======================================================================
+# Core Tier — minAvailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-orchestrator-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: orchestrator
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: orchestrator
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-architect-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: architect
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: architect
+---
+# ======================================================================
+# Domain Tier — maxUnavailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-builder-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: builder
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: builder
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-compliance-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: compliance
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: compliance
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-security-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: security
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: security
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-infra-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: infra
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: infra
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-mbse-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: mbse-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mbse-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-modernization-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: modernization-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: modernization-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-requirements-analyst-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: requirements-analyst-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: requirements-analyst-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-supply-chain-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: supply-chain-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: supply-chain-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-simulation-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: simulation-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: simulation-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-integration-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: integration-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: integration-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-devsecops-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: devsecops-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: devsecops-agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-gateway-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: gateway-agent
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway-agent
+---
+# ======================================================================
+# Support Tier — maxUnavailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-knowledge-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: knowledge
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knowledge
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-monitor-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: monitor
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: monitor
+---
+# ======================================================================
+# Dashboard — minAvailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-dashboard-pdb
+  namespace: signalforge
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dashboard
+---
+# ======================================================================
+# API Gateway — minAvailable: 1
+# ======================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: signalforge-api-gateway-pdb
+  namespace: signalforge-platform
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: signalforge
+    classification: CUI
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway

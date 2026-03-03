@@ -1,0 +1,142 @@
+# Financial Baseline Development Profile v1
+# For PCI DSS and SOC 2 regulated financial organizations
+name: "Financial Baseline"
+version: "1.0.0"
+description: "Development standards for financial services handling payment card data"
+applicable_to: [financial]
+impact_levels: [IL2, IL4]
+
+language:
+  primary: java
+  allowed: [java, typescript, python, go]
+  forbidden: []
+  versions:
+    java: ">=17"
+    typescript: ">=5.0"
+    python: ">=3.11"
+    go: ">=1.22"
+  package_managers:
+    java: maven
+    typescript: npm
+    python: pip
+    go: go
+  virtual_env_tool: venv
+  banned_packages: []
+  approved_registries: []
+
+style:
+  naming_convention: camelCase
+  indent_style: spaces
+  indent_size: 4
+  max_line_length: 120
+  docstring_format: javadoc
+  import_order: organized
+  formatter:
+    java: google-java-format
+    typescript: prettier
+    python: black
+    go: gofmt
+  linter:
+    java: checkstyle
+    typescript: eslint
+    python: ruff
+    go: golangci-lint
+  trailing_commas: true
+  quote_style: double
+
+testing:
+  methodology: tdd
+  min_coverage: 85
+  require_bdd: true
+  require_unit: true
+  require_e2e: true
+  bdd_framework:
+    java: cucumber-jvm
+    typescript: cucumber-js
+    python: behave
+    go: godog
+  test_naming_pattern: "should_{description}"
+  flaky_test_policy: fix_immediately
+
+architecture:
+  web_framework:
+    java: spring-boot
+    typescript: express
+    python: flask
+    go: gin
+  database: postgresql
+  orm:
+    java: hibernate
+    python: sqlalchemy
+  auth_pattern: oauth2_oidc
+  api_style: rest_openapi
+  container_base:
+    java: "eclipse-temurin:17-jre-alpine"
+    typescript: "node:20-alpine"
+  error_handling: structured_hierarchy
+  logging_format: structured_json
+  project_structure: hexagonal
+
+security:
+  encryption_standard: aes_256
+  secret_management: hashicorp_vault
+  sast_tools:
+    java: spotbugs
+    typescript: eslint-security
+    python: bandit
+    go: gosec
+  dependency_audit: true
+  container_hardening: stig
+  vulnerability_sla:
+    critical: "24h"
+    high: "7d"
+    medium: "30d"
+    low: "60d"
+  secret_rotation_days: 60
+  image_signing: true
+
+compliance:
+  frameworks: [pci_dss_v4, soc2_type_ii, iso27001_2022]
+  cui_required: false
+  audit_trail_required: true
+  classification_level: PCI
+  sbom_format: cyclonedx
+  ato_approach: traditional
+
+operations:
+  deployment_target: kubernetes
+  container_runtime: containerd
+  ci_cd_platform: github_actions
+  monitoring_stack: [prometheus, grafana, datadog]
+  region: us-east-1
+  service_mesh: istio
+  network_policy: default_deny
+  backup_strategy: continuous
+
+documentation:
+  readme_required: true
+  api_docs_required: true
+  adr_required: true
+  changelog_required: true
+  diagram_tool: mermaid
+  spec_format: markdown
+  runbook_required: true
+
+git:
+  branching_strategy: gitflow
+  merge_strategy: merge_commit
+  commit_format: conventional_commits_with_scope
+  branch_naming: "{type}/{num}-{slug}"
+  min_approvals: 2
+  gpg_signing: required
+  pr_size_limit: 400
+  delete_branch_on_merge: true
+
+ai:
+  preferred_provider: bedrock
+  code_gen_model: claude-sonnet
+  compliance_model: claude-sonnet
+  token_budget_monthly: 3000000
+  attribution: required
+  byok_enabled: true
+  prompt_governance: centralized

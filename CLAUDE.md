@@ -165,13 +165,13 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications using the 
 
 Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s). Each publishes an Agent Card at `/.well-known/agent.json`.
 
-### MCP Servers (Unified Gateway + 18 individual servers)
+### MCP Servers (Unified Gateway + 19 individual servers)
 
-**Recommended: Use `icdev-unified` — single server with all 241 tools (D301).**
+**Recommended: Use `icdev-unified` — single server with all 251 tools (D301).**
 
 | Server | Config Key | Tools |
 |--------|-----------|-------|
-| **icdev-unified** | `.mcp.json` | **All 225 tools from 18 servers + 66 new tools** (lazy-loaded, D301) |
+| **icdev-unified** | `.mcp.json` | **All 225 tools from 19 servers + 66 new tools** (lazy-loaded, D301) |
 | icdev-core | `.mcp.json` | project_create, project_list, project_status, task_dispatch, agent_status |
 | icdev-compliance | `.mcp.json` | ssp_generate, poam_generate, stig_check, sbom_generate, cui_mark, control_map, nist_lookup, cssp_assess, cssp_report, cssp_ir_plan, cssp_evidence, xacta_sync, xacta_export, sbd_assess, sbd_report, ivv_assess, ivv_report, rtm_generate, **crosswalk_query, fedramp_assess, fedramp_report, cmmc_assess, cmmc_report, oscal_generate, emass_sync, cato_monitor, pi_compliance, classification_check, fips199_categorize, fips200_validate, security_categorize, oscal_validate_deep, oscal_convert, oscal_resolve_profile, oscal_catalog_lookup, oscal_detect_tools, omb_m25_21_assess, omb_m26_04_assess, nist_ai_600_1_assess, gao_ai_assess, model_card_generate, system_card_generate, ai_transparency_audit, confabulation_check, ai_inventory_register, fairness_assess** |
 | icdev-builder | `.mcp.json` | scaffold, generate_code, write_tests, run_tests, lint, format, dev_profile_create, dev_profile_get, dev_profile_resolve, dev_profile_detect |
@@ -188,6 +188,7 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | icdev-devsecops | `.mcp.json` | devsecops_profile_create, devsecops_profile_get, devsecops_maturity_assess, zta_maturity_score, zta_assess, pipeline_security_generate, policy_generate, service_mesh_generate, network_segmentation_generate, attestation_verify, zta_posture_check, pdp_config_generate |
 | icdev-gateway | `.mcp.json` | bind_user, list_bindings, revoke_binding, send_command, gateway_status |
 | icdev-innovation | `.mcp.json` | scan_web, score_signals, triage_signals, detect_trends, generate_solution, run_pipeline, get_status, introspect, competitive_scan, standards_check |
+| icdev-research | `.mcp.json` | research_create_session, research_run_stage, research_run_pipeline, research_get_status, research_list_sessions, research_get_dossier, research_review_dossier, research_list_verticals, research_get_challenges, research_get_forecasts, research_trigger_fitness |
 | icdev-context | `.mcp.json` | fetch_docs, list_sections, get_icdev_metadata, get_project_context, get_agent_context |
 | icdev-observability | `.mcp.json` | trace_query, trace_summary, prov_lineage, prov_export, shap_analyze, xai_assess |
 
@@ -283,6 +284,7 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
 | `/icdev-mosa` | DoD MOSA (10 U.S.C. §4401) — MOSA assessment, modularity analysis, ICD/TSP generation, code enforcement, intake auto-detection for DoD/IC |
 | `/icdev-innovate` | Innovation Engine — autonomous self-improvement: web scanning, signal scoring, compliance triage, trend detection, solution generation, introspective analysis, competitive intel, standards monitoring |
+| `/icdev-research` | Industry Research Engine — deep vertical research: 9-stage pipeline (SCOPE→FORECAST→DOSSIER), 9 source streams (incl. YouTube video), 6-dimension challenge scoring, regulatory mapping, build/buy analysis, cross-engine forecast with surprise predictions, dossier generation, HITL review, child app fitness trigger |
 | `/icdev-translate` | Cross-language translation — 5-phase hybrid pipeline (Extract→Type-Check→Translate→Assemble→Validate+Repair), 30 language pairs, pass@k candidates, mock-and-continue, compliance bridge |
 | `/icdev-trace` | Observability & XAI — distributed tracing queries, provenance lineage, AgentSHAP tool attribution, XAI compliance assessment (Phase 46) |
 | `/audit` | Production readiness audit — 38 checks across 7 categories (platform, security, compliance, integration, performance, documentation, code_quality), streaming results, consolidated report, trend tracking |
@@ -412,6 +414,7 @@ pytest tests/test_dispatcher_mode.py -v                 # Dispatcher-only orches
 pytest tests/test_prompt_chain_executor.py -v           # Declarative prompt chain executor tests (63 tests)
 pytest tests/test_atlas_critique.py -v                  # ATLAS adversarial critique tests (36 tests)
 pytest tests/test_session_purpose.py -v                 # Session purpose + async result injection + tiered file access tests (27 tests)
+pytest tests/test_research_engine.py -v                 # Industry Research Engine tests (68 tests)
 
 # .claude directory governance
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
@@ -551,7 +554,7 @@ python tools/audit/audit_query.py --project "proj-123" --format json
 python tools/audit/decision_recorder.py --project-id "proj-123" --decision "Use PostgreSQL" --rationale "RDS requirement" --actor "architect-agent"
 
 # MCP servers (stdio transport)
-python tools/mcp/unified_server.py                   # Start unified MCP gateway (241 tools, recommended)
+python tools/mcp/unified_server.py                   # Start unified MCP gateway (251 tools, recommended)
 python tools/mcp/core_server.py                     # Start core MCP server
 python tools/mcp/compliance_server.py               # Start compliance MCP server
 python tools/mcp/builder_server.py                  # Start builder MCP server
@@ -563,6 +566,7 @@ python tools/mcp/requirements_server.py            # Start Requirements MCP serv
 python tools/mcp/supply_chain_server.py            # Start Supply Chain MCP server
 python tools/mcp/simulation_server.py              # Start Simulation MCP server
 python tools/mcp/integration_server.py             # Start Integration MCP server
+python tools/mcp/research_server.py                # Start Research MCP server
 
 # Requirements Intake (RICOAS)
 python tools/requirements/intake_engine.py --project-id "proj-123" --customer-name "Jane Smith" --customer-org "DoD PEO" --impact-level IL5 --json  # New session
@@ -1119,6 +1123,7 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /fedramp-20x       — FedRAMP 20x KSI dashboard: KSI status grid, evidence table, generate/package actions (Phase 53, D338)
 #   /evidence          — Compliance evidence inventory: multi-framework collection, freshness status, collect trigger (Phase 56, D347)
 #   /lineage           — Artifact lineage DAG: SVG visualization joining digital thread, provenance, audit trail, SBOM (Phase 56, D348)
+#   /research          — Industry Research Engine: stat grid, sessions table, pipeline badges, new session panel, dossier viewer with scored challenges (Phase 63)
 #   /ai-transparency   — AI Transparency dashboard: framework scores, model/system cards, AI inventory, fairness, confabulation, GAO evidence, gap analysis (Phase 48)
 #   /ai-accountability — AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment scheduling, cross-framework audit (Phase 49)
 #   /proposals         — Proposal lifecycle tracker: opportunity list, stat grid, new opportunity modal
@@ -1263,7 +1268,7 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 234 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360), CPMP (cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history, cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments, cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations, cpmp_sam_contract_awards, cpmp_cor_access_log — Phase 60, D-CPMP-1 through D-CPMP-10), Phase 61 Orchestration (atlas_critique_sessions, atlas_critique_findings, prompt_chain_executions, dispatcher_mode_overrides, session_purposes — D-DISP-1, D-PC-1, D-ORCH-5) |
+| `data/icdev.db` | 244 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360), CPMP (cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history, cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments, cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations, cpmp_sam_contract_awards, cpmp_cor_access_log — Phase 60, D-CPMP-1 through D-CPMP-10), Phase 61 Orchestration (atlas_critique_sessions, atlas_critique_findings, prompt_chain_executions, dispatcher_mode_overrides, session_purposes — D-DISP-1, D-PC-1, D-ORCH-5), Industry Research Engine (research_verticals, research_sessions, research_signals, research_challenges, research_regulatory_map, research_build_buy, research_dossiers, research_trends, research_capability_map, research_forecasts — Phase 63, D-RES-1 through D-RES-21) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1325,6 +1330,7 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 | `args/prompt_chains.yaml` | Declarative prompt chain templates (Phase 61, D-PC-1): 4 pre-built chains (plan_critique_refine, scout_analyze_recommend, security_review_chain, build_review_iterate), $INPUT/$ORIGINAL/$STEP{id} variable substitution, per-step agent routing, defaults (timeout 120s, model_effort high) |
 | `args/atlas_critique_config.yaml` | ATLAS adversarial critique (Phase 61): 3 critics (security, compliance, knowledge) with focus areas and prompt context, consensus rules (GO: 0 critical + 0 high, CONDITIONAL: 0 critical, NOGO: any critical), revision prompt template, enabled toggle |
 | `args/file_access_tiers.yaml` | Tiered file access control (Phase 61, D-ORCH-8): 3 tiers — zero_access (secrets, .env, .pem, .tfstate), read_only (compliance catalogs, lockfiles, build outputs), no_delete (CLAUDE.md, goals/, .git/, Dockerfiles). Glob-style patterns with ! exclusion |
+| `args/research_config.yaml` | Industry Research Engine (Phase 63, D-RES-1 through D-RES-21): 9-stage pipeline, 9 source streams (community_forum, review_site, academic_paper, regulatory_body, open_source, saas_commercial, news_blog, patent, video), 6-dimension scoring weights/thresholds, regulatory mapping, capability mapping, build/buy analysis, dossier template, forecast generation (LLM/deterministic, cross-engine, surprise scoring), innovation/creative bridge, trend detection, air-gapped mode, scheduling |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1680,6 +1686,7 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 | Creative Engine | `goals/creative_engine.md` | Customer-centric feature opportunity discovery: auto-discover competitors, scan review sites/forums/GitHub, extract pain points (deterministic keyword), 3-dimension scoring (pain_frequency 0.40 + gap_uniqueness 0.35 + effort_to_impact 0.25), trend detection, template-based spec generation, Innovation Engine bridge (Phase 58, D351-D360) |
 | CPMP Workflow | `goals/cpmp_workflow.md` | Contract Performance Management Portal: post-award lifecycle management — EVM (ANSI/EIA-748), CPARS prediction (NDAA), subcontractor FAR 52.219-9, CDRL auto-generation, COR portal, SAM.gov awards, portfolio health scoring (Phase 60, D-CPMP-1 through D-CPMP-10) |
 | Orchestration Improvements | `goals/multi_agent_orchestration.md` | Phase 61: Dispatcher-only orchestrator mode (D-DISP-1), declarative prompt chains (D-PC-1/2/3), ATLAS adversarial critique, session purpose (D-ORCH-5), async result injection (D-ORCH-7), tiered file access (D-ORCH-8), real-time orchestration dashboard |
+| Industry Research | `goals/industry_research.md` | Deep industry vertical research: 9-stage pipeline (SCOPE→FORECAST→DOSSIER), 9 source streams (incl. YouTube video), 6-dimension challenge scoring, regulatory mapping, capability coverage, build/buy analysis, cross-engine forecast with surprise predictions, dossier generation, HITL review, child app fitness trigger, cross-engine registration (Phase 63, D-RES-1 through D-RES-21) |
 
 ---
 
@@ -1782,7 +1789,7 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D288:** AgentSHAP post-hoc tool attribution via Monte Carlo Shapley values — 0.945 consistency (arXiv:2512.12597), stdlib `random` for sampling (D22 air-gap safe)
 - **D289:** XAI assessor via BaseAssessor pattern (D116) — ~200 LOC, crosswalk to NIST 800-53 US hub cascades to FedRAMP/CMMC
 - **D290:** Dual-mode config in `args/observability_tracing_config.yaml` — auto-detect: `ICDEV_MLFLOW_TRACKING_URI` set → `otel` mode, else → `sqlite` mode
-- **D301:** Unified MCP gateway (`unified_server.py`) uses declarative tool registry (`tool_registry.py`) with lazy module loading. Existing 18 servers remain independently runnable (backward compat). Registry maps tool name → (module, handler, schema). Handlers imported via `importlib.import_module()` on first call, cached thereafter. 55 new tools for CLI gaps use direct Python import with subprocess fallback (`gap_handlers.py`). All 238 tools inherit D284 auto-instrumentation from `base_server.py`. Reduces `.mcp.json` from 18 entries to 1.
+- **D301:** Unified MCP gateway (`unified_server.py`) uses declarative tool registry (`tool_registry.py`) with lazy module loading. Existing 19 servers remain independently runnable (backward compat). Registry maps tool name → (module, handler, schema). Handlers imported via `importlib.import_module()` on first call, cached thereafter. 55 new tools for CLI gaps use direct Python import with subprocess fallback (`gap_handlers.py`). All 248 tools inherit D284 auto-instrumentation from `base_server.py`. Reduces `.mcp.json` from 19 entries to 1.
 - **D302:** oscal-cli invoked via subprocess (`_run_cli()` pattern). Java detected at load time, cached. Degrades to built-in validation when absent. Config: `args/oscal_tools_config.yaml`
 - **D303:** oscal-pydantic is a post-generation validation layer. Does NOT replace dict construction. Skipped via `ImportError` when not installed. MIT license.
 - **D304:** Official NIST OSCAL catalog stored in `context/oscal/` (downloaded, not committed — 14MB). ICDEV custom catalog (`context/compliance/nist_800_53.json`) preserved as fallback. `OscalCatalogAdapter` normalizes both formats. Priority: official → ICDEV.
@@ -1950,6 +1957,122 @@ python tools/creative/creative_engine.py --daemon --json
 
 ---
 
+## Industry Research Engine — Deep Vertical Research (Phase 63)
+
+### Overview
+Standardized, reusable process for deeply researching any industry vertical and producing scored research dossiers that feed into child app generation. General-purpose from day one, with trading as the first vertical. Separate from Innovation Engine (technical self-improvement) and Creative Engine (customer pain points) — Research Engine does deep industry vertical analysis with regulatory mapping, academic scanning, build/buy analysis, and capability gap assessment.
+
+### Pipeline (9 stages)
+```
+SCOPE → LANDSCAPE → REGULATE → COMMUNITY → ACADEMIC → BUILD_BUY → SYNTHESIZE → FORECAST → DOSSIER
+```
+
+### Session Lifecycle
+```
+created → scoping → scanning → synthesizing → dossier_ready → reviewed → child_app_triggered → archived
+```
+
+### Commands
+```bash
+# Full pipeline
+python tools/research/research_engine.py --run --vertical trading --json
+
+# Individual stages
+python tools/research/research_engine.py --run-stage SCOPE --session-id "rsess-xxx" --json
+
+# Session management
+python tools/research/session_manager.py --create --vertical trading --name "Trading Research" --json
+python tools/research/session_manager.py --list --json
+
+# Vertical management
+python tools/research/vertical_loader.py --load --json
+python tools/research/vertical_loader.py --list --json
+
+# Source scanning (8 streams)
+python tools/research/source_scanner.py --scan --session-id "rsess-xxx" --json
+python tools/research/source_scanner.py --list-sources --json
+
+# Challenge scoring
+python tools/research/challenge_scorer.py --cluster --session-id "rsess-xxx" --json
+python tools/research/challenge_scorer.py --score --session-id "rsess-xxx" --json
+
+# Regulatory mapping
+python tools/research/regulatory_mapper.py --map --session-id "rsess-xxx" --json
+
+# Capability mapping
+python tools/research/capability_mapper.py --map --session-id "rsess-xxx" --json
+
+# Build/buy analysis
+python tools/research/build_buy_analyzer.py --analyze --session-id "rsess-xxx" --json
+
+# Trend detection
+python tools/research/trend_detector.py --detect --json
+
+# Dossier generation
+python tools/research/dossier_generator.py --generate --session-id "rsess-xxx" --json
+python tools/research/dossier_generator.py --list --json
+
+# YouTube video scanning (9th source stream)
+python tools/research/youtube_scanner.py --scan --queries "topic keyword" --json
+python tools/research/youtube_scanner.py --scan --urls "https://youtube.com/watch?v=xxx" --json
+python tools/research/youtube_scanner.py --scan --channels "UCxxx" --json
+
+# Forecast generation (cross-engine predictions)
+python tools/research/forecast_generator.py --generate --session-id "rsess-xxx" --json
+python tools/research/forecast_generator.py --get --session-id "rsess-xxx" --json
+
+# Status
+python tools/research/research_engine.py --status --json
+
+# Daemon mode
+python tools/research/research_engine.py --daemon --json
+```
+
+### Architecture Decisions
+- **D-RES-1:** Session-based (not daemon). Bounded lifecycle per vertical research
+- **D-RES-2:** Vertical configs are declarative JSON in `context/research/verticals/*.json` — add new verticals without code changes
+- **D-RES-3:** Source adapters via `SOURCE_SCANNERS` function registry dict (D352 pattern)
+- **D-RES-4:** 6-dimension challenge scoring (D21 deterministic weighted average)
+- **D-RES-5:** All `research_*` tables append-only (D6) except `research_sessions` and `research_verticals` (allow UPDATE for status)
+- **D-RES-6:** Regulatory body mapping uses `context/research/regulatory_registry.json` with crosswalk hooks
+- **D-RES-7:** ICDEV capability mapping reuses `icdev_capability_catalog.json` with keyword-overlap algorithm
+- **D-RES-8:** Build/buy/partner is a separate pipeline stage producing scored decision matrix per challenge
+- **D-RES-9:** Dossier is template-based Markdown (D356, no LLM, air-gap safe)
+- **D-RES-10:** Dossier feeds into child app fitness via `research_session_id` field. HITL approval required
+- **D-RES-11:** Cross-registration to Innovation Engine (score >= 0.70) and Creative Engine (score >= 0.65) via D360 pattern
+- **D-RES-12:** Air-gapped mode degrades to manual entries + uploaded documents
+- **D-RES-13:** Research Engine is parent-only (not copied to child apps, added to `PARENT_ONLY_DIRS`)
+- **D-RES-14:** YouTube is a 9th source stream (`source='video'`) with 3 source_types: `youtube_search`, `youtube_manual`, `youtube_channel`. Disabled by default, opt-in per deployment
+- **D-RES-15:** YouTube Data API v3 requires `YOUTUBE_API_KEY` env var. Degrades gracefully without key to manual-only mode. Transcript extraction via `youtube-transcript-api` (no API key needed)
+- **D-RES-16:** YouTube transcripts processed via two-tier LLM: qwen3 summarizes transcript → Claude extracts key signals. Metadata-only fallback when no transcripts available
+- **D-RES-17:** FORECAST is the 9th pipeline stage: SCOPE→...→SYNTHESIZE→FORECAST→DOSSIER. Maps to status `synthesizing`. Generates LLM-assisted predictions via two-tier routing
+- **D-RES-18:** Cross-engine aggregation: FORECAST queries `innovation_trends`, `innovation_signals`, `creative_pain_points`, `creative_feature_gaps` alongside research data
+- **D-RES-19:** Each prediction has confidence (0-1), surprise_score (0-1), composite_rank = confidence × surprise_score. Top 5 returned sorted by composite_rank
+- **D-RES-20:** `research_forecasts` table (append-only, D6) stores predictions with `outcome` field for future accuracy tracking
+- **D-RES-21:** Dossier gains "Predictive Analysis & Surprise Recommendations" section between Recommendations and Appendix
+
+### 6-Dimension Challenge Scoring
+```
+market_demand:          0.25  (signal frequency, upvotes, citations)
+regulatory_pressure:    0.20  (regulation count, enforcement 1.5x, deadlines 1.3x)
+technical_complexity:   0.15  (academic paper density, patent activity)
+competitive_saturation: 0.15  (inverse: fewer solutions = bigger opportunity)
+icdev_readiness:        0.15  (ICDEV capability coverage score)
+compliance_alignment:   0.10  (maps to existing ICDEV framework = 1.0)
+```
+
+### Available Verticals
+| Vertical | Config | Key Regulatory Bodies |
+|----------|--------|----------------------|
+| Trading | `context/research/verticals/trading.json` | CFTC, NFA, SEC, FINRA, MiFID II, FCA |
+| Healthcare | `context/research/verticals/healthcare.json` | HHS OCR, FDA, CMS, ONC |
+| Defense | `context/research/verticals/defense.json` | DoD CIO, DISA, NSA, NIST |
+| Fintech | `context/research/verticals/fintech.json` | OCC, FDIC, Fed Reserve, CFPB, SEC |
+| Cybersecurity | `context/research/verticals/cybersecurity.json` | CISA, NIST, NSA, FTC |
+| Logistics | `context/research/verticals/logistics.json` | FMCSA, DOT, CBP, FDA Food |
+
+---
+
 ## RICOAS — Requirements Intake, COA & Approval System
 
 ### Overview
@@ -2057,6 +2180,8 @@ These are the 12 dimensions you can tune to improve agent behavior.
 - All containers must run as non-root with read-only root filesystem
 - IL6/SECRET projects require SIPR-only network, NSA Type 1 encryption, air-gapped CI/CD
 - **V&V before handoff** — NEVER declare a fix/feature complete based solely on API or CLI validation. If the change affects UI/dashboard, open the browser with Playwright MCP, interact with the feature as the user would (click buttons, submit forms, watch real-time updates), take a screenshot, and confirm it works from the user's perspective BEFORE reporting completion. API passing ≠ user experience working.
+- **Playwright E2E after dashboard changes** — When implementing ANY phase or feature that adds/modifies dashboard pages, routes, or templates: (1) start the dashboard, (2) run Playwright MCP to navigate to the new/changed page, (3) verify page loads without errors, (4) test interactive elements (forms, buttons, dropdowns), (5) take screenshots at desktop/tablet/mobile viewports, (6) check browser console for errors, (7) fix all issues found. Do NOT wait for the user to ask — this is mandatory post-implementation verification.
+- **Feature documentation after phase implementation** — When implementing a new phase (Phase N), ALWAYS create `docs/features/phase-{N}-{slug}.md` before declaring the work complete. Follow the existing format: CUI markings, metadata table, problem statement, goals, architecture, DB schema, configuration, CLI commands, dashboard, ADRs, testing, security considerations. Do NOT wait for the user to ask — this is a mandatory deliverable of every phase.
 
 ---
 
