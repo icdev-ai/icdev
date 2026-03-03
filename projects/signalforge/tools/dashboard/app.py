@@ -950,9 +950,14 @@ def create_app() -> Flask:
 
     @app.route("/profile/api/llm-keys/<key_id>/revoke", methods=["POST"])
     def profile_revoke_llm_key(key_id):
-        """Revoke a BYOK LLM key."""
+        """Revoke a BYOK LLM key (ownership-scoped)."""
         from tools.dashboard.byok import revoke_llm_key
-        revoke_llm_key(key_id)
+        user = getattr(g, "current_user", None)
+        if not user:
+            return jsonify({"error": "Not authenticated"}), 401
+        success = revoke_llm_key(key_id, user_id=user["id"])
+        if not success:
+            return jsonify({"error": "Key not found"}), 404
         return jsonify({"status": "revoked"})
 
     # ---- Phase roadmap route ----

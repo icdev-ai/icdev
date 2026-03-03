@@ -146,18 +146,27 @@ def list_llm_keys(user_id: str) -> list:
         conn.close()
 
 
-def revoke_llm_key(key_id: str) -> bool:
-    """Revoke an LLM key."""
+def revoke_llm_key(key_id: str, user_id: str = None) -> bool:
+    """Revoke an LLM key. If user_id provided, enforce ownership."""
     conn = _get_db()
     try:
-        conn.execute(
-            """UPDATE dashboard_user_llm_keys
-               SET status = 'revoked', updated_at = ?
-               WHERE id = ?""",
-            (datetime.now(timezone.utc).isoformat(), key_id),
-        )
+        now = datetime.now(timezone.utc).isoformat()
+        if user_id:
+            cursor = conn.execute(
+                """UPDATE dashboard_user_llm_keys
+                   SET status = 'revoked', updated_at = ?
+                   WHERE id = ? AND user_id = ?""",
+                (now, key_id, user_id),
+            )
+        else:
+            cursor = conn.execute(
+                """UPDATE dashboard_user_llm_keys
+                   SET status = 'revoked', updated_at = ?
+                   WHERE id = ?""",
+                (now, key_id),
+            )
         conn.commit()
-        return True
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
