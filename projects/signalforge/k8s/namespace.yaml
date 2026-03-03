@@ -1,8 +1,0 @@
-# [TEMPLATE: CUI // SP-CTI]
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: signalforge
-  labels:
-    app.kubernetes.io/part-of: signalforge
-    classification: CUI

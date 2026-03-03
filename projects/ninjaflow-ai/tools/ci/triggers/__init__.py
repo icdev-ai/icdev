@@ -1,2 +1,0 @@
-# [TEMPLATE: CUI // SP-CTI]
-# NINJAFLOW_AI CI Triggers
