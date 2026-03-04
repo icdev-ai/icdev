@@ -1,0 +1,739 @@
+{
+  "_metadata": {
+    "description": "CSP Service Registry — baseline catalog of cloud services across all 5 CSPs",
+    "version": "1.0.0",
+    "last_updated": "2026-02-21T00:00:00Z",
+    "updated_by": "icdev-architect",
+    "schema_version": 1,
+    "notes": "This registry is the source of truth for ICDEV's understanding of CSP service offerings. The CSP monitor (tools/cloud/csp_monitor.py) diffs live CSP data against this registry to detect changes. Updates require human review unless auto_update is enabled in args/csp_monitor_config.yaml."
+  },
+  "service_categories": {
+    "compute": "Container orchestration, serverless, VMs",
+    "storage": "Object storage, block storage, file systems",
+    "database": "Managed databases (relational, NoSQL, graph)",
+    "secrets": "Secrets management and vault services",
+    "kms": "Key management and encryption services",
+    "iam": "Identity and access management",
+    "monitoring": "Logging, metrics, tracing, SIEM",
+    "ai_ml": "AI/ML model hosting, inference, training",
+    "networking": "VPC, load balancing, DNS, CDN",
+    "registry": "Container image registry",
+    "ci_cd": "Build, deploy, pipeline services",
+    "security": "WAF, DDoS, threat detection, compliance scanning"
+  },
+  "services": {
+    "aws": {
+      "eks": {
+        "display_name": "Amazon EKS",
+        "category": "compute",
+        "description": "Managed Kubernetes service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis", "itar"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"]
+        },
+        "icdev_provider_mapping": "compute",
+        "last_checked": "2026-02-21"
+      },
+      "s3": {
+        "display_name": "Amazon S3",
+        "category": "storage",
+        "description": "Object storage service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis", "itar"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1", "ap-southeast-1"]
+        },
+        "icdev_provider_mapping": "storage",
+        "last_checked": "2026-02-21"
+      },
+      "secrets_manager": {
+        "display_name": "AWS Secrets Manager",
+        "category": "secrets",
+        "description": "Managed secrets storage and rotation",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1"]
+        },
+        "icdev_provider_mapping": "secrets",
+        "last_checked": "2026-02-21"
+      },
+      "kms": {
+        "display_name": "AWS KMS",
+        "category": "kms",
+        "description": "Key Management Service with HSM-backed keys",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "fips_level": "L2",
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1"]
+        },
+        "icdev_provider_mapping": "kms",
+        "last_checked": "2026-02-21"
+      },
+      "iam": {
+        "display_name": "AWS IAM",
+        "category": "iam",
+        "description": "Identity and Access Management",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["global"]
+        },
+        "icdev_provider_mapping": "iam",
+        "last_checked": "2026-02-21"
+      },
+      "cloudwatch": {
+        "display_name": "Amazon CloudWatch",
+        "category": "monitoring",
+        "description": "Monitoring, logging, and alerting",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1"]
+        },
+        "icdev_provider_mapping": "monitoring",
+        "last_checked": "2026-02-21"
+      },
+      "bedrock": {
+        "display_name": "Amazon Bedrock",
+        "category": "ai_ml",
+        "description": "Managed foundation model inference (Claude, Titan, etc.)",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1"]
+        },
+        "icdev_provider_mapping": "ai_ml",
+        "last_checked": "2026-02-21"
+      },
+      "ecr": {
+        "display_name": "Amazon ECR",
+        "category": "registry",
+        "description": "Container image registry",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1"]
+        },
+        "icdev_provider_mapping": "registry",
+        "last_checked": "2026-02-21"
+      },
+      "rds": {
+        "display_name": "Amazon RDS",
+        "category": "database",
+        "description": "Managed relational database (PostgreSQL, MySQL, etc.)",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-gov-west-1", "us-gov-east-1"],
+          "commercial": ["us-east-1", "us-west-2", "eu-west-1"]
+        },
+        "icdev_provider_mapping": "database",
+        "last_checked": "2026-02-21"
+      }
+    },
+    "azure": {
+      "aks": {
+        "display_name": "Azure Kubernetes Service",
+        "category": "compute",
+        "description": "Managed Kubernetes service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia", "usgovarizona", "usdodcentral", "usdodeast"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "compute",
+        "last_checked": "2026-02-21"
+      },
+      "blob_storage": {
+        "display_name": "Azure Blob Storage",
+        "category": "storage",
+        "description": "Object storage service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia", "usgovarizona"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "storage",
+        "last_checked": "2026-02-21"
+      },
+      "key_vault": {
+        "display_name": "Azure Key Vault",
+        "category": "secrets",
+        "description": "Secrets and key management with HSM support",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "fips_level": "L2",
+        "regions": {
+          "government": ["usgovvirginia", "usgovarizona"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "secrets",
+        "last_checked": "2026-02-21"
+      },
+      "azure_openai": {
+        "display_name": "Azure OpenAI Service",
+        "category": "ai_ml",
+        "description": "Managed OpenAI model inference (GPT-4, etc.)",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "ai_ml",
+        "last_checked": "2026-02-21"
+      },
+      "azure_monitor": {
+        "display_name": "Azure Monitor",
+        "category": "monitoring",
+        "description": "Monitoring, logging, and alerting (Log Analytics, App Insights)",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia", "usgovarizona"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "monitoring",
+        "last_checked": "2026-02-21"
+      },
+      "entra_id": {
+        "display_name": "Microsoft Entra ID (Azure AD)",
+        "category": "iam",
+        "description": "Identity and access management",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001", "cjis"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia"],
+          "commercial": ["global"]
+        },
+        "icdev_provider_mapping": "iam",
+        "last_checked": "2026-02-21"
+      },
+      "acr": {
+        "display_name": "Azure Container Registry",
+        "category": "registry",
+        "description": "Container image registry",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia", "usgovarizona"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "registry",
+        "last_checked": "2026-02-21"
+      },
+      "azure_db_postgresql": {
+        "display_name": "Azure Database for PostgreSQL",
+        "category": "database",
+        "description": "Managed PostgreSQL database",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["usgovvirginia", "usgovarizona"],
+          "commercial": ["eastus", "westus2", "northeurope"]
+        },
+        "icdev_provider_mapping": "database",
+        "last_checked": "2026-02-21"
+      }
+    },
+    "gcp": {
+      "gke": {
+        "display_name": "Google Kubernetes Engine",
+        "category": "compute",
+        "description": "Managed Kubernetes service",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4", "us-central1"],
+          "commercial": ["us-east1", "us-west1", "europe-west1"]
+        },
+        "icdev_provider_mapping": "compute",
+        "last_checked": "2026-02-21"
+      },
+      "cloud_storage": {
+        "display_name": "Google Cloud Storage",
+        "category": "storage",
+        "description": "Object storage service",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4", "us-central1"],
+          "commercial": ["us-east1", "us-west1", "europe-west1"]
+        },
+        "icdev_provider_mapping": "storage",
+        "last_checked": "2026-02-21"
+      },
+      "secret_manager": {
+        "display_name": "Google Secret Manager",
+        "category": "secrets",
+        "description": "Secrets management service",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4"],
+          "commercial": ["us-east1", "us-west1", "europe-west1"]
+        },
+        "icdev_provider_mapping": "secrets",
+        "last_checked": "2026-02-21"
+      },
+      "vertex_ai": {
+        "display_name": "Vertex AI",
+        "category": "ai_ml",
+        "description": "Managed ML platform with Gemini model inference",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4"],
+          "commercial": ["us-east1", "us-central1", "europe-west1"]
+        },
+        "icdev_provider_mapping": "ai_ml",
+        "last_checked": "2026-02-21"
+      },
+      "cloud_monitoring": {
+        "display_name": "Google Cloud Monitoring",
+        "category": "monitoring",
+        "description": "Monitoring, logging, and alerting (Stackdriver)",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4"],
+          "commercial": ["global"]
+        },
+        "icdev_provider_mapping": "monitoring",
+        "last_checked": "2026-02-21"
+      },
+      "cloud_iam": {
+        "display_name": "Google Cloud IAM",
+        "category": "iam",
+        "description": "Identity and access management",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4"],
+          "commercial": ["global"]
+        },
+        "icdev_provider_mapping": "iam",
+        "last_checked": "2026-02-21"
+      },
+      "artifact_registry": {
+        "display_name": "Google Artifact Registry",
+        "category": "registry",
+        "description": "Container and package registry",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-east4"],
+          "commercial": ["us-east1", "us-west1", "europe-west1"]
+        },
+        "icdev_provider_mapping": "registry",
+        "last_checked": "2026-02-21"
+      },
+      "cloud_kms": {
+        "display_name": "Google Cloud KMS",
+        "category": "kms",
+        "description": "Key management with HSM support",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "assured_workloads": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "fips_level": "L3",
+        "regions": {
+          "government": ["us-east4"],
+          "commercial": ["us-east1", "us-west1", "europe-west1"]
+        },
+        "icdev_provider_mapping": "kms",
+        "last_checked": "2026-02-21"
+      }
+    },
+    "oci": {
+      "oke": {
+        "display_name": "Oracle Container Engine for Kubernetes",
+        "category": "compute",
+        "description": "Managed Kubernetes service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-langley-1", "us-luke-1", "us-gov-ashburn-1"],
+          "commercial": ["us-ashburn-1", "us-phoenix-1", "eu-frankfurt-1"]
+        },
+        "icdev_provider_mapping": "compute",
+        "last_checked": "2026-02-21"
+      },
+      "object_storage": {
+        "display_name": "OCI Object Storage",
+        "category": "storage",
+        "description": "Object storage service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-langley-1", "us-luke-1"],
+          "commercial": ["us-ashburn-1", "us-phoenix-1", "eu-frankfurt-1"]
+        },
+        "icdev_provider_mapping": "storage",
+        "last_checked": "2026-02-21"
+      },
+      "vault": {
+        "display_name": "OCI Vault",
+        "category": "secrets",
+        "description": "Secrets and key management with HSM",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "fips_level": "L3",
+        "regions": {
+          "government": ["us-langley-1", "us-luke-1"],
+          "commercial": ["us-ashburn-1", "us-phoenix-1"]
+        },
+        "icdev_provider_mapping": "secrets",
+        "last_checked": "2026-02-21"
+      },
+      "oci_genai": {
+        "display_name": "OCI Generative AI",
+        "category": "ai_ml",
+        "description": "Managed generative AI service (Cohere, Meta)",
+        "govcloud_available": false,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["soc2", "iso_27001"],
+        "fips_validated": false,
+        "regions": {
+          "government": [],
+          "commercial": ["us-chicago-1", "eu-frankfurt-1"]
+        },
+        "icdev_provider_mapping": "ai_ml",
+        "last_checked": "2026-02-21"
+      },
+      "logging_analytics": {
+        "display_name": "OCI Logging Analytics",
+        "category": "monitoring",
+        "description": "Log management and analytics",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-langley-1"],
+          "commercial": ["us-ashburn-1", "us-phoenix-1"]
+        },
+        "icdev_provider_mapping": "monitoring",
+        "last_checked": "2026-02-21"
+      },
+      "oci_iam": {
+        "display_name": "OCI IAM with Identity Domains",
+        "category": "iam",
+        "description": "Identity and access management",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-langley-1", "us-luke-1"],
+          "commercial": ["us-ashburn-1", "us-phoenix-1"]
+        },
+        "icdev_provider_mapping": "iam",
+        "last_checked": "2026-02-21"
+      },
+      "ocir": {
+        "display_name": "OCI Container Registry",
+        "category": "registry",
+        "description": "Container image registry",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-langley-1", "us-luke-1"],
+          "commercial": ["us-ashburn-1", "us-phoenix-1"]
+        },
+        "icdev_provider_mapping": "registry",
+        "last_checked": "2026-02-21"
+      }
+    },
+    "ibm": {
+      "iks": {
+        "display_name": "IBM Cloud Kubernetes Service",
+        "category": "compute",
+        "description": "Managed Kubernetes service",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de", "jp-tok"]
+        },
+        "icdev_provider_mapping": "compute",
+        "last_checked": "2026-02-21"
+      },
+      "openshift": {
+        "display_name": "Red Hat OpenShift on IBM Cloud",
+        "category": "compute",
+        "description": "Managed OpenShift Kubernetes platform",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de"]
+        },
+        "icdev_provider_mapping": "compute",
+        "last_checked": "2026-02-21"
+      },
+      "cos": {
+        "display_name": "IBM Cloud Object Storage",
+        "category": "storage",
+        "description": "S3-compatible object storage",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de", "jp-tok"]
+        },
+        "icdev_provider_mapping": "storage",
+        "last_checked": "2026-02-21"
+      },
+      "secrets_manager": {
+        "display_name": "IBM Cloud Secrets Manager",
+        "category": "secrets",
+        "description": "Centralized secrets management",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de"]
+        },
+        "icdev_provider_mapping": "secrets",
+        "last_checked": "2026-02-21"
+      },
+      "key_protect": {
+        "display_name": "IBM Key Protect",
+        "category": "kms",
+        "description": "Key management with FIPS 140-2 L3 HSM",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "fips_level": "L3",
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de"]
+        },
+        "icdev_provider_mapping": "kms",
+        "last_checked": "2026-02-21"
+      },
+      "hpcs": {
+        "display_name": "IBM Hyper Protect Crypto Services",
+        "category": "kms",
+        "description": "FIPS 140-2 Level 4 dedicated HSM",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "fips_level": "L4",
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de"]
+        },
+        "icdev_provider_mapping": "kms",
+        "last_checked": "2026-02-21"
+      },
+      "watsonx": {
+        "display_name": "IBM watsonx.ai",
+        "category": "ai_ml",
+        "description": "Managed AI platform (Granite, Llama models)",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south"],
+          "commercial": ["us-south", "eu-de", "jp-tok"]
+        },
+        "icdev_provider_mapping": "ai_ml",
+        "notes": "FedRAMP via watsonx on AWS GovCloud (D238)",
+        "last_checked": "2026-02-21"
+      },
+      "cloud_monitoring": {
+        "display_name": "IBM Cloud Monitoring",
+        "category": "monitoring",
+        "description": "Monitoring powered by Sysdig",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["us-south", "us-east", "eu-de"]
+        },
+        "icdev_provider_mapping": "monitoring",
+        "last_checked": "2026-02-21"
+      },
+      "iam": {
+        "display_name": "IBM Cloud IAM",
+        "category": "iam",
+        "description": "Identity and access management",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south", "us-east"],
+          "commercial": ["global"]
+        },
+        "icdev_provider_mapping": "iam",
+        "last_checked": "2026-02-21"
+      },
+      "container_registry": {
+        "display_name": "IBM Cloud Container Registry",
+        "category": "registry",
+        "description": "Container image registry with Vulnerability Advisor",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south"],
+          "commercial": ["us-south", "eu-de", "ap-south"]
+        },
+        "icdev_provider_mapping": "registry",
+        "last_checked": "2026-02-21"
+      },
+      "qradar": {
+        "display_name": "IBM QRadar SIEM",
+        "category": "security",
+        "description": "Security information and event management",
+        "govcloud_available": true,
+        "commercial_available": true,
+        "status": "active",
+        "compliance_programs": ["fedramp_high", "hipaa", "pci_dss", "soc2", "iso_27001"],
+        "fips_validated": true,
+        "regions": {
+          "government": ["us-south"],
+          "commercial": ["us-south", "eu-de"]
+        },
+        "icdev_provider_mapping": "monitoring",
+        "last_checked": "2026-02-21"
+      }
+    }
+  }
+}

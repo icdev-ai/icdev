@@ -101,6 +101,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             r'isinstance\s*\(', r'validate\s*\(', r'schema\.\w+\s*\(',
             r'_validate_fields\s*\(', r'if\s+not\s+data',
             r"if\s+[\"']\w+[\"']\s+not\s+in\s+data", r'pydantic',
+            r'request\.get_json', r'request\.json', r'request\.form',
+            r'return.*40[0-9]', r'abort\(4',
         ],
         "java": [r'@Valid', r'@NotNull', r'@NotBlank', r'Validator'],
         "go": [r'validate\.Struct', r'binding:"required"'],
@@ -108,14 +110,25 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "rust": [r'#\[validate\]', r'serde::Deserialize'],
         "csharp": [r'\[Required\]', r'ModelState\.IsValid'],
     },
+    "file_level_auth_patterns": {
+        "python": [
+            r'before_request', r'register_dashboard_auth',
+            r'session\[.user_id.\]', r'session\.get\(.user_id.\)',
+        ],
+        "typescript": [r'app\.use\(.*auth', r'app\.use\(.*passport'],
+        "java": [r'WebSecurityConfigurerAdapter', r'SecurityFilterChain'],
+        "go": [r'Use\(.*authMiddleware'],
+        "csharp": [r'AddAuthentication', r'UseAuthorization'],
+    },
     "write_methods": ["POST", "PUT", "PATCH"],
     "exempt_patterns": [
         "/health", "/ready", "/metrics", "/ping",
-        "/favicon", "/static", "/login", "/api_events",
+        "/favicon", "/static", "/login", "/logout",
+        "/register", "/api_events",
     ],
     "severity": {
         "missing_auth": "critical",
-        "missing_validation_on_write": "high",
+        "missing_validation_on_write": "medium",
         "missing_idor_check": "medium",
     },
     "scan": {
@@ -144,10 +157,12 @@ class EndpointSecurityScanner:
         self._config: Dict[str, Any] = dict(DEFAULT_CONFIG)
         self._compiled_routes: Dict[str, List[re.Pattern]] = {}
         self._compiled_auth: Dict[str, List[re.Pattern]] = {}
+        self._compiled_file_auth: Dict[str, List[re.Pattern]] = {}
         self._compiled_validation: Dict[str, List[re.Pattern]] = {}
         self._skip_dirs: set = set()
         self._exclude_globs: List[str] = []
         self._exempt_patterns: List[str] = []
+        self._auth_inherited_dirs: List[str] = []
         self._context_window: int = 20
         self._max_file_size: int = 500 * 1024  # bytes
 
@@ -168,7 +183,9 @@ class EndpointSecurityScanner:
             with open(path, encoding="utf-8") as fh:
                 data = yaml.safe_load(fh) or {}
 
-            for key in ("route_patterns", "auth_patterns", "validation_patterns",
+            for key in ("route_patterns", "auth_patterns", "file_level_auth_patterns",
+                        "validation_patterns", "auth_inherited_dirs",
+                        "exclude_file_patterns_extra",
                         "write_methods", "exempt_patterns", "severity", "scan"):
                 if key in data:
                     self._config[key] = data[key]
@@ -179,15 +196,23 @@ class EndpointSecurityScanner:
         """Pre-compile all regex patterns."""
         self._compiled_routes = self._compile_group(self._config["route_patterns"])
         self._compiled_auth = self._compile_group(self._config["auth_patterns"])
+        self._compiled_file_auth = self._compile_group(
+            self._config.get("file_level_auth_patterns", {})
+        )
         self._compiled_validation = self._compile_group(self._config["validation_patterns"])
 
         scan_cfg = self._config.get("scan", {})
         self._skip_dirs = set(scan_cfg.get("skip_dirs", []))
         self._exclude_globs = scan_cfg.get("exclude_file_patterns", [])
+        self._exclude_globs.extend(self._config.get("exclude_file_patterns_extra", []))
         self._context_window = scan_cfg.get("context_window_lines", 20)
         max_kb = scan_cfg.get("max_file_size_kb", 500)
         self._max_file_size = max_kb * 1024
         self._exempt_patterns = self._config.get("exempt_patterns", [])
+        self._auth_inherited_dirs = [
+            d.replace("/", "\\").replace("\\", "/")
+            for d in self._config.get("auth_inherited_dirs", [])
+        ]
 
     @staticmethod
     def _compile_group(group: Dict[str, List[str]]) -> Dict[str, List[re.Pattern]]:
@@ -262,6 +287,23 @@ class EndpointSecurityScanner:
         # Find all route definitions
         routes = self._find_routes(lines, route_patterns, language)
 
+        # Check file-level auth patterns (middleware-based auth like
+        # Flask before_request).  If found anywhere in file, all routes
+        # are considered authenticated — skip per-route auth checks.
+        file_auth_patterns = self._compiled_file_auth.get(language, [])
+        has_file_level_auth = any(
+            p.search(content) for p in file_auth_patterns
+        )
+
+        # Check if file is in an auth-inherited directory (e.g., Flask
+        # blueprints registered on an app with before_request auth).
+        source_normalized = source.replace("\\", "/")
+        if not has_file_level_auth and self._auth_inherited_dirs:
+            for auth_dir in self._auth_inherited_dirs:
+                if auth_dir in source_normalized:
+                    has_file_level_auth = True
+                    break
+
         for route_info in routes:
             line_num = route_info["line"]
             route_path = route_info.get("path", "")
@@ -277,8 +319,10 @@ class EndpointSecurityScanner:
             context_lines = lines[ctx_start:ctx_end]
             context_text = "\n".join(context_lines)
 
-            # Check 1: Missing auth
-            has_auth = any(p.search(context_text) for p in auth_patterns)
+            # Check 1: Missing auth (skip if file-level auth detected)
+            has_auth = has_file_level_auth or any(
+                p.search(context_text) for p in auth_patterns
+            )
             if not has_auth:
                 findings.append({
                     "name": "api_route_without_auth_decorator",
@@ -513,11 +557,14 @@ class EndpointSecurityScanner:
 
     def _is_excluded(self, file_path: Path) -> bool:
         """Check if file matches exclusion patterns (test files)."""
+        import fnmatch
         name = file_path.name
+        # Also build parent/name for patterns like "playground/app.py"
+        rel_parts = "/".join(file_path.parts[-2:]) if len(file_path.parts) >= 2 else name
         for glob_pat in self._exclude_globs:
-            # Simple glob matching using fnmatch
-            import fnmatch
             if fnmatch.fnmatch(name, glob_pat):
+                return True
+            if "/" in glob_pat and fnmatch.fnmatch(rel_parts, glob_pat):
                 return True
         return False
 

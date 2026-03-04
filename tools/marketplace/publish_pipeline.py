@@ -84,6 +84,7 @@ ASSET_TYPE_FILES = {
     "context": "context.json",
     "args": "config.yaml",
     "compliance": "controls.json",
+    "lora_adapter": "adapter_config.json",
 }
 
 # Alternative names accepted for each type
@@ -94,6 +95,7 @@ ASSET_TYPE_ALTERNATIVES = {
     "context": ["context.json", "context.yaml", "reference.json"],
     "args": ["config.yaml", "config.json", "settings.yaml"],
     "compliance": ["controls.json", "overlay.json", "framework.json"],
+    "lora_adapter": ["adapter_config.json", "training_metadata.json"],
 }
 
 

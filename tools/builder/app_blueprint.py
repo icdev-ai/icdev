@@ -724,6 +724,10 @@ def resolve_capabilities(
                 overall_score >= 5
                 or user_decisions.get("code_intelligence_enabled", False)
             )
+        elif cap_name == "rag":
+            enabled = user_decisions.get("rag_enabled", False)
+        elif cap_name == "fine_tuning":
+            enabled = user_decisions.get("fine_tuning_enabled", False)
         else:
             # Unknown capabilities default to off unless always_on
             enabled = False
@@ -743,6 +747,10 @@ def resolve_capabilities(
     # Parent-only capabilities — NEVER enabled in child apps regardless of overrides
     capabilities["modernization"] = False
     capabilities["govcon"] = False  # D-CHILD-3: GovProposal/CPMP/GovCon parent-only
+
+    # Phase 61: Orchestration always enabled (prompt chains, dispatcher mode,
+    # session purpose — core GOTCHA separation of concerns)
+    capabilities["orchestration"] = True
 
     logger.info("Resolved capabilities: %s",
                 {k: v for k, v in capabilities.items() if v})
@@ -971,6 +979,10 @@ def _resolve_goals_for_capabilities(
         "ai_accountability": "ai_security",
         "owasp_agentic_security": "ai_security",
         "code_intelligence": "code_intelligence",
+        # Phase 64: RAG subsystem
+        "rag_subsystem": "rag",
+        # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ATLAS critique)
+        "multi_agent_orchestration": None,  # Always include when available
     }
 
     goals: List[str] = []
@@ -1171,9 +1183,17 @@ def generate_blueprint(
         "fitness_step": False,
         "model_phase": capabilities.get("mbse", False),
         "phases": ["architect", "trace", "link", "assemble", "stress_test"],
+        # ATLAS-CR: auto-enable adversarial critique for IL5+ child apps
+        "critique_enabled": impact_level in ("IL5", "IL6"),
+        "critique_rag_augmented": (
+            impact_level in ("IL5", "IL6")
+            and capabilities.get("rag", False)
+        ),
     }
     if atlas_config["model_phase"]:
         atlas_config["phases"].insert(0, "model")
+    if atlas_config["critique_enabled"]:
+        atlas_config["phases"].append("critique")
 
     # Step 10: Grandchild prevention — prevents recursive child app generation
     grandchild_prevention = {

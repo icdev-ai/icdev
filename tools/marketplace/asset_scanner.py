@@ -71,12 +71,13 @@ ALL_GATES = [
     "cui_marking_validation", "sbom_generation",
     "supply_chain_provenance", "digital_signature",
     "prompt_injection_scan", "behavioral_sandbox",
+    "training_data_provenance",
 ]
 
 BLOCKING_GATES = {
     "sast_scan", "secret_detection", "dependency_audit",
     "cui_marking_validation", "sbom_generation", "digital_signature",
-    "prompt_injection_scan",
+    "prompt_injection_scan", "training_data_provenance",
 }
 
 # Secret patterns to scan for (air-gapped, no external tools required)
@@ -748,6 +749,129 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
 
 
 # ---------------------------------------------------------------------------
+# Gate 10: Training Data Provenance (D-FT-18 — Phase 64 Extension)
+# ---------------------------------------------------------------------------
+
+def scan_training_data_provenance(asset_path, asset_id, version_id, db_path=None):
+    """Gate 10: Training data provenance verification for lora_adapter assets.
+
+    Checks that LoRA adapter marketplace assets include required provenance
+    artifacts: adapter_config.json, training_metadata.json with dataset lineage,
+    and a PROV-AGENT provenance chain linking source documents → RAG chunks →
+    training pairs → dataset → training job → LoRA adapter (D-FT-22).
+
+    Blocking gate — lora_adapter assets MUST have verifiable training data
+    provenance before marketplace publication.
+    """
+    asset_path = Path(asset_path)
+    findings = []
+    required_files = {
+        "adapter_config.json": False,
+        "training_metadata.json": False,
+    }
+
+    # Check for required files
+    for fname in required_files:
+        candidates = list(asset_path.rglob(fname))
+        if candidates:
+            required_files[fname] = True
+
+    # Check adapter_config.json
+    if not required_files["adapter_config.json"]:
+        findings.append({
+            "severity": "critical",
+            "description": "Missing adapter_config.json — required for LoRA adapter provenance",
+        })
+    else:
+        # Validate adapter_config.json has required fields
+        config_path = list(asset_path.rglob("adapter_config.json"))[0]
+        try:
+            config_data = json.loads(config_path.read_text(encoding="utf-8"))
+            for field in ("base_model_name_or_path", "r", "lora_alpha", "target_modules"):
+                if field not in config_data:
+                    findings.append({
+                        "severity": "high",
+                        "description": f"adapter_config.json missing required field: {field}",
+                    })
+        except (json.JSONDecodeError, Exception) as exc:
+            findings.append({
+                "severity": "critical",
+                "description": f"adapter_config.json is not valid JSON: {exc}",
+            })
+
+    # Check training_metadata.json
+    if not required_files["training_metadata.json"]:
+        findings.append({
+            "severity": "critical",
+            "description": "Missing training_metadata.json — required for training data provenance chain",
+        })
+    else:
+        meta_path = list(asset_path.rglob("training_metadata.json"))[0]
+        try:
+            meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
+            # Verify provenance chain fields (D-FT-22)
+            for field in ("dataset_id", "training_job_id", "base_model"):
+                if field not in meta_data:
+                    findings.append({
+                        "severity": "high",
+                        "description": f"training_metadata.json missing provenance field: {field}",
+                    })
+            # Verify dataset lineage
+            if "dataset_lineage" not in meta_data and "provenance" not in meta_data:
+                findings.append({
+                    "severity": "high",
+                    "description": "training_metadata.json missing dataset_lineage or provenance section",
+                })
+            # Verify classification marking
+            if "classification" not in meta_data:
+                findings.append({
+                    "severity": "high",
+                    "description": "training_metadata.json missing classification marking",
+                })
+        except (json.JSONDecodeError, Exception) as exc:
+            findings.append({
+                "severity": "critical",
+                "description": f"training_metadata.json is not valid JSON: {exc}",
+            })
+
+    # Check for model card (recommended but not blocking)
+    model_card_found = bool(list(asset_path.rglob("model_card.md")))
+    if not model_card_found:
+        findings.append({
+            "severity": "low",
+            "description": "No model_card.md found — recommended for LoRA adapter assets",
+        })
+
+    critical = sum(1 for f in findings if f["severity"] == "critical")
+    high = sum(1 for f in findings if f["severity"] == "high")
+    medium = sum(1 for f in findings if f["severity"] == "medium")
+    low = sum(1 for f in findings if f["severity"] == "low")
+    total = len(findings)
+
+    status = "fail" if critical > 0 or high > 0 else ("warning" if total > 0 else "pass")
+
+    scan_id = _record_scan(
+        asset_id, version_id, "training_data_provenance", status,
+        findings_count=total,
+        critical=critical, high=high, medium=medium, low=low,
+        details={
+            "required_files": required_files,
+            "findings": findings[:15],
+            "model_card_present": model_card_found,
+        },
+        db_path=db_path,
+    )
+    return scan_id, {
+        "status": status,
+        "total_findings": total,
+        "critical": critical,
+        "high": high,
+        "medium": medium,
+        "low": low,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Full scan orchestrator
 # ---------------------------------------------------------------------------
 
@@ -773,6 +897,7 @@ def run_full_scan(asset_id, version_id, asset_path, gates=None,
         "digital_signature": lambda: scan_signature(asset_path, asset_id, version_id, db_path),
         "prompt_injection_scan": lambda: scan_prompt_injection(asset_path, asset_id, version_id, db_path),
         "behavioral_sandbox": lambda: scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path),
+        "training_data_provenance": lambda: scan_training_data_provenance(asset_path, asset_id, version_id, db_path),
     }
 
     for gate in gates:

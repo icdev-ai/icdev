@@ -2,6 +2,9 @@
 .env
 .env.local
 
+# Claude Code local settings (may contain credentials in allow rules)
+.claude/settings.local.json
+
 # Databases (regeneratable)
 data/*.db
 data/tenants/*.db

@@ -61,6 +61,11 @@ from tools.dashboard.api.code_quality import code_quality_api
 from tools.dashboard.api.fedramp_20x import fedramp_20x_api
 from tools.dashboard.api.evidence import evidence_api
 from tools.dashboard.api.lineage import lineage_api
+try:
+    from tools.dashboard.api.finetune import finetune_api
+    _HAS_FINETUNE_API = True
+except ImportError:
+    _HAS_FINETUNE_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 import os as _os
 _GOVCON_ENABLED = _os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
@@ -740,6 +745,8 @@ def create_app() -> Flask:
     app.register_blueprint(fedramp_20x_api)
     app.register_blueprint(evidence_api)
     app.register_blueprint(lineage_api)
+    if _HAS_FINETUNE_API:
+        app.register_blueprint(finetune_api)
     if _HAS_GOVCON:
         app.register_blueprint(proposals_api)
         app.register_blueprint(govcon_api)
@@ -2094,6 +2101,269 @@ def create_app() -> Flask:
             return jsonify(result)
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
+
+    # ---- Phase 64: RAG Knowledge Search ----
+
+    @app.route("/knowledge-search")
+    def knowledge_search_page():
+        """RAG Knowledge Search — natural language search across all ICDEV knowledge (Phase 64, D-RAG-1)."""
+        status = None
+        recent_searches = []
+        source_types = []
+        try:
+            from tools.rag.ingestion_manager import get_status as rag_get_status
+            from tools.rag.source_registry import SOURCE_REGISTRY
+            status = rag_get_status()
+            source_types = sorted(SOURCE_REGISTRY.keys())
+        except Exception:
+            pass
+        try:
+            conn = _get_db()
+            recent_searches = [dict(r) for r in conn.execute(
+                "SELECT * FROM rag_retrieval_log ORDER BY created_at DESC LIMIT 20"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template(
+            "rag/knowledge_search.html",
+            status=status,
+            recent_searches=recent_searches,
+            source_types=source_types,
+        )
+
+    @app.route("/api/rag/search", methods=["POST"])
+    def api_rag_search():
+        """RAG search API endpoint."""
+        data = flask_request.get_json(silent=True) or {}
+        query = data.get("query", "")
+        if not query:
+            return jsonify({"error": "query is required", "results": []}), 400
+        try:
+            from tools.rag.retriever import RAGRetriever
+            retriever = RAGRetriever()
+            top_k = data.get("top_k", 5)
+            source_types = None
+            if data.get("source_type"):
+                source_types = [data["source_type"]]
+            results = retriever.search(
+                query=query,
+                top_k=top_k,
+                source_types=source_types,
+            )
+            return jsonify({
+                "classification": "CUI // SP-CTI",
+                "query": query,
+                "results_count": len(results),
+                "results": [r.to_dict() for r in results],
+            })
+        except ImportError:
+            return jsonify({"error": "RAG subsystem not available", "results": []}), 503
+        except Exception as e:
+            return jsonify({"error": str(e), "results": []}), 500
+
+    @app.route("/api/rag/status")
+    def api_rag_status():
+        """RAG status API endpoint."""
+        try:
+            from tools.rag.ingestion_manager import get_status as rag_get_status
+            return jsonify(rag_get_status())
+        except ImportError:
+            return jsonify({"error": "RAG subsystem not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ---- Phase 64 Extension: Fine-Tuning Dashboard ----
+
+    @app.route("/finetune")
+    def finetune_overview_page():
+        """Fine-Tuning overview — stats, GPU status, recent jobs, active overrides (D-FT-1 through D-FT-22)."""
+        stats = {"datasets": 0, "total_jobs": 0, "active_jobs": 0, "model_versions": 0,
+                 "promoted_models": 0, "active_overrides": 0, "evaluations": 0}
+        recent_jobs = []
+        active_overrides = []
+        promotions = []
+        try:
+            conn = _get_db()
+            stats["datasets"] = conn.execute("SELECT COUNT(*) FROM ft_datasets").fetchone()[0]
+            stats["total_jobs"] = conn.execute("SELECT COUNT(*) FROM ft_training_jobs").fetchone()[0]
+            stats["active_jobs"] = conn.execute(
+                "SELECT COUNT(*) FROM ft_training_jobs WHERE status IN ('pending','preparing','training','exporting','evaluating')"
+            ).fetchone()[0]
+            stats["model_versions"] = conn.execute("SELECT COUNT(*) FROM ft_model_versions").fetchone()[0]
+            stats["promoted_models"] = conn.execute(
+                "SELECT COUNT(*) FROM ft_model_versions WHERE status = 'promoted'"
+            ).fetchone()[0]
+            stats["active_overrides"] = conn.execute(
+                "SELECT COUNT(*) FROM ft_active_models WHERE deactivated_at IS NULL"
+            ).fetchone()[0]
+            stats["evaluations"] = conn.execute("SELECT COUNT(*) FROM ft_evaluations").fetchone()[0]
+            recent_jobs = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_training_jobs ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()]
+            active_overrides = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_active_models WHERE deactivated_at IS NULL ORDER BY activated_at DESC"
+            ).fetchall()]
+            promotions = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_promotion_log ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("finetune/index.html", stats=stats, recent_jobs=recent_jobs,
+                               active_overrides=active_overrides, promotions=promotions)
+
+    @app.route("/finetune/datasets")
+    def finetune_datasets_page():
+        """Fine-Tuning datasets — versioned training data collections."""
+        datasets = []
+        try:
+            conn = _get_db()
+            datasets = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_datasets ORDER BY updated_at DESC"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("finetune/datasets.html", datasets=datasets)
+
+    @app.route("/finetune/datasets/<dataset_id>")
+    def finetune_dataset_detail_page(dataset_id):
+        """Fine-Tuning dataset detail — examples with labeling controls."""
+        dataset = None
+        examples = []
+        try:
+            conn = _get_db()
+            row = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
+            if row:
+                dataset = dict(row)
+            examples = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                (dataset_id,),
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        if not dataset:
+            return render_template("404.html", message="Dataset not found"), 404
+        return render_template("finetune/dataset_detail.html", dataset=dataset, examples=examples)
+
+    @app.route("/finetune/label")
+    def finetune_label_page():
+        """Fine-Tuning bulk labeling — multi-dimensional scoring, batch approve/reject (D-FT-12)."""
+        datasets = []
+        examples = []
+        selected_dataset_id = flask_request.args.get("dataset_id", "")
+        try:
+            conn = _get_db()
+            datasets = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_datasets ORDER BY updated_at DESC"
+            ).fetchall()]
+            if selected_dataset_id:
+                examples = [dict(r) for r in conn.execute(
+                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                    (selected_dataset_id,),
+                ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("finetune/label.html", datasets=datasets, examples=examples,
+                               selected_dataset_id=selected_dataset_id)
+
+    @app.route("/finetune/jobs")
+    def finetune_jobs_page():
+        """Fine-Tuning training jobs — status tracking, loss curves."""
+        jobs = []
+        try:
+            conn = _get_db()
+            jobs = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_training_jobs ORDER BY created_at DESC"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("finetune/jobs.html", jobs=jobs)
+
+    @app.route("/finetune/jobs/<job_id>")
+    def finetune_job_detail_page(job_id):
+        """Fine-Tuning job detail — loss curve, hyperparams, events."""
+        import json as _json
+        job = None
+        events = []
+        loss_history = []
+        try:
+            conn = _get_db()
+            row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
+            if row:
+                job = dict(row)
+                try:
+                    loss_history = _json.loads(job.get("loss_history", "[]") or "[]")
+                except (ValueError, TypeError):
+                    loss_history = []
+            events = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC",
+                (job_id,),
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        if not job:
+            return render_template("404.html", message="Training job not found"), 404
+        return render_template("finetune/job_detail.html", job=job, events=events, loss_history=loss_history)
+
+    @app.route("/finetune/models")
+    def finetune_models_page():
+        """Fine-Tuning model versions — eval scores, promotion status."""
+        models = []
+        try:
+            conn = _get_db()
+            models = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_model_versions ORDER BY created_at DESC"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("finetune/models.html", models=models)
+
+    @app.route("/finetune/models/<model_id>")
+    def finetune_model_detail_page(model_id):
+        """Fine-Tuning model detail — evaluation history, promotion log."""
+        model = None
+        evaluations = []
+        promotions = []
+        try:
+            conn = _get_db()
+            row = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)).fetchone()
+            if row:
+                model = dict(row)
+            evaluations = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_evaluations WHERE model_version_id = ? ORDER BY evaluated_at DESC",
+                (model_id,),
+            ).fetchall()]
+            promotions = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_promotion_log WHERE model_version_id = ? ORDER BY created_at DESC",
+                (model_id,),
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        if not model:
+            return render_template("404.html", message="Model version not found"), 404
+        return render_template("finetune/model_detail.html", model=model, evaluations=evaluations, promotions=promotions)
+
+    @app.route("/finetune/evaluate")
+    def finetune_evaluate_page():
+        """Fine-Tuning evaluations — BLEU, ROUGE-L, perplexity scoring (D-FT-14, D-FT-15)."""
+        evaluations = []
+        try:
+            conn = _get_db()
+            evaluations = [dict(r) for r in conn.execute(
+                "SELECT * FROM ft_evaluations ORDER BY evaluated_at DESC"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("finetune/evaluate.html", evaluations=evaluations)
 
     @app.errorhandler(401)
     def unauthorized(e):

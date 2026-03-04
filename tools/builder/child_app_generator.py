@@ -171,6 +171,10 @@ CONDITIONAL_DIRS = {
         "tools/observability/provenance",
     ],
     "code_intelligence": ["tools/analysis"],
+    # D-RAG-13: RAG subsystem (Phase 64)
+    "rag": ["tools/rag", "context/rag"],
+    # D-FT-19: Fine-tuning subsystem (Phase 64 Extension)
+    "fine_tuning": ["tools/finetune"],
 }
 
 
@@ -1396,6 +1400,14 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
         args_files.append(("args/code_quality_config.yaml", []))
     if capabilities.get("ai_governance"):
         args_files.append(("args/ai_governance_config.yaml", []))
+    # D-RAG-13: RAG config
+    if capabilities.get("rag"):
+        args_files.append(("args/rag_config.yaml", []))
+    # Phase 61: Orchestration config (prompt chains, ATLAS critique)
+    args_files.append(("args/prompt_chains.yaml", []))
+    atlas_config = blueprint.get("atlas_config", {})
+    if atlas_config.get("critique_enabled"):
+        args_files.append(("args/atlas_critique_config.yaml", []))
 
     for rel_path, adaptations in args_files:
         src = icdev_root / rel_path
@@ -1649,6 +1661,101 @@ def list_parent_capabilities() -> list:
     return result.get("methods", [])
 
 
+def query_parent_rag(query: str, top_k: int = 5) -> dict:
+    """Query parent's RAG for cross-engine intelligence (D-RAG-13, D-RAG-14).
+
+    Child apps without local RAG can query the parent's knowledge base for
+    context from Innovation, Creative, and Research engines.
+
+    Args:
+        query: Natural language search query.
+        top_k: Number of top results to return.
+
+    Returns:
+        Dict with search results or error.
+    """
+    import hashlib
+    import sqlite3
+    from pathlib import Path
+
+    # Check local cache first (TTL-based)
+    cache_db = str(Path(__file__).resolve().parent.parent.parent / "data" / "{app_name}.db")
+    try:
+        qhash = hashlib.sha256(query.encode()).hexdigest()
+        conn = sqlite3.connect(cache_db)
+        row = conn.execute(
+            "SELECT results FROM rag_parent_cache WHERE query_hash = ? AND expires_at > datetime('now')",
+            (qhash,)
+        ).fetchone()
+        if row:
+            conn.close()
+            return json.loads(row[0])
+        conn.close()
+    except Exception:
+        qhash = hashlib.sha256(query.encode()).hexdigest()
+
+    # Query parent
+    result = call_parent("rag.search", {{
+        "query": query,
+        "top_k": top_k,
+        "child_id": "{app_name}",
+    }})
+
+    # Cache successful results (1 hour TTL)
+    if "error" not in result and result.get("results"):
+        try:
+            conn = sqlite3.connect(cache_db)
+            conn.execute(
+                "INSERT OR REPLACE INTO rag_parent_cache (query_hash, results, expires_at) VALUES (?, ?, datetime('now', '+1 hour'))",
+                (qhash, json.dumps(result))
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    return result
+
+
+def send_critique_findings(session_id: str, findings: list) -> dict:
+    """Send ATLAS critique findings to parent for federated history.
+
+    Enables cross-child critique learning: findings from one child app
+    are available to parent and sibling apps via critique history queries.
+
+    Args:
+        session_id: Local ATLAS critique session ID.
+        findings: List of critique finding dicts from atlas_critique.py.
+
+    Returns:
+        Dict with acknowledgment or error.
+    """
+    return call_parent("atlas_critique.report_findings", {{
+        "session_id": session_id,
+        "child_id": "{app_name}",
+        "findings": findings,
+    }})
+
+
+def query_critique_history(project_type: str = "", limit: int = 20) -> dict:
+    """Query parent for historical ATLAS critique findings.
+
+    Retrieves critique patterns and common findings from parent and sibling
+    apps to inform local critique sessions.
+
+    Args:
+        project_type: Optional filter by project type.
+        limit: Max results.
+
+    Returns:
+        Dict with critique history or error.
+    """
+    params = {{"child_id": "{app_name}", "limit": limit}}
+    if project_type:
+        params["project_type"] = project_type
+    return call_parent("atlas_critique.get_history", params)
+
+
 if __name__ == "__main__":
     import sys
     if "--health" in sys.argv:
@@ -1833,33 +1940,28 @@ def _copy_license_files(
         files_copied.append("data/license.json")
 
     # D-CHILD-5: AGPL-3.0 license for government deliveries
+    # Copy the full ICDEV LICENSE file to keep child apps identical
     license_type = blueprint.get("license", "AGPL-3.0")
-    if license_type == "AGPL-3.0":
+    parent_license = icdev_root / "LICENSE"
+    child_license = child_root / "LICENSE"
+    if license_type == "AGPL-3.0" and parent_license.exists():
+        import shutil
+        shutil.copy2(str(parent_license), str(child_license))
+        files_copied.append("LICENSE (AGPL-3.0, copied from parent)")
+    elif license_type == "AGPL-3.0":
+        # Fallback: generate if parent LICENSE missing (shouldn't happen)
         agpl_text = (
-            f"GNU AFFERO GENERAL PUBLIC LICENSE\n"
-            f"Version 3, 19 November 2007\n\n"
-            f"Copyright (C) {datetime.now(tz=timezone.utc).year} "
-            f"{blueprint.get('customer_org', 'ICDEV Enterprise Delivery')}\n\n"
+            f"ICDEV — Intelligent Certified Development Platform\n"
+            f"Copyright (C) 2024-{datetime.now(tz=timezone.utc).year} "
+            f"Steven Chuo\n\n"
             f"This program is free software: you can redistribute it and/or modify\n"
             f"it under the terms of the GNU Affero General Public License as\n"
             f"published by the Free Software Foundation, either version 3 of the\n"
             f"License, or (at your option) any later version.\n\n"
-            f"This program is distributed in the hope that it will be useful,\n"
-            f"but WITHOUT ANY WARRANTY; without even the implied warranty of\n"
-            f"MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the\n"
-            f"GNU Affero General Public License for more details.\n\n"
-            f"You should have received a copy of the GNU Affero General Public\n"
-            f"License along with this program. If not, see\n"
-            f"<https://www.gnu.org/licenses/>.\n\n"
-            f"---\n"
-            f"Application: {app_name}\n"
-            f"Generated by: ICDEV Enterprise Delivery (D374)\n"
-            f"License grants free internal use for government operations.\n"
-            f"Network use (SaaS) requires AGPL-3.0 source disclosure.\n"
+            f"For commercial licensing options, see COMMERCIAL.md.\n"
         )
-        lic_path = child_root / "LICENSE"
-        lic_path.write_text(agpl_text, encoding="utf-8")
-        files_copied.append("LICENSE (AGPL-3.0)")
+        child_license.write_text(agpl_text, encoding="utf-8")
+        files_copied.append("LICENSE (AGPL-3.0, generated fallback)")
 
     logger.info(
         "Step 9b: License files copied: %s (demo=%s, license=%s)",

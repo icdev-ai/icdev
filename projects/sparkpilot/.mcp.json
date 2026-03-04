@@ -1,0 +1,148 @@
+{
+  "mcpServers": {
+    "sparkpilot-core-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/core_server.py"
+      ]
+    },
+    "sparkpilot-builder-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/builder_server.py"
+      ]
+    },
+    "sparkpilot-knowledge-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/knowledge_server.py"
+      ]
+    },
+    "sparkpilot-monitor-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/monitor_server.py"
+      ]
+    },
+    "sparkpilot-compliance-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/compliance_server.py"
+      ]
+    },
+    "sparkpilot-security-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/security_server.py"
+      ]
+    },
+    "sparkpilot-requirements-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/requirements_server.py"
+      ]
+    },
+    "sparkpilot-supply-chain-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/supply_chain_server.py"
+      ]
+    },
+    "sparkpilot-simulation-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/simulation_server.py"
+      ]
+    },
+    "sparkpilot-devsecops-server": {
+      "command": "python",
+      "args": [
+        "tools/mcp/devsecops_server.py"
+      ]
+    },
+    "@aws/core-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/core-mcp-server"
+      ]
+    },
+    "@aws/aws-api-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/aws-api-mcp-server"
+      ]
+    },
+    "@aws/cdk-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/cdk-mcp-server"
+      ]
+    },
+    "@aws/terraform-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/terraform-mcp-server"
+      ]
+    },
+    "@aws/cloudformation-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/cloudformation-mcp-server"
+      ]
+    },
+    "@aws/iam-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/iam-mcp-server"
+      ]
+    },
+    "@aws/well-architected-security-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/well-architected-security-mcp-server"
+      ]
+    },
+    "@aws/cloudwatch-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/cloudwatch-mcp-server"
+      ]
+    },
+    "@aws/cloudtrail-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/cloudtrail-mcp-server"
+      ]
+    },
+    "@aws/cost-explorer-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/cost-explorer-mcp-server"
+      ]
+    },
+    "@aws/aws-documentation-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/aws-documentation-mcp-server"
+      ]
+    },
+    "@aws/aws-knowledge-mcp-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@aws/aws-knowledge-mcp-server"
+      ]
+    }
+  }
+}

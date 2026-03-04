@@ -123,6 +123,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - When defining SQL CHECK constraints, derive the values from a Python constant (e.g., `ENTITY_TYPES` tuple) using string formatting — never hardcode the same list in both Python and SQL
 - Entity types must be added to BOTH the Python constant AND the SQL CHECK constraint (via the constant) — the `db_init_generator.py` pattern comment shows how
 - When generating a child application, ALWAYS use the `child_app_generator.py` pipeline and run `gotcha_validator.py --gate` post-generation — GOTCHA compliance is mandatory, manual scaffolding is prohibited
+- Before writing tests for an ICDEV module, ALWAYS run `python tools/testing/api_surface_extractor.py --file <module> --json` to verify field names, function signatures, return types, and mock paths — never guess at API surfaces
 
 *(Add new guardrails as mistakes happen. Keep under 15 items.)*
 
@@ -415,6 +416,22 @@ pytest tests/test_prompt_chain_executor.py -v           # Declarative prompt cha
 pytest tests/test_atlas_critique.py -v                  # ATLAS adversarial critique tests (36 tests)
 pytest tests/test_session_purpose.py -v                 # Session purpose + async result injection + tiered file access tests (27 tests)
 pytest tests/test_research_engine.py -v                 # Industry Research Engine tests (68 tests)
+pytest tests/test_rag_vector_stores.py -v               # RAG vector store backend tests (40 tests)
+pytest tests/test_rag_chunker.py -v                     # RAG adaptive chunking tests (20 tests)
+pytest tests/test_rag_retriever.py -v                   # RAG retrieval pipeline tests (25 tests)
+pytest tests/test_rag_reranker.py -v                    # RAG re-ranking tests (15 tests)
+pytest tests/test_rag_ingestion.py -v                   # RAG ingestion manager tests (25 tests)
+pytest tests/test_rag_retention.py -v                   # RAG tier migration tests (15 tests)
+pytest tests/test_rag_two_tier.py -v                    # RAG two-tier LLM integration tests (10 tests)
+pytest tests/test_rag_child_app.py -v                   # RAG child app integration tests (20 tests)
+pytest tests/test_finetune_provider.py -v         # Fine-tune provider ABC tests (21 tests)
+pytest tests/test_finetune_gpu_detector.py -v      # GPU detection tests (20 tests)
+pytest tests/test_finetune_dataset.py -v           # Dataset management tests (32 tests)
+pytest tests/test_finetune_training_engine.py -v   # Training engine tests (65 tests)
+pytest tests/test_finetune_evaluator.py -v         # Evaluator + promotion tests (67 tests)
+pytest tests/test_finetune_router_integration.py -v # Router integration tests (23 tests)
+pytest tests/test_finetune_cloud_providers.py -v   # Cloud provider tests (74 tests)
+pytest tests/test_api_surface_extractor.py -v            # API surface extractor tests (38 tests)
 
 # .claude directory governance
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
@@ -1026,6 +1043,29 @@ python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json      
 python tools/analysis/runtime_feedback.py --xml .tmp/results.xml --project-id proj-123 --json                 # Parse JUnit XML + store feedback
 python tools/analysis/runtime_feedback.py --health --function analyze_code --json                              # Per-function health score
 
+# Universal RAG Subsystem (Phase 64)
+python tools/rag/ingestion_manager.py --ingest --source innovation_signals --json   # Ingest single source
+python tools/rag/ingestion_manager.py --sweep --json                                 # Batch sweep all sources
+python tools/rag/ingestion_manager.py --status --json                                # Ingestion status
+python tools/rag/ingestion_manager.py --daemon --json                                # Continuous ingestion daemon
+python tools/rag/retriever.py --query "FedRAMP AC-2" --json                          # Search across all knowledge
+python tools/rag/retention_manager.py --migrate --json                               # Hot/warm/cold tier migration
+python tools/rag/retention_manager.py --status --json                                # Retention tier status
+
+# Fine-Tuning (Phase 64 Extension)
+python tools/finetune/dataset_manager.py --create --name "my-dataset" --purpose general --json   # Create dataset
+python tools/finetune/dataset_manager.py --list --json                                            # List datasets
+python tools/finetune/dataset_manager.py --export --dataset-id "ds-xxx" --output data.jsonl --json  # Export JSONL
+python tools/finetune/pair_generator.py --dataset-id "ds-xxx" --source-type rag --json            # Generate Q&A pairs from RAG
+python tools/finetune/training_engine.py --dataset-id "ds-xxx" --json                             # Train local (Unsloth)
+python tools/finetune/training_engine.py --dataset-id "ds-xxx" --provider openai --json           # Train cloud (OpenAI)
+python tools/finetune/evaluator.py --model-version-id "mv-xxx" --json                             # Evaluate model
+python tools/finetune/ab_evaluator.py --model-a "mv-xxx" --model-b "mv-yyy" --json               # A/B comparison
+python tools/finetune/promotion_manager.py --check --model-version-id "mv-xxx" --json             # Check promotion eligibility
+python tools/finetune/promotion_manager.py --promote --model-version-id "mv-xxx" --function code_generation --json  # Promote model
+python tools/finetune/gpu_detector.py --json                                                       # GPU detection
+python tools/finetune/retrain_trigger.py --check --json                                            # Check retrain triggers
+
 # Observability, Traceability & Explainable AI (Phase 46)
 python -c "from tools.observability import get_tracer; print(type(get_tracer()).__name__)"           # Check active tracer
 python tools/observability/shap/agent_shap.py --trace-id "<trace-id>" --iterations 1000 --json       # SHAP analysis on trace
@@ -1124,6 +1164,16 @@ python tools/dashboard/auth.py list-users            # List all dashboard users
 #   /evidence          — Compliance evidence inventory: multi-framework collection, freshness status, collect trigger (Phase 56, D347)
 #   /lineage           — Artifact lineage DAG: SVG visualization joining digital thread, provenance, audit trail, SBOM (Phase 56, D348)
 #   /research          — Industry Research Engine: stat grid, sessions table, pipeline badges, new session panel, dossier viewer with scored challenges (Phase 63)
+#   /knowledge-search  — Knowledge Search (RAG): stat grid (chunks, sources, tiers, backend), NLQ search, source filter, top-K selector, source distribution chart, recent searches (Phase 64)
+#   /finetune           — Fine-tuning overview: stat grid, recent jobs, GPU status, active overrides
+#   /finetune/datasets  — Dataset management: create, list, versions
+#   /finetune/datasets/<id> — Dataset detail: examples table with labeling
+#   /finetune/label     — Bulk labeling: multi-dimensional scoring, batch approve/reject, keyboard shortcuts
+#   /finetune/jobs      — Training jobs: status badges, loss curve SVGs
+#   /finetune/jobs/<id> — Job detail: live loss curve, hyperparams, export
+#   /finetune/models    — Model versions: eval scores, A/B launcher
+#   /finetune/models/<id> — Model detail: promotion history, serving status
+#   /finetune/evaluate  — Evaluations: run evaluation, A/B comparison
 #   /ai-transparency   — AI Transparency dashboard: framework scores, model/system cards, AI inventory, fairness, confabulation, GAO evidence, gap analysis (Phase 48)
 #   /ai-accountability — AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment scheduling, cross-framework audit (Phase 49)
 #   /proposals         — Proposal lifecycle tracker: opportunity list, stat grid, new opportunity modal
@@ -1268,7 +1318,7 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 244 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360), CPMP (cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history, cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments, cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations, cpmp_sam_contract_awards, cpmp_cor_access_log — Phase 60, D-CPMP-1 through D-CPMP-10), Phase 61 Orchestration (atlas_critique_sessions, atlas_critique_findings, prompt_chain_executions, dispatcher_mode_overrides, session_purposes — D-DISP-1, D-PC-1, D-ORCH-5), Industry Research Engine (research_verticals, research_sessions, research_signals, research_challenges, research_regulatory_map, research_build_buy, research_dossiers, research_trends, research_capability_map, research_forecasts — Phase 63, D-RES-1 through D-RES-21) |
+| `data/icdev.db` | 257 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360), CPMP (cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history, cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments, cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations, cpmp_sam_contract_awards, cpmp_cor_access_log — Phase 60, D-CPMP-1 through D-CPMP-10), Phase 61 Orchestration (atlas_critique_sessions, atlas_critique_findings, prompt_chain_executions, dispatcher_mode_overrides, session_purposes — D-DISP-1, D-PC-1, D-ORCH-5), Industry Research Engine (research_verticals, research_sessions, research_signals, research_challenges, research_regulatory_map, research_build_buy, research_dossiers, research_trends, research_capability_map, research_forecasts — Phase 63, D-RES-1 through D-RES-21), RAG Subsystem (rag_chunks, rag_ingestion_log, rag_retrieval_log, rag_parent_cache — Phase 64, D-RAG-1 through D-RAG-14), Fine-Tuning (ft_datasets, ft_dataset_examples, ft_training_jobs, ft_training_job_events, ft_model_versions, ft_active_models, ft_evaluations, ft_promotion_log, ft_hyperparam_results — Phase 64 Extension, D-FT-1 through D-FT-22) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1331,6 +1381,9 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 | `args/atlas_critique_config.yaml` | ATLAS adversarial critique (Phase 61): 3 critics (security, compliance, knowledge) with focus areas and prompt context, consensus rules (GO: 0 critical + 0 high, CONDITIONAL: 0 critical, NOGO: any critical), revision prompt template, enabled toggle |
 | `args/file_access_tiers.yaml` | Tiered file access control (Phase 61, D-ORCH-8): 3 tiers — zero_access (secrets, .env, .pem, .tfstate), read_only (compliance catalogs, lockfiles, build outputs), no_delete (CLAUDE.md, goals/, .git/, Dockerfiles). Glob-style patterns with ! exclusion |
 | `args/research_config.yaml` | Industry Research Engine (Phase 63, D-RES-1 through D-RES-21): 9-stage pipeline, 9 source streams (community_forum, review_site, academic_paper, regulatory_body, open_source, saas_commercial, news_blog, patent, video), 6-dimension scoring weights/thresholds, regulatory mapping, capability mapping, build/buy analysis, dossier template, forecast generation (LLM/deterministic, cross-engine, surprise scoring), innovation/creative bridge, trend detection, air-gapped mode, scheduling |
+| `args/rag_config.yaml` | Universal RAG Subsystem (Phase 64, D-RAG-1 through D-RAG-14): vector store backend (auto/sqlite/chromadb/faiss), embedding (768-dim nomic-embed-text, batch_size 20), chunking (short_threshold 500, chunk_size 2000, overlap 10%), retrieval (vector_top_k 50, final_top_k 5, bm25_boost 0.3, time_decay), rerank (qwen3-local, max_preview 400 chars), injection (max 4000 chars, system prompt, function denylist), ingestion (realtime + batch sources, dedup), retention (hot 30d/warm 365d float16/cold archive), provenance (hash-only queries, D282), child app (parent cache TTL 1h) |
+| `args/finetune_config.yaml` | Fine-Tuning (Phase 64 Extension, D-FT-1 through D-FT-22): local engine (Unsloth, base models, quantization, distributed), GPU (min/preferred VRAM, CPU fallback), LoRA (rank/alpha/target_modules/dropout), training (LR, epochs, batch, scheduler), hyperparameter search (grid/random, max trials), dataset (min examples, auto-generate pairs), evaluation (auto-eval, BLEU/ROUGE-L/perplexity, LLM judge), promotion (auto-promote thresholds), retrain (threshold 50, cooldown 24h), cloud (OpenAI/Bedrock/Azure), export (GGUF Q4_K_M, Ollama prefix), marketplace (model card, SBOM, provenance), child app (copy adapters, inherit active models), provenance (PROV-AGENT chain) |
+| `args/security_gates.yaml` | (updated) Added `rag` gate with blocking: rag_injection_without_provenance, rag_cross_tenant_query_detected, rag_content_tracing_in_cui_without_approval; warning: rag_ingestion_stale_over_7_days, rag_retrieval_low_relevance_trend, rag_vector_store_unavailable; thresholds: provenance_required=true, tenant_isolation_required=true, max_ingestion_staleness_days=7 |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -1590,6 +1643,8 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 - **AI Accountability Gate:** CAIO designated for high-impact AI, oversight plan exists, 0 unresolved critical AI incidents, no reassessments overdue >90 days; warn on appeal process not defined, ethics review not conducted, impact assessment missing, fairness gate not passing
 - **AI Governance Gate:** CAIO designated for rights-impacting AI, oversight plan for high-impact AI, impact assessment completed; warn on model card missing, fairness assessment stale, reassessment overdue, AI inventory incomplete
 - **Code Quality Gate:** Avg cyclomatic complexity ≤ 25 (blocking), maintainability score not declining, smell density ≤ 20/KLOC, dead code ≤ 10%
+- **RAG Gate:** Provenance required per retrieval (blocking), cross-tenant query isolation enforced (blocking), content tracing in CUI requires approval (blocking); warn on ingestion staleness >7 days, low relevance trend, vector store unavailable
+- **Fine-Tuning Gate:** CUI boundary violation blocks cloud training (blocking), cloud exceeds classification (blocking), unsigned LoRA for marketplace (blocking), provenance missing (blocking); warn on dataset < 20 examples, eval below baseline, GPU VRAM insufficient, auto-retrain disabled
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -1687,6 +1742,8 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 | CPMP Workflow | `goals/cpmp_workflow.md` | Contract Performance Management Portal: post-award lifecycle management — EVM (ANSI/EIA-748), CPARS prediction (NDAA), subcontractor FAR 52.219-9, CDRL auto-generation, COR portal, SAM.gov awards, portfolio health scoring (Phase 60, D-CPMP-1 through D-CPMP-10) |
 | Orchestration Improvements | `goals/multi_agent_orchestration.md` | Phase 61: Dispatcher-only orchestrator mode (D-DISP-1), declarative prompt chains (D-PC-1/2/3), ATLAS adversarial critique, session purpose (D-ORCH-5), async result injection (D-ORCH-7), tiered file access (D-ORCH-8), real-time orchestration dashboard |
 | Industry Research | `goals/industry_research.md` | Deep industry vertical research: 9-stage pipeline (SCOPE→FORECAST→DOSSIER), 9 source streams (incl. YouTube video), 6-dimension challenge scoring, regulatory mapping, capability coverage, build/buy analysis, cross-engine forecast with surprise predictions, dossier generation, HITL review, child app fitness trigger, cross-engine registration (Phase 63, D-RES-1 through D-RES-21) |
+| RAG Subsystem | `goals/rag_subsystem.md` | Universal RAG: multi-source ingestion (20+ tables), adaptive chunking, vector store ABC (SQLite/ChromaDB/FAISS), two-stage retrieval (vector top-50 → qwen3 re-rank → top-5), auto-inject into two-tier LLM, tiered retention (hot/warm/cold), PROV-AGENT provenance, child app 3-tier RAG (local/parent-federated/hybrid), knowledge search dashboard (Phase 64, D-RAG-1 through D-RAG-14) |
+| Fine-Tuning Extension | `goals/rag_subsystem.md` (Component 7) | QLoRA fine-tuning: dataset management, labeling, training (Unsloth/OpenAI/Bedrock/Azure), GGUF export, BLEU/ROUGE-L/perplexity evaluation, auto-promotion, LLM router override, marketplace LoRA adapter assets (Phase 64 Extension, D-FT-1 through D-FT-22) |
 
 ---
 
@@ -1872,6 +1929,42 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D-CHILD-4:** Full 40+ page dashboard replaces minimal stub in child apps — GovProposal/CPMP/GovCon routes stripped via `_strip_govcon_from_dashboard()`
 - **D-CHILD-5:** AGPL-3.0 default license for government deliveries — dual licensing (AGPL-3.0 for open-source obligations, commercial license available)
 - **D-CHILD-6:** GovProposal/CPMP/GovCon routes feature-flag isolated via `ICDEV_GOVCON_ENABLED` env var — child apps and non-govcon deployments exclude these modules cleanly
+- **D-RAG-1:** VectorStoreProvider ABC with SQLite/ChromaDB/FAISS (D66 pattern). SQLite always available, others graceful ImportError
+- **D-RAG-2:** RAG context injected into system prompt of `_draft_request()`, not user message. Claude reviews draft without raw chunks
+- **D-RAG-3:** Two-stage retrieval: vector top-50 → qwen3 re-rank to top-5. Re-ranking is scanner_function (qwen3 only)
+- **D-RAG-4:** Adaptive chunking: <500 tok whole, >2000 tok overlap. Deterministic, no LLM needed, air-gap safe
+- **D-RAG-5:** Content hash (SHA-256) dedup on ingest. Skips re-embedding unchanged content
+- **D-RAG-6:** Tiered retention: hot(30d)/warm(365d,float16)/cold(archive). Originals always preserved in source tables
+- **D-RAG-7:** Multi-tenant isolation via namespacing. Mirrors D60 SaaS isolation
+- **D-RAG-8:** Full PROV-AGENT provenance chain per retrieval. NIST AU-3 compliant
+- **D-RAG-9:** Real-time via extension hooks (D261) + batch sweep. Hybrid ingestion
+- **D-RAG-10:** Embeddings via existing `get_embedding_provider()` → Ollama nomic-embed-text. No new embedding infra
+- **D-RAG-11:** retrieval_log and ingestion_log append-only (D6). Added to APPEND_ONLY_TABLES
+- **D-RAG-12:** BM25 boost reuses `hybrid_search.py`, time-decay reuses `time_decay.py`. Zero code duplication
+- **D-RAG-13:** Child apps get RAG via capability flag. 3-tier: local-only, parent-federated (A2A), or hybrid
+- **D-RAG-14:** Parent RAG queries from children logged with `agent_id="child:{child_id}"` for audit
+- **D-FT-1:** `FineTuneProvider` ABC (D66 pattern) with 4 implementations: `UnslothLocalProvider`, `OpenAIFineTuneProvider`, `BedrockFineTuneProvider`, `AzureOpenAIFineTuneProvider`. Graceful `ImportError` on missing SDKs
+- **D-FT-2:** Unsloth as sole local QLoRA engine (MIT license, air-gap safe). Subprocess invocation. GGUF export via `save_pretrained_gguf()` with Q4_K_M
+- **D-FT-3:** Training job events append-only (`ft_training_job_events`, `ft_promotion_log`). Job/model tables allow UPDATE for status fields
+- **D-FT-4:** CUI boundary enforcement — cloud fine-tuning blocked if `project.classification > cloud_max_classification`
+- **D-FT-5:** GGUF export via Unsloth with Q4_K_M quantization. Registered with Ollama via `ollama create`. Naming: `{app}-{purpose}-v{version}`
+- **D-FT-6:** Fine-tuned model slots into two-tier via `ft_active_models` table lookup in `router.py`. Additive runtime override — does NOT modify `llm_config.yaml`
+- **D-FT-7:** Multi-version coexistence via Ollama model tags. Only one "active" per function at a time
+- **D-FT-8:** GPU auto-detection: `torch.cuda` → `nvidia-smi` subprocess → CPU fallback. Training requires GPU; serving via Ollama supports CPU
+- **D-FT-9:** Datasets append-only versioned. Content-hashed snapshots (SHA-256)
+- **D-FT-10:** Auto-generate Q&A training pairs from RAG chunks via qwen3 (scanner_function). Pairs require human review
+- **D-FT-11:** Document extraction reuses RAG PDF pipeline (`pdf_provider.py`). Word docs via `python-docx`
+- **D-FT-12:** Dashboard labeling UI: quality/compliance/relevance scores (1-5), batch approve/reject with keyboard shortcuts
+- **D-FT-13:** Hyperparameter search: grid/random over LoRA rank, learning rate, epochs, batch size. Best by eval score
+- **D-FT-14:** Pure Python BLEU/ROUGE-L/perplexity scoring. No external ML libraries required (air-gap safe)
+- **D-FT-15:** A/B evaluation: same test set through two models, paired t-test (stdlib `statistics`)
+- **D-FT-16:** Auto-promotion if BLEU >= 0.30 AND ROUGE-L >= 0.40 AND perplexity improvement >= 10%. All transitions in `ft_promotion_log`
+- **D-FT-17:** Auto-retrain when `new_examples >= threshold` (default 50). Heartbeat daemon check
+- **D-FT-18:** LoRA adapters as marketplace asset type (`lora_adapter`). 10-gate pipeline + training data provenance gate
+- **D-FT-19:** Child apps inherit parent's promoted adapter files. `child_app_generator.py` scaffolds `tools/finetune/` when enabled
+- **D-FT-20:** Cloud providers: OpenAI (`/v1/fine_tuning/jobs`), Bedrock (`create_model_customization_job`), Azure OpenAI (`/fine_tuning/jobs`). Long-running poll
+- **D-FT-21:** Multi-GPU via `accelerate` library prefix to Unsloth subprocess
+- **D-FT-22:** Full PROV-AGENT provenance chain: source document → RAG chunk → training pair → dataset → training job → LoRA adapter → active model
 
 ### Innovation Security Gates
 | Gate | Condition |

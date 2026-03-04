@@ -10,6 +10,7 @@ import copy
 import logging
 import os
 import re
+import sqlite3
 import time
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -379,6 +380,136 @@ class LLMRouter:
             logger.warning("Two-tier: direct invoke failed for %s/%s: %s", model_name, model_id, exc)
             return None
 
+    @staticmethod
+    def _sanitize_rag_chunk(text: str) -> str:
+        """Remove known prompt injection patterns from RAG chunk content.
+
+        SEC: Mitigates indirect prompt injection — attackers could embed
+        instructions in documents that get retrieved and injected into
+        the LLM system prompt. This strips common injection patterns.
+        """
+        import re as _re
+        # Patterns that attempt to override system behavior
+        _injection_patterns = [
+            _re.compile(r"(?i)ignore\s+(all\s+)?previous\s+instructions?"),
+            _re.compile(r"(?i)you\s+are\s+now\s+(?:a|an|in)\s+"),
+            _re.compile(r"(?i)system\s*:\s*"),
+            _re.compile(r"(?i)<<\s*SYS\s*>>"),
+            _re.compile(r"(?i)\[INST\]"),
+            _re.compile(r"(?i)forget\s+(?:all|everything|your)\s+"),
+            _re.compile(r"(?i)new\s+instructions?\s*:"),
+            _re.compile(r"(?i)override\s+(?:previous|all|system)"),
+        ]
+        sanitized = text
+        for pattern in _injection_patterns:
+            sanitized = pattern.sub("[FILTERED]", sanitized)
+        return sanitized
+
+    def _rag_augment(self, request: LLMRequest, function: str) -> LLMRequest:
+        """Prepend RAG context to request system prompt (D-RAG-2, D-RAG-21).
+
+        Graceful import: does nothing if RAG subsystem unavailable.
+        RAG context goes into the system prompt of _draft_request() so
+        qwen3 produces a better draft; Claude reviews the draft without
+        seeing raw chunks.  Maximum token savings.
+
+        D-RAG-21: When citation_enabled=true, chunks are tagged as [SOURCE-N]
+        and a citation instruction is appended from hardprompts/rag_citation.md.
+
+        Args:
+            request: Original LLM request.
+            function: ICDEV function name (checked against denylist).
+
+        Returns:
+            Augmented LLMRequest (or original if RAG unavailable/disabled).
+        """
+        try:
+            from tools.rag.retriever import RAGRetriever
+        except ImportError:
+            return request  # RAG subsystem not installed
+
+        # Check if RAG injection is enabled
+        rag_cfg = self._config.get("rag", {})
+        injection_cfg = rag_cfg.get("injection", {})
+        if not rag_cfg.get("enabled", False) or not injection_cfg.get("enabled", True):
+            return request
+
+        # Check function denylist
+        denylist = injection_cfg.get("function_denylist", [])
+        if function in denylist:
+            return request
+
+        # Extract user query from messages
+        query = ""
+        for msg in (request.messages or []):
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                c = msg.get("content", "")
+                query = c if isinstance(c, str) else str(c)
+                break
+        if not query:
+            return request
+
+        try:
+            retriever = RAGRetriever()
+            top_k = injection_cfg.get("injection_top_k", 5)
+            max_chars = injection_cfg.get("max_injection_chars", 4000)
+            citation_enabled = injection_cfg.get("citation_enabled", True)
+            citation_instruction = injection_cfg.get("citation_instruction", True)
+
+            results = retriever.search(query=query, top_k=top_k)
+            if not results:
+                return request
+
+            # Build context block with optional [SOURCE-N] tags (D-RAG-21)
+            # SEC: Sanitize chunk content to mitigate indirect prompt injection
+            context_parts = []
+            total_chars = 0
+            for i, r in enumerate(results):
+                snippet = r.content[:max_chars - total_chars] if total_chars + len(r.content) > max_chars else r.content
+                # SEC: Strip known prompt injection patterns from retrieved chunks
+                snippet = self._sanitize_rag_chunk(snippet)
+                source_label = f"{r.source_type}"
+                if r.source_id:
+                    source_label += f":{r.source_id}"
+                if citation_enabled:
+                    tag = f"[SOURCE-{i + 1}]"
+                    context_parts.append(f"{tag} ({source_label} | score={r.final_score:.2f})\n{snippet}")
+                else:
+                    context_parts.append(f"[{source_label} | score={r.final_score:.2f}]\n{snippet}")
+                total_chars += len(snippet)
+                if total_chars >= max_chars:
+                    break
+
+            if not context_parts:
+                return request
+
+            context_block = (
+                "\n[RELEVANT CONTEXT — retrieved from ICDEV knowledge base]\n"
+                + "\n---\n".join(context_parts)
+                + "\n[END CONTEXT]\n"
+            )
+
+            # Append citation instruction if enabled (D-RAG-21)
+            citation_block = ""
+            if citation_enabled and citation_instruction:
+                citation_path = Path(__file__).resolve().parent.parent.parent / "hardprompts" / "rag_citation.md"
+                if citation_path.exists():
+                    try:
+                        citation_block = "\n" + citation_path.read_text(encoding="utf-8") + "\n"
+                    except Exception:
+                        pass
+
+            # Prepend to system prompt
+            req = copy.copy(request)
+            req.system_prompt = context_block + citation_block + (request.system_prompt or "")
+            logger.debug("RAG augment: injected %d chunks (%d chars, citations=%s) for %s",
+                         len(context_parts), total_chars, citation_enabled, function)
+            return req
+
+        except Exception as exc:
+            logger.debug("RAG augment skipped for %s: %s", function, exc)
+            return request  # Never fail the main pipeline
+
     def _draft_request(self, request: LLMRequest) -> LLMRequest:
         """Return a copy of request with a compact-output instruction appended.
 
@@ -421,6 +552,78 @@ class LLMRouter:
         )}]
         return req
 
+    # -------------------------------------------------------------------
+    # Fine-tuned model override (D-FT-6)
+    # -------------------------------------------------------------------
+    def _check_finetuned_override(
+        self, function: str, tenant_id: str = "", project_id: str = "",
+    ) -> Optional[str]:
+        """Check if a fine-tuned model is active for this function (D-FT-6).
+
+        Queries ft_active_models for a promoted model version. Returns
+        the Ollama model name if found, else None.
+
+        This is an additive lookup — if no fine-tuned model is active,
+        returns None and caller falls through to default routing.
+        """
+        db_path = BASE_DIR / "data" / "icdev.db"
+        if not db_path.exists():
+            return None
+
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """SELECT ollama_model_name FROM ft_active_models
+                   WHERE function_name = ? AND deactivated_at IS NULL
+                   AND (tenant_id = ? OR tenant_id = '')
+                   AND (project_id = ? OR project_id = '')
+                   ORDER BY id DESC LIMIT 1""",
+                (function, tenant_id, project_id),
+            ).fetchone()
+            conn.close()
+            if row and row["ollama_model_name"]:
+                logger.info(
+                    "Fine-tuned override: %s → %s",
+                    function, row["ollama_model_name"],
+                )
+                return row["ollama_model_name"]
+        except Exception as exc:
+            logger.debug("Fine-tuned override check failed: %s", exc)
+
+        return None
+
+    def _invoke_finetuned_model(
+        self, ollama_model_name: str, request: LLMRequest,
+    ) -> Optional[LLMResponse]:
+        """Invoke a fine-tuned model via the Ollama provider.
+
+        Returns None on failure so caller can fall through to default.
+        """
+        # Find the Ollama provider instance
+        provider = self._get_provider("ollama")
+        if provider is None:
+            # Try to find any ollama-type provider
+            for pname, pcfg in self._config.get("providers", {}).items():
+                if pcfg.get("type") == "ollama":
+                    provider = self._get_provider(pname)
+                    if provider:
+                        break
+        if provider is None:
+            logger.warning("Fine-tuned invoke: no Ollama provider available")
+            return None
+
+        try:
+            # Use the fine-tuned model name directly as model_id
+            model_cfg = {"model_id": ollama_model_name, "provider": "ollama"}
+            return provider.invoke(request, ollama_model_name, model_cfg)
+        except Exception as exc:
+            logger.warning(
+                "Fine-tuned invoke failed for %s: %s",
+                ollama_model_name, exc,
+            )
+            return None
+
     def _maybe_invoke_two_tier(
         self, function: str, request: LLMRequest
     ) -> Optional[LLMResponse]:
@@ -453,20 +656,43 @@ class LLMRouter:
             # Fall through to chain on failure
 
         elif function in workers:
-            # qwen3 drafts, Claude reviews
-            logger.debug("Two-tier: %s → worker (qwen3 draft → Claude review)", function)
-            draft = self._invoke_model_direct(tier1, self._draft_request(request))
+            # D-FT-6: Check if a fine-tuned model overrides tier1 for this function
+            ft_override = self._check_finetuned_override(
+                function,
+                tenant_id=getattr(request, "tenant_id", "") or "",
+                project_id=getattr(request, "project_id", "") or "",
+            )
+
+            # RAG augment: inject relevant context before drafting (D-RAG-2)
+            augmented = self._rag_augment(request, function)
+
+            if ft_override:
+                # Fine-tuned model replaces qwen3 as drafter
+                logger.debug(
+                    "Two-tier: %s → worker (fine-tuned %s draft → Claude review)",
+                    function, ft_override,
+                )
+                draft = self._invoke_finetuned_model(
+                    ft_override, self._draft_request(augmented),
+                )
+            else:
+                # Default: qwen3 drafts
+                logger.debug("Two-tier: %s → worker (qwen3 draft → Claude review)", function)
+                draft = self._invoke_model_direct(tier1, self._draft_request(augmented))
+
             if draft is not None:
                 review_req = self._review_request(request, draft, function)
                 reviewed = self._invoke_model_direct(tier2, review_req)
                 if reviewed is not None:
                     # Store draft on response for audit/observability
                     reviewed.draft_content = draft.content  # type: ignore[attr-defined]
+                    if ft_override:
+                        reviewed.ft_model_used = ft_override  # type: ignore[attr-defined]
                     return reviewed
-                # Claude unavailable — return qwen3 draft as fallback
-                logger.warning("Two-tier: Claude review unavailable for %s, returning qwen3 draft", function)
+                # Claude unavailable — return draft as fallback
+                logger.warning("Two-tier: Claude review unavailable for %s, returning draft", function)
                 return draft
-            # qwen3 unavailable — fall through to chain
+            # Drafter unavailable — fall through to chain
 
         elif function in scanners:
             # qwen3 only, no review

@@ -202,6 +202,18 @@ python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json
 python tools/analysis/runtime_feedback.py --health --function analyze_code --json
 ```
 {% endif %}
+{% if capabilities.get("rag", False) %}
+
+### RAG Knowledge Search Commands
+```bash
+python tools/rag/ingestion_manager.py --ingest --source innovation_signals --json  # Ingest source
+python tools/rag/ingestion_manager.py --sweep --json                               # Batch ingest all sources
+python tools/rag/ingestion_manager.py --status --json                              # Ingestion status
+python tools/rag/retriever.py --query "search query" --json                        # Retrieve with re-ranking
+python tools/rag/retention_manager.py --status --json                              # Tier retention status
+python tools/rag/retention_manager.py --migrate --json                             # Run tier migration
+```
+{% endif %}
 {% if capabilities.get("mbse", False) %}
 
 ### MBSE Commands
@@ -417,6 +429,18 @@ Distributed tracing (OTel+SQLite), W3C PROV provenance, AgentSHAP tool attributi
 - Attribution: `agent_shap.py` (Monte Carlo Shapley values)
 - XAI assessment: `xai_assessor.py` (10 compliance checks)
 {% endif %}
+{% if capabilities.get("rag", False) %}
+
+### RAG Knowledge Search (Phase 64)
+
+Local RAG subsystem for auto-retrieving relevant context before LLM calls. Indexes all data into a unified vector store, enables natural language search across all knowledge.
+
+- Ingestion: `ingestion_manager.py` (real-time hooks + batch sweep)
+- Retrieval: `retriever.py` (vector top-50 → BM25 boost → qwen3 re-rank → top-5)
+- Retention: `retention_manager.py` (hot/warm/cold tier migration)
+- Vector stores: SQLite (default), ChromaDB, FAISS (configurable)
+{% if parent_callback.get("enabled", False) %}- Parent RAG: `query_parent_rag()` in A2A callback for cross-engine intelligence
+{% endif %}{% endif %}
 {% if capabilities.get("code_intelligence", False) %}
 
 ### Code Intelligence
@@ -436,6 +460,25 @@ Build process follows the ATLAS methodology:
 {% endif %}
 {% for phase in atlas_phases %}{{ loop.index }}. **{{ phase | capitalize }}** -- {{ atlas_phase_descriptions.get(phase, phase) }}
 {% endfor %}
+{% if atlas_config.get("critique_enabled", False) %}
+**ATLAS-CR (Adversarial Critique):** After stress-test, security/compliance/knowledge critics review the output.  Consensus: GO (0 critical, 0 high), CONDITIONAL (0 critical), NOGO (any critical).
+{% if atlas_config.get("critique_rag_augmented", False) %}- RAG-augmented: Critics receive relevant knowledge context from RAG retrieval before reviewing.
+{% endif %}{% endif %}
+
+### Orchestration
+
+- Prompt chains: Declarative YAML multi-step LLM reasoning (plan_critique_refine, scout_analyze_recommend)
+- Dispatcher mode: Orchestrator restricted to delegation tools only (GOTCHA separation of concerns)
+- Session purpose: Declared intent per session for NIST AU-3 audit traceability
+{% if atlas_config.get("critique_enabled", False) %}- ATLAS critique: 3 critics (security, compliance, knowledge) with GO/CONDITIONAL/NOGO consensus
+{% endif %}
+```bash
+python tools/agent/prompt_chain_executor.py --list --json
+python tools/agent/prompt_chain_executor.py --chain plan_critique_refine --input "text" --project-id "proj-123" --json
+python tools/agent/dispatcher_mode.py --status --project-id "proj-123" --json
+python tools/agent/session_purpose.py --declare "task description" --project-id "proj-123" --json
+{% if atlas_config.get("critique_enabled", False) %}python tools/agent/atlas_critique.py --project-id "proj-123" --phase-output "text" --json
+{% endif %}```
 {% if capabilities.get("testing", False) %}
 
 ### Testing Framework
@@ -540,6 +583,7 @@ ATLAS_PHASE_DESCRIPTIONS: Dict[str, str] = {
     "link": "Wire components together, dependency injection, A2A registration",
     "assemble": "Build, test (TDD RED->GREEN->REFACTOR), integrate",
     "stress_test": "Load testing, security scanning, compliance gate checks",
+    "critique": "Adversarial review by security, compliance, and knowledge critics (ATLAS-CR)",
 }
 
 
@@ -652,6 +696,14 @@ GOAL_METADATA: Dict[str, Dict[str, str]] = {
     "code_intelligence": {
         "name": "Code Intelligence",
         "purpose": "AST metrics, smell detection, maintainability scoring",
+    },
+    "rag_subsystem": {
+        "name": "RAG Subsystem",
+        "purpose": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
+    },
+    "multi_agent_orchestration": {
+        "name": "Multi-Agent Orchestration",
+        "purpose": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
     },
 }
 

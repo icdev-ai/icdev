@@ -301,6 +301,7 @@
 | Diagram Validator | tools/compliance/diagram_validator.py | Compliance diagram validation (SSP, network zone, ATO boundary) | --image, --type, --expected-components, --expected-zones | Pass/fail per check |
 | Production Audit | tools/testing/production_audit.py | 30-check pre-production readiness audit across 6 categories (platform, security, compliance, integration, performance, documentation) | --json, --human, --stream, --gate, --category | AuditReport JSON + exit code |
 | Production Remediate | tools/testing/production_remediate.py | Auto-fix audit blockers using 3-tier confidence model (auto-fix >= 0.7, suggest 0.3-0.7, escalate < 0.3) | --auto, --dry-run, --check-id, --category, --skip-audit, --json, --human, --stream | RemediationReport JSON + exit code |
+| API Surface Extractor | tools/testing/api_surface_extractor.py | AST-based extraction of public API surface (functions, classes, dataclass fields, dict constants, imports, mock targets) — run BEFORE writing tests to prevent field name, return type, and mock path errors (D-API-1) | --file, --dir, --json, --human, --mock-targets, --include-private | API surface JSON or markdown |
 | Playwright Config | playwright.config.ts | Playwright test runner config (Chromium/Firefox/WebKit, video, screenshots) | — | — |
 | E2E Test: Dashboard | tests/e2e/dashboard_health.spec.ts | Native Playwright test: dashboard CUI banners + navigation | npx playwright test | Pass/fail + screenshots |
 | E2E Test: Compliance | tests/e2e/compliance_artifacts.spec.ts | Native Playwright test: compliance artifact display | npx playwright test | Pass/fail + screenshots |
@@ -821,6 +822,27 @@
 |------|------|-------------|-------|--------|
 | ATLAS Critique | tools/agent/atlas_critique.py | Adversarial multi-agent plan critique: parallel dispatch to security/compliance/knowledge agents, severity classification, GO/NOGO/CONDITIONAL consensus, revision loop (max 3 rounds). Append-only findings (NIST AU). | --project-id, --phase-output, --session-id, --status, --history, --max-rounds, --json | Critique session + findings JSON |
 | ATLAS Critique Config | args/atlas_critique_config.yaml | Critique phase config: critic agent assignments, focus areas, consensus rules, revision prompt, max rounds | (data) | YAML config |
+
+## Universal RAG Subsystem (Phase 64)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Vector Store Provider | tools/rag/vector_store_provider.py | ABC + dataclasses (VectorChunk, SearchResult) for pluggable vector store backends (D-RAG-1) | (import) | ABC |
+| SQLite Vector Store | tools/rag/sqlite_vector_store.py | Default vector store backend using BLOB embeddings with cosine similarity (numpy + pure-Python fallback) | (import) | VectorStoreProvider |
+| ChromaDB Vector Store | tools/rag/chroma_vector_store.py | Optional ChromaDB backend with persistent collections and tenant-namespaced isolation | (import) | VectorStoreProvider |
+| FAISS Vector Store | tools/rag/faiss_vector_store.py | Optional FAISS backend (faiss-cpu) with IndexFlatIP for fast approximate nearest neighbor search | (import) | VectorStoreProvider |
+| Vector Store Factory | tools/rag/vector_store_factory.py | Config-driven backend selection: auto-detect ChromaDB → FAISS → SQLite fallback | (import) | VectorStoreProvider instance |
+| Adaptive Chunker | tools/rag/chunker.py | Adaptive chunking: <500 tok whole, >2000 tok sliding window with 10% overlap at sentence boundaries (D-RAG-4) | text, source_type | List[VectorChunk] |
+| Source Registry | tools/rag/source_registry.py | Declarative SOURCE_REGISTRY mapping 20+ source types to tables, columns, priority, chunk strategy | (import) | Registry dict |
+| Ingestion Manager | tools/rag/ingestion_manager.py | Real-time + batch ingestion pipeline with content hash dedup, watermarking, CLI (D-RAG-9) | --ingest, --sweep, --status, --daemon, --json | Ingestion stats JSON |
+| RAG Retriever | tools/rag/retriever.py | Two-stage retrieval: vector top-50 → BM25 boost → time-decay → qwen3 re-rank → top-5 (D-RAG-3) | --query, --json | Ranked results JSON |
+| Re-ranker | tools/rag/reranker.py | qwen3 re-ranking via LLM router scanner_function (D-RAG-3) | query, chunks | Ranked chunk IDs |
+| Retention Manager | tools/rag/retention_manager.py | Hot/warm/cold tier migration with float16 compression (D-RAG-6) | --migrate, --status, --json | Migration stats JSON |
+| RAG Ingestion Hook | tools/extensions/builtins/020_rag_ingestion.py | Extension hook at TOOL_EXECUTE_AFTER for real-time ingestion (D-RAG-9) | (hook) | Auto-ingest |
+| RAG MCP Server | tools/mcp/rag_server.py | 9 MCP tool handlers: search, ingest, status, chunk_info, delete, retention, reindex, history, providers | (MCP stdio) | JSON-RPC responses |
+| RAG Config | args/rag_config.yaml | All RAG settings: vector store, embedding, chunking, retrieval, rerank, injection, ingestion, retention, provenance | (data) | YAML config |
+| RAG Re-rank Prompt | hardprompts/rag_rerank.md | Re-ranking prompt template for qwen3 scanner_function | (hardprompt) | Prompt template |
+| Source Mappings | context/rag/source_mappings.json | Declarative source type → table/column mappings (D26 pattern) | (data) | JSON mappings |
+| Knowledge Search Page | tools/dashboard/templates/rag/knowledge_search.html | Dashboard page: stat grid, NLQ search, results with scores, source distribution chart, recent searches | (template) | HTML |
 
 ## Safety Hooks
 | Tool | File | Description | Input | Output |

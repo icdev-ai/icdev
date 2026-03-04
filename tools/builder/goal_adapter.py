@@ -67,6 +67,10 @@ GOAL_FILE_MAP: Dict[str, str] = {
     "owasp_agentic_security": "owasp_agentic_security.md",
     "code_intelligence": "code_intelligence.md",
     "ato_acceleration": "ato_acceleration.md",
+    # Phase 64: RAG subsystem
+    "rag_subsystem": "rag_subsystem.md",
+    # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ATLAS critique)
+    "multi_agent_orchestration": "multi_agent_orchestration.md",
 }
 
 # ============================================================
@@ -100,6 +104,8 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "owasp_agentic_security": "Behavioral drift, tool chain validation, trust scoring, RBAC",
     "code_intelligence": "AST metrics, smell detection, maintainability scoring",
     "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
+    "rag_subsystem": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
+    "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
 }
 
 # ============================================================
@@ -133,6 +139,8 @@ GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
     "owasp_agentic_security": "OWASP Agentic Security",
     "code_intelligence": "Code Intelligence",
     "ato_acceleration": "ATO Acceleration",
+    "rag_subsystem": "RAG Subsystem",
+    "multi_agent_orchestration": "Multi-Agent Orchestration",
 }
 
 # ============================================================

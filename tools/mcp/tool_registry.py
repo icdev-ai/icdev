@@ -2039,6 +2039,72 @@ TOOL_REGISTRY = {
         "description": "Collect runtime feedback from test results. Parses JUnit XML or pytest stdout and correlates test results back to source functions.",
         "input_schema": {"type": "object", "properties": {"xml_path": {"type": "string", "description": "Path to JUnit XML file"}, "project_id": {"type": "string"}, "run_id": {"type": "string"}}, "required": ["xml_path"]},
     },
+    # ============================================================
+    # RAG KNOWLEDGE (Phase 64, D-RAG-1 through D-RAG-14, 9 tools)
+    # ============================================================
+    "rag_search": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_search",
+        "description": "Search ICDEV RAG knowledge base with natural language query. Returns ranked results from all indexed sources (innovation signals, compliance artifacts, research dossiers, etc.).",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "Natural language search query"}, "top_k": {"type": "integer", "description": "Number of results to return (default 5)", "default": 5}, "source_type": {"type": "string", "description": "Filter by source type (optional)"}, "tenant_id": {"type": "string", "description": "Tenant ID for multi-tenant isolation"}, "child_id": {"type": "string", "description": "Child app ID for federated queries"}}, "required": ["query"]},
+    },
+    "rag_ingest": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_ingest",
+        "description": "Ingest a source type into the RAG vector store. Chunks content, embeds via Ollama nomic-embed-text, and stores with dedup.",
+        "input_schema": {"type": "object", "properties": {"source_type": {"type": "string", "description": "Source type key (e.g., innovation_signals, creative_pain_points)"}, "tenant_id": {"type": "string"}, "project_id": {"type": "string"}, "limit": {"type": "integer", "description": "Max rows to process (0 = all)", "default": 0}}, "required": ["source_type"]},
+    },
+    "rag_status": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_status",
+        "description": "Get RAG ingestion and vector store status including chunk counts by source type and tier.",
+        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string", "description": "Tenant ID (optional)"}}, "required": []},
+    },
+    "rag_chunk_info": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_chunk_info",
+        "description": "Get detailed info about a specific RAG chunk by ID or content hash.",
+        "input_schema": {"type": "object", "properties": {"chunk_id": {"type": "string", "description": "Chunk ID"}, "content_hash": {"type": "string", "description": "Content SHA-256 hash"}, "tenant_id": {"type": "string"}}, "required": []},
+    },
+    "rag_delete_source": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_delete_source",
+        "description": "Delete all chunks from a specific source type in the vector store.",
+        "input_schema": {"type": "object", "properties": {"source_type": {"type": "string", "description": "Source type to delete"}, "tenant_id": {"type": "string"}}, "required": ["source_type"]},
+    },
+    "rag_retention_migrate": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_retention_migrate",
+        "description": "Run tier migration: hot→warm (float16 compression) and warm→cold (metadata only) based on age thresholds.",
+        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "dry_run": {"type": "boolean", "description": "Report candidates without migrating", "default": false}}, "required": []},
+    },
+    "rag_reindex": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_reindex",
+        "description": "Re-index all or specified sources by running a full ingestion sweep.",
+        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "sources": {"type": "string", "description": "Comma-separated source types to re-index (default: all)"}}, "required": []},
+    },
+    "rag_retrieval_history": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_retrieval_history",
+        "description": "Get recent retrieval history from the RAG retrieval log (NIST AU-3 compliant).",
+        "input_schema": {"type": "object", "properties": {"limit": {"type": "integer", "description": "Max results (default 20)", "default": 20}, "tenant_id": {"type": "string"}}, "required": []},
+    },
+    "rag_providers": {
+        "category": "rag",
+        "module": "tools.mcp.rag_server",
+        "handler": "handle_rag_providers",
+        "description": "List available vector store backends (SQLite, ChromaDB, FAISS) and embedding provider status.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 }
 
 

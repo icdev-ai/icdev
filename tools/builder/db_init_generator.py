@@ -1280,6 +1280,165 @@ DEVSECOPS_ZTA_TABLES: Dict[str, str] = {
 
 
 # ============================================================
+# D-RAG-13: RAG TABLES (Phase 64)
+# ============================================================
+
+RAG_TABLES: Dict[str, str] = {
+    "rag_chunks": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_chunks (
+            id TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            embedding BLOB,
+            source_type TEXT NOT NULL,
+            source_id TEXT,
+            source_table TEXT,
+            chunk_index INTEGER DEFAULT 0,
+            total_chunks INTEGER DEFAULT 1,
+            metadata TEXT DEFAULT '{}',
+            tier TEXT DEFAULT 'hot' CHECK(tier IN ('hot', 'warm', 'cold')),
+            tenant_id TEXT DEFAULT '',
+            project_id TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "rag_ingestion_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_ingestion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_type TEXT NOT NULL,
+            source_id TEXT,
+            source_table TEXT,
+            chunks_created INTEGER DEFAULT 0,
+            chunks_skipped INTEGER DEFAULT 0,
+            ingestion_mode TEXT DEFAULT 'batch',
+            tenant_id TEXT DEFAULT '',
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "rag_retrieval_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_retrieval_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_hash TEXT NOT NULL,
+            results_count INTEGER DEFAULT 0,
+            top_score REAL,
+            rerank_used INTEGER DEFAULT 0,
+            filters TEXT,
+            agent_id TEXT DEFAULT '',
+            duration_ms INTEGER,
+            tenant_id TEXT DEFAULT '',
+            classification TEXT DEFAULT 'CUI',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+
+    "rag_parent_cache": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS rag_parent_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_hash TEXT UNIQUE,
+            results TEXT,
+            retrieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP,
+            source TEXT DEFAULT 'parent'
+        );"""),
+}
+
+
+# ============================================================
+# Phase 61: ORCHESTRATION TABLES (ATLAS critique, prompt chains,
+# dispatcher mode, session purpose)
+# ============================================================
+
+ORCHESTRATION_TABLES: Dict[str, str] = {
+    "atlas_critique_sessions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            workflow_id TEXT,
+            phase_input_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'in_progress' CHECK(status IN (
+                'in_progress', 'go', 'nogo', 'conditional', 'revised', 'failed')),
+            round_number INTEGER DEFAULT 1,
+            max_rounds INTEGER DEFAULT 3,
+            consensus TEXT CHECK(consensus IN ('go', 'nogo', 'conditional') OR consensus IS NULL),
+            critics_assigned TEXT DEFAULT '[]',
+            total_findings INTEGER DEFAULT 0,
+            critical_count INTEGER DEFAULT 0,
+            high_count INTEGER DEFAULT 0,
+            medium_count INTEGER DEFAULT 0,
+            low_count INTEGER DEFAULT 0,
+            revision_summary TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );"""),
+    "atlas_critique_findings": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS atlas_critique_findings (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL REFERENCES atlas_critique_sessions(id),
+            critic_agent TEXT NOT NULL,
+            round_number INTEGER DEFAULT 1,
+            finding_type TEXT NOT NULL CHECK(finding_type IN (
+                'security_vulnerability', 'compliance_gap', 'architecture_flaw',
+                'performance_risk', 'maintainability_concern', 'testing_gap',
+                'deployment_risk', 'data_handling_issue')),
+            severity TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low')),
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            evidence TEXT,
+            suggested_fix TEXT,
+            nist_controls TEXT DEFAULT '[]',
+            addressed_in_revision INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );"""),
+    "prompt_chain_executions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS prompt_chain_executions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            chain_name TEXT NOT NULL,
+            original_input TEXT NOT NULL,
+            original_input_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'running'
+                CHECK(status IN ('running', 'completed', 'failed', 'cancelled')),
+            steps_completed INTEGER DEFAULT 0,
+            steps_total INTEGER NOT NULL,
+            step_results TEXT DEFAULT '{}',
+            final_output TEXT,
+            final_output_hash TEXT,
+            total_duration_ms INTEGER,
+            total_tokens_used INTEGER DEFAULT 0,
+            error_message TEXT,
+            executed_by TEXT,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );"""),
+    "dispatcher_mode_overrides": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS dispatcher_mode_overrides (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL UNIQUE,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            custom_dispatch_tools TEXT DEFAULT '[]',
+            custom_blocked_tools TEXT DEFAULT '[]',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            created_by TEXT NOT NULL DEFAULT 'system'
+        );"""),
+    "session_purposes": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS session_purposes (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            purpose TEXT NOT NULL,
+            purpose_hash TEXT NOT NULL,
+            declared_by TEXT DEFAULT 'user',
+            scope TEXT DEFAULT 'session' CHECK(scope IN ('session','workflow','task')),
+            status TEXT DEFAULT 'active' CHECK(status IN ('active','completed','abandoned')),
+            metadata TEXT DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        );"""),
+}
+
+
+# ============================================================
 # CAPABILITY → TABLE GROUP MAPPING
 # ============================================================
 
@@ -1295,6 +1454,10 @@ CAPABILITY_TABLE_MAP: Dict[str, Dict[str, str]] = {
     "observability": OBSERVABILITY_TABLES,
     "code_intelligence": CODE_INTELLIGENCE_TABLES,
     "devsecops_zta": DEVSECOPS_ZTA_TABLES,
+    # D-RAG-13: RAG tables (Phase 64)
+    "rag": RAG_TABLES,
+    # Phase 61: Orchestration tables (always included)
+    "orchestration": ORCHESTRATION_TABLES,
 }
 
 

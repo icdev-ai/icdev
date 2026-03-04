@@ -5846,8 +5846,347 @@ CREATE INDEX IF NOT EXISTS idx_session_purposes_project
     ON session_purposes(project_id);
 CREATE INDEX IF NOT EXISTS idx_session_purposes_status
     ON session_purposes(status);
+
+-- Phase 64: Universal RAG Subsystem (D-RAG-1 through D-RAG-14)
+CREATE TABLE IF NOT EXISTS rag_chunks (
+    id TEXT PRIMARY KEY,
+    content TEXT NOT NULL,
+    content_hash TEXT NOT NULL,
+    embedding BLOB,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT '',
+    source_table TEXT NOT NULL DEFAULT '',
+    chunk_index INTEGER NOT NULL DEFAULT 0,
+    total_chunks INTEGER NOT NULL DEFAULT 1,
+    metadata TEXT DEFAULT '{}',
+    tier TEXT NOT NULL DEFAULT 'hot'
+        CHECK(tier IN ('hot', 'warm', 'cold')),
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_content_hash
+    ON rag_chunks(content_hash);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_source
+    ON rag_chunks(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_tier
+    ON rag_chunks(tier);
+CREATE INDEX IF NOT EXISTS idx_rag_chunks_tenant
+    ON rag_chunks(tenant_id);
+
+-- RAG PDF documents — ingested PDF files (D-RAG-15)
+CREATE TABLE IF NOT EXISTS rag_pdf_documents (
+    id TEXT PRIMARY KEY,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    page_count INTEGER DEFAULT 0,
+    extracted_text TEXT,
+    provider_used TEXT DEFAULT ''
+        CHECK(provider_used IN ('', 'anthropic', 'google', 'vision_llava', 'pypdf_text')),
+    classification TEXT DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'extracting', 'extracted', 'failed', 'ingested')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_pdf_hash
+    ON rag_pdf_documents(file_hash);
+CREATE INDEX IF NOT EXISTS idx_rag_pdf_tenant
+    ON rag_pdf_documents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_rag_pdf_status
+    ON rag_pdf_documents(status);
+
+-- RAG ingestion log — tracks what was ingested when (append-only, D6, D-RAG-18)
+CREATE TABLE IF NOT EXISTS rag_ingestion_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type TEXT NOT NULL,
+    source_id TEXT NOT NULL DEFAULT '',
+    source_table TEXT NOT NULL DEFAULT '',
+    chunks_created INTEGER NOT NULL DEFAULT 0,
+    chunks_skipped INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT DEFAULT '',
+    ingestion_mode TEXT DEFAULT 'batch'
+        CHECK(ingestion_mode IN ('realtime', 'batch', 'manual')),
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    agent_id TEXT DEFAULT '',
+    correlation_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_ingestion_source
+    ON rag_ingestion_log(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_rag_ingestion_tenant
+    ON rag_ingestion_log(tenant_id);
+
+-- RAG retrieval log — every retrieval logged (append-only, NIST AU-3, D-RAG-8)
+CREATE TABLE IF NOT EXISTS rag_retrieval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT NOT NULL,
+    query_text TEXT DEFAULT '',
+    results_count INTEGER NOT NULL DEFAULT 0,
+    top_score REAL DEFAULT 0.0,
+    retrieval_mode TEXT DEFAULT 'hybrid'
+        CHECK(retrieval_mode IN ('vector', 'bm25', 'hybrid', 'rrf_hybrid', 'reranked')),
+    vector_top_k INTEGER DEFAULT 50,
+    final_top_k INTEGER DEFAULT 5,
+    rerank_used INTEGER DEFAULT 0,
+    source_types_queried TEXT DEFAULT '',
+    duration_ms INTEGER DEFAULT 0,
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    agent_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_retrieval_tenant
+    ON rag_retrieval_log(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_rag_retrieval_created
+    ON rag_retrieval_log(created_at);
+
+-- RAG parent cache — child apps cache parent RAG query results (D-RAG-13)
+CREATE TABLE IF NOT EXISTS rag_parent_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_hash TEXT UNIQUE,
+    results TEXT DEFAULT '[]',
+    retrieved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    source TEXT DEFAULT 'parent'
+);
+
+CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_hash
+    ON rag_parent_cache(query_hash);
+CREATE INDEX IF NOT EXISTS idx_rag_parent_cache_expires
+    ON rag_parent_cache(expires_at);
+
+-- ============================================================
+-- FINE-TUNING SUBSYSTEM (Phase 64 Extension, D-FT-1 through D-FT-22)
+-- ============================================================
+
+-- 1. Datasets: versioned collections of training examples (D-FT-9)
+CREATE TABLE IF NOT EXISTS ft_datasets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    purpose TEXT DEFAULT 'general'
+        CHECK(purpose IN ('general','proposal_drafting','compliance_export','code_generation','custom')),
+    base_model TEXT DEFAULT 'qwen3:latest',
+    version INTEGER DEFAULT 1,
+    example_count INTEGER DEFAULT 0,
+    content_hash TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','labeling','ready','archived')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Training examples — APPEND-ONLY (D6, D-FT-9)
+CREATE TABLE IF NOT EXISTS ft_dataset_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+    system_prompt TEXT DEFAULT '',
+    user_input TEXT NOT NULL,
+    expected_output TEXT NOT NULL,
+    source TEXT DEFAULT 'manual'
+        CHECK(source IN ('manual','rag_auto_generated','document_extraction','imported','marketplace')),
+    source_chunk_id TEXT DEFAULT '',
+    source_document_id TEXT DEFAULT '',
+    quality_score REAL DEFAULT 0.0,
+    compliance_score REAL DEFAULT 0.0,
+    relevance_score REAL DEFAULT 0.0,
+    approved INTEGER DEFAULT 0,
+    labeled_by TEXT DEFAULT '',
+    labeled_at TIMESTAMP,
+    content_hash TEXT NOT NULL,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_examples_dataset
+    ON ft_dataset_examples(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_ft_examples_hash
+    ON ft_dataset_examples(content_hash);
+CREATE INDEX IF NOT EXISTS idx_ft_examples_approved
+    ON ft_dataset_examples(dataset_id, approved);
+
+-- 3. Training jobs (D-FT-3)
+CREATE TABLE IF NOT EXISTS ft_training_jobs (
+    id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+    provider TEXT NOT NULL DEFAULT 'unsloth_local'
+        CHECK(provider IN ('unsloth_local','openai','bedrock','azure_openai')),
+    base_model TEXT NOT NULL DEFAULT 'qwen3:latest',
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','preparing','training','exporting','evaluating','completed','failed','canceled')),
+    hyperparams TEXT DEFAULT '{}',
+    lora_rank INTEGER DEFAULT 16,
+    learning_rate REAL DEFAULT 2e-4,
+    epochs INTEGER DEFAULT 3,
+    batch_size INTEGER DEFAULT 2,
+    max_seq_length INTEGER DEFAULT 2048,
+    gpu_count INTEGER DEFAULT 1,
+    distributed INTEGER DEFAULT 0,
+    output_dir TEXT DEFAULT '',
+    adapter_path TEXT DEFAULT '',
+    gguf_path TEXT DEFAULT '',
+    ollama_model_name TEXT DEFAULT '',
+    cloud_job_id TEXT DEFAULT '',
+    loss_history TEXT DEFAULT '[]',
+    training_duration_seconds INTEGER DEFAULT 0,
+    total_steps INTEGER DEFAULT 0,
+    error_message TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_jobs_dataset
+    ON ft_training_jobs(dataset_id);
+CREATE INDEX IF NOT EXISTS idx_ft_jobs_status
+    ON ft_training_jobs(status);
+
+-- 4. Training job events — APPEND-ONLY (D6, D-FT-3)
+CREATE TABLE IF NOT EXISTS ft_training_job_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+    event_type TEXT NOT NULL
+        CHECK(event_type IN ('created','started','checkpoint','progress','export_started',
+                              'export_completed','eval_started','eval_completed',
+                              'completed','failed','canceled','promoted','demoted')),
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_events_job
+    ON ft_training_job_events(job_id);
+
+-- 5. Model versions — all trained adapters (D-FT-7)
+CREATE TABLE IF NOT EXISTS ft_model_versions (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+    model_name TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    base_model TEXT NOT NULL,
+    adapter_path TEXT DEFAULT '',
+    gguf_path TEXT DEFAULT '',
+    ollama_model_name TEXT DEFAULT '',
+    adapter_hash TEXT DEFAULT '',
+    file_size_bytes INTEGER DEFAULT 0,
+    eval_bleu REAL DEFAULT 0.0,
+    eval_rouge_l REAL DEFAULT 0.0,
+    eval_perplexity REAL DEFAULT 0.0,
+    eval_custom TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'created'
+        CHECK(status IN ('created','evaluated','promoted','demoted','archived')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(model_name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_ft_models_name
+    ON ft_model_versions(model_name);
+CREATE INDEX IF NOT EXISTS idx_ft_models_status
+    ON ft_model_versions(status);
+
+-- 6. Active model overrides — runtime routing (D-FT-6)
+CREATE TABLE IF NOT EXISTS ft_active_models (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    function_name TEXT NOT NULL,
+    model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+    ollama_model_name TEXT NOT NULL,
+    routing_tier TEXT DEFAULT 'worker' CHECK(routing_tier IN ('worker','scanner','planner')),
+    activated_by TEXT DEFAULT '',
+    activation_reason TEXT DEFAULT '',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deactivated_at TIMESTAMP,
+    UNIQUE(function_name, tenant_id, project_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ft_active_function
+    ON ft_active_models(function_name, deactivated_at);
+
+-- 7. Evaluations — APPEND-ONLY (D6, D-FT-14)
+CREATE TABLE IF NOT EXISTS ft_evaluations (
+    id TEXT PRIMARY KEY,
+    model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+    eval_type TEXT NOT NULL DEFAULT 'automated'
+        CHECK(eval_type IN ('automated','ab_comparison','human','regression')),
+    test_set_size INTEGER DEFAULT 0,
+    bleu_score REAL DEFAULT 0.0,
+    rouge_l_score REAL DEFAULT 0.0,
+    perplexity REAL DEFAULT 0.0,
+    custom_metrics TEXT DEFAULT '{}',
+    comparison_model TEXT DEFAULT '',
+    comparison_scores TEXT DEFAULT '{}',
+    statistical_significance REAL DEFAULT 0.0,
+    pass_threshold INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_evals_model
+    ON ft_evaluations(model_version_id);
+
+-- 8. Promotion log — APPEND-ONLY (D6, D-FT-16)
+CREATE TABLE IF NOT EXISTS ft_promotion_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+    action TEXT NOT NULL CHECK(action IN ('promoted','demoted','override_promoted','override_demoted','auto_promoted')),
+    function_name TEXT NOT NULL,
+    previous_model TEXT DEFAULT '',
+    eval_score_summary TEXT DEFAULT '{}',
+    reason TEXT DEFAULT '',
+    actor TEXT DEFAULT '',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_promo_model
+    ON ft_promotion_log(model_version_id);
+
+-- 9. Hyperparameter search results — APPEND-ONLY (D6, D-FT-13)
+CREATE TABLE IF NOT EXISTS ft_hyperparam_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    search_id TEXT NOT NULL,
+    job_id TEXT REFERENCES ft_training_jobs(id),
+    hyperparams TEXT NOT NULL DEFAULT '{}',
+    eval_bleu REAL DEFAULT 0.0,
+    eval_rouge_l REAL DEFAULT 0.0,
+    eval_perplexity REAL DEFAULT 0.0,
+    composite_score REAL DEFAULT 0.0,
+    is_best INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_hp_search
+    ON ft_hyperparam_results(search_id);
 """
 
+
+# Phase 64: RAG columns on projects table
+RAG_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN rag_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN rag_chunk_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN rag_last_ingestion TIMESTAMP",
+]
 
 MBSE_ALTER_SQL = [
     "ALTER TABLE projects ADD COLUMN sysml_model_path TEXT",
@@ -5982,6 +6321,14 @@ QTG_ALTER_SQL = [
 CPMP_ALTER_SQL = [
     "ALTER TABLE proposal_opportunities ADD COLUMN contract_id TEXT",
     "ALTER TABLE customer_deliveries ADD COLUMN contract_id TEXT",
+]
+
+# Phase 64 Extension: Fine-Tuning columns (D-FT-1)
+FINETUNE_ALTER_SQL = [
+    "ALTER TABLE projects ADD COLUMN finetune_enabled INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN finetune_dataset_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN finetune_active_model_count INTEGER DEFAULT 0",
+    "ALTER TABLE projects ADD COLUMN finetune_last_training TIMESTAMP",
 ]
 
 
@@ -6140,6 +6487,18 @@ def init_db(db_path=None):
             pass
     # Phase 60: CPMP — link proposals/deliveries to contracts (D-CPMP-9)
     for sql in CPMP_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 64 Extension: Fine-Tuning columns (D-FT-1)
+    for sql in FINETUNE_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
+    # Phase 64: RAG Subsystem columns (D-RAG-1)
+    for sql in RAG_ALTER_SQL:
         try:
             conn.execute(sql)
         except sqlite3.OperationalError:

@@ -14,7 +14,6 @@ Features:
 
 Usage:
     from icdev.tools.observability.sqlite_tracer import SQLiteTracer
-from icdev._paths import get_project_root
     tracer = SQLiteTracer()
 
     with tracer.start_span("my_op", attributes={"key": "val"}) as span:
@@ -31,6 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from icdev._paths import get_project_root
 from icdev.tools.observability.tracer import NullSpan, Span, Tracer
 
 logger = logging.getLogger("icdev.observability.sqlite_tracer")

@@ -357,6 +357,11 @@ routing:
     chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, codestral-local]
     effort: low
 
+  # RAG Re-ranking (Phase 64, D-RAG-3 — scanner_function, qwen3 only)
+  rag_rerank:
+    chain: [qwen3-local, gemini-2.0-flash, gpt-4o-mini, llama-local]
+    effort: low
+
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
@@ -495,3 +500,25 @@ two_tier:
   scanner_functions:
     - agent_monitor
     - attachment_analysis
+    - rag_rerank
+    - rag_evaluate
+
+# -----------------------------------------------------------------------
+# RAG Integration (D-RAG-2, Phase 64)
+# -----------------------------------------------------------------------
+# Controls RAG context injection into two-tier LLM pipeline.
+# Full RAG config in args/rag_config.yaml — this section enables/disables
+# the injection hook in the LLM router.
+rag:
+  enabled: true
+  injection:
+    enabled: true
+    injection_top_k: 5
+    max_injection_chars: 4000
+    function_denylist:
+      - attachment_analysis
+      - screenshot_validation
+      - document_vision
+      - ui_analysis
+      - diagram_extraction
+      - compliance_diagram

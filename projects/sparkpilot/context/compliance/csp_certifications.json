@@ -1,0 +1,251 @@
+{
+  "_metadata": {
+    "description": "CSP region compliance certification registry (D233)",
+    "version": "1.0.0",
+    "last_updated": "2026-02-21",
+    "sources": [
+      "AWS GovCloud Compliance",
+      "Azure Government Compliance",
+      "Google Cloud Compliance",
+      "Oracle Cloud Compliance",
+      "IBM Cloud Compliance"
+    ]
+  },
+  "il_certification_requirements": {
+    "IL2": ["fedramp_moderate"],
+    "IL4": ["fedramp_moderate"],
+    "IL5": ["fedramp_high", "dod_srg_il5"],
+    "IL6": ["fedramp_high", "dod_srg_il6"]
+  },
+  "certifications": {
+    "aws": {
+      "us-gov-west-1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": true,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true
+      },
+      "us-gov-east-1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": true,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true
+      },
+      "us-iso-east-1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5", "IL6"],
+        "hipaa": false,
+        "pci_dss": false,
+        "cjis": false,
+        "fti": false,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "AWS C2S — SECRET/IL6 only"
+      },
+      "us-east-1": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false
+      },
+      "us-west-2": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false
+      }
+    },
+    "azure": {
+      "usgovvirginia": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": true,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true
+      },
+      "usgovarizona": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": true,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true
+      },
+      "usdodcentral": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5", "IL6"],
+        "hipaa": false,
+        "pci_dss": false,
+        "cjis": false,
+        "fti": false,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "Azure Government Secret — IL6"
+      },
+      "usdodeast": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5", "IL6"],
+        "hipaa": false,
+        "pci_dss": false,
+        "cjis": false,
+        "fti": false,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "Azure Government Secret — IL6"
+      },
+      "eastus": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false
+      }
+    },
+    "gcp": {
+      "us-east4": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": false,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "Assured Workloads required for IL4/IL5"
+      },
+      "us-central1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": false,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "Assured Workloads required for IL4/IL5"
+      },
+      "us-east1": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false
+      }
+    },
+    "oci": {
+      "us-langley-1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": true,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "OCI Government Cloud"
+      },
+      "us-luke-1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": true,
+        "fti": true,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "OCI Government Cloud"
+      },
+      "us-gov-ashburn-1": {
+        "fedramp": "high",
+        "dod_il": ["IL2", "IL4", "IL5", "IL6"],
+        "hipaa": false,
+        "pci_dss": false,
+        "cjis": false,
+        "fti": false,
+        "itar": true,
+        "fips_140_2": true,
+        "nist_800_171": true,
+        "note": "OCI DoD regions — IL6"
+      },
+      "us-ashburn-1": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false
+      }
+    },
+    "ibm": {
+      "us-south": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false,
+        "note": "IBM Cloud for Government (IC4G) — Dallas"
+      },
+      "us-east": {
+        "fedramp": "moderate",
+        "dod_il": ["IL2"],
+        "hipaa": true,
+        "pci_dss": true,
+        "cjis": false,
+        "fti": false,
+        "itar": false,
+        "fips_140_2": true,
+        "nist_800_171": false,
+        "note": "IBM Cloud for Government (IC4G) — Washington DC"
+      }
+    }
+  }
+}
