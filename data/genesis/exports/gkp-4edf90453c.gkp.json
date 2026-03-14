@@ -1,0 +1,16 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-4edf90453c",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.9,
+  "evidence": null,
+  "payload": {
+    "title": "NIST SP 800-53 Rev 6 Draft",
+    "description": "New revision draft released",
+    "source": "nist_rss"
+  },
+  "sha256": "093f0331a647ac7e3475d6088d854d3353a85a513ad85593b9be144753b027ff",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:19:33Z"
+}

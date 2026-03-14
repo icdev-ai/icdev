@@ -1,0 +1,20 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-3b629987f9",
+  "artifact_type": "capability_update",
+  "genesis_reflex": "market",
+  "confidence": 0.6,
+  "evidence": {
+    "stats_count": 0,
+    "feedback_count": 0
+  },
+  "payload": {
+    "title": "Marketplace: bootstrap \u2014 all",
+    "description": "No marketplace activity detected",
+    "action": "Enable marketplace and register initial modules",
+    "source": "genesis_market"
+  },
+  "sha256": "e01121e3fdc0244220fe08f550f9c52d557258b95942cafce0bde022443dbaa6",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:33:33Z"
+}

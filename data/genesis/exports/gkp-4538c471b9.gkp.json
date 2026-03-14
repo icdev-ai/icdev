@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-4538c471b9",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T03:50:58Z"
+  },
+  "payload": {
+    "title": "Siemens Heliox EV Chargers",
+    "description": "<p><a href=\"https://github.com/cisagov/CSAF/blob/develop/csaf_files/OT/white/2026/icsa-26-071-05.json\"><strong>View CSAF</strong></a></p>\n<h2>Summary</h2>\n<p><strong>Heliox EV Chargers listed below contain improper access control vulnerability that could allow an attacker to reach unauthorized services via the charging cable. Siemens has released new versions for the affected products and recommends to update to the latest versions.</strong></p>\n<p>The following versions of Siemens Heliox EV Cha",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-071-05",
+    "published": "Thu, 12 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "ff9eb06f821c7136780f2ceb233971d19c1ef6b8147e9c1f63e124ea4dee0e15",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:50:58Z"
+}

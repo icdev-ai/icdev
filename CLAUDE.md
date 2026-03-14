@@ -43,6 +43,464 @@ See `requirements.txt` for full list. Key packages:
 **Optional:** openai (embeddings + OpenAI-compat providers), anthropic (direct Anthropic API), python-dotenv (.env loading), numpy (embedding math), rank_bm25 (search, has fallback)
 **ICDEV:** pyyaml, jinja2, flask, pytest, pytest-cov, behave, requests, boto3, cyclonedx-bom, bandit, pip-audit, detect-secrets
 
+### CloudForge Runbooks & Metastore Commands
+```bash
+# Runbook Engine
+python tools/cloudforge/runbooks/engine.py --list --json                    # List runbooks
+python tools/cloudforge/runbooks/engine.py --get <id> --json                # Get runbook detail
+python tools/cloudforge/runbooks/template_loader.py --list --json           # List YAML templates
+python tools/cloudforge/runbooks/template_loader.py --load dr_failover --json  # Load template
+
+# Application Metastore
+python tools/cloudforge/metastore/registry.py --list --json                 # List applications
+python tools/cloudforge/metastore/registry.py --get <id> --json             # Get app detail
+
+# Ops MCP Server (18 tools: runbooks, metastore, cross-domain)
+python tools/mcp/ops_server.py                                              # Start stdio MCP server
+```
+
+### Testing Commands
+```bash
+python tools/testing/health_check.py                 # Full system health check
+python tools/testing/health_check.py --json           # JSON output
+python tools/testing/test_orchestrator.py --project-dir /path/to/project
+python tools/testing/e2e_runner.py --discover         # List available E2E test specs
+python tools/testing/e2e_runner.py --run-all           # Execute all E2E tests
+```
+
+### Compliance Commands
+```bash
+python tools/compliance/ssp_generator.py --project-id "sparkpilot"
+python tools/compliance/poam_generator.py --project-id "sparkpilot"
+python tools/compliance/stig_checker.py --project-id "sparkpilot"
+python tools/compliance/sbom_generator.py --project-dir "/path/to/project"
+python tools/compliance/cui_marker.py --file "/path/to/file" --marking "CUI // SP-CTI"
+python tools/compliance/nist_lookup.py --control "AC-2"
+python tools/compliance/control_mapper.py --activity "code.commit" --project-id "sparkpilot"
+python tools/compliance/crosswalk_engine.py --control AC-2
+python tools/compliance/crosswalk_engine.py --project-id "sparkpilot" --coverage
+python tools/compliance/fedramp_assessor.py --project-id "sparkpilot" --baseline moderate
+python tools/compliance/cmmc_assessor.py --project-id "sparkpilot" --level 2
+python tools/compliance/oscal_generator.py --project-id "sparkpilot" --artifact ssp
+python tools/compliance/classification_manager.py --impact-level IL4
+
+# Secure by Design (CISA SbD + Cloudyrion 8-Pillar)
+python tools/compliance/sbd_assessor.py --project-id "sparkpilot" --project-dir . --gate --json
+python tools/compliance/sbd_assessor.py --project-id "sparkpilot" --list-exceptions --json
+python tools/compliance/sbd_assessor.py --project-id "sparkpilot" --register-exception --requirement-id "SBD-04" --title "Title" --owner "owner@org" --duration-days 90 --json
+python tools/compliance/sbd_assessor.py --project-id "sparkpilot" --renew-exception --requirement-id "SBD-04" --json
+python tools/compliance/sbd_report_generator.py --project-id "sparkpilot" --json
+python tools/compliance/crosswalk_engine.py --framework cisa_sbd --project-id "sparkpilot" --coverage
+```
+
+### Module Encryption Commands
+```bash
+# Encrypt a module directory (used by marketplace SaaS at publish time)
+python tools/marketplace/module_crypto.py encrypt --module-dir tools/writing --seed "<hex>" --slug writeguard
+python tools/marketplace/module_crypto.py encrypt --module-dir tools/writing --seed "<hex>" --slug writeguard --keep-originals
+
+# Verify a .py.enc file can be decrypted
+python tools/marketplace/module_crypto.py verify --file tools/writing/analysis_engine.py.enc --seed "<hex>" --slug writeguard
+```
+
+### Storage Layer Commands
+```bash
+python tools/db/storage.py --health --json        # Check backend connectivity
+python tools/db/storage.py --info --json           # Show backend configuration
+# Connection API (in Python):
+# from tools.db.storage import get_connection
+# with get_connection() as conn:
+#     rows = conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchall()
+```
+
+### Security Commands
+```bash
+python tools/security/sast_runner.py --project-dir "/path"
+python tools/security/dependency_auditor.py --project-dir "/path"
+python tools/security/secret_detector.py --project-dir "/path"
+python tools/security/container_scanner.py --image "sparkpilot:latest"
+```
+
+### AI Security Commands
+```bash
+python tools/security/prompt_injection_detector.py --text "input" --json
+python tools/security/prompt_injection_detector.py --project-dir /path --gate --json
+python tools/security/ai_telemetry_logger.py --summary --json
+python tools/security/ai_telemetry_logger.py --anomalies --window-hours 24 --json
+python tools/security/ai_bom_generator.py --project-id "sparkpilot" --project-dir . --json
+python tools/compliance/atlas_assessor.py --project-id "sparkpilot" --json
+python tools/compliance/owasp_llm_assessor.py --project-id "sparkpilot" --json
+python tools/compliance/owasp_agentic_assessor.py --project-id "sparkpilot" --json
+python tools/security/agent_trust_scorer.py --all --json
+```
+
+### Requirements Intake (RICOAS) Commands
+```bash
+python tools/requirements/intake_engine.py --project-id "sparkpilot" --customer-name "Name" --customer-org "Org" --impact-level IL4 --json
+python tools/requirements/gap_detector.py --session-id "<id>" --check-security --check-compliance --json
+python tools/requirements/readiness_scorer.py --session-id "<id>" --json
+python tools/requirements/decomposition_engine.py --session-id "<id>" --level story --generate-bdd --json
+python tools/requirements/boundary_analyzer.py --project-id "sparkpilot" --list-assessments --json
+python tools/supply_chain/dependency_graph.py --project-id "sparkpilot" --build-graph --json
+python tools/supply_chain/scrm_assessor.py --project-id "sparkpilot" --aggregate --json
+python tools/supply_chain/cve_triager.py --project-id "sparkpilot" --sla-check --json
+python tools/simulation/simulation_engine.py --project-id "sparkpilot" --create-scenario --scenario-name "Scenario" --scenario-type what_if --json
+python tools/simulation/monte_carlo.py --scenario-id "<id>" --dimension schedule --iterations 10000 --json
+python tools/simulation/coa_generator.py --session-id "<id>" --generate-3-coas --simulate --json
+```
+
+### DevSecOps & ZTA Commands
+```bash
+python tools/devsecops/profile_manager.py --project-id "sparkpilot" --assess --json
+python tools/devsecops/pipeline_security_generator.py --project-id "sparkpilot" --json
+python tools/devsecops/policy_generator.py --project-id "sparkpilot" --engine kyverno --json
+python tools/devsecops/zta_maturity_scorer.py --project-id "sparkpilot" --all --json
+python tools/compliance/nist_800_207_assessor.py --project-id "sparkpilot" --json
+python tools/devsecops/service_mesh_generator.py --project-id "sparkpilot" --mesh istio --json
+```
+
+### Observability & XAI Commands
+```bash
+python tools/observability/shap/agent_shap.py --project-id "sparkpilot" --last-n 10 --json
+python tools/observability/provenance/prov_query.py --entity-id "<id>" --direction backward --json
+python tools/observability/provenance/prov_export.py --project-id "sparkpilot" --json
+python tools/compliance/xai_assessor.py --project-id "sparkpilot" --json
+```
+
+### Code Intelligence Commands
+```bash
+python tools/analysis/code_analyzer.py --project-dir tools/ --json
+python tools/analysis/code_analyzer.py --project-dir tools/ --store --json
+python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json
+python tools/analysis/runtime_feedback.py --health --function analyze_code --json
+```
+
+### Knowledge Graph & GraphRAG Commands
+```bash
+# Knowledge graph analysis
+python tools/knowledge_graph/text_network.py --text "input text" --project-id "sparkpilot" --json
+python tools/knowledge_graph/ingester.py --file /path/to/doc --project-id "sparkpilot" --json
+
+# GraphRAG retrieval (D-KARL-1 scoring profiles, D-KARL-2 compression)
+python tools/knowledge_graph/graph_rag.py --query "zero trust" --project-id sparkpilot --json
+python tools/knowledge_graph/graph_rag.py --query "AC-2 compliance" --profile compliance --json
+python tools/knowledge_graph/graph_rag.py --query "explore gaps" --profile exploratory --no-compress --json
+
+# AI insight generation (scanner-tier, zero Claude tokens)
+python tools/knowledge_graph/insight_generator.py --graph-id <id> --questions --json
+python tools/knowledge_graph/insight_generator.py --graph-id <id> --bridge-gaps --json
+
+# Parallel multi-strategy retrieval (D-KARL-3)
+python tools/rag/corrective_rag.py --parallel --query "NIST compliance gaps" --json
+python tools/rag/corrective_rag.py --parallel --query "zero trust" --profile compliance --json
+
+# KARL pass-rate filtered pair generation (D-KARL-4)
+python tools/finetune/pair_generator.py --generate-filtered --dataset-id "ds-xxx" --source-table "research_signals" --json
+python tools/finetune/pair_generator.py --generate-filtered --dataset-id "ds-xxx" --source-table "research_signals" --num-attempts 5 --min-pass-rate 0.2 --max-pass-rate 0.8 --json
+```
+
+### MBSE Commands
+```bash
+python tools/mbse/xmi_parser.py --project-id "sparkpilot" --file /path/model.xmi --json
+python tools/mbse/reqif_parser.py --project-id "sparkpilot" --file /path/reqs.reqif --json
+python tools/mbse/digital_thread.py --project-id "sparkpilot" auto-link --json
+python tools/mbse/digital_thread.py --project-id "sparkpilot" coverage --json
+python tools/mbse/model_code_generator.py --project-id "sparkpilot" --language python --output ./src
+python tools/mbse/sync_engine.py --project-id "sparkpilot" detect-drift --json
+python tools/mbse/des_assessor.py --project-id "sparkpilot" --project-dir /path --json
+```
+
+### DocHub Commands
+```bash
+# Document generation
+python tools/dochub/doc_generator.py --project-id "sparkpilot" --doc-type ssp --profile 3pao --impact-level IL4 --json
+python tools/dochub/doc_generator.py --project-id "sparkpilot" --generate-all --profile compliance --json
+python tools/dochub/doc_generator.py --regenerate --doc-id "dh-doc-xxx" --json
+
+# Data collection
+python tools/dochub/data_collector.py --project-id "sparkpilot" --collect --json
+python tools/dochub/data_collector.py --project-id "sparkpilot" --doc-type ssp --json
+
+# Profiles
+python tools/dochub/profile_engine.py --list --json
+python tools/dochub/profile_engine.py --profile 3pao --json
+
+# Export (8 formats: markdown, html, pdf_ready, oscal_json, xacta_csv, fedramp_zip, dod_pkg, emass)
+python tools/dochub/export_engine.py --doc-id "dh-doc-xxx" --format html --json
+python tools/dochub/export_engine.py --project-id "sparkpilot" --format fedramp_zip --output ./exports --json
+python tools/dochub/export_engine.py --project-id "sparkpilot" --format dod_pkg --impact-level IL4 --output ./exports --json
+
+# Health scoring
+python tools/dochub/health_scorer.py --project-id "sparkpilot" --compute --json
+python tools/dochub/health_scorer.py --project-id "sparkpilot" --trend --json
+python tools/dochub/health_scorer.py --project-id "sparkpilot" --module-scores --json
+python tools/dochub/health_scorer.py --portfolio --json
+
+# Diff/changelog
+python tools/dochub/diff_engine.py --doc-id "dh-doc-xxx" --latest --json
+python tools/dochub/diff_engine.py --project-id "sparkpilot" --summary --json
+
+# BYOS scanning
+python tools/dochub/byos_scanner.py --project-dir /path/to/app --scan --json
+python tools/dochub/byos_scanner.py --project-dir /path --scan --store --generate --json
+python tools/dochub/byos_scanner.py --import-artifact --file /path/to/sbom.json --artifact-type sbom --project-id X --json
+
+# Research enrichment
+python tools/dochub/enrichment_engine.py --project-id "sparkpilot" --enrich --json
+python tools/dochub/enrichment_engine.py --project-id "sparkpilot" --check-cves --json
+python tools/dochub/enrichment_engine.py --cache-status --json
+
+# Multi-tenant / module management
+python tools/dochub/tenant_manager.py --register --project-id "sparkpilot" --name "SparkPilot" --app-type icdev --json
+python tools/dochub/tenant_manager.py --list --json
+python tools/dochub/tenant_manager.py --register-module --project-id "sparkpilot" --module-name "WriteGuard" --module-slug writeguard --json
+python tools/dochub/tenant_manager.py --list-modules --project-id "sparkpilot" --json
+python tools/dochub/tenant_manager.py --impact-analysis --target-id "requests" --target-type dependency --json
+```
+
+### Embedded Development Commands
+```bash
+# Natural Language to Firmware
+python tools/embedded/nl_to_firmware.py --command "Blink LED every 2 seconds" --board simulator --json
+python tools/embedded/nl_to_firmware.py --command "Read temperature sensor" --board esp32-s3 --json
+python tools/embedded/nl_to_firmware.py --command "Send MQTT message" --board stm32f407 --deploy --json
+
+# CMake and FreeRTOSConfig.h Generation
+python tools/embedded/cmake_generator.py --board esp32-s3 --json
+python tools/embedded/cmake_generator.py --board simulator --with-tinyml --json
+python tools/embedded/cmake_generator.py --board stm32f407 --project-dir ./my-project --json
+
+# Crash Analysis / Self-Healing
+python tools/embedded/crash_analyzer.py --crash-type hardfault --device-id dev-001 --json
+python tools/embedded/crash_analyzer.py --patterns --json
+```
+
+### Fleet Management Commands
+```bash
+# Device Registry
+python tools/fleet/device_registry.py --register --name "my-esp32" --board esp32-s3 --json
+python tools/fleet/device_registry.py --list --json
+python tools/fleet/device_registry.py --heartbeat --device-id dev-001 --json
+python tools/fleet/device_registry.py --health --json
+
+# OTA Updates
+python tools/fleet/ota_manager.py --deploy --firmware-id fw-001 --device-id dev-001 --json
+python tools/fleet/ota_manager.py --canary --firmware-id fw-001 --group-id grp-001 --canary-pct 10 --json
+python tools/fleet/ota_manager.py --status --json
+```
+
+### Edge AI / TinyML Commands
+```bash
+python tools/edge_ai/model_manager.py --templates --json                           # List model templates
+python tools/edge_ai/model_manager.py --register --name "anomaly" --task anomaly_detection --json
+python tools/edge_ai/model_manager.py --list --json
+python tools/edge_ai/model_manager.py --deploy --model-id mdl-001 --device-id dev-001 --json
+python tools/edge_ai/model_manager.py --inference-stats --device-id dev-001 --json
+```
+
+### Gamified Missions Commands
+```bash
+python tools/missions/mission_engine.py --seed --json            # Seed 7 default missions
+python tools/missions/mission_engine.py --list --json            # List all missions
+python tools/missions/mission_engine.py --start --mission 1 --user-id player1 --json
+python tools/missions/mission_engine.py --complete --mission 1 --user-id player1 --json
+python tools/missions/mission_engine.py --progress --user-id player1 --json
+```
+
+### Simulator Commands
+```bash
+python tools/simulator/sim_runner.py --seed --json               # Seed virtual peripherals
+python tools/simulator/sim_runner.py --peripherals --json        # List available peripherals
+python tools/simulator/sim_runner.py --create --user-id player1 --json  # Create session
+python tools/simulator/sim_runner.py --list --json               # List sessions
+python tools/simulator/sim_runner.py --status --session-id sim-001 --json
+python tools/simulator/sim_runner.py --stop --session-id sim-001 --json
+```
+
+### Genesis v2.0 — Autonomous Research Lab Commands
+```bash
+# Daemon
+ICDEV_GENESIS_ENABLED=true python tools/genesis/daemon.py    # Run as always-on daemon
+python tools/genesis/daemon.py --once --json                  # Single pass (run all due reflexes)
+python tools/genesis/daemon.py --status --json                # Show status of all 12 reflexes
+python tools/genesis/daemon.py --reflex research --json       # Run one reflex immediately
+python tools/genesis/daemon.py --reflex scout --json          # GitHub competitor intel
+python tools/genesis/daemon.py --reflex audit --json          # Self-scan (code quality + SAST)
+python tools/genesis/daemon.py --reflex comply --json         # cATO evidence + crosswalk + SbD
+python tools/genesis/daemon.py --reflex ingest --json         # RSS → innovation_signals
+python tools/genesis/daemon.py --reflex market --json         # Marketplace analytics
+python tools/genesis/daemon.py --reflex publish --json        # Demand → draft → WriteGuard → staging
+python tools/genesis/daemon.py --reflex test --json           # Find untested modules → generate tests
+python tools/genesis/daemon.py --reflex learn --json          # Training pair generation
+python tools/genesis/daemon.py --reflex heal --json           # Pattern-match errors → remediation
+python tools/genesis/daemon.py --reflex evolve --json         # Worst-quality file → LLM analysis → GKP proposal
+python tools/genesis/daemon.py --reflex report --json         # Weekly status report
+python tools/genesis/daemon.py --enable research              # Enable a reflex
+python tools/genesis/daemon.py --disable evolve               # Disable a reflex
+python tools/genesis/daemon.py --reset heal --json            # Reset circuit breaker
+
+# Knowledge Bridge (Promoter)
+python tools/genesis/promoter.py --list --json                                      # List all GKPs
+python tools/genesis/promoter.py --list --status-filter pending_review --json       # Pending review
+python tools/genesis/promoter.py --auto-promote --json                              # Auto-promote eligible
+python tools/genesis/promoter.py --promote gkp-xxxx --json                          # Manually promote
+python tools/genesis/promoter.py --reject gkp-xxxx --reason "Not relevant" --json   # Reject
+python tools/genesis/promoter.py --stats --json                                     # Promotion statistics
+
+# Feedback Collector (v1.x → v2.0 telemetry)
+python tools/genesis/feedback_collector.py --collect --json    # Collect all feedback now
+python tools/genesis/feedback_collector.py --latest --json     # Show latest feedback
+python tools/genesis/feedback_collector.py --summary --json    # 7-day summary
+python tools/genesis/feedback_collector.py --priorities --json # Reflex priority recommendations
+
+# Reporter
+python tools/genesis/reporter.py --generate --json            # Generate weekly report
+python tools/genesis/reporter.py --latest                     # Show latest report
+python tools/genesis/reporter.py --list --json                # List all reports
+```
+
+### Connector Forge Commands
+```bash
+# Generate connector from OpenAPI spec (template-only, no LLM)
+python -c "from tools.databridge.forge.forge_agent import forge_from_spec; import json; print(json.dumps(forge_from_spec(content='{...}', connector_name='my_api', use_llm=False, run_sandbox_flag=False), indent=2))"
+
+# List forge connectors
+python -c "from tools.databridge.forge.forge_agent import list_forge_connectors; import json; print(json.dumps(list_forge_connectors(), indent=2))"
+
+# Promote sandboxed connector
+python -c "from tools.databridge.forge.promoter import promote_connector; import json; print(json.dumps(promote_connector('forge-xxx', 'admin'), indent=2))"
+
+# MCP server
+echo '{"jsonrpc":"2.0","id":1,"method":"forge_list","params":{}}' | python tools/mcp/connector_forge_server.py
+```
+
+### CI/CD Commands
+```bash
+python tools/ci/triggers/webhook_server.py           # Start webhook server
+python tools/ci/triggers/poll_trigger.py             # Start issue polling
+python tools/ci/workflows/icdev_sdlc.py 123          # Run full SDLC pipeline
+```
+
+### Forge Studio Blueprint Commands
+```bash
+# Tier classification (deterministic 12-signal heuristic)
+python tools/forge_studio/generator/complexity_detector.py --classify-tier --description "Build me a CRM" --json
+
+# Create blueprint (classify + store)
+python tools/forge_studio/blueprint/export_engine.py --description "Build me a CRM" --json
+python tools/forge_studio/blueprint/export_engine.py --app-id "app-xxx" --force-tier local --json
+
+# Full automated pipeline: classify → route → build/submit
+python tools/forge_studio/blueprint/build_tracker.py --build --description "Build me a CRM" --json
+python tools/forge_studio/blueprint/build_tracker.py --build --app-id "app-xxx" --json
+
+# Build status (auto-polls parent for Tier 2)
+python tools/forge_studio/blueprint/build_tracker.py --status --blueprint-id "bp-xxx" --json
+
+# Retry queued parent submissions
+python tools/forge_studio/blueprint/build_tracker.py --retry-queued --json
+
+# Parent ICDEV handoff
+python tools/forge_studio/blueprint/parent_client.py --submit --blueprint-id "bp-xxx" --json
+python tools/forge_studio/blueprint/parent_client.py --poll --blueprint-id "bp-xxx" --json
+python tools/forge_studio/blueprint/parent_client.py --health --json
+```
+
+### Pulse AI Blog Engine Commands
+```bash
+# SAM.gov → Pulse Article Pipeline
+python tools/pulse/engine/sam_bridge.py --run --json              # Generate articles from SAM.gov opportunities
+python tools/pulse/engine/sam_bridge.py --dry-run --json          # Extract topics without generating
+python tools/pulse/engine/sam_bridge.py --list-pending --json     # List pending extracted topics
+python tools/pulse/engine/sam_bridge.py --stats --json            # Pipeline statistics
+
+# Capability Scanner (D-PULSE-CAP-1, deterministic keyword matching)
+python tools/pulse/engine/capability_scanner.py --list --json            # List all capabilities across 18 domains
+python tools/pulse/engine/capability_scanner.py --domains --json         # List domain summaries
+python tools/pulse/engine/capability_scanner.py --match "zero trust compliance" --json  # Match capabilities by keywords
+python tools/pulse/engine/capability_scanner.py --format-context "DevSecOps pipeline" --json  # Format for drafter injection
+
+# Demand Detector (D-PULSE-CAP-2/3, append-only signals)
+python tools/pulse/engine/demand_detector.py --detect --json             # Detect signals from recent SAM pain points
+python tools/pulse/engine/demand_detector.py --aggregate --json          # Compute frequency/velocity stats
+python tools/pulse/engine/demand_detector.py --high-demand --json        # List high-demand unmet signals (threshold 5+)
+python tools/pulse/engine/demand_detector.py --suggest-articles --json   # Suggest positioning articles for high-demand gaps
+python tools/pulse/engine/demand_detector.py --graph --json              # Query capability graph edges
+```
+
+### Harness Engineering Commands
+```bash
+# Maturity assessment (6 dimensions, Level 0-4)
+python tools/harness/maturity_assessor.py --project-dir . --detailed --json
+
+# Exit criteria — list workflows or evaluate a specific one
+python tools/harness/exit_criteria_evaluator.py --list --json
+python tools/harness/exit_criteria_evaluator.py --workflow build --json
+python tools/harness/exit_criteria_evaluator.py --workflow build --check-state .tmp/test_runs/state.json --json
+
+# Trace analysis — analyze recent sessions for patterns
+python tools/harness/trace_analyzer.py --last-n 5 --json
+python tools/harness/trace_analyzer.py --session-id <id> --json
+python tools/harness/trace_analyzer.py --recommendations --limit 20 --json
+
+# Scaffold baseline harness for child apps
+python tools/harness/scaffold_harness.py --output-dir /path/to/project --json
+python tools/harness/scaffold_harness.py --output-dir /path --impact-level IL4 --json
+```
+
+### Innovation Feature Commands
+```bash
+# VSM Dashboard (F3) — DORA metrics, pipeline flow, bottleneck detection
+python tools/analytics/vsm_engine.py --project-id "sparkpilot" --dora --json
+python tools/analytics/vsm_engine.py --project-id "sparkpilot" --bottlenecks --json
+python tools/analytics/vsm_engine.py --project-id "sparkpilot" --pipelines --json
+
+# Developer Scorecard (F8) — 5-dimension health scoring
+python tools/analytics/scorecard.py --project-id "sparkpilot" --compute --json
+python tools/analytics/scorecard.py --project-id "sparkpilot" --trend --json
+python tools/analytics/scorecard.py --project-id "sparkpilot" --latest --json
+
+# cATO Live Evidence (F1) — continuous OSCAL streaming
+python tools/compliance/cato_live_engine.py --project-id "sparkpilot" --stream --json
+python tools/compliance/cato_live_engine.py --project-id "sparkpilot" --dashboard --json
+python tools/compliance/cato_live_engine.py --project-id "sparkpilot" --timeline --json
+
+# AI Narratives (F4) — compliance narrative workflow
+python tools/compliance/narrative_workflow.py --project-id "sparkpilot" --batch --json
+python tools/compliance/narrative_workflow.py --project-id "sparkpilot" --pending --json
+
+# Template Exchange (F2) — community compliance templates
+python tools/compliance/template_exchange.py --list --json
+python tools/compliance/template_exchange.py --create --name "AC-2 SSP" --template-type ssp --framework "NIST 800-53" --content "..." --json
+
+# Firmware SBOM + VEX (F12)
+python tools/compliance/firmware_sbom.py --project-id "sparkpilot" --generate --project-dir . --board simulator --json
+
+# Thread Heatmap (F5) — digital thread coverage gaps
+python tools/mbse/thread_heatmap.py --project-id "sparkpilot" --generate --json
+python tools/mbse/thread_heatmap.py --project-id "sparkpilot" --orphans --json
+
+# PR Intelligence (F6) — compliance/security pre-check
+python tools/ci/pr_intelligence.py --project-id "sparkpilot" --analyze --pr-reference HEAD --project-dir . --json
+
+# Threat Modeler (F7) — STRIDE analysis with NIST mapping
+python tools/security/threat_modeler.py --project-id "sparkpilot" --list --json
+python tools/security/threat_modeler.py --project-id "sparkpilot" --create --name "Model" --components '[{"id":"web","type":"web_application"}]' --json
+
+# Golden Path Scaffolder (F9)
+python tools/scaffold/golden_path.py --list --json
+python tools/scaffold/golden_path.py --scaffold --template flask_api --project-name "my-project" --json
+
+# Forge Hub (F10) — connector community marketplace
+python tools/databridge/forge/community_hub.py --browse --json
+python tools/databridge/forge/community_hub.py --featured --json
+
+# ATO Simulator (F11) — Monte Carlo timeline prediction
+python tools/simulation/ato_simulator.py --project-id "sparkpilot" --simulate --iterations 1000 --json
+
+# All tools use icdev.db (NOT sparkpilot.db)
+```
+
 ---
 
 ## Architecture: GOTCHA Framework
@@ -1744,6 +2202,8 @@ python tools/agent/session_purpose.py --history --project-id "proj-123" --json  
 | Industry Research | `goals/industry_research.md` | Deep industry vertical research: 9-stage pipeline (SCOPE→FORECAST→DOSSIER), 9 source streams (incl. YouTube video), 6-dimension challenge scoring, regulatory mapping, capability coverage, build/buy analysis, cross-engine forecast with surprise predictions, dossier generation, HITL review, child app fitness trigger, cross-engine registration (Phase 63, D-RES-1 through D-RES-21) |
 | RAG Subsystem | `goals/rag_subsystem.md` | Universal RAG: multi-source ingestion (20+ tables), adaptive chunking, vector store ABC (SQLite/ChromaDB/FAISS), two-stage retrieval (vector top-50 → qwen3 re-rank → top-5), auto-inject into two-tier LLM, tiered retention (hot/warm/cold), PROV-AGENT provenance, child app 3-tier RAG (local/parent-federated/hybrid), knowledge search dashboard (Phase 64, D-RAG-1 through D-RAG-14) |
 | Fine-Tuning Extension | `goals/rag_subsystem.md` (Component 7) | QLoRA fine-tuning: dataset management, labeling, training (Unsloth/OpenAI/Bedrock/Azure), GGUF export, BLEU/ROUGE-L/perplexity evaluation, auto-promotion, LLM router override, marketplace LoRA adapter assets (Phase 64 Extension, D-FT-1 through D-FT-22) |
+| Genesis Daemon | `goals/genesis_daemon.md` | v2.0 autonomous research lab — 12 Reflexes, Trust Kernel, circuit breakers, always-on daemon |
+| Genesis Promoter | `goals/genesis_promoter.md` | Knowledge Bridge — GKP export/import, dedup, auto-promote, human review gateway |
 
 ---
 
@@ -2408,6 +2868,155 @@ python tools/marketplace/catalog_manager.py --get --slug "tenant-abc/my-skill" -
 # Provenance
 python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
 ```
+
+- **D1:** ~~SQLite for internal operational data (zero-config portability)~~ Superseded by D-DB-20
+- **D-DB-20:** PostgreSQL is the primary backend; SQLite retained as lightweight fallback for portable/browser scenarios
+- **D-DB-21:** Storage abstraction layer in ``tools/db/storage.py`` -- all tools use ``get_connection()`` (backend-agnostic)
+- **D-DB-22:** ``args/storage_config.yaml`` controls backend selection; env vars override YAML (ICDEV_STORAGE_BACKEND, ICDEV_PG_*)
+- **D-DB-23:** Placeholder translation (? -> %s) handled transparently by StorageConnection wrapper
+- **D-DB-24:** Supabase for marketplace-saas (PostgreSQL + Auth + RLS + Realtime)
+- **D-DB-25:** Alembic for PostgreSQL schema versioning (replaces table-recreation pattern)
+- **D2:** Stdio for MCP (Claude Code); HTTPS+mTLS for A2A (K8s inter-agent)
+- **D5:** CUI markings applied at generation time (inline, not post-processing)
+- **D6:** Audit trail is append-only/immutable (no UPDATE/DELETE -- NIST AU compliance)
+- **D4:** Statistical methods for pattern detection; Bedrock LLM for root cause analysis
+- **D7:** Python stdlib xml.etree.ElementTree for XMI/ReqIF parsing (zero deps, air-gap safe)
+- **D8:** Normalized DB tables for model elements (enables SQL joins across digital thread)
+- **D9:** M-ATLAS adds Model pre-phase to ATLAS (backward compatible -- skips if no model)
+- **D12:** N:M digital thread links (one block -> many code modules; one control -> many requirements)
+- **D21:** Readiness scoring uses deterministic weighted average (reproducible, not probabilistic)
+- **D22:** Monte Carlo uses Python stdlib random (zero deps, air-gap safe)
+- **D27:** Supply chain graph stored as SQL adjacency list (no graph DB needed)
+- **D117:** DevSecOps/ZTA Agent with hard veto on pipeline_configuration and zero_trust_policy
+- **D120:** ZTA maturity model uses DoD 7-pillar scoring (Traditional -> Advanced -> Optimal)
+- **D215:** Prompt injection detector uses 5 detection categories
+- **D216:** AI telemetry hashes prompts/responses with SHA-256 (privacy-preserving audit)
+- **D280:** Pluggable Tracer ABC: OTelTracer (production), SQLiteTracer (air-gapped), NullTracer (fallback)
+- **D287:** PROV-AGENT provenance in 3 append-only SQLite tables (W3C PROV standard)
+- **D331:** Code quality metrics are read-only, advisory-only -- never modifies source files
+- **D-WG-1:** Independent `tools/writing/` directory for marketplace portability
+- **D-WG-2:** Deterministic-first pipeline (regex before LLM) -- air-gap safe, reproducible
+- **D-WG-3:** 5-layer style guide cascade with ISSO locks (Platform->Tenant->Program->Project->User)
+- **D-WG-5:** Plagiarism via RAG similarity (0.85 threshold)
+- **D-WG-6:** AI detection is deterministic (advisory-only) -- perplexity, burstiness, n-gram stats
+- **D-WG-7:** Snippets follow knowledge_base.py CRUD + hybrid search pattern
+- **D-WG-8:** GovProposal via read-only bridge -- never writes to proposal tables
+- **D-WG-9:** Append-only analysis results (NIST AU compliant)
+- **D-WG-12:** Two-tier routing per function -- grammar/readability deterministic, tone scanner, rewrite/coherence worker
+- **D-MKT-S1:** Marketplace extracted to standalone SaaS (marketplace.icdev.ai) -- ICDEV uses thin client (4 files, ~400 LOC)
+- **D-MKT-S2:** Two modes: oss (all unlocked, default), saas (token verification)
+- **D-MKT-S3:** Token verification is 100% offline via RSA-SHA256 public key -- 30-day grace period for air-gap
+- **D-MKT-S4:** Thin client: module_runtime.py (gating), license_client.py (sync/verify/renew/feedback), token_store.py (local JSON cache)
+- **D-MKT-C1:** Community-first model: 90-day free activation, unlimited renewals, no SLA
+- **D-MKT-C2:** Sponsor tiers (platinum/gold/silver/bronze) are recognition badges only -- no feature gating, donations handled externally
+- **D-MKT-C3:** Renewal = feedback touchpoint: optional survey on each renewal for continuous improvement
+- **D-MKT-E1:** At-rest encryption for marketplace modules using AES-256-GCM with HKDF-SHA256 key derivation
+- **D-MKT-E2:** Encryption key derived from token `encryption_seed` field (hex string, stable across renewals) + module slug as HKDF salt
+- **D-MKT-E3:** File format: `[4B "IENC"][2B version][12B nonce][NB ciphertext+GCM tag]` -- GCM provides both confidentiality and integrity (no separate HMAC)
+- **D-MKT-E4:** Custom `sys.meta_path` import hook (`EncryptedModuleFinder`) transparently decrypts `.py.enc` files to memory on import -- never writes plaintext to disk
+- **D-MKT-E5:** Anti-tamper: if `.py` exists where `.py.enc` is expected for a protected module, import is refused with `ImportError`
+- **D-MKT-E6:** Per-module encryption keys (different slug = different HKDF salt = different key) -- per-child-app isolation via per-license `encryption_seed`
+- **D-MKT-E7:** OSS mode skips encryption entirely (files in the clear); SaaS mode encrypts on install, decrypts on import
+- **D-MKT-E8:** Key and code object caches are per-process lifetime -- each module decrypted only once per process, ~0.5ms per 100KB
+- **D-MKT-D1:** Marketplace disabled by default (air-gapped/OSS). Enable with `ICDEV_MARKETPLACE_ENABLED=true` env var or `args/marketplace_config.yaml enabled: true`. When disabled: `is_module_enabled()` returns True (all features are core), marketplace commerce routes return 501, no token checks, no network calls, no encrypted import hooks.
+- **D-CF-1:** Connector Forge `forge/` is a subpackage of `tools/databridge/` -- imports from existing ABCs
+- **D-CF-2:** Two-tier LLM for code gen (qwen3 drafts connector skeleton, Claude reviews against ABC contract)
+- **D-CF-3:** Inline Jinja2 template strings with string-replacement fallback (air-gap safe)
+- **D-CF-4:** Docker sandbox primary (--network none, --memory 256m), subprocess fallback
+- **D-CF-5:** Two new ConnectorType enum values: SOAP, HEALTH
+- **D-CF-6:** Promotion state machine: sandboxed → promoted → published → deprecated
+- **D-CF-7:** 8 new audit event types for forge lifecycle
+- **D-CF-8:** Marketplace install via ASSET_TYPE_DIRS["databridge_connector"]
+- **D-CF-9:** MCP server exposes 8 tools for forge operations
+- **D-CF-10:** Config in databridge_config.yaml under forge: block
+- **D-SC-1:** Scale Engine uses ThreadPoolExecutor wrapping existing sync connectors (no ABC changes)
+- **D-SC-2:** Per-connector-type connection pools (key = connector_name)
+- **D-SC-3:** WAL + batch flush for sync log and audit writes (single writer thread)
+- **D-SC-4:** Fixed limits (configurable max_workers, max_concurrent_syncs via YAML)
+- **D-SC-5:** Semaphore enforces max_concurrent_syncs (makes existing config value real)
+- **D-SC-6:** stdlib only (concurrent.futures, threading, queue); psutil optional for backpressure
+- **D-SC-7:** Append-only audit trail preserved (INSERT only in WriteBatcher, NIST AU)
+- **D-CF-19:** Runbooks stored as JSON DAG (tasks_json + edges_json) in SQLite -- air-gap safe
+- **D-CF-20:** Runbook executions are append-only with per-task log (NIST AU compliance)
+- **D-CF-21:** DAG execution uses Kahn's algorithm (topological sort) -- deterministic O(V+E), no LLM in critical path
+- **D-CF-22:** Snippets are self-contained sub-DAGs embedded by reference with usage count tracking
+- **D-CF-23:** Metastore uses adjacency list for dependency graph (matches D27 pattern, SQL joins)
+- **D-CF-24:** Auto-discovery pulls from db_connections, cf_landing_zones, devices -- idempotent upsert
+- **D-CF-25:** Conditional branching uses deterministic expression eval (key-operator-value triples, no eval())
+- **D-CF-26:** AI runbook generation is non-critical-path, always outputs status='draft'
+- **D-CF-27:** RTO/RPO stored as hours (REAL) on cf_applications -- simple numeric comparison
+- **D-CF-28:** Single unified Ops MCP server with 18 tools (reduces MCP server proliferation)
+- **D-CF-29:** YAML runbook templates in args/cloudforge_runbook_templates/ (GOTCHA args layer)
+- **D-CF-30:** Community: 3 runbooks, no snippets/AI/discovery; Pro: unlimited
+- **D52:** This is a generated child app -- grandchild app generation is disabled by design
+- **D-INV-1:** cATO OSCAL streaming uses incremental assessment-results (per-control, not bulk)
+- **D-INV-2:** Evidence freshness thresholds: current <= 30d, stale <= 90d, expired > 90d
+- **D-INV-5:** Template provenance via SHA-256 content hash (tamper detection)
+- **D-INV-9:** DORA metrics computed from audit_trail stage timestamps (no external CI integration needed)
+- **D-INV-10:** Bottleneck detection via p90 statistical analysis (no ML)
+- **D-INV-13:** Two-tier LLM for narrative generation: qwen3 drafts, Claude reviews
+- **D-INV-14:** Narrative approval workflow: draft -> pending_review -> approved/rejected
+- **D-INV-17:** Heatmap matrix uses N x M artifact-type cross-reference (not individual artifacts)
+- **D-INV-21:** PR diff analysis via subprocess git (no GitHub API dependency)
+- **D-INV-25:** STRIDE threat analysis is deterministic rule-based per component type (no LLM)
+- **D-INV-26:** STRIDE-to-NIST mapping: Spoofing->AC/IA, Tampering->SC/SI, Repudiation->AU, InfoDisc->SC, DoS->SC/CP, EoP->AC
+- **D-INV-29:** Scorecard weighted composite (6 dimensions): code_quality=0.20, security=0.20, compliance=0.15, test_coverage=0.15, velocity=0.10, sbd_posture=0.20
+- **D-INV-33:** Golden Path uses declarative YAML template definitions (5 built-in templates)
+- **D-INV-37:** Forge Hub trust score: validation=0.30, rating=0.25, downloads=0.20, age=0.15, author=0.10
+- **D-INV-41:** ATO simulator uses PERT sampling via stdlib random.betavariate (zero deps)
+- **D-INV-45:** Firmware SBOM output format: CycloneDX 1.5 JSON
+- **D-INV-46:** VEX output format: CSAF 2.0 with per-component exploitability status
+- **D-INV-48:** All innovation features use icdev.db (NOT sparkpilot.db -- that's for IoT/embedded only)
+- **D-HARNESS-1:** Loop state in `.tmp/sessions/` JSON (ephemeral, not DB)
+- **D-HARNESS-2:** Loop detection is soft-signal only (stderr, exit 0) -- never blocks
+- **D-HARNESS-3:** Progress file is JSON (models handle structured data better)
+- **D-HARNESS-4:** Exit criteria in args/ YAML (GOTCHA separation)
+- **D-HARNESS-5:** Trace analyzer scanner-tier only (zero Claude tokens)
+- **D-HARNESS-6:** Maturity assessor read-only, advisory-only
+- **D-HARNESS-7:** Scaffolder generates 3 hooks (minimal), not all 7
+- **D-HARNESS-8:** One new append-only DB table: `harness_trace_recommendations`
+- **D-SBD-1:** Cloudyrion 8-Pillar SbD Framework mapped to all 35 SBD requirements via `sbd_pillars` field
+- **D-SBD-2:** Security exception registry in `sbd_exceptions` table (active/expired/renewed lifecycle, max 365 days)
+- **D-SBD-3:** Exception aging gate: expired exceptions block deployment (Cloudyrion anti-pattern: lingering exceptions)
+- **D-SBD-4:** CISA SbD added to crosswalk engine as `cisa_sbd` framework key (implement once, satisfy many)
+- **D-SBD-5:** Golden Path child apps auto-inherit SECURITY.md, .well-known/security.txt, and args/sbd_gates.yaml
+- **D-SBD-6:** Developer Scorecard expanded to 6 dimensions (sbd_posture=0.20 weight, penalizes expired exceptions)
+- **D-SBD-7:** SbD goal workflow: 7-step assess-review-remediate-report cycle with Cloudyrion pillar alignment
+- **D-KARL-1:** Per-query-type GraphRAG scoring profiles (compliance, exploratory, entity_search, synthesis) with auto-detection from query text
+- **D-KARL-2:** Self-directed context compression via scanner-tier LLM (qwen3.5, zero Claude tokens) — compresses verbose GraphRAG neighborhood context before downstream consumption
+- **D-KARL-3:** Parallel multi-strategy retrieval (GraphRAG + corrective RAG + source registry) via ThreadPoolExecutor with generative aggregation — scanner-tier LLM synthesizes unified context from N independent retrieval paths
+- **D-KARL-4:** Pass-rate filtered training pair generation — Goldilocks difficulty calibration (pairs that are neither too easy nor too hard for the model)
+- **D-FS-TIER-1:** Deterministic 12-signal tier classifier (regex, no LLM) — threshold >= 3 routes to parent ICDEV handoff
+- **D-FS-TIER-2:** ForgeBlueprint manifest with 31-column DB table — portable JSON spec for app design, requirements, and handoff tracking
+- **D-FS-TIER-3:** Parent ICDEV HTTP client uses stdlib urllib (air-gap safe) with queued retry when parent unreachable
+- **D-FS-TIER-4:** Build tracker orchestrates full pipeline: classify → route → build (local eject) or submit (parent handoff) → track
+- **D-DH-1:** Scanner-tier deterministic generation (zero Claude tokens). Templates + data aggregation only. Optional LLM enhancement via two-tier router.
+- **D-DH-2:** Document versions use monotonic integer (1, 2, 3...) with SHA-256 content hash for integrity
+- **D-DH-3:** Section-level diffing (not line-level) — aligns with structured document templates
+- **D-DH-4:** Health score uses weighted composite: freshness=0.35, completeness=0.40, gaps=0.25 (same pattern as D-INV-29 scorecard)
+- **D-DH-5:** BYOS scanner reuses existing detection patterns from sbom_generator.py and code_analyzer.py
+- **D-DH-6:** Enrichment cache with configurable TTL — graceful degradation in air-gapped mode
+- **D-DH-7:** Multi-tenant via tenant_id column — future-proofed for multi-org without schema change
+- **D-DH-8:** Export delegates to existing tools (oscal_generator, xacta_export, emass_export) where possible
+- **D-DH-9:** All dh_ tables are append-only (new version = new row, status change on old row) — NIST AU compliant
+- **D-DH-10:** Profile definitions are JSON in context/ (GOTCHA context layer), not hardcoded in tools
+- **D-DH-11:** Module-level docs with independent health scores, rolling up to parent app
+- **D-DH-12:** Portfolio aggregate uses weighted average by app criticality
+- **D-DH-13:** Imported artifacts stored as-is with format detection (SPDX, CycloneDX, PDF, OSCAL)
+- **D-DH-14:** Provenance tracks origin_project, origin_version, current_version, drift_status
+- **D-DH-15:** Dependency graph uses adjacency list (matches D27 pattern)
+- **D-GEN-1:** Single daemon process, 12 threads (one per Reflex) — simpler than 12 daemons
+- **D-GEN-2:** Scanner-tier LLM only (qwen3.5 local, unlimited) — zero Claude cost for autonomous ops
+- **D-GEN-3:** Knowledge flows via GKP JSON artifacts, never git merge — decouples experimental code from production
+- **D-GEN-4:** Promoter is the only gateway from v2.0 → v1.x — single point of validation and audit
+- **D-GEN-5:** v2-genesis rebases on main weekly — stays current without polluting main
+- **D-GEN-6:** All autonomous decisions logged to append-only genesis_audit table (NIST AU)
+- **D-GEN-7:** Code patches require human cherry-pick to main — highest safety for code changes
+- **D-GEN-8:** Weekly Report includes Evolve change log with diffs — human oversight without daily burden
+- **D-GEN-9:** Feature flag ICDEV_GENESIS_ENABLED (default: false) — opt-in activation
+- **D-GEN-10:** Append-only genesis_audit table for all autonomous decisions (NIST AU compliance)
+- **D-GEN-11:** Feedback loop is pull-based (v2.0 pulls from v1.x) — v1.x doesn't need to know v2.0 exists
+- **D-GEN-12:** Weekly report includes all promotions, rejections, metrics — human oversight without daily burden
 
 ---
 

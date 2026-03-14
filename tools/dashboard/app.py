@@ -2399,6 +2399,299 @@ def _get_db():
 # CLI entry point
 # ---------------------------------------------------------------------------
 
+@app.route("/api/cli-generator/generate", methods=["POST"])
+def api_cli_generator_generate():
+    try:
+        from tools.harness.cli_generator import generate
+        data = request.get_json(force=True)
+        spec_path = data.get("spec_path", "")
+        if not spec_path:
+            return jsonify({"status": "error", "error": "spec_path is required"}), 400
+        result = generate(
+            spec_path=spec_path,
+            output_dir=data.get("output_dir"),
+            name=data.get("name"),
+            dry_run=data.get("dry_run", False),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MCP Wrapper Generator (Phase 3)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/mcp-wrapper")
+def mcp_wrapper_page():
+    return render_template("mcp_wrapper.html", app_name="SparkPilot")
+
+
+@app.route("/api/mcp-wrapper/scan")
+def api_mcp_wrapper_scan():
+    try:
+        from tools.harness.mcp_wrapper_generator import scan_tools
+        return jsonify(scan_tools())
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e), "discovered": [], "total": 0, "with_json_flag": 0})
+
+
+@app.route("/api/mcp-wrapper/list")
+def api_mcp_wrapper_list():
+    try:
+        from tools.harness.mcp_wrapper_generator import list_wrapped
+        return jsonify(list_wrapped())
+    except Exception as e:
+        return jsonify({"wrappers": [], "count": 0, "error": str(e)})
+
+
+@app.route("/api/mcp-wrapper/wrap", methods=["POST"])
+def api_mcp_wrapper_wrap():
+    try:
+        from tools.harness.mcp_wrapper_generator import wrap_tool
+        data = request.get_json(force=True)
+        tool_path = data.get("tool_path", "")
+        if not tool_path:
+            return jsonify({"status": "error", "error": "tool_path is required"}), 400
+        return jsonify(wrap_tool(tool_path, dry_run=data.get("dry_run", False)))
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+@app.route("/api/mcp-wrapper/wrap-all", methods=["POST"])
+def api_mcp_wrapper_wrap_all():
+    try:
+        from tools.harness.mcp_wrapper_generator import wrap_all
+        data = request.get_json(force=True) if request.data else {}
+        return jsonify(wrap_all(
+            dry_run=data.get("dry_run", False),
+            limit=data.get("limit", 20),
+        ))
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)}), 500
+
+
+# ── Page Agent Copilot API ───────────────────────────────────────
+# Inspired by alibaba/page-agent: text-based DOM navigation + AI copilot
+
+_PAGE_AGENT_ROUTE_MAP = {
+    "home": "/", "dashboard": "/", "missions": "/missions",
+    "simulator": "/simulator", "fleet": "/devices", "devices": "/devices",
+    "firmware": "/firmware", "edge ai": "/edge-ai", "self-heal": "/crashes",
+    "agents": "/agents", "govcon": "/govcon", "writeguard": "/writeguard",
+    "pulse": "/pulse", "databridge": "/databridge",
+    "messaging": "/databridge/messaging", "cloudforge": "/cloudforge",
+    "knowledge": "/knowledge-graph", "knowledge graph": "/knowledge-graph",
+    "marketplace": "/marketplace", "research": "/research",
+    "harness": "/harness", "codelens": "/container-lens",
+    "forge studio": "/forge-studio", "dochub": "/dochub",
+    "resilience": "/resilience", "architecture": "/architecture",
+    "compliance": "/compliance-accel", "agent evolution": "/agent-evolution",
+    "intelligence": "/intelligence", "maturity": "/maturity",
+    "decisions": "/decisions", "security": "/security-scan",
+}
+
+
+@app.route("/api/page-agent/message", methods=["POST"])
+def api_page_agent_message():
+    """Process a Page Agent copilot message — navigation, search, or contextual help."""
+    try:
+        data = request.get_json(force=True) if request.is_json else {}
+        message = data.get("message", "").strip()
+        page = data.get("page", "/")
+        if not message:
+            return jsonify({"error": "message required"}), 400
+
+        lower = message.lower().strip()
+
+        # Navigation intent
+        for prefix in ("go to ", "navigate to ", "show me ", "open "):
+            if lower.startswith(prefix):
+                target = lower[len(prefix):].strip()
+                route = _PAGE_AGENT_ROUTE_MAP.get(target)
+                if route:
+                    return jsonify({
+                        "response": f"Navigating to **{target}**...",
+                        "action": "navigate",
+                        "route": route,
+                    })
+                # Fuzzy match
+                best, best_score = None, 0
+                for key in _PAGE_AGENT_ROUTE_MAP:
+                    score = _bigram_similarity(target, key)
+                    if score > best_score and score > 0.4:
+                        best_score = score
+                        best = key
+                if best:
+                    return jsonify({
+                        "response": f"Did you mean **{best}**? Navigating...",
+                        "action": "navigate",
+                        "route": _PAGE_AGENT_ROUTE_MAP[best],
+                    })
+                return jsonify({
+                    "response": f"Page not found: `{target}`. Try asking `show pages`.",
+                    "suggestions": ["show pages", "help"],
+                })
+
+        # Help
+        if lower in ("help", "what can you do", "commands"):
+            return jsonify({
+                "response": (
+                    "**Commands:** `go to <page>`, `search <text>`, "
+                    "`show pages`, `where am i`, `describe this page`, "
+                    "`scroll up/down`, `click <element>`, `fill <value> in <field>`"
+                ),
+                "suggestions": ["go to compliance", "show pages", "describe this page"],
+            })
+
+        # Page listing
+        if "show pages" in lower or "list pages" in lower or "list routes" in lower:
+            pages = sorted(_PAGE_AGENT_ROUTE_MAP.keys())
+            lines = [f"- `{p}` → {_PAGE_AGENT_ROUTE_MAP[p]}" for p in pages]
+            return jsonify({
+                "response": f"**Available pages ({len(pages)}):**\n" + "\n".join(lines),
+            })
+
+        # Context-aware suggestions based on current page
+        suggestions = _page_suggestions(page)
+        return jsonify({
+            "response": (
+                f"I understand your request: *{message}*. "
+                "For best results, try specific commands like `go to agents` or `search <keyword>`."
+            ),
+            "suggestions": suggestions,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _bigram_similarity(a, b):
+    """Bigram (Dice) similarity for fuzzy page matching."""
+    if a == b:
+        return 1.0
+    if len(a) < 2 or len(b) < 2:
+        return 0.0
+    a_bigrams = {}
+    for i in range(len(a) - 1):
+        bg = a[i:i+2]
+        a_bigrams[bg] = a_bigrams.get(bg, 0) + 1
+    matches = 0
+    for i in range(len(b) - 1):
+        bg = b[i:i+2]
+        if a_bigrams.get(bg, 0) > 0:
+            matches += 1
+            a_bigrams[bg] -= 1
+    return (2.0 * matches) / (len(a) + len(b) - 2)
+
+
+def _page_suggestions(current_page):
+    """Return contextual suggestions based on current page."""
+    suggestions_map = {
+        "/": ["go to agents", "go to compliance", "go to missions"],
+        "/agents": ["go to agent evolution", "go to harness", "go to intelligence"],
+        "/compliance-accel": ["go to dochub", "go to resilience", "go to maturity"],
+        "/devices": ["go to firmware", "go to edge ai", "go to simulator"],
+        "/knowledge-graph": ["go to research", "go to intelligence", "search compliance"],
+        "/cloudforge": ["go to databridge", "go to marketplace", "go to forge studio"],
+        "/genesis": ["run research", "run audit", "show promoter stats"],
+    }
+    return suggestions_map.get(current_page, ["help", "show pages", "go to agents"])
+
+# ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
+
+@app.route("/genesis")
+def genesis():
+    """Genesis v2.0 — Autonomous Research Lab dashboard."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
+            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+        )
+        stdout = result.stdout.strip()
+        json_start = stdout.find("{")
+        if json_start >= 0:
+            status = json.loads(stdout[json_start:])
+        else:
+            status = {"error": "Could not parse daemon status"}
+    except Exception as exc:
+        status = {"error": str(exc)}
+    return render_template("genesis.html", status=status)
+
+
+@app.route("/api/genesis/status", methods=["GET"])
+def api_genesis_status():
+    try:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
+            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+        )
+        stdout = result.stdout.strip()
+        json_start = stdout.find("{")
+        if json_start >= 0:
+            return jsonify(json.loads(stdout[json_start:]))
+        return jsonify({"error": "parse_failed"}), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/genesis/reflex/<name>", methods=["POST"])
+def api_genesis_run_reflex(name):
+    """Run a single Genesis reflex on-demand."""
+    allowed = ["research", "scout", "audit", "report", "comply", "ingest",
+               "market", "publish", "test", "learn", "heal", "evolve"]
+    if name not in allowed:
+        return jsonify({"error": f"Unknown reflex: {name}"}), 400
+    try:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "tools/genesis/daemon.py", "--reflex", name, "--json"],
+            capture_output=True, text=True, timeout=300, cwd=BASE_DIR,
+        )
+        stdout = result.stdout.strip()
+        json_start = stdout.find("{")
+        if json_start >= 0:
+            return jsonify(json.loads(stdout[json_start:]))
+        return jsonify({"error": "parse_failed", "raw": stdout[:500]}), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/genesis/promoter/stats", methods=["GET"])
+def api_genesis_promoter_stats():
+    try:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "tools/genesis/promoter.py", "--stats", "--json"],
+            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+        )
+        stdout = result.stdout.strip()
+        json_start = stdout.find("{")
+        if json_start >= 0:
+            return jsonify(json.loads(stdout[json_start:]))
+        return jsonify({"error": "parse_failed"}), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/genesis/feedback/priorities", methods=["GET"])
+def api_genesis_feedback_priorities():
+    try:
+        import subprocess
+        result = subprocess.run(
+            [sys.executable, "tools/genesis/feedback_collector.py", "--priorities", "--json"],
+            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+        )
+        stdout = result.stdout.strip()
+        json_start = stdout.find("{")
+        if json_start >= 0:
+            return jsonify(json.loads(stdout[json_start:]))
+        return jsonify({"error": "parse_failed"}), 500
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ICDEV Dashboard")
     parser.add_argument("--port", type=int, default=PORT, help="Port to run on (default: 5000)")

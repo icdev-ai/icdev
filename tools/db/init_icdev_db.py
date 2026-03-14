@@ -6178,6 +6178,1315 @@ CREATE TABLE IF NOT EXISTS ft_hyperparam_results (
 );
 CREATE INDEX IF NOT EXISTS idx_ft_hp_search
     ON ft_hyperparam_results(search_id);
+
+-- ============================================================
+-- WRITEGUARD SUBSYSTEM (Phase 65, D-WG-1 through D-WG-14)
+-- ============================================================
+
+-- 1. Style guides — 5-layer cascade (mutable, versioned per D183)
+CREATE TABLE IF NOT EXISTS wg_style_guides (
+    id TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK(scope IN ('platform','tenant','program','project','user')),
+    scope_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    guide_name TEXT NOT NULL,
+    guide_yaml TEXT NOT NULL,
+    inherits_from TEXT,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER DEFAULT 1,
+    change_summary TEXT,
+    classification TEXT DEFAULT 'CUI',
+    PRIMARY KEY (id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_wg_style_guides_scope
+    ON wg_style_guides(scope, scope_id);
+
+-- 2. Style guide locks — ISSO-lockable dimensions (D-WG-3)
+CREATE TABLE IF NOT EXISTS wg_style_guide_locks (
+    id TEXT PRIMARY KEY,
+    guide_id TEXT NOT NULL REFERENCES wg_style_guides(id),
+    dimension_path TEXT NOT NULL,
+    lock_owner_role TEXT NOT NULL CHECK(lock_owner_role IN ('isso','architect','pm','admin')),
+    locked_by TEXT NOT NULL,
+    locked_at TEXT NOT NULL DEFAULT (datetime('now')),
+    reason TEXT,
+    is_active INTEGER DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_wg_locks_guide
+    ON wg_style_guide_locks(guide_id);
+
+-- 3. Analysis results — APPEND-ONLY (D6, D-WG-9)
+CREATE TABLE IF NOT EXISTS wg_analysis_results (
+    id TEXT PRIMARY KEY,
+    input_text_hash TEXT NOT NULL,
+    input_length INTEGER NOT NULL DEFAULT 0,
+    mode TEXT NOT NULL DEFAULT 'inline' CHECK(mode IN ('inline','batch')),
+    readability_flesch REAL DEFAULT 0.0,
+    readability_gunning_fog REAL DEFAULT 0.0,
+    readability_grade_level REAL DEFAULT 0.0,
+    grammar_error_count INTEGER DEFAULT 0,
+    passive_voice_pct REAL DEFAULT 0.0,
+    avg_sentence_length REAL DEFAULT 0.0,
+    tone_profile TEXT DEFAULT '{}',
+    coherence_score REAL DEFAULT 0.0,
+    plagiarism_max_similarity REAL DEFAULT 0.0,
+    ai_content_score REAL DEFAULT 0.0,
+    overall_quality_score REAL DEFAULT 0.0,
+    style_guide_id TEXT,
+    section_id TEXT,
+    opportunity_id TEXT,
+    document_name TEXT DEFAULT '',
+    findings_count INTEGER DEFAULT 0,
+    analysis_duration_ms INTEGER DEFAULT 0,
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    user_id TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_wg_results_hash
+    ON wg_analysis_results(input_text_hash);
+CREATE INDEX IF NOT EXISTS idx_wg_results_section
+    ON wg_analysis_results(section_id);
+
+-- 4. Analysis findings — APPEND-ONLY (D6, D-WG-9)
+CREATE TABLE IF NOT EXISTS wg_analysis_findings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    result_id TEXT NOT NULL REFERENCES wg_analysis_results(id),
+    category TEXT NOT NULL CHECK(category IN (
+        'grammar','spelling','punctuation','readability','sentence_length',
+        'passive_voice','tone','style','coherence','plagiarism','ai_content',
+        'cui_marking','classification','govcon_compliance','win_theme',
+        'cross_volume','custom_rule'
+    )),
+    severity TEXT NOT NULL DEFAULT 'info'
+        CHECK(severity IN ('critical','high','medium','low','info')),
+    message TEXT NOT NULL,
+    suggestion TEXT DEFAULT '',
+    context TEXT DEFAULT '',
+    line_number INTEGER DEFAULT 0,
+    char_offset INTEGER DEFAULT 0,
+    char_length INTEGER DEFAULT 0,
+    rule_id TEXT DEFAULT '',
+    confidence REAL DEFAULT 1.0,
+    auto_fixable INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_wg_findings_result
+    ON wg_analysis_findings(result_id);
+CREATE INDEX IF NOT EXISTS idx_wg_findings_category
+    ON wg_analysis_findings(category);
+
+-- 5. Snippets — reusable writing templates (D-WG-7)
+CREATE TABLE IF NOT EXISTS wg_snippets (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(category IN (
+        'boilerplate','transition','introduction','conclusion',
+        'methodology','compliance','evidence','custom'
+    )),
+    domain TEXT DEFAULT 'general',
+    tags TEXT DEFAULT '[]',
+    usage_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','archived')),
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wg_snippets_category
+    ON wg_snippets(category);
+
+-- 6. Batch runs — batch analysis sessions (D-WG-9)
+CREATE TABLE IF NOT EXISTS wg_batch_runs (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    document_count INTEGER DEFAULT 0,
+    completed_count INTEGER DEFAULT 0,
+    avg_quality_score REAL DEFAULT 0.0,
+    cross_doc_consistency_score REAL DEFAULT 0.0,
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','running','completed','failed')),
+    summary TEXT DEFAULT '{}',
+    tenant_id TEXT DEFAULT '',
+    project_id TEXT DEFAULT '',
+    created_by TEXT DEFAULT '',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Phase 68: Draft generation batch job tracking (D-P68-3)
+CREATE TABLE IF NOT EXISTS draft_generation_jobs (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    job_type TEXT DEFAULT 'batch',
+    total_sections INTEGER DEFAULT 0,
+    completed_sections INTEGER DEFAULT 0,
+    current_section_id TEXT,
+    current_section_title TEXT,
+    current_step TEXT,
+    steps_completed TEXT DEFAULT '[]',
+    status TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'completed', 'failed')),
+    error_message TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE INDEX IF NOT EXISTS idx_draftjob_opp ON draft_generation_jobs(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_draftjob_status ON draft_generation_jobs(status);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- DataBridge — Universal Data & Storage Connector (D-DB-1 through D-DB-20)
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Connections (D-DB-12, D-DB-13)
+CREATE TABLE IF NOT EXISTS db_connections (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    connector_type TEXT NOT NULL
+        CHECK(connector_type IN ('database','cloud_storage','file',
+                                  'streaming','saas_api','on_prem')),
+    connector_name TEXT NOT NULL,
+    config_yaml TEXT NOT NULL,
+    auth_method TEXT NOT NULL DEFAULT 'none'
+        CHECK(auth_method IN ('none','api_key','oauth2','iam_role',
+                               'connection_string','pki','password','pat')),
+    auth_secret_ref TEXT,
+    sync_direction TEXT DEFAULT 'read'
+        CHECK(sync_direction IN ('read','write','bidirectional')),
+    status TEXT DEFAULT 'configured'
+        CHECK(status IN ('configured','connected','syncing','error','disabled')),
+    health_status TEXT DEFAULT 'unknown'
+        CHECK(health_status IN ('unknown','healthy','degraded','unhealthy')),
+    last_health_check TEXT,
+    last_sync TEXT,
+    sync_cadence_minutes INTEGER DEFAULT 60,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    impact_level TEXT DEFAULT 'IL4'
+        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_db_conn_tenant ON db_connections(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_db_conn_type ON db_connections(connector_type);
+CREATE INDEX IF NOT EXISTS idx_db_conn_status ON db_connections(status);
+
+-- Schema registry (versioned, D-DB-7)
+CREATE TABLE IF NOT EXISTS db_schemas (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    table_name TEXT NOT NULL,
+    schema_json TEXT NOT NULL,
+    schema_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    inferred_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    UNIQUE(connection_id, table_name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_db_schema_conn ON db_schemas(connection_id);
+
+-- Sync log (append-only, D-DB-6)
+CREATE TABLE IF NOT EXISTS db_sync_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    sync_direction TEXT NOT NULL CHECK(sync_direction IN ('read','write')),
+    table_name TEXT,
+    rows_read INTEGER DEFAULT 0,
+    rows_written INTEGER DEFAULT 0,
+    rows_failed INTEGER DEFAULT 0,
+    bytes_transferred INTEGER DEFAULT 0,
+    sync_duration_ms INTEGER,
+    incremental_key TEXT,
+    incremental_value TEXT,
+    error_details TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    synced_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_sync_conn ON db_sync_log(connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_sync_time ON db_sync_log(synced_at);
+
+-- Connector configuration registry
+CREATE TABLE IF NOT EXISTS db_connector_configs (
+    id TEXT PRIMARY KEY,
+    connector_name TEXT NOT NULL UNIQUE,
+    connector_type TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    description TEXT,
+    config_schema_json TEXT,
+    requires_dependencies TEXT,
+    is_builtin INTEGER DEFAULT 1,
+    tier TEXT DEFAULT 'free' CHECK(tier IN ('free','paid')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Cloud storage path registry (Phase 3)
+CREATE TABLE IF NOT EXISTS db_storage_paths (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    logical_name TEXT NOT NULL,
+    physical_path TEXT NOT NULL,
+    file_format TEXT NOT NULL
+        CHECK(file_format IN ('parquet','csv','json','avro','orc','ipc','auto')),
+    partition_scheme TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id, logical_name)
+);
+
+-- Schema mappings (versioned, D-DB-7)
+CREATE TABLE IF NOT EXISTS db_mappings (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    target_connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    source_table TEXT NOT NULL,
+    target_table TEXT NOT NULL,
+    mapping_json TEXT NOT NULL,
+    mapping_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft','active','archived')),
+    cui_field_markings TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_db_map_src ON db_mappings(source_connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_map_tgt ON db_mappings(target_connection_id);
+
+-- Mapping execution log (append-only, D-DB-6)
+CREATE TABLE IF NOT EXISTS db_mapping_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mapping_id TEXT NOT NULL REFERENCES db_mappings(id),
+    rows_mapped INTEGER DEFAULT 0,
+    rows_failed INTEGER DEFAULT 0,
+    transform_errors TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    executed_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Lookup tables for transforms (D-DB-15)
+CREATE TABLE IF NOT EXISTS db_lookup_tables (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    table_json TEXT NOT NULL,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+
+-- Active stream subscriptions (Phase 6)
+CREATE TABLE IF NOT EXISTS db_streams (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    stream_name TEXT NOT NULL,
+    consumer_group TEXT,
+    status TEXT DEFAULT 'stopped'
+        CHECK(status IN ('stopped','running','paused','error')),
+    batch_window_seconds INTEGER DEFAULT 10,
+    batch_size INTEGER DEFAULT 1000,
+    last_offset TEXT,
+    rows_consumed INTEGER DEFAULT 0,
+    errors_count INTEGER DEFAULT 0,
+    started_at TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_stream_conn ON db_streams(connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_stream_status ON db_streams(status);
+
+-- OAuth2 token cache (Phase 7)
+CREATE TABLE IF NOT EXISTS db_oauth_tokens (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL REFERENCES db_connections(id),
+    access_token_ref TEXT NOT NULL,
+    refresh_token_ref TEXT,
+    token_type TEXT DEFAULT 'bearer',
+    expires_at TEXT,
+    scopes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id)
+);
+
+-- On-prem agent registrations (Phase 8)
+CREATE TABLE IF NOT EXISTS db_agents (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    agent_key_hash TEXT NOT NULL,
+    status TEXT DEFAULT 'registered'
+        CHECK(status IN ('registered','connected','disconnected','revoked')),
+    last_heartbeat TEXT,
+    ip_address TEXT,
+    agent_version TEXT,
+    capabilities_json TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_agent_tenant ON db_agents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_db_agent_status ON db_agents(status);
+
+-- DataBridge Messages (Phase 71, D-DB-26, append-only/immutable)
+CREATE TABLE IF NOT EXISTS db_messages (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('inbound','outbound')),
+    channel_id TEXT NOT NULL,
+    channel_name TEXT,
+    thread_id TEXT,
+    author_id TEXT NOT NULL,
+    author_name TEXT,
+    content TEXT NOT NULL,
+    content_html TEXT,
+    attachments_json TEXT,
+    platform_message_id TEXT,
+    reply_to_message_id TEXT,
+    agent_routed_to TEXT,
+    agent_response_task_id TEXT,
+    pii_scan_status TEXT DEFAULT 'pending'
+        CHECK(pii_scan_status IN ('pending','clean','flagged','error')),
+    pii_findings_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_db_msg_conn ON db_messages(connection_id);
+CREATE INDEX IF NOT EXISTS idx_db_msg_channel ON db_messages(channel_id);
+CREATE INDEX IF NOT EXISTS idx_db_msg_platform ON db_messages(platform);
+CREATE INDEX IF NOT EXISTS idx_db_msg_time ON db_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_db_msg_pii ON db_messages(pii_scan_status);
+
+-- Agent routing overrides (Phase 71, D-DB-25)
+CREATE TABLE IF NOT EXISTS db_message_routing (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL,
+    channel_id TEXT,
+    platform TEXT NOT NULL DEFAULT '',
+    target_agent_name TEXT NOT NULL DEFAULT 'orchestrator',
+    target_agent_url TEXT,
+    routing_rules_json TEXT,
+    enabled INTEGER DEFAULT 1,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id, channel_id)
+);
+
+-- Messaging daemon state (Phase 71, D-DB-23)
+CREATE TABLE IF NOT EXISTS db_messaging_daemon_state (
+    id TEXT PRIMARY KEY,
+    connection_id TEXT NOT NULL,
+    platform TEXT NOT NULL,
+    listener_type TEXT NOT NULL
+        CHECK(listener_type IN ('long_poll','websocket','gateway','webhook_only','error')),
+    status TEXT DEFAULT 'stopped'
+        CHECK(status IN ('stopped','starting','running','error','reconnecting')),
+    last_heartbeat TEXT,
+    error_details TEXT,
+    pid INTEGER,
+    thread_name TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connection_id)
+);
+
+-- ============================================================
+-- CONNECTOR FORGE (Phase 78, D-CF-1 through D-CF-10)
+-- Dynamic DataBridge connector generation, validation, sandbox
+-- ============================================================
+
+-- Generated connector code and metadata
+CREATE TABLE IF NOT EXISTS db_forge_connectors (
+    id TEXT PRIMARY KEY,
+    connector_name TEXT NOT NULL,
+    connector_type TEXT NOT NULL,
+    base_class TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    generated_code TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'sandboxed'
+        CHECK(status IN ('sandboxed','promoted','published','deprecated')),
+    spec_id TEXT,
+    promoted_by TEXT,
+    promoted_at TEXT,
+    published_slug TEXT,
+    marketplace_artifact_id TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_connector_name ON db_forge_connectors(connector_name);
+CREATE INDEX IF NOT EXISTS idx_forge_connector_status ON db_forge_connectors(status);
+CREATE INDEX IF NOT EXISTS idx_forge_connector_tenant ON db_forge_connectors(tenant_id);
+
+-- Input specs used to generate connectors
+CREATE TABLE IF NOT EXISTS db_forge_specs (
+    id TEXT PRIMARY KEY,
+    input_type TEXT NOT NULL
+        CHECK(input_type IN ('openapi','wsdl','html','yaml','manual')),
+    input_source TEXT NOT NULL DEFAULT '',
+    raw_input TEXT NOT NULL,
+    parsed_manifest TEXT,
+    detected_protocol TEXT,
+    target_base_class TEXT,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Static + integration validation results per connector version
+CREATE TABLE IF NOT EXISTS db_forge_validations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    stage TEXT NOT NULL
+        CHECK(stage IN ('py_compile','ruff','ast_abc','bandit','secret_scan',
+                        'import_whitelist','integration')),
+    passed INTEGER NOT NULL DEFAULT 0,
+    details TEXT,
+    duration_ms INTEGER,
+    run_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_val_connector ON db_forge_validations(connector_id);
+
+-- Sandbox runtime events (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS db_forge_sandbox_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    sandbox_type TEXT NOT NULL CHECK(sandbox_type IN ('docker','subprocess')),
+    event_type TEXT NOT NULL
+        CHECK(event_type IN ('start','connect','read','write','schema',
+                             'health','error','stop','import','instantiate',
+                             'list_tables')),
+    details TEXT,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    logged_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_sandbox_conn ON db_forge_sandbox_log(connector_id);
+
+-- Promotion approvals (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS db_forge_promotions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    from_status TEXT NOT NULL,
+    to_status TEXT NOT NULL,
+    promoted_by TEXT NOT NULL,
+    review_notes TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    promoted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_forge_promo_conn ON db_forge_promotions(connector_id);
+
+-- ============================================================
+-- CLOUDFORGE: LANDING ZONES (D-CF-1, D-CF-15)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_landing_zones (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    cloud_type TEXT NOT NULL CHECK(cloud_type IN
+        ('aws_commercial','aws_govcloud','aws_secret',
+         'azure_commercial','azure_gov','azure_secret','gcp','oci')),
+    region TEXT NOT NULL,
+    impact_level TEXT NOT NULL DEFAULT 'IL4' CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+    environment TEXT NOT NULL DEFAULT 'staging' CHECK(environment IN ('dev','staging','production','dr')),
+    blueprint_name TEXT NOT NULL,
+    iac_engine TEXT DEFAULT 'terraform' CHECK(iac_engine IN ('terraform','opentofu','pulumi')),
+    status TEXT DEFAULT 'planned' CHECK(status IN
+        ('planned','provisioning','active','updating','destroying','destroyed','error','drifted')),
+    iac_output_path TEXT,
+    state_file_path TEXT,
+    estimated_monthly_cost_usd REAL DEFAULT 0.0,
+    inherited_controls_json TEXT,
+    parameters_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_lz_cloud ON cf_landing_zones(cloud_type);
+CREATE INDEX IF NOT EXISTS idx_cf_lz_status ON cf_landing_zones(status);
+CREATE INDEX IF NOT EXISTS idx_cf_lz_tenant ON cf_landing_zones(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: PROVISIONING LOG (append-only, D-CF-15)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_provision_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('plan','apply','validate','destroy','drift_check','rollback')),
+    status TEXT NOT NULL CHECK(status IN ('started','completed','failed','rolled_back')),
+    resources_affected INTEGER DEFAULT 0,
+    duration_ms INTEGER,
+    iac_plan_json TEXT,
+    error_details TEXT,
+    actor TEXT DEFAULT 'cloudforge',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_plog_zone ON cf_provision_log(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_plog_action ON cf_provision_log(action);
+
+-- ============================================================
+-- CLOUDFORGE: ATO PHASES (D-CF-14)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_ato_phases (
+    id TEXT PRIMARY KEY,
+    zone_id TEXT NOT NULL,
+    phase_number INTEGER NOT NULL CHECK(phase_number BETWEEN 1 AND 5),
+    phase_name TEXT NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','in_progress','passed','failed','waived')),
+    started_at TEXT,
+    completed_at TEXT,
+    gate_results_json TEXT,
+    evidence_artifact_ids TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    UNIQUE(zone_id, phase_number)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_ato_zone ON cf_ato_phases(zone_id);
+
+-- ============================================================
+-- CLOUDFORGE: MIGRATION ASSESSMENTS (D-CF-7, D-CF-12)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_migration_assessments (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_cloud TEXT NOT NULL,
+    target_cloud TEXT NOT NULL,
+    status TEXT DEFAULT 'draft' CHECK(status IN
+        ('draft','assessing','planned','executing','completed','failed','cancelled')),
+    workload_count INTEGER DEFAULT 0,
+    total_data_volume_gb REAL DEFAULT 0.0,
+    overall_risk_score REAL DEFAULT 0.0,
+    overall_complexity_score REAL DEFAULT 0.0,
+    strategy TEXT DEFAULT 'phased' CHECK(strategy IN ('phased','big_bang','trickle','replatform','hybrid')),
+    estimated_downtime_hours REAL DEFAULT 0.0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_mig_status ON cf_migration_assessments(status);
+CREATE INDEX IF NOT EXISTS idx_cf_mig_tenant ON cf_migration_assessments(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: MIGRATION WORKLOADS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_migration_workloads (
+    id TEXT PRIMARY KEY,
+    assessment_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    workload_type TEXT NOT NULL CHECK(workload_type IN
+        ('vm','container','database','storage','serverless','network','identity','application','data_pipeline')),
+    source_details_json TEXT,
+    target_details_json TEXT,
+    risk_score REAL DEFAULT 0.0,
+    complexity_score REAL DEFAULT 0.0,
+    data_volume_gb REAL DEFAULT 0.0,
+    dependencies_json TEXT,
+    migration_phase INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'pending' CHECK(status IN
+        ('pending','migrating','validating','completed','failed','rolled_back')),
+    databridge_sync_id TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_mwl_assess ON cf_migration_workloads(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_cf_mwl_status ON cf_migration_workloads(status);
+
+-- ============================================================
+-- CLOUDFORGE: HYBRID TOPOLOGY (D-CF-13)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_hybrid_topology (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    topology_type TEXT NOT NULL CHECK(topology_type IN ('hub_spoke','mesh','gateway','point_to_point')),
+    status TEXT DEFAULT 'planned' CHECK(status IN ('planned','deploying','active','degraded','error')),
+    nodes_json TEXT,
+    edges_json TEXT,
+    health_status TEXT DEFAULT 'unknown',
+    last_health_check TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_topo_tenant ON cf_hybrid_topology(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: HYBRID CONNECTIONS (D-CF-13)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_hybrid_connections (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT NOT NULL,
+    source_zone_id TEXT NOT NULL,
+    target_zone_id TEXT NOT NULL,
+    connection_type TEXT NOT NULL CHECK(connection_type IN
+        ('vpn','peering','direct_connect','expressroute','interconnect','transit_gateway','relay')),
+    status TEXT DEFAULT 'planned' CHECK(status IN
+        ('planned','establishing','active','degraded','error','disconnected')),
+    bandwidth_mbps INTEGER,
+    latency_ms INTEGER,
+    encrypted INTEGER DEFAULT 1,
+    health_status TEXT DEFAULT 'unknown',
+    config_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_conn_topo ON cf_hybrid_connections(topology_id);
+CREATE INDEX IF NOT EXISTS idx_cf_conn_src ON cf_hybrid_connections(source_zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_conn_tgt ON cf_hybrid_connections(target_zone_id);
+
+-- ============================================================
+-- CLOUDFORGE: FINOPS COST RECORDS (D-CF-11)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_cost_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id TEXT,
+    cloud_type TEXT NOT NULL,
+    service_name TEXT NOT NULL,
+    cost_usd REAL NOT NULL,
+    usage_quantity REAL,
+    usage_unit TEXT,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    tags_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    collected_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_cost_zone ON cf_cost_records(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_cost_period ON cf_cost_records(period_start, period_end);
+
+-- ============================================================
+-- CLOUDFORGE: FINOPS BUDGETS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_budgets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    zone_id TEXT,
+    monthly_limit_usd REAL NOT NULL,
+    alert_threshold_pct REAL DEFAULT 80.0,
+    current_spend_usd REAL DEFAULT 0.0,
+    period TEXT NOT NULL,
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','exceeded','closed')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_budget_tenant ON cf_budgets(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: SIEM EVENTS (append-only, D-CF-10)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_siem_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    zone_id TEXT,
+    cloud_type TEXT NOT NULL,
+    event_source TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    severity TEXT DEFAULT 'info' CHECK(severity IN ('info','low','medium','high','critical')),
+    raw_event_json TEXT,
+    correlated_event_id TEXT,
+    alert_fired INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    event_time TEXT NOT NULL,
+    ingested_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_siem_zone ON cf_siem_events(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_siem_sev ON cf_siem_events(severity);
+CREATE INDEX IF NOT EXISTS idx_cf_siem_time ON cf_siem_events(event_time);
+
+-- ============================================================
+-- CLOUDFORGE: SHIFT EMULATOR SESSIONS (D-CF-6)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_shift_sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    emulated_il_level TEXT NOT NULL CHECK(emulated_il_level IN ('IL4','IL5','IL6')),
+    container_ids_json TEXT,
+    network_policy_json TEXT,
+    status TEXT DEFAULT 'stopped' CHECK(status IN ('stopped','starting','running','error')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    stopped_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cf_shift_tenant ON cf_shift_sessions(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: CD HUB DEPLOYMENTS (D-CF-8)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_deployments (
+    id TEXT PRIMARY KEY,
+    zone_id TEXT NOT NULL,
+    artifact_name TEXT NOT NULL,
+    artifact_version TEXT NOT NULL,
+    strategy TEXT DEFAULT 'rolling' CHECK(strategy IN ('rolling','canary','blue_green','recreate')),
+    status TEXT DEFAULT 'pending' CHECK(status IN
+        ('pending','deploying','healthy','degraded','failed','rolled_back')),
+    canary_pct INTEGER DEFAULT 0,
+    spoke_id TEXT,
+    gitops_repo TEXT,
+    gitops_path TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_cf_deploy_zone ON cf_deployments(zone_id);
+CREATE INDEX IF NOT EXISTS idx_cf_deploy_status ON cf_deployments(status);
+
+-- ============================================================
+-- CLOUDFORGE: CONTAINER SCANS (D-CF-9)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_container_scans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    image_name TEXT NOT NULL,
+    image_tag TEXT NOT NULL,
+    scan_type TEXT NOT NULL CHECK(scan_type IN ('vulnerability','stig','sbom','cis_benchmark')),
+    findings_count INTEGER DEFAULT 0,
+    critical_count INTEGER DEFAULT 0,
+    high_count INTEGER DEFAULT 0,
+    results_json TEXT,
+    hardened INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    scanned_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_cscan_image ON cf_container_scans(image_name);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOKS (D-CF-19)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbooks (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    version INTEGER NOT NULL DEFAULT 1,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','published','archived','deprecated')),
+    template_source TEXT,
+    tasks_json TEXT NOT NULL,
+    edges_json TEXT NOT NULL,
+    snippets_used TEXT,
+    estimated_duration_minutes INTEGER,
+    owner TEXT,
+    tags TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name, version)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_rb_tenant ON cf_runbooks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cf_rb_status ON cf_runbooks(status);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOK EXECUTIONS (append-only, D-CF-20)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbook_executions (
+    id TEXT PRIMARY KEY,
+    runbook_id TEXT NOT NULL,
+    runbook_version INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN
+        ('pending','running','completed','failed','cancelled','paused')),
+    trigger_type TEXT DEFAULT 'manual' CHECK(trigger_type IN ('manual','scheduled','event','api')),
+    triggered_by TEXT,
+    started_at TEXT,
+    completed_at TEXT,
+    duration_ms INTEGER,
+    task_results_json TEXT,
+    parallel_paths_count INTEGER DEFAULT 0,
+    tasks_completed INTEGER DEFAULT 0,
+    tasks_failed INTEGER DEFAULT 0,
+    tasks_skipped INTEGER DEFAULT 0,
+    tasks_total INTEGER DEFAULT 0,
+    error_summary TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_rbe_runbook ON cf_runbook_executions(runbook_id);
+CREATE INDEX IF NOT EXISTS idx_cf_rbe_status ON cf_runbook_executions(status);
+CREATE INDEX IF NOT EXISTS idx_cf_rbe_tenant ON cf_runbook_executions(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOK TASK LOG (append-only, D-CF-21, NIST AU)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbook_task_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    execution_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    task_name TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('started','completed','failed','skipped','retried','paused','resumed')),
+    output_json TEXT,
+    error_details TEXT,
+    duration_ms INTEGER,
+    actor TEXT DEFAULT 'cloudforge',
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cf_rtl_exec ON cf_runbook_task_log(execution_id);
+CREATE INDEX IF NOT EXISTS idx_cf_rtl_task ON cf_runbook_task_log(task_id);
+
+-- ============================================================
+-- CLOUDFORGE: RUNBOOK SNIPPETS (D-CF-22)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_runbook_snippets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    category TEXT NOT NULL CHECK(category IN
+        ('dr_failover','backup','health_check','patching','incident','provisioning','migration','custom')),
+    tasks_json TEXT NOT NULL,
+    edges_json TEXT NOT NULL,
+    usage_count INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_snp_category ON cf_runbook_snippets(category);
+CREATE INDEX IF NOT EXISTS idx_cf_snp_tenant ON cf_runbook_snippets(tenant_id);
+
+-- ============================================================
+-- CLOUDFORGE: APPLICATION METASTORE (D-CF-23)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_applications (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    app_type TEXT NOT NULL CHECK(app_type IN
+        ('web','api','database','queue','cache','batch','streaming','edge','firmware','monolith','microservice','other')),
+    status TEXT DEFAULT 'active' CHECK(status IN ('active','inactive','deprecated','decommissioned','discovered')),
+    environment TEXT DEFAULT 'production' CHECK(environment IN ('dev','staging','production','dr')),
+    rto_hours REAL,
+    rpo_hours REAL,
+    criticality TEXT DEFAULT 'medium' CHECK(criticality IN ('critical','high','medium','low')),
+    owner_team TEXT,
+    owner_email TEXT,
+    zone_ids TEXT,
+    device_ids TEXT,
+    connection_ids TEXT,
+    runbook_ids TEXT,
+    metadata_json TEXT,
+    discovery_source TEXT,
+    tags TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    project_id TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, name, environment)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_app_tenant ON cf_applications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_cf_app_type ON cf_applications(app_type);
+CREATE INDEX IF NOT EXISTS idx_cf_app_status ON cf_applications(status);
+CREATE INDEX IF NOT EXISTS idx_cf_app_criticality ON cf_applications(criticality);
+
+-- ============================================================
+-- CLOUDFORGE: APPLICATION DEPENDENCIES (adjacency list, D-CF-24)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cf_app_dependencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_app_id TEXT NOT NULL,
+    target_app_id TEXT NOT NULL,
+    dependency_type TEXT NOT NULL CHECK(dependency_type IN
+        ('hard','soft','data','network','auth','queue','shared_storage')),
+    protocol TEXT,
+    port INTEGER,
+    description TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(source_app_id, target_app_id, dependency_type)
+);
+CREATE INDEX IF NOT EXISTS idx_cf_adep_src ON cf_app_dependencies(source_app_id);
+CREATE INDEX IF NOT EXISTS idx_cf_adep_tgt ON cf_app_dependencies(target_app_id);
+CREATE INDEX IF NOT EXISTS idx_cf_adep_tenant ON cf_app_dependencies(tenant_id);
+
+-- ============================================================
+-- INNOVATION: cATO LIVE EVIDENCE STREAM (D-INV-1)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS cato_evidence_stream (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL,
+    oscal_artifact_type TEXT NOT NULL DEFAULT 'assessment-results',
+    oscal_json TEXT NOT NULL,
+    evidence_ids TEXT,
+    stream_status TEXT NOT NULL DEFAULT 'current' CHECK(stream_status IN ('current','stale','expired')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cato_stream_project ON cato_evidence_stream(project_id);
+CREATE INDEX IF NOT EXISTS idx_cato_stream_control ON cato_evidence_stream(control_id);
+
+-- ============================================================
+-- INNOVATION: COMPLIANCE TEMPLATE EXCHANGE (D-INV-5)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS compliance_templates (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    template_type TEXT NOT NULL CHECK(template_type IN ('ssp_section','poam','narrative','control_set','checklist')),
+    framework TEXT,
+    content TEXT NOT NULL,
+    version TEXT DEFAULT '1.0.0',
+    author TEXT,
+    author_org TEXT,
+    provenance_hash TEXT,
+    rating_sum REAL DEFAULT 0,
+    rating_count INTEGER DEFAULT 0,
+    download_count INTEGER DEFAULT 0,
+    is_published INTEGER DEFAULT 0,
+    marketplace_slug TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ct_project ON compliance_templates(project_id);
+CREATE INDEX IF NOT EXISTS idx_ct_type ON compliance_templates(template_type);
+CREATE INDEX IF NOT EXISTS idx_ct_framework ON compliance_templates(framework);
+
+CREATE TABLE IF NOT EXISTS compliance_template_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_id TEXT NOT NULL REFERENCES compliance_templates(id),
+    user_id TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(template_id, user_id)
+);
+
+-- ============================================================
+-- INNOVATION: VSM DASHBOARD (D-INV-9)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS vsm_stage_events (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pipeline_run_id TEXT NOT NULL,
+    stage TEXT NOT NULL CHECK(stage IN ('architect','trace','link','assemble','stress_test')),
+    event_type TEXT NOT NULL CHECK(event_type IN ('started','completed','failed','blocked')),
+    actor TEXT,
+    duration_seconds REAL,
+    metadata TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_vsm_project ON vsm_stage_events(project_id);
+CREATE INDEX IF NOT EXISTS idx_vsm_pipeline ON vsm_stage_events(pipeline_run_id);
+CREATE INDEX IF NOT EXISTS idx_vsm_stage ON vsm_stage_events(stage);
+
+CREATE TABLE IF NOT EXISTS vsm_dora_snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    snapshot_date TEXT NOT NULL,
+    deployment_frequency REAL,
+    lead_time_hours REAL,
+    change_failure_rate REAL,
+    mttr_hours REAL,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dora_project ON vsm_dora_snapshots(project_id);
+
+-- ============================================================
+-- INNOVATION: NARRATIVE APPROVALS (D-INV-13)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS narrative_approvals (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    control_id TEXT NOT NULL,
+    narrative_type TEXT NOT NULL CHECK(narrative_type IN ('ssp','poam','executive','control')),
+    template_draft TEXT,
+    llm_draft TEXT,
+    llm_reviewed TEXT,
+    final_narrative TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','pending_review','approved','rejected')),
+    reviewer TEXT,
+    review_comment TEXT,
+    reviewed_at TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_narr_project ON narrative_approvals(project_id);
+CREATE INDEX IF NOT EXISTS idx_narr_status ON narrative_approvals(status);
+CREATE INDEX IF NOT EXISTS idx_narr_control ON narrative_approvals(control_id);
+
+-- ============================================================
+-- INNOVATION: DIGITAL THREAD HEATMAP SNAPSHOTS (D-INV-17)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS thread_heatmap_snapshots (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    matrix_json TEXT NOT NULL,
+    total_links INTEGER,
+    total_orphans INTEGER,
+    overall_coverage REAL,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_heatmap_project ON thread_heatmap_snapshots(project_id);
+
+-- ============================================================
+-- INNOVATION: PR INTELLIGENCE REPORTS (D-INV-21)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS pr_intelligence_reports (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    pr_reference TEXT,
+    diff_summary TEXT,
+    files_changed INTEGER,
+    security_findings TEXT,
+    compliance_impacts TEXT,
+    code_quality_delta TEXT,
+    overall_status TEXT NOT NULL CHECK(overall_status IN ('pass','warn','fail')),
+    report_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pr_intel_project ON pr_intelligence_reports(project_id);
+
+-- ============================================================
+-- INNOVATION: STRIDE THREAT MODELS (D-INV-25)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS threat_models (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    name TEXT NOT NULL,
+    description TEXT,
+    components TEXT NOT NULL,
+    data_flows TEXT,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','analyzed','reviewed','approved')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tm_project ON threat_models(project_id);
+
+CREATE TABLE IF NOT EXISTS threat_findings (
+    id TEXT PRIMARY KEY,
+    model_id TEXT NOT NULL REFERENCES threat_models(id),
+    component_id TEXT NOT NULL,
+    stride_category TEXT NOT NULL CHECK(stride_category IN ('spoofing','tampering','repudiation','information_disclosure','denial_of_service','elevation_of_privilege')),
+    threat_description TEXT NOT NULL,
+    risk_level TEXT NOT NULL CHECK(risk_level IN ('critical','high','moderate','low')),
+    attack_technique TEXT,
+    nist_controls TEXT,
+    mitigation TEXT,
+    poam_id TEXT,
+    status TEXT DEFAULT 'open' CHECK(status IN ('open','mitigated','accepted','transferred')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tf_model ON threat_findings(model_id);
+CREATE INDEX IF NOT EXISTS idx_tf_stride ON threat_findings(stride_category);
+CREATE INDEX IF NOT EXISTS idx_tf_risk ON threat_findings(risk_level);
+
+-- ============================================================
+-- INNOVATION: DEVELOPER SCORECARDS (D-INV-29)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS developer_scorecards (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    actor TEXT,
+    overall_score REAL NOT NULL,
+    letter_grade TEXT NOT NULL CHECK(letter_grade IN ('A','B','C','D','F')),
+    code_quality_score REAL,
+    security_score REAL,
+    compliance_score REAL,
+    test_coverage_score REAL,
+    velocity_score REAL,
+    dimension_details TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sc_project ON developer_scorecards(project_id);
+CREATE INDEX IF NOT EXISTS idx_sc_actor ON developer_scorecards(actor);
+CREATE INDEX IF NOT EXISTS idx_sc_created ON developer_scorecards(created_at);
+
+-- ============================================================
+-- INNOVATION: SCAFFOLD RUNS (D-INV-33)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS scaffold_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id),
+    template_name TEXT NOT NULL,
+    output_dir TEXT NOT NULL,
+    parameters TEXT,
+    files_created INTEGER,
+    compliance_bootstrapped INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','in_progress','completed','failed')),
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scaffold_project ON scaffold_runs(project_id);
+
+-- ============================================================
+-- INNOVATION: FORGE HUB RATINGS & TRUST (D-INV-37)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS forge_hub_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    connector_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+    review_text TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(connector_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_fhr_connector ON forge_hub_ratings(connector_id);
+
+CREATE TABLE IF NOT EXISTS forge_hub_trust_scores (
+    id TEXT PRIMARY KEY,
+    connector_id TEXT NOT NULL,
+    trust_score REAL NOT NULL,
+    validation_pass_rate REAL,
+    download_count INTEGER,
+    avg_rating REAL,
+    age_days INTEGER,
+    score_breakdown TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    computed_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fht_connector ON forge_hub_trust_scores(connector_id);
+
+-- ============================================================
+-- INNOVATION: ATO SIMULATION RUNS (D-INV-41)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS ato_simulation_runs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    scenario_id TEXT,
+    iterations INTEGER NOT NULL,
+    stig_findings_count INTEGER,
+    poam_open_count INTEGER,
+    evidence_stale_count INTEGER,
+    result_json TEXT NOT NULL,
+    p50_days REAL,
+    p80_days REAL,
+    p90_days REAL,
+    p95_days REAL,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ato_sim_project ON ato_simulation_runs(project_id);
+
+-- ============================================================
+-- INNOVATION: FIRMWARE SBOM & VEX (D-INV-45)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS firmware_sbom_records (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    board TEXT,
+    cmake_path TEXT,
+    components TEXT NOT NULL,
+    component_count INTEGER,
+    rtos_detected TEXT,
+    sbom_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fw_sbom_project ON firmware_sbom_records(project_id);
+
+CREATE TABLE IF NOT EXISTS firmware_vex_records (
+    id TEXT PRIMARY KEY,
+    sbom_id TEXT NOT NULL REFERENCES firmware_sbom_records(id),
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    vex_format TEXT NOT NULL DEFAULT 'csaf',
+    vulnerabilities TEXT NOT NULL,
+    vulnerability_count INTEGER,
+    vex_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_fw_vex_project ON firmware_vex_records(project_id);
+CREATE INDEX IF NOT EXISTS idx_fw_vex_sbom ON firmware_vex_records(sbom_id);
+
+-- ============================================================
+-- GENESIS v2.0 — AUTONOMOUS RESEARCH LAB (D-GEN-6, D-GEN-10)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS genesis_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    gkp_id          TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_type ON genesis_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_reflex ON genesis_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_genesis_audit_created ON genesis_audit(created_at);
+
+CREATE TABLE IF NOT EXISTS genesis_reflex_state (
+    reflex_name         TEXT PRIMARY KEY,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    last_run_at         TEXT,
+    next_run_at         TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs          INTEGER NOT NULL DEFAULT 0,
+    total_successes     INTEGER NOT NULL DEFAULT 0,
+    total_failures      INTEGER NOT NULL DEFAULT 0,
+    last_metric_value   REAL,
+    last_error          TEXT,
+    updated_at          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS genesis_gkp (
+    id              TEXT PRIMARY KEY,
+    gkp_version     TEXT NOT NULL DEFAULT '1.0',
+    artifact_type   TEXT NOT NULL,
+    genesis_reflex  TEXT NOT NULL,
+    confidence      REAL NOT NULL DEFAULT 0.0,
+    evidence        TEXT,
+    payload         TEXT NOT NULL,
+    sha256          TEXT NOT NULL,
+    promotion_status TEXT NOT NULL DEFAULT 'pending_review'
+        CHECK(promotion_status IN ('pending_review','auto_promoted','promoted','rejected','dedup_skipped')),
+    promoted_at     TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_type ON genesis_gkp(artifact_type);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_status ON genesis_gkp(promotion_status);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_reflex ON genesis_gkp(genesis_reflex);
+CREATE INDEX IF NOT EXISTS idx_genesis_gkp_created ON genesis_gkp(created_at);
 """
 
 

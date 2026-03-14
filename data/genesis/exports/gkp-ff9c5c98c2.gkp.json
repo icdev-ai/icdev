@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-ff9c5c98c2",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "OWASP News",
+    "fetched_at": "2026-03-14T03:51:01Z"
+  },
+  "payload": {
+    "title": "OWASP Elections 2025 - Become a member today!",
+    "description": "",
+    "source": "genesis_research:OWASP News",
+    "url": "http://owasp.org/blog/2025/09/03/owasp-membership-drive.html",
+    "published": "",
+    "score": 50
+  },
+  "sha256": "5578c1fbd502ecf40bf2cb0b16ecbf420e018b7114d119835fb55fda27295f45",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:51:01Z"
+}

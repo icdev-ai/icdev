@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-08677168de",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T02:26:39Z"
+  },
+  "payload": {
+    "title": "Siemens RUGGEDCOM APE1808 Devices",
+    "description": "<p><a href=\"https://github.com/cisagov/CSAF/blob/develop/csaf_files/OT/white/2026/icsa-26-071-02.json\"><strong>View CSAF</strong></a></p>\n<h2>Summary</h2>\n<p><strong>Fortinet has published information on vulnerabilities in FORTIOS. This advisory lists the related Siemens Industrial products. Siemens has released a new version for RUGGEDCOM APE1808 and recommends to update to the latest version.</strong></p>\n<p>The following versions of Siemens RUGGEDCOM APE1808 Devices are affected:</p>\n<ul>\n<li",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-071-02",
+    "published": "Thu, 12 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "759e1f790180b9ca2cc8057fa35d2e109ef01e6ec38cbab1ab094c0fb6bbff17",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:26:39Z"
+}

@@ -1,0 +1,17 @@
+{
+  "collected_at": "2026-03-14T02:47:10Z",
+  "runtime_failures": [],
+  "quality_trends": [],
+  "coverage_gaps": [],
+  "heal_outcomes": [],
+  "demand_signals": [],
+  "trace_recommendations": [],
+  "summary": {
+    "runtime_failures": 0,
+    "quality_degradations": 0,
+    "coverage_gaps": 0,
+    "heal_events": 0,
+    "high_demand_signals": 0,
+    "trace_recommendations": 0
+  }
+}

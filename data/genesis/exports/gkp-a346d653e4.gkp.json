@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-a346d653e4",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T03:50:58Z"
+  },
+  "payload": {
+    "title": "CISA Adds Two Known Exploited Vulnerabilities to Catalog",
+    "description": "<p>CISA has added two new vulnerabilities to its <a href=\"https://www.cisa.gov/known-exploited-vulnerabilities-catalog\" data-entity-type=\"node\" data-entity-uuid=\"79453b83-86b9-4e2f-b1ec-abf73c6eb291\" data-entity-substitution=\"canonical\" title=\"Known Exploited Vulnerabilities Catalog\">Known Exploited Vulnerabilities (KEV) Catalog</a>, based on evidence of active exploitation.</p>\n<ul>\n<li><a href=\"https://www.cve.org/CVERecord?id=CVE-2026-3909\" target=\"_blank\">CVE-2026-3909</a> Google Skia Out-of",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/alerts/2026/03/13/cisa-adds-two-known-exploited-vulnerabilities-catalog",
+    "published": "Fri, 13 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "e50589fd3ff22889d9527d4c9501eade70f5741613d26cc232c91d23163cbfe5",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:50:58Z"
+}

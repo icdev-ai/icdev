@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-a03b41d582",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA KEV (Known Exploited)",
+    "fetched_at": "2026-03-14T02:26:39Z"
+  },
+  "payload": {
+    "title": "KEV: CVE-2025-68613 \u2014 n8n n8n",
+    "description": "n8n contains an improper control of dynamically managed code resources vulnerability in its workflow expression evaluation system that allows for remote code execution.",
+    "source": "genesis_research:CISA KEV (Known Exploited)",
+    "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-68613",
+    "published": "2026-03-11",
+    "score": 50
+  },
+  "sha256": "ecab2fe8fe56f911728365eae293d4f665a5a6ce865f26e75af3e407805628a8",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:26:39Z"
+}

@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-f62e787b8f",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "OWASP News",
+    "fetched_at": "2026-03-14T02:26:43Z"
+  },
+  "payload": {
+    "title": "Help Support Sherif Mansour by donating blood today!",
+    "description": "",
+    "source": "genesis_research:OWASP News",
+    "url": "http://owasp.org/blog/2025/08/20/blood-donation-drive.html",
+    "published": "",
+    "score": 50
+  },
+  "sha256": "4174375185e796b29b25e97781c1adc6ba3d6d6e5dd47ff0a605edb6ab5c005d",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:26:43Z"
+}

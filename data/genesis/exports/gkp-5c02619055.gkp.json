@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-5c02619055",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T03:50:58Z"
+  },
+  "payload": {
+    "title": "Ceragon Siklu MultiHaul and EtherHaul Series",
+    "description": "<p><a href=\"https://github.com/cisagov/CSAF/blob/develop/csaf_files/OT/white/2026/icsa-26-069-04.json\"><strong>View CSAF</strong></a></p>\n<h2>Summary</h2>\n<p><strong>Successful exploitation of this vulnerability could result in arbitrary file upload to the target equipment.</strong></p>\n<p>The following versions of Ceragon Siklu MultiHaul and EtherHaul Series are affected:</p>\n<ul>\n<li>MultiHaul MH-B100-CCS</li>\n<li>MultiHaul MH-T200-CCC</li>\n<li>MultiHaul MH-T200-CNN</li>\n<li>MultiHaul MH-T201-",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-069-04",
+    "published": "Tue, 10 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "06e84e348572e656fee07649409715853065b74b52349a05b9d494500850e51e",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:50:58Z"
+}

@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-43b64f8fa3",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T03:50:58Z"
+  },
+  "payload": {
+    "title": "Inductive Automation Ignition Software",
+    "description": "<p><a href=\"https://github.com/cisagov/CSAF/blob/develop/csaf_files/OT/white/2026/icsa-26-071-06.json\"><strong>View CSAF</strong></a></p>\n<h2>Summary</h2>\n<p><strong>Successful exploitation of this vulnerability could allow an attacker to execute malicious code with OS application service account permissions that the authenticated, privileged application user did not intend on running.</strong></p>\n<p>The following versions of Inductive Automation Ignition Software are affected:</p>\n<ul>\n<li>Ign",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-071-06",
+    "published": "Thu, 12 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "69e6dc757baa5dc9e83bf2e1230c0c5a4c02a724f44548834a18311c26680b72",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:50:58Z"
+}

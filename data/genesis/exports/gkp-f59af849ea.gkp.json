@@ -1,0 +1,16 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-f59af849ea",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.9,
+  "evidence": null,
+  "payload": {
+    "title": "Test Signal",
+    "description": "Verify promoter works",
+    "source": "genesis_test"
+  },
+  "sha256": "322b34be8dceca0009e5aca33665f74d57a75e786761835db6e499b7e6273ea5",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:20:40Z"
+}

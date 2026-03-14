@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-60ce3285a4",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T02:26:39Z"
+  },
+  "payload": {
+    "title": "Honeywell IQ4x BMS Controller",
+    "description": "<p><a href=\"https://github.com/cisagov/CSAF/blob/develop/csaf_files/OT/white/2026/icsa-26-069-03.json\"><strong>View CSAF</strong></a></p>\n<h2>Summary</h2>\n<p><strong>Successful exploitation of this vulnerability could allow an unauthorized attacker to access controller management settings, control components, disclose information, or cause a denial-of-service condition.</strong></p>\n<p>The following versions of Honeywell IQ4x BMS Controller are affected:</p>\n<ul>\n<li>IQ4E &gt;=Firmware_v3.50_3.4",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-069-03",
+    "published": "Tue, 10 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "9dccac151ca74017581a1c3a954df459dcad9e1b156b6647e0af2fd8e93a542d",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:26:39Z"
+}

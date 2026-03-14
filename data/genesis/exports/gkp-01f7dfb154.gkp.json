@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-01f7dfb154",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T03:50:58Z"
+  },
+  "payload": {
+    "title": "CISA Adds One Known Exploited Vulnerability to Catalog",
+    "description": "<p>CISA has added one new vulnerability to its <a href=\"https://www.cisa.gov/known-exploited-vulnerabilities-catalog\">Known Exploited Vulnerabilities (KEV) Catalog</a>, based on evidence of active exploitation.</p>\n<ul>\n<li><a href=\"https://www.cve.org/CVERecord?id=CVE-2025-68613\" target=\"_blank\">CVE-2025-68613</a> n8n Improper Control of Dynamically-Managed Code Resources Vulnerability</li>\n</ul>\n<p>This type of vulnerability is a frequent attack vector for malicious cyber actors and poses sign",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/alerts/2026/03/11/cisa-adds-one-known-exploited-vulnerability-catalog",
+    "published": "Wed, 11 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "d19f47433a22a7687ae2498f2780c930745e4e511b46829ec9e2b4ed4d75a506",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:50:58Z"
+}

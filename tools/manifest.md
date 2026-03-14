@@ -848,3 +848,31 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Pre-Tool-Use Hook | .claude/hooks/pre_tool_use.py | Blocks dangerous rm, .env access, audit modifications | tool_name, tool_input | Allow/block |
+
+## Genesis v2.0 — Autonomous Research Lab
+
+### Core Engine
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 12 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1) |
+| promoter | `tools/genesis/promoter.py` | Knowledge Bridge: GKP export/import, dedup, auto-promote, human review gateway (D-GEN-4) |
+| feedback_collector | `tools/genesis/feedback_collector.py` | Pull v1.x telemetry (failures, quality, coverage, heals) for v2.0 consumption (D-GEN-11) |
+| reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |
+
+### 12 Reflexes (tools/genesis/reflexes/)
+
+| Reflex | Risk Tier | Schedule | Purpose |
+|--------|-----------|----------|---------|
+| research | GREEN | every 6h | Scrape NIST/CISA/OWASP feeds, export GKP research signals |
+| scout | GREEN | daily 07:00 | Monitor 16 GitHub repos (autoresearch, trivy, ollama, etc.), intel briefs |
+| audit | GREEN | daily 06:00 | Self-scan: code quality + SAST via existing tools |
+| report | GREEN | weekly Sun 20:00 | Generate weekly status report with promotions/circuit breakers |
+| comply | GREEN | daily 09:00 | cATO evidence freshness, crosswalk sync, SbD assessment |
+| ingest | GREEN | every 4h | RSS feeds → innovation_signals for knowledge enrichment |
+| market | GREEN | daily 10:00 | Marketplace module usage analytics, improvement suggestions |
+| publish | YELLOW | daily 08:00 | Demand topic → draft → WriteGuard → staging (never production) |
+| test | YELLOW | nightly 03:00 | Find untested modules → generate test stubs → run → keep passing |
+| learn | YELLOW | nightly 04:00 | Generate training pairs from approved outputs for Ollama fine-tuning |
+| heal | YELLOW | continuous/5min | Pattern-match audit trail errors → auto-remediation (log-only v2.0) |
+| evolve | ORANGE | nightly 02:00 | Pick worst-quality file → LLM analysis → propose GKP code_patch for human review |

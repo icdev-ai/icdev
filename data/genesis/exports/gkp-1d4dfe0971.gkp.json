@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-1d4dfe0971",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA KEV (Known Exploited)",
+    "fetched_at": "2026-03-14T03:50:58Z"
+  },
+  "payload": {
+    "title": "KEV: CVE-2023-43000 \u2014 Apple Multiple Products",
+    "description": "Apple macOS, iOS, iPadOS, and Safari 16.6 contain a use-after-free vulnerability due to the processing of maliciously crafted web content that may lead to memory corruption.",
+    "source": "genesis_research:CISA KEV (Known Exploited)",
+    "url": "https://nvd.nist.gov/vuln/detail/CVE-2023-43000",
+    "published": "2026-03-05",
+    "score": 50
+  },
+  "sha256": "402c3d923719a4678fef209d01b9a4feca9eceb3993fb71401336f860a4b174b",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T03:50:58Z"
+}

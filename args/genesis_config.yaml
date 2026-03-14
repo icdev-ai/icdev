@@ -1,0 +1,400 @@
+# CUI // SP-CTI
+# Genesis v2.0 — Autonomous Research Lab Configuration
+#
+# Controls the always-on Genesis daemon and its 12 Reflexes.
+# This is the ARGS layer (GOTCHA) — change behavior without editing goals/tools.
+#
+# Override any value via environment variable:
+#   ICDEV_GENESIS_ENABLED=true
+#   ICDEV_GENESIS_REFLEX_<NAME>_ENABLED=false
+#
+# Classification: CUI // SP-CTI
+
+classification: "CUI // SP-CTI"
+
+# ── Master Switch ────────────────────────────────────────────────────────────
+
+enabled: true  # D-GEN-9: enabled for persistent daemon
+env_override: ICDEV_GENESIS_ENABLED
+
+# ── LLM Configuration ───────────────────────────────────────────────────────
+
+llm:
+  # D-GEN-2: scanner-tier only (zero Claude cost for autonomous ops)
+  tier: scanner
+  model: qwen3.5-local
+  max_tokens: 4096
+  timeout_seconds: 120
+  # Evolve Reflex may need reasoning — allow phi4 fallback
+  evolve_model: phi4-reasoning
+  evolve_max_tokens: 8192
+
+# ── Trust Kernel ─────────────────────────────────────────────────────────────
+
+trust_kernel:
+  # Risk tiers: GREEN (auto-approve), YELLOW (sandbox+rollback), ORANGE (human review)
+  risk_tiers:
+    green:
+      description: "Non-destructive, read-only operations"
+      approval: auto
+      sandbox: false
+      audit: true
+    yellow:
+      description: "Reversible writes — worktree sandbox with rollback"
+      approval: auto
+      sandbox: true
+      rollback_window_hours: 72
+      audit: true
+    orange:
+      description: "Code mutation — worktree + test gate + human review"
+      approval: human
+      sandbox: true
+      require_tests_pass: true
+      require_complexity_check: true
+      audit: true
+
+  # D-GEN-8: circuit breaker — 3 consecutive failures disables Reflex
+  circuit_breaker:
+    max_consecutive_failures: 3
+    cooldown_minutes: 60
+    auto_reenable: false  # human must re-enable after trip
+    notify_on_trip: true
+
+  # Kill switch
+  kill_switch:
+    enabled: true
+    check_interval_seconds: 10
+
+  # Allowed actions whitelist per risk tier
+  allowed_actions:
+    green:
+      - read_file
+      - query_database
+      - fetch_rss
+      - fetch_url
+      - write_data_genesis
+      - log_audit
+    yellow:
+      - read_file
+      - query_database
+      - fetch_rss
+      - fetch_url
+      - write_data_genesis
+      - write_database
+      - create_worktree
+      - run_tests
+      - commit_worktree
+      - publish_draft
+      - log_audit
+    orange:
+      - read_file
+      - query_database
+      - write_data_genesis
+      - create_worktree
+      - edit_source_file
+      - run_tests
+      - run_code_analyzer
+      - commit_worktree
+      - log_audit
+
+# ── Git Configuration ────────────────────────────────────────────────────────
+
+git:
+  lab_branch: v2-genesis
+  worktree_base: .tmp/genesis/worktrees
+  branch_prefix: genesis/
+  rebase_on_main_schedule: weekly  # Sun 00:00
+  auto_cleanup_merged_worktrees: true
+
+# ── Data Paths ───────────────────────────────────────────────────────────────
+
+paths:
+  exports: data/genesis/exports
+  feedback: data/genesis/feedback
+  reports: data/genesis/reports
+
+# ── 12 Reflexes ──────────────────────────────────────────────────────────────
+
+reflexes:
+
+  # ── GREEN tier (read-only, auto-approve) ─────────────────────────────────
+
+  research:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    description: "Scrape NIST/CISA/DoD feeds, SAM.gov, GitHub trending"
+    success_metric:
+      name: signals_ingested
+      threshold: 0        # >= 0 (0 new = all duplicates = healthy)
+      operator: gte
+    sources:
+      - type: rss
+        name: NIST NVD
+        url: "https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss-analyzed.xml"
+      - type: rss
+        name: CISA Advisories
+        url: "https://www.cisa.gov/cybersecurity-advisories/all.xml"
+      - type: rss
+        name: CISA KEV
+        url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+      - type: github_trending
+        languages: [python, rust, go]
+        since: daily
+
+  scout:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 07:00"
+    description: "Monitor competitor/adjacent GitHub repos for intel"
+    success_metric:
+      name: briefs_generated
+      threshold: 0
+      operator: gte
+    targets_file: context/genesis/competitors.yaml
+
+  audit:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 06:00"
+    description: "Self-audit: code quality, security, compliance, STIG, SbD"
+    success_metric:
+      name: audit_completed
+      threshold: 0
+      operator: gte  # Always succeeds (informational)
+    checks:
+      - code_quality
+      - security_scan
+      - compliance_check
+      - stig_check
+      - sbd_assessment
+
+  comply:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 09:00"
+    description: "Refresh cATO evidence, regenerate stale SSPs, run crosswalk"
+    success_metric:
+      name: evidence_freshness_pct
+      threshold: 0
+      operator: gte  # Informational — always succeeds; alert if < 90 in report
+
+  ingest:
+    enabled: true
+    risk_tier: green
+    schedule: "every 4h"
+    description: "Watch NIST NVD, CISA KEV, FedRAMP updates → knowledge graph"
+    success_metric:
+      name: nodes_added
+      threshold: 0
+      operator: gte
+    feeds_file: context/genesis/feeds.yaml
+
+  market:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 10:00"
+    description: "Track marketplace module usage/feedback, suggest improvements"
+    success_metric:
+      name: suggestions_generated
+      threshold: 0
+      operator: gt
+
+  report:
+    enabled: true
+    risk_tier: green
+    schedule: "weekly Sun 20:00"
+    description: "Generate weekly autonomous status report"
+    success_metric:
+      name: report_delivered
+      threshold: 0
+      operator: gte  # Boolean — always succeeds
+    output_dir: data/genesis/reports
+    include_sections:
+      - reflex_activity_summary
+      - evolve_change_log
+      - promotions_and_rejections
+      - knowledge_growth_metrics
+      - circuit_breaker_status
+      - recommendations
+
+  # ── YELLOW tier (reversible writes, sandbox + rollback) ──────────────────
+
+  publish:
+    enabled: true
+    risk_tier: yellow
+    schedule: "daily 08:00"
+    description: "End-to-end Pulse: demand topic → draft → WriteGuard → staging"
+    success_metric:
+      name: writeguard_score
+      threshold: 0
+      operator: gte  # 0 = no topics to publish (ok), >80 = article staged
+    target: staging  # D-GEN: staging/draft only, never production
+    require_writeguard_pass: true
+    require_cui_check: true
+    max_articles_per_day: 2
+
+  test:
+    enabled: true
+    risk_tier: yellow
+    schedule: "nightly 03:00"
+    description: "Identify under-tested tools, generate tests, run, commit passing"
+    success_metric:
+      name: coverage_delta
+      threshold: 0
+      operator: gt  # Net new coverage
+    min_coverage_target: 0.60
+    max_tests_per_run: 10
+
+  learn:
+    enabled: true
+    risk_tier: yellow
+    schedule: "nightly 04:00"
+    description: "Generate training pairs from approved outputs, fine-tune Ollama"
+    success_metric:
+      name: validation_loss_delta
+      threshold: 0
+      operator: gte  # 0 = no pairs to generate (ok), > 0 = new pairs created
+    pair_generation:
+      source_tables:
+        - research_signals
+        - innovation_signals
+        - pulse_posts
+      min_pass_rate: 0.2
+      max_pass_rate: 0.8
+    fine_tune:
+      base_model: qwen3.5
+      method: lora  # LoRA for efficient local fine-tuning
+      epochs: 3
+      validation_split: 0.2
+
+  heal:
+    enabled: true
+    risk_tier: yellow
+    schedule: "continuous"
+    interval_seconds: 300
+    description: "Pattern-based auto-remediation for known failure patterns"
+    success_metric:
+      name: mttr_reduction
+      threshold: 0
+      operator: gte  # 0 = no failures (healthy), > 0 = healed something
+    confidence_threshold: 0.7
+    max_auto_heals_per_hour: 5
+    cooldown_minutes: 10
+
+  # ── ORANGE tier (code mutation, human review required) ───────────────────
+
+  evolve:
+    enabled: true
+    risk_tier: orange
+    schedule: "nightly 02:00"
+    description: "Autoresearch-style: pick worst tool → improve → test → keep/discard"
+    success_metric:
+      name: test_pass_and_complexity
+      # Both must pass: test_pass_rate >= baseline AND complexity_delta <= 0
+      composite:
+        - name: test_pass_rate_delta
+          threshold: 0
+          operator: gte
+        - name: complexity_delta
+          threshold: 0
+          operator: lte
+    selection_strategy: worst_code_quality  # Pick tool with highest complexity/smells
+    max_files_per_cycle: 1  # Autoresearch lesson: ONE file per mutation
+    allowed_directories:
+      - tools/
+      - goals/
+      - args/
+      - context/
+    forbidden_files:
+      - CLAUDE.md
+      - .env
+      - tools/db/storage.py  # Critical infrastructure, no auto-mutation
+      - tools/genesis/daemon.py  # No self-modification of the daemon itself
+    require_human_merge: true
+
+# ── Promoter Configuration ───────────────────────────────────────────────────
+
+promoter:
+  # D-GEN-4: single gateway from v2.0 → v1.x
+  export_dir: data/genesis/exports
+  gkp_version: "1.0"
+
+  # Auto-promote rules (no human needed)
+  auto_promote:
+    - artifact_type: research_signal
+      min_confidence: 0.0  # Always promote (read-only data)
+    - artifact_type: compliance_knowledge
+      min_confidence: 0.0
+    - artifact_type: quality_baseline
+      min_confidence: 0.0
+    - artifact_type: proven_pattern
+      min_confidence: 0.85
+
+  # Human-approve rules
+  human_approve:
+    - artifact_type: proven_pattern
+      confidence_range: [0.7, 0.85]
+    - artifact_type: capability_update
+      min_confidence: 0.0
+    - artifact_type: code_patch
+      min_confidence: 0.0  # Always human review
+    - artifact_type: training_pair
+      min_confidence: 0.0  # Always human review
+
+  # Deduplication
+  dedup:
+    enabled: true
+    similarity_threshold: 0.85
+    method: jaccard_trigram
+
+# ── Feedback Collector Configuration ─────────────────────────────────────────
+
+feedback:
+  # D-GEN-11: pull-based (v2.0 pulls from v1.x)
+  collection_schedule: "daily 01:00"
+  sources:
+    - name: runtime_failures
+      query: "SELECT * FROM audit_trail WHERE event_type LIKE 'error.%' AND created_at > ?"
+      lookback_hours: 24
+    - name: quality_trends
+      query: "SELECT * FROM code_quality_metrics WHERE created_at > ?"
+      lookback_hours: 168  # 7 days
+    - name: coverage_gaps
+      table: code_quality_metrics
+      filter: "maintainability_score < 50"
+    - name: heal_outcomes
+      query: "SELECT * FROM self_healing_events WHERE created_at > ?"
+      lookback_hours: 168
+    - name: demand_signals
+      table: pulse_demand_signals
+      filter: "is_high_demand = 1"
+  output_dir: data/genesis/feedback
+
+# ── Audit Configuration ─────────────────────────────────────────────────────
+
+audit:
+  # D-GEN-6, D-GEN-10: append-only genesis_audit table
+  table: genesis_audit
+  retention_days: 365  # Keep 1 year of autonomous decision logs
+  event_types:
+    - genesis.daemon.started
+    - genesis.daemon.stopped
+    - genesis.reflex.started
+    - genesis.reflex.completed
+    - genesis.reflex.failed
+    - genesis.reflex.skipped
+    - genesis.circuit_breaker.tripped
+    - genesis.circuit_breaker.reset
+    - genesis.promoter.exported
+    - genesis.promoter.auto_promoted
+    - genesis.promoter.human_review_pending
+    - genesis.promoter.promoted
+    - genesis.promoter.rejected
+    - genesis.promoter.dedup_skipped
+    - genesis.evolve.mutation_proposed
+    - genesis.evolve.mutation_accepted
+    - genesis.evolve.mutation_rejected
+    - genesis.feedback.collected
+    - genesis.report.generated
+    - genesis.kill_switch.activated

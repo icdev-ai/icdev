@@ -1,0 +1,22 @@
+{
+  "gkp_version": "1.0",
+  "id": "gkp-de4b178a46",
+  "artifact_type": "research_signal",
+  "genesis_reflex": "research",
+  "confidence": 0.7,
+  "evidence": {
+    "feed": "CISA Advisories",
+    "fetched_at": "2026-03-14T02:26:39Z"
+  },
+  "payload": {
+    "title": "Trane Tracer SC, Tracer SC+, and Tracer Concierge",
+    "description": "<p><a href=\"https://github.com/cisagov/CSAF/blob/develop/csaf_files/OT/white/2026/icsa-26-071-01.json\"><strong>View CSAF</strong></a></p>\n<h2>Summary</h2>\n<p><strong>Successful exploitation of these vulnerabilities could allow an attacker to disclose sensitive information, execute arbitrary commands, or perform a denial-of-service on the product.</strong></p>\n<p>The following versions of Trane Tracer SC, Tracer SC+, and Tracer Concierge are affected:</p>\n<ul>\n<li>Tracer SC</li>\n<li>Tracer SC+</l",
+    "source": "genesis_research:CISA Advisories",
+    "url": "https://www.cisa.gov/news-events/ics-advisories/icsa-26-071-01",
+    "published": "Thu, 12 Mar 26 12:00:00 +0000",
+    "score": 50
+  },
+  "sha256": "3ef47945e06e4b09ac9b0a5f4ec45b26f11ee22bfb9ffc1414adb2fc56089ad9",
+  "promotion_status": "pending_review",
+  "created_at": "2026-03-14T02:26:39Z"
+}
