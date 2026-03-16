@@ -90,7 +90,8 @@ def _log_ingestion(
     correlation_id: str = "",
 ):
     """Log ingestion event to rag_ingestion_log (append-only, D-RAG-11, D-RAG-18)."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute(
         """INSERT INTO rag_ingestion_log
            (source_type, source_id, source_table, chunks_created, chunks_skipped,
@@ -155,7 +156,8 @@ def ingest_source(
 
     col_str = ", ".join(all_cols)
 
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.row_factory = sqlite3.Row
     sql = f"SELECT {col_str} FROM {table}"
     conditions = []
@@ -333,7 +335,8 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
     last_ingestion = None
     if ICDEV_DB.exists():
         try:
-            conn = sqlite3.connect(str(ICDEV_DB))
+            conn = sqlite3.connect(str(ICDEV_DB), timeout=10)
+            conn.execute("PRAGMA busy_timeout=5000")
             row = conn.execute(
                 "SELECT MAX(created_at) FROM rag_ingestion_log"
             ).fetchone()

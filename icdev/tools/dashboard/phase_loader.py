@@ -11,11 +11,11 @@ Uses PyYAML if available, falls back to a minimal YAML parser (air-gap safe).
 
 Usage:
     from icdev.tools.dashboard.phase_loader import load_phases, get_phase_summary
-from icdev._paths import get_project_root
     phases = load_phases()
     summary = get_phase_summary(phases)
 """
 
+from icdev._paths import get_project_root
 from pathlib import Path
 
 BASE_DIR = get_project_root()

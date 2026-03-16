@@ -718,3 +718,59 @@ fine_tuning:
     min_perplexity_improvement_pct: 10
     cloud_max_classification: CUI
     min_gpu_vram_gb: 16
+
+# Blockchain Security Gates (D-GC-1 through D-GC-11)
+blockchain:
+  blocking:
+    - chaincode_critical_finding_open
+    - fips_crypto_not_validated
+    - peer_tls_not_configured
+    - endorsement_policy_missing
+    - hsm_required_not_configured  # IL5+ only
+  warning:
+    - chaincode_high_finding_open
+    - fips_validation_expired
+    - peer_health_check_failed
+    - provenance_anchor_pending
+  thresholds:
+    max_critical_chaincode_findings: 0
+    max_high_chaincode_findings: 0
+    fips_validation_required: true
+    hsm_required_for_il5_plus: true
+    tls_mutual_auth_required: true
+
+# Red Team Plugin Registry Gates (Phase 65 — promptfoo-inspired)
+red_team:
+  blocking:
+    - critical_plugin_test_failed
+    - prompt_injection_defense_gaps
+    - atlas_technique_unmitigated
+    - compliance_bypass_detected
+  warning:
+    - high_plugin_test_failed
+    - output_safety_gaps
+    - tool_chain_violations
+  thresholds:
+    max_critical_failures: 0
+    max_high_failures: 0
+    min_plugin_pass_rate: 1.0
+    scan_required_for_il4_plus: true
+
+# Agent Benchmark Framework Gates (Phase 65 — TheAgentCompany-inspired)
+agent_benchmark:
+  blocking:
+    - agent_below_minimum_threshold
+    - core_agent_benchmark_not_run
+  warning:
+    - agent_score_declining
+    - benchmark_coverage_low
+    - benchmark_stale
+  thresholds:
+    min_composite_score: 0.60
+    min_outcome_score: 0.50
+    min_methodology_score: 0.40
+    benchmark_max_age_days: 30
+    core_agents_required:
+      - orchestrator
+      - builder
+      - compliance

@@ -1,0 +1,266 @@
+# CUI // SP-CTI
+"""WriteGuard analysis engine — unified quality analysis for written content.
+
+Provides the ``analyze()`` entry point consumed by:
+    tools/proposal_genesis/reflexes/polish.py  (Proposal Genesis R8 Polish)
+    tools/writing/batch_analyzer.py            (batch scanning)
+
+Scanner-tier only when ``skip_llm=True`` (zero Claude tokens, D-WG-2).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Dict, List, Optional
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _count_syllables(word: str) -> int:
+    word = word.lower().strip(".,!?;:'\"")
+    if not word:
+        return 0
+    count = 0
+    prev_vowel = False
+    for ch in word:
+        is_v = ch in "aeiouy"
+        if is_v and not prev_vowel:
+            count += 1
+        prev_vowel = is_v
+    if word.endswith("e") and count > 1:
+        count -= 1
+    return max(1, count)
+
+
+def _grammar_check(text: str) -> Dict[str, Any]:
+    """Deterministic grammar analysis."""
+    issues: List[str] = []
+
+    doubles = len(re.findall(r"  +", text))
+    if doubles:
+        issues.append(f"{doubles} double-space occurrences")
+
+    uncapped = len(re.findall(r"\.\s+[a-z]", text))
+    if uncapped:
+        issues.append(f"{uncapped} sentences not capitalised")
+
+    repeated = len(re.findall(r"\b(\w+)\s+\1\b", text, re.IGNORECASE))
+    if repeated:
+        issues.append(f"{repeated} repeated word pairs")
+
+    error_count = doubles + uncapped + repeated
+    score = max(0.0, 1.0 - error_count * 0.05)
+    return {"score": round(score, 2), "error_count": error_count, "issues": issues}
+
+
+def _readability_check(text: str) -> Dict[str, Any]:
+    """Flesch-Kincaid readability approximation."""
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    words = text.split()
+    if not sentences or not words:
+        return {"score": 0.5, "grade_level": 0, "avg_sentence_length": 0}
+
+    syllables = sum(_count_syllables(w) for w in words)
+    avg_sent = len(words) / len(sentences)
+    avg_syl = syllables / len(words)
+    grade = 0.39 * avg_sent + 11.8 * avg_syl - 15.59
+    grade = max(0, min(20, grade))
+
+    # Proposal ideal: grade 10-14
+    if 10 <= grade <= 14:
+        score = 1.0
+    elif 8 <= grade < 10 or 14 < grade <= 16:
+        score = 0.8
+    else:
+        score = max(0.3, 1.0 - abs(grade - 12) * 0.05)
+
+    return {
+        "score": round(score, 2),
+        "grade_level": round(grade, 1),
+        "avg_sentence_length": round(avg_sent, 1),
+    }
+
+
+def _tone_check(text: str) -> Dict[str, Any]:
+    """Professional tone analysis via keyword matching."""
+    issues: List[str] = []
+    text_lower = text.lower()
+
+    informal = [
+        "gonna", "wanna", "gotta", "kinda", "sorta", "ain't",
+        "stuff", "things", "basically", "obviously", "super",
+        "pretty much", "a lot of", "tons of",
+    ]
+    found = [w for w in informal if w in text_lower]
+    if found:
+        issues.append(f"informal language: {', '.join(found[:5])}")
+
+    weak = [
+        "we think", "we believe", "we hope", "we feel",
+        "maybe", "perhaps", "possibly", "try to",
+    ]
+    found_weak = [w for w in weak if w in text_lower]
+    if found_weak:
+        issues.append(f"weak language: {', '.join(found_weak[:5])}")
+
+    score = max(0.0, 1.0 - (len(found) + len(found_weak)) * 0.10)
+    return {"score": round(score, 2), "issues": issues}
+
+
+def _ai_detection(text: str) -> Dict[str, Any]:
+    """Deterministic AI-content detection via burstiness proxy (D-WG-6)."""
+    sentences = [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
+    if len(sentences) < 3:
+        return {"score": 0.8, "burstiness": 0}
+
+    lengths = [len(s.split()) for s in sentences]
+    mean_len = sum(lengths) / len(lengths)
+    variance = sum((l - mean_len) ** 2 for l in lengths) / len(lengths)
+    burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0
+
+    if burstiness < 0.3:
+        score = 0.5
+    elif burstiness < 0.5:
+        score = 0.7
+    else:
+        score = 0.9
+
+    return {"score": round(score, 2), "burstiness": round(burstiness, 3)}
+
+
+def _plagiarism_check(text: str, opportunity_id: str = "") -> Dict[str, Any]:
+    """Content similarity check (n-gram overlap against existing drafts).
+
+    Falls back gracefully if DB tables are missing.
+    """
+    if not opportunity_id:
+        return {"score": 1.0, "max_similarity": 0.0}
+
+    try:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT section_text FROM proposal_section_drafts "
+                "WHERE opportunity_id != ? AND status IN ('draft', 'approved') "
+                "ORDER BY created_at DESC LIMIT 20",
+                (opportunity_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception:
+        return {"score": 1.0, "max_similarity": 0.0}
+
+    if not rows:
+        return {"score": 1.0, "max_similarity": 0.0}
+
+    text_ngrams = _ngrams(text, 4)
+    max_sim = 0.0
+    for row in rows:
+        other = row["section_text"] if hasattr(row, "keys") else row[0]
+        other_ng = _ngrams(other or "", 4)
+        if text_ngrams and other_ng:
+            overlap = len(text_ngrams & other_ng)
+            total = len(text_ngrams | other_ng)
+            sim = overlap / total if total else 0
+            max_sim = max(max_sim, sim)
+
+    return {"score": round(max(0, 1.0 - max_sim), 2), "max_similarity": round(max_sim, 3)}
+
+
+def _ngrams(text: str, n: int) -> set:
+    text = re.sub(r"\s+", " ", text.lower().strip())
+    if len(text) < n:
+        return set()
+    return {text[i : i + n] for i in range(len(text) - n + 1)}
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def analyze(
+    text: str,
+    mode: str = "inline",
+    opportunity_id: str = "",
+    skip_llm: bool = True,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Run full WriteGuard analysis on *text*.
+
+    Parameters
+    ----------
+    text : str
+        The content to analyse (plain text or markdown).
+    mode : str
+        ``"inline"`` for single-text analysis, ``"batch"`` for bulk.
+    opportunity_id : str
+        Optional proposal opportunity ID for plagiarism cross-check.
+    skip_llm : bool
+        When ``True`` (default), use only deterministic checks —
+        scanner-tier, zero Claude tokens.
+
+    Returns
+    -------
+    dict
+        Keys:
+        - ``quality_score`` (float, 0-1 composite)
+        - ``findings`` (list[dict])
+        - ``readability`` (dict)
+        - ``grammar_error_count`` (int)
+        - ``ai_content_score`` (float or None)
+        - ``checks`` (dict of individual results)
+    """
+    if not text or not text.strip():
+        return {
+            "quality_score": 0,
+            "findings": [{"error": "empty text"}],
+            "readability": {},
+            "grammar_error_count": 0,
+            "ai_content_score": None,
+            "checks": {},
+        }
+
+    grammar = _grammar_check(text)
+    readability = _readability_check(text)
+    tone = _tone_check(text)
+    plagiarism = _plagiarism_check(text, opportunity_id)
+    ai_det = _ai_detection(text)
+
+    checks = {
+        "grammar": grammar,
+        "readability": readability,
+        "tone": tone,
+        "plagiarism": plagiarism,
+        "ai_detection": ai_det,
+    }
+
+    # Weighted composite (same weights as polish.py)
+    weights = {
+        "grammar": 0.20,
+        "readability": 0.25,
+        "tone": 0.25,
+        "plagiarism": 0.15,
+        "ai_detection": 0.15,
+    }
+    quality_score = round(
+        sum(checks[k]["score"] * w for k, w in weights.items()), 3
+    )
+
+    # Collect findings
+    findings: List[Dict[str, Any]] = []
+    for name, result in checks.items():
+        for issue in result.get("issues", []):
+            findings.append({"check": name, "issue": issue})
+
+    return {
+        "quality_score": quality_score,
+        "findings": findings,
+        "readability": readability,
+        "grammar_error_count": grammar.get("error_count", 0),
+        "ai_content_score": ai_det.get("score"),
+        "checks": checks,
+    }

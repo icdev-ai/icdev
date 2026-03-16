@@ -24,7 +24,7 @@ python tools/compliance/stig_checker.py --project-id "" --json
 
 ## MCP
 
-19 MCP servers — see `.mcp.json` for definitions.
+2 MCP servers — see `.mcp.json` for definitions.
 
 ---
 

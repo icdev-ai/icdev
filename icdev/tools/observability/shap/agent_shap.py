@@ -9,7 +9,6 @@ Reference: arXiv:2512.12597 — 0.945 consistency, model-agnostic.
 
 Usage:
     from icdev.tools.observability.shap.agent_shap import AgentSHAP
-from icdev._paths import get_project_root
     shap = AgentSHAP()
     results = shap.analyze_trace(trace_id="abc123", iterations=1000)
 
@@ -23,6 +22,8 @@ import json
 import logging
 import math
 import random
+
+from icdev._paths import get_project_root
 import sqlite3
 import uuid
 from datetime import datetime, timezone

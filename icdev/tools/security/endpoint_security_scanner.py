@@ -13,7 +13,6 @@ Follows the same class structure as ``CodePatternScanner`` so that callers
 
 Usage:
     from icdev.tools.security.endpoint_security_scanner import EndpointSecurityScanner
-from icdev._paths import get_project_root
 
     scanner = EndpointSecurityScanner()
     result = scanner.scan_file("tools/dashboard/api/cpmp.py")
@@ -25,6 +24,7 @@ CLI:
     python tools/security/endpoint_security_scanner.py --file tools/dashboard/api/cpmp.py
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import re

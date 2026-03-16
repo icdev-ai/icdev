@@ -8,7 +8,6 @@ set project_id once, use everywhere.
 
 Usage:
     from icdev.tools.sdk.icdev_client import ICDEVClient
-from icdev._paths import get_project_root
 
     client = ICDEVClient(project_id="proj-123", project_dir="/path/to/project")
     status = client.project_status()
@@ -17,6 +16,7 @@ from icdev._paths import get_project_root
     context = client.build_context()
 """
 
+from icdev._paths import get_project_root
 import json
 import subprocess
 import sys

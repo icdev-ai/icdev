@@ -21,6 +21,8 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 events_bp = Blueprint("events_api", __name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -73,7 +75,7 @@ def get_recent_events():
             "total": total,
             "limit": limit,
             "offset": offset,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         })
     finally:
         conn.close()
@@ -134,7 +136,7 @@ def poll_events():
             "cursor": new_cursor,
             "count": len(events),
             "poll_interval_ms": DEFAULT_POLL_INTERVAL_MS,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         })
     finally:
         conn.close()
@@ -181,7 +183,7 @@ def get_filter_options():
         return jsonify({
             "hook_types": hook_types,
             "tool_names": tool_names,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         })
     finally:
         conn.close()

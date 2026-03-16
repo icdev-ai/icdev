@@ -1,0 +1,244 @@
+# INTaaS SaaS — AWS SAM Template
+# Lambda + Function URL + DynamoDB (zero API Gateway)
+# Mirrors marketplace-saas pattern exactly.
+# IP-restricted to 71.244.231.47 only.
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  INTaaS SaaS — Intelligence-as-a-Service Multiperspectivity Platform.
+  Lambda Function URL (permanent free tier), DynamoDB (provisioned free tier).
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Timeout: 120
+    MemorySize: 512
+    Environment:
+      Variables:
+        LOG_LEVEL: INFO
+        STAGE: !Ref Stage
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+  AllowedIP:
+    Type: String
+    Default: "71.244.231.47"
+    Description: IP address allowed to access the API
+
+Resources:
+  # ── Lambda Function ──────────────────────────────────────────
+  IntaasFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "intaas-saas-${Stage}"
+      Handler: src.app.handler
+      CodeUri: s3://icdev-sam-deploy-dev/intaas-saas/dev/intaas-20260315-222515.zip
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - "*"
+          AllowMethods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+          AllowHeaders:
+            - Authorization
+            - Content-Type
+      Environment:
+        Variables:
+          TOPICS_TABLE: !Ref TopicsTable
+          SOURCES_TABLE: !Ref SourcesTable
+          ARTICLES_TABLE: !Ref ArticlesTable
+          PERSPECTIVES_TABLE: !Ref PerspectivesTable
+          SOCRATIC_TABLE: !Ref SocraticTable
+          ANNOTATIONS_TABLE: !Ref AnnotationsTable
+          JUDGE_TABLE: !Ref JudgeTable
+          TENANTS_TABLE: !Ref TenantsTable
+          SAGEMAKER_ENABLED: "false"
+          ALLOWED_IP: !Ref AllowedIP
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TopicsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SourcesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ArticlesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PerspectivesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SocraticTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AnnotationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref JudgeTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TenantsTable
+
+  # ── DynamoDB Tables ──────────────────────────────────────────
+  # Provisioned 3/3 RCU/WCU per table (8 tables = 24, within 25 free tier)
+  TopicsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-topics-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  SourcesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-sources-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  ArticlesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-articles-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  PerspectivesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-perspectives-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  SocraticTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-socratic-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  AnnotationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-annotations-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  JudgeTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-judge-evals-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  TenantsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "intaas-tenants-${Stage}"
+      BillingMode: PROVISIONED
+      ProvisionedThroughput:
+        ReadCapacityUnits: 3
+        WriteCapacityUnits: 3
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
+Outputs:
+  IntaasFunctionUrl:
+    Description: Lambda Function URL (public endpoint)
+    Value: !GetAtt IntaasFunctionUrl.FunctionUrl
+  TopicsTableName:
+    Value: !Ref TopicsTable
+  TenantsTableName:
+    Value: !Ref TenantsTable

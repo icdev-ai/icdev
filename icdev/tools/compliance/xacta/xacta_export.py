@@ -4,7 +4,6 @@
 
 Generates OSCAL JSON and CSV exports compatible with Xacta 360's
 import functionality. Used as fallback when API is unavailable or
-from icdev._paths import get_project_root
 for bulk data transfer.
 
 Formats:
@@ -18,6 +17,7 @@ Usage:
     python tools/compliance/xacta/xacta_export.py --project-id proj-123 --format all
 """
 
+from icdev._paths import get_project_root
 import argparse
 import csv
 import json

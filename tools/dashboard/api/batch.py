@@ -32,6 +32,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -659,7 +661,7 @@ def history():
             "total": total,
             "limit": limit,
             "offset": offset,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         })
     finally:
         conn.close()

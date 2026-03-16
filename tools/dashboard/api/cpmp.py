@@ -27,6 +27,7 @@ from pathlib import Path
 from flask import Blueprint, g, jsonify, request
 
 from tools.dashboard.auth import require_role
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -64,12 +65,16 @@ def _audit(conn, action, details="", actor="cpmp_api"):
         pass
 
 
+def _classification():
+    return DEFAULT_CLASSIFICATION
+
+
 def _cor_access_log(conn, user_id, contract_id, action):
     try:
         conn.execute(
             "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (_uuid(), user_id, contract_id, action, _now(), "CUI // SP-CTI"),
+            (_uuid(), user_id, contract_id, action, _now(), _classification()),
         )
     except Exception:
         pass

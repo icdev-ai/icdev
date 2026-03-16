@@ -168,6 +168,27 @@ capabilities:
     source_dirs: []
     includes: ["tools/agent/prompt_chain_executor.py", "tools/agent/dispatcher_mode.py", "tools/agent/session_purpose.py", "tools/agent/atlas_critique.py", "args/prompt_chains.yaml", "args/atlas_critique_config.yaml"]
     db_tables: ["atlas_critique_sessions", "atlas_critique_findings", "prompt_chain_executions", "dispatcher_mode_overrides", "session_purposes"]
+  knowledge_graph:
+    always_on: false
+    trigger: { flag: "knowledge_graph_enabled" }
+    description: "GraphRAG with scoring profiles (D-KARL-1), context compression (D-KARL-2), parallel retrieval (D-KARL-3), entity/relationship extraction"
+    source_dirs: ["tools/knowledge_graph"]
+    includes: ["tools/knowledge_graph/*.py", "args/knowledge_graph_config.yaml", "context/knowledge_graph/*.json"]
+    db_tables: ["kg_graphs", "kg_nodes", "kg_edges", "kg_retrieval_log"]
+  genesis:
+    always_on: false
+    trigger: { flag: "genesis_enabled" }
+    description: "Autonomous research lab — 13 Reflexes, Trust Kernel, circuit breakers, GKP promoter (D-GEN-1 through D-GEN-12)"
+    source_dirs: ["tools/genesis", "tools/genesis/reflexes"]
+    includes: ["tools/genesis/*.py", "tools/genesis/reflexes/*.py", "args/genesis_config.yaml"]
+    db_tables: ["genesis_audit", "genesis_reflex_state", "genesis_gkp"]
+  databridge:
+    always_on: false
+    trigger: { flag: "databridge_enabled" }
+    description: "DataBridge connectors + Connector Forge (D-CF-1 through D-CF-10)"
+    source_dirs: ["tools/databridge", "tools/databridge/forge"]
+    includes: ["tools/databridge/**/*.py", "tools/databridge/forge/templates/*.py", "context/databridge/*.json"]
+    db_tables: []
   govcon:
     always_on: false
     trigger: { never: true }

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INTaaS — Intelligence-as-a-Service</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">INTaaS <span>Multiperspectivity</span></a>
+    <ul class="navbar-nav">
+      <li><a href="/" class="active">Home</a></li>
+      <li><a href="sources.html">Sources</a></li>
+      <li><a href="reference.html">Reference</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <!-- Search -->
+    <div style="margin-bottom: 1.5rem; display: flex; gap: 0.5rem;">
+      <input type="text" id="search-input" placeholder="Search across all analyzed articles..."
+             style="flex:1;padding:0.6rem 0.8rem;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;color:var(--text-primary);font-size:0.95rem"
+             onkeypress="if(event.key==='Enter') runSearch()">
+      <button class="btn btn-secondary" onclick="runSearch()">Search</button>
+    </div>
+    <div id="search-results" style="display:none;margin-bottom:1.5rem"></div>
+
+    <!-- Stats -->
+    <div class="stat-grid" id="stats">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-topics">-</div>
+        <div class="stat-label">Topics Analyzed</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-sources">8</div>
+        <div class="stat-label">OSINT Sources</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-languages">65</div>
+        <div class="stat-label">Languages (GDELT)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-status">-</div>
+        <div class="stat-label">API Status</div>
+      </div>
+    </div>
+
+    <!-- Analyze Form -->
+    <div class="analyze-form">
+      <h2>Analyze a Topic</h2>
+      <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
+        Submit a URL or describe a topic. INTaaS will find multiple perspectives,
+        score bias across 5 dimensions, and generate Socratic questions to develop your critical thinking.
+      </p>
+      <div class="form-group">
+        <label for="analyze-url">Article or YouTube URL (optional)</label>
+        <input type="url" id="analyze-url" placeholder="https://example.com/article or https://youtube.com/watch?v=...">
+      </div>
+      <div class="form-group">
+        <label for="analyze-title">Topic / Title</label>
+        <input type="text" id="analyze-title" placeholder="e.g., AI Regulation in the EU">
+      </div>
+      <div class="form-group">
+        <label for="analyze-text">Additional context (optional)</label>
+        <textarea id="analyze-text" placeholder="Paste article text or describe what you want to analyze..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="analyze-btn" onclick="submitAnalysis()">
+        Analyze Perspectives
+      </button>
+      <span id="analyze-status" class="loading" style="display:none; margin-left: 1rem;">
+        <span class="spinner"></span> Analyzing...
+      </span>
+    </div>
+
+    <!-- Recent Topics -->
+    <div class="card">
+      <div class="card-header">
+        <h2>Recent Topics</h2>
+        <button class="btn btn-secondary" onclick="loadTopics()">Refresh</button>
+      </div>
+      <ul class="topic-list" id="topic-list">
+        <li class="topic-item" style="justify-content: center; color: var(--text-muted);">
+          Loading topics...
+        </li>
+      </ul>
+    </div>
+
+    <!-- Upload Article -->
+    <div class="card" style="margin-top: 1rem;">
+      <div class="card-header">
+        <h2>Upload Article or Document</h2>
+      </div>
+      <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.85rem;">
+        Paste article text or document content for analysis. Add sources that GDELT doesn't cover.
+      </p>
+      <div class="form-group">
+        <label for="upload-title">Title</label>
+        <input type="text" id="upload-title" placeholder="Article or document title">
+      </div>
+      <div class="form-group">
+        <label for="upload-source">Source name (optional)</label>
+        <input type="text" id="upload-source" placeholder="e.g., Internal Report, Reuters, etc.">
+      </div>
+      <div class="form-group">
+        <label for="upload-content">Content (paste article text)</label>
+        <textarea id="upload-content" rows="6" placeholder="Paste the full article text here..."></textarea>
+      </div>
+      <button class="btn btn-secondary" onclick="uploadArticle()">Upload &amp; Analyze</button>
+      <span id="upload-status" class="loading" style="display:none; margin-left: 1rem;">
+        <span class="spinner"></span> Uploading...
+      </span>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    function ensureApiKey() {
+      if (!localStorage.getItem('intaas_api_key')) {
+        const key = prompt('API Key required to submit new analyses.\nEnter your INTaaS API Key:');
+        if (!key) return false;
+        localStorage.setItem('intaas_api_key', key);
+        window.location.reload();
+        return false;
+      }
+      return true;
+    }
+
+    async function loadStats() {
+      try {
+        const health = await api.health();
+        document.getElementById('stat-status').textContent = health.status === 'healthy' ? 'Online' : 'Offline';
+        document.getElementById('stat-status').style.color = health.status === 'healthy' ? 'var(--success)' : 'var(--danger)';
+      } catch { document.getElementById('stat-status').textContent = 'Offline'; }
+
+      try {
+        const topics = await api.listTopics();
+        document.getElementById('stat-topics').textContent = topics.count || 0;
+      } catch { /* ignore */ }
+    }
+
+    async function loadTopics() {
+      const list = document.getElementById('topic-list');
+      try {
+        const data = await api.listTopics();
+        if (!data.topics || data.topics.length === 0) {
+          list.innerHTML = '<li class="topic-item" style="justify-content:center;color:var(--text-muted)">No topics yet. Analyze one above!</li>';
+          return;
+        }
+        list.innerHTML = data.topics.map(t => `
+          <li class="topic-item" onclick="location.href='topic.html?id=${t.topic_id}'">
+            <div>
+              <div class="topic-title">${t.title}</div>
+            </div>
+            <div class="topic-meta">
+              <span class="status-badge ${statusClass(t.status)}">${t.status}</span>
+              <span>${t.source_count} sources</span>
+              <span>${timeAgo(t.created_at)}</span>
+            </div>
+          </li>
+        `).join('');
+      } catch (e) {
+        list.innerHTML = `<li class="topic-item" style="justify-content:center;color:var(--danger)">${e.message}</li>`;
+      }
+    }
+
+    async function runSearch() {
+      const q = document.getElementById('search-input').value.trim();
+      if (!q) return;
+      const el = document.getElementById('search-results');
+      el.style.display = 'block';
+      el.innerHTML = '<div class="loading"><span class="spinner"></span> Searching...</div>';
+      try {
+        const data = await api.search(q);
+        if (!data.results || data.results.length === 0) {
+          el.innerHTML = '<p style="color:var(--text-muted)">No results for "' + q + '"</p>';
+          return;
+        }
+        let html = '<div class="card"><div class="card-header"><h2>' + data.count + ' results for "' + q + '"</h2></div>';
+        for (const r of data.results) {
+          html += '<div class="topic-item" onclick="location.href=\'topic.html?id=' + r.topic_id + '\'" style="cursor:pointer;margin-bottom:0.5rem">'
+            + '<div><div class="topic-title">' + (r.title || 'Untitled') + '</div>'
+            + '<div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.2rem">' + (r.snippet || '') + '</div></div>'
+            + '<div class="topic-meta"><span style="color:var(--accent)">' + r.score.toFixed(3) + '</span>'
+            + '<span>' + (r.topic_title || '') + '</span></div>'
+            + '</div>';
+        }
+        html += '</div>';
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = '<p style="color:var(--danger)">Error: ' + e.message + '</p>';
+      }
+    }
+
+    async function uploadArticle() {
+      if (!ensureApiKey()) return;
+      const title = document.getElementById('upload-title').value;
+      const content = document.getElementById('upload-content').value;
+      const source = document.getElementById('upload-source').value;
+      if (!title || !content) { alert('Title and content are required'); return; }
+
+      const status = document.getElementById('upload-status');
+      status.style.display = 'inline-flex';
+      try {
+        const result = await api.uploadArticle({
+          title: title, content: content, source_name: source,
+        });
+        status.style.display = 'none';
+        if (result.topic_id) {
+          location.href = 'topic.html?id=' + result.topic_id;
+        }
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+        status.style.display = 'none';
+      }
+    }
+
+    async function submitAnalysis() {
+      if (!ensureApiKey()) return;
+
+      const url = document.getElementById('analyze-url').value;
+      const title = document.getElementById('analyze-title').value;
+      const text = document.getElementById('analyze-text').value;
+
+      if (!title && !url) { alert('Enter a topic title or URL'); return; }
+
+      const btn = document.getElementById('analyze-btn');
+      const status = document.getElementById('analyze-status');
+      btn.disabled = true;
+      status.style.display = 'inline-flex';
+
+      try {
+        const result = await api.analyze({ url: url || undefined, title, text: text || undefined });
+        status.style.display = 'none';
+        btn.disabled = false;
+
+        // Navigate to topic page
+        location.href = `topic.html?id=${result.topic_id}`;
+      } catch (e) {
+        alert('Analysis failed: ' + e.message);
+        status.style.display = 'none';
+        btn.disabled = false;
+      }
+    }
+
+    // Init
+    loadStats();
+    loadTopics();
+  </script>
+</body>
+</html>

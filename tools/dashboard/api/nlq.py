@@ -15,6 +15,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 nlq_bp = Blueprint("nlq_api", __name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -49,7 +51,7 @@ def get_schema():
     from tools.dashboard.nlq_processor import extract_schema
 
     schema = extract_schema(DB_PATH)
-    return jsonify({"schema": schema, "classification": "CUI"})
+    return jsonify({"schema": schema, "classification": DEFAULT_CLASSIFICATION})
 
 
 @nlq_bp.route("/api/nlq/history", methods=["GET"])
@@ -65,7 +67,7 @@ def get_history():
         ).fetchall()
         return jsonify({
             "queries": [dict(r) for r in rows],
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         })
     finally:
         conn.close()

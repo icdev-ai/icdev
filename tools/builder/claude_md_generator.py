@@ -214,6 +214,53 @@ python tools/rag/retention_manager.py --status --json                           
 python tools/rag/retention_manager.py --migrate --json                             # Run tier migration
 ```
 {% endif %}
+{% if capabilities.get("knowledge_graph", False) %}
+
+### Knowledge Graph & GraphRAG Commands
+```bash
+# Knowledge graph analysis
+python tools/knowledge_graph/text_network.py --text "input text" --project-id "{{ app_name }}" --json
+python tools/knowledge_graph/ingester.py --file /path/to/doc --project-id "{{ app_name }}" --json
+
+# GraphRAG retrieval (D-KARL-1 scoring profiles, D-KARL-2 compression)
+python tools/knowledge_graph/graph_rag.py --query "query text" --project-id "{{ app_name }}" --json
+python tools/knowledge_graph/graph_rag.py --query "query text" --profile compliance --json
+
+# AI insight generation (scanner-tier, zero Claude tokens)
+python tools/knowledge_graph/insight_generator.py --graph-id <id> --questions --json
+python tools/knowledge_graph/insight_generator.py --graph-id <id> --bridge-gaps --json
+```
+{% endif %}
+{% if capabilities.get("genesis", False) %}
+
+### Genesis v2.0 — Autonomous Research Lab Commands
+```bash
+# Daemon
+ICDEV_GENESIS_ENABLED=true python tools/genesis/daemon.py    # Run as always-on daemon
+python tools/genesis/daemon.py --once --json                  # Single pass (run all due reflexes)
+python tools/genesis/daemon.py --status --json                # Show status of all reflexes
+python tools/genesis/daemon.py --reflex research --json       # Run one reflex immediately
+
+# Knowledge Bridge (Promoter)
+python tools/genesis/promoter.py --list --json                                      # List all GKPs
+python tools/genesis/promoter.py --auto-promote --json                              # Auto-promote eligible
+python tools/genesis/promoter.py --promote gkp-xxxx --json                          # Manually promote
+python tools/genesis/promoter.py --reject gkp-xxxx --reason "reason" --json         # Reject
+python tools/genesis/promoter.py --stats --json                                     # Promotion statistics
+```
+{% endif %}
+{% if capabilities.get("fine_tuning", False) %}
+
+### Fine-Tuning Commands
+```bash
+python tools/finetune/dataset_manager.py --create --name "dataset" --purpose general --json
+python tools/finetune/dataset_manager.py --list --json
+python tools/finetune/pair_generator.py --dataset-id "ds-xxx" --source-type rag --json
+python tools/finetune/training_engine.py --dataset-id "ds-xxx" --json
+python tools/finetune/evaluator.py --model-version-id "mv-xxx" --json
+python tools/finetune/promotion_manager.py --check --model-version-id "mv-xxx" --json
+```
+{% endif %}
 {% if capabilities.get("mbse", False) %}
 
 ### MBSE Commands
@@ -534,6 +581,10 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 {% endif %}{% if capabilities.get("ricoas", False) %}- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs
 {% endif %}{% if capabilities.get("observability", False) %}- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed
 {% endif %}{% if capabilities.get("code_intelligence", False) %}- Code Quality gates block on: average cyclomatic complexity > 25
+{% endif %}{% if capabilities.get("genesis", False) %}- Genesis daemon is opt-in: set ICDEV_GENESIS_ENABLED=true to activate. All autonomous decisions logged to append-only genesis_audit table
+- Genesis knowledge flows via GKP JSON artifacts only — code patches require human review
+{% endif %}{% if capabilities.get("knowledge_graph", False) %}- Knowledge Graph retrieval log (kg_retrieval_log) is append-only (NIST AU compliance)
+{% endif %}{% if capabilities.get("rag", False) %}- RAG gates block on: injection without provenance, cross-tenant query detected, content tracing in CUI without approval
 {% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 {% if parent_callback.get("enabled", False) %}
 

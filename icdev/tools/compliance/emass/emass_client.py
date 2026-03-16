@@ -10,12 +10,12 @@ eMASS API reference: REST API v3.12 with PKI/CAC auth.
 
 Usage:
     from icdev.tools.compliance.emass.emass_client import EMASSClient
-from icdev._paths import get_project_root
     client = EMASSClient()
     client.get_systems()
     client.push_controls(system_id, controls)
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import sqlite3

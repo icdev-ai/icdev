@@ -76,11 +76,11 @@ DB_PATH = os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
 # CUI banner text
 CUI_BANNER_TOP = os.environ.get(
     "ICDEV_CUI_BANNER_TOP",
-    CUI_CONFIG.get("banner_top", "CUI // SP-CTI"),
+    CUI_CONFIG.get("banner_top", ""),
 )
 CUI_BANNER_BOTTOM = os.environ.get(
     "ICDEV_CUI_BANNER_BOTTOM",
-    CUI_CONFIG.get("banner_bottom", "CUI // SP-CTI"),
+    CUI_CONFIG.get("banner_bottom", ""),
 )
 CUI_DESIGNATION = CUI_CONFIG.get("designation_indicator", {})
 CUI_PORTION_MARKING = CUI_CONFIG.get("portion_marking", "(CUI)")
@@ -96,7 +96,7 @@ SLA = MONITORING_CONFIG.get("sla", {})
 
 # CUI banner toggle (D173)
 CUI_BANNER_ENABLED = os.environ.get(
-    "ICDEV_CUI_BANNER_ENABLED", "true"
+    "ICDEV_CUI_BANNER_ENABLED", "false"
 ).lower() in ("1", "true", "yes")
 
 # Dashboard auth (D169-D172)
@@ -113,4 +113,4 @@ BYOK_ENABLED = os.environ.get(
 BYOK_ENCRYPTION_KEY = os.environ.get("ICDEV_BYOK_ENCRYPTION_KEY", "")
 
 # Classification
-DEFAULT_CLASSIFICATION = os.environ.get("ICDEV_CLASSIFICATION", "CUI")
+DEFAULT_CLASSIFICATION = os.environ.get("ICDEV_CLASSIFICATION", "")

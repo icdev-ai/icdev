@@ -313,6 +313,22 @@ reflexes:
       - tools/genesis/daemon.py  # No self-modification of the daemon itself
     require_human_merge: true
 
+  docs:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 06:00"
+    description: "Documentation drift detection — stale refs, missing docs, manifest drift, route drift"
+    success_metric:
+      name: docs_drift_count
+      threshold: 0
+      operator: lte
+    checks:
+      stale_feature_docs: true
+      missing_feature_docs: true
+      manifest_drift: true
+      claude_md_route_drift: true
+      readme_staleness: true
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:
@@ -330,13 +346,25 @@ promoter:
       min_confidence: 0.0
     - artifact_type: proven_pattern
       min_confidence: 0.85
+    - artifact_type: capability_update
+      min_confidence: 0.0  # Marketplace capability updates are safe
+    # Reflex-based rules: any GKP from these reflexes auto-promotes
+    - reflex: comply
+      min_confidence: 0.0  # All compliance outputs are safe
+    - reflex: audit
+      min_confidence: 0.0  # Audit findings are read-only
+    # Source-based rules: trusted external sources auto-promote
+    - source_contains: CISA
+      min_confidence: 0.0  # cisa.gov advisories and KEV
+    - source_contains: OWASP
+      min_confidence: 0.0  # owasp.org feeds
+    - source_contains: nist
+      min_confidence: 0.0  # NIST NVD and standards
 
   # Human-approve rules
   human_approve:
     - artifact_type: proven_pattern
       confidence_range: [0.7, 0.85]
-    - artifact_type: capability_update
-      min_confidence: 0.0
     - artifact_type: code_patch
       min_confidence: 0.0  # Always human review
     - artifact_type: training_pair
@@ -398,3 +426,71 @@ audit:
     - genesis.feedback.collected
     - genesis.report.generated
     - genesis.kill_switch.activated
+    - genesis.convergence.evaluated
+    - genesis.convergence.retrospective_triggered
+    - genesis.stagnation.detected
+    - genesis.stagnation.plateau_broken
+
+# ── Convergence Gates (Phase 65 — Ouroboros-inspired) ──────────────────────
+
+convergence:
+  enabled: true
+  weights:
+    goal_drift: 0.5
+    metric_drift: 0.3
+    output_similarity: 0.2
+  thresholds:
+    max_acceptable_drift: 0.30
+    convergence_similarity: 0.95
+    max_ambiguity: 0.20
+  ambiguity_weights:
+    problem_clarity: 0.40
+    solution_clarity: 0.30
+    verification_clarity: 0.30
+  retrospective:
+    trigger_every_n_cycles: 5
+    trigger_on_drift_above: 0.30
+  window_size: 10
+
+# ── Stagnation Detector (Phase 65 — Ouroboros-inspired) ────────────────────
+
+stagnation:
+  enabled: true
+  detection:
+    oscillation_window: 4
+    stagnation_threshold: 0.99
+    stagnation_min_consecutive: 3
+    diminishing_returns_slope_threshold: 0.01
+    repetitive_output_overlap: 0.70
+    repetitive_output_window: 3
+  personas:
+    hacker:
+      description: "Find unconventional workarounds for this constraint"
+      applicable_patterns:
+        - oscillation
+        - stagnation
+    researcher:
+      description: "What additional information would clarify this?"
+      applicable_patterns:
+        - stagnation
+        - diminishing_returns
+    simplifier:
+      description: "How can we reduce complexity?"
+      applicable_patterns:
+        - diminishing_returns
+        - repetitive_output
+    architect:
+      description: "How should we restructure this approach?"
+      applicable_patterns:
+        - oscillation
+        - repetitive_output
+    contrarian:
+      description: "What assumption should we challenge?"
+      applicable_patterns:
+        - stagnation
+        - diminishing_returns
+        - oscillation
+  scoring:
+    feasibility_weight: 0.6
+    novelty_weight: 0.4
+  max_alternatives_per_persona: 3

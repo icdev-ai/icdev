@@ -3118,8 +3118,8 @@ CREATE TABLE IF NOT EXISTS innovation_triage_log (
     signal_id TEXT NOT NULL REFERENCES innovation_signals(id),
     stage INTEGER NOT NULL CHECK(stage BETWEEN 1 AND 5),
     stage_name TEXT NOT NULL
-        CHECK(stage_name IN ('classify', 'gotcha_fit', 'boundary_impact',
-                              'compliance_check', 'dedup_license')),
+        CHECK(stage_name IN ('classify_signal', 'gotcha_fit_check', 'boundary_impact',
+                              'compliance_precheck', 'duplicate_license_check')),
     result TEXT NOT NULL CHECK(result IN ('pass', 'block', 'warn')),
     details TEXT,
     triaged_at TEXT NOT NULL
@@ -7487,6 +7487,491 @@ CREATE INDEX IF NOT EXISTS idx_genesis_gkp_type ON genesis_gkp(artifact_type);
 CREATE INDEX IF NOT EXISTS idx_genesis_gkp_status ON genesis_gkp(promotion_status);
 CREATE INDEX IF NOT EXISTS idx_genesis_gkp_reflex ON genesis_gkp(genesis_reflex);
 CREATE INDEX IF NOT EXISTS idx_genesis_gkp_created ON genesis_gkp(created_at);
+
+-- ============================================================
+-- PROPOSAL GENESIS — AUTONOMOUS PROPOSAL INTELLIGENCE (D-PG-1 through D-PG-10)
+-- ============================================================
+
+-- Audit trail for all autonomous proposal decisions (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS pg_proposal_genesis_audit (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    reflex_name     TEXT,
+    risk_tier       TEXT,
+    opportunity_id  TEXT,
+    details         TEXT,
+    success         INTEGER,
+    duration_ms     INTEGER,
+    metric_name     TEXT,
+    metric_value    REAL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_type ON pg_proposal_genesis_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_reflex ON pg_proposal_genesis_audit(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_opp ON pg_proposal_genesis_audit(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_audit_created ON pg_proposal_genesis_audit(created_at);
+
+-- Reflex state tracking (mirrors genesis_reflex_state pattern)
+CREATE TABLE IF NOT EXISTS pg_proposal_genesis_state (
+    reflex_name         TEXT PRIMARY KEY,
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    last_run_at         TEXT,
+    next_run_at         TEXT,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_open INTEGER NOT NULL DEFAULT 0,
+    circuit_breaker_tripped_at TEXT,
+    total_runs          INTEGER NOT NULL DEFAULT 0,
+    total_successes     INTEGER NOT NULL DEFAULT 0,
+    total_failures      INTEGER NOT NULL DEFAULT 0,
+    last_metric_value   REAL,
+    last_error          TEXT,
+    updated_at          TEXT NOT NULL
+);
+
+-- Daemon configuration overrides (D-PG-3: toggle)
+CREATE TABLE IF NOT EXISTS pg_proposal_genesis_config (
+    key             TEXT PRIMARY KEY,
+    value           TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Amendment tracking diffs (R1 Discover → R5 Extract)
+CREATE TABLE IF NOT EXISTS pg_amendment_diffs (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    amendment_id    TEXT,
+    diff_type       TEXT NOT NULL CHECK(diff_type IN ('added', 'removed', 'modified')),
+    section         TEXT,
+    old_text        TEXT,
+    new_text        TEXT,
+    re_extracted    INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_amend_opp ON pg_amendment_diffs(opportunity_id);
+
+-- Pulse ↔ Proposal content links (D-PG-5: bidirectional)
+CREATE TABLE IF NOT EXISTS pg_pulse_proposal_links (
+    id              TEXT PRIMARY KEY,
+    pulse_post_id   TEXT,
+    opportunity_id  TEXT,
+    section_id      TEXT,
+    link_type       TEXT NOT NULL CHECK(link_type IN ('article_to_proposal', 'capability_to_article', 'cdrl_to_case_study')),
+    relevance_score REAL DEFAULT 0.0,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_pulse_link_post ON pg_pulse_proposal_links(pulse_post_id);
+CREATE INDEX IF NOT EXISTS idx_pg_pulse_link_opp ON pg_pulse_proposal_links(opportunity_id);
+
+-- Proposal quality scores from WriteGuard (R8 Polish)
+CREATE TABLE IF NOT EXISTS pg_proposal_quality_scores (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    section_id      TEXT,
+    draft_id        TEXT,
+    grammar_score   REAL,
+    readability_score REAL,
+    tone_score      REAL,
+    plagiarism_score REAL,
+    ai_detection_score REAL,
+    overall_score   REAL NOT NULL DEFAULT 0.0,
+    passed          INTEGER NOT NULL DEFAULT 0,
+    findings        TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_quality_opp ON pg_proposal_quality_scores(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_quality_created ON pg_proposal_quality_scores(created_at);
+
+-- Bid/no-bid decisions (R9 Decide — Phase B)
+CREATE TABLE IF NOT EXISTS pg_bid_decisions (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    decision        TEXT NOT NULL CHECK(decision IN ('bid', 'no_bid', 'pending', 'deferred')),
+    win_probability REAL,
+    score_breakdown TEXT,
+    rationale       TEXT,
+    decided_by      TEXT DEFAULT 'autonomous',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_bid_opp ON pg_bid_decisions(opportunity_id);
+
+-- Bid decision outcomes for calibration (R13 Analyze — Phase B)
+CREATE TABLE IF NOT EXISTS pg_bid_decision_outcomes (
+    id              TEXT PRIMARY KEY,
+    bid_decision_id TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled', 'withdrawn')),
+    actual_award_date TEXT,
+    award_amount    REAL,
+    notes           TEXT,
+    created_at      TEXT NOT NULL
+);
+
+-- Win/loss records (R13 Analyze — Phase B)
+CREATE TABLE IF NOT EXISTS pg_win_loss_records (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    outcome         TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled')),
+    competitor_name TEXT,
+    competitor_strengths TEXT,
+    our_strengths   TEXT,
+    our_weaknesses  TEXT,
+    lessons_learned TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_winloss_opp ON pg_win_loss_records(opportunity_id);
+
+-- Win/loss lessons for feedback loop (R13 Analyze → R14 Train)
+CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
+    id              TEXT PRIMARY KEY,
+    win_loss_id     TEXT NOT NULL,
+    category        TEXT NOT NULL CHECK(category IN ('technical', 'management', 'pricing', 'past_performance', 'compliance', 'staffing', 'other')),
+    lesson          TEXT NOT NULL,
+    actionable      INTEGER NOT NULL DEFAULT 1,
+    applied         INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL
+);
+
+-- CRM accounts (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_accounts (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    agency          TEXT,
+    sub_agency      TEXT,
+    account_type    TEXT DEFAULT 'government' CHECK(account_type IN ('government', 'prime', 'subcontractor', 'partner', 'other')),
+    website         TEXT,
+    naics_codes     TEXT,
+    set_asides      TEXT,
+    notes           TEXT,
+    status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'prospect')),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_acct_name ON pg_crm_accounts(name);
+
+-- CRM contacts (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_contacts (
+    id              TEXT PRIMARY KEY,
+    account_id      TEXT NOT NULL,
+    name            TEXT NOT NULL,
+    title           TEXT,
+    email           TEXT,
+    phone           TEXT,
+    role_in_procurement TEXT,
+    influence_level TEXT CHECK(influence_level IN ('decision_maker', 'influencer', 'evaluator', 'end_user', 'unknown')),
+    notes           TEXT,
+    last_contact_at TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_contact_acct ON pg_crm_contacts(account_id);
+
+-- CRM interactions (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_interactions (
+    id              TEXT PRIMARY KEY,
+    contact_id      TEXT NOT NULL,
+    account_id      TEXT NOT NULL,
+    interaction_type TEXT NOT NULL CHECK(interaction_type IN ('meeting', 'call', 'email', 'conference', 'site_visit', 'rfi_response', 'industry_day', 'other')),
+    subject         TEXT,
+    notes           TEXT,
+    opportunity_id  TEXT,
+    interaction_date TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_interact_contact ON pg_crm_interactions(contact_id);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_interact_acct ON pg_crm_interactions(account_id);
+
+-- CRM engagement scores (R4 Engage — Phase C)
+CREATE TABLE IF NOT EXISTS pg_crm_engagement_scores (
+    id              TEXT PRIMARY KEY,
+    account_id      TEXT NOT NULL,
+    score           REAL NOT NULL DEFAULT 0.0,
+    score_breakdown TEXT,
+    interaction_count INTEGER DEFAULT 0,
+    last_interaction_at TEXT,
+    opportunity_count INTEGER DEFAULT 0,
+    win_rate        REAL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_crm_eng_acct ON pg_crm_engagement_scores(account_id);
+
+-- Capture plans (R3 Shape — Phase D)
+CREATE TABLE IF NOT EXISTS pg_capture_plans (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    status          TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'active', 'completed', 'abandoned')),
+    win_strategy    TEXT,
+    discriminators  TEXT,
+    teaming_strategy TEXT,
+    price_strategy  TEXT,
+    gate_reviews    TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_capture_opp ON pg_capture_plans(opportunity_id);
+
+-- Capture activities (R3 Shape — Phase D)
+CREATE TABLE IF NOT EXISTS pg_capture_activities (
+    id              TEXT PRIMARY KEY,
+    capture_plan_id TEXT NOT NULL,
+    activity_type   TEXT NOT NULL,
+    description     TEXT,
+    assigned_to     TEXT,
+    due_date        TEXT,
+    status          TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_capture_act_plan ON pg_capture_activities(capture_plan_id);
+
+-- Teaming partners (R3 Shape — Phase D, D-PG-6)
+CREATE TABLE IF NOT EXISTS pg_teaming_partners (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    partner_type    TEXT NOT NULL CHECK(partner_type IN ('prime', 'subcontractor', 'consultant', 'technology_partner', 'mentor_protege')),
+    capabilities    TEXT,
+    past_performance TEXT,
+    contract_vehicles TEXT,
+    certifications  TEXT,
+    set_asides      TEXT,
+    status          TEXT DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'prospect')),
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_team_name ON pg_teaming_partners(name);
+
+-- Teaming assessments (R3 Shape — Phase D)
+CREATE TABLE IF NOT EXISTS pg_teaming_assessments (
+    id              TEXT PRIMARY KEY,
+    opportunity_id  TEXT NOT NULL,
+    partner_id      TEXT NOT NULL,
+    fit_score       REAL DEFAULT 0.0,
+    capability_gaps_filled TEXT,
+    risk_assessment TEXT,
+    recommendation  TEXT CHECK(recommendation IN ('strong_fit', 'good_fit', 'marginal', 'not_recommended')),
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_team_assess_opp ON pg_teaming_assessments(opportunity_id);
+
+-- ================================================================
+-- File Sync Module (D-SYNC-1 through D-SYNC-10)
+-- ================================================================
+
+-- Sync jobs — mutable (status updates allowed)
+CREATE TABLE IF NOT EXISTS sync_jobs (
+    id                          TEXT PRIMARY KEY,
+    name                        TEXT NOT NULL,
+    source_path                 TEXT NOT NULL,
+    source_provider             TEXT NOT NULL DEFAULT 'local'
+        CHECK(source_provider IN ('local', 'sftp', 's3', 'azure', 'gcs')),
+    dest_path                   TEXT NOT NULL,
+    dest_provider               TEXT NOT NULL DEFAULT 'local'
+        CHECK(dest_provider IN ('local', 'sftp', 's3', 'azure', 'gcs')),
+    sync_mode                   TEXT NOT NULL DEFAULT 'push'
+        CHECK(sync_mode IN ('push', 'pull', 'bidirectional')),
+    conflict_strategy           TEXT NOT NULL DEFAULT 'last_write_wins'
+        CHECK(conflict_strategy IN ('last_write_wins', 'rename_both', 'newest_wins', 'source_wins', 'skip')),
+    ignore_file                 TEXT DEFAULT '.syncignore',
+    delete_orphans              INTEGER DEFAULT 0,
+    status                      TEXT NOT NULL DEFAULT 'idle'
+        CHECK(status IN ('idle', 'scanning', 'syncing', 'completed', 'failed', 'paused', 'watching')),
+    schedule_interval_seconds   INTEGER DEFAULT 0,
+    bandwidth_limit_kbps        INTEGER DEFAULT 0,
+    max_workers                 INTEGER DEFAULT 4,
+    last_run_at                 TIMESTAMP,
+    last_success_at             TIMESTAMP,
+    files_synced                INTEGER DEFAULT 0,
+    files_skipped               INTEGER DEFAULT 0,
+    files_conflicted            INTEGER DEFAULT 0,
+    bytes_transferred           INTEGER DEFAULT 0,
+    error_message               TEXT,
+    config_json                 TEXT,
+    classification              TEXT DEFAULT 'CUI',
+    project_id                  TEXT,
+    created_by                  TEXT,
+    created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_jobs_status ON sync_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_sync_jobs_project ON sync_jobs(project_id);
+
+-- Sync state — mutable (per-file hash cache for fast-skip, D-SYNC-2)
+CREATE TABLE IF NOT EXISTS sync_state (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id          TEXT NOT NULL REFERENCES sync_jobs(id),
+    relative_path   TEXT NOT NULL,
+    content_hash    TEXT,
+    file_size       INTEGER,
+    mtime_epoch     REAL,
+    side            TEXT NOT NULL DEFAULT 'source'
+        CHECK(side IN ('source', 'dest')),
+    last_synced_at  TIMESTAMP,
+    last_synced_hash TEXT,
+    UNIQUE(job_id, relative_path, side)
+);
+CREATE INDEX IF NOT EXISTS idx_sync_state_job ON sync_state(job_id);
+
+-- Sync log — APPEND-ONLY (NIST AU compliant, D6, D-SYNC-7)
+CREATE TABLE IF NOT EXISTS sync_log (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id              TEXT NOT NULL REFERENCES sync_jobs(id),
+    action              TEXT NOT NULL CHECK(action IN (
+        'copy', 'update', 'delete', 'rename', 'skip',
+        'conflict_resolved', 'conflict_skipped', 'error',
+        'scan_started', 'scan_completed',
+        'sync_started', 'sync_completed', 'sync_failed'
+    )),
+    relative_path       TEXT,
+    source_hash         TEXT,
+    dest_hash           TEXT,
+    bytes_transferred   INTEGER DEFAULT 0,
+    duration_ms         INTEGER DEFAULT 0,
+    resolution          TEXT,
+    error_detail        TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_log_job ON sync_log(job_id);
+CREATE INDEX IF NOT EXISTS idx_sync_log_action ON sync_log(action);
+CREATE INDEX IF NOT EXISTS idx_sync_log_created ON sync_log(created_at);
+
+-- Sync conflicts — mutable (resolution status updates)
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id              TEXT PRIMARY KEY,
+    job_id          TEXT NOT NULL REFERENCES sync_jobs(id),
+    relative_path   TEXT NOT NULL,
+    source_hash     TEXT,
+    source_mtime    REAL,
+    source_size     INTEGER,
+    dest_hash       TEXT,
+    dest_mtime      REAL,
+    dest_size       INTEGER,
+    resolution      TEXT CHECK(resolution IN (
+        'pending', 'source_wins', 'dest_wins', 'renamed', 'skipped', 'manual'
+    )) DEFAULT 'pending',
+    resolved_at     TIMESTAMP,
+    resolved_by     TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_job ON sync_conflicts(job_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_status ON sync_conflicts(resolution);
+
+-- =========================================================================
+-- Pulse AI Blog Engine
+-- =========================================================================
+
+-- Pulse demand signals (topics extracted from SAM.gov, community, etc.)
+CREATE TABLE IF NOT EXISTS pulse_demand_signals (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    pain_point_text TEXT NOT NULL,
+    domain_category TEXT,
+    keywords        TEXT,
+    source          TEXT DEFAULT 'manual',
+    frequency       INTEGER DEFAULT 1,
+    velocity        REAL DEFAULT 0.0,
+    is_high_demand  INTEGER DEFAULT 0,
+    article_generated INTEGER DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_demand_high ON pulse_demand_signals(is_high_demand);
+CREATE INDEX IF NOT EXISTS idx_pulse_demand_created ON pulse_demand_signals(created_at);
+
+-- Pulse blog posts (articles — draft/staged/published lifecycle)
+CREATE TABLE IF NOT EXISTS pulse_posts (
+    id                  TEXT PRIMARY KEY,
+    title               TEXT NOT NULL,
+    slug                TEXT,
+    status              TEXT NOT NULL DEFAULT 'draft'
+                        CHECK(status IN ('draft', 'staged', 'review', 'published', 'archived')),
+    topic               TEXT,
+    body_markdown       TEXT,
+    hero_image_path     TEXT,
+    hero_image_method   TEXT CHECK(hero_image_method IN ('sdxl_turbo', 'svg', 'manual', NULL)),
+    hero_image_prompt   TEXT,
+    readability_score   REAL DEFAULT 0.0,
+    author_id           TEXT,
+    demand_signal_id    INTEGER REFERENCES pulse_demand_signals(id),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pulse_posts_status ON pulse_posts(status);
+CREATE INDEX IF NOT EXISTS idx_pulse_posts_slug ON pulse_posts(slug);
+CREATE INDEX IF NOT EXISTS idx_pulse_posts_created ON pulse_posts(created_at);
+
+-- =========================================================================
+-- Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
+-- =========================================================================
+
+-- Red Team Plugin Registry results (append-only, D6)
+CREATE TABLE IF NOT EXISTS red_team_results (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT,
+    plugin_id       TEXT NOT NULL,
+    plugin_name     TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    passed          INTEGER DEFAULT 0,
+    tests_run       INTEGER DEFAULT 0,
+    tests_passed    INTEGER DEFAULT 0,
+    findings_json   TEXT,
+    duration_ms     INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_red_team_plugin ON red_team_results(plugin_id);
+CREATE INDEX IF NOT EXISTS idx_red_team_project ON red_team_results(project_id);
+
+-- Genesis Convergence Log (append-only, D6)
+CREATE TABLE IF NOT EXISTS genesis_convergence_log (
+    id                      TEXT PRIMARY KEY,
+    reflex_name             TEXT NOT NULL,
+    generation              INTEGER DEFAULT 0,
+    goal_drift              REAL DEFAULT 0.0,
+    metric_drift            REAL DEFAULT 0.0,
+    output_similarity       REAL DEFAULT 0.0,
+    combined_drift          REAL DEFAULT 0.0,
+    ambiguity_score         REAL DEFAULT 0.0,
+    converged               INTEGER DEFAULT 0,
+    retrospective_triggered INTEGER DEFAULT 0,
+    details_json            TEXT,
+    classification          TEXT DEFAULT 'CUI',
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_conv_reflex ON genesis_convergence_log(reflex_name);
+
+-- Genesis Stagnation Log (append-only, D6)
+CREATE TABLE IF NOT EXISTS genesis_stagnation_log (
+    id                   TEXT PRIMARY KEY,
+    reflex_name          TEXT NOT NULL,
+    pattern_type         TEXT NOT NULL CHECK(pattern_type IN (
+        'oscillation', 'stagnation', 'diminishing_returns', 'repetitive_output'
+    )),
+    persona_used         TEXT,
+    alternatives_json    TEXT,
+    selected_alternative TEXT,
+    score                REAL DEFAULT 0.0,
+    details_json         TEXT,
+    classification       TEXT DEFAULT 'CUI',
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stag_reflex ON genesis_stagnation_log(reflex_name);
+
+-- Agent Benchmark Results (append-only, D6)
+CREATE TABLE IF NOT EXISTS agent_benchmark_results (
+    id                  TEXT PRIMARY KEY,
+    scan_id             TEXT NOT NULL,
+    project_id          TEXT,
+    agent_type          TEXT NOT NULL,
+    scenario_id         TEXT NOT NULL,
+    scenario_name       TEXT NOT NULL,
+    category            TEXT NOT NULL,
+    outcome_passed      INTEGER DEFAULT 0,
+    methodology_passed  INTEGER DEFAULT 0,
+    composite_score     REAL DEFAULT 0.0,
+    duration_ms         INTEGER DEFAULT 0,
+    details_json        TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_bench_scan ON agent_benchmark_results(scan_id);
+CREATE INDEX IF NOT EXISTS idx_bench_agent ON agent_benchmark_results(agent_type);
 """
 
 

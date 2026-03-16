@@ -8,7 +8,6 @@ Caches in memory, refreshes on mtime change.
 
 Usage:
     from icdev.tools.mcp.context_indexer import ClaudeMdIndexer
-from icdev._paths import get_project_root
 
     indexer = ClaudeMdIndexer()
     section = indexer.get_section("Testing Framework")
@@ -16,6 +15,7 @@ from icdev._paths import get_project_root
     toc = indexer.get_toc()
 """
 
+from icdev._paths import get_project_root
 import logging
 import os
 import re

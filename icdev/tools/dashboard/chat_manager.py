@@ -8,13 +8,13 @@ Intervention via atomic field, checked at 3 points per agent loop iteration.
 
 Usage:
     from icdev.tools.dashboard.chat_manager import chat_manager
-from icdev._paths import get_project_root
 
     ctx = chat_manager.create_context("user-1", "tenant-1", "My Chat")
     chat_manager.send_message(ctx["context_id"], "Hello!", role="user")
     chat_manager.intervene(ctx["context_id"], "Stop and do this instead")
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import sqlite3

@@ -18,13 +18,13 @@ Architecture:
 
 Usage:
     from icdev.tools.registry.telemetry_collector import TelemetryCollector
-from icdev._paths import get_project_root
     collector = TelemetryCollector()
     heartbeat = collector.collect_heartbeat("child-abc", "http://localhost:8445/health")
     collector.store_heartbeat(heartbeat)
     summary = collector.get_health_summary("child-abc")
 """
 
+from icdev._paths import get_project_root
 import hashlib
 import json
 import sqlite3

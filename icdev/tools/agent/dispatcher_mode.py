@@ -14,7 +14,6 @@ Configuration:
 Usage::
 
     from icdev.tools.agent.dispatcher_mode import is_dispatcher_mode, is_tool_allowed
-from icdev._paths import get_project_root
 
     if is_dispatcher_mode(project_id="proj-123"):
         if not is_tool_allowed("scaffold"):
@@ -28,6 +27,7 @@ CLI::
     python tools/agent/dispatcher_mode.py --disable --project-id proj-123
 """
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import logging

@@ -28,6 +28,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -151,7 +153,7 @@ def import_sam_to_proposal(sam_opp_id):
             """INSERT INTO proposal_opportunities
                (id, solicitation_number, title, agency, sub_agency, due_date,
                 naics_code, set_aside_type, rfp_url, status, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'intake', 'CUI', ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'intake', ?, ?, ?)""",
             (
                 prop_id,
                 sam.get("solicitation_number", ""),
@@ -162,6 +164,7 @@ def import_sam_to_proposal(sam_opp_id):
                 sam.get("naics_code", ""),
                 sam.get("set_aside_type", ""),
                 sam.get("solicitation_number", ""),  # use as rfp_url placeholder
+                DEFAULT_CLASSIFICATION,
                 _now(), _now(),
             ),
         )
@@ -324,7 +327,7 @@ def auto_populate_compliance(opp_id):
                                (id, opportunity_id, section_ref, requirement_text,
                                 requirement_type, compliance_status, response_summary,
                                 classification, created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, 'CUI', ?, ?)""",
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                             (
                                 _uuid(), opp_id,
                                 item.get("domain", ""),
@@ -332,6 +335,7 @@ def auto_populate_compliance(opp_id):
                                 grade,
                                 status_map.get(grade, "not_addressed"),
                                 f"Auto: {item.get('best_capability', 'none')} ({item.get('coverage_score', 0):.0%})",
+                                DEFAULT_CLASSIFICATION,
                                 _now(), _now(),
                             ),
                         )
@@ -437,14 +441,14 @@ def approve_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, 'CUI')""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)""",
             (
                 _uuid(), draft.get("section_id"), draft.get("opportunity_id"),
                 draft.get("shall_statement_id"), draft.get("capability_ids"),
                 draft.get("draft_content"), draft.get("confidence"),
                 draft.get("generation_model"), draft.get("knowledge_block_ids"),
                 reviewer, _now(), data.get("review_notes", ""),
-                _now(),
+                _now(), DEFAULT_CLASSIFICATION,
             ),
         )
 
@@ -489,14 +493,14 @@ def reject_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rejected', ?, ?, ?, ?, 'CUI')""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rejected', ?, ?, ?, ?, ?)""",
             (
                 _uuid(), draft.get("section_id"), draft.get("opportunity_id"),
                 draft.get("shall_statement_id"), draft.get("capability_ids"),
                 draft.get("draft_content"), draft.get("confidence"),
                 draft.get("generation_model"), draft.get("knowledge_block_ids"),
                 reviewer, _now(), data.get("review_notes", "Rejected"),
-                _now(),
+                _now(), DEFAULT_CLASSIFICATION,
             ),
         )
 
@@ -774,7 +778,7 @@ def create_question(opp_id):
             """INSERT INTO proposal_questions
                (id, opportunity_id, question_number, question_text, category, priority,
                 source, rfp_section_ref, status, created_by, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, 'draft', ?, 'CUI', ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, 'draft', ?, ?, ?, ?)""",
             (
                 q_id, opp_id, next_num,
                 data["question_text"],
@@ -782,6 +786,7 @@ def create_question(opp_id):
                 data.get("priority", "medium"),
                 data.get("rfp_section_ref", ""),
                 data.get("created_by", "govcon_api"),
+                DEFAULT_CLASSIFICATION,
                 now, now,
             ),
         )

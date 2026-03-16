@@ -1,0 +1,269 @@
+# CUI // SP-CTI
+# Proposal Genesis — Autonomous Proposal Intelligence Daemon
+#
+# Controls the Proposal Genesis daemon and its 14 Reflexes across
+# 4 phases: CAPTURE, PROPOSE, DELIVER, LEARN.
+#
+# Override any value via environment variable:
+#   ICDEV_PROPOSAL_GENESIS_ENABLED=true
+#   ICDEV_PG_REFLEX_<NAME>_ENABLED=false
+#
+# Classification: CUI // SP-CTI
+
+classification: "CUI // SP-CTI"
+
+# ── Master Switch ────────────────────────────────────────────────────────────
+
+enabled: false  # D-PG-3: all automated with master toggle
+env_override: ICDEV_PROPOSAL_GENESIS_ENABLED
+
+# ── LLM Configuration ───────────────────────────────────────────────────────
+
+llm:
+  # D-PG-7: scanner-tier for most reflexes (zero Claude cost)
+  tier: scanner
+  model: qwen3.5-local
+  max_tokens: 4096
+  timeout_seconds: 120
+  # R7 Draft uses two-tier (qwen3.5 drafts → Claude reviews)
+  draft_model: qwen3.5-local
+  review_model: claude-sonnet
+  draft_max_tokens: 8192
+
+# ── Trust Kernel ─────────────────────────────────────────────────────────────
+
+trust_kernel:
+  # Risk tiers: GREEN (auto-approve), YELLOW (sandbox+rollback)
+  # D-PG-8: human review at end, not middle — no ORANGE tier
+  risk_tiers:
+    green:
+      description: "Non-destructive, read-only operations"
+      approval: auto
+      sandbox: false
+      audit: true
+    yellow:
+      description: "Reversible writes — drafts, extractions, mappings"
+      approval: auto
+      sandbox: false
+      audit: true
+
+  # Circuit breaker — 3 consecutive failures disables Reflex
+  circuit_breaker:
+    max_consecutive_failures: 3
+    cooldown_minutes: 60
+    auto_reenable: false
+
+  # Kill switch
+  kill_switch:
+    enabled: true
+    check_interval_seconds: 10
+
+# ── Data Paths ───────────────────────────────────────────────────────────────
+
+paths:
+  exports: data/proposal_genesis/exports
+  reports: data/proposal_genesis/reports
+
+# ── 14 Reflexes (Phase A implements R1, R5, R6, R7, R8) ─────────────────────
+
+reflexes:
+
+  # ── PHASE 1: CAPTURE (Market Intelligence) ──────────────────────────────
+
+  discover:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    description: "SAM.gov polling + pre-solicitation monitoring + amendment detection"
+    phase: capture
+    success_metric:
+      name: opportunities_found
+      threshold: 0
+      operator: gte
+
+  scout:
+    enabled: true  # Phase B — implemented
+    risk_tier: green
+    schedule: "daily 07:00"
+    description: "Competitor award tracking + intel briefs"
+    phase: capture
+    success_metric:
+      name: briefs_generated
+      threshold: 0
+      operator: gte
+
+  shape:
+    enabled: true  # Phase B — implemented
+    risk_tier: yellow
+    schedule: "daily 08:00"
+    description: "Capture planning + teaming assessment"
+    phase: capture
+    success_metric:
+      name: plans_updated
+      threshold: 0
+      operator: gte
+
+  engage:
+    enabled: true  # Phase C — implemented
+    risk_tier: green
+    schedule: "every 4h"
+    description: "CRM account/contact tracking + engagement scoring"
+    phase: capture
+    success_metric:
+      name: accounts_scored
+      threshold: 0
+      operator: gte
+
+  # ── PHASE 2: PROPOSE (Bid Lifecycle) ────────────────────────────────────
+
+  extract:
+    enabled: true
+    risk_tier: green
+    schedule: "on_demand"
+    description: "Shall statement mining + amendment re-extraction"
+    phase: propose
+    trigger: "after_discover"
+    success_metric:
+      name: statements_extracted
+      threshold: 0
+      operator: gte
+
+  map:
+    enabled: true
+    risk_tier: green
+    schedule: "on_demand"
+    description: "Expanded capability matching (ICDEV + consulting + partners)"
+    phase: propose
+    trigger: "after_extract"
+    success_metric:
+      name: coverage_score
+      threshold: 0
+      operator: gte
+
+  draft:
+    enabled: true
+    risk_tier: yellow
+    schedule: "on_demand"
+    description: "Two-tier LLM drafting + Pulse content reuse + KB enrichment"
+    phase: propose
+    trigger: "after_map"
+    success_metric:
+      name: sections_drafted
+      threshold: 0
+      operator: gte
+    max_drafts_per_run: 10
+    pulse_integration: true
+    kb_enrichment: true
+
+  polish:
+    enabled: true
+    risk_tier: yellow
+    schedule: "on_demand"
+    description: "WriteGuard quality gate — grammar, readability, tone, plagiarism, AI detection"
+    phase: propose
+    trigger: "after_draft"
+    success_metric:
+      name: avg_quality_score
+      threshold: 70
+      operator: gte
+    writeguard:
+      min_score: 70
+      checks:
+        - grammar
+        - readability
+        - tone
+        - plagiarism
+        - ai_detection
+
+  decide:
+    enabled: true  # Phase F — implemented
+    risk_tier: green
+    schedule: "on_demand"
+    description: "Bid/no-bid scoring + win probability estimation"
+    phase: propose
+    success_metric:
+      name: decisions_scored
+      threshold: 0
+      operator: gte
+
+  # ── PHASE 3: DELIVER (Post-Award) ──────────────────────────────────────
+
+  monitor:
+    enabled: true  # Phase E — implemented
+    risk_tier: green
+    schedule: "every 4h"
+    description: "CPARS prediction + EVM early warnings"
+    phase: deliver
+    success_metric:
+      name: alerts_generated
+      threshold: 0
+      operator: gte
+
+  fulfill:
+    enabled: true  # Phase E — implemented
+    risk_tier: yellow
+    schedule: "daily 09:00"
+    description: "CDRL auto-generation + compliance refresh"
+    phase: deliver
+    days_ahead: 14
+    max_generations_per_run: 10
+    stale_threshold_days: 90
+    success_metric:
+      name: cdrls_generated
+      threshold: 0
+      operator: gte
+
+  publish:
+    enabled: true  # Phase D — implemented
+    risk_tier: yellow
+    schedule: "on_demand"
+    description: "Approved proposal drafts → Pulse case study articles"
+    phase: deliver
+    trigger: "after_fulfill"
+    max_articles_per_run: 5
+    success_metric:
+      name: articles_staged
+      threshold: 0
+      operator: gte
+
+  # ── PHASE 4: LEARN (Feedback Loop) ─────────────────────────────────────
+
+  analyze:
+    enabled: true  # Phase F — implemented
+    risk_tier: green
+    schedule: "weekly Sun 20:00"
+    description: "Win/loss analysis + lessons learned"
+    phase: learn
+    success_metric:
+      name: analyses_completed
+      threshold: 0
+      operator: gte
+
+  train:
+    enabled: true  # Phase F — implemented
+    risk_tier: yellow
+    schedule: "weekly Sun 22:00"
+    description: "Approved drafts → fine-tuning pairs → Ollama"
+    phase: learn
+    success_metric:
+      name: pairs_generated
+      threshold: 0
+      operator: gte
+
+# ── Audit Configuration ─────────────────────────────────────────────────────
+
+audit:
+  table: pg_proposal_genesis_audit
+  retention_days: 365
+  event_types:
+    - pg.daemon.started
+    - pg.daemon.stopped
+    - pg.reflex.started
+    - pg.reflex.completed
+    - pg.reflex.failed
+    - pg.reflex.skipped
+    - pg.reflex.triggered
+    - pg.circuit_breaker.tripped
+    - pg.circuit_breaker.reset
+    - pg.pipeline.discover_to_polish
+    - pg.kill_switch.activated

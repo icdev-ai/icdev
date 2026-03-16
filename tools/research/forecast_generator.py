@@ -118,19 +118,37 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
 
 
 def _parse_json(text: str) -> Optional[List[Dict]]:
-    """Parse JSON from LLM output, handling markdown wrapping."""
+    """Parse JSON from LLM output, handling markdown wrapping and thinking tags."""
     if not text:
         return None
-    # Strip markdown code fences
     cleaned = text.strip()
+
+    # Strip qwen3.5 thinking tags (model emits <think>...</think> before JSON)
+    import re
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
+
+    # Strip markdown code fences
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # Remove first and last lines if they are fences
         if lines[0].startswith("```"):
             lines = lines[1:]
         if lines and lines[-1].strip() == "```":
             lines = lines[:-1]
         cleaned = "\n".join(lines)
+
+    # Try to extract JSON array from the text if it contains other content
+    if not cleaned.startswith("[") and not cleaned.startswith("{"):
+        # Find first [ or { and last ] or }
+        arr_start = cleaned.find("[")
+        obj_start = cleaned.find("{")
+        if arr_start >= 0 and (obj_start < 0 or arr_start < obj_start):
+            arr_end = cleaned.rfind("]")
+            if arr_end > arr_start:
+                cleaned = cleaned[arr_start : arr_end + 1]
+        elif obj_start >= 0:
+            obj_end = cleaned.rfind("}")
+            if obj_end > obj_start:
+                cleaned = cleaned[obj_start : obj_end + 1]
 
     try:
         result = json.loads(cleaned)
@@ -187,21 +205,29 @@ def _aggregate_cross_engine_data(
         ).fetchall()
         result["signals"] = [dict(r) for r in rows]
 
-        # Research trends
-        rows = conn.execute(
-            """SELECT id, name, description, velocity, acceleration,
-                      signal_count, confidence, keywords
+        # Research trends — session_ids is a JSON list, not a scalar column
+        all_trends = conn.execute(
+            """SELECT id, name, velocity, acceleration,
+                      signal_count, keywords, session_ids, metadata
                FROM research_trends
-               WHERE session_id = ?
-               ORDER BY velocity DESC LIMIT 20""",
-            (session_id,),
+               ORDER BY velocity DESC"""
         ).fetchall()
-        result["trends"] = [dict(r) for r in rows]
+        session_trends = []
+        for tr in all_trends:
+            sids = tr["session_ids"] or "[]"
+            try:
+                sid_list = json.loads(sids) if isinstance(sids, str) else sids
+            except (json.JSONDecodeError, TypeError):
+                sid_list = []
+            if session_id in sid_list:
+                session_trends.append(dict(tr))
+        result["trends"] = session_trends[:20]
 
         # Research challenges (top 20 by composite_score)
         rows = conn.execute(
-            """SELECT id, title, description, severity, frequency,
-                      addressability, composite_score, keywords
+            """SELECT id, title, description, severity, signal_count,
+                      composite_score, keywords, market_demand,
+                      regulatory_pressure, technical_complexity
                FROM research_challenges
                WHERE session_id = ?
                ORDER BY composite_score DESC LIMIT 20""",
@@ -322,14 +348,19 @@ def _invoke_forecast_llm(prompt: str, config: Dict) -> Tuple[List[Dict], str]:
 
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
-        result = router.invoke(
-            llm_function,
-            {"prompt": prompt, "max_tokens": 2000},
+        # Prepend /no_think for qwen3.5 (burns all tokens on thinking otherwise)
+        prefixed_prompt = "/no_think\n" + prompt
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prefixed_prompt}],
+            max_tokens=4096,
+            temperature=0.7,
         )
-        content = result.get("content", "") or result.get("text", "")
-        model = result.get("model", "unknown")
+        response = router.invoke(llm_function, request)
+        content = response.content or ""
+        model = response.model_id or "unknown"
 
         predictions = _parse_json(content)
         if predictions:

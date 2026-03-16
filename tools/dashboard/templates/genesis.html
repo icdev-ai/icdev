@@ -6,7 +6,7 @@
 
 <div class="intro-panel">
     <h2>Continuous Self-Improvement Engine</h2>
-    <p>12 autonomous Reflexes run on schedule — researching, auditing, testing, and evolving the ICDEV platform. Knowledge flows from v2.0 to v1.x production via Genesis Knowledge Packets (GKP).</p>
+    <p>13 autonomous Reflexes run on schedule — researching, auditing, testing, evolving, and documenting the ICDEV platform. Knowledge flows from v2.0 to v1.x production via Genesis Knowledge Packets (GKP).</p>
     <div class="intro-steps">
         <div class="intro-step"><span class="step-num">1</span><span class="step-text">Monitor Reflexes</span></div>
         <div class="intro-step"><span class="step-num">2</span><span class="step-text">Review GKPs</span></div>
@@ -46,7 +46,7 @@
 
 <!-- Reflex Status Table -->
 <div class="section-card">
-    <h2>12 Reflexes</h2>
+    <h2>13 Reflexes</h2>
     <button class="btn btn-primary" id="g-refresh-btn" onclick="refreshStatus()">Refresh Status</button>
     <div style="overflow-x: auto; margin-top: 16px;">
         <table class="data-table" id="g-reflex-table">
@@ -96,15 +96,73 @@
     </div>
 </div>
 
-<!-- Promoter Stats -->
+<!-- Knowledge Bridge — GKP Review -->
 <div class="section-card">
-    <h2>Knowledge Bridge (GKP Promoter)</h2>
-    <button class="btn btn-primary" id="g-promoter-btn" onclick="loadPromoterStats()">Load Stats</button>
-    <div class="stat-grid" id="g-promoter-stats" style="margin-top: 16px;">
+    <h2>Knowledge Bridge (GKP Review)</h2>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <button class="btn btn-primary" onclick="loadGKPs()">Refresh</button>
+        <button class="btn" onclick="loadGKPs('pending_review')">Pending</button>
+        <button class="btn" onclick="loadGKPs('promoted')">Promoted</button>
+        <button class="btn" onclick="loadGKPs('rejected')">Rejected</button>
+        <button class="btn" onclick="loadGKPs()">All</button>
+        <button class="btn btn-warning" onclick="autoPromoteAll()">Auto-Promote Eligible</button>
+    </div>
+
+    <!-- Stats row -->
+    <div class="stat-grid" style="margin-top: 16px;">
         <div class="stat-card"><div class="label">Total GKPs</div><div class="value blue" id="g-gkp-total">—</div></div>
         <div class="stat-card"><div class="label">Promoted</div><div class="value green" id="g-gkp-promoted">—</div></div>
         <div class="stat-card"><div class="label">Pending Review</div><div class="value orange" id="g-gkp-pending">—</div></div>
         <div class="stat-card"><div class="label">Rejected</div><div class="value red" id="g-gkp-rejected">—</div></div>
+    </div>
+
+    <!-- GKP Table -->
+    <div style="overflow-x: auto; margin-top: 16px;">
+        <table class="data-table" id="g-gkp-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Type</th>
+                    <th>Reflex</th>
+                    <th>Confidence</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="g-gkp-tbody">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-dim);">Click Refresh or a filter to load GKPs</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- GKP Detail Modal -->
+<div id="gkp-modal" class="gkp-modal" style="display:none;">
+    <div class="gkp-modal-content">
+        <div class="gkp-modal-header">
+            <h3 id="gkp-modal-title">GKP Detail</h3>
+            <button class="btn btn-sm" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="gkp-modal-body">
+            <div class="gkp-detail-grid">
+                <div><strong>ID:</strong> <span id="gkp-d-id"></span></div>
+                <div><strong>Type:</strong> <span id="gkp-d-type"></span></div>
+                <div><strong>Reflex:</strong> <span id="gkp-d-reflex"></span></div>
+                <div><strong>Confidence:</strong> <span id="gkp-d-confidence"></span></div>
+                <div><strong>Status:</strong> <span id="gkp-d-status"></span></div>
+                <div><strong>Created:</strong> <span id="gkp-d-created"></span></div>
+                <div><strong>SHA-256:</strong> <span id="gkp-d-sha" style="font-size:11px;word-break:break-all;"></span></div>
+            </div>
+            <h4 style="margin-top:16px;">Payload</h4>
+            <pre id="gkp-d-payload" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:300px; font-size:12px;"></pre>
+            <div id="gkp-d-evidence-section" style="display:none;">
+                <h4 style="margin-top:16px;">Evidence</h4>
+                <pre id="gkp-d-evidence" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:200px; font-size:12px;"></pre>
+            </div>
+        </div>
+        <div class="gkp-modal-footer" id="gkp-modal-actions">
+        </div>
     </div>
 </div>
 
@@ -129,7 +187,24 @@
 .badge-orange { background: #f97316a0; color: #fff; }
 .badge-red { background: #ef444420; color: #ef4444; }
 .badge-gray { background: #6b728020; color: #6b7280; }
+.badge-blue { background: #3b82f620; color: #3b82f6; }
 .btn-sm { padding: 4px 12px; font-size: 12px; }
+.btn-warning { background: #f59e0b; color: #000; }
+.btn-warning:hover { background: #d97706; }
+.btn-success { background: #10b981; color: #fff; }
+.btn-success:hover { background: #059669; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.gkp-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.gkp-modal-content { background: var(--bg-card, #1e293b); border-radius: 12px; width: 90%; max-width: 700px; max-height: 85vh; display: flex; flex-direction: column; border: 1px solid var(--border); }
+.gkp-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.gkp-modal-header h3 { margin: 0; }
+.gkp-modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.gkp-modal-footer { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end; }
+.gkp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gkp-row-pending { border-left: 3px solid #f59e0b; }
+.gkp-row-promoted { border-left: 3px solid #10b981; }
+.gkp-row-rejected { border-left: 3px solid #ef4444; opacity: 0.6; }
 .green { color: #10b981; }
 .red { color: #ef4444; }
 .data-table { width: 100%; border-collapse: collapse; }
@@ -180,20 +255,168 @@ function runReflex(name) {
         });
 }
 
-function loadPromoterStats() {
-    document.getElementById('g-promoter-btn').textContent = 'Loading...';
+function loadGKPs(statusFilter) {
+    const url = statusFilter ? '/api/genesis/gkps?status=' + statusFilter : '/api/genesis/gkps';
+    const tbody = document.getElementById('g-gkp-tbody');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading...</td></tr>';
+
+    // Also refresh stats
     fetch('/api/genesis/promoter/stats')
         .then(r => r.json())
         .then(data => {
-            document.getElementById('g-promoter-btn').textContent = 'Load Stats';
-            document.getElementById('g-gkp-total').textContent = data.total || 0;
-            document.getElementById('g-gkp-promoted').textContent = data.promoted || 0;
-            document.getElementById('g-gkp-pending').textContent = data.pending_review || 0;
-            document.getElementById('g-gkp-rejected').textContent = data.rejected || 0;
+            const byStatus = data.by_status || {};
+            document.getElementById('g-gkp-total').textContent = data.total_gkps || 0;
+            document.getElementById('g-gkp-promoted').textContent = (byStatus.promoted || 0) + (byStatus.auto_promoted || 0);
+            document.getElementById('g-gkp-pending').textContent = byStatus.pending_review || 0;
+            document.getElementById('g-gkp-rejected').textContent = byStatus.rejected || 0;
+        }).catch(() => {});
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const gkps = data.gkps || [];
+            if (gkps.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No GKPs found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            gkps.forEach(g => {
+                const tr = document.createElement('tr');
+                const statusClass = g.promotion_status.includes('promoted') ? 'gkp-row-promoted' :
+                    g.promotion_status === 'pending_review' ? 'gkp-row-pending' :
+                    g.promotion_status === 'rejected' ? 'gkp-row-rejected' : '';
+                tr.className = statusClass;
+
+                const statusBadge = g.promotion_status === 'pending_review' ? 'badge-yellow' :
+                    g.promotion_status.includes('promoted') ? 'badge-green' :
+                    g.promotion_status === 'rejected' ? 'badge-red' : 'badge-gray';
+
+                let actions = `<button class="btn btn-sm" onclick="viewGKP('${g.id}')">View</button> `;
+                if (g.promotion_status === 'pending_review') {
+                    actions += `<button class="btn btn-sm btn-success" onclick="promoteGKP('${g.id}')">Promote</button> `;
+                    actions += `<button class="btn btn-sm btn-danger" onclick="rejectGKP('${g.id}')">Reject</button>`;
+                }
+
+                tr.innerHTML = `
+                    <td style="font-family:monospace;font-size:12px;">${g.id}</td>
+                    <td><span class="badge badge-blue">${g.artifact_type}</span></td>
+                    <td>${g.genesis_reflex}</td>
+                    <td>${(g.confidence || 0).toFixed(2)}</td>
+                    <td><span class="badge ${statusBadge}">${g.promotion_status.replace('_', ' ')}</span></td>
+                    <td>${(g.created_at || '').substring(0, 16)}</td>
+                    <td style="white-space:nowrap;">${actions}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         })
         .catch(e => {
-            document.getElementById('g-promoter-btn').textContent = 'Load Stats';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#ef4444;">Error: ' + e + '</td></tr>';
         });
+}
+
+function viewGKP(gkpId) {
+    fetch('/api/genesis/gkps/' + gkpId)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert(data.error); return; }
+            document.getElementById('gkp-modal-title').textContent = 'GKP: ' + data.id;
+            document.getElementById('gkp-d-id').textContent = data.id;
+            document.getElementById('gkp-d-type').textContent = data.artifact_type;
+            document.getElementById('gkp-d-reflex').textContent = data.genesis_reflex;
+            document.getElementById('gkp-d-confidence').textContent = (data.confidence || 0).toFixed(2);
+            document.getElementById('gkp-d-status').textContent = data.promotion_status;
+            document.getElementById('gkp-d-created').textContent = data.created_at || '';
+            document.getElementById('gkp-d-sha').textContent = data.sha256 || '';
+
+            // Parse and display payload
+            let payload = data.payload;
+            try { payload = JSON.parse(payload); } catch(e) {}
+            document.getElementById('gkp-d-payload').textContent = JSON.stringify(payload, null, 2);
+
+            // Evidence
+            const evSection = document.getElementById('gkp-d-evidence-section');
+            if (data.evidence) {
+                let evidence = data.evidence;
+                try { evidence = JSON.parse(evidence); } catch(e) {}
+                document.getElementById('gkp-d-evidence').textContent = JSON.stringify(evidence, null, 2);
+                evSection.style.display = 'block';
+            } else {
+                evSection.style.display = 'none';
+            }
+
+            // Action buttons
+            const footer = document.getElementById('gkp-modal-actions');
+            footer.innerHTML = '<button class="btn" onclick="closeModal()">Close</button>';
+            if (data.promotion_status === 'pending_review') {
+                footer.innerHTML = `
+                    <button class="btn btn-success" onclick="promoteGKP('${data.id}'); closeModal();">Promote to v1.x</button>
+                    <button class="btn btn-danger" onclick="rejectGKP('${data.id}'); closeModal();">Reject</button>
+                    <button class="btn" onclick="closeModal()">Close</button>
+                `;
+            }
+
+            document.getElementById('gkp-modal').style.display = 'flex';
+        })
+        .catch(e => alert('Error loading GKP: ' + e));
+}
+
+function closeModal() {
+    document.getElementById('gkp-modal').style.display = 'none';
+}
+
+function promoteGKP(gkpId) {
+    if (!confirm('Promote ' + gkpId + ' to v1.x production knowledge?')) return;
+    fetch('/api/genesis/gkps/' + gkpId + '/promote', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            const msg = data.status === 'promoted' ? 'Promoted successfully!' :
+                data.status === 'already_promoted' ? 'Already promoted.' :
+                'Result: ' + (data.error || data.status);
+            showToast(msg, data.error ? 'error' : 'success');
+            loadGKPs();
+        })
+        .catch(e => showToast('Error: ' + e, 'error'));
+}
+
+function rejectGKP(gkpId) {
+    const reason = prompt('Rejection reason (optional):');
+    if (reason === null) return;
+    fetch('/api/genesis/gkps/' + gkpId + '/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason || 'Rejected via dashboard' }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            showToast('Rejected: ' + gkpId, 'success');
+            loadGKPs();
+        })
+        .catch(e => showToast('Error: ' + e, 'error'));
+}
+
+function autoPromoteAll() {
+    if (!confirm('Auto-promote all eligible GKPs based on confidence rules?')) return;
+    fetch('/api/genesis/gkps/auto-promote', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            showToast('Auto-promoted ' + (data.auto_promoted || 0) + ' GKPs', 'success');
+            loadGKPs();
+        })
+        .catch(e => showToast('Error: ' + e, 'error'));
+}
+
+// Auto-load GKPs on page load
+document.addEventListener('DOMContentLoaded', () => loadGKPs());
+
+// Close modal on Escape
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;z-index:2000;font-size:14px;color:#fff;background:' + (type === 'error' ? '#ef4444' : '#10b981') + ';box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
 }
 
 function loadPriorities() {

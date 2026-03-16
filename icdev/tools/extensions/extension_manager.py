@@ -9,7 +9,6 @@ Existing store_event() passive hooks are preserved as the observational tier.
 
 Usage:
     from icdev.tools.extensions.extension_manager import extension_manager, ExtensionPoint
-from icdev._paths import get_project_root
 
     # Register an extension programmatically
     extension_manager.register(
@@ -24,6 +23,7 @@ from icdev._paths import get_project_root
     modified_ctx = extension_manager.dispatch(ExtensionPoint.TOOL_EXECUTE_BEFORE, context)
 """
 
+from icdev._paths import get_project_root
 import importlib.util
 import logging
 import os

@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import json
 import sqlite3
 import sys
 import uuid
@@ -24,6 +25,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from functools import wraps
+
 from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for, flash
 
 from tools.dashboard.config import (
@@ -32,6 +35,7 @@ from tools.dashboard.config import (
     CUI_BANNER_BOTTOM,
     CUI_DESIGNATION,
     CUI_BANNER_ENABLED,
+    DEFAULT_CLASSIFICATION,
     BYOK_ENABLED,
     PORT,
     DEBUG,
@@ -61,6 +65,7 @@ from tools.dashboard.api.code_quality import code_quality_api
 from tools.dashboard.api.fedramp_20x import fedramp_20x_api
 from tools.dashboard.api.evidence import evidence_api
 from tools.dashboard.api.lineage import lineage_api
+from tools.dashboard.api.filesync import filesync_api
 try:
     from tools.dashboard.api.finetune import finetune_api
     _HAS_FINETUNE_API = True
@@ -78,6 +83,13 @@ if _GOVCON_ENABLED:
         _HAS_GOVCON = True
     except ImportError:
         _HAS_GOVCON = False
+    try:
+        from tools.dashboard.api.proposal_genesis import proposal_genesis_api
+        _HAS_PROPOSAL_GENESIS = True
+    except ImportError:
+        _HAS_PROPOSAL_GENESIS = False
+else:
+    _HAS_PROPOSAL_GENESIS = False
 from tools.dashboard.api.orchestration import orchestration_api
 try:
     from tools.dashboard.api.chat import chat_api
@@ -245,7 +257,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 conn.execute(
                     "INSERT INTO cpmp_cor_access_log (id, user_id, contract_id, action, accessed_at, classification) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (str(uuid.uuid4()), cor_email, contract_id, "view_contract", datetime.now(timezone.utc).isoformat(), "CUI // SP-CTI"),
+                    (str(uuid.uuid4()), cor_email, contract_id, "view_contract", datetime.now(timezone.utc).isoformat(), DEFAULT_CLASSIFICATION),
                 )
                 conn.commit()
             except Exception:
@@ -610,6 +622,31 @@ def _register_govcon_pages(app: "Flask", _get_db):
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _module_not_installed(slug: str):
+    """Return a friendly error when a marketplace module is not installed."""
+    return jsonify({"error": f"Module '{slug}' is not installed. Install via marketplace."}), 501
+
+
+def require_installed(slug):
+    """Route decorator — catches ImportError when module code is missing."""
+    def decorator(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except ImportError as exc:
+                if slug in str(exc) or f"tools.{slug}" in str(exc) or f"tools/{slug}" in str(exc):
+                    return _module_not_installed(slug)
+                raise
+        return wrapper
+    return decorator
+
+
 # App factory
 # ---------------------------------------------------------------------------
 
@@ -745,12 +782,15 @@ def create_app() -> Flask:
     app.register_blueprint(fedramp_20x_api)
     app.register_blueprint(evidence_api)
     app.register_blueprint(lineage_api)
+    app.register_blueprint(filesync_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_GOVCON:
         app.register_blueprint(proposals_api)
         app.register_blueprint(govcon_api)
         app.register_blueprint(cpmp_api)
+    if _HAS_PROPOSAL_GENESIS:
+        app.register_blueprint(proposal_genesis_api)
     app.register_blueprint(orchestration_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
@@ -1437,7 +1477,7 @@ def create_app() -> Flask:
         return jsonify({
             "steps": steps,
             "version": 2,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         })
 
     # ---- Profile routes (D172, D175-D178) ----
@@ -1931,6 +1971,12 @@ def create_app() -> Flask:
         """Artifact Lineage — unified DAG visualization of digital thread, provenance, audit trail, SBOM (Phase 56, D348)."""
         return render_template("lineage.html")
 
+    # ---- Database helper ----
+    def _get_db():
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        return conn
+
     # ---- CPMP / Proposals / GovCon Pages (D-CHILD-6: guarded) ----
     if _HAS_GOVCON:
         _register_govcon_pages(app, _get_db)
@@ -2152,7 +2198,7 @@ def create_app() -> Flask:
                 source_types=source_types,
             )
             return jsonify({
-                "classification": "CUI // SP-CTI",
+                "classification": DEFAULT_CLASSIFICATION,
                 "query": query,
                 "results_count": len(results),
                 "results": [r.to_dict() for r in results],
@@ -2365,6 +2411,1204 @@ def create_app() -> Flask:
             pass
         return render_template("finetune/evaluate.html", evaluations=evaluations)
 
+    # ── ICDEV Pulse — Blog Engine ─────────────────────────────────────
+
+
+    @app.route("/pulse")
+    @require_installed("pulse")
+    def pulse():
+        """ICDEV Pulse — AI-powered blog engine dashboard."""
+        try:
+            from tools.pulse.db import init_db, query_rows
+            init_db()
+            posts = query_rows("posts", limit=500)
+            by_status = {}
+            for p in posts:
+                s = p.get("status", "unknown")
+                by_status[s] = by_status.get(s, 0) + 1
+            stats = {
+                "total_posts": len(posts),
+                "by_status": by_status,
+            }
+            # Get recent posts for the table (include quality stats)
+            with _get_db() as conn:
+                recent = conn.execute(
+                    "SELECT id, title, slug, status, word_count, readability_score, "
+                    "grammar_score, plagiarism_score, ai_detection_score, tone_score, "
+                    "writeguard_passed, capabilities_referenced, "
+                    "hero_image_path, generated_video_path, generated_video_method, "
+                    "judge_color, judge_composite, judge_combined, "
+                    "created_at, updated_at, published_at "
+                    "FROM pulse_posts ORDER BY updated_at DESC LIMIT 50"
+                ).fetchall()
+                recent_posts = [dict(r) for r in recent]
+                research_count = conn.execute("SELECT COUNT(*) FROM pulse_research_cache").fetchone()[0]
+                cluster_count = conn.execute("SELECT COUNT(*) FROM pulse_topic_clusters").fetchone()[0]
+                run_count = conn.execute("SELECT COUNT(*) FROM pulse_schedule_log").fetchone()[0]
+            stats["research_entries"] = research_count
+            stats["clusters"] = cluster_count
+            stats["pipeline_runs"] = run_count
+            # Capability catalog stats
+            try:
+                from tools.pulse.engine.capability_scanner import load_all_capabilities
+                stats["capabilities"] = len(load_all_capabilities())
+            except Exception:
+                stats["capabilities"] = 0
+        except Exception:
+            recent_posts = []
+            stats = {"total_posts": 0, "by_status": {}, "research_entries": 0,
+                     "clusters": 0, "pipeline_runs": 0}
+        return render_template("pulse.html", posts=recent_posts, stats=stats)
+
+
+    @app.route("/pulse/post/<post_id>")
+    @require_installed("pulse")
+    def pulse_post_detail(post_id):
+        """ICDEV Pulse — Single post detail view."""
+        try:
+            from tools.pulse.db import get_row
+            post = get_row("posts", post_id)
+        except Exception:
+            post = None
+        if not post:
+            return render_template("pulse.html", posts=[], stats={},
+                                   error=f"Post not found: {post_id}"), 404
+        # Render markdown to HTML if body_html is missing
+        if post.get("body_markdown") and not post.get("body_html"):
+            import re
+            md = post["body_markdown"]
+            # Convert markdown to basic HTML
+            lines = md.split("\n")
+            html_parts = []
+            in_list = False
+            in_code = False
+            for line in lines:
+                stripped = line.strip()
+                # Code blocks
+                if stripped.startswith("```"):
+                    if in_code:
+                        html_parts.append("</code></pre>")
+                        in_code = False
+                    else:
+                        lang = stripped[3:].strip()
+                        html_parts.append(f'<pre><code class="language-{lang}">' if lang else "<pre><code>")
+                        in_code = True
+                    continue
+                if in_code:
+                    html_parts.append(line.replace("<", "&lt;").replace(">", "&gt;") + "\n")
+                    continue
+                # Headers
+                if stripped.startswith("######"):
+                    html_parts.append(f"<h6>{stripped[6:].strip()}</h6>")
+                elif stripped.startswith("#####"):
+                    html_parts.append(f"<h5>{stripped[5:].strip()}</h5>")
+                elif stripped.startswith("####"):
+                    html_parts.append(f"<h4>{stripped[4:].strip()}</h4>")
+                elif stripped.startswith("###"):
+                    html_parts.append(f"<h3>{stripped[3:].strip()}</h3>")
+                elif stripped.startswith("##"):
+                    html_parts.append(f"<h2>{stripped[2:].strip()}</h2>")
+                elif stripped.startswith("# "):
+                    html_parts.append(f"<h1>{stripped[1:].strip()}</h1>")
+                # List items
+                elif stripped.startswith("- ") or stripped.startswith("* "):
+                    if not in_list:
+                        html_parts.append("<ul>")
+                        in_list = True
+                    content = stripped[2:]
+                    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
+                    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
+                    html_parts.append(f"<li>{content}</li>")
+                elif re.match(r'^\d+\.\s', stripped):
+                    if not in_list:
+                        html_parts.append("<ol>")
+                        in_list = True
+                    content = re.sub(r'^\d+\.\s', '', stripped)
+                    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
+                    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
+                    html_parts.append(f"<li>{content}</li>")
+                # Empty line
+                elif not stripped:
+                    if in_list:
+                        html_parts.append("</ul>" if html_parts[-5:] and "<ul>" in "".join(html_parts[-5:]) else "</ol>")
+                        in_list = False
+                    html_parts.append("")
+                # Paragraph
+                else:
+                    if in_list:
+                        html_parts.append("</ul>" if "<ul>" in "".join(html_parts[-10:]) else "</ol>")
+                        in_list = False
+                    content = stripped
+                    content = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', content)
+                    content = re.sub(r'\*(.+?)\*', r'<em>\1</em>', content)
+                    content = re.sub(r'`(.+?)`', r'<code>\1</code>', content)
+                    content = re.sub(r'\[(.+?)\]\((.+?)\)', r'<a href="\2" style="color:var(--primary);">\1</a>', content)
+                    html_parts.append(f"<p>{content}</p>")
+            if in_list:
+                html_parts.append("</ul>")
+            if in_code:
+                html_parts.append("</code></pre>")
+            post["body_html"] = "\n".join(html_parts)
+        return render_template("pulse_post.html", post=post)
+
+
+    # ── Pulse API Endpoints ──────────────────────────────────────────
+
+
+    @app.route("/api/pulse/posts")
+    @require_installed("pulse")
+    def api_pulse_list_posts():
+        """List all Pulse posts."""
+        try:
+            from tools.pulse.db import init_db, query_rows
+            init_db()
+            status = flask_request.args.get("status")
+            if status:
+                rows = query_rows("posts", where="status = ?", params=(status,), limit=500)
+            else:
+                rows = query_rows("posts", limit=500)
+            return jsonify(rows)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>")
+    @require_installed("pulse")
+    def api_pulse_get_post(post_id):
+        """Get a single Pulse post."""
+        try:
+            from tools.pulse.db import get_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            return jsonify(post)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>", methods=["PUT"])
+    @require_installed("pulse")
+    def api_pulse_update_post(post_id):
+        """Update a Pulse post."""
+        try:
+            from tools.pulse.db import get_row, update_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            body = flask_request.get_json(silent=True) or {}
+            updates = {}
+            for field in ("title", "body_markdown", "tldr", "seo_title",
+                           "seo_description", "seo_keywords", "status"):
+                if field in body:
+                    updates[field] = body[field]
+            if "title" in updates:
+                from slugify import slugify as _slugify
+                updates["slug"] = _slugify(updates["title"], max_length=80)
+            if not updates:
+                return jsonify({"error": "No valid fields to update"}), 400
+            update_row("posts", post_id, updates)
+            return jsonify({"post_id": post_id, "updated": list(updates.keys())})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/approve", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_approve(post_id):
+        """Approve a Pulse post."""
+        try:
+            from tools.pulse.db import get_row, update_row, insert_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            now = datetime.now(timezone.utc).isoformat()
+            update_row("posts", post_id, {"status": "approved"})
+            insert_row("post_reviews", {
+                "id": f"rev-{uuid.uuid4().hex[:12]}",
+                "post_id": post_id,
+                "action": "approved",
+                "notes": "",
+                "created_at": now,
+            })
+            return jsonify({"status": "approved", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/reject", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_reject(post_id):
+        """Reject a Pulse post."""
+        try:
+            from tools.pulse.db import get_row, update_row, insert_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            body = flask_request.get_json(silent=True) or {}
+            notes = body.get("notes", "")
+            now = datetime.now(timezone.utc).isoformat()
+            update_row("posts", post_id, {"status": "rejected", "review_notes": notes})
+            insert_row("post_reviews", {
+                "id": f"rev-{uuid.uuid4().hex[:12]}",
+                "post_id": post_id,
+                "action": "rejected",
+                "notes": notes,
+                "created_at": now,
+            })
+            return jsonify({"status": "rejected", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/judge", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_judge_post(post_id):
+        """Run LLM Judge (Prometheus-2) on a Pulse post."""
+        import threading
+        try:
+            conn = _get_db()
+            row = conn.execute(
+                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = ?",
+                (post_id,),
+            ).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "Post not found"}), 404
+
+            def _judge(pid, body, wg_score):
+                try:
+                    from tools.writing.llm_judge import evaluate_and_store, init_judge_db
+                    init_judge_db()
+                    result = evaluate_and_store(
+                        text=body, content_type="blog",
+                        writeguard_score=wg_score or 0, post_id=pid,
+                    )
+                    if result.get("status") == "evaluated":
+                        conn2 = _get_db()
+                        conn2.execute(
+                            "UPDATE pulse_posts SET judge_color = ?, judge_composite = ?, "
+                            "judge_combined = ? WHERE id = ?",
+                            (result["color_rating"]["color"],
+                             result["composite_score"],
+                             result.get("combined_score", 0), pid),
+                        )
+                        conn2.commit()
+                        conn2.close()
+                except Exception:
+                    pass
+
+            threading.Thread(
+                target=_judge,
+                args=(post_id, row["body_markdown"], row["readability_score"]),
+                daemon=True,
+            ).start()
+            return jsonify({"status": "judging", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/pulse/posts/<post_id>/undo-reject", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_undo_reject(post_id):
+        """Undo rejection — revert post to draft status."""
+        try:
+            from tools.pulse.db import get_row, update_row, insert_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            if post.get("status") != "rejected":
+                return jsonify({"error": f"Post is {post.get('status')}, not rejected"}), 400
+            now = datetime.now(timezone.utc).isoformat()
+            update_row("posts", post_id, {"status": "draft", "review_notes": ""})
+            insert_row("post_reviews", {
+                "id": f"rev-{uuid.uuid4().hex[:12]}",
+                "post_id": post_id,
+                "action": "undo_reject",
+                "notes": "Reverted to draft",
+                "created_at": now,
+            })
+            return jsonify({"status": "draft", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/pulse/posts/<post_id>/publish", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_publish(post_id):
+        """Publish a Pulse post, export, and optionally push to Hostinger."""
+        try:
+            from tools.pulse.db import get_row, update_row
+            from tools.pulse.engine.exporter import export_both
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            now = datetime.now(timezone.utc).isoformat()
+            update_row("posts", post_id, {"status": "published", "published_at": now})
+            exports = export_both(post_id)
+
+            # Auto-push to WordPress (icdev.ai)
+            wp_result = None
+            auto_push = flask_request.json.get("auto_push", True) if flask_request.is_json else True
+            if auto_push:
+                try:
+                    from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
+                    wp_result = wp_publish(post_id)
+                except Exception as we:
+                    wp_result = {"status": "error", "message": str(we)}
+
+            return jsonify({
+                "status": "published",
+                "post_id": post_id,
+                "exports": exports,
+                "hostinger": wp_result,
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/unpublish", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_unpublish(post_id):
+        """Unpublish a post: revert to draft locally and set WP post to draft."""
+        try:
+            from tools.pulse.db import get_row, update_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            update_row("posts", post_id, {
+                "status": "draft",
+                "published_at": None,
+            })
+
+            # Set WordPress post to draft if it was published there
+            wp_result = None
+            wp_post_id = post.get("wp_post_id")
+            if wp_post_id:
+                try:
+                    from tools.pulse.engine.wordpress_publisher import (
+                        _get_client, WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
+                    )
+                    if WP_PASSWORD:
+                        wp = _get_client()
+                        wp.wp.editPost(
+                            WP_BLOG_ID, WP_USERNAME, WP_PASSWORD,
+                            wp_post_id, {"post_status": "draft"},
+                        )
+                        wp_result = {"status": "ok", "wp_post_id": wp_post_id, "wp_status": "draft"}
+                except Exception as we:
+                    wp_result = {"status": "error", "message": str(we)}
+
+            return jsonify({
+                "status": "unpublished",
+                "post_id": post_id,
+                "wordpress": wp_result,
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/push-hostinger", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_push_hostinger(post_id):
+        """Push a published post to WordPress (icdev.ai)."""
+        try:
+            from tools.pulse.db import get_row
+            from tools.pulse.engine.wordpress_publisher import publish_post as wp_publish
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            if post.get("status") != "published":
+                return jsonify({"error": f"Post must be published first (current: {post.get('status')})"}), 400
+            result = wp_publish(post_id)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/hostinger/session")
+    @require_installed("pulse")
+    def api_pulse_hostinger_session():
+        """Check WordPress connection status."""
+        try:
+            from tools.pulse.engine.wordpress_publisher import test_connection
+            result = test_connection()
+            return jsonify({
+                "session": result,
+                "key_rotation": {"status": "ok", "message": "N/A — WordPress uses password auth"},
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/export", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_export(post_id):
+        """Export a Pulse post as MDX + HTML."""
+        try:
+            from tools.pulse.db import get_row
+            from tools.pulse.engine.exporter import export_both
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            exports = export_both(post_id)
+            return jsonify({"post_id": post_id, "exports": exports})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>", methods=["DELETE"])
+    @require_installed("pulse")
+    def api_pulse_archive(post_id):
+        """Archive or permanently delete a Pulse post."""
+        try:
+            from tools.pulse.db import get_row, update_row
+            post = get_row("posts", post_id)
+            if not post:
+                return jsonify({"error": "Post not found"}), 404
+            permanent = flask_request.args.get("permanent", "false").lower() == "true"
+            if permanent:
+                with _get_db() as conn:
+                    conn.execute("DELETE FROM pulse_posts WHERE id = ?", (post_id,))
+                    conn.commit()
+                return jsonify({"status": "deleted", "post_id": post_id, "permanent": True})
+            now = datetime.now(timezone.utc).isoformat()
+            update_row("posts", post_id, {"status": "archived", "archived_at": now})
+            return jsonify({"status": "archived", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/research")
+    @require_installed("pulse")
+    def api_pulse_research():
+        """List Pulse research cache entries."""
+        try:
+            from tools.pulse.db import query_rows
+            limit = flask_request.args.get("limit", 50, type=int)
+            rows = query_rows("research_cache", limit=limit)
+            return jsonify(rows)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/clusters")
+    @require_installed("pulse")
+    def api_pulse_clusters():
+        """List Pulse topic clusters."""
+        try:
+            with _get_db() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM pulse_topic_clusters ORDER BY priority_score DESC LIMIT 100"
+                ).fetchall()
+                return jsonify([dict(r) for r in rows])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    _pulse_pipeline_runs: dict = {}
+
+
+    @app.route("/api/pulse/pipeline/run", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_pipeline_run():
+        """Trigger a Pulse content pipeline run.
+
+        Two modes:
+        - With body_markdown + topic: Process pre-written draft (Claude Code orchestrated)
+        - With topic only: Run research + cluster phase (returns context for Claude Code)
+        - No params: Run research + cluster for all configured topics
+        """
+        import threading
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            body = flask_request.get_json(silent=True) or {}
+            topic = body.get("topic")
+            body_markdown = body.get("body_markdown")
+            run_id = f"run-{uuid.uuid4().hex[:12]}"
+            _pulse_pipeline_runs[run_id] = {"run_id": run_id, "status": "running"}
+
+            def _run_bg(rid, t, bm):
+                try:
+                    if bm and t:
+                        # Claude Code wrote the article — run post-processing
+                        from tools.pulse.engine.scheduler import run_pipeline_from_draft
+                        result = run_pipeline_from_draft(t, bm, [])
+                    else:
+                        # Research + cluster only — returns context for Claude Code
+                        from tools.pulse.engine.scheduler import research_phase
+                        result = research_phase(topic_override=t)
+                    _pulse_pipeline_runs[rid] = result
+                except Exception as exc:
+                    _pulse_pipeline_runs[rid] = {"run_id": rid, "status": "failed", "error": str(exc)}
+
+            threading.Thread(target=_run_bg, args=(run_id, topic, body_markdown), daemon=True).start()
+            return jsonify({"run_id": run_id, "status": "started"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/rewrite", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_rewrite_post(post_id):
+        """Update a post with rewritten content from Claude Code."""
+        try:
+            from tools.pulse.engine.scheduler import update_post_content
+            body = flask_request.get_json(silent=True) or {}
+            body_markdown = body.get("body_markdown")
+            if not body_markdown:
+                return jsonify({"error": "body_markdown is required"}), 400
+            result = update_post_content(post_id, body_markdown)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/rewrite-llm", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_rewrite_llm(post_id):
+        """Trigger Claude Sonnet rewrite for a post via LLM router.
+
+        Reads the post, runs WriteGuard to get findings, then rewrites
+        via the LLM router (pulse_rewrite → Claude Sonnet planner tier).
+        """
+        try:
+            from tools.pulse.engine.scheduler import rewrite_post_via_llm
+            result = rewrite_post_via_llm(post_id)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/<post_id>/enrich-capabilities", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_enrich_capabilities(post_id):
+        """Rewrite a post with ICDEV capability context injected.
+
+        Matches capabilities based on title/topic, injects into rewrite prompt,
+        triggers Claude Sonnet rewrite with capability references.
+        """
+        try:
+            from tools.pulse.engine.scheduler import enrich_post_with_capabilities
+            result = enrich_post_with_capabilities(post_id)
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/posts/enrich-all", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_enrich_all():
+        """Enrich all published posts with ICDEV capabilities (batch)."""
+        import threading
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            with _get_db() as conn:
+                posts = conn.execute(
+                    "SELECT id, title FROM pulse_posts WHERE status = 'published'"
+                ).fetchall()
+
+            run_id = f"enrich-{__import__('uuid').uuid4().hex[:8]}"
+            post_ids = [p["id"] for p in posts]
+
+            def _run_batch():
+                from tools.pulse.engine.scheduler import enrich_post_with_capabilities
+                results = []
+                for pid in post_ids:
+                    try:
+                        r = enrich_post_with_capabilities(pid)
+                        results.append({"post_id": pid, "status": r.get("status", "unknown")})
+                    except Exception as e:
+                        results.append({"post_id": pid, "status": "error", "error": str(e)})
+                # Store results in pipeline runs table
+                try:
+                    from tools.pulse.db import insert_row
+                    insert_row("pipeline_runs", {
+                        "id": run_id,
+                        "status": "completed",
+                        "stage": "enrich_capabilities",
+                        "config_json": __import__("json").dumps({"post_ids": post_ids}),
+                        "result_json": __import__("json").dumps(results),
+                    })
+                except Exception:
+                    pass
+
+            t = threading.Thread(target=_run_batch, daemon=True)
+            t.start()
+            return jsonify({
+                "status": "started",
+                "run_id": run_id,
+                "posts_queued": len(post_ids),
+                "post_ids": post_ids,
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/pipeline/run-full", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_pipeline_run_full():
+        """Run the full automated pipeline: research → draft → quality → rewrite.
+
+        Uses LLM router: qwen3.5 for research/draft, Claude Sonnet for rewrite.
+
+        Body params:
+            topic (str, optional): Topic override.
+            template_type (str): 'challenge_solution' or 'feature_spotlight'.
+            auto_rewrite (bool): Whether to auto-rewrite via Sonnet (default true).
+        """
+        import threading
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            body = flask_request.get_json(silent=True) or {}
+            topic = body.get("topic")
+            template_type = body.get("template_type", "challenge_solution")
+            auto_rewrite = body.get("auto_rewrite", True)
+            run_id = f"run-{uuid.uuid4().hex[:12]}"
+            _pulse_pipeline_runs[run_id] = {"run_id": run_id, "status": "running", "stage": "research"}
+
+            def _run_bg(rid, t, tmpl, ar):
+                def _on_stage(stage):
+                    _pulse_pipeline_runs[rid] = {
+                        "run_id": rid, "status": "running", "stage": stage,
+                    }
+                try:
+                    from tools.pulse.engine.scheduler import run_full_pipeline
+                    result = run_full_pipeline(
+                        topic_override=t,
+                        template_type=tmpl,
+                        auto_rewrite=ar,
+                        progress_callback=_on_stage,
+                    )
+                    _pulse_pipeline_runs[rid] = result
+                except Exception as exc:
+                    _pulse_pipeline_runs[rid] = {
+                        "run_id": rid, "status": "failed",
+                        "stage": "error", "error": str(exc),
+                    }
+
+            threading.Thread(
+                target=_run_bg,
+                args=(run_id, topic, template_type, auto_rewrite),
+                daemon=True,
+            ).start()
+            return jsonify({"run_id": run_id, "status": "started", "stage": "research"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/pipeline/status/<run_id>")
+    @require_installed("pulse")
+    def api_pulse_pipeline_status(run_id):
+        """Get Pulse pipeline run status."""
+        if run_id in _pulse_pipeline_runs:
+            return jsonify(_pulse_pipeline_runs[run_id])
+        try:
+            from tools.pulse.db import get_row
+            entry = get_row("schedule_log", run_id)
+            if not entry:
+                return jsonify({"error": "Run not found"}), 404
+            return jsonify(entry)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/pipeline/history")
+    @require_installed("pulse")
+    def api_pulse_pipeline_history():
+        """Get Pulse pipeline run history."""
+        try:
+            with _get_db() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM pulse_schedule_log ORDER BY started_at DESC LIMIT 50"
+                ).fetchall()
+                return jsonify([dict(r) for r in rows])
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/authors")
+    @require_installed("pulse")
+    def api_pulse_authors():
+        """List Pulse authors."""
+        try:
+            from tools.pulse.db import query_rows
+            rows = query_rows("authors", limit=100)
+            return jsonify(rows)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/authors", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_create_author():
+        """Create a Pulse author."""
+        try:
+            from tools.pulse.db import insert_row
+            body = flask_request.get_json(silent=True) or {}
+            name = body.get("name")
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            author_id = f"author-{uuid.uuid4().hex[:12]}"
+            now = datetime.now(timezone.utc).isoformat()
+            data = {
+                "id": author_id,
+                "name": name,
+                "email": body.get("email", ""),
+                "bio": body.get("bio", ""),
+                "role": body.get("role", "contributor"),
+                "created_at": now,
+            }
+            insert_row("authors", data)
+            return jsonify(data), 201
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/stats")
+    @require_installed("pulse")
+    def api_pulse_stats():
+        """Get Pulse pipeline statistics."""
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            with _get_db() as conn:
+                total = conn.execute("SELECT COUNT(*) FROM pulse_posts").fetchone()[0]
+                status_rows = conn.execute(
+                    "SELECT status, COUNT(*) as count FROM pulse_posts GROUP BY status"
+                ).fetchall()
+                by_status = {row["status"]: row["count"] for row in status_rows}
+                research_count = conn.execute("SELECT COUNT(*) FROM pulse_research_cache").fetchone()[0]
+                cluster_count = conn.execute("SELECT COUNT(*) FROM pulse_topic_clusters").fetchone()[0]
+                run_count = conn.execute("SELECT COUNT(*) FROM pulse_schedule_log").fetchone()[0]
+            return jsonify({
+                "total_posts": total,
+                "by_status": by_status,
+                "research_entries": research_count,
+                "clusters": cluster_count,
+                "pipeline_runs": run_count,
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/analytics/<post_id>")
+    @require_installed("pulse")
+    def api_pulse_analytics(post_id):
+        """Get analytics for a Pulse post."""
+        try:
+            from tools.pulse.db import query_rows
+            rows = query_rows("post_analytics", where="post_id = ?", params=(post_id,), limit=100)
+            return jsonify(rows)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    # ── Pulse SAM Bridge ──────────────────────────────────────────────
+
+    _sam_bridge_runs: dict[str, dict] = {}
+
+
+    @app.route("/api/pulse/sam-bridge/run", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_sam_bridge_run():
+        """Run SAM-to-Pulse bridge (extracts pain points from SAM.gov, generates articles).
+
+        Body params:
+            dry_run (bool): If true, extract topics without generating articles.
+            max_articles (int): Max articles to generate (default 5).
+        """
+        import threading
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            body = flask_request.get_json(silent=True) or {}
+            dry_run = body.get("dry_run", False)
+            max_articles = body.get("max_articles", 5)
+            run_id = f"sam-{uuid.uuid4().hex[:12]}"
+            _sam_bridge_runs[run_id] = {
+                "run_id": run_id, "status": "running",
+                "stage": "scanning", "dry_run": dry_run,
+            }
+
+            def _run_bg(rid, dr, ma):
+                try:
+                    _sam_bridge_runs[rid]["stage"] = "extracting"
+                    from tools.pulse.engine.sam_bridge import run_sam_to_pulse
+                    result = run_sam_to_pulse(dry_run=dr, max_articles=ma)
+                    result["run_id"] = rid
+                    result["status"] = "completed"
+                    _sam_bridge_runs[rid] = result
+                except Exception as exc:
+                    _sam_bridge_runs[rid] = {
+                        "run_id": rid, "status": "failed",
+                        "stage": "error", "error": str(exc),
+                    }
+
+            threading.Thread(
+                target=_run_bg, args=(run_id, dry_run, max_articles),
+                daemon=True,
+            ).start()
+            return jsonify({"run_id": run_id, "status": "started", "dry_run": dry_run})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/sam-bridge/status/<run_id>")
+    @require_installed("pulse")
+    def api_pulse_sam_bridge_status(run_id):
+        """Get SAM bridge run status."""
+        if run_id in _sam_bridge_runs:
+            return jsonify(_sam_bridge_runs[run_id])
+        return jsonify({"error": "Run not found"}), 404
+
+
+    @app.route("/api/pulse/sam-bridge/stats")
+    @require_installed("pulse")
+    def api_pulse_sam_bridge_stats():
+        """Get SAM bridge pipeline statistics."""
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            with _get_db() as conn:
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM pulse_sam_article_log"
+                ).fetchone()[0]
+                by_status = {}
+                status_rows = conn.execute(
+                    "SELECT pipeline_status, COUNT(*) as count "
+                    "FROM pulse_sam_article_log GROUP BY pipeline_status"
+                ).fetchall()
+                for row in status_rows:
+                    by_status[row["pipeline_status"]] = row["count"]
+                by_domain = {}
+                domain_rows = conn.execute(
+                    "SELECT domain_category, COUNT(*) as count "
+                    "FROM pulse_sam_article_log GROUP BY domain_category"
+                ).fetchall()
+                for row in domain_rows:
+                    by_domain[row["domain_category"] or "unknown"] = row["count"]
+                recent = conn.execute(
+                    "SELECT id, opportunity_title, domain_category, article_topic, "
+                    "pipeline_status, created_at FROM pulse_sam_article_log "
+                    "ORDER BY created_at DESC LIMIT 10"
+                ).fetchall()
+            return jsonify({
+                "total": total,
+                "by_status": by_status,
+                "by_domain": by_domain,
+                "recent": [dict(r) for r in recent],
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/demand-signals")
+    @require_installed("pulse")
+    def api_pulse_demand_signals():
+        """List demand signals, optionally filtered to high-demand only."""
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            high_only = flask_request.args.get("high_demand", "0") == "1"
+            with _get_db() as conn:
+                if high_only:
+                    rows = conn.execute(
+                        "SELECT * FROM pulse_demand_signals WHERE is_high_demand = 1 "
+                        "ORDER BY frequency DESC"
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM pulse_demand_signals ORDER BY frequency DESC"
+                    ).fetchall()
+            return jsonify({"signals": [dict(r) for r in rows], "count": len(rows)})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/demand-signals/aggregate")
+    @require_installed("pulse")
+    def api_pulse_demand_signals_aggregate():
+        """Aggregate demand signal stats by domain."""
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            with _get_db() as conn:
+                rows = conn.execute(
+                    "SELECT domain_category, COUNT(*) as count, "
+                    "SUM(CASE WHEN is_high_demand = 1 THEN 1 ELSE 0 END) as high_demand_count, "
+                    "AVG(frequency) as avg_frequency "
+                    "FROM pulse_demand_signals GROUP BY domain_category "
+                    "ORDER BY count DESC"
+                ).fetchall()
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM pulse_demand_signals"
+                ).fetchone()[0]
+                high_total = conn.execute(
+                    "SELECT COUNT(*) FROM pulse_demand_signals WHERE is_high_demand = 1"
+                ).fetchone()[0]
+            return jsonify({
+                "by_domain": [dict(r) for r in rows],
+                "total": total,
+                "high_demand_total": high_total,
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/capability-graph")
+    @require_installed("pulse")
+    def api_pulse_capability_graph():
+        """Query capability graph edges, optionally filtered by capability slug."""
+        try:
+            from tools.pulse.db import init_db
+            init_db()
+            cap_slug = flask_request.args.get("capability")
+            with _get_db() as conn:
+                if cap_slug:
+                    rows = conn.execute(
+                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? "
+                        "ORDER BY confidence DESC", (cap_slug,)
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM pulse_capability_graph ORDER BY created_at DESC LIMIT 100"
+                    ).fetchall()
+            return jsonify({"edges": [dict(r) for r in rows], "count": len(rows)})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/capabilities")
+    @require_installed("pulse")
+    def api_pulse_capabilities():
+        """List all ICDEV capabilities from the capability catalog."""
+        try:
+            from tools.pulse.engine.capability_scanner import load_domains
+            domains = load_domains(include_capabilities=True)
+            total = sum(d["capability_count"] for d in domains)
+            return jsonify({"domains": domains, "total_capabilities": total, "total_domains": len(domains)})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/capabilities/match")
+    @require_installed("pulse")
+    def api_pulse_capabilities_match():
+        """Match capabilities by keywords."""
+        try:
+            from tools.pulse.engine.capability_scanner import match_capabilities
+            q = flask_request.args.get("q", "")
+            top_n = int(flask_request.args.get("top_n", "5"))
+            keywords = [kw for kw in q.split() if len(kw) > 2]
+            if not keywords:
+                return jsonify({"error": "Provide ?q= with keywords"}), 400
+            matched = match_capabilities(keywords, top_n=top_n)
+            return jsonify({"query": q, "matched": len(matched), "capabilities": matched})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+
+    @app.route("/api/pulse/hero-image/<post_id>")
+    def api_pulse_hero_image(post_id):
+        """Serve a Pulse post hero image from disk."""
+        from flask import send_file
+        try:
+            conn = _get_db()
+            row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            conn.close()
+            if not row or not row["hero_image_path"]:
+                return "No image", 404
+            img_path = Path(row["hero_image_path"])
+            if not img_path.exists():
+                return "Image file not found", 404
+            mime = "image/png" if str(img_path).endswith(".png") else "image/svg+xml"
+            return send_file(str(img_path), mimetype=mime)
+        except Exception as e:
+            return str(e), 500
+
+    @app.route("/api/pulse/posts/<post_id>/generate-image", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_generate_image(post_id):
+        """Generate a hero image for a Pulse post using SDXL Turbo (local GPU)."""
+        import threading
+        try:
+            conn = _get_db()
+            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "Post not found"}), 404
+            title = row["title"]
+            category = row["topic"] or ""
+
+            def _gen(pid, t, c):
+                try:
+                    from tools.pulse.engine.image_generator import generate_hero_image
+                    result = generate_hero_image(title=t, category=c)
+                    if result.get("success"):
+                        conn2 = _get_db()
+                        conn2.execute(
+                            "UPDATE pulse_posts SET hero_image_path = ?, hero_image_method = ?, hero_image_prompt = ? WHERE id = ?",
+                            (result["path"], result["method"], result.get("prompt", ""), pid),
+                        )
+                        conn2.commit()
+                        conn2.close()
+                except Exception:
+                    pass
+
+            threading.Thread(target=_gen, args=(post_id, title, category), daemon=True).start()
+            return jsonify({"success": True, "status": "generating", "method": "sdxl_turbo", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/pulse/generated-video/<post_id>")
+    @require_installed("pulse")
+    def api_pulse_generated_video(post_id):
+        """Serve a Pulse post generated video from disk."""
+        from flask import send_file
+        try:
+            conn = _get_db()
+            row = conn.execute(
+                "SELECT generated_video_path, generated_video_method FROM pulse_posts WHERE id = ?",
+                (post_id,),
+            ).fetchone()
+            conn.close()
+            if not row or not row["generated_video_path"]:
+                return "No video", 404
+            vid_path = Path(row["generated_video_path"])
+            if not vid_path.exists():
+                return "Video file not found", 404
+            method = row["generated_video_method"] or ""
+            if method == "animated_svg" or str(vid_path).endswith(".svg"):
+                mime = "image/svg+xml"
+            else:
+                mime = "video/mp4"
+            return send_file(str(vid_path), mimetype=mime)
+        except Exception as e:
+            return str(e), 500
+
+    @app.route("/api/pulse/posts/<post_id>/generate-video", methods=["POST"])
+    @require_installed("pulse")
+    def api_pulse_generate_video(post_id):
+        """Generate a hero video for a Pulse post using LTX-Video 2B (local GPU)."""
+        import threading
+        try:
+            conn = _get_db()
+            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "Post not found"}), 404
+            title = row["title"]
+            category = row["topic"] or ""
+
+            def _gen(pid, t, c):
+                try:
+                    from tools.pulse.engine.video_generator import generate_post_video
+                    result = generate_post_video(title=t, category=c)
+                    if result.get("success"):
+                        conn2 = _get_db()
+                        conn2.execute(
+                            "UPDATE pulse_posts SET generated_video_path = ?, "
+                            "generated_video_method = ?, generated_video_duration = ? WHERE id = ?",
+                            (result["path"], result["method"], result.get("duration_sec", 0), pid),
+                        )
+                        conn2.commit()
+                        conn2.close()
+                except Exception:
+                    pass
+
+            threading.Thread(target=_gen, args=(post_id, title, category), daemon=True).start()
+            return jsonify({"success": True, "status": "generating", "method": "ltx_video_2b", "post_id": post_id})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ---- File Sync (D-SYNC-1 through D-SYNC-12) ----
+
+    @app.route("/filesync")
+    def filesync_page():
+        """File Sync — sync jobs, status, conflicts, activity log."""
+        stats = {"total_jobs": 0, "active_jobs": 0, "watching_jobs": 0,
+                 "completed_syncs": 0,
+                 "failed_syncs": 0, "pending_conflicts": 0, "total_bytes": 0,
+                 "total_bytes_display": "0 B"}
+        jobs = []
+        log_entries = []
+        conn = _get_db()
+        try:
+            try:
+                row = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs").fetchone()
+                stats["total_jobs"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM sync_jobs WHERE status IN ('scanning', 'syncing', 'watching')"
+                ).fetchone()
+                stats["active_jobs"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM sync_jobs WHERE status = 'watching'"
+                ).fetchone()
+                stats["watching_jobs"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'sync_completed'"
+                ).fetchone()
+                stats["completed_syncs"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM sync_log WHERE action = 'error'"
+                ).fetchone()
+                stats["failed_syncs"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM sync_conflicts WHERE resolution = 'pending'"
+                ).fetchone()
+                stats["pending_conflicts"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_log"
+                ).fetchone()
+                total_bytes = row["total"]
+                stats["total_bytes"] = total_bytes
+                if total_bytes >= 1073741824:
+                    stats["total_bytes_display"] = f"{total_bytes / 1073741824:.1f} GB"
+                elif total_bytes >= 1048576:
+                    stats["total_bytes_display"] = f"{total_bytes / 1048576:.1f} MB"
+                elif total_bytes >= 1024:
+                    stats["total_bytes_display"] = f"{total_bytes / 1024:.1f} KB"
+                else:
+                    stats["total_bytes_display"] = f"{total_bytes} B"
+            except Exception:
+                pass
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM sync_jobs ORDER BY created_at DESC"
+                ).fetchall()
+                jobs = [dict(r) for r in rows]
+            except Exception:
+                pass
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM sync_log ORDER BY created_at DESC LIMIT 30"
+                ).fetchall()
+                log_entries = [dict(r) for r in rows]
+            except Exception:
+                pass
+        finally:
+            conn.close()
+        return render_template("filesync.html", stats=stats, jobs=jobs, log_entries=log_entries)
+
     @app.errorhandler(401)
     def unauthorized(e):
         if flask_request.is_json or flask_request.path.startswith("/api/"):
@@ -2381,315 +3625,476 @@ def create_app() -> Flask:
     def not_found(e):
         return render_template("404.html", message="Page not found"), 404
 
-    return app
+    # -------------------------------------------------------------------
+    # CLI Generator (cherry-picked from icdev main)
+    # -------------------------------------------------------------------
+
+    @app.route("/api/cli-generator/generate", methods=["POST"])
+    def api_cli_generator_generate():
+        try:
+            from tools.harness.cli_generator import generate
+            data = flask_request.get_json(force=True)
+            spec_path = data.get("spec_path", "")
+            if not spec_path:
+                return jsonify({"status": "error", "error": "spec_path is required"}), 400
+            result = generate(
+                spec_path=spec_path,
+                output_dir=data.get("output_dir"),
+                name=data.get("name"),
+                dry_run=data.get("dry_run", False),
+            )
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({"status": "error", "error": str(e)}), 500
 
 
-# ---------------------------------------------------------------------------
-# Database helper
-# ---------------------------------------------------------------------------
+    # ═══════════════════════════════════════════════════════════════════════════
+    # MCP Wrapper Generator (Phase 3)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    @app.route("/mcp-wrapper")
+    def mcp_wrapper_page():
+        return render_template("mcp_wrapper.html", app_name="SparkPilot")
 
 
-def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    @app.route("/api/mcp-wrapper/scan")
+    def api_mcp_wrapper_scan():
+        try:
+            from tools.harness.mcp_wrapper_generator import scan_tools
+            return jsonify(scan_tools())
+        except Exception as e:
+            return jsonify({"status": "error", "error": str(e), "discovered": [], "total": 0, "with_json_flag": 0})
 
 
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
-
-@app.route("/api/cli-generator/generate", methods=["POST"])
-def api_cli_generator_generate():
-    try:
-        from tools.harness.cli_generator import generate
-        data = request.get_json(force=True)
-        spec_path = data.get("spec_path", "")
-        if not spec_path:
-            return jsonify({"status": "error", "error": "spec_path is required"}), 400
-        result = generate(
-            spec_path=spec_path,
-            output_dir=data.get("output_dir"),
-            name=data.get("name"),
-            dry_run=data.get("dry_run", False),
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+    @app.route("/api/mcp-wrapper/list")
+    def api_mcp_wrapper_list():
+        try:
+            from tools.harness.mcp_wrapper_generator import list_wrapped
+            return jsonify(list_wrapped())
+        except Exception as e:
+            return jsonify({"wrappers": [], "count": 0, "error": str(e)})
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# MCP Wrapper Generator (Phase 3)
-# ═══════════════════════════════════════════════════════════════════════════
-
-@app.route("/mcp-wrapper")
-def mcp_wrapper_page():
-    return render_template("mcp_wrapper.html", app_name="SparkPilot")
-
-
-@app.route("/api/mcp-wrapper/scan")
-def api_mcp_wrapper_scan():
-    try:
-        from tools.harness.mcp_wrapper_generator import scan_tools
-        return jsonify(scan_tools())
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e), "discovered": [], "total": 0, "with_json_flag": 0})
+    @app.route("/api/mcp-wrapper/wrap", methods=["POST"])
+    def api_mcp_wrapper_wrap():
+        try:
+            from tools.harness.mcp_wrapper_generator import wrap_tool
+            data = flask_request.get_json(force=True)
+            tool_path = data.get("tool_path", "")
+            if not tool_path:
+                return jsonify({"status": "error", "error": "tool_path is required"}), 400
+            return jsonify(wrap_tool(tool_path, dry_run=data.get("dry_run", False)))
+        except Exception as e:
+            return jsonify({"status": "error", "error": str(e)}), 500
 
 
-@app.route("/api/mcp-wrapper/list")
-def api_mcp_wrapper_list():
-    try:
-        from tools.harness.mcp_wrapper_generator import list_wrapped
-        return jsonify(list_wrapped())
-    except Exception as e:
-        return jsonify({"wrappers": [], "count": 0, "error": str(e)})
+    @app.route("/api/mcp-wrapper/wrap-all", methods=["POST"])
+    def api_mcp_wrapper_wrap_all():
+        try:
+            from tools.harness.mcp_wrapper_generator import wrap_all
+            data = flask_request.get_json(force=True) if flask_request.data else {}
+            return jsonify(wrap_all(
+                dry_run=data.get("dry_run", False),
+                limit=data.get("limit", 20),
+            ))
+        except Exception as e:
+            return jsonify({"status": "error", "error": str(e)}), 500
 
 
-@app.route("/api/mcp-wrapper/wrap", methods=["POST"])
-def api_mcp_wrapper_wrap():
-    try:
-        from tools.harness.mcp_wrapper_generator import wrap_tool
-        data = request.get_json(force=True)
-        tool_path = data.get("tool_path", "")
-        if not tool_path:
-            return jsonify({"status": "error", "error": "tool_path is required"}), 400
-        return jsonify(wrap_tool(tool_path, dry_run=data.get("dry_run", False)))
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+    # ── Page Agent Copilot API ───────────────────────────────────────
+    # Inspired by alibaba/page-agent: text-based DOM navigation + AI copilot
+
+    _PAGE_AGENT_ROUTE_MAP = {
+        "home": "/", "dashboard": "/", "missions": "/missions",
+        "simulator": "/simulator", "fleet": "/devices", "devices": "/devices",
+        "firmware": "/firmware", "edge ai": "/edge-ai", "self-heal": "/crashes",
+        "agents": "/agents", "govcon": "/govcon", "writeguard": "/writeguard",
+        "pulse": "/pulse", "databridge": "/databridge",
+        "messaging": "/databridge/messaging", "cloudforge": "/cloudforge",
+        "knowledge": "/knowledge-graph", "knowledge graph": "/knowledge-graph",
+        "marketplace": "/marketplace", "research": "/research",
+        "harness": "/harness", "codelens": "/container-lens",
+        "forge studio": "/forge-studio", "dochub": "/dochub",
+        "resilience": "/resilience", "architecture": "/architecture",
+        "compliance": "/compliance-accel", "agent evolution": "/agent-evolution",
+        "intelligence": "/intelligence", "maturity": "/maturity",
+        "decisions": "/decisions", "security": "/security-scan",
+    }
 
 
-@app.route("/api/mcp-wrapper/wrap-all", methods=["POST"])
-def api_mcp_wrapper_wrap_all():
-    try:
-        from tools.harness.mcp_wrapper_generator import wrap_all
-        data = request.get_json(force=True) if request.data else {}
-        return jsonify(wrap_all(
-            dry_run=data.get("dry_run", False),
-            limit=data.get("limit", 20),
-        ))
-    except Exception as e:
-        return jsonify({"status": "error", "error": str(e)}), 500
+    @app.route("/api/page-agent/message", methods=["POST"])
+    def api_page_agent_message():
+        """Process a Page Agent copilot message — navigation, search, or contextual help."""
+        try:
+            data = flask_request.get_json(force=True) if flask_request.is_json else {}
+            message = data.get("message", "").strip()
+            page = data.get("page", "/")
+            if not message:
+                return jsonify({"error": "message required"}), 400
 
+            lower = message.lower().strip()
 
-# ── Page Agent Copilot API ───────────────────────────────────────
-# Inspired by alibaba/page-agent: text-based DOM navigation + AI copilot
-
-_PAGE_AGENT_ROUTE_MAP = {
-    "home": "/", "dashboard": "/", "missions": "/missions",
-    "simulator": "/simulator", "fleet": "/devices", "devices": "/devices",
-    "firmware": "/firmware", "edge ai": "/edge-ai", "self-heal": "/crashes",
-    "agents": "/agents", "govcon": "/govcon", "writeguard": "/writeguard",
-    "pulse": "/pulse", "databridge": "/databridge",
-    "messaging": "/databridge/messaging", "cloudforge": "/cloudforge",
-    "knowledge": "/knowledge-graph", "knowledge graph": "/knowledge-graph",
-    "marketplace": "/marketplace", "research": "/research",
-    "harness": "/harness", "codelens": "/container-lens",
-    "forge studio": "/forge-studio", "dochub": "/dochub",
-    "resilience": "/resilience", "architecture": "/architecture",
-    "compliance": "/compliance-accel", "agent evolution": "/agent-evolution",
-    "intelligence": "/intelligence", "maturity": "/maturity",
-    "decisions": "/decisions", "security": "/security-scan",
-}
-
-
-@app.route("/api/page-agent/message", methods=["POST"])
-def api_page_agent_message():
-    """Process a Page Agent copilot message — navigation, search, or contextual help."""
-    try:
-        data = request.get_json(force=True) if request.is_json else {}
-        message = data.get("message", "").strip()
-        page = data.get("page", "/")
-        if not message:
-            return jsonify({"error": "message required"}), 400
-
-        lower = message.lower().strip()
-
-        # Navigation intent
-        for prefix in ("go to ", "navigate to ", "show me ", "open "):
-            if lower.startswith(prefix):
-                target = lower[len(prefix):].strip()
-                route = _PAGE_AGENT_ROUTE_MAP.get(target)
-                if route:
+            # Navigation intent
+            for prefix in ("go to ", "navigate to ", "show me ", "open "):
+                if lower.startswith(prefix):
+                    target = lower[len(prefix):].strip()
+                    route = _PAGE_AGENT_ROUTE_MAP.get(target)
+                    if route:
+                        return jsonify({
+                            "response": f"Navigating to **{target}**...",
+                            "action": "navigate",
+                            "route": route,
+                        })
+                    # Fuzzy match
+                    best, best_score = None, 0
+                    for key in _PAGE_AGENT_ROUTE_MAP:
+                        score = _bigram_similarity(target, key)
+                        if score > best_score and score > 0.4:
+                            best_score = score
+                            best = key
+                    if best:
+                        return jsonify({
+                            "response": f"Did you mean **{best}**? Navigating...",
+                            "action": "navigate",
+                            "route": _PAGE_AGENT_ROUTE_MAP[best],
+                        })
                     return jsonify({
-                        "response": f"Navigating to **{target}**...",
-                        "action": "navigate",
-                        "route": route,
+                        "response": f"Page not found: `{target}`. Try asking `show pages`.",
+                        "suggestions": ["show pages", "help"],
                     })
-                # Fuzzy match
-                best, best_score = None, 0
-                for key in _PAGE_AGENT_ROUTE_MAP:
-                    score = _bigram_similarity(target, key)
-                    if score > best_score and score > 0.4:
-                        best_score = score
-                        best = key
-                if best:
-                    return jsonify({
-                        "response": f"Did you mean **{best}**? Navigating...",
-                        "action": "navigate",
-                        "route": _PAGE_AGENT_ROUTE_MAP[best],
-                    })
+
+            # Help
+            if lower in ("help", "what can you do", "commands"):
                 return jsonify({
-                    "response": f"Page not found: `{target}`. Try asking `show pages`.",
-                    "suggestions": ["show pages", "help"],
+                    "response": (
+                        "**Commands:** `go to <page>`, `search <text>`, "
+                        "`show pages`, `where am i`, `describe this page`, "
+                        "`scroll up/down`, `click <element>`, `fill <value> in <field>`"
+                    ),
+                    "suggestions": ["go to compliance", "show pages", "describe this page"],
                 })
 
-        # Help
-        if lower in ("help", "what can you do", "commands"):
+            # Page listing
+            if "show pages" in lower or "list pages" in lower or "list routes" in lower:
+                pages = sorted(_PAGE_AGENT_ROUTE_MAP.keys())
+                lines = [f"- `{p}` → {_PAGE_AGENT_ROUTE_MAP[p]}" for p in pages]
+                return jsonify({
+                    "response": f"**Available pages ({len(pages)}):**\n" + "\n".join(lines),
+                })
+
+            # Context-aware suggestions based on current page
+            suggestions = _page_suggestions(page)
             return jsonify({
                 "response": (
-                    "**Commands:** `go to <page>`, `search <text>`, "
-                    "`show pages`, `where am i`, `describe this page`, "
-                    "`scroll up/down`, `click <element>`, `fill <value> in <field>`"
+                    f"I understand your request: *{message}*. "
+                    "For best results, try specific commands like `go to agents` or `search <keyword>`."
                 ),
-                "suggestions": ["go to compliance", "show pages", "describe this page"],
+                "suggestions": suggestions,
             })
-
-        # Page listing
-        if "show pages" in lower or "list pages" in lower or "list routes" in lower:
-            pages = sorted(_PAGE_AGENT_ROUTE_MAP.keys())
-            lines = [f"- `{p}` → {_PAGE_AGENT_ROUTE_MAP[p]}" for p in pages]
-            return jsonify({
-                "response": f"**Available pages ({len(pages)}):**\n" + "\n".join(lines),
-            })
-
-        # Context-aware suggestions based on current page
-        suggestions = _page_suggestions(page)
-        return jsonify({
-            "response": (
-                f"I understand your request: *{message}*. "
-                "For best results, try specific commands like `go to agents` or `search <keyword>`."
-            ),
-            "suggestions": suggestions,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
 
-def _bigram_similarity(a, b):
-    """Bigram (Dice) similarity for fuzzy page matching."""
-    if a == b:
-        return 1.0
-    if len(a) < 2 or len(b) < 2:
-        return 0.0
-    a_bigrams = {}
-    for i in range(len(a) - 1):
-        bg = a[i:i+2]
-        a_bigrams[bg] = a_bigrams.get(bg, 0) + 1
-    matches = 0
-    for i in range(len(b) - 1):
-        bg = b[i:i+2]
-        if a_bigrams.get(bg, 0) > 0:
-            matches += 1
-            a_bigrams[bg] -= 1
-    return (2.0 * matches) / (len(a) + len(b) - 2)
+    def _bigram_similarity(a, b):
+        """Bigram (Dice) similarity for fuzzy page matching."""
+        if a == b:
+            return 1.0
+        if len(a) < 2 or len(b) < 2:
+            return 0.0
+        a_bigrams = {}
+        for i in range(len(a) - 1):
+            bg = a[i:i+2]
+            a_bigrams[bg] = a_bigrams.get(bg, 0) + 1
+        matches = 0
+        for i in range(len(b) - 1):
+            bg = b[i:i+2]
+            if a_bigrams.get(bg, 0) > 0:
+                matches += 1
+                a_bigrams[bg] -= 1
+        return (2.0 * matches) / (len(a) + len(b) - 2)
 
 
-def _page_suggestions(current_page):
-    """Return contextual suggestions based on current page."""
-    suggestions_map = {
-        "/": ["go to agents", "go to compliance", "go to missions"],
-        "/agents": ["go to agent evolution", "go to harness", "go to intelligence"],
-        "/compliance-accel": ["go to dochub", "go to resilience", "go to maturity"],
-        "/devices": ["go to firmware", "go to edge ai", "go to simulator"],
-        "/knowledge-graph": ["go to research", "go to intelligence", "search compliance"],
-        "/cloudforge": ["go to databridge", "go to marketplace", "go to forge studio"],
-        "/genesis": ["run research", "run audit", "show promoter stats"],
-    }
-    return suggestions_map.get(current_page, ["help", "show pages", "go to agents"])
+    def _page_suggestions(current_page):
+        """Return contextual suggestions based on current page."""
+        suggestions_map = {
+            "/": ["go to agents", "go to compliance", "go to missions"],
+            "/agents": ["go to agent evolution", "go to harness", "go to intelligence"],
+            "/compliance-accel": ["go to dochub", "go to resilience", "go to maturity"],
+            "/devices": ["go to firmware", "go to edge ai", "go to simulator"],
+            "/knowledge-graph": ["go to research", "go to intelligence", "search compliance"],
+            "/cloudforge": ["go to databridge", "go to marketplace", "go to forge studio"],
+            "/genesis": ["run research", "run audit", "show promoter stats"],
+        }
+        return suggestions_map.get(current_page, ["help", "show pages", "go to agents"])
 
-# ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
+    # ── Proposal Genesis — Autonomous Capture Pipeline Dashboard ─────────────
 
-@app.route("/genesis")
-def genesis():
-    """Genesis v2.0 — Autonomous Research Lab dashboard."""
-    try:
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
-            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
-        )
-        stdout = result.stdout.strip()
-        json_start = stdout.find("{")
-        if json_start >= 0:
-            status = json.loads(stdout[json_start:])
-        else:
-            status = {"error": "Could not parse daemon status"}
-    except Exception as exc:
-        status = {"error": str(exc)}
-    return render_template("genesis.html", status=status)
-
-
-@app.route("/api/genesis/status", methods=["GET"])
-def api_genesis_status():
-    try:
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
-            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
-        )
-        stdout = result.stdout.strip()
-        json_start = stdout.find("{")
-        if json_start >= 0:
-            return jsonify(json.loads(stdout[json_start:]))
-        return jsonify({"error": "parse_failed"}), 500
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/api/genesis/reflex/<name>", methods=["POST"])
-def api_genesis_run_reflex(name):
-    """Run a single Genesis reflex on-demand."""
-    allowed = ["research", "scout", "audit", "report", "comply", "ingest",
-               "market", "publish", "test", "learn", "heal", "evolve"]
-    if name not in allowed:
-        return jsonify({"error": f"Unknown reflex: {name}"}), 400
-    try:
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "tools/genesis/daemon.py", "--reflex", name, "--json"],
-            capture_output=True, text=True, timeout=300, cwd=BASE_DIR,
-        )
-        stdout = result.stdout.strip()
-        json_start = stdout.find("{")
-        if json_start >= 0:
-            return jsonify(json.loads(stdout[json_start:]))
-        return jsonify({"error": "parse_failed", "raw": stdout[:500]}), 500
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    @app.route("/proposal-genesis")
+    def proposal_genesis():
+        """Proposal Genesis — autonomous capture-to-delivery pipeline dashboard."""
+        status = {}
+        summary = {}
+        try:
+            import subprocess
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = subprocess.run(
+                [sys.executable, "tools/proposal_genesis/daemon.py", "--status", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                status = json.loads(stdout[json_start:])
+        except Exception as exc:
+            status = {"error": str(exc)}
+        # Summary stats
+        try:
+            conn = _get_db()
+            try:
+                summary["opportunities"] = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM proposal_opportunities WHERE status IN ('tracking', 'drafting')"
+                ).fetchone()["cnt"]
+            except Exception:
+                summary["opportunities"] = 0
+            try:
+                summary["shall_statements"] = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM rfp_shall_statements"
+                ).fetchone()["cnt"]
+            except Exception:
+                summary["shall_statements"] = 0
+            try:
+                summary["drafts"] = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM proposal_section_drafts WHERE status = 'draft'"
+                ).fetchone()["cnt"]
+            except Exception:
+                summary["drafts"] = 0
+            try:
+                row = conn.execute("SELECT AVG(composite_score) as avg_score FROM pg_proposal_quality_scores").fetchone()
+                summary["avg_quality"] = round(row["avg_score"] or 0, 3)
+            except Exception:
+                summary["avg_quality"] = 0
+            try:
+                summary["pulse_links"] = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM pg_pulse_proposal_links"
+                ).fetchone()["cnt"]
+            except Exception:
+                summary["pulse_links"] = 0
+            conn.close()
+        except Exception:
+            pass
+        return render_template("proposal_genesis.html", status=status, summary=summary)
 
 
-@app.route("/api/genesis/promoter/stats", methods=["GET"])
-def api_genesis_promoter_stats():
-    try:
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "tools/genesis/promoter.py", "--stats", "--json"],
-            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
-        )
-        stdout = result.stdout.strip()
-        json_start = stdout.find("{")
-        if json_start >= 0:
-            return jsonify(json.loads(stdout[json_start:]))
-        return jsonify({"error": "parse_failed"}), 500
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
+
+    @app.route("/genesis")
+    def genesis():
+        """Genesis v2.0 — Autonomous Research Lab dashboard."""
+        try:
+            import subprocess
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = subprocess.run(
+                [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                status = json.loads(stdout[json_start:])
+            else:
+                status = {"error": "Could not parse daemon status"}
+        except Exception as exc:
+            status = {"error": str(exc)}
+        return render_template("genesis.html", status=status)
 
 
-@app.route("/api/genesis/feedback/priorities", methods=["GET"])
-def api_genesis_feedback_priorities():
-    try:
-        import subprocess
-        result = subprocess.run(
-            [sys.executable, "tools/genesis/feedback_collector.py", "--priorities", "--json"],
-            capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
-        )
-        stdout = result.stdout.strip()
-        json_start = stdout.find("{")
-        if json_start >= 0:
-            return jsonify(json.loads(stdout[json_start:]))
-        return jsonify({"error": "parse_failed"}), 500
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+    @app.route("/api/genesis/status", methods=["GET"])
+    def api_genesis_status():
+        try:
+            import subprocess
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = subprocess.run(
+                [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"error": "parse_failed"}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/reflex/<name>", methods=["POST"])
+    def api_genesis_run_reflex(name):
+        """Run a single Genesis reflex on-demand."""
+        allowed = ["research", "scout", "audit", "report", "comply", "ingest",
+                   "market", "publish", "test", "learn", "heal", "evolve"]
+        if name not in allowed:
+            return jsonify({"error": f"Unknown reflex: {name}"}), 400
+        try:
+            import subprocess
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = subprocess.run(
+                [sys.executable, "tools/genesis/daemon.py", "--reflex", name, "--json"],
+                capture_output=True, text=True, timeout=300, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"error": "parse_failed", "raw": stdout[:500]}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/promoter/stats", methods=["GET"])
+    def api_genesis_promoter_stats():
+        try:
+            import subprocess
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(BASE_DIR)}
+            result = subprocess.run(
+                [sys.executable, "tools/genesis/promoter.py", "--stats", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"error": "parse_failed", "stderr": result.stderr[-500:] if result.stderr else ""}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/gkps", methods=["GET"])
+    def api_genesis_gkps():
+        """List GKPs with optional status filter."""
+        status_filter = flask_request.args.get("status", None)
+        limit = int(flask_request.args.get("limit", "100"))
+        try:
+            conn = _get_db()
+            try:
+                if status_filter:
+                    rows = conn.execute(
+                        "SELECT * FROM genesis_gkp WHERE promotion_status = ? ORDER BY created_at DESC LIMIT ?",
+                        (status_filter, limit),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                gkps = [dict(r) for r in rows]
+                return jsonify({"gkps": gkps, "count": len(gkps)})
+            finally:
+                conn.close()
+        except Exception as exc:
+            return jsonify({"gkps": [], "count": 0, "note": str(exc)})
+
+
+    @app.route("/api/genesis/gkps/<gkp_id>", methods=["GET"])
+    def api_genesis_gkp_detail(gkp_id):
+        """Get a single GKP by ID."""
+        try:
+            conn = _get_db()
+            try:
+                row = conn.execute("SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
+                if not row:
+                    return jsonify({"error": "GKP not found"}), 404
+                return jsonify(dict(row))
+            finally:
+                conn.close()
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/gkps/<gkp_id>/promote", methods=["POST"])
+    def api_genesis_promote_gkp(gkp_id):
+        """Promote a GKP to v1.x."""
+        try:
+            import subprocess as _sp
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = _sp.run(
+                [sys.executable, "tools/genesis/promoter.py", "--promote", gkp_id, "--json"],
+                capture_output=True, text=True, timeout=30, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"error": result.stderr or "promote failed"}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/gkps/<gkp_id>/reject", methods=["POST"])
+    def api_genesis_reject_gkp(gkp_id):
+        """Reject a GKP."""
+        try:
+            data = flask_request.get_json(silent=True) or {}
+            reason = data.get("reason", "Rejected via dashboard")
+            import subprocess as _sp
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = _sp.run(
+                [sys.executable, "tools/genesis/promoter.py", "--reject", gkp_id, "--reason", reason, "--json"],
+                capture_output=True, text=True, timeout=30, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"error": result.stderr or "reject failed"}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/gkps/auto-promote", methods=["POST"])
+    def api_genesis_auto_promote():
+        """Auto-promote all eligible GKPs."""
+        try:
+            import subprocess as _sp
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = _sp.run(
+                [sys.executable, "tools/genesis/promoter.py", "--auto-promote", "--json"],
+                capture_output=True, text=True, timeout=30, cwd=BASE_DIR,
+                env=_utf8_env,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"auto_promoted": 0, "results": []})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/feedback/priorities", methods=["GET"])
+    def api_genesis_feedback_priorities():
+        try:
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, "tools/genesis/feedback_collector.py", "--priorities", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+            )
+            stdout = result.stdout.strip()
+            json_start = stdout.find("{")
+            if json_start >= 0:
+                return jsonify(json.loads(stdout[json_start:]))
+            return jsonify({"error": "parse_failed"}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+
+    return app
 
 
 if __name__ == "__main__":
@@ -2701,7 +4106,7 @@ if __name__ == "__main__":
     app = create_app()
     print(f"[ICDEV Dashboard] Starting on http://127.0.0.1:{args.port}")
     print(f"[ICDEV Dashboard] Database: {DB_PATH}")
-    print(f"[ICDEV Dashboard] CUI Marking: {CUI_BANNER_TOP}")
+    print(f"[ICDEV Dashboard] CUI Marking: {CUI_BANNER_TOP or '(none)'}")
 
     # Use SocketIO runner if available (D170), otherwise plain Flask
     socketio = get_socketio()

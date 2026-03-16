@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INTaaS — Bias Forensics</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">INTaaS <span>Multiperspectivity</span></a>
+    <ul class="navbar-nav">
+      <li><a href="/">Home</a></li>
+      <li><a href="sources.html">Sources</a></li>
+      <li><a href="reference.html">Reference</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="card">
+      <div class="card-header">
+        <h2>Bias Forensics</h2>
+        <span id="bias-color-badge"></span>
+      </div>
+
+      <h3 id="article-title" style="margin-bottom: 1rem; font-size: 1.2rem;">Loading...</h3>
+
+      <!-- Composite Score -->
+      <div style="display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.5rem;">
+        <div style="text-align: center;">
+          <div id="composite-score" style="font-size: 2.5rem; font-weight: 700; color: var(--accent);">-</div>
+          <div style="font-size: 0.8rem; color: var(--text-muted);">Composite Score</div>
+        </div>
+        <div id="composite-label" style="font-size: 0.9rem; color: var(--text-secondary);"></div>
+      </div>
+
+      <!-- Dimension Bars -->
+      <div class="bias-chart" id="bias-chart">
+        <div class="loading"><span class="spinner"></span> Analyzing bias dimensions...</div>
+      </div>
+
+      <!-- Findings -->
+      <div id="findings-section" style="display: none; margin-top: 1.5rem;">
+        <h3 style="font-size: 1rem; margin-bottom: 0.75rem; color: var(--warning);">Findings</h3>
+        <div id="findings-list"></div>
+      </div>
+
+      <!-- LLM Judge -->
+      <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+        <button class="btn btn-secondary" id="judge-btn" onclick="runJudge()">
+          Run LLM-as-a-Judge (Prometheus-2)
+        </button>
+        <span id="judge-status" style="display: none; margin-left: 0.75rem;" class="loading">
+          <span class="spinner"></span> Evaluating with Prometheus-2...
+        </span>
+        <div id="judge-result" style="margin-top: 1rem;"></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 1rem;">
+      <a href="javascript:history.back()" style="color: var(--text-muted); font-size: 0.9rem;">Back to topic</a>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const articleId = params.get('id');
+    const topicId = params.get('topic');
+
+    async function loadBias() {
+      if (!articleId) {
+        document.getElementById('article-title').textContent = 'No article ID provided';
+        return;
+      }
+
+      try {
+        const data = await api.getBias(articleId);
+        document.getElementById('article-title').textContent = data.title || `Article ${articleId}`;
+        document.getElementById('composite-score').textContent = (data.composite || 0).toFixed(1);
+        document.getElementById('composite-score').style.color = biasBarColor(data.composite || 3);
+
+        const color = data.color || 'green';
+        const label = data.color_label || color;
+        document.getElementById('bias-color-badge').innerHTML =
+          `<span class="bias-badge ${biasColorClass(color)}">${color} — ${label}</span>`;
+
+        // Render dimension bars
+        const chart = document.getElementById('bias-chart');
+        const scores = data.scores || {};
+        const dims = Object.entries(scores);
+
+        if (dims.length === 0) {
+          chart.innerHTML = '<p style="color:var(--text-muted)">No dimensional scores available.</p>';
+          return;
+        }
+
+        chart.innerHTML = dims.map(([name, score]) => {
+          const pct = (score / 5 * 100).toFixed(0);
+          const label = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          return `
+            <div class="bias-dimension">
+              <div class="dim-label">${label}</div>
+              <div class="dim-bar-bg">
+                <div class="dim-bar" style="width: ${pct}%; background: ${biasBarColor(score)}"></div>
+              </div>
+              <div class="dim-score" style="color: ${biasBarColor(score)}">${score.toFixed(1)}</div>
+            </div>
+          `;
+        }).join('');
+
+        // Findings
+        if (data.findings && data.findings.length > 0) {
+          document.getElementById('findings-section').style.display = 'block';
+          document.getElementById('findings-list').innerHTML = data.findings.map(f =>
+            `<div class="gap-item" style="border-left-color: var(--danger);">
+              <div class="gap-icon">&#x1F50D;</div>
+              <div class="gap-text">${f}</div>
+            </div>`
+          ).join('');
+        }
+      } catch (e) {
+        document.getElementById('bias-chart').innerHTML =
+          `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+    }
+
+    async function runJudge() {
+      const btn = document.getElementById('judge-btn');
+      const status = document.getElementById('judge-status');
+      const result = document.getElementById('judge-result');
+
+      btn.disabled = true;
+      status.style.display = 'inline-flex';
+
+      try {
+        const data = await api.deepAnalysis(articleId);
+
+        let html = `<div class="card" style="background: var(--bg-secondary);">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 0.75rem;">
+            <span class="bias-badge ${biasColorClass(data.color)}">${data.color} — ${data.composite_score?.toFixed(1)}/5.0</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Method: ${data.method || 'deterministic'}</span>
+          </div>`;
+
+        if (data.strengths && data.strengths.length > 0) {
+          html += '<div style="margin-bottom: 0.5rem;"><strong style="color:var(--success)">Strengths:</strong><ul style="margin-left:1rem">';
+          data.strengths.forEach(s => { html += `<li style="font-size:0.9rem;color:var(--text-secondary)">${s}</li>`; });
+          html += '</ul></div>';
+        }
+        if (data.weaknesses && data.weaknesses.length > 0) {
+          html += '<div><strong style="color:var(--warning)">Weaknesses:</strong><ul style="margin-left:1rem">';
+          data.weaknesses.forEach(w => { html += `<li style="font-size:0.9rem;color:var(--text-secondary)">${w}</li>`; });
+          html += '</ul></div>';
+        }
+        html += '</div>';
+        result.innerHTML = html;
+      } catch (e) {
+        result.innerHTML = `<p style="color:var(--danger)">${e.message}</p>`;
+      }
+
+      btn.disabled = false;
+      status.style.display = 'none';
+    }
+
+    loadBias();
+  </script>
+</body>
+</html>

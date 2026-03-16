@@ -12,7 +12,6 @@ Architecture Decision D304.
 
 Usage (library):
     from icdev.tools.compliance.oscal_catalog_adapter import OscalCatalogAdapter
-from icdev._paths import get_project_root
     adapter = OscalCatalogAdapter()
     ctrl = adapter.get_control("AC-2")
     ctrls = adapter.list_controls(family="AC")
@@ -24,6 +23,7 @@ Usage (CLI):
     python tools/compliance/oscal_catalog_adapter.py --stats --json
 """
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import logging

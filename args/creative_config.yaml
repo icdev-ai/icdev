@@ -6,11 +6,30 @@
 # Product Domain (what you're building for)
 # =========================================================================
 domain:
-  name: ""                              # e.g., "government proposal management"
-  g2_category_url: ""                   # G2 category page URL for auto-discovery
-  capterra_category_url: ""             # Capterra category page URL
+  name: "file synchronization"
+  g2_category_url: "https://www.g2.com/categories/file-sync"
+  capterra_category_url: "https://www.capterra.com/file-sync-software/"
   trustradius_category_url: ""          # TrustRadius category page URL
-  producthunt_topic: ""                 # Product Hunt topic for monitoring
+  producthunt_topic: "file-sync"        # Product Hunt topic for monitoring
+
+# Secondary domain — blockchain monitoring & analytics
+blockchain:
+  name: "blockchain"
+  g2_category_url: "https://www.g2.com/categories/blockchain"
+  capterra_category_url: "https://www.capterra.com/blockchain-software/"
+  trustradius_category_url: "https://www.trustradius.com/blockchain-platforms"
+  producthunt_topic: "blockchain"
+  keywords:
+    - blockchain
+    - smart contract
+    - DeFi
+    - web3
+    - distributed ledger
+    - tokenization
+    - consensus mechanism
+    - on-chain analytics
+    - crypto compliance
+    - digital asset
 
 # =========================================================================
 # Source Adapters
@@ -45,11 +64,50 @@ sources:
     scan_interval_hours: 12
     platforms:
       - name: reddit
-        subreddits: []                   # populated per domain
+        subreddits:
+          - selfhosted
+          - DataHoarder
+          - syncthing
+          - nextcloud
+          - sysadmin
+          - homelab
+          - linux
+          - opensource
+          - blockchain
+          - ethereum
+          - CryptoCurrency
+          - defi
+          - solana
+          - web3
         sort: hot
         max_results: 50
         min_upvotes: 10
-        keyword_filter: []               # populated per domain
+        keyword_filter:
+          - file sync
+          - file synchronization
+          - cloud sync
+          - backup sync
+          - syncthing
+          - rclone
+          - nextcloud
+          - owncloud
+          - seafile
+          - dropbox alternative
+          - self-hosted sync
+          - peer-to-peer sync
+          - real-time sync
+          - conflict resolution
+          - delta sync
+          - blockchain
+          - smart contract
+          - web3
+          - DeFi
+          - on-chain
+          - crypto compliance
+          - distributed ledger
+          - tokenization
+          - NFT
+          - DAO
       - name: govcon_blogs
         urls: []                         # populated per domain
         max_results: 30
@@ -63,7 +121,20 @@ sources:
   github_issues:
     enabled: true
     scan_interval_hours: 12
-    repos: []                            # populated per domain
+    repos:
+      - syncthing/syncthing
+      - rclone/rclone
+      - nextcloud/server
+      - owncloud/core
+      - haiwen/seafile
+      - ethereum/go-ethereum
+      - solana-labs/solana
+      - hyperledger/fabric
+      - ChainSafe/web3.js
+      - OpenZeppelin/openzeppelin-contracts
+      - paradigmxyz/reth
+      - foundry-rs/foundry
+      - crytic/slither
     labels: [enhancement, feature-request, feature, wishlist, "help wanted"]
     max_results: 100
     rate_limit:
@@ -73,7 +144,15 @@ sources:
   producthunt:
     enabled: true
     scan_interval_hours: 168             # weekly
-    topics: []                           # populated per domain
+    topics:
+      - file-sync
+      - file-sharing
+      - cloud-storage
+      - backup
+      - blockchain
+      - web3
+      - crypto
+      - defi
     max_results: 20
 
 # =========================================================================

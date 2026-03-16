@@ -9,12 +9,12 @@ Consolidation log is append-only (D6).
 
 Usage:
     from icdev.tools.memory.memory_consolidation import MemoryConsolidator
-from icdev._paths import get_project_root
 
     consolidator = MemoryConsolidator()
     result = consolidator.check_for_consolidation("new content", "fact", "user-1")
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import re

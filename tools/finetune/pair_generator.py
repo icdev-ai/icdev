@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+RAG_DB_PATH = BASE_DIR / "data" / "rag" / "rag_vectors.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
@@ -311,12 +312,15 @@ def generate_from_rag_source(
 ) -> Dict[str, Any]:
     """Generate Q&A pairs from existing RAG chunks.
 
-    Reads chunks from rag_chunks table filtered by source_table.
+    Reads chunks from rag_chunks table in the RAG vector store DB.
     """
-    conn = _get_db(db_path)
+    rag_db = RAG_DB_PATH
+    if not rag_db.exists():
+        return {"success": False, "error": f"RAG vector store not found: {rag_db}"}
+    conn = _get_db(rag_db)
     try:
         rows = conn.execute(
-            """SELECT chunk_id, content, source_id
+            """SELECT id, content, source_id
                FROM rag_chunks
                WHERE source_table = ? AND tier = 'hot'
                ORDER BY created_at DESC LIMIT ?""",
@@ -327,7 +331,8 @@ def generate_from_rag_source(
             return {"success": False, "error": f"No RAG chunks found for source: {source_table}"}
 
         chunks = [
-            {"content": r["content"], "chunk_id": r["chunk_id"]}
+            {"content": r["content"] if isinstance(r, dict) else r[1],
+             "chunk_id": r["id"] if isinstance(r, dict) else r[0]}
             for r in rows
         ]
     except Exception as e:

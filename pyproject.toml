@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "AGPL-3.0-or-later"
 authors = [
-    {name = "Steven Chuo"},
+    {name = "Sovanna Chuon"},
 ]
 keywords = ["devops", "compliance", "nist", "fedramp", "govcloud", "llm", "agentic", "sdlc", "gotcha"]
 classifiers = [
@@ -101,6 +101,13 @@ dev = [
     "icdev[testing,security]",
     "build>=1.0",
     "twine>=5.0",
+]
+# Image generation (Pulse hero images via SDXL Turbo on local GPU)
+image-gen = [
+    "torch>=2.1",
+    "diffusers>=0.27",
+    "transformers>=4.36",
+    "accelerate>=0.25",
 ]
 # Everything
 full = [

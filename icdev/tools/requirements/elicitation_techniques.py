@@ -16,13 +16,13 @@ government/defense requirements gathering.
 
 Usage:
     from icdev.tools.requirements.elicitation_techniques import (
-from icdev._paths import get_project_root
         list_techniques, get_technique, activate_technique,
     )
     techniques = list_techniques()
     result = activate_technique(session_id, "pre_mortem", db_path=DB_PATH)
 """
 
+from icdev._paths import get_project_root
 import json
 import sqlite3
 from pathlib import Path

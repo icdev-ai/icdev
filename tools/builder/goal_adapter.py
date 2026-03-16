@@ -71,6 +71,9 @@ GOAL_FILE_MAP: Dict[str, str] = {
     "rag_subsystem": "rag_subsystem.md",
     # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ATLAS critique)
     "multi_agent_orchestration": "multi_agent_orchestration.md",
+    # Genesis v2.0 Autonomous Research Lab
+    "genesis_daemon": "genesis_daemon.md",
+    "genesis_promoter": "genesis_promoter.md",
 }
 
 # ============================================================
@@ -106,6 +109,8 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
     "rag_subsystem": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
     "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
+    "genesis_daemon": "Autonomous research lab — 13 Reflexes, Trust Kernel, circuit breakers",
+    "genesis_promoter": "Knowledge Bridge — GKP export/import, dedup, auto-promote, human review",
 }
 
 # ============================================================
@@ -141,6 +146,8 @@ GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
     "ato_acceleration": "ATO Acceleration",
     "rag_subsystem": "RAG Subsystem",
     "multi_agent_orchestration": "Multi-Agent Orchestration",
+    "genesis_daemon": "Genesis Daemon",
+    "genesis_promoter": "Genesis Promoter",
 }
 
 # ============================================================

@@ -13,6 +13,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -250,9 +252,9 @@ def log_nlq_query(query_text: str, generated_sql: str, result_count: int,
             """INSERT INTO nlq_queries
                (query_text, generated_sql, result_count, execution_time_ms,
                 actor, status, error_message, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (query_text, generated_sql, result_count, execution_time_ms,
-             actor, status, error_message),
+             actor, status, error_message, DEFAULT_CLASSIFICATION),
         )
         conn.commit()
         conn.close()
@@ -277,7 +279,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
         return {
             "status": "error",
             "error": "Could not generate SQL from your question. Try rephrasing.",
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         }
 
     # Validate SQL (read-only enforcement)
@@ -290,7 +292,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
             "status": "blocked",
             "error": f"Query blocked by security policy: {validation_error}",
             "generated_sql": generated_sql,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         }
 
     # Execute safely
@@ -308,7 +310,7 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
             "generated_sql": generated_sql,
             "results": formatted,
             "execution_time_ms": duration_ms,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         }
     except Exception as e:
         duration_ms = int((time.time() - start_time) * 1000)
@@ -318,5 +320,5 @@ def process_nlq_query(query_text: str, actor: str = "dashboard-user") -> dict:
             "status": "error",
             "error": f"Query execution failed: {str(e)}",
             "generated_sql": generated_sql,
-            "classification": "CUI",
+            "classification": DEFAULT_CLASSIFICATION,
         }

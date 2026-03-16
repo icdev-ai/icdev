@@ -9,7 +9,6 @@ YELLOW tier (reversible writes — staging/draft only).
 Scanner-tier LLM (qwen3.5) for drafting, WriteGuard deterministic for QA.
 """
 
-import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,8 +70,23 @@ def _run_writeguard(body: str) -> Dict[str, Any]:
         return {"score": 0, "findings": [{"error": str(e)}]}
 
 
+def _generate_hero_image(topic: str, category: str = "") -> Optional[Dict[str, Any]]:
+    """Generate a hero image for the article (GPU → SVG fallback)."""
+    try:
+        from tools.pulse.engine.image_generator import generate_hero_image
+        result = generate_hero_image(title=topic, category=category)
+        if result and result.get("success"):
+            print(f"  Publish: hero image generated via {result['method']} "
+                  f"({result.get('elapsed_ms', 0)}ms)")
+            return result
+    except Exception as e:
+        print(f"  WARN: Hero image generation failed: {e}")
+    return None
+
+
 def _stage_draft(topic: str, body: str, quality_score: float,
-                 demand_signal_id: Optional[int] = None) -> Optional[int]:
+                 demand_signal_id: Optional[int] = None,
+                 hero_image: Optional[Dict[str, Any]] = None) -> Optional[int]:
     """Insert article as staging draft in pulse_posts."""
     import uuid
     now = _utcnow_iso()
@@ -83,8 +97,9 @@ def _stage_draft(topic: str, body: str, quality_score: float,
         conn.execute(
             """INSERT INTO pulse_posts
                (id, title, slug, status, topic, body_markdown,
-                readability_score, author_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                readability_score, hero_image_path, hero_image_method,
+                hero_image_prompt, author_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 post_id,
                 topic[:300],
@@ -93,6 +108,9 @@ def _stage_draft(topic: str, body: str, quality_score: float,
                 topic[:300],
                 body,
                 quality_score,
+                hero_image.get("path") if hero_image else None,
+                hero_image.get("method") if hero_image else None,
+                hero_image.get("prompt") if hero_image else None,
                 "genesis_publish",
                 now,
                 now,
@@ -148,10 +166,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             })
             continue
 
+        # Generate hero image
+        hero = _generate_hero_image(topic, category=topic_data.get("category", ""))
+
         # Stage as draft
         post_id = _stage_draft(
             topic, body, score,
             demand_signal_id=topic_data.get("id"),
+            hero_image=hero,
         )
 
         results.append({

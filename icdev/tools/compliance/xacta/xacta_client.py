@@ -8,12 +8,12 @@ per DoD environment requirements.
 
 Usage:
     from icdev.tools.compliance.xacta.xacta_client import XactaClient
-from icdev._paths import get_project_root
     client = XactaClient()
     client.push_system(project_data)
     client.push_assessment(project_id, assessment_results)
 """
 
+from icdev._paths import get_project_root
 import json
 import logging
 import sqlite3

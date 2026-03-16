@@ -844,10 +844,34 @@
 | Source Mappings | context/rag/source_mappings.json | Declarative source type → table/column mappings (D26 pattern) | (data) | JSON mappings |
 | Knowledge Search Page | tools/dashboard/templates/rag/knowledge_search.html | Dashboard page: stat grid, NLQ search, results with scores, source distribution chart, recent searches | (template) | HTML |
 
+## File Sync (`tools/filesync/`)
+
+| Tool | Purpose | CLI |
+|------|---------|-----|
+| `sync_engine.py` | Main orchestrator — job CRUD, sync execution, daemon mode, health | `--create/--list/--run/--daemon/--health --json` |
+| `providers/base.py` | `SyncTargetProvider` ABC — list_files, read_file, write_file, delete_file, get_file_info | N/A (imported) |
+| `providers/local.py` | Local filesystem provider (stdlib Path/os.walk) | N/A (imported) |
+| `providers/sftp.py` | SFTP provider (paramiko + subprocess ssh/scp fallback) | N/A (imported) |
+| `providers/cloud.py` | Cloud provider wrapping existing `StorageProvider` ABC | N/A (imported) |
+| `ignore_parser.py` | `.syncignore` parser using stdlib `fnmatch` | N/A (imported) |
+| `scanner.py` | File tree scanner — SHA-256 manifests with fast-skip (mtime+size) | N/A (imported) |
+| `change_detector.py` | Manifest diffing → action plans (push + bidirectional) | N/A (imported) |
+| `conflict_resolver.py` | Strategy pattern: last_write_wins, rename_both, source_wins, skip | N/A (imported) |
+| `transfer.py` | ThreadPoolExecutor file transfer with bandwidth throttling | N/A (imported) |
+| `watcher.py` | File watcher — optional watchdog + periodic scan fallback | N/A (imported) |
+
 ## Safety Hooks
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Pre-Tool-Use Hook | .claude/hooks/pre_tool_use.py | Blocks dangerous rm, .env access, audit modifications | tool_name, tool_input | Allow/block |
+
+## Daemon Infrastructure — Shared Base Classes
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| DaemonBase | `tools/daemon/base.py` | ABC for all ICDEV daemons: signal handling, config loading, main loop, schedule parsing, circuit breaker, audit logging, CLI (--once, --status, --reflex, --enable, --disable, --reset, --json) |
+| ReflexStateBase | `tools/daemon/base.py` | Thread-safe DB-backed reflex state management parameterized by `state_table` class attribute |
+| TrustKernelBase | `tools/daemon/base.py` | Risk tier enforcement (GREEN=auto, YELLOW=sandbox, ORANGE=human review) |
 
 ## Genesis v2.0 — Autonomous Research Lab
 
@@ -855,7 +879,7 @@
 
 | Tool | Path | Purpose |
 |------|------|---------|
-| daemon | `tools/genesis/daemon.py` | Always-on daemon: 12 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1) |
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 13 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
 | promoter | `tools/genesis/promoter.py` | Knowledge Bridge: GKP export/import, dedup, auto-promote, human review gateway (D-GEN-4) |
 | feedback_collector | `tools/genesis/feedback_collector.py` | Pull v1.x telemetry (failures, quality, coverage, heals) for v2.0 consumption (D-GEN-11) |
 | reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |
@@ -876,3 +900,39 @@
 | learn | YELLOW | nightly 04:00 | Generate training pairs from approved outputs for Ollama fine-tuning |
 | heal | YELLOW | continuous/5min | Pattern-match audit trail errors → auto-remediation (log-only v2.0) |
 | evolve | ORANGE | nightly 02:00 | Pick worst-quality file → LLM analysis → propose GKP code_patch for human review |
+| docs | GREEN | daily 06:00 | Documentation drift detection → GKP report |
+
+## Proposal Genesis — Autonomous Proposal Intelligence
+
+### Core Engine
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| daemon | `tools/proposal_genesis/daemon.py` | Autonomous proposal intelligence daemon: 14 Reflexes across 4 phases (CAPTURE, PROPOSE, DELIVER, LEARN). Subclass of DaemonBase (D-PG-1) |
+
+### 14 Reflexes (tools/proposal_genesis/reflexes/)
+
+| Reflex | Phase | Risk Tier | Purpose |
+|--------|-------|-----------|---------|
+| discover | CAPTURE | GREEN | Scan SAM.gov, internal signals for new opportunities |
+| scout | CAPTURE | GREEN | Competitive intelligence and market analysis |
+| shape | CAPTURE | GREEN | Win strategy, discriminators, partner fit assessment |
+| engage | CAPTURE | GREEN | CRM account/contact/engagement tracking |
+| extract | PROPOSE | GREEN | Extract requirements from opportunity documents |
+| map | PROPOSE | GREEN | Map requirements to ICDEV capabilities |
+| draft | PROPOSE | GREEN | Generate proposal section drafts |
+| polish | PROPOSE | GREEN | Grammar, readability, tone, AI detection quality checks |
+| decide | PROPOSE | YELLOW | Bid/no-bid decision with scoring |
+| monitor | DELIVER | GREEN | Track awarded contract performance |
+| fulfill | DELIVER | GREEN | CDRL delivery tracking |
+| publish | DELIVER | GREEN | Knowledge base article generation from wins |
+| analyze | LEARN | GREEN | Win/loss analysis, lesson extraction |
+| train | LEARN | GREEN | Generate fine-tuning pairs from approved content |
+
+## Evaluation & Red Teaming (Phase 65)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Red Team Registry | tools/security/red_team_registry.py | YAML-driven adversarial testing framework (6 plugins, promptfoo-inspired) | --run-all, --plugin, --category, --gate, --list, --project-id, --json | Plugin results + gate evaluation |
+| Convergence Gates | tools/genesis/convergence.py | Detect phantom improvements and reflex plateau (3 drift vectors + ambiguity, Ouroboros-inspired) | (library — called by daemon post-reflex hook) | Drift scores + recommendation |
+| Stagnation Detector | tools/genesis/stagnation_detector.py | Detect stuck reflexes, break plateaus via 5 lateral thinking personas (Ouroboros-inspired) | (library — called by daemon when convergence flags stagnation) | Pattern detection + alternatives |
+| Agent Benchmark | tools/evaluation/agent_benchmark.py | Scenario-based 2-tier evaluation of ICDEV agents (12 scenarios, 4 agent types, TheAgentCompany-inspired) | --run-all, --agent-type, --scenario, --trend, --gate, --list, --json | Per-agent scores + trend + gate |

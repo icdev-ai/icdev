@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 logger = logging.getLogger("icdev.chat_manager")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -545,11 +547,11 @@ class ChatManager:
                    (id, user_id, tenant_id, title, status, project_id,
                     agent_model, system_prompt, dirty_version, message_count,
                     classification, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ctx.context_id, ctx.user_id, ctx.tenant_id, ctx.title,
                     ctx.status, ctx.project_id, ctx.agent_model,
-                    ctx.system_prompt, 0, 0,
+                    ctx.system_prompt, 0, 0, DEFAULT_CLASSIFICATION,
                     ctx.created_at, ctx.created_at,
                 ),
             )
@@ -585,10 +587,11 @@ class ChatManager:
                 """INSERT INTO chat_messages
                    (context_id, turn_number, role, content, content_type,
                     metadata, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     context_id, turn_number, role, content, content_type,
                     json.dumps(metadata) if metadata else None,
+                    DEFAULT_CLASSIFICATION,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )
@@ -610,9 +613,10 @@ class ChatManager:
                 """INSERT INTO chat_tasks
                    (id, context_id, task_type, status, input_text,
                     classification, created_at)
-                   VALUES (?, ?, ?, 'processing', ?, 'CUI', ?)""",
+                   VALUES (?, ?, ?, 'processing', ?, ?, ?)""",
                 (
                     task_id, context_id, task_type, input_text[:2000],
+                    DEFAULT_CLASSIFICATION,
                     datetime.now(timezone.utc).isoformat(),
                 ),
             )

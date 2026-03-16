@@ -154,6 +154,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
         "rag_ingestion_log",
         "rag_retrieval_log",
+        # Genesis v2.0 (D-GEN-6, D-GEN-10)
+        "genesis_audit",
+        # Knowledge Graph (D-KARL-1)
+        "kg_retrieval_log",
         # Phase 64 Extension — Fine-Tuning (D-FT-3, D-FT-9, D-FT-14, D-FT-16, D-FT-13)
         "ft_dataset_examples",
         "ft_training_job_events",
@@ -205,6 +209,26 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "research_trends",
         "research_capability_map",
         "research_forecasts",
+        # Proposal Genesis (D-PG-1 through D-PG-10)
+        "pg_proposal_genesis_audit",
+        "pg_amendment_diffs",
+        "pg_pulse_proposal_links",
+        "pg_proposal_quality_scores",
+        "pg_bid_decisions",
+        "pg_bid_decision_outcomes",
+        "pg_win_loss_records",
+        "pg_win_loss_lessons",
+        "pg_crm_interactions",
+        "pg_crm_engagement_scores",
+        "pg_capture_activities",
+        "pg_teaming_assessments",
+        # File Sync Module (D-SYNC-7 — sync_log is append-only, NIST AU)
+        "sync_log",
+        # Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
+        "red_team_results",
+        "genesis_convergence_log",
+        "genesis_stagnation_log",
+        "agent_benchmark_results",
     ]
 
     if tool_name == "Bash":

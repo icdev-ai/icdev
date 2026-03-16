@@ -12,7 +12,6 @@ For vendor-agnostic LLM access (multi-provider, local models), use the
 
     from icdev.tools.llm import get_router
     from icdev.tools.llm.provider import LLMRequest
-from icdev._paths import get_project_root
     router = get_router()
     resp = router.invoke("code_generation", LLMRequest(...))
 
@@ -22,6 +21,7 @@ Decision D70: BedrockClient preserved for Bedrock-specific callers; tools.llm
     provides the vendor-agnostic alternative.
 """
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import logging

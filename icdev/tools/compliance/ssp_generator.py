@@ -3,9 +3,9 @@
 """Generate a System Security Plan (SSP) from template and project data.
 Fills {{variables}} from project data in icdev.db, pulls control implementations
 from project_controls table, applies CUI markings, saves to project compliance
-from icdev._paths import get_project_root
 directory, records in ssp_documents table, and logs an audit event."""
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import re

@@ -32,7 +32,7 @@ def _count_existing_pairs() -> int:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ft_training_pairs WHERE status = 'approved'"
+            "SELECT COUNT(*) as cnt FROM ft_dataset_examples WHERE approved = 1"
         ).fetchone()
         return (row["cnt"] if isinstance(row, dict) else row[0]) if row else 0
     except Exception:
@@ -84,17 +84,17 @@ def _get_training_stats() -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute("""
-            SELECT source_table, COUNT(*) as cnt, AVG(pass_rate) as avg_pass
-            FROM ft_training_pairs
-            WHERE status = 'approved'
-            GROUP BY source_table
+            SELECT source, COUNT(*) as cnt, AVG(quality_score) as avg_quality
+            FROM ft_dataset_examples
+            WHERE approved = 1
+            GROUP BY source
         """).fetchall()
         return {
             "sources": [
                 {
-                    "table": r["source_table"] if isinstance(r, dict) else r[0],
+                    "table": r["source"] if isinstance(r, dict) else r[0],
                     "count": r["cnt"] if isinstance(r, dict) else r[1],
-                    "avg_pass_rate": round(r["avg_pass"] if isinstance(r, dict) else r[2], 3),
+                    "avg_quality": round(r["avg_quality"] if isinstance(r, dict) else r[2], 3) if (r["avg_quality"] if isinstance(r, dict) else r[2]) else 0.0,
                 }
                 for r in rows
             ],
@@ -132,7 +132,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     fine_tune_result = None
 
     if fine_tune_ready and _check_ollama_modelfile_support():
-        print(f"  Learn: {stats['total']} pairs available — fine-tuning not yet automated")
+        print(f"  Learn: {stats['total']} pairs available -- fine-tuning not yet automated")
         fine_tune_result = {
             "status": "deferred",
             "reason": "Automated Ollama fine-tuning via Modelfile planned for Phase 5",

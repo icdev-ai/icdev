@@ -1,0 +1,57 @@
+# INTaaS Perspective Analysis Rubric — Prometheus-2 evaluation anchors
+# Scores how well a collection of articles covers a topic from multiple perspectives
+
+name: "Perspective Analysis"
+content_type: perspective_analysis
+description: "Evaluates coverage breadth, source diversity, framing awareness, omission detection, and evidence quality across multiple articles on the same topic."
+
+dimensions:
+  coverage_breadth:
+    weight: 0.25
+    description: "How many distinct perspectives are represented in the coverage?"
+    anchors:
+      1: "Single perspective only. All sources echo the same narrative with no meaningful variation in viewpoint."
+      2: "Two perspectives (typically binary: for/against). No nuance, no third-party or expert views."
+      3: "Several perspectives but clustered. Viewpoints from different outlets but fundamentally similar framing."
+      4: "Good diversity. Multiple distinct perspectives including expert, affected parties, and institutional views."
+      5: "Exceptional breadth. Perspectives span political, economic, cultural, geographic, and generational dimensions."
+
+  source_diversity:
+    weight: 0.20
+    description: "Are sources geographically, ideologically, and institutionally diverse?"
+    anchors:
+      1: "All sources from same country, same ideological camp, or same media conglomerate."
+      2: "Slight variation but sources predominantly from one region or editorial stance."
+      3: "Moderate diversity. Multiple countries or editorial stances but gaps remain."
+      4: "Good diversity across geography and ideology. Independent and mainstream sources both represented."
+      5: "Exceptional diversity. Sources span multiple continents, languages, editorial traditions, and institutional types."
+
+  framing_awareness:
+    weight: 0.20
+    description: "Does the analysis identify how different sources frame the same facts differently?"
+    anchors:
+      1: "No awareness of framing. Articles taken at face value with no comparison of how the same event is presented differently."
+      2: "Minimal framing awareness. Differences noted but not analyzed."
+      3: "Some framing analysis. Recognizes that sources use different angles but doesn't explain why."
+      4: "Good framing analysis. Identifies specific framing techniques (emphasis, omission, word choice) across sources."
+      5: "Deep framing analysis. Explains the editorial, economic, or political reasons behind different framings."
+
+  omission_detection:
+    weight: 0.20
+    description: "Are coverage gaps identified — facts that most sources omit?"
+    anchors:
+      1: "No omission detection. No awareness of what's missing from the coverage."
+      2: "Vague awareness that coverage might be incomplete but no specific gaps identified."
+      3: "Some gaps identified but significance not assessed."
+      4: "Key gaps identified with explanation of why they matter and who benefits from the omission."
+      5: "Comprehensive gap analysis. Systematic comparison of what each source covers and omits, with significance scoring."
+
+  evidence_quality:
+    weight: 0.15
+    description: "How well-sourced are the claims across all articles?"
+    anchors:
+      1: "No evidence cited. Claims are assertions without data, experts, or documentation."
+      2: "Weak evidence. Anecdotal or single-source evidence. No primary documents."
+      3: "Moderate evidence. Some data and expert quotes but key claims lack strong backing."
+      4: "Strong evidence. Multiple data sources, named experts, official documents referenced."
+      5: "Exceptional evidence. Primary sources, peer-reviewed research, official data with full context."

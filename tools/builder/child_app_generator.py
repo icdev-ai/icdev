@@ -175,6 +175,16 @@ CONDITIONAL_DIRS = {
     "rag": ["tools/rag", "context/rag"],
     # D-FT-19: Fine-tuning subsystem (Phase 64 Extension)
     "fine_tuning": ["tools/finetune"],
+    # Knowledge Graph (D-KARL-1 through D-KARL-4)
+    "knowledge_graph": ["tools/knowledge_graph", "context/knowledge_graph"],
+    # Genesis v2.0 Autonomous Research Lab (D-GEN-1 through D-GEN-12)
+    "genesis": ["tools/genesis", "tools/genesis/reflexes", "data/genesis"],
+    # DataBridge + Connector Forge (D-CF-1 through D-CF-10)
+    "databridge": [
+        "tools/databridge", "tools/databridge/forge",
+        "tools/databridge/forge/templates", "tools/databridge/connectors",
+        "context/databridge",
+    ],
 }
 
 
@@ -337,11 +347,46 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
 # Step 2: Copy and Adapt Tools
 # ---------------------------------------------------------------------------
 
+def _build_fallback_manifest(blueprint: dict) -> list:
+    """Build a file manifest from DIRECTORY_TREE + CONDITIONAL_DIRS when
+    the blueprint's file_manifest is missing or not a proper list of dicts."""
+    capabilities = blueprint.get("capabilities", {})
+    entries = []
+    default_adaptations = ["db_rename", "port_remap", "classification_replace",
+                           "app_name_replace"]
+
+    # Dirs to skip content copying (step 01 creates empty, other steps populate)
+    SKIP_CONTENT_DIRS = {".tmp", "data", "memory/logs"}
+
+    # Core directories (always copied)
+    for d in DIRECTORY_TREE:
+        if d in SKIP_CONTENT_DIRS:
+            continue  # Empty dir created by step 01, no parent content to copy
+        entries.append({"source": d, "dest": d, "adaptations": default_adaptations})
+
+    # Conditional directories (only when capability enabled)
+    for cap_name, dirs in CONDITIONAL_DIRS.items():
+        if capabilities.get(cap_name):
+            for d in dirs:
+                entries.append({"source": d, "dest": d,
+                                "adaptations": default_adaptations})
+
+    return entries
+
+
 def step_02_copy_and_adapt_tools(
     child_root: Path, blueprint: dict, icdev_root: Path
 ) -> dict:
     """Step 2: Copy ICDEV tools to child app with adaptations applied."""
     manifest = blueprint.get("file_manifest", [])
+
+    # Handle non-list file_manifest (e.g. summary string from blueprint)
+    if not isinstance(manifest, list) or (
+        manifest and isinstance(manifest[0], str) and len(manifest[0]) == 1
+    ):
+        logger.info("Step 2: file_manifest is not structured, building fallback from CONDITIONAL_DIRS")
+        manifest = _build_fallback_manifest(blueprint)
+
     total_copied = 0
     total_skipped = 0
     results = []
@@ -1403,6 +1448,15 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
     # D-RAG-13: RAG config
     if capabilities.get("rag"):
         args_files.append(("args/rag_config.yaml", []))
+    # D-FT-19: Fine-tuning config
+    if capabilities.get("fine_tuning"):
+        args_files.append(("args/finetune_config.yaml", []))
+    # D-GEN-1: Genesis config
+    if capabilities.get("genesis"):
+        args_files.append(("args/genesis_config.yaml", ["app_name_replace"]))
+    # D-KARL-1: Knowledge Graph config
+    if capabilities.get("knowledge_graph"):
+        args_files.append(("args/knowledge_graph_config.yaml", []))
     # Phase 61: Orchestration config (prompt chains, ATLAS critique)
     args_files.append(("args/prompt_chains.yaml", []))
     atlas_config = blueprint.get("atlas_config", {})
@@ -1953,7 +2007,7 @@ def _copy_license_files(
         agpl_text = (
             f"ICDEV — Intelligent Certified Development Platform\n"
             f"Copyright (C) 2024-{datetime.now(tz=timezone.utc).year} "
-            f"Steven Chuo\n\n"
+            f"Sovanna Chuon\n\n"
             f"This program is free software: you can redistribute it and/or modify\n"
             f"it under the terms of the GNU Affero General Public License as\n"
             f"published by the Free Software Foundation, either version 3 of the\n"

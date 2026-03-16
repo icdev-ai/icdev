@@ -962,6 +962,16 @@ class LLMRouter:
                         api_key=api_key, project_id=project_id, url=url,
                     )
 
+                elif ptype == "ollama":
+                    from tools.llm.embedding_provider import OllamaEmbeddingProvider
+                    pcfg = self._config.get("providers", {}).get(provider_name, {})
+                    base_url = _expand_env(pcfg.get("base_url", "http://localhost:11434"))
+                    emb = OllamaEmbeddingProvider(
+                        base_url=base_url,
+                        model_id=mcfg.get("model_id", "nomic-embed-text"),
+                        dims=mcfg.get("dimensions", 768),
+                    )
+
                 if emb and emb.check_availability():
                     self._embedding_providers[model_name] = emb
                     logger.info("Embedding provider ready: %s", model_name)

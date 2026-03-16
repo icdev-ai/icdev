@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>INTaaS — OSINT Sources</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">INTaaS <span>Multiperspectivity</span></a>
+    <ul class="navbar-nav">
+      <li><a href="/">Home</a></li>
+      <li><a href="sources.html" class="active">Sources</a></li>
+    </ul>
+  </nav>
+
+  <div class="container">
+    <div class="card">
+      <div class="card-header">
+        <h2>OSINT Data Sources</h2>
+        <button class="btn btn-secondary" onclick="loadSources()">Refresh</button>
+      </div>
+      <table class="source-table" id="sources-table">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Type</th>
+            <th>Bias Profile</th>
+            <th>URL</th>
+          </tr>
+        </thead>
+        <tbody id="sources-body">
+          <tr><td colspan="4" class="loading"><span class="spinner"></span> Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Source Report Cards -->
+    <div class="card" style="margin-top: 1.5rem;">
+      <div class="card-header">
+        <h2>Source Report Cards</h2>
+        <button class="btn btn-secondary" onclick="loadReportCards()">Load Cards</button>
+      </div>
+      <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:0.75rem">Aggregate bias scores across all analyzed topics — shows how each source performs over time.</p>
+      <div id="report-cards"><span style="color:var(--text-muted);font-size:0.9rem">Click "Load Cards" to see source performance across topics.</span></div>
+    </div>
+
+    <div class="card" style="margin-top: 1.5rem;">
+      <h2 style="margin-bottom: 1rem;">About INTaaS Sources</h2>
+      <div style="color: var(--text-secondary); font-size: 0.9rem; line-height: 1.8;">
+        <p><strong>GDELT</strong> — Global Database of Events, Language, and Tone.
+           Free, 65 languages, 15-minute updates, since 1979. Primary data backbone.</p>
+        <p style="margin-top: 0.75rem;"><strong>MediaCloud</strong> — Open-source media research platform.
+           1B+ stories, hyperlink analysis, academic backbone.</p>
+        <p style="margin-top: 0.75rem;"><strong>Semantic Scholar</strong> — 200M+ academic papers.
+           Provides the "neutral anchor" for fact-checking against peer-reviewed research.</p>
+        <p style="margin-top: 0.75rem;"><strong>Media Bias/Fact Check</strong> — 5,600+ source credibility ratings.
+           Provides per-outlet bias profiles used in scoring.</p>
+        <p style="margin-top: 0.75rem;"><strong>AllSides</strong> — 800+ media bias ratings (left/center/right).
+           INTaaS extends this beyond political axes.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script>
+    async function loadSources() {
+      const tbody = document.getElementById('sources-body');
+      try {
+        const data = await api.getSources();
+        tbody.innerHTML = data.sources.map(s => `
+          <tr>
+            <td style="font-weight: 500;">${s.name}</td>
+            <td><span class="status-badge status-ready">${s.type || s.profile || 'api'}</span></td>
+            <td>${s.bias_profile || s.profile || 'neutral'}</td>
+            <td>${s.url ? `<a href="${s.url}" target="_blank">${s.url.replace('https://', '').substring(0, 35)}</a>` : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="4" style="color:var(--danger)">${e.message}</td></tr>`;
+      }
+    }
+
+    function dimLabel(d) { return d.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()); }
+
+    async function loadReportCards() {
+      const el = document.getElementById('report-cards');
+      el.innerHTML = '<div class="loading"><span class="spinner"></span> Loading report cards...</div>';
+      try {
+        const data = await api.getReportCards();
+        if (!data.sources || data.sources.length === 0) {
+          el.innerHTML = '<p style="color:var(--text-muted)">No sources analyzed yet.</p>';
+          return;
+        }
+        const colorMap = {blue:'var(--bias-blue)',purple:'var(--bias-purple)',green:'var(--bias-green)',yellow:'var(--bias-yellow)',red:'var(--bias-red)'};
+        let html = '';
+        for (const s of data.sources) {
+          const col = colorMap[s.avg_color] || 'var(--text-muted)';
+          html += '<div style="padding:0.75rem;background:var(--bg-secondary);border-radius:6px;margin-bottom:0.5rem;border-left:3px solid ' + col + '">'
+            + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem">'
+            + '<span style="font-weight:600;font-size:0.95rem">' + s.source + '</span>'
+            + '<span style="display:flex;gap:0.5rem;align-items:center">'
+            + '<span class="bias-badge bias-' + s.avg_color + '">' + s.avg_color.toUpperCase() + ' ' + s.avg_score.toFixed(1) + '</span>'
+            + '<span style="font-size:0.7rem;padding:0.1rem 0.3rem;border-radius:3px;background:rgba(255,255,255,0.05);color:var(--text-muted);border:1px solid var(--border)">' + s.credibility + ' ' + s.political + '</span>'
+            + '</span></div>';
+
+          // Dimension bars
+          const dims = s.dimension_averages || {};
+          const dimEntries = Object.entries(dims);
+          if (dimEntries.length > 0) {
+            html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.3rem">';
+            for (const [dim, avg] of dimEntries) {
+              const pct = (avg / 5 * 100).toFixed(0);
+              const bColor = avg >= 3.8 ? 'var(--success)' : avg >= 3.0 ? 'var(--accent)' : avg >= 2.0 ? 'var(--warning)' : 'var(--danger)';
+              const isWeak = dim === s.weakest_dimension;
+              const isStrong = dim === s.strongest_dimension;
+              html += '<div style="flex:1;min-width:100px">'
+                + '<div style="font-size:0.65rem;color:' + (isWeak ? 'var(--danger)' : isStrong ? 'var(--success)' : 'var(--text-muted)') + '">'
+                + dimLabel(dim) + (isWeak ? ' (weakest)' : isStrong ? ' (strongest)' : '') + '</div>'
+                + '<div style="height:6px;background:var(--bg-primary);border-radius:3px;overflow:hidden;margin-top:0.15rem">'
+                + '<div style="width:' + pct + '%;height:100%;background:' + bColor + ';border-radius:3px"></div></div></div>';
+            }
+            html += '</div>';
+          }
+          html += '<div style="font-size:0.7rem;color:var(--text-muted)">' + s.appearances + ' articles analyzed</div>';
+          html += '</div>';
+        }
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = '<p style="color:var(--danger)">Error: ' + e.message + '</p>';
+      }
+    }
+
+    loadSources();
+  </script>
+</body>
+</html>

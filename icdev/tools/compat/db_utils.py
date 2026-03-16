@@ -7,7 +7,6 @@ consistent fallback chain: env var > explicit argument > default.
 
 Usage:
     from icdev.tools.compat.db_utils import get_icdev_db_path, get_db_connection
-from icdev._paths import get_project_root
 
     db_path = get_icdev_db_path()                    # env var or default
     db_path = get_icdev_db_path("/custom/path.db")   # explicit override
@@ -29,8 +28,8 @@ import sqlite3
 from pathlib import Path
 from typing import Optional, Union
 
-# Project root: 3 levels up from tools/compat/db_utils.py
-_PROJECT_ROOT = get_project_root()
+# Project root: 3 levels up from icdev/tools/compat/db_utils.py
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 _DEFAULT_DB = _PROJECT_ROOT / "data" / "icdev.db"
 
 

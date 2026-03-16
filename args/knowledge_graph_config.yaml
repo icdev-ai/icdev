@@ -1,0 +1,65 @@
+# CUI // SP-CTI
+# Knowledge Graph & GraphRAG Configuration (D-KARL-1 through D-KARL-4)
+
+extraction:
+  method: regex  # air-gap safe, no LLM needed
+  entity_types:
+    - organization
+    - system
+    - control
+    - requirement
+    - component
+    - person
+    - document
+    - standard
+
+graph_rag:
+  # D-KARL-1: Per-query-type scoring profiles
+  profiles:
+    compliance:
+      edge_weight: 0.4
+      centrality: 0.3
+      recency: 0.3
+      keywords: ["compliance", "audit", "NIST", "control", "FedRAMP", "CMMC", "assessment", "ATO"]
+    exploratory:
+      edge_weight: 0.2
+      centrality: 0.5
+      recency: 0.3
+      keywords: ["explore", "discover", "gap", "what", "how", "overview", "landscape"]
+    provenance:
+      edge_weight: 0.5
+      centrality: 0.2
+      recency: 0.3
+      keywords: ["provenance", "origin", "source", "chain", "trace", "lineage", "supply"]
+    security:
+      edge_weight: 0.3
+      centrality: 0.4
+      recency: 0.3
+      keywords: ["security", "vulnerability", "threat", "attack", "CVE", "SAST", "injection"]
+
+  # D-KARL-2: Context compression via scanner-tier LLM
+  compression:
+    enabled: true
+    model: qwen3.5-local
+    max_context_chars: 4000
+
+  # D-KARL-3: Parallel multi-strategy retrieval
+  parallel_retrieval:
+    enabled: true
+    max_workers: 3
+
+  # Retrieval defaults
+  defaults:
+    top_k: 10
+    recency_half_life_days: 30
+    min_score: 0.01
+
+ingestion:
+  chunk_size: 2000
+  chunk_overlap: 200
+  supported_extensions:
+    - .md
+    - .txt
+    - .json
+    - .yaml
+    - .yml

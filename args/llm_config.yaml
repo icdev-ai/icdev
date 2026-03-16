@@ -57,8 +57,8 @@ models:
     pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
 
   claude-sonnet:
-    provider: bedrock
-    model_id: anthropic.claude-sonnet-4-5-20250929-v1:0
+    provider: anthropic
+    model_id: claude-sonnet-4-5-20250929
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
@@ -184,7 +184,7 @@ models:
 
   qwen3-local:
     provider: ollama
-    model_id: qwen3:latest
+    model_id: qwen3.5:latest
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -362,6 +362,11 @@ routing:
     chain: [qwen3-local, gemini-2.0-flash, gpt-4o-mini, llama-local]
     effort: low
 
+  # Fine-tuning pair generation (D-FT-10 — scanner_function, local only)
+  ft_pair_generation:
+    chain: [qwen3-local, gemini-2.0-flash, llama-local]
+    effort: low
+
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
@@ -502,6 +507,7 @@ two_tier:
     - attachment_analysis
     - rag_rerank
     - rag_evaluate
+    - ft_pair_generation
 
 # -----------------------------------------------------------------------
 # RAG Integration (D-RAG-2, Phase 64)

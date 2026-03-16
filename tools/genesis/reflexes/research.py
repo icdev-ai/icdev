@@ -183,7 +183,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         return {
             "success": True,
             "metric_value": 0,
-            "details": {"status": "air_gapped", "message": "Skipped — air-gapped mode"},
+            "details": {"status": "air_gapped", "message": "Skipped -- air-gapped mode"},
         }
 
     feeds = _load_feeds()

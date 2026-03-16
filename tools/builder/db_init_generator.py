@@ -1439,6 +1439,235 @@ ORCHESTRATION_TABLES: Dict[str, str] = {
 
 
 # ============================================================
+# GENESIS TABLES (D-GEN-6, D-GEN-10)
+# ============================================================
+
+GENESIS_TABLES: Dict[str, str] = {
+    "genesis_audit": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS genesis_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reflex TEXT NOT NULL,
+            action TEXT NOT NULL,
+            detail TEXT,
+            risk_tier TEXT DEFAULT 'GREEN'
+                CHECK(risk_tier IN ('GREEN', 'YELLOW', 'ORANGE')),
+            status TEXT DEFAULT 'completed'
+                CHECK(status IN ('started', 'completed', 'failed', 'skipped')),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "genesis_reflex_state": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS genesis_reflex_state (
+            reflex TEXT PRIMARY KEY,
+            enabled INTEGER DEFAULT 1,
+            last_run TIMESTAMP,
+            next_run TIMESTAMP,
+            run_count INTEGER DEFAULT 0,
+            consecutive_failures INTEGER DEFAULT 0,
+            circuit_state TEXT DEFAULT 'closed'
+                CHECK(circuit_state IN ('closed', 'open', 'half_open')),
+            last_error TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "genesis_gkp": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS genesis_gkp (
+            id TEXT PRIMARY KEY,
+            reflex TEXT NOT NULL,
+            gkp_type TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            status TEXT DEFAULT 'pending_review'
+                CHECK(status IN ('pending_review', 'auto_promoted', 'promoted',
+                    'rejected', 'expired')),
+            risk_tier TEXT DEFAULT 'GREEN',
+            promoted_at TIMESTAMP,
+            promoted_by TEXT,
+            rejection_reason TEXT,
+            metadata TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
+# KNOWLEDGE GRAPH TABLES (D-KARL-1 through D-KARL-4)
+# ============================================================
+
+KNOWLEDGE_GRAPH_TABLES: Dict[str, str] = {
+    "kg_graphs": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_graphs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            name TEXT NOT NULL,
+            description TEXT,
+            entity_count INTEGER DEFAULT 0,
+            edge_count INTEGER DEFAULT 0,
+            metadata TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "kg_nodes": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_nodes (
+            id TEXT PRIMARY KEY,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            label TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            properties TEXT DEFAULT '{}',
+            embedding BLOB,
+            centrality REAL DEFAULT 0.0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "kg_edges": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_edges (
+            id TEXT PRIMARY KEY,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            source_id TEXT NOT NULL REFERENCES kg_nodes(id),
+            target_id TEXT NOT NULL REFERENCES kg_nodes(id),
+            relationship TEXT NOT NULL,
+            weight REAL DEFAULT 1.0,
+            properties TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "kg_retrieval_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS kg_retrieval_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            query TEXT NOT NULL,
+            query_hash TEXT NOT NULL,
+            profile TEXT DEFAULT 'exploratory',
+            nodes_returned INTEGER DEFAULT 0,
+            edges_returned INTEGER DEFAULT 0,
+            compression_applied INTEGER DEFAULT 0,
+            retrieval_ms INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
+# FINE-TUNING TABLES (D-FT-1 through D-FT-22)
+# ============================================================
+
+FINE_TUNING_TABLES: Dict[str, str] = {
+    "ft_datasets": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_datasets (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            purpose TEXT DEFAULT 'general',
+            version INTEGER DEFAULT 1,
+            example_count INTEGER DEFAULT 0,
+            content_hash TEXT,
+            status TEXT DEFAULT 'active'
+                CHECK(status IN ('active', 'archived', 'deleted')),
+            metadata TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_dataset_examples": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_dataset_examples (
+            id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+            input_text TEXT NOT NULL,
+            output_text TEXT NOT NULL,
+            source_type TEXT,
+            source_id TEXT,
+            quality_score REAL,
+            compliance_score REAL,
+            relevance_score REAL,
+            label TEXT DEFAULT 'unlabeled'
+                CHECK(label IN ('unlabeled', 'approved', 'rejected', 'needs_review')),
+            labeled_by TEXT,
+            labeled_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_training_jobs": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_training_jobs (
+            id TEXT PRIMARY KEY,
+            dataset_id TEXT NOT NULL REFERENCES ft_datasets(id),
+            provider TEXT NOT NULL,
+            base_model TEXT NOT NULL,
+            status TEXT DEFAULT 'pending'
+                CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+            hyperparams TEXT DEFAULT '{}',
+            metrics TEXT DEFAULT '{}',
+            error_message TEXT,
+            started_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_training_job_events": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_training_job_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+            event_type TEXT NOT NULL,
+            detail TEXT,
+            metrics TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_model_versions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_model_versions (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+            model_name TEXT NOT NULL,
+            version INTEGER DEFAULT 1,
+            adapter_path TEXT,
+            gguf_path TEXT,
+            eval_scores TEXT DEFAULT '{}',
+            status TEXT DEFAULT 'created'
+                CHECK(status IN ('created', 'evaluating', 'promoted', 'deprecated', 'archived')),
+            promoted_at TIMESTAMP,
+            promoted_function TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_active_models": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_active_models (
+            id TEXT PRIMARY KEY,
+            function_name TEXT NOT NULL UNIQUE,
+            model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+            ollama_model_tag TEXT,
+            activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            activated_by TEXT DEFAULT 'system'
+        );"""),
+    "ft_evaluations": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_evaluations (
+            id TEXT PRIMARY KEY,
+            model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+            eval_type TEXT DEFAULT 'standard'
+                CHECK(eval_type IN ('standard', 'ab_comparison', 'regression')),
+            test_count INTEGER DEFAULT 0,
+            bleu_score REAL,
+            rouge_l_score REAL,
+            perplexity REAL,
+            custom_metrics TEXT DEFAULT '{}',
+            passed INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_promotion_log": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_promotion_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            model_version_id TEXT NOT NULL REFERENCES ft_model_versions(id),
+            action TEXT NOT NULL,
+            function_name TEXT,
+            previous_model_id TEXT,
+            reason TEXT,
+            promoted_by TEXT DEFAULT 'system',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+    "ft_hyperparam_results": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS ft_hyperparam_results (
+            id TEXT PRIMARY KEY,
+            job_id TEXT NOT NULL REFERENCES ft_training_jobs(id),
+            search_type TEXT DEFAULT 'grid'
+                CHECK(search_type IN ('grid', 'random')),
+            hyperparams TEXT NOT NULL,
+            eval_score REAL,
+            is_best INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );"""),
+}
+
+
+# ============================================================
 # CAPABILITY → TABLE GROUP MAPPING
 # ============================================================
 
@@ -1456,6 +1685,12 @@ CAPABILITY_TABLE_MAP: Dict[str, Dict[str, str]] = {
     "devsecops_zta": DEVSECOPS_ZTA_TABLES,
     # D-RAG-13: RAG tables (Phase 64)
     "rag": RAG_TABLES,
+    # D-FT-19: Fine-tuning tables (Phase 64 Extension)
+    "fine_tuning": FINE_TUNING_TABLES,
+    # D-GEN-6: Genesis tables
+    "genesis": GENESIS_TABLES,
+    # D-KARL-1: Knowledge Graph tables
+    "knowledge_graph": KNOWLEDGE_GRAPH_TABLES,
     # Phase 61: Orchestration tables (always included)
     "orchestration": ORCHESTRATION_TABLES,
 }

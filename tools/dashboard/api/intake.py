@@ -20,6 +20,8 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
+from tools.dashboard.config import DEFAULT_CLASSIFICATION
+
 # ---------------------------------------------------------------------------
 # Path setup
 # ---------------------------------------------------------------------------
@@ -444,7 +446,7 @@ def trigger_build(session_id):
             "goal": context.get("goal", "build"),
             "role": context.get("role", "developer"),
             "frameworks": context.get("selected_frameworks", []),
-            "classification": session_data.get("classification", "CUI"),
+            "classification": session_data.get("classification", DEFAULT_CLASSIFICATION),
             "impact_level": session_data.get("impact_level", "IL4"),
             "requirements_count": len(requirements),
             "requirements": requirements,
@@ -455,7 +457,7 @@ def trigger_build(session_id):
             ],
             "message": (
                 f"Build context ready: {len(requirements)} requirements{coa_label}, "
-                f"classification {session_data.get('classification', 'CUI')}, "
+                f"classification {session_data.get('classification', DEFAULT_CLASSIFICATION or 'unclassified')}, "
                 f"impact level {session_data.get('impact_level', 'IL4')}."
             ),
         })
@@ -543,8 +545,8 @@ def generate_session_coas(session_id):
             conn.execute(
                 """INSERT OR IGNORE INTO projects
                    (id, name, type, classification, status, directory_path, created_at)
-                   VALUES (?, ?, 'webapp', 'CUI', 'active', '', datetime('now'))""",
-                (project_id, f"Simulation for {session_id}"),
+                   VALUES (?, ?, 'webapp', ?, 'active', '', datetime('now'))""",
+                (project_id, f"Simulation for {session_id}", DEFAULT_CLASSIFICATION),
             )
             conn.execute(
                 "UPDATE intake_sessions SET project_id = ? WHERE id = ?",
@@ -797,8 +799,8 @@ def _run_build_pipeline(session_id):
                 conn.execute(
                     """INSERT OR IGNORE INTO projects
                        (id, name, type, classification, status, directory_path, created_at)
-                       VALUES (?, ?, 'webapp', 'CUI', 'active', '', datetime('now'))""",
-                    (project_id, f"App from {session_id[:12]}"),
+                       VALUES (?, ?, 'webapp', ?, 'active', '', datetime('now'))""",
+                    (project_id, f"App from {session_id[:12]}", DEFAULT_CLASSIFICATION),
                 )
                 conn.execute(
                     "UPDATE intake_sessions SET project_id = ? WHERE id = ?",

@@ -297,20 +297,36 @@ def auto_promote_eligible() -> List[Dict[str, Any]]:
     for row in pending:
         artifact_type = row["artifact_type"]
         confidence = row["confidence"]
+        reflex = row["genesis_reflex"]
+        # Extract source from payload for source-based rules
+        try:
+            payload = json.loads(row["payload"]) if row["payload"] else {}
+        except (json.JSONDecodeError, TypeError):
+            payload = {}
+        source = payload.get("source", "")
 
-        # Check if any auto-promote rule matches
+        # Check if any auto-promote rule matches (by artifact_type, reflex, or source)
+        matched = False
         for rule in auto_rules:
-            if rule.get("artifact_type") == artifact_type:
-                min_conf = rule.get("min_confidence", 0.0)
-                if confidence >= min_conf:
-                    result = promote_gkp(row["id"], auto=True)
-                    results.append(result)
-                    break
-        else:
+            min_conf = rule.get("min_confidence", 0.0)
+            if confidence < min_conf:
+                continue
+            if rule.get("artifact_type") and rule["artifact_type"] == artifact_type:
+                matched = True
+            elif rule.get("reflex") and rule["reflex"] == reflex:
+                matched = True
+            elif rule.get("source_contains") and rule["source_contains"].lower() in source.lower():
+                matched = True
+            if matched:
+                result = promote_gkp(row["id"], auto=True)
+                results.append(result)
+                break
+        if not matched:
             # No auto-promote rule matched — stays pending for human review
             _log_audit("genesis.promoter.human_review_pending", row["id"], {
                 "artifact_type": artifact_type,
                 "confidence": confidence,
+                "source": source,
             })
 
     return results
@@ -472,7 +488,7 @@ def _import_capability_update(payload: Dict) -> Dict:
     return {
         "success": True,
         "action": "staged_for_review",
-        "message": "Capability YAML update staged — requires human review to apply",
+        "message": "Capability YAML update staged -- requires human review to apply",
         "payload": payload,
     }
 
@@ -482,7 +498,7 @@ def _import_code_patch(payload: Dict) -> Dict:
     return {
         "success": True,
         "action": "staged_for_review",
-        "message": "Code patch staged — requires human cherry-pick to main",
+        "message": "Code patch staged -- requires human cherry-pick to main",
         "branch": payload.get("branch", "unknown"),
         "files_changed": payload.get("files_changed", []),
     }

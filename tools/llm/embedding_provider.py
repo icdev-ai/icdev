@@ -436,3 +436,73 @@ class IBMWatsonxEmbeddingProvider(EmbeddingProvider):
 
     def check_availability(self) -> bool:
         return _HAS_IBM_EMBED and bool(self._api_key) and bool(self._project_id)
+
+
+class OllamaEmbeddingProvider(EmbeddingProvider):
+    """Ollama native /api/embed embedding provider (air-gap safe, zero cost)."""
+
+    def __init__(self, base_url: str = "", model_id: str = "nomic-embed-text",
+                 dims: int = 768):
+        self._base_url = (
+            base_url
+            or os.environ.get("OLLAMA_BASE_URL", "").rstrip("/").replace("/v1", "")
+            or "http://localhost:11434"
+        )
+        self._model_id = model_id
+        self._dims = dims
+
+    @property
+    def provider_name(self) -> str:
+        return "ollama"
+
+    @property
+    def dimensions(self) -> int:
+        return self._dims
+
+    def embed(self, text: str) -> Optional[List[float]]:
+        import urllib.request
+        try:
+            payload = json.dumps({"model": self._model_id, "input": text}).encode()
+            req = urllib.request.Request(
+                f"{self._base_url}/api/embed",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read())
+                embeddings = data.get("embeddings", [])
+                return embeddings[0] if embeddings else None
+        except Exception as exc:
+            logger.debug("Ollama embed failed: %s", exc)
+            return None
+
+    def embed_batch(self, texts: List[str]) -> List[Optional[List[float]]]:
+        import urllib.request
+        try:
+            payload = json.dumps({"model": self._model_id, "input": texts}).encode()
+            req = urllib.request.Request(
+                f"{self._base_url}/api/embed",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read())
+                return data.get("embeddings", [None] * len(texts))
+        except Exception as exc:
+            logger.debug("Ollama batch embed failed: %s", exc)
+            return [None] * len(texts)
+
+    def check_availability(self) -> bool:
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                f"{self._base_url}/api/tags", method="GET"
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                models = [m.get("name", "") for m in data.get("models", [])]
+                return any(self._model_id in m for m in models)
+        except Exception:
+            return False

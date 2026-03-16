@@ -300,7 +300,7 @@ def main() -> None:
             print(f"Reflex priorities (boosted: {result.get('boost_count', 0)}):")
             for name, info in result.get("priorities", {}).items():
                 marker = ">>>" if info["priority"] == "boost" else "   "
-                print(f"  {marker} {name}: {info['priority']} — {info['reason']}")
+                print(f"  {marker} {name}: {info['priority']} -- {info['reason']}")
         return
 
     parser.print_help()

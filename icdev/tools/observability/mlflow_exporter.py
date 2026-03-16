@@ -7,7 +7,6 @@ Reads from otel_spans table, exports to MLflow tracking server via REST API.
 
 Usage:
     from icdev.tools.observability.mlflow_exporter import MLflowExporter
-from icdev._paths import get_project_root
     exporter = MLflowExporter(tracking_uri="http://localhost:5001")
     exporter.export_pending()
 
@@ -16,6 +15,7 @@ CLI:
     python tools/observability/mlflow_exporter.py --status --json
 """
 
+from icdev._paths import get_project_root
 import argparse
 import json
 import logging

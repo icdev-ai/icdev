@@ -35,4 +35,4 @@ python tools/project/project_status.py --project-id "" --json
 
 ## MCP
 
-19 servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.
+2 servers available. Register in Cursor MCP settings — see `.mcp.json` for definitions or run `python tools/dx/mcp_config_generator.py --platform cursor`.
