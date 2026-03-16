@@ -68,3 +68,33 @@ vendor/
 # Generated projects (created by project_create.py)
 # projects/  # Uncomment to ignore generated projects
 videos/
+
+# Build artifacts (child apps)
+intaas-saas/.build/
+intaas-saas/.build-*.zip
+marketplace-saas/.aws-sam/
+marketplace-saas/.pytest_cache/
+
+# Hypothesis (property-based testing cache)
+.hypothesis/
+
+# Claude Code project settings (local only)
+.claude/projects/
+
+# Private keys (NEVER commit)
+*.private_key.pem
+args/marketplace_private_key.pem
+
+# Genesis runtime exports (GKP artifacts)
+data/genesis/exports/
+
+# Pulse runtime data
+data/pulse/
+data/pulse_content/
+
+# Runtime data files
+data/installed_assets.json
+data/license_tokens.json
+
+# Local ICDEV databases (icdev package)
+icdev/data/*.db
