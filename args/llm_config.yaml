@@ -58,7 +58,7 @@ models:
 
   claude-sonnet:
     provider: anthropic
-    model_id: claude-sonnet-4-5-20250929
+    model_id: "${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}"
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
@@ -97,7 +97,7 @@ models:
   # -- OpenAI --
   gpt-4o:
     provider: openai
-    model_id: gpt-4o
+    model_id: "${OPENAI_MODEL:-gpt-4o}"
     max_output_tokens: 16384
     supports_thinking: false
     supports_tools: true
@@ -136,7 +136,7 @@ models:
 
   gemini-2.5-flash:
     provider: gemini
-    model_id: gemini-2.5-flash-preview-04-17
+    model_id: "${GOOGLE_MODEL:-gemini-2.5-flash-preview-04-17}"
     max_output_tokens: 65536
     supports_thinking: true
     supports_tools: true
@@ -155,6 +155,7 @@ models:
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Local Models (Ollama) --
+  # Model IDs configurable via .env: OLLAMA_MODEL overrides primary local model
   llama-local:
     provider: ollama
     model_id: llama3.3:70b
@@ -184,7 +185,7 @@ models:
 
   qwen3-local:
     provider: ollama
-    model_id: qwen3.5:latest
+    model_id: "${OLLAMA_MODEL:-qwen3.5:latest}"
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true

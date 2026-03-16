@@ -461,6 +461,23 @@ If the implementation added or modified dashboard pages, routes, or templates:
 
 **Do NOT wait for the user to request this.** Playwright E2E is part of Stress-test, not a separate step.
 
+### 1b. Cross-Platform Compatibility (if new Python tools created)
+
+If the implementation added or modified Python tools:
+
+```
+[ ] All file paths use pathlib.Path (no string concatenation with / or \)
+[ ] All open() calls specify encoding='utf-8'
+[ ] No hardcoded /tmp or C:\ paths (use tempfile.gettempdir())
+[ ] No subprocess calls for Ollama (use HTTP /api/tags)
+[ ] datetime.now(timezone.utc) used, not datetime.utcnow()
+[ ] hashlib.sha256 used, not hashlib.md5 (bandit B324)
+[ ] .gitattributes exists with eol=lf rules
+[ ] Run: python tools/testing/platform_check.py --json (0 failures)
+```
+
+**Do NOT skip this.** Code developed on Windows must deploy to Linux without modification.
+
 ### 2. Feature Documentation
 
 Create `docs/features/phase-{N}-{descriptive-slug}.md` following the standard format:
@@ -482,7 +499,21 @@ Create `docs/features/phase-{N}-{descriptive-slug}.md` following the standard fo
 
 **Do NOT wait for the user to request this.** Documentation is a mandatory deliverable of every phase.
 
-### 3. CLAUDE.md Updates
+### 3. Companion Sync (LLM-Agnostic — Mandatory)
+
+ICDEV supports 10 AI coding platforms. After every phase:
+
+```
+[ ] Run: python tools/dx/companion.py --sync --write --json
+[ ] Verify instruction files updated (AGENTS.md, .clinerules, .cursor/, .windsurf/, etc.)
+[ ] Verify MCP configs updated for detected platforms
+[ ] Verify skills translated for all platforms
+```
+
+This ensures Codex, Cursor, Copilot, Windsurf, Gemini, Amazon Q, JetBrains, Cline, and Aider
+users all benefit from new capabilities. **Do NOT skip this.**
+
+### 4. CLAUDE.md Updates
 
 If the phase added new capabilities, update CLAUDE.md:
 - New DB tables → update table count

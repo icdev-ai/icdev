@@ -1,9 +1,4 @@
 #!/usr/bin/env python3
-# CUI // SP-CTI
-# Controlled by: Department of Defense
-# CUI Category: CTI
-# Distribution: D
-# POC: ICDEV System Administrator
 """Child App Generator - generates mini-ICDEV clone applications from blueprints.
 
 This is the core engine for ICDEV Phase 19 agentic app generation. Every child
@@ -58,6 +53,11 @@ try:
 except ImportError:
     def audit_log_event(**kwargs):
         logger.debug("audit_logger unavailable — %s", kwargs.get("action", ""))
+
+try:
+    from tools.compliance.classification_resolver import ClassificationResolver
+except ImportError:
+    ClassificationResolver = None
 
 
 def _get_child_app_model_config() -> dict:
@@ -139,7 +139,7 @@ DIRECTORY_TREE = [
     "tools/testing", "tools/ci/triggers", "tools/ci/workflows",
     "tools/infra", "tools/maintenance", "tools/mcp", "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
-    "tools/llm", "tools/compat", "tools/cli",  # D-CHILD-9: fundamental infra
+    "tools/llm", "tools/compat", "tools/cli", "tools/dx",  # D-CHILD-9: fundamental infra + LLM-agnostic companion
     "args", "context/agentic", "context/compliance", "context/languages",
     "hardprompts/agent", "hardprompts/security",  # D-EPSEC-7
     "memory/logs", "data",
@@ -195,7 +195,11 @@ CONDITIONAL_DIRS = {
 def _apply_adaptations(content: str, adaptations: List[str], blueprint: dict) -> str:
     """Apply a list of text adaptations to file content."""
     app_name = blueprint["app_name"]
-    classification = blueprint.get("classification", "CUI")
+    classification = blueprint.get("classification", "public")
+    # Resolve classification profile for conditional behavior
+    _resolver = None
+    if ClassificationResolver is not None:
+        _resolver = ClassificationResolver(classification)
 
     for adaptation in adaptations:
         if adaptation == "db_rename":
@@ -222,10 +226,17 @@ def _apply_adaptations(content: str, adaptations: List[str], blueprint: dict) ->
             content = content.replace("[ICDEV-BOT]", bot_id)
 
         elif adaptation == "classification_update":
-            if classification == "SECRET":
-                content = content.replace("CUI // SP-CTI", "SECRET // NOFORN")
-                content = content.replace(
-                    "CUI Category: CTI", "Classification: SECRET")
+            if _resolver and _resolver.strip_cui_headers:
+                # Remove CUI headers for non-CUI projects
+                content = re.sub(
+                    r'^# CUI // SP-CTI\n(# .*\n)*', '', content)
+                content = re.sub(
+                    r'^# CUI\n', '', content)
+            if _resolver and _resolver.banner_enabled and _resolver.file_header_text:
+                # Add the correct classification header
+                header = _resolver.file_header_text
+                if not content.startswith(header):
+                    content = header + "\n" + content
 
         elif adaptation == "impact_level_update":
             impact = blueprint.get("impact_level", "IL4")
@@ -339,8 +350,113 @@ def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
                 full_path.mkdir(parents=True, exist_ok=True)
                 created_dirs.append(str(dir_path))
 
+    # Generate .gitattributes for cross-platform line ending consistency
+    gitattributes = child_root / ".gitattributes"
+    gitattributes.write_text(
+        "# Cross-platform line ending enforcement\n"
+        "* text=auto eol=lf\n"
+        "\n"
+        "# Explicitly mark as text (LF)\n"
+        "*.py text eol=lf\n"
+        "*.md text eol=lf\n"
+        "*.yaml text eol=lf\n"
+        "*.yml text eol=lf\n"
+        "*.toml text eol=lf\n"
+        "*.html text eol=lf\n"
+        "*.css text eol=lf\n"
+        "*.js text eol=lf\n"
+        "*.json text eol=lf\n"
+        "*.txt text eol=lf\n"
+        "*.sql text eol=lf\n"
+        "*.sh text eol=lf\n"
+        "*.feature text eol=lf\n"
+        "*.cfg text eol=lf\n"
+        "*.ini text eol=lf\n"
+        "*.env text eol=lf\n"
+        "\n"
+        "# Binary files\n"
+        "*.db binary\n"
+        "*.sqlite binary\n"
+        "*.png binary\n"
+        "*.jpg binary\n"
+        "*.jpeg binary\n"
+        "*.gif binary\n"
+        "*.ico binary\n"
+        "*.woff binary\n"
+        "*.woff2 binary\n"
+        "*.ttf binary\n"
+        "*.pkl binary\n"
+        "*.gguf binary\n"
+        "*.bin binary\n",
+        encoding="utf-8",
+    )
+    logger.info("Step 1: Generated .gitattributes for cross-platform line endings")
+
+    # Generate .env.example so admins can configure LLM without editing code
+    app_name = blueprint.get("app_name", "child-app")
+    app_upper = app_name.upper().replace("-", "_")
+    env_example = child_root / ".env.example"
+    env_example.write_text(
+        f"# ============================================================================\n"
+        f"# {app_name.upper()} — Environment Configuration\n"
+        f"# ============================================================================\n"
+        f"# Copy to .env and edit. All LLM settings here — no code changes needed.\n"
+        f"# ============================================================================\n"
+        f"\n"
+        f"# === LLM Primary (Ollama — free, local, air-gap safe) ===\n"
+        f"OLLAMA_BASE_URL=http://localhost:11434\n"
+        f"OLLAMA_MODEL=qwen3.5:latest\n"
+        f"\n"
+        f"# === LLM Cloud Providers (all optional — leave blank to disable) ===\n"
+        f"ANTHROPIC_API_KEY=\n"
+        f"ANTHROPIC_MODEL=claude-sonnet-4-20250514\n"
+        f"OPENAI_API_KEY=\n"
+        f"OPENAI_MODEL=gpt-4o\n"
+        f"GOOGLE_API_KEY=\n"
+        f"GOOGLE_MODEL=gemini-2.5-flash\n"
+        f"AZURE_OPENAI_API_KEY=\n"
+        f"AZURE_OPENAI_ENDPOINT=\n"
+        f"AZURE_OPENAI_MODEL=gpt-4o\n"
+        f"\n"
+        f"# === LLM Routing ===\n"
+        f"LLM_TWO_TIER_ENABLED=true\n"
+        f"LLM_CONFIDENCE_THRESHOLD=0.85\n"
+        f"\n"
+        f"# === RAG ===\n"
+        f"RAG_ENABLED=true\n"
+        f"RAG_EMBEDDING_MODEL=nomic-embed-text\n"
+        f"\n"
+        f"# === Fine-Tuning ===\n"
+        f"FINETUNE_ENABLED=true\n"
+        f"FINETUNE_MIN_EXAMPLES=50\n"
+        f"FINETUNE_BASE_MODEL=qwen3.5:latest\n"
+        f"\n"
+        f"# === Server ===\n"
+        f"{app_upper}_DASHBOARD_PORT=5000\n"
+        f"{app_upper}_DASHBOARD_HOST=127.0.0.1\n"
+        f"{app_upper}_DASHBOARD_SECRET=change-me-in-production\n"
+        f"\n"
+        f"# === Logging ===\n"
+        f"LOG_LEVEL=INFO\n",
+        encoding="utf-8",
+    )
+    # Also generate a minimal .env for development
+    env_file = child_root / ".env"
+    env_file.write_text(
+        f"# {app_name.upper()} — Local Development\n"
+        f"OLLAMA_BASE_URL=http://localhost:11434\n"
+        f"OLLAMA_MODEL=qwen3.5:latest\n"
+        f"LLM_TWO_TIER_ENABLED=true\n"
+        f"LLM_CONFIDENCE_THRESHOLD=0.85\n"
+        f"RAG_ENABLED=true\n"
+        f"RAG_EMBEDDING_MODEL=nomic-embed-text\n"
+        f"LOG_LEVEL=INFO\n",
+        encoding="utf-8",
+    )
+    logger.info("Step 1: Generated .env.example and .env for admin LLM configuration")
+
     logger.info("Step 1: Created %d directories", len(created_dirs))
-    return {"directories_created": len(created_dirs), "dirs": created_dirs}
+    return {"directories_created": len(created_dirs), "dirs": created_dirs, "gitattributes": True, "env_files": True}
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +468,7 @@ def _build_fallback_manifest(blueprint: dict) -> list:
     the blueprint's file_manifest is missing or not a proper list of dicts."""
     capabilities = blueprint.get("capabilities", {})
     entries = []
-    default_adaptations = ["db_rename", "port_remap", "classification_replace",
+    default_adaptations = ["db_rename", "port_remap", "classification_update",
                            "app_name_replace"]
 
     # Dirs to skip content copying (step 01 creates empty, other steps populate)
@@ -588,7 +704,7 @@ def _generate_agent_config(
         import yaml
         config = {
             "application": app_name,
-            "classification": blueprint.get("classification", "CUI"),
+            "classification": blueprint.get("classification", "public"),
             "agents": {},
         }
         for agent in agents:

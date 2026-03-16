@@ -1639,6 +1639,18 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
     if caps.get("code_intelligence", False):
         parts.append("- Code Quality gates block on: average cyclomatic complexity > 25")
 
+    # Cross-platform compatibility (always-on for all child apps)
+    parts.append("- All file paths MUST use `pathlib.Path` -- never string concatenation with `/` or `\\\\`")
+    parts.append("- All `open()` calls MUST specify `encoding='utf-8'` -- never rely on system default encoding")
+    parts.append("- Never hardcode `/tmp` or `C:\\\\` -- use `tempfile.gettempdir()` or `tools/compat/platform_utils.py`")
+    parts.append("- Ollama availability checks MUST use HTTP API (`/api/tags`) -- never `subprocess.run(['ollama', ...])`")
+    parts.append("- Use `datetime.now(timezone.utc)` -- never `datetime.utcnow()` (deprecated in Python 3.12+)")
+    parts.append("- Use `hashlib.sha256` for non-cryptographic hashing -- never `hashlib.md5` (bandit B324)")
+    parts.append("- `.gitattributes` enforces `eol=lf` -- all text files use Unix line endings on all platforms")
+    parts.append("- Run `python tools/testing/platform_check.py` to validate cross-platform compatibility")
+    parts.append("- LLM model names and API keys MUST be in `.env`, not hardcoded — use `os.environ.get()` with defaults")
+    parts.append("- When adding LLM-dependent features, add env vars to `.env.example` with comments")
+
     parts.append(
         "- **This application CANNOT generate child applications** -- it is a generated "
         "child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and "

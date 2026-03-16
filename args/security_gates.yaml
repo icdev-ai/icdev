@@ -13,12 +13,17 @@ merge_gates:
     - critical_vulnerability
     - high_vulnerability
     - failed_tests
-    - missing_cui_markings
+    # CUI marking gate is classification-aware: only enforced when
+    # classification_profiles.yaml -> enforce_cui_marking_gate is true.
+    # Use ClassificationResolver.enforce_cui_marking_gate to check at runtime.
+    - missing_cui_markings_if_required
     - secrets_detected
   warn_on:
     - cat2_stig_finding
     - medium_vulnerability
     - coverage_below_threshold
+    # Warn (not block) if classification markings are missing on non-CUI projects
+    - classification_markings_inconsistent
 
 deployment_gates:
   block_on:
@@ -455,6 +460,22 @@ code_patterns:
     max_critical: 0
     max_high: 0
     max_medium: 10
+
+# Cross-Platform Compatibility Gates (OS-agnostic: Windows → Linux)
+cross_platform:
+  blocking:
+    - hardcoded_platform_paths_detected        # /tmp, C:\, backslash in path strings
+    - datetime_utcnow_usage_detected           # deprecated in Python 3.12+
+    - hashlib_md5_for_non_security_detected     # bandit B324, use sha256
+    - gitattributes_missing_in_project_root     # line ending consistency
+  warning:
+    - open_without_encoding_detected            # implicit encoding varies by OS
+    - subprocess_for_ollama_status              # use HTTP /api/tags instead
+    - os_specific_api_usage                     # fcntl, winreg, msvcrt
+  thresholds:
+    max_path_violations: 0
+    require_gitattributes: true
+    require_timezone_aware_datetime: true
 
 # Endpoint Security Gates (D-EPSEC-2)
 endpoint_security:

@@ -526,7 +526,8 @@ This is a 6-layer agentic system. The AI (you) is the orchestration layer — yo
 - `tools/manifest.md` — Master list of all tools. Check before writing a new script.
 - `memory/MEMORY.md` — Curated long-term facts/preferences, read at session start.
 - `memory/logs/YYYY-MM-DD.md` — Daily session logs.
-- `.env` — API keys and environment variables.
+- `.env` — API keys, LLM model names, and environment variables. **Admins configure LLM here, not in code.**
+- `.env.example` — Full reference with all available settings and comments.
 - `.tmp/` — Disposable scratch work. Never store important data here.
 
 ### Memory System Architecture
@@ -583,8 +584,10 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - Entity types must be added to BOTH the Python constant AND the SQL CHECK constraint (via the constant) — the `db_init_generator.py` pattern comment shows how
 - When generating a child application, ALWAYS use the `child_app_generator.py` pipeline and run `gotcha_validator.py --gate` post-generation — GOTCHA compliance is mandatory, manual scaffolding is prohibited
 - Before writing tests for an ICDEV module, ALWAYS run `python tools/testing/api_surface_extractor.py --file <module> --json` to verify field names, function signatures, return types, and mock paths — never guess at API surfaces
+- **Cross-platform (Windows→Linux):** All file paths MUST use `pathlib.Path`, all `open()` calls MUST specify `encoding='utf-8'`, never hardcode `/tmp` or `C:\` (use `tempfile.gettempdir()`), never use `subprocess` for Ollama status (use HTTP `/api/tags`), use `datetime.now(timezone.utc)` not `datetime.utcnow()`, use `hashlib.sha256` not `hashlib.md5`, ensure `.gitattributes` with `eol=lf` exists in project root
+- **LLM config via `.env`, not code:** Model names, API keys, and routing settings MUST be configurable via environment variables in `.env` — never hardcode model IDs in Python. Use `${VAR:-default}` expansion in `llm_config.yaml`. When adding new LLM-dependent features, add the env var to `.env.example` with a comment
 
-*(Add new guardrails as mistakes happen. Keep under 15 items.)*
+*(Add new guardrails as mistakes happen. Keep under 20 items.)*
 
 ---
 

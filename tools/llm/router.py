@@ -638,11 +638,15 @@ class LLMRouter:
           scanner_functions  → qwen3 only (no review)
         """
         cfg = self._config.get("two_tier", {})
-        if not cfg.get("enabled", False):
+        # Allow env var override: LLM_TWO_TIER_ENABLED=false disables two-tier
+        env_enabled = os.environ.get("LLM_TWO_TIER_ENABLED", "").lower()
+        if env_enabled in ("false", "0", "no"):
+            return None
+        if not cfg.get("enabled", False) and env_enabled not in ("true", "1", "yes"):
             return None
 
-        tier1 = cfg.get("tier1_model", "qwen3-local")
-        tier2 = cfg.get("tier2_model", "claude-sonnet")
+        tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
+        tier2 = _expand_env(cfg.get("tier2_model", "claude-sonnet"))
         planners = cfg.get("planner_functions", [])
         workers = cfg.get("worker_functions", [])
         scanners = cfg.get("scanner_functions", [])

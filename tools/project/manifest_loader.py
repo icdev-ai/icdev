@@ -33,7 +33,7 @@ MANIFEST_VERSION = 1
 
 IL_DEFAULTS = {
     "IL2": {
-        "classification_level": "UNCLASSIFIED",
+        "classification_level": "public",
         "cui_markings": False,
         "frameworks": [],
         "profile_template": "startup",
@@ -41,7 +41,7 @@ IL_DEFAULTS = {
         "deployment_platform": "docker",
     },
     "IL4": {
-        "classification_level": "CUI",
+        "classification_level": "cui",
         "cui_markings": True,
         "frameworks": ["fedramp_moderate"],
         "profile_template": "dod_baseline",
@@ -49,7 +49,7 @@ IL_DEFAULTS = {
         "deployment_platform": "k8s",
     },
     "IL5": {
-        "classification_level": "CUI",
+        "classification_level": "cui",
         "cui_markings": True,
         "frameworks": ["fedramp_high", "cmmc_l2"],
         "profile_template": "dod_baseline",
@@ -57,7 +57,7 @@ IL_DEFAULTS = {
         "deployment_platform": "k8s",
     },
     "IL6": {
-        "classification_level": "SECRET",
+        "classification_level": "secret",
         "cui_markings": True,
         "frameworks": ["fedramp_high", "cmmc_l3"],
         "profile_template": "dod_baseline",
@@ -292,10 +292,10 @@ def validate_manifest(config: dict) -> tuple:
     if not project.get("name"):
         errors.append("project.name is required")
 
-    # IL6 requires SECRET
-    if il == "IL6" and classification_level != "SECRET":
+    # IL6 requires secret classification
+    if il == "IL6" and classification_level.lower() not in ("secret",):
         errors.append(
-            f"impact_level IL6 requires classification.level = SECRET "
+            f"impact_level IL6 requires classification.level = secret "
             f"(got '{classification_level}')"
         )
 
