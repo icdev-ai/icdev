@@ -7972,6 +7972,63 @@ CREATE TABLE IF NOT EXISTS agent_benchmark_results (
 );
 CREATE INDEX IF NOT EXISTS idx_bench_scan ON agent_benchmark_results(scan_id);
 CREATE INDEX IF NOT EXISTS idx_bench_agent ON agent_benchmark_results(agent_type);
+
+-- GSD-adapted: 4-Level Verification & Stub Detection Results (D-GSD-1/3)
+CREATE TABLE IF NOT EXISTS stub_detection_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id      TEXT NOT NULL,
+    project_dir     TEXT,
+    files_checked   INTEGER DEFAULT 0,
+    files_passed    INTEGER DEFAULT 0,
+    files_failed    INTEGER DEFAULT 0,
+    stub_total      INTEGER DEFAULT 0,
+    level_summary   TEXT,       -- JSON: per-level pass/fail counts
+    failures        TEXT,       -- JSON: list of failure details
+    overall_passed  INTEGER DEFAULT 1,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_stub_project ON stub_detection_results(project_id);
+
+-- GSD-adapted: Context Pressure & Stuck Detection Events (D-GSD-4/6)
+CREATE TABLE IF NOT EXISTS context_pressure_events (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id               TEXT NOT NULL,
+    event_type               TEXT NOT NULL CHECK(event_type IN (
+        'pressure_check', 'stuck_analysis_paralysis',
+        'stuck_duplicate_loop', 'stuck_retry_spiral', 'stuck_unknown'
+    )),
+    pressure_level           TEXT NOT NULL CHECK(pressure_level IN (
+        'normal', 'warning', 'critical', 'stuck'
+    )),
+    estimated_tokens_used    INTEGER DEFAULT 0,
+    estimated_remaining_pct  REAL DEFAULT 100.0,
+    tool_call_count          INTEGER DEFAULT 0,
+    recommendation           TEXT,
+    classification           TEXT DEFAULT 'CUI',
+    created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ctx_pressure_session ON context_pressure_events(session_id);
+
+-- GSD-adapted: Category-Based Deviation Rule Events (D-GSD-7/9)
+CREATE TABLE IF NOT EXISTS deviation_rule_events (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    category            TEXT NOT NULL,
+    confidence          REAL NOT NULL,
+    original_decision   TEXT NOT NULL CHECK(original_decision IN (
+        'auto_heal', 'suggest', 'escalate'
+    )),
+    final_decision      TEXT NOT NULL CHECK(final_decision IN (
+        'auto_heal', 'suggest', 'escalate'
+    )),
+    category_overrode   INTEGER DEFAULT 0,
+    matched_keywords    TEXT,       -- JSON array of matched keywords
+    reason              TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_deviation_category ON deviation_rule_events(category);
+CREATE INDEX IF NOT EXISTS idx_deviation_decision ON deviation_rule_events(final_decision);
 """
 
 

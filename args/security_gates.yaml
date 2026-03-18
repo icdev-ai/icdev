@@ -777,6 +777,66 @@ red_team:
     min_plugin_pass_rate: 1.0
     scan_required_for_il4_plus: true
 
+# Formal Verification Gate (LeanStral-adapted, D-VL-6)
+# Property-based testing, type-level security, SQL injection immunity
+formal_verification:
+  blocking:
+    - sql_injection_pattern_detected
+    - critical_dangerous_pattern_detected
+    - eval_exec_in_production_code
+  warning:
+    - cui_marking_missing
+    - input_validation_gap
+    - low_invariant_density
+    - high_dangerous_pattern_detected
+  thresholds:
+    max_critical_findings: 0
+    max_high_findings: 0
+    min_average_score: 0.60
+    require_cui_markings: true
+
+# Compiler-in-the-Loop Verification Gate (LeanStral-adapted, D-VL-1)
+verify_loop:
+  blocking:
+    - blocking_verifier_failure_unresolved
+  warning:
+    - warning_verifier_failure
+    - repair_attempted_but_failed
+  thresholds:
+    max_unresolved_blocking: 0
+    max_unresolved_warnings: 10
+    require_all_blocking_pass: true
+
+# GSD-adapted: 4-Level Verification & Stub Detection Gate (D-GSD-1)
+stub_detection:
+  blocking:
+    - file_exists_verification_failed
+    - high_stub_ratio_detected
+  warning:
+    - stubs_detected_in_project
+    - wiring_disconnected_files
+    - functional_check_failed
+  thresholds:
+    max_stub_ratio: 0.5
+    max_disconnected_files: 5
+    require_exists_pass: true
+    require_substantive_pass: true
+
+# GSD-adapted: Context Pressure & Stuck Detection Gate (D-GSD-4/5)
+context_health:
+  blocking:
+    - stuck_analysis_paralysis
+    - stuck_duplicate_loop
+  warning:
+    - context_pressure_critical
+    - context_pressure_warning
+    - approaching_analysis_paralysis
+  thresholds:
+    max_consecutive_reads: 5
+    max_duplicate_calls: 3
+    warning_remaining_pct: 35
+    critical_remaining_pct: 25
+
 # Agent Benchmark Framework Gates (Phase 65 — TheAgentCompany-inspired)
 agent_benchmark:
   blocking:

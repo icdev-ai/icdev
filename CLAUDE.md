@@ -173,6 +173,30 @@ python tools/analysis/code_analyzer.py --project-dir tools/ --json
 python tools/analysis/code_analyzer.py --project-dir tools/ --store --json
 python tools/analysis/code_analyzer.py --project-dir tools/ --trend --json
 python tools/analysis/runtime_feedback.py --health --function analyze_code --json
+
+# Compiler-in-the-Loop Verification (LeanStral-adapted, D-VL-1)
+python tools/analysis/verify_loop.py --file src/main.py --language python --json        # Single file verify
+python tools/analysis/verify_loop.py --file src/main.py --language python --repair --json  # Verify + LLM repair loop
+python tools/analysis/verify_loop.py --project-dir src/ --language python --json          # Project-wide verify
+python tools/analysis/verify_loop.py --file src/main.py --language python --gate --json    # Gate evaluation
+python tools/analysis/verify_loop.py --dry-run --file src/main.py --language python --json # Preview only
+
+# Formal Verification Gate (LeanStral-adapted, D-VL-6)
+python tools/analysis/formal_verifier.py --file src/main.py --json                        # Single file formal checks
+python tools/analysis/formal_verifier.py --project-dir src/ --json                        # Project-wide formal checks
+python tools/analysis/formal_verifier.py --project-dir src/ --gate --json                 # Gate evaluation
+python tools/analysis/formal_verifier.py --generate-properties --file src/main.py --json  # Generate hypothesis test suggestions
+
+# GovEval Benchmark (LeanStral FLTEval-adapted, D-VL-9)
+python tools/testing/goveval.py --project-id "sparkpilot" --json                          # Full 7-dimension evaluation
+python tools/testing/goveval.py --project-id "sparkpilot" --dimension ssp_completeness --json  # Single dimension
+python tools/testing/goveval.py --project-id "sparkpilot" --gate --json                   # Gate evaluation
+python tools/testing/goveval.py --project-id "sparkpilot" --trend --json                  # Score trend
+python tools/testing/goveval.py --project-id "sparkpilot" --compare --model-a "qwen3" --model-b "claude" --json  # Model A/B
+
+# LSP-over-MCP Server (LeanStral lean-lsp-mcp adapted, D-VL-7)
+python tools/mcp/lsp_server.py                                                            # Start MCP server (stdio)
+python tools/mcp/lsp_server.py --check --json                                             # Check available LSP servers
 ```
 
 ### Knowledge Graph & GraphRAG Commands
@@ -429,6 +453,28 @@ python tools/pulse/engine/demand_detector.py --suggest-articles --json   # Sugge
 python tools/pulse/engine/demand_detector.py --graph --json              # Query capability graph edges
 ```
 
+### GSD-Adapted Tools (Context Engineering & Quality Guard)
+```bash
+# 4-Level Verification & Stub Detection (D-GSD-1 through D-GSD-3)
+python tools/testing/stub_detector.py --file src/main.py --json                 # Single file: EXISTS→SUBSTANTIVE→WIRED→FUNCTIONAL
+python tools/testing/stub_detector.py --project-dir tools/ --json               # Directory scan
+python tools/testing/stub_detector.py --project-dir tools/ --gate --json        # Gate evaluation (exit 0=pass)
+python tools/testing/stub_detector.py --project-dir tools/ --store --json       # Store results in DB
+python tools/testing/stub_detector.py --file src/main.py --max-level substantive --json  # Stop at specific level
+
+# Context Pressure Monitor & Stuck Detection (D-GSD-4 through D-GSD-6)
+python tools/agent/context_pressure.py --check health --json                    # Combined health check
+python tools/agent/context_pressure.py --check pressure --session-id <id> --json  # Context window pressure
+python tools/agent/context_pressure.py --check stuck --session-id <id> --json   # Stuck detection guard
+python tools/agent/context_pressure.py --check health --human                   # Human-readable output
+
+# Category-Based Deviation Rules (D-GSD-7 through D-GSD-9)
+python tools/knowledge/deviation_rules.py --classify '{"error_message":"SQL injection"}' --json  # Classify failure
+python tools/knowledge/deviation_rules.py --apply '{"error_message":"SQL injection"}' --confidence 0.55 --json  # Apply rules
+python tools/knowledge/deviation_rules.py --list-categories --json              # List all 5 categories
+python tools/knowledge/deviation_rules.py --stats --json                        # Deviation rule statistics
+```
+
 ### Harness Engineering Commands
 ```bash
 # Maturity assessment (6 dimensions, Level 0-4)
@@ -654,6 +700,7 @@ Agents communicate via **A2A protocol** (JSON-RPC 2.0 over mutual TLS within K8s
 | icdev-research | `.mcp.json` | research_create_session, research_run_stage, research_run_pipeline, research_get_status, research_list_sessions, research_get_dossier, research_review_dossier, research_list_verticals, research_get_challenges, research_get_forecasts, research_trigger_fitness |
 | icdev-context | `.mcp.json` | fetch_docs, list_sections, get_icdev_metadata, get_project_context, get_agent_context |
 | icdev-observability | `.mcp.json` | trace_query, trace_summary, prov_lineage, prov_export, shap_analyze, xai_assess |
+| icdev-lsp | `.mcp.json` | lsp_check_servers, lsp_diagnostics, lsp_hover, lsp_find_definition, lsp_verify_loop |
 
 ### Compliance Frameworks Supported
 | Framework | Catalog | Assessor | Report |
@@ -1863,6 +1910,7 @@ python tools/filesync/sync_engine.py --health --json
 | `args/finetune_config.yaml` | Fine-Tuning (Phase 64 Extension, D-FT-1 through D-FT-22): local engine (Unsloth, base models, quantization, distributed), GPU (min/preferred VRAM, CPU fallback), LoRA (rank/alpha/target_modules/dropout), training (LR, epochs, batch, scheduler), hyperparameter search (grid/random, max trials), dataset (min examples, auto-generate pairs), evaluation (auto-eval, BLEU/ROUGE-L/perplexity, LLM judge), promotion (auto-promote thresholds), retrain (threshold 50, cooldown 24h), cloud (OpenAI/Bedrock/Azure), export (GGUF Q4_K_M, Ollama prefix), marketplace (model card, SBOM, provenance), child app (copy adapters, inherit active models), provenance (PROV-AGENT chain) |
 | `args/security_gates.yaml` | (updated) Added `rag` gate with blocking: rag_injection_without_provenance, rag_cross_tenant_query_detected, rag_content_tracing_in_cui_without_approval; warning: rag_ingestion_stale_over_7_days, rag_retrieval_low_relevance_trend, rag_vector_store_unavailable; thresholds: provenance_required=true, tenant_isolation_required=true, max_ingestion_staleness_days=7 |
 | `args/filesync_config.yaml` | File Sync settings: detection (SHA-256, fast-skip mtime+size), watcher (optional watchdog, periodic scan), transfer (ThreadPoolExecutor, bandwidth throttle), SFTP, provider config, scheduling |
+| `args/verify_loop_config.yaml` | Compiler-in-the-Loop Verification (LeanStral-adapted, D-VL-1): per-language verifier stacks (6 languages), loop settings (max 3 iterations, timeout), LLM repair config (system prompt, temperature, max chars), air-gap settings (prefer_local, local_repair_model), gate thresholds, audit (append-only) |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -2458,6 +2506,18 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D-FT-20:** Cloud providers: OpenAI (`/v1/fine_tuning/jobs`), Bedrock (`create_model_customization_job`), Azure OpenAI (`/fine_tuning/jobs`). Long-running poll
 - **D-FT-21:** Multi-GPU via `accelerate` library prefix to Unsloth subprocess
 - **D-FT-22:** Full PROV-AGENT provenance chain: source document → RAG chunk → training pair → dataset → training job → LoRA adapter → active model
+- **D-VL-1:** Compiler-in-the-loop verification generalizes D255 to all 6 languages — iterative verify→LLM repair→re-verify loop adapted from LeanStral (Mistral AI, 2026-03-16). Config: `args/verify_loop_config.yaml`
+- **D-VL-2:** Per-language verifier stacks are declarative YAML (D26 pattern) — add languages/tools without code changes
+- **D-VL-3:** Air-gap safe — repair uses local Ollama models (`qwen3-local`) when `ICDEV_AIR_GAPPED=true`; cloud models (LeanStral, Claude) optional
+- **D-VL-4:** `verify_loop_runs` table is append-only (NIST AU, D6 pattern)
+- **D-VL-5:** Verifiers classified as blocking (syntax, type check) vs non-blocking (lint, SAST) — blocking failures stop the pipeline
+- **D-VL-6:** Formal verification gate uses deterministic checks (SQL injection regex, dangerous patterns, invariant density, input validation AST) — no LLM required. Property-based test generation via hypothesis specs (advisory only)
+- **D-VL-7:** LSP-over-MCP exposes compiler intelligence to AI agents via MCP (adapted from LeanStral's `lean-lsp-mcp`). 100% air-gap safe — all LSP servers run locally
+- **D-VL-8:** Python (pylsp/pyright) first-class, other 5 languages supported via direct tool invocation fallback
+- **D-VL-9:** GovEval benchmark — 7-dimension domain-specific evaluation for Gov/DoD compliance quality (SSP completeness, control accuracy, CUI consistency, SBOM quality, gate pass rate, artifact currency, crosswalk cascade). Inspired by LeanStral's FLTEval
+- **D-VL-10:** GovEval scoring is deterministic (D21 weighted average, no LLM required). Optional LLM-as-judge for subjective quality
+- **D-VL-11:** `formal_verification_results` and `goveval_results` tables are append-only (NIST AU, D6 pattern)
+- **D-VL-12:** Mistral/LeanStral models added to LLM router as `openai_compatible` provider — cloud via `api.mistral.ai/v1` (requires `MISTRAL_API_KEY`), self-hosted via vLLM (`MISTRAL_VLLM_BASE_URL`). LeanStral: 119B sparse MoE, 6.5B active/token, Apache 2.0
 
 ### Innovation Security Gates
 | Gate | Condition |

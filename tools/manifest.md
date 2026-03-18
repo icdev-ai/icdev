@@ -250,6 +250,7 @@
 | Pattern Detector | tools/knowledge/pattern_detector.py | Detect patterns from logs/metrics | --source, --data | Patterns found |
 | Recommendation Engine | tools/knowledge/recommendation_engine.py | Generate recommendations via Bedrock | --context | Recommendations |
 | Self-Heal Analyzer | tools/knowledge/self_heal_analyzer.py | Analyze failures and auto-correct | --failure-data | Healing result |
+| Deviation Rules | tools/knowledge/deviation_rules.py | Category-based deviation rules (GSD-adapted): 5 categories layered on confidence-based healing — security/blocking auto-fix at lower threshold, architectural/compliance always escalate (D-GSD-7 through D-GSD-9) | --classify, --apply, --confidence, --stats, --list-categories, --json | Classification + decision override |
 
 ## Monitoring
 | Tool | File | Description | Input | Output |
@@ -301,6 +302,7 @@
 | Diagram Validator | tools/compliance/diagram_validator.py | Compliance diagram validation (SSP, network zone, ATO boundary) | --image, --type, --expected-components, --expected-zones | Pass/fail per check |
 | Production Audit | tools/testing/production_audit.py | 30-check pre-production readiness audit across 6 categories (platform, security, compliance, integration, performance, documentation) | --json, --human, --stream, --gate, --category | AuditReport JSON + exit code |
 | Production Remediate | tools/testing/production_remediate.py | Auto-fix audit blockers using 3-tier confidence model (auto-fix >= 0.7, suggest 0.3-0.7, escalate < 0.3) | --auto, --dry-run, --check-id, --category, --skip-audit, --json, --human, --stream | RemediationReport JSON + exit code |
+| Stub Detector | tools/testing/stub_detector.py | 4-level verification & stub detection (GSD-adapted): EXISTS→SUBSTANTIVE→WIRED→FUNCTIONAL cascade, per-language stub patterns (6 languages), Python AST analysis, orphan detection, security gate (D-GSD-1 through D-GSD-3) | --file, --project-dir, --max-level, --project-id, --store, --gate, --json, --human | Verification results + gate |
 | API Surface Extractor | tools/testing/api_surface_extractor.py | AST-based extraction of public API surface (functions, classes, dataclass fields, dict constants, imports, mock targets) — run BEFORE writing tests to prevent field name, return type, and mock path errors (D-API-1) | --file, --dir, --json, --human, --mock-targets, --include-private | API surface JSON or markdown |
 | Playwright Config | playwright.config.ts | Playwright test runner config (Chromium/Firefox/WebKit, video, screenshots) | — | — |
 | E2E Test: Dashboard | tests/e2e/dashboard_health.spec.ts | Native Playwright test: dashboard CUI banners + navigation | npx playwright test | Pass/fail + screenshots |
@@ -425,6 +427,7 @@
 | Agent Executor | tools/agent/agent_executor.py | Subprocess-based Claude Code CLI invocation with JSONL parsing, retry, audit | --prompt, --model, --max-retries, --timeout, --json | AgentPromptResponse |
 | Agent Models | tools/agent/agent_models.py | Dataclasses: AgentPromptRequest, AgentPromptResponse, RetryCode enum | — | — |
 | Skill Selector | tools/agent/skill_selector.py | Selective skill injection: keyword-based category matching, file detection, context-aware skill/goal/context loading (D146) | --query, --detect, --project-dir, --resolve, --format-context, --json | Matched categories + commands + goals |
+| Context Pressure | tools/agent/context_pressure.py | Context pressure monitor & stuck detection guard (GSD-adapted): token estimation, 3-level pressure alerts (normal/warning/critical), analysis paralysis detection, duplicate loop detection, combined health check (D-GSD-4 through D-GSD-6) | --check pressure/stuck/health, --session-id, --json, --human | Pressure level + stuck status |
 
 ## LLM Provider Abstraction (Vendor-Agnostic)
 | Tool | File | Description | Input | Output |

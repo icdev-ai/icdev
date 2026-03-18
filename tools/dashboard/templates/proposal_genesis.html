@@ -78,6 +78,12 @@
         </div>
     </div>
     <div class="stat-card">
+        <div class="label">CRM Contacts</div>
+        <div class="value purple" id="pg-crm-contacts">
+            {{ summary.get('crm_contacts', 0) }}
+        </div>
+    </div>
+    <div class="stat-card">
         <div class="label">CRM Interactions</div>
         <div class="value purple" id="pg-crm-interactions">
             {{ summary.get('crm_interactions', 0) }}
@@ -263,6 +269,7 @@
 <div class="section-card">
     <h2>CRM Accounts (R4 Engage)</h2>
     <button class="btn btn-primary" onclick="pgLoadCRMAccounts()">Refresh</button>
+    <button class="btn btn-success" onclick="document.getElementById('pg-add-account-modal').style.display='flex'" style="margin-left:8px;">+ Add Account</button>
     <div style="overflow-x: auto; margin-top: 16px;">
         <table class="data-table" id="pg-crm-accounts-table">
             <thead>
@@ -282,10 +289,36 @@
     </div>
 </div>
 
+<!-- Phase C: CRM Contacts -->
+<div class="section-card">
+    <h2>CRM Contacts</h2>
+    <button class="btn btn-primary" onclick="pgLoadCRMContacts()">Refresh</button>
+    <button class="btn btn-success" onclick="pgShowAddContact()" style="margin-left:8px;">+ Add Contact</button>
+    <div style="overflow-x: auto; margin-top: 16px;">
+        <table class="data-table" id="pg-crm-contacts-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Account</th>
+                    <th>Title</th>
+                    <th>Email</th>
+                    <th>Influence</th>
+                    <th>Last Contact</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="pg-crm-contacts-tbody">
+                <tr><td colspan="7" style="text-align:center; color:var(--text-dim);">Click Refresh to load contacts</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
 <!-- Phase C: CRM Interactions -->
 <div class="section-card">
     <h2>CRM Interactions (R4 Engage)</h2>
     <button class="btn btn-primary" onclick="pgLoadCRMInteractions()">Refresh</button>
+    <button class="btn btn-success" onclick="pgShowLogInteraction()" style="margin-left:8px;">+ Log Interaction</button>
     <div style="overflow-x: auto; margin-top: 16px;">
         <table class="data-table" id="pg-crm-interactions-table">
             <thead>
@@ -669,6 +702,7 @@ function pgRefresh() {
             if (s.capture_plans !== undefined) document.getElementById('pg-capture-plans').textContent = s.capture_plans;
             if (s.teaming_assessments !== undefined) document.getElementById('pg-teaming-assessments').textContent = s.teaming_assessments;
             if (s.crm_accounts !== undefined) document.getElementById('pg-crm-accounts').textContent = s.crm_accounts;
+            if (s.crm_contacts !== undefined) document.getElementById('pg-crm-contacts').textContent = s.crm_contacts;
             if (s.crm_interactions !== undefined) document.getElementById('pg-crm-interactions').textContent = s.crm_interactions;
             if (s.avg_engagement !== undefined) document.getElementById('pg-avg-engagement').textContent = (s.avg_engagement * 100).toFixed(1) + '%';
             if (s.published_articles !== undefined) document.getElementById('pg-published-articles').textContent = s.published_articles;
@@ -1226,6 +1260,258 @@ function pgLoadTrends() {
 
 // Auto-load trends on page load
 document.addEventListener('DOMContentLoaded', function() { pgLoadTrends(); });
+
+/* ── CRM Contacts ──────────────────────────────────────────── */
+function pgLoadCRMContacts(accountId) {
+    let url = '/api/proposal-genesis/crm-contacts?limit=50';
+    if (accountId) url += '&account_id=' + encodeURIComponent(accountId);
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('pg-crm-contacts-tbody');
+            if (!data.contacts || data.contacts.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No contacts yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.contacts.map(c => {
+                const inf = (c.influence_level || 'unknown').replace(/_/g, ' ');
+                const infCls = c.influence_level === 'decision_maker' ? 'red' :
+                               c.influence_level === 'influencer' ? 'orange' : 'blue';
+                return `<tr>
+                    <td><strong>${c.name || '—'}</strong></td>
+                    <td>${c.account_name || '—'}</td>
+                    <td>${c.title || '—'}</td>
+                    <td>${c.email || '—'}</td>
+                    <td><span class="badge badge-${infCls}">${inf.toUpperCase()}</span></td>
+                    <td>${(c.last_contact_at || '—').substring(0, 16)}</td>
+                    <td>
+                        <button class="btn btn-sm" style="padding:2px 8px; font-size:11px;" onclick="pgDeleteContact('${c.id}')">Del</button>
+                    </td>
+                </tr>`;
+            }).join('');
+        });
+}
+
+function pgDeleteContact(contactId) {
+    if (!confirm('Delete this contact?')) return;
+    fetch('/api/proposal-genesis/crm-contacts/' + contactId, {method: 'DELETE'})
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) pgLoadCRMContacts();
+            else alert('Error: ' + (data.error || 'unknown'));
+        });
+}
+
+/* ── Add Account Modal ─────────────────────────────────────── */
+function pgShowAddContact() {
+    // Pre-load accounts for the dropdown
+    fetch('/api/proposal-genesis/crm-accounts?limit=100')
+        .then(r => r.json())
+        .then(data => {
+            const sel = document.getElementById('pg-contact-account-id');
+            sel.innerHTML = '<option value="">— Select Account —</option>';
+            (data.accounts || []).forEach(a => {
+                sel.innerHTML += `<option value="${a.id}">${a.name}</option>`;
+            });
+            document.getElementById('pg-add-contact-modal').style.display = 'flex';
+        });
+}
+
+function pgSubmitAccount() {
+    const body = {
+        name: document.getElementById('pg-acct-name').value,
+        agency: document.getElementById('pg-acct-agency').value,
+        account_type: document.getElementById('pg-acct-type').value,
+        website: document.getElementById('pg-acct-website').value,
+        naics_codes: document.getElementById('pg-acct-naics').value,
+        notes: document.getElementById('pg-acct-notes').value,
+    };
+    if (!body.name) { alert('Name is required'); return; }
+    fetch('/api/proposal-genesis/crm-accounts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            document.getElementById('pg-add-account-modal').style.display = 'none';
+            pgLoadCRMAccounts();
+        } else {
+            alert('Error: ' + (data.error || 'unknown'));
+        }
+    });
+}
+
+function pgSubmitContact() {
+    const body = {
+        account_id: document.getElementById('pg-contact-account-id').value,
+        name: document.getElementById('pg-contact-name').value,
+        title: document.getElementById('pg-contact-title').value,
+        email: document.getElementById('pg-contact-email').value,
+        phone: document.getElementById('pg-contact-phone').value,
+        role_in_procurement: document.getElementById('pg-contact-role').value,
+        influence_level: document.getElementById('pg-contact-influence').value,
+        notes: document.getElementById('pg-contact-notes').value,
+    };
+    if (!body.account_id) { alert('Account is required'); return; }
+    if (!body.name) { alert('Name is required'); return; }
+    fetch('/api/proposal-genesis/crm-contacts', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            document.getElementById('pg-add-contact-modal').style.display = 'none';
+            pgLoadCRMContacts();
+        } else {
+            alert('Error: ' + (data.error || 'unknown'));
+        }
+    });
+}
+
+/* ── Log Interaction Modal ─────────────────────────────────── */
+function pgShowLogInteraction() {
+    fetch('/api/proposal-genesis/crm-accounts?limit=100')
+        .then(r => r.json())
+        .then(data => {
+            const sel = document.getElementById('pg-int-account-id');
+            sel.innerHTML = '<option value="">— Select Account —</option>';
+            (data.accounts || []).forEach(a => {
+                sel.innerHTML += `<option value="${a.id}">${a.name}</option>`;
+            });
+            document.getElementById('pg-log-interaction-modal').style.display = 'flex';
+        });
+}
+
+function pgIntAccountChanged() {
+    const acctId = document.getElementById('pg-int-account-id').value;
+    const sel = document.getElementById('pg-int-contact-id');
+    sel.innerHTML = '<option value="">(none)</option>';
+    if (!acctId) return;
+    fetch('/api/proposal-genesis/crm-contacts?account_id=' + encodeURIComponent(acctId) + '&limit=100')
+        .then(r => r.json())
+        .then(data => {
+            (data.contacts || []).forEach(c => {
+                sel.innerHTML += `<option value="${c.id}">${c.name} — ${c.title || 'N/A'}</option>`;
+            });
+        });
+}
+
+function pgSubmitInteraction() {
+    const body = {
+        account_id: document.getElementById('pg-int-account-id').value,
+        contact_id: document.getElementById('pg-int-contact-id').value || '',
+        interaction_type: document.getElementById('pg-int-type').value,
+        subject: document.getElementById('pg-int-subject').value,
+        notes: document.getElementById('pg-int-notes').value,
+        interaction_date: document.getElementById('pg-int-date').value || undefined,
+    };
+    if (!body.account_id) { alert('Account is required'); return; }
+    if (!body.subject) { alert('Subject is required'); return; }
+    fetch('/api/proposal-genesis/crm-interactions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(r => r.json()).then(data => {
+        if (data.success) {
+            document.getElementById('pg-log-interaction-modal').style.display = 'none';
+            pgLoadCRMInteractions();
+        } else {
+            alert('Error: ' + (data.error || 'unknown'));
+        }
+    });
+}
 </script>
+
+<!-- ── Add Account Modal ─────────────────────────────────────── -->
+<div id="pg-add-account-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card); border-radius:8px; padding:24px; max-width:480px; width:90%;">
+        <h3 style="margin-top:0;">Add CRM Account</h3>
+        <label>Name *<br><input id="pg-acct-name" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>Agency<br><input id="pg-acct-agency" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>Type<br>
+            <select id="pg-acct-type" style="width:100%; padding:6px; margin-bottom:8px;">
+                <option value="government">Government</option>
+                <option value="prime">Prime</option>
+                <option value="subcontractor">Subcontractor</option>
+                <option value="partner">Partner</option>
+                <option value="other">Other</option>
+            </select>
+        </label>
+        <label>Website<br><input id="pg-acct-website" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>NAICS Codes<br><input id="pg-acct-naics" style="width:100%; padding:6px; margin-bottom:8px;" placeholder="541511, 541512"></label>
+        <label>Notes<br><textarea id="pg-acct-notes" rows="2" style="width:100%; padding:6px; margin-bottom:12px;"></textarea></label>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn" onclick="document.getElementById('pg-add-account-modal').style.display='none'">Cancel</button>
+            <button class="btn btn-success" onclick="pgSubmitAccount()">Create Account</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Add Contact Modal ─────────────────────────────────────── -->
+<div id="pg-add-contact-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card); border-radius:8px; padding:24px; max-width:480px; width:90%;">
+        <h3 style="margin-top:0;">Add CRM Contact</h3>
+        <label>Account *<br>
+            <select id="pg-contact-account-id" style="width:100%; padding:6px; margin-bottom:8px;">
+                <option value="">— Select Account —</option>
+            </select>
+        </label>
+        <label>Name *<br><input id="pg-contact-name" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>Title / Role<br><input id="pg-contact-title" style="width:100%; padding:6px; margin-bottom:8px;" placeholder="e.g. COR, CO, PM"></label>
+        <label>Email<br><input id="pg-contact-email" type="email" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>Phone<br><input id="pg-contact-phone" type="tel" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>Role in Procurement<br><input id="pg-contact-role" style="width:100%; padding:6px; margin-bottom:8px;" placeholder="e.g. Technical evaluator"></label>
+        <label>Influence Level<br>
+            <select id="pg-contact-influence" style="width:100%; padding:6px; margin-bottom:8px;">
+                <option value="unknown">Unknown</option>
+                <option value="decision_maker">Decision Maker</option>
+                <option value="influencer">Influencer</option>
+                <option value="evaluator">Evaluator</option>
+                <option value="end_user">End User</option>
+            </select>
+        </label>
+        <label>Notes<br><textarea id="pg-contact-notes" rows="2" style="width:100%; padding:6px; margin-bottom:12px;"></textarea></label>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn" onclick="document.getElementById('pg-add-contact-modal').style.display='none'">Cancel</button>
+            <button class="btn btn-success" onclick="pgSubmitContact()">Create Contact</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Log Interaction Modal ──────────────────────────────────── -->
+<div id="pg-log-interaction-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card); border-radius:8px; padding:24px; max-width:480px; width:90%;">
+        <h3 style="margin-top:0;">Log Interaction</h3>
+        <label>Account *<br>
+            <select id="pg-int-account-id" onchange="pgIntAccountChanged()" style="width:100%; padding:6px; margin-bottom:8px;">
+                <option value="">— Select Account —</option>
+            </select>
+        </label>
+        <label>Contact (optional)<br>
+            <select id="pg-int-contact-id" style="width:100%; padding:6px; margin-bottom:8px;">
+                <option value="">(none)</option>
+            </select>
+        </label>
+        <label>Type *<br>
+            <select id="pg-int-type" style="width:100%; padding:6px; margin-bottom:8px;">
+                <option value="meeting">Meeting</option>
+                <option value="call">Call</option>
+                <option value="email">Email</option>
+                <option value="conference">Conference</option>
+                <option value="site_visit">Site Visit</option>
+                <option value="rfi_response">RFI Response</option>
+                <option value="industry_day">Industry Day</option>
+                <option value="other">Other</option>
+            </select>
+        </label>
+        <label>Subject *<br><input id="pg-int-subject" style="width:100%; padding:6px; margin-bottom:8px;"></label>
+        <label>Notes<br><textarea id="pg-int-notes" rows="3" style="width:100%; padding:6px; margin-bottom:8px;"></textarea></label>
+        <label>Date (optional, defaults to now)<br><input id="pg-int-date" type="datetime-local" style="width:100%; padding:6px; margin-bottom:12px;"></label>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn" onclick="document.getElementById('pg-log-interaction-modal').style.display='none'">Cancel</button>
+            <button class="btn btn-success" onclick="pgSubmitInteraction()">Log Interaction</button>
+        </div>
+    </div>
+</div>
 
 {% endblock %}

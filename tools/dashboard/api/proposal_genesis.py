@@ -11,7 +11,6 @@ import os
 import sqlite3
 import subprocess
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -255,6 +254,13 @@ def api_pg_summary():
             stats["crm_accounts"] = 0
 
         try:
+            stats["crm_contacts"] = conn.execute(
+                "SELECT COUNT(*) as cnt FROM pg_crm_contacts"
+            ).fetchone()["cnt"]
+        except Exception:
+            stats["crm_contacts"] = 0
+
+        try:
             stats["crm_interactions"] = conn.execute(
                 "SELECT COUNT(*) as cnt FROM pg_crm_interactions"
             ).fetchone()["cnt"]
@@ -485,6 +491,130 @@ def api_pg_engagement_scores():
         return jsonify({"scores": [], "count": 0, "note": str(exc)})
     finally:
         conn.close()
+
+
+# ── Phase C: CRM Account CRUD ────────────────────────────────────────────────
+
+@proposal_genesis_api.route("/crm-accounts", methods=["POST"])
+def api_pg_create_account():
+    """POST /api/proposal-genesis/crm-accounts — Create a CRM account."""
+    from tools.proposal_genesis.reflexes.engage import create_account
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"success": False, "error": "name is required"}), 400
+    result = create_account(
+        name=name,
+        agency=data.get("agency", ""),
+        sub_agency=data.get("sub_agency", ""),
+        account_type=data.get("account_type", "government"),
+        website=data.get("website", ""),
+        naics_codes=data.get("naics_codes", ""),
+        set_asides=data.get("set_asides", ""),
+        notes=data.get("notes", ""),
+        status=data.get("status", "active"),
+    )
+    return jsonify(result), 201 if result.get("success") else 400
+
+
+@proposal_genesis_api.route("/crm-accounts/<account_id>", methods=["PUT"])
+def api_pg_update_account(account_id):
+    """PUT /api/proposal-genesis/crm-accounts/<id> — Update a CRM account."""
+    from tools.proposal_genesis.reflexes.engage import update_account
+    data = request.get_json(force=True, silent=True) or {}
+    result = update_account(account_id, **data)
+    return jsonify(result), 200 if result.get("success") else 400
+
+
+# ── Phase C: CRM Contact CRUD ───────────────────────────────────────────────
+
+@proposal_genesis_api.route("/crm-contacts", methods=["GET"])
+def api_pg_crm_contacts():
+    """GET /api/proposal-genesis/crm-contacts — List CRM contacts."""
+    from tools.proposal_genesis.reflexes.engage import list_contacts
+    account_id = request.args.get("account_id")
+    limit = int(request.args.get("limit", "50"))
+    contacts = list_contacts(account_id=account_id, limit=limit)
+    return jsonify({"contacts": contacts, "count": len(contacts)})
+
+
+@proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["GET"])
+def api_pg_get_contact(contact_id):
+    """GET /api/proposal-genesis/crm-contacts/<id> — Get a single contact."""
+    from tools.proposal_genesis.reflexes.engage import get_contact
+    contact = get_contact(contact_id)
+    if not contact:
+        return jsonify({"error": "contact not found"}), 404
+    return jsonify({"contact": contact})
+
+
+@proposal_genesis_api.route("/crm-contacts", methods=["POST"])
+def api_pg_create_contact():
+    """POST /api/proposal-genesis/crm-contacts — Create a CRM contact."""
+    from tools.proposal_genesis.reflexes.engage import create_contact
+    data = request.get_json(force=True, silent=True) or {}
+    account_id = data.get("account_id", "").strip()
+    name = data.get("name", "").strip()
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id is required"}), 400
+    if not name:
+        return jsonify({"success": False, "error": "name is required"}), 400
+    result = create_contact(
+        account_id=account_id,
+        name=name,
+        title=data.get("title", ""),
+        email=data.get("email", ""),
+        phone=data.get("phone", ""),
+        role_in_procurement=data.get("role_in_procurement", ""),
+        influence_level=data.get("influence_level", "unknown"),
+        notes=data.get("notes", ""),
+    )
+    return jsonify(result), 201 if result.get("success") else 400
+
+
+@proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["PUT"])
+def api_pg_update_contact(contact_id):
+    """PUT /api/proposal-genesis/crm-contacts/<id> — Update a CRM contact."""
+    from tools.proposal_genesis.reflexes.engage import update_contact
+    data = request.get_json(force=True, silent=True) or {}
+    result = update_contact(contact_id, **data)
+    return jsonify(result), 200 if result.get("success") else 400
+
+
+@proposal_genesis_api.route("/crm-contacts/<contact_id>", methods=["DELETE"])
+def api_pg_delete_contact(contact_id):
+    """DELETE /api/proposal-genesis/crm-contacts/<id> — Delete a CRM contact."""
+    from tools.proposal_genesis.reflexes.engage import delete_contact
+    result = delete_contact(contact_id)
+    return jsonify(result), 200 if result.get("success") else 404
+
+
+# ── Phase C: Manual Interaction Logging ──────────────────────────────────────
+
+@proposal_genesis_api.route("/crm-interactions", methods=["POST"])
+def api_pg_log_interaction():
+    """POST /api/proposal-genesis/crm-interactions — Log a manual interaction."""
+    from tools.proposal_genesis.reflexes.engage import log_manual_interaction
+    data = request.get_json(force=True, silent=True) or {}
+    account_id = data.get("account_id", "").strip()
+    interaction_type = data.get("interaction_type", "").strip()
+    subject = data.get("subject", "").strip()
+    if not account_id:
+        return jsonify({"success": False, "error": "account_id is required"}), 400
+    if not interaction_type:
+        return jsonify({"success": False, "error": "interaction_type is required"}), 400
+    if not subject:
+        return jsonify({"success": False, "error": "subject is required"}), 400
+    result = log_manual_interaction(
+        account_id=account_id,
+        interaction_type=interaction_type,
+        subject=subject,
+        contact_id=data.get("contact_id", ""),
+        notes=data.get("notes", ""),
+        opportunity_id=data.get("opportunity_id", ""),
+        interaction_date=data.get("interaction_date"),
+    )
+    return jsonify(result), 201 if result.get("success") else 400
 
 
 # ── Phase D: Published Articles ──────────────────────────────────────────────

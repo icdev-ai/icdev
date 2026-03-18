@@ -41,6 +41,23 @@ providers:
     project_id: ${IBM_WATSONX_PROJECT_ID:-}
     url: ${IBM_WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
 
+  # Mistral AI — OpenAI-compatible API (LeanStral, Mistral Small 4)
+  # Cloud: api.mistral.ai (requires MISTRAL_API_KEY)
+  # Air-gapped: self-host via vLLM (see mistral_vllm provider below)
+  mistral:
+    type: openai_compatible
+    api_key_env: MISTRAL_API_KEY
+    base_url: ${MISTRAL_BASE_URL:-https://api.mistral.ai/v1}
+
+  # Self-hosted Mistral/LeanStral via vLLM (air-gapped deployment)
+  # docker pull mistralllm/vllm-ms4:latest
+  # vllm serve mistralai/Leanstral-2603 --tensor-parallel-size 4 \
+  #   --attention-backend FLASH_ATTN_MLA --tool-call-parser mistral
+  mistral_vllm:
+    type: openai_compatible
+    base_url: ${MISTRAL_VLLM_BASE_URL:-http://localhost:8100/v1}
+    api_key_env: MISTRAL_VLLM_API_KEY
+
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
@@ -235,6 +252,40 @@ models:
       input_per_1k: 0.0
       output_per_1k: 0.0
 
+  # -- Mistral AI (LeanStral + Mistral Small 4) --
+  # LeanStral: 119B sparse MoE, 6.5B active/token, Apache 2.0
+  # Specialized for formal proof & code verification (Lean 4 trained)
+  # Cloud: labs-leanstral-2603 via api.mistral.ai (free during preview)
+  # Air-gap: self-host via vLLM (mistral_vllm provider)
+  leanstral:
+    provider: mistral
+    model_id: labs-leanstral-2603
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0002, output_per_1k: 0.0006 }
+
+  leanstral-local:
+    provider: mistral_vllm
+    model_id: mistralai/Leanstral-2603
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  mistral-small-4:
+    provider: mistral
+    model_id: mistral-small-latest
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0001, output_per_1k: 0.0003 }
+
 # -----------------------------------------------------------------------
 # Function -> Model Routing
 # -----------------------------------------------------------------------
@@ -367,6 +418,24 @@ routing:
   ft_pair_generation:
     chain: [qwen3-local, gemini-2.0-flash, llama-local]
     effort: low
+
+  # Compiler-in-the-Loop Verification Repair (LeanStral-adapted, D-VL-1)
+  # LeanStral excels at code verification and repair — use when available,
+  # fall back to general-purpose models. Air-gapped: leanstral-local via vLLM.
+  verify_loop_repair:
+    chain: [leanstral, leanstral-local, claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    effort: high
+
+  # Formal Verification / Property-Based Testing (D-VL-6)
+  # For generating invariant specifications and property tests.
+  formal_verification:
+    chain: [leanstral, leanstral-local, claude-opus, o3, gemini-2.5-pro, qwen3-local]
+    effort: max
+
+  # GovEval Benchmark Evaluation (D-VL-9)
+  goveval_judge:
+    chain: [claude-sonnet, leanstral, gpt-4o, gemini-2.5-pro, qwen3-local]
+    effort: high
 
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
@@ -501,6 +570,8 @@ two_tier:
     - dependency_suggestion
     - research_forecast
     - research_youtube_summarize
+    - verify_loop_repair
+    - formal_verification
     - default
 
   scanner_functions:

@@ -229,6 +229,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "genesis_convergence_log",
         "genesis_stagnation_log",
         "agent_benchmark_results",
+        # GSD-adapted: 4-Level Verification, Context Pressure, Deviation Rules (D-GSD-1 through D-GSD-9)
+        "stub_detection_results",
+        "context_pressure_events",
+        "deviation_rule_events",
     ]
 
     if tool_name == "Bash":
