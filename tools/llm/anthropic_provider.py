@@ -99,8 +99,9 @@ class AnthropicLLMProvider(LLMProvider):
         if request.tools:
             kwargs["tools"] = tools_to_anthropic(request.tools)
 
-        # Thinking support
-        if model_config.get("supports_thinking", False):
+        # Thinking support — try adaptive, fall back to disabled on API error
+        use_thinking = model_config.get("supports_thinking", False)
+        if use_thinking:
             effort = request.effort or "medium"
             kwargs["thinking"] = {
                 "type": "adaptive",
@@ -110,8 +111,18 @@ class AnthropicLLMProvider(LLMProvider):
         try:
             message = client.messages.create(**kwargs)
         except Exception as exc:
-            logger.error("Anthropic API error: %s", exc)
-            raise
+            if use_thinking and "budget_tokens" in str(exc):
+                # Model doesn't support adaptive thinking — retry without it
+                logger.warning("Adaptive thinking not supported, retrying without: %s", exc)
+                kwargs.pop("thinking", None)
+                try:
+                    message = client.messages.create(**kwargs)
+                except Exception as exc2:
+                    logger.error("Anthropic API error (no thinking): %s", exc2)
+                    raise
+            else:
+                logger.error("Anthropic API error: %s", exc)
+                raise
 
         # Parse response
         resp = LLMResponse(provider=self.provider_name)

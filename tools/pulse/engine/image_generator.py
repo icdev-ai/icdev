@@ -90,7 +90,7 @@ def _generate_svg_hero(
     Returns SVG string. Deterministic — same inputs produce same output.
     """
     # Derive a consistent color from title hash
-    h = hashlib.md5(title.encode()).hexdigest()
+    h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()
     hue1 = int(h[:3], 16) % 360
     hue2 = (hue1 + 40) % 360
     color1 = f"hsl({hue1}, 65%, 35%)"
@@ -174,7 +174,7 @@ def generate_svg(
     svg_content = _generate_svg_hero(title, category, width, height)
 
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]
         DEFAULT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_IMAGE_DIR / f"hero-{slug}.svg")
 
@@ -266,7 +266,7 @@ def _build_image_prompt(title: str, category: str = "") -> str:
         # Use the single most relevant visual (keeps images distinct)
         scene = visuals[0]
         # Vary the art style based on title hash for diversity
-        h = hashlib.md5(title.encode()).hexdigest()
+        h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()
         style_idx = int(h[:2], 16) % 5
         styles = [
             "photorealistic digital art, cinematic lighting, detailed, high quality, 4k, dark blue and teal color palette",
@@ -338,7 +338,7 @@ def generate_image(
 
     # Build output path
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]
         DEFAULT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_IMAGE_DIR / f"hero-{slug}.png")
 

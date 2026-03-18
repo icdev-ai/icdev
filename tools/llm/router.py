@@ -314,6 +314,38 @@ class LLMRouter:
         route = routing.get(function, routing.get("default", {}))
         return route.get("chain", [])
 
+    def _log_telemetry(
+        self, function: str, request, response,
+        model_id: str, provider_name: str, latency_ms: int,
+    ) -> None:
+        """Log AI interaction to ai_telemetry table (D218)."""
+        import hashlib
+        prompt_text = " ".join(m.get("content", "") for m in (request.messages or []) if isinstance(m, dict))
+        prompt_hash = hashlib.sha256(prompt_text.encode("utf-8", errors="replace")).hexdigest()[:32]
+        response_hash = hashlib.sha256(
+            (getattr(response, "content", "") or "").encode("utf-8", errors="replace")
+        ).hexdigest()[:32]
+
+        try:
+            from tools.security.ai_telemetry_logger import AITelemetryLogger
+            logger_inst = AITelemetryLogger()
+            logger_inst.log_ai_interaction(
+                model_id=getattr(response, "model_id", model_id) or model_id,
+                provider=provider_name,
+                prompt_hash=prompt_hash,
+                response_hash=response_hash,
+                input_tokens=getattr(response, "input_tokens", 0) or 0,
+                output_tokens=getattr(response, "output_tokens", 0) or 0,
+                thinking_tokens=getattr(response, "thinking_tokens", 0) or 0,
+                latency_ms=float(latency_ms),
+                cost_usd=getattr(response, "cost_usd", 0.0) or 0.0,
+                project_id=getattr(request, "project_id", None),
+                function=function,
+                api_key_source=getattr(request, "api_key_source", "system") or "system",
+            )
+        except Exception:
+            pass
+
     def _scan_for_injection(self, request: LLMRequest) -> Optional[str]:
         """Scan request messages for prompt injection patterns.
 
@@ -699,9 +731,11 @@ class LLMRouter:
             # Drafter unavailable — fall through to chain
 
         elif function in scanners:
-            # qwen3 only, no review
-            logger.debug("Two-tier: %s → scanner (qwen3 only)", function)
-            result = self._invoke_model_direct(tier1, request)
+            # Check for per-function model override
+            overrides = cfg.get("function_model_overrides", {})
+            scanner_model = overrides.get(function, tier1)
+            logger.debug("Two-tier: %s → scanner (%s only)", function, scanner_model)
+            result = self._invoke_model_direct(scanner_model, request)
             if result is not None:
                 return result
             # Fall through to chain on failure
@@ -726,11 +760,13 @@ class LLMRouter:
             RuntimeError: If no provider in the chain can serve the request.
         """
         # Scan for prompt injection before invoking (D217)
-        injection_action = self._scan_for_injection(request)
-        if injection_action == "block":
-            raise RuntimeError(
-                "Prompt injection detected with high confidence — request blocked. "
-                "Review the input content for injection patterns."
+        # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
+        if not request.skip_injection_scan:
+            injection_action = self._scan_for_injection(request)
+            if injection_action == "block":
+                raise RuntimeError(
+                    "Prompt injection detected with high confidence — request blocked. "
+                    "Review the input content for injection patterns."
             )
 
         # Apply configured effort if not set on request
@@ -788,6 +824,16 @@ class LLMRouter:
                         span.set_attribute("gen_ai.usage.cost_usd", response.cost_usd)
                     span.set_status("OK")
                     span.end()
+
+                # D218: Log AI telemetry for usage dashboard
+                try:
+                    self._log_telemetry(
+                        function=function, request=request, response=response,
+                        model_id=model_id, provider_name=provider_name,
+                        latency_ms=_latency,
+                    )
+                except Exception:
+                    pass  # Best-effort — never block on telemetry
 
                 return response
             except Exception as exc:

@@ -1,0 +1,42 @@
+# CUI // SP-CTI
+# Bandit SAST Configuration for ICDEV Framework
+#
+# ICDEV is a meta-builder framework that legitimately uses subprocess,
+# importlib, and try-except-pass patterns as part of its GOTCHA architecture.
+# These skips suppress known false positives inherent to framework design.
+#
+# Skipped checks are ONLY suppressed for the ICDEV platform codebase.
+# Child applications, marketplace assets, and user code are scanned
+# without these skips (via tools/security/sast_runner.py).
+
+skips:
+  # B110: try-except-pass — ICDEV uses resilient orchestration where
+  # auxiliary operations (audit logging, telemetry, feature detection)
+  # must not block core workflows. Intentional per GOTCHA design.
+  - B110
+
+  # B404: import subprocess — Required for GOTCHA Tool layer.
+  # ICDEV invokes external tools (ruff, pytest, git, terraform, kubectl)
+  # via subprocess. This is the framework's primary execution mechanism.
+  - B404
+
+  # B603: subprocess without shell — ICDEV passes args as lists (not strings),
+  # which prevents shell injection. shell=False is the default and safe.
+  - B603
+
+  # B607: start process with partial path — ICDEV runs in containerized
+  # environments (K8s) where PATH is controlled. Tool availability checks
+  # (e.g., gofmt --version) are not security-sensitive.
+  - B607
+
+  # B113: request without timeout — Many ICDEV HTTP calls set timeouts
+  # at the orchestration layer (LLMRouter, retry utility), not at call site.
+  - B113
+
+exclude_dirs:
+  - .tmp
+  - node_modules
+  - .git
+  - __pycache__
+  - projects
+  - playwright

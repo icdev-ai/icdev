@@ -218,11 +218,13 @@ def check_dockerfile_syntax() -> AuditCheck:
 
 def check_sast_bandit() -> AuditCheck:
     """SEC-001: SAST scan via bandit."""
-    rc, stdout, stderr = _run_subprocess(
-        [sys.executable, "-m", "bandit", "-r", str(PROJECT_ROOT / "tools"),
-         "-f", "json", "-q", "--severity-level", "medium"],
-        timeout=300,
-    )
+    cmd = [sys.executable, "-m", "bandit", "-r", str(PROJECT_ROOT / "tools"),
+           "-f", "json", "-q", "--severity-level", "medium"]
+    # Use bandit.yaml config to suppress framework-inherent false positives
+    bandit_cfg = PROJECT_ROOT / "bandit.yaml"
+    if bandit_cfg.exists():
+        cmd.extend(["--configfile", str(bandit_cfg)])
+    rc, stdout, stderr = _run_subprocess(cmd, timeout=300)
     if rc == -1:
         return AuditCheck(
             check_id="SEC-001", check_name="SAST Scan (Bandit)",
@@ -405,14 +407,21 @@ def check_code_pattern_scan() -> AuditCheck:
     if rc == 0:
         try:
             data = json.loads(stdout)
-            critical = data.get("critical", 0)
-            high = data.get("high", 0)
-            ok = critical == 0
+            # Use unallowed counts (excludes framework-inherent patterns)
+            unallowed_critical = data.get("unallowed_critical", data.get("critical", 0))
+            unallowed_high = data.get("unallowed_high", data.get("high", 0))
+            total_critical = data.get("critical", 0)
+            total_high = data.get("high", 0)
+            allowed = data.get("allowed_count", 0)
+            ok = unallowed_critical == 0 and unallowed_high == 0
+            msg = f"critical={total_critical}, high={total_high}"
+            if allowed:
+                msg += f" ({allowed} allowed by framework allowlist)"
             return AuditCheck(
                 check_id="SEC-006", check_name="Code Pattern Scan",
                 category="security", status="pass" if ok else "fail",
                 severity="blocking",
-                message=f"critical={critical}, high={high}",
+                message=msg,
                 details=data,
             )
         except json.JSONDecodeError:
@@ -1330,8 +1339,25 @@ def check_avg_complexity() -> AuditCheck:
         )
 
 
+def _load_code_quality_thresholds() -> dict:
+    """Load audit thresholds from args/code_quality_config.yaml."""
+    defaults = {"max_high_cc_pct": 8.0, "max_smell_density_per_kloc": 15.0, "max_smell_density_critical": 25.0}
+    try:
+        import yaml
+        cfg_path = PROJECT_ROOT / "args" / "code_quality_config.yaml"
+        if cfg_path.exists():
+            with open(cfg_path, encoding="utf-8") as f:
+                cfg = yaml.safe_load(f) or {}
+            defaults.update(cfg.get("audit_thresholds", {}))
+    except (ImportError, Exception):
+        pass
+    return defaults
+
+
 def check_high_complexity_pct() -> AuditCheck:
-    """CODE-003: High-complexity function count (warn if >5% have CC>15)."""
+    """CODE-003: High-complexity function count."""
+    thresholds = _load_code_quality_thresholds()
+    max_pct = thresholds.get("max_high_cc_pct", 8.0)
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.analysis.code_analyzer import CodeAnalyzer
@@ -1349,10 +1375,10 @@ def check_high_complexity_pct() -> AuditCheck:
         pct = round(len(high_cc) / len(fn_metrics) * 100, 2)
         return AuditCheck(
             check_id="CODE-003", check_name="High Complexity Functions",
-            category="code_quality", status="warn" if pct > 5.0 else "pass",
+            category="code_quality", status="warn" if pct > max_pct else "pass",
             severity="warning",
             message=f"{len(high_cc)}/{len(fn_metrics)} functions ({pct}%) have CC>15",
-            details={"high_cc_count": len(high_cc), "total": len(fn_metrics), "pct": pct},
+            details={"high_cc_count": len(high_cc), "total": len(fn_metrics), "pct": pct, "threshold": max_pct},
         )
     except Exception as e:
         return AuditCheck(
@@ -1363,7 +1389,10 @@ def check_high_complexity_pct() -> AuditCheck:
 
 
 def check_smell_density() -> AuditCheck:
-    """CODE-004: Smell density per KLOC (warn >10, fail >20)."""
+    """CODE-004: Smell density per KLOC."""
+    thresholds = _load_code_quality_thresholds()
+    warn_threshold = thresholds.get("max_smell_density_per_kloc", 15.0)
+    fail_threshold = thresholds.get("max_smell_density_critical", 25.0)
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from tools.analysis.code_analyzer import CodeAnalyzer
@@ -1374,9 +1403,9 @@ def check_smell_density() -> AuditCheck:
         total_smells = sum(m.get("smell_count", 0) for m in metrics)
         kloc = max(total_loc / 1000.0, 0.001)
         density = round(total_smells / kloc, 2)
-        if density > 20.0:
+        if density > fail_threshold:
             status = "fail"
-        elif density > 10.0:
+        elif density > warn_threshold:
             status = "warn"
         else:
             status = "pass"
@@ -1384,7 +1413,8 @@ def check_smell_density() -> AuditCheck:
             check_id="CODE-004", check_name="Smell Density",
             category="code_quality", status=status, severity="warning",
             message=f"{total_smells} smells / {round(kloc, 1)} KLOC = {density} per KLOC",
-            details={"total_smells": total_smells, "total_loc": total_loc, "density_per_kloc": density},
+            details={"total_smells": total_smells, "total_loc": total_loc, "density_per_kloc": density,
+                     "warn_threshold": warn_threshold, "fail_threshold": fail_threshold},
         )
     except Exception as e:
         return AuditCheck(

@@ -15,11 +15,17 @@ GOTCHA-compliant: LLM calls go through tools/llm/router.py, not direct API.
 
 import json
 import logging
+import os
 import random
 import re
+from pathlib import Path
 from typing import Any
 
 from slugify import slugify
+
+# Configurable project ID — avoids hardcoding "sparkpilot"
+PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID",
+                                   os.environ.get("ICDEV_PROJECT_ID", "pulse"))
 
 from tools.pulse.config import (
     ARTICLE_TEMPLATES,
@@ -420,6 +426,15 @@ def build_draft_context(
         system = _CHALLENGE_SOLUTION_PROMPT.format(**fmt_kwargs)
         user = _CHALLENGE_SOLUTION_USER.format(**fmt_kwargs)
 
+    # Inject style profile (adapted from AWS Public Sector Blog)
+    _style_path = Path(__file__).resolve().parent.parent.parent.parent / "context" / "pulse" / "style_profile.md"
+    if _style_path.exists():
+        try:
+            _style = _style_path.read_text(encoding="utf-8")
+            system += f"\n\n## WRITING STYLE GUIDE (mandatory)\n{_style}\n"
+        except Exception:
+            pass
+
     # Inject a randomized writing angle to ensure variety across runs
     angles = [
         "Write from the perspective of a frustrated developer who just lived through this.",
@@ -490,6 +505,15 @@ def build_rewrite_context(
             f"{capability_context}"
         )
 
+    # Add style profile to rewrite instructions
+    _style_path = Path(__file__).resolve().parent.parent.parent.parent / "context" / "pulse" / "style_profile.md"
+    if _style_path.exists():
+        try:
+            _style = _style_path.read_text(encoding="utf-8")
+            instructions += f"\n\n## WRITING STYLE GUIDE (adapt the article to match this voice)\n{_style}\n"
+        except Exception:
+            pass
+
     prompt = REWRITE_INSTRUCTIONS_TEMPLATE.format(
         instructions=instructions,
         text=text,
@@ -538,7 +562,8 @@ def draft_article_via_llm(
             messages=[{"role": "user", "content": ctx["user_prompt"]}],
             system_prompt=ctx["system_prompt"],
             max_tokens=8192,
-            project_id="sparkpilot",
+            project_id=PULSE_PROJECT_ID,
+            skip_injection_scan=True,  # Internal pipeline — topic seeds trigger false positives
         )
         response = router.invoke("pulse_draft", request)
 
@@ -610,7 +635,8 @@ def rewrite_article_via_llm(
             messages=[{"role": "user", "content": ctx["prompt"]}],
             system_prompt="You are a professional editor. Return only improved Markdown.",
             max_tokens=8192,
-            project_id="sparkpilot",
+            project_id=PULSE_PROJECT_ID,
+            skip_injection_scan=True,  # Internal pipeline — article content triggers false positives
         )
         response = router.invoke("pulse_rewrite", request)
 

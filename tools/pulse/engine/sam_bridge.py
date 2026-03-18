@@ -527,7 +527,10 @@ def run_sam_to_pulse(
             from tools.pulse.engine.demand_detector import detect_demand_signals
             flat_keywords = []
             for pp_item in pain_points:
-                flat_keywords.extend(pp_item.get("keywords", []))
+                if isinstance(pp_item, dict):
+                    flat_keywords.extend(pp_item.get("keywords", []))
+                elif isinstance(pp_item, str):
+                    flat_keywords.append(pp_item)
             detect_demand_signals(flat_keywords, opp_id, opp_title or "")
         except Exception as e:
             logger.warning("Demand detection skipped for %s: %s", opp_id, e)

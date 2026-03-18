@@ -101,7 +101,11 @@ class BaseAssessor(ABC):
             print(f"Warning: Could not log audit event: {e}", file=sys.stderr)
 
     def _ensure_table(self, conn: sqlite3.Connection) -> None:
-        """Create the framework-specific assessments table if not exists."""
+        """Create the framework-specific assessments table if not exists.
+
+        Also reconciles missing columns for tables created by init_icdev_db.py
+        with an older schema.
+        """
         status_check = ", ".join(f"'{s}'" for s in self.STATUS_VALUES)
         conn.executescript(f"""
             CREATE TABLE IF NOT EXISTS {self.TABLE_NAME} (
@@ -126,6 +130,30 @@ class BaseAssessor(ABC):
             CREATE INDEX IF NOT EXISTS idx_{self.TABLE_NAME}_project
                 ON {self.TABLE_NAME}(project_id);
         """)
+        # Reconcile missing columns for pre-existing tables (D151 pattern)
+        expected_cols = [
+            ("requirement_title", "TEXT"),
+            ("family", "TEXT"),
+            ("evidence_description", "TEXT"),
+            ("evidence_path", "TEXT"),
+            ("automation_result", "TEXT"),
+            ("assessor", "TEXT DEFAULT 'icdev-compliance-engine'"),
+            ("updated_at", "TEXT"),
+        ]
+        existing = {
+            row[1]
+            for row in conn.execute(
+                f"PRAGMA table_info({self.TABLE_NAME})"
+            ).fetchall()
+        }
+        for col_name, col_def in expected_cols:
+            if col_name not in existing:
+                try:
+                    conn.execute(
+                        f"ALTER TABLE {self.TABLE_NAME} ADD COLUMN {col_name} {col_def}"
+                    )
+                except Exception:
+                    pass  # Column may have been added concurrently
         conn.commit()
 
     # -----------------------------------------------------------------

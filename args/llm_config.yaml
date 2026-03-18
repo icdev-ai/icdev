@@ -58,7 +58,7 @@ models:
 
   claude-sonnet:
     provider: anthropic
-    model_id: "${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}"
+    model_id: "claude-sonnet-4-5-20250929"
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
@@ -185,7 +185,7 @@ models:
 
   qwen3-local:
     provider: ollama
-    model_id: "${OLLAMA_MODEL:-qwen3.5:latest}"
+    model_id: "qwen3.5:latest"
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -509,6 +509,15 @@ two_tier:
     - rag_rerank
     - rag_evaluate
     - ft_pair_generation
+    - pulse_draft          # Drafting uses gemma3 (no thinking mode issues)
+    - pulse_rewrite        # Rewriting uses qwen3.5 (think:false via provider)
+
+  # Per-function model overrides (scanner tier)
+  # Override tier1_model for specific functions
+  function_model_overrides:
+    pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
+    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting
+    pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
 
 # -----------------------------------------------------------------------
 # RAG Integration (D-RAG-2, Phase 64)

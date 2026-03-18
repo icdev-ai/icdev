@@ -716,14 +716,22 @@ def _extract_findings(quality: dict) -> list[dict]:
     """Extract findings from a WriteGuard quality result."""
     findings = []
     for key, result in quality.get("details", {}).items():
+        if not isinstance(result, dict):
+            continue
         for f in result.get("findings", result.get("issues", [])):
-            findings.append({
-                "category": key,
-                "message": f.get("message", f.get("description", "")),
-                "suggestion": f.get("suggestion", f.get("replacement", "")),
-            })
+            if isinstance(f, dict):
+                findings.append({
+                    "category": key,
+                    "message": f.get("message", f.get("description", "")),
+                    "suggestion": f.get("suggestion", f.get("replacement", "")),
+                })
+            elif isinstance(f, str):
+                findings.append({"category": key, "message": f, "suggestion": ""})
     for rec in quality.get("recommendations", []):
-        findings.append({"category": "recommendation", "message": rec, "suggestion": ""})
+        if isinstance(rec, str):
+            findings.append({"category": "recommendation", "message": rec, "suggestion": ""})
+        elif isinstance(rec, dict):
+            findings.append({"category": "recommendation", "message": rec.get("message", ""), "suggestion": rec.get("suggestion", "")})
     return findings
 
 

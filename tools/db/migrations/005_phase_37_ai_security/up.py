@@ -222,6 +222,108 @@ CREATE INDEX IF NOT EXISTS idx_iso42001_project ON iso42001_assessments(project_
 """
 
 
+def _column_exists(conn, table, column):
+    """Check if a column exists in a table."""
+    info = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(col[1] == column for col in info)
+
+
+def _safe_add_column(conn, table, column, col_def):
+    """Add a column if it does not already exist."""
+    if not _column_exists(conn, table, column):
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+            print(f"    Added column {table}.{column}")
+        except Exception as e:
+            print(f"    Warning: could not add {table}.{column}: {e}")
+
+
+def _reconcile_existing_tables(conn):
+    """Add missing columns to tables that were created by init_icdev_db.py
+    with an older schema before this migration existed.
+
+    init_icdev_db.py may define these tables with a different column set.
+    We add any columns the migration schema expects that are missing."""
+
+    # prompt_injection_log
+    if _table_exists(conn, "prompt_injection_log"):
+        _safe_add_column(conn, "prompt_injection_log", "finding_count", "INTEGER NOT NULL DEFAULT 0")
+        _safe_add_column(conn, "prompt_injection_log", "findings_json", "TEXT")
+        _safe_add_column(conn, "prompt_injection_log", "classification", "TEXT DEFAULT 'CUI'")
+        _safe_add_column(conn, "prompt_injection_log", "scanned_at", "TEXT")
+
+    # ai_telemetry
+    if _table_exists(conn, "ai_telemetry"):
+        _safe_add_column(conn, "ai_telemetry", "thinking_tokens", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "ai_telemetry", "cost_usd", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "ai_telemetry", "api_key_source", "TEXT DEFAULT 'system'")
+        _safe_add_column(conn, "ai_telemetry", "injection_scan_result", "TEXT")
+        _safe_add_column(conn, "ai_telemetry", "logged_at", "TEXT")
+
+    # ai_bom
+    if _table_exists(conn, "ai_bom"):
+        _safe_add_column(conn, "ai_bom", "component_type", "TEXT NOT NULL DEFAULT 'model'")
+        _safe_add_column(conn, "ai_bom", "component_name", "TEXT NOT NULL DEFAULT 'unknown'")
+        _safe_add_column(conn, "ai_bom", "license", "TEXT")
+        _safe_add_column(conn, "ai_bom", "risk_level", "TEXT DEFAULT 'medium'")
+        _safe_add_column(conn, "ai_bom", "atlas_techniques_json", "TEXT")
+        _safe_add_column(conn, "ai_bom", "mitigations_json", "TEXT")
+        _safe_add_column(conn, "ai_bom", "last_assessed", "TEXT")
+        _safe_add_column(conn, "ai_bom", "updated_at", "TEXT")
+
+    # atlas_assessments
+    if _table_exists(conn, "atlas_assessments"):
+        _safe_add_column(conn, "atlas_assessments", "assessment_date", "TEXT")
+        _safe_add_column(conn, "atlas_assessments", "coverage_pct", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "atlas_assessments", "mitigations_implemented", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "atlas_assessments", "mitigations_total", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "atlas_assessments", "techniques_covered", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "atlas_assessments", "techniques_total", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "atlas_assessments", "automated_checks_json", "TEXT")
+        _safe_add_column(conn, "atlas_assessments", "assessor", "TEXT")
+        _safe_add_column(conn, "atlas_assessments", "created_at", "TEXT")
+
+    # atlas_red_team_results
+    if _table_exists(conn, "atlas_red_team_results"):
+        _safe_add_column(conn, "atlas_red_team_results", "tactic", "TEXT")
+        _safe_add_column(conn, "atlas_red_team_results", "evidence_json", "TEXT")
+        _safe_add_column(conn, "atlas_red_team_results", "scanner_version", "TEXT")
+        _safe_add_column(conn, "atlas_red_team_results", "classification", "TEXT DEFAULT 'CUI'")
+        _safe_add_column(conn, "atlas_red_team_results", "scan_date", "TEXT")
+        _safe_add_column(conn, "atlas_red_team_results", "created_at", "TEXT")
+
+    # owasp_llm_assessments
+    if _table_exists(conn, "owasp_llm_assessments"):
+        _safe_add_column(conn, "owasp_llm_assessments", "assessment_date", "TEXT")
+        _safe_add_column(conn, "owasp_llm_assessments", "coverage_pct", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "owasp_llm_assessments", "items_satisfied", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "owasp_llm_assessments", "items_total", "INTEGER DEFAULT 10")
+        _safe_add_column(conn, "owasp_llm_assessments", "assessor", "TEXT")
+        _safe_add_column(conn, "owasp_llm_assessments", "created_at", "TEXT")
+
+    # nist_ai_rmf_assessments
+    if _table_exists(conn, "nist_ai_rmf_assessments"):
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "assessment_date", "TEXT")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "coverage_pct", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "govern_score", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "map_score", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "measure_score", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "manage_score", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "functions_assessed", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "functions_total", "INTEGER DEFAULT 4")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "assessor", "TEXT")
+        _safe_add_column(conn, "nist_ai_rmf_assessments", "created_at", "TEXT")
+
+    # iso42001_assessments
+    if _table_exists(conn, "iso42001_assessments"):
+        _safe_add_column(conn, "iso42001_assessments", "assessment_date", "TEXT")
+        _safe_add_column(conn, "iso42001_assessments", "coverage_pct", "REAL DEFAULT 0.0")
+        _safe_add_column(conn, "iso42001_assessments", "controls_satisfied", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "iso42001_assessments", "controls_total", "INTEGER DEFAULT 0")
+        _safe_add_column(conn, "iso42001_assessments", "assessor", "TEXT")
+        _safe_add_column(conn, "iso42001_assessments", "created_at", "TEXT")
+
+
 def up(conn: sqlite3.Connection):
     """Apply migration 005 — Phase 37 AI Security tables."""
     tables = [
@@ -233,11 +335,17 @@ def up(conn: sqlite3.Connection):
 
     existing = [t for t in tables if _table_exists(conn, t)]
     if existing:
-        print(f"  Note: tables already exist (skipping): {', '.join(existing)}")
+        print(f"  Note: tables already exist (will reconcile columns): {', '.join(existing)}")
 
+    # Reconcile pre-existing tables with missing columns
+    _reconcile_existing_tables(conn)
+
+    # Create any tables that don't exist yet
     conn.executescript(AI_SECURITY_SCHEMA)
     conn.commit()
-    print(f"  Migration 005 applied: {len(tables)} AI security tables created")
+
+    # Create indexes (idempotent — IF NOT EXISTS)
+    print(f"  Migration 005 applied: {len(tables)} AI security tables ensured")
 
 
 if __name__ == "__main__":

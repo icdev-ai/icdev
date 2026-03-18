@@ -14,11 +14,14 @@ import sys
 import types
 import warnings
 
-warnings.warn(
-    "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
+# Deprecation warning suppressed — migration to icdev.tools is incomplete
+# and the warning fires on every import across hundreds of files.
+# Uncomment when ready to migrate:
+# warnings.warn(
+#     "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
+#     DeprecationWarning,
+#     stacklevel=2,
+# )
 
 
 class _ToolsRedirect(types.ModuleType):

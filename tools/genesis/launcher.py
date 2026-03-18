@@ -13,6 +13,18 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.chdir(ROOT)
 
+# Load .env so dashboard/daemon get API keys, LLM config, etc.
+_env_file = os.path.join(ROOT, ".env")
+if os.path.isfile(_env_file):
+    with open(_env_file, encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+                if _k:
+                    os.environ.setdefault(_k, _v)
+
 # Ensure .tmp dirs exist
 os.makedirs(".tmp/genesis", exist_ok=True)
 
@@ -97,6 +109,23 @@ def _start_daemon():
     return proc, daemon_log
 
 
+def _start_proposal_genesis():
+    """Start Proposal Genesis Daemon subprocess."""
+    os.makedirs(".tmp/proposal_genesis", exist_ok=True)
+    pg_log = open(".tmp/proposal_genesis/daemon.log", "a", encoding="utf-8")
+    env = _child_env()
+    env["ICDEV_PROPOSAL_GENESIS_ENABLED"] = "true"
+    proc = subprocess.Popen(
+        [sys.executable, "tools/proposal_genesis/daemon.py"],
+        stdout=pg_log,
+        stderr=pg_log,
+        cwd=ROOT,
+        env=env,
+    )
+    _log(f"Proposal Genesis Daemon started (PID {proc.pid})")
+    return proc, pg_log
+
+
 def main():
     _log("=" * 60)
     _log("ICDEV Services Launcher starting")
@@ -113,6 +142,9 @@ def main():
     # Start Genesis Daemon
     daemon_proc, daemon_log_f = _start_daemon()
 
+    # Start Proposal Genesis Daemon (SAM.gov scanning, proposal intelligence)
+    pg_proc, pg_log_f = _start_proposal_genesis()
+
     # Monitor loop — restart crashed processes
     try:
         while True:
@@ -125,29 +157,34 @@ def main():
                 time.sleep(2)
                 dash_proc, dash_log_f = _start_dashboard()
 
-            # Check daemon
+            # Check Genesis daemon
             if daemon_proc.poll() is not None:
                 _log(f"Genesis Daemon exited (code {daemon_proc.returncode}), restarting...")
                 daemon_log_f.close()
                 time.sleep(5)
                 daemon_proc, daemon_log_f = _start_daemon()
 
+            # Check Proposal Genesis daemon
+            if pg_proc.poll() is not None:
+                _log(f"Proposal Genesis exited (code {pg_proc.returncode}), restarting...")
+                pg_log_f.close()
+                time.sleep(5)
+                pg_proc, pg_log_f = _start_proposal_genesis()
+
     except KeyboardInterrupt:
         _log("Shutdown requested")
     finally:
         _log("Stopping services...")
-        daemon_proc.terminate()
-        dash_proc.terminate()
-        try:
-            daemon_proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            daemon_proc.kill()
-        try:
-            dash_proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            dash_proc.kill()
+        for proc in [daemon_proc, pg_proc, dash_proc]:
+            proc.terminate()
+        for proc in [daemon_proc, pg_proc, dash_proc]:
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
         dash_log_f.close()
         daemon_log_f.close()
+        pg_log_f.close()
         _log("ICDEV Services stopped")
 
 

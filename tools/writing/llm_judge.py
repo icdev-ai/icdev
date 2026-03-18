@@ -496,7 +496,7 @@ def evaluate_and_store(
     try:
         from tools.db.storage import get_connection
 
-        entry_id = f"judge-{hashlib.md5(f'{post_id}{time.time()}'.encode()).hexdigest()[:12]}"
+        entry_id = f"judge-{hashlib.md5(f'{post_id}{time.time()}'.encode(), usedforsecurity=False).hexdigest()[:12]}"
         now = datetime.now(timezone.utc).isoformat()
 
         with get_connection() as conn:

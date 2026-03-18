@@ -86,10 +86,17 @@ def top_complex():
     try:
         conn = _get_db()
         rows = conn.execute(
-            """SELECT function_name, file_path, cyclomatic_complexity, cognitive_complexity,
-                      nesting_depth, parameter_count, smell_count, maintainability_score, loc
+            """SELECT function_name, file_path,
+                      MAX(cyclomatic_complexity) as cyclomatic_complexity,
+                      MAX(cognitive_complexity) as cognitive_complexity,
+                      MAX(nesting_depth) as nesting_depth,
+                      MAX(parameter_count) as parameter_count,
+                      MAX(smell_count) as smell_count,
+                      MIN(maintainability_score) as maintainability_score,
+                      MAX(loc) as loc
                FROM code_quality_metrics
                WHERE function_name IS NOT NULL
+               GROUP BY function_name, file_path
                ORDER BY cyclomatic_complexity DESC
                LIMIT ?""",
             (limit,),
@@ -133,22 +140,36 @@ def smell_breakdown():
 @code_quality_api.route("/trend", methods=["GET"])
 def trend_data():
     """Maintainability trend over scans."""
-    project_id = request.args.get("project_id", "icdev")
+    project_id = request.args.get("project_id")
     try:
         conn = _get_db()
-        rows = conn.execute(
-            """SELECT scan_id, MIN(created_at) as scan_date,
-                      AVG(cyclomatic_complexity) as avg_complexity,
-                      AVG(maintainability_score) as avg_maintainability,
-                      SUM(smell_count) as total_smells,
-                      COUNT(DISTINCT file_path) as files_scanned
-               FROM code_quality_metrics
-               WHERE project_id = ? OR ?1 IS NULL
-               GROUP BY scan_id
-               ORDER BY scan_date ASC
-               LIMIT 30""",
-            (project_id,),
-        ).fetchall()
+        # Include all scans (project_id may be NULL for platform-wide scans)
+        if project_id:
+            rows = conn.execute(
+                """SELECT scan_id, MIN(created_at) as scan_date,
+                          AVG(cyclomatic_complexity) as avg_complexity,
+                          AVG(maintainability_score) as avg_maintainability,
+                          SUM(smell_count) as total_smells,
+                          COUNT(DISTINCT file_path) as files_scanned
+                   FROM code_quality_metrics
+                   WHERE project_id = ? OR project_id IS NULL
+                   GROUP BY scan_id
+                   ORDER BY scan_date ASC
+                   LIMIT 30""",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT scan_id, MIN(created_at) as scan_date,
+                          AVG(cyclomatic_complexity) as avg_complexity,
+                          AVG(maintainability_score) as avg_maintainability,
+                          SUM(smell_count) as total_smells,
+                          COUNT(DISTINCT file_path) as files_scanned
+                   FROM code_quality_metrics
+                   GROUP BY scan_id
+                   ORDER BY scan_date ASC
+                   LIMIT 30""",
+            ).fetchall()
         conn.close()
         return jsonify({"trend": [dict(r) for r in rows]})
     except sqlite3.Error as e:

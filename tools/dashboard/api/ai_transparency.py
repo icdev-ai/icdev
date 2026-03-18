@@ -25,6 +25,22 @@ def _get_db() -> sqlite3.Connection:
     return conn
 
 
+def _resolve_project_id(explicit: str = None) -> str:
+    """Resolve project ID: explicit > query param > first project in DB > 'icdev-platform'."""
+    pid = explicit or request.args.get("project_id")
+    if pid:
+        return pid
+    try:
+        conn = _get_db()
+        row = conn.execute("SELECT id FROM projects ORDER BY rowid LIMIT 1").fetchone()
+        conn.close()
+        if row:
+            return row["id"]
+    except Exception:
+        pass
+    return "icdev-platform"
+
+
 def _safe_count(conn, table, project_id=None):
     try:
         if project_id:
@@ -61,6 +77,41 @@ def get_stats():
             ).fetchone()
             if row:
                 stats["fairness_score"] = round(row["overall_score"], 1)
+        except Exception:
+            pass
+
+        # Compute transparency score from framework coverage averages
+        try:
+            assessment_tables = [
+                "omb_m25_21_assessments", "omb_m26_04_assessments",
+                "nist_ai_600_1_assessments", "gao_ai_assessments",
+            ]
+            pid = _resolve_project_id(project_id)
+            coverages = []
+            for tbl in assessment_tables:
+                try:
+                    total = conn.execute(
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ?", (pid,),
+                    ).fetchone()
+                    satisfied = conn.execute(
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ? AND status IN ('satisfied', 'partially_satisfied')",
+                        (pid,),
+                    ).fetchone()
+                    if total and total["cnt"] > 0:
+                        coverages.append(round(satisfied["cnt"] / total["cnt"] * 100, 1))
+                except Exception:
+                    pass
+            if coverages:
+                framework_avg = round(sum(coverages) / len(coverages), 1)
+                # Transparency = 0.4 * framework + 0.4 * artifact + 0.2 * fairness
+                artifact_score = 100.0 if all([
+                    stats["inventory_count"] > 0, stats["model_card_count"] > 0,
+                    stats["system_card_count"] > 0, stats["confabulation_count"] > 0,
+                ]) else 50.0
+                fairness = stats["fairness_score"] or 0
+                stats["transparency_score"] = round(
+                    0.4 * framework_avg + 0.4 * artifact_score + 0.2 * fairness, 1
+                )
         except Exception:
             pass
 
@@ -141,11 +192,11 @@ def get_model_cards():
 @ai_transparency_api.route("/gaps", methods=["GET"])
 def get_gaps():
     """Get transparency gaps from latest audit."""
-    project_id = request.args.get("project_id")
+    project_id = _resolve_project_id()
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_transparency_audit import run_transparency_audit
-        result = run_transparency_audit(project_id or "default", db_path=DB_PATH)
+        result = run_transparency_audit(project_id, db_path=DB_PATH)
         return jsonify({"gaps": result.get("gaps", []), "gap_count": result.get("gap_count", 0)})
     except Exception as e:
         return jsonify({"gaps": [], "gap_count": 0, "error": str(e)})
@@ -155,7 +206,7 @@ def get_gaps():
 def run_audit():
     """Run full transparency audit."""
     data = request.get_json(silent=True) or {}
-    project_id = data.get("project_id", "default")
+    project_id = _resolve_project_id(data.get("project_id"))
     project_dir = data.get("project_dir")
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
@@ -170,7 +221,7 @@ def run_audit():
 def generate_model_card():
     """Generate a model card."""
     data = request.get_json(silent=True) or {}
-    project_id = data.get("project_id", "default")
+    project_id = _resolve_project_id(data.get("project_id"))
     model_name = data.get("model_name")
     if not model_name:
         return jsonify({"error": "model_name required"}), 400
@@ -187,7 +238,7 @@ def generate_model_card():
 def generate_system_card():
     """Generate a system card."""
     data = request.get_json(silent=True) or {}
-    project_id = data.get("project_id", "default")
+    project_id = _resolve_project_id(data.get("project_id"))
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from system_card_generator import generate_system_card as gen

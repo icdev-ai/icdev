@@ -95,15 +95,52 @@ class RemediationReport:
 # Each entry: check_id -> {confidence, tier, strategy, command, suggestion}
 # SEC-003 hardcoded to escalate (D297) — secrets MUST NEVER be auto-fixed.
 
+def _detect_project_id() -> str:
+    """Detect an existing project ID from the database, or create a default."""
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        row = conn.execute("SELECT id FROM projects ORDER BY rowid LIMIT 1").fetchone()
+        if row:
+            conn.close()
+            return row[0]
+        # No projects exist — create a default one for remediation
+        from datetime import datetime, timezone as _tz
+        pid = "icdev-platform"
+        now = datetime.now(_tz.utc).isoformat()
+        conn.execute(
+            "INSERT OR IGNORE INTO projects "
+            "(id, name, type, classification, status, directory_path, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (pid, "ICDEV Platform", "webapp", "CUI", "active", str(PROJECT_ROOT), now, now),
+        )
+        conn.commit()
+        conn.close()
+        return pid
+    except Exception:
+        return "icdev-platform"
+
+
+# Lazily resolved project ID (computed once on first use)
+_RESOLVED_PROJECT_ID: Optional[str] = None
+
+
+def _get_project_id() -> str:
+    """Return a valid project ID for remediation commands."""
+    global _RESOLVED_PROJECT_ID
+    if _RESOLVED_PROJECT_ID is None:
+        _RESOLVED_PROJECT_ID = _detect_project_id()
+    return _RESOLVED_PROJECT_ID
+
+
 REMEDIATION_REGISTRY: Dict[str, dict] = {
     # --- Auto-fix (confidence >= 0.7) ---
     "SEC-002": {
         "confidence": 0.80,
         "tier": "auto_fix",
         "strategy": "dep_version_bumps",
-        "command": [
+        "command_factory": lambda: [
             sys.executable, str(PROJECT_ROOT / "tools" / "maintenance" / "remediation_engine.py"),
-            "--project-id", "icdev-platform", "--auto", "--json",
+            "--project-id", _get_project_id(), "--auto", "--json",
         ],
         "suggestion": None,
     },
@@ -142,9 +179,9 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "confidence": 0.80,
         "tier": "auto_fix",
         "strategy": "populate_ai_inventory",
-        "command": [
+        "command_factory": lambda: [
             sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "ai_inventory_manager.py"),
-            "--project-id", "icdev-platform", "--register", "--name", "default", "--json",
+            "--project-id", _get_project_id(), "--register", "--name", "default", "--json",
         ],
         "suggestion": None,
     },
@@ -152,9 +189,9 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "confidence": 0.80,
         "tier": "auto_fix",
         "strategy": "generate_model_cards",
-        "command": [
+        "command_factory": lambda: [
             sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "model_card_generator.py"),
-            "--project-id", "icdev-platform", "--model-name", "default", "--json",
+            "--project-id", _get_project_id(), "--model-name", "default", "--json",
         ],
         "suggestion": None,
     },
@@ -162,9 +199,9 @@ REMEDIATION_REGISTRY: Dict[str, dict] = {
         "confidence": 0.75,
         "tier": "auto_fix",
         "strategy": "run_ai_transparency_audit",
-        "command": [
+        "command_factory": lambda: [
             sys.executable, str(PROJECT_ROOT / "tools" / "compliance" / "ai_transparency_audit.py"),
-            "--project-id", "icdev-platform", "--json",
+            "--project-id", _get_project_id(), "--json",
         ],
         "suggestion": None,
     },
@@ -351,7 +388,7 @@ def _run_auto_fix(
 
     Returns (status, message, details).
     """
-    cmd = registry_entry["command"]
+    cmd = registry_entry.get("command") or (registry_entry["command_factory"]() if "command_factory" in registry_entry else None)
     if not cmd:
         return "failed", "No command configured", {}
 
@@ -567,7 +604,7 @@ def run_remediation(
                 tier=reg["tier"],
                 status=status,
                 fix_strategy=reg["strategy"],
-                fix_command=" ".join(str(c) for c in reg["command"]) if reg["command"] else None,
+                fix_command=" ".join(str(c) for c in (reg.get("command") or (reg["command_factory"]() if "command_factory" in reg else None) or [])) or None,
                 message=message,
                 details=details,
             )

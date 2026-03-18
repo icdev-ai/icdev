@@ -11,6 +11,21 @@ from pathlib import Path
 # Base directory: project root (3 levels up from this file)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Load .env early so all os.environ reads below pick up .env values
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    _env_file = BASE_DIR / ".env"
+    if _env_file.exists():
+        for _line in _env_file.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                _k, _v = _k.strip(), _v.strip().strip('"').strip("'")
+                if _k and _k not in os.environ:
+                    os.environ[_k] = _v
+
 # ---------------------------------------------------------------------------
 # YAML loading (pure-Python fallback if PyYAML is not installed)
 # ---------------------------------------------------------------------------

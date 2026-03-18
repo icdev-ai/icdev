@@ -125,7 +125,7 @@ class OllamaProvider(LLMProvider):
 
     def __init__(self, base_url: str = "http://localhost:11434"):
         self._base_url = base_url.rstrip("/")
-        self._timeout = 120  # seconds
+        self._timeout = 300  # seconds (increased for GPU contention with image gen)
 
     @property
     def provider_name(self) -> str:
@@ -165,6 +165,11 @@ class OllamaProvider(LLMProvider):
 
         if options:
             payload["options"] = options
+
+        # Disable thinking mode for qwen3+ models — they burn all num_predict
+        # tokens on reasoning before producing output, causing timeouts
+        if "qwen3" in model_id.lower():
+            payload["think"] = False
 
         # Structured output via Ollama's format parameter
         if request.output_schema and model_config.get("supports_structured_output", False):
@@ -258,6 +263,10 @@ class OllamaProvider(LLMProvider):
 
         if options:
             payload["options"] = options
+
+        # Disable thinking mode for qwen3+ models (see invoke() comment)
+        if "qwen3" in model_id.lower():
+            payload["think"] = False
 
         if request.output_schema and model_config.get("supports_structured_output", False):
             payload["format"] = "json"

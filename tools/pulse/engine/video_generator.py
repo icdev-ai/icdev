@@ -150,7 +150,7 @@ def generate_svg_video(
     """
     start = time.time()
 
-    h = hashlib.md5(title.encode()).hexdigest()
+    h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()
     hue1 = int(h[:3], 16) % 360
     hue2 = (hue1 + 40) % 360
     color1 = f"hsl({hue1}, 65%, 25%)"
@@ -213,7 +213,7 @@ def generate_svg_video(
 </svg>"""
 
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]
         DEFAULT_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_VIDEO_DIR / f"video-{slug}.svg")
 
@@ -328,7 +328,7 @@ def generate_video(
     prompt = prompt_override or _build_video_prompt(title, category)
 
     if not output_path:
-        slug = hashlib.md5(title.encode()).hexdigest()[:12]
+        slug = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()[:12]
         DEFAULT_VIDEO_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(DEFAULT_VIDEO_DIR / f"video-{slug}.mp4")
 

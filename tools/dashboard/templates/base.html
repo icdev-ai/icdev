@@ -22,38 +22,83 @@
         <a class="navbar-brand" href="/">ICDEV</a>
         <ul class="navbar-nav">
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
-            <li><a href="/projects" class="{% if '/projects' in request.path %}active{% endif %}">Projects</a></li>
-            <li><a href="/agents" class="{% if '/agents' in request.path %}active{% endif %}">Agents</a></li>
-            <li><a href="/orchestration" class="{% if '/orchestration' in request.path %}active{% endif %}">Orchestration</a></li>
-            <li><a href="/monitoring" class="{% if '/monitoring' in request.path %}active{% endif %}">Monitoring</a></li>
-            <li><a href="/activity" class="{% if '/activity' in request.path %}active{% endif %}">Activity</a></li>
-            <li><a href="/usage" class="{% if '/usage' in request.path %}active{% endif %}">Usage</a></li>
-            <li><a href="/quick-paths" class="{% if '/quick-paths' in request.path %}active{% endif %}">Quick Paths</a></li>
-            <li><a href="/batch" class="{% if '/batch' in request.path %}active{% endif %}">Batch</a></li>
-            <li><a href="/diagrams" class="{% if '/diagrams' in request.path %}active{% endif %}">Diagrams</a></li>
-            <li><a href="/cicd" class="{% if '/cicd' in request.path %}active{% endif %}">CI/CD</a></li>
-            <li><a href="/chat" class="{% if request.path == '/chat' or request.path.startswith('/chat/') %}active{% endif %}">Chat</a></li>
-            <li><a href="/dev-profiles" class="{% if '/dev-profiles' in request.path %}active{% endif %}">Profiles</a></li>
-            <li><a href="/phases" class="{% if '/phases' in request.path %}active{% endif %}">Phases</a></li>
-            <li><a href="/translations" class="{% if '/translations' in request.path %}active{% endif %}">Translations</a></li>
-            <li><a href="/oscal" class="{% if '/oscal' in request.path %}active{% endif %}">OSCAL</a></li>
-            <li><a href="/prod-audit" class="{% if '/prod-audit' in request.path %}active{% endif %}">Audit</a></li>
-            <li><a href="/ai-transparency" class="{% if '/ai-transparency' in request.path %}active{% endif %}">AI Transparency</a></li>
-            <li><a href="/ai-accountability" class="{% if '/ai-accountability' in request.path %}active{% endif %}">AI Accountability</a></li>
-            <li><a href="/code-quality" class="{% if '/code-quality' in request.path %}active{% endif %}">Code Quality</a></li>
-            <li><a href="/research" class="{% if '/research' in request.path %}active{% endif %}">Research</a></li>
-            <li><a href="/knowledge-search" class="{% if '/knowledge-search' in request.path %}active{% endif %}">Knowledge</a></li>
-            <li><a href="/finetune" class="{% if '/finetune' in request.path %}active{% endif %}">Fine-Tuning</a></li>
+            <li><a href="/chat" class="{% if '/chat' in request.path %}active{% endif %}">Chat</a></li>
+
+            <!-- Operations -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/projects', '/agents', '/orchestration', '/monitoring', '/activity', '/cicd', '/batch'] %}active{% endif %}">Ops</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/projects">Projects</a></li>
+                    <li><a href="/agents">Agents</a></li>
+                    <li><a href="/orchestration">Orchestration</a></li>
+                    <li><a href="/monitoring">Monitoring</a></li>
+                    <li><a href="/activity">Activity</a></li>
+                    <li><a href="/cicd">CI/CD</a></li>
+                    <li><a href="/batch">Batch</a></li>
+                </ul>
+            </li>
+
+            <!-- Compliance & Security -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/oscal', '/prod-audit', '/ai-transparency', '/ai-accountability'] %}active{% endif %}">Compliance</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/oscal">OSCAL</a></li>
+                    <li><a href="/prod-audit">Production Audit</a></li>
+                    <li><a href="/ai-transparency">AI Transparency</a></li>
+                    <li><a href="/ai-accountability">AI Accountability</a></li>
+                </ul>
+            </li>
+
+            <!-- Intelligence -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/research', '/knowledge-search', '/code-quality', '/pulse'] %}active{% endif %}">Intelligence</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/research">Research</a></li>
+                    <li><a href="/knowledge-search">Knowledge</a></li>
+                    <li><a href="/code-quality">Code Quality</a></li>
+                    <li><a href="/pulse">Pulse Blog</a></li>
+                </ul>
+            </li>
+
+            <!-- Genesis (all apps) -->
             <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>
-            <li><a href="/pulse" class="{% if '/pulse' in request.path %}active{% endif %}">Pulse</a></li>
+
+            <!-- Build & Dev -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/dev-profiles', '/phases', '/translations', '/finetune', '/diagrams'] %}active{% endif %}">Build</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/dev-profiles">Dev Profiles</a></li>
+                    <li><a href="/phases">Phases</a></li>
+                    <li><a href="/translations">Translations</a></li>
+                    <li><a href="/finetune">Fine-Tuning</a></li>
+                    <li><a href="/diagrams">Diagrams</a></li>
+                </ul>
+            </li>
+
             {% if govcon_enabled %}
-            <li><a href="/proposals" class="{% if '/proposals' in request.path %}active{% endif %}">Proposals</a></li>
-            <li><a href="/govcon" class="{% if '/govcon' in request.path %}active{% endif %}">GovCon</a></li>
+            <!-- GovCon -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/proposals', '/govcon'] or '/proposals' in request.path %}active{% endif %}">GovCon</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/proposals">Proposals</a></li>
+                    <li><a href="/govcon">Intelligence</a></li>
+                </ul>
+            </li>
             {% endif %}
+
+            <!-- Utility -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard'] %}active{% endif %}">More</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/usage">Usage</a></li>
+                    <li><a href="/quick-paths">Quick Paths</a></li>
+                    <li><a href="/wizard" style="color: var(--accent-blue-light);">Get Started</a></li>
+                </ul>
+            </li>
+
             {% if current_user and current_user.role == 'admin' %}
             <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
             {% endif %}
-            <li><a href="/wizard" class="{% if '/wizard' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Get Started</a></li>
         </ul>
         <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             {% if current_user %}

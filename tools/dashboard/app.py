@@ -1705,9 +1705,30 @@ def create_app() -> Flask:
     @app.route("/login", methods=["GET", "POST"])
     def login_page():
         """Login page — accepts API key via form or header."""
+        # Auto-login when .env key is configured
+        env_key = _os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+        if env_key:
+            try:
+                user = validate_api_key(env_key)
+                if not user:
+                    from tools.dashboard.auth import bootstrap_env_user
+                    user = bootstrap_env_user(env_key)
+                if user:
+                    flask_session["user_id"] = user["id"]
+                    return redirect(url_for("index"))
+                else:
+                    app.logger.warning("ICDEV_DASHBOARD_API_KEY set but validation failed")
+            except Exception as exc:
+                app.logger.error(f"Auto-login failed: {exc}")
         if flask_request.method == "POST":
             raw_key = flask_request.form.get("api_key", "").strip()
             user = validate_api_key(raw_key)
+            # Fallback: accept ICDEV_DASHBOARD_API_KEY from .env
+            if not user:
+                env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+                if env_key and raw_key == env_key:
+                    from tools.dashboard.auth import bootstrap_env_user
+                    user = bootstrap_env_user(env_key)
             if user:
                 flask_session["user_id"] = user["id"]
                 log_auth_event(
@@ -3888,36 +3909,282 @@ def create_app() -> Flask:
 
     # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
 
+    # Registry of all Genesis-enabled apps (app_key → config)
+    GENESIS_APPS = {
+        "icdev": {
+            "name": "ICDEV",
+            "root": str(BASE_DIR),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": "tools/genesis/promoter.py",
+            "env_var": "ICDEV_GENESIS_ENABLED",
+            "db": str(BASE_DIR / "data" / "icdev.db"),
+        },
+        "govchain": {
+            "name": "GovChain",
+            "root": str(Path(BASE_DIR).parent / "govchain"),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": None,
+            "env_var": "GOVCHAIN_GENESIS_ENABLED",
+            "db": str(Path(BASE_DIR).parent / "govchain" / "data" / "govchain.db"),
+        },
+        "govproposal": {
+            "name": "GovProposal",
+            "root": str(Path(BASE_DIR).parent / "GovProposal"),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": None,
+            "env_var": "GOVPROPOSAL_GENESIS_ENABLED",
+            "db": str(Path(BASE_DIR).parent / "GovProposal" / "data" / "govproposal.db"),
+        },
+        "trading-engine": {
+            "name": "Trading Engine",
+            "root": str(Path(BASE_DIR).parent / "trading-engine"),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": None,
+            "env_var": "TRADING_GENESIS_ENABLED",
+            "db": str(Path(BASE_DIR).parent / "trading-engine" / "data" / "trading-engine.db"),
+        },
+        "trading-strategy": {
+            "name": "Trading Strategy",
+            "root": str(Path(BASE_DIR).parent / "Trading_Strategy"),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": "tools/genesis/promoter.py",
+            "env_var": "TRADING_GENESIS_ENABLED",
+            "db": str(Path(BASE_DIR).parent / "Trading_Strategy" / "data" / "trading_strategy.db"),
+        },
+        "ninjaflow": {
+            "name": "NinjaFlow",
+            "root": str(Path(BASE_DIR).parent / "ninjaflow-ai" / "ninjaflow-ai"),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": None,
+            "env_var": "NINJAFLOW_GENESIS_ENABLED",
+            "db": str(Path(BASE_DIR).parent / "ninjaflow-ai" / "ninjaflow-ai" / "data" / "ninjaflow-ai.db"),
+        },
+        "signalforge": {
+            "name": "SignalForge",
+            "root": str(Path(BASE_DIR).parent / "signalforge"),
+            "daemon": "tools/genesis/daemon.py",
+            "promoter": None,
+            "env_var": "SIGNALFORGE_GENESIS_ENABLED",
+            "db": str(Path(BASE_DIR).parent / "signalforge" / "data" / "signalforge.db"),
+        },
+    }
+
+    def _genesis_app(app_key):
+        """Get Genesis app config, default to icdev."""
+        return GENESIS_APPS.get(app_key, GENESIS_APPS["icdev"])
+
+    def _genesis_run(app_key, args, timeout=15):
+        """Run a Genesis daemon command for a given app."""
+        import subprocess as _sp
+        cfg = _genesis_app(app_key)
+        app_root = cfg["root"]
+        daemon_path = cfg["daemon"]
+        env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": app_root,
+               cfg["env_var"]: "true", "PYTHONUNBUFFERED": "1"}
+        result = _sp.run(
+            [sys.executable, daemon_path] + args,
+            capture_output=True, text=True, timeout=timeout, cwd=app_root, env=env,
+        )
+        stdout = result.stdout.strip()
+        json_start = stdout.find("{")
+        if json_start >= 0:
+            return json.loads(stdout[json_start:])
+        return {"error": "parse_failed", "stderr": result.stderr[:500] if result.stderr else ""}
+
+    def _genesis_db(app_key):
+        """Get a DB connection for a Genesis app."""
+        cfg = _genesis_app(app_key)
+        db_path = cfg["db"]
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
+
+    # ── Contact Form Submissions ─────────────────────────────────────────────
+
+    @app.route("/api/contact/submit", methods=["POST", "OPTIONS"])
+    def api_contact_submit():
+        """Public endpoint — receives contact form submissions from icdev.ai."""
+        # CORS for cross-origin from icdev.ai
+        if flask_request.method == "OPTIONS":
+            resp = app.make_default_options_response()
+            resp.headers["Access-Control-Allow-Origin"] = "https://icdev.ai"
+            resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            return resp
+
+        try:
+            # Accept both JSON and form data
+            if flask_request.is_json:
+                data = flask_request.get_json()
+            else:
+                data = flask_request.form.to_dict()
+
+            name = (data.get("name") or "").strip()
+            email = (data.get("email") or "").strip()
+            if not name or not email:
+                return jsonify({"error": "Name and email are required"}), 400
+
+            sub_id = f"lead-{uuid.uuid4().hex[:12]}"
+            now = __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            ).isoformat()
+
+            conn = _get_db()
+            try:
+                conn.execute(
+                    "INSERT INTO contact_submissions "
+                    "(id, name, email, organization, role, interest, message, status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (sub_id, name, email,
+                     (data.get("organization") or "").strip(),
+                     (data.get("role") or "").strip(),
+                     (data.get("interest") or "").strip(),
+                     (data.get("message") or "").strip(),
+                     "new", now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            resp = jsonify({"ok": True, "id": sub_id})
+            resp.headers["Access-Control-Allow-Origin"] = "https://icdev.ai"
+            return resp
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/leads")
+    def leads_page():
+        """Contact form submissions dashboard."""
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM contact_submissions ORDER BY created_at DESC LIMIT 100"
+            ).fetchall()
+            submissions = [dict(r) for r in rows]
+            stats = {
+                "total": len(submissions),
+                "new": sum(1 for s in submissions if s.get("status") == "new"),
+                "contacted": sum(1 for s in submissions if s.get("status") == "contacted"),
+                "closed": sum(1 for s in submissions if s.get("status") == "closed"),
+            }
+        except Exception:
+            submissions = []
+            stats = {"total": 0, "new": 0, "contacted": 0, "closed": 0}
+        finally:
+            conn.close()
+        return render_template("leads.html", submissions=submissions, stats=stats)
+
+    @app.route("/api/leads/<lead_id>/status", methods=["POST"])
+    def api_lead_update_status(lead_id):
+        """Update a lead's status."""
+        data = flask_request.get_json(silent=True) or {}
+        new_status = data.get("status", "")
+        notes = data.get("notes", "")
+        if new_status not in ("new", "contacted", "qualified", "closed"):
+            return jsonify({"error": "Invalid status"}), 400
+        now = __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).isoformat()
+        conn = _get_db()
+        try:
+            conn.execute(
+                "UPDATE contact_submissions SET status = ?, notes = ?, updated_at = ? WHERE id = ?",
+                (new_status, notes, now, lead_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "id": lead_id, "status": new_status})
+
+    # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
+
     @app.route("/genesis")
     def genesis():
-        """Genesis v2.0 — Autonomous Research Lab dashboard."""
-        try:
-            import subprocess
-            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-            result = subprocess.run(
-                [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
-                env=_utf8_env,
-            )
-            stdout = result.stdout.strip()
-            json_start = stdout.find("{")
-            if json_start >= 0:
-                status = json.loads(stdout[json_start:])
+        """Genesis v2.0 — Autonomous Research Lab dashboard (multi-app)."""
+        app_key = flask_request.args.get("app", "icdev")
+        # Gather status for all apps
+        all_status = {}
+        for key, cfg in GENESIS_APPS.items():
+            if Path(cfg["root"]).exists():
+                try:
+                    all_status[key] = _genesis_run(key, ["--status", "--json"])
+                    all_status[key]["_name"] = cfg["name"]
+                    all_status[key]["_available"] = True
+                except Exception as exc:
+                    all_status[key] = {"_name": cfg["name"], "_available": False, "error": str(exc)}
             else:
-                status = {"error": "Could not parse daemon status"}
-        except Exception as exc:
-            status = {"error": str(exc)}
-        return render_template("genesis.html", status=status)
+                all_status[key] = {"_name": cfg["name"], "_available": False, "error": "Directory not found"}
+        # Active app status
+        status = all_status.get(app_key, all_status.get("icdev", {}))
+        return render_template("genesis.html", status=status, all_apps=all_status,
+                               active_app=app_key, genesis_apps=GENESIS_APPS)
 
 
     @app.route("/api/genesis/status", methods=["GET"])
     def api_genesis_status():
+        app_key = flask_request.args.get("app", "icdev")
+        try:
+            return jsonify(_genesis_run(app_key, ["--status", "--json"]))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/all-status", methods=["GET"])
+    def api_genesis_all_status():
+        """Get status for all Genesis apps."""
+        results = {}
+        for key, cfg in GENESIS_APPS.items():
+            if Path(cfg["root"]).exists():
+                try:
+                    results[key] = _genesis_run(key, ["--status", "--json"])
+                    results[key]["_name"] = cfg["name"]
+                except Exception as exc:
+                    results[key] = {"_name": cfg["name"], "error": str(exc)}
+            else:
+                results[key] = {"_name": cfg["name"], "error": "not_found"}
+        return jsonify(results)
+
+
+    @app.route("/api/genesis/reflex/<name>", methods=["POST"])
+    def api_genesis_run_reflex(name):
+        """Run a single Genesis reflex on-demand."""
+        app_key = flask_request.args.get("app", "icdev")
+        allowed = ["research", "scout", "audit", "report", "comply", "ingest",
+                   "market", "publish", "test", "learn", "heal", "evolve", "docs"]
+        if name not in allowed:
+            return jsonify({"error": f"Unknown reflex: {name}"}), 400
+        try:
+            return jsonify(_genesis_run(app_key, ["--reflex", name, "--json"], timeout=300))
+            return jsonify({"error": "parse_failed", "raw": stdout[:500]}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+
+    @app.route("/api/genesis/promoter/stats", methods=["GET"])
+    def api_genesis_promoter_stats():
+        app_key = flask_request.args.get("app", "icdev")
+        cfg = _genesis_app(app_key)
+        if not cfg.get("promoter"):
+            # No promoter — query DB directly for GKP counts
+            try:
+                conn = _genesis_db(app_key)
+                try:
+                    total = conn.execute("SELECT COUNT(*) FROM genesis_gkp").fetchone()[0]
+                    by_status = {}
+                    for row in conn.execute("SELECT promotion_status, COUNT(*) as cnt FROM genesis_gkp GROUP BY promotion_status").fetchall():
+                        by_status[row[0]] = row[1]
+                    return jsonify({"total_gkps": total, "by_status": by_status})
+                finally:
+                    conn.close()
+            except Exception as exc:
+                return jsonify({"total_gkps": 0, "by_status": {}, "note": str(exc)})
         try:
             import subprocess
-            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = subprocess.run(
-                [sys.executable, "tools/genesis/daemon.py", "--status", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
+                [sys.executable, cfg["promoter"], "--stats", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -3929,56 +4196,14 @@ def create_app() -> Flask:
             return jsonify({"error": str(exc)}), 500
 
 
-    @app.route("/api/genesis/reflex/<name>", methods=["POST"])
-    def api_genesis_run_reflex(name):
-        """Run a single Genesis reflex on-demand."""
-        allowed = ["research", "scout", "audit", "report", "comply", "ingest",
-                   "market", "publish", "test", "learn", "heal", "evolve"]
-        if name not in allowed:
-            return jsonify({"error": f"Unknown reflex: {name}"}), 400
-        try:
-            import subprocess
-            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-            result = subprocess.run(
-                [sys.executable, "tools/genesis/daemon.py", "--reflex", name, "--json"],
-                capture_output=True, text=True, timeout=300, cwd=BASE_DIR,
-                env=_utf8_env,
-            )
-            stdout = result.stdout.strip()
-            json_start = stdout.find("{")
-            if json_start >= 0:
-                return jsonify(json.loads(stdout[json_start:]))
-            return jsonify({"error": "parse_failed", "raw": stdout[:500]}), 500
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-
-    @app.route("/api/genesis/promoter/stats", methods=["GET"])
-    def api_genesis_promoter_stats():
-        try:
-            import subprocess
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": str(BASE_DIR)}
-            result = subprocess.run(
-                [sys.executable, "tools/genesis/promoter.py", "--stats", "--json"],
-                capture_output=True, text=True, timeout=15, cwd=BASE_DIR,
-                env=_utf8_env,
-            )
-            stdout = result.stdout.strip()
-            json_start = stdout.find("{")
-            if json_start >= 0:
-                return jsonify(json.loads(stdout[json_start:]))
-            return jsonify({"error": "parse_failed", "stderr": result.stderr[-500:] if result.stderr else ""}), 500
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-
     @app.route("/api/genesis/gkps", methods=["GET"])
     def api_genesis_gkps():
         """List GKPs with optional status filter."""
+        app_key = flask_request.args.get("app", "icdev")
         status_filter = flask_request.args.get("status", None)
         limit = int(flask_request.args.get("limit", "100"))
         try:
-            conn = _get_db()
+            conn = _genesis_db(app_key)
             try:
                 if status_filter:
                     rows = conn.execute(
@@ -4001,8 +4226,9 @@ def create_app() -> Flask:
     @app.route("/api/genesis/gkps/<gkp_id>", methods=["GET"])
     def api_genesis_gkp_detail(gkp_id):
         """Get a single GKP by ID."""
+        app_key = flask_request.args.get("app", "icdev")
         try:
-            conn = _get_db()
+            conn = _genesis_db(app_key)
             try:
                 row = conn.execute("SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
                 if not row:
@@ -4017,12 +4243,26 @@ def create_app() -> Flask:
     @app.route("/api/genesis/gkps/<gkp_id>/promote", methods=["POST"])
     def api_genesis_promote_gkp(gkp_id):
         """Promote a GKP to v1.x."""
+        app_key = flask_request.args.get("app", "icdev")
+        cfg = _genesis_app(app_key)
+        if not cfg.get("promoter"):
+            # Manual DB update for apps without a promoter
+            try:
+                conn = _genesis_db(app_key)
+                try:
+                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = ?", (gkp_id,))
+                    conn.commit()
+                    return jsonify({"status": "promoted", "gkp_id": gkp_id})
+                finally:
+                    conn.close()
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
         try:
             import subprocess as _sp
-            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
-                [sys.executable, "tools/genesis/promoter.py", "--promote", gkp_id, "--json"],
-                capture_output=True, text=True, timeout=30, cwd=BASE_DIR,
+                [sys.executable, cfg["promoter"], "--promote", gkp_id, "--json"],
+                capture_output=True, text=True, timeout=30, cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -4037,14 +4277,27 @@ def create_app() -> Flask:
     @app.route("/api/genesis/gkps/<gkp_id>/reject", methods=["POST"])
     def api_genesis_reject_gkp(gkp_id):
         """Reject a GKP."""
+        app_key = flask_request.args.get("app", "icdev")
+        cfg = _genesis_app(app_key)
+        data = flask_request.get_json(silent=True) or {}
+        reason = data.get("reason", "Rejected via dashboard")
+        if not cfg.get("promoter"):
+            try:
+                conn = _genesis_db(app_key)
+                try:
+                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'rejected' WHERE id = ?", (gkp_id,))
+                    conn.commit()
+                    return jsonify({"status": "rejected", "gkp_id": gkp_id, "reason": reason})
+                finally:
+                    conn.close()
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
         try:
-            data = flask_request.get_json(silent=True) or {}
-            reason = data.get("reason", "Rejected via dashboard")
             import subprocess as _sp
-            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
-                [sys.executable, "tools/genesis/promoter.py", "--reject", gkp_id, "--reason", reason, "--json"],
-                capture_output=True, text=True, timeout=30, cwd=BASE_DIR,
+                [sys.executable, cfg["promoter"], "--reject", gkp_id, "--reason", reason, "--json"],
+                capture_output=True, text=True, timeout=30, cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()
@@ -4059,12 +4312,16 @@ def create_app() -> Flask:
     @app.route("/api/genesis/gkps/auto-promote", methods=["POST"])
     def api_genesis_auto_promote():
         """Auto-promote all eligible GKPs."""
+        app_key = flask_request.args.get("app", "icdev")
+        cfg = _genesis_app(app_key)
+        if not cfg.get("promoter"):
+            return jsonify({"error": "No promoter configured for this app", "auto_promoted": 0}), 400
         try:
             import subprocess as _sp
-            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
-                [sys.executable, "tools/genesis/promoter.py", "--auto-promote", "--json"],
-                capture_output=True, text=True, timeout=30, cwd=BASE_DIR,
+                [sys.executable, cfg["promoter"], "--auto-promote", "--json"],
+                capture_output=True, text=True, timeout=30, cwd=cfg["root"],
                 env=_utf8_env,
             )
             stdout = result.stdout.strip()

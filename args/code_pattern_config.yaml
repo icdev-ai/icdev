@@ -39,10 +39,10 @@ patterns:
       severity: critical
       name: os_popen
       description: "Shell command via os.popen"
-    - pattern: '\bcompile\s*\('
+    - pattern: '(?<!re\.)\bcompile\s*\('
       severity: medium
       name: compile_usage
-      description: "Dynamic code compilation"
+      description: "Dynamic code compilation (excludes re.compile)"
 
   java:
     - pattern: 'Runtime\.getRuntime\(\)\.exec\s*\('
@@ -149,3 +149,19 @@ scan:
     typescript: [".ts", ".tsx", ".js", ".jsx"]
 
   max_file_size_kb: 500
+
+# Framework allowlist — patterns that are legitimate in ICDEV's own tools/
+# directory but should still be flagged in marketplace assets, child apps,
+# and user-submitted code. The scanner uses this to classify findings as
+# "allowed" (framework-inherent) vs "unallowed" (potential real issues).
+framework_allowlist:
+  # Directory scope: only these paths get allowlist treatment
+  allowed_dirs:
+    - tools/
+  # Pattern names that are legitimate in the allowed_dirs
+  allowed_patterns:
+    - subprocess_spawn    # GOTCHA Tool layer — list-arg invocation, no shell
+    - dunder_import       # D66 ABC provider pattern — dynamic loading
+    - importlib_usage     # D66 pluggable architecture — plugin loading
+    - compile_usage       # re.compile() — regex, not code exec
+    - exec_usage          # Connector Forge sandbox (D-CF-4) — documented design

@@ -120,12 +120,14 @@ def _ai_detection(text: str) -> Dict[str, Any]:
     variance = sum((l - mean_len) ** 2 for l in lengths) / len(lengths)
     burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0
 
-    if burstiness < 0.3:
-        score = 0.5
-    elif burstiness < 0.5:
-        score = 0.7
+    # Higher burstiness = more sentence length variation = more human-like
+    # Lower burstiness = uniform sentence lengths = more AI-like
+    if burstiness >= 0.5:
+        score = 0.3  # High variation — likely human
+    elif burstiness >= 0.3:
+        score = 0.5  # Moderate variation — uncertain
     else:
-        score = 0.9
+        score = 0.8  # Low variation — likely AI
 
     return {"score": round(score, 2), "burstiness": round(burstiness, 3)}
 

@@ -26,6 +26,7 @@ class LLMRequest:
     output_schema: Optional[Dict] = None
     stop_sequences: Optional[List[str]] = None
     effort: str = "medium"                   # low, medium, high, max
+    skip_injection_scan: bool = False        # True for trusted internal pipeline calls
     # Tracking metadata
     agent_id: str = ""
     project_id: str = ""

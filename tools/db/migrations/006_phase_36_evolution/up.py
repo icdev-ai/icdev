@@ -284,7 +284,12 @@ CREATE INDEX IF NOT EXISTS idx_atlas_assessments_project
 
 
 def up(conn):
-    """Apply Phase 36 evolution engine tables to icdev.db."""
+    """Apply Phase 36 evolution engine tables to icdev.db.
+
+    If tables already exist (created by init_icdev_db.py), skip schema
+    creation entirely — the existing schema is what the codebase uses.
+    Only create tables that are genuinely missing.
+    """
     tables = [
         "child_capabilities",
         "child_telemetry",
@@ -297,9 +302,14 @@ def up(conn):
         "atlas_assessments",
     ]
 
-    # Only create tables that don't exist yet (idempotent)
+    existing = [t for t in tables if _table_exists(conn, t)]
     missing = [t for t in tables if not _table_exists(conn, t)]
+
+    if existing:
+        print(f"  Note: {len(existing)} tables already exist (from init_icdev_db.py), skipping")
+
     if missing:
+        print(f"  Creating {len(missing)} missing tables: {', '.join(missing)}")
         conn.executescript(EVOLUTION_SCHEMA)
 
     conn.commit()

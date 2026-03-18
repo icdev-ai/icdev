@@ -340,6 +340,31 @@ def _normalize_opportunity(raw, max_desc=MAX_DESCRIPTION_LENGTH):
         title = raw.get("subject", "Untitled")
 
     description = raw.get("description", "") or ""
+
+    # SAM.gov v1 API returns a URL for full description — fetch it
+    if description.startswith("https://api.sam.gov/") and "noticedesc" in description:
+        api_key = os.environ.get("SAM_GOV_API_KEY", "")
+        desc_url = description
+        if api_key and "api_key" not in desc_url:
+            sep = "&" if "?" in desc_url else "?"
+            desc_url = f"{desc_url}{sep}api_key={api_key}"
+        desc_data, desc_err = _safe_get(desc_url, timeout=10)
+        if desc_data and not desc_err:
+            if isinstance(desc_data, dict):
+                # API returns {"description": "..full text.."} or HTML content
+                fetched = desc_data.get("description", "") or desc_data.get("content", "")
+                if isinstance(fetched, str) and len(fetched) > 50:
+                    description = fetched
+            elif isinstance(desc_data, dict) and desc_data.get("_raw"):
+                # Might be HTML — extract text
+                raw_text = desc_data["_raw"]
+                import re as _re
+                # Strip HTML tags
+                clean = _re.sub(r"<[^>]+>", " ", raw_text)
+                clean = _re.sub(r"\s+", " ", clean).strip()
+                if len(clean) > 50:
+                    description = clean
+
     if len(description) > max_desc:
         description = description[:max_desc]
 
@@ -728,6 +753,82 @@ def _print_human(result, args):
             print(f"  [{o.get('notice_type','?')}] {o.get('title','')[:50]}")
             print(f"      NAICS: {o.get('naics_code','')} | Agency: {o.get('agency','')[:30]} | Due: {deadline}")
     print()
+
+
+def backfill_descriptions(db_path=None, limit=50, delay=0.5):
+    """Fetch full descriptions for opportunities that only have URL placeholders.
+
+    SAM.gov v1 API returns a URL in the description field. This function
+    fetches the actual content from those URLs and updates the DB.
+
+    Args:
+        db_path: Optional database path override.
+        limit: Max opportunities to backfill per run.
+        delay: Delay between API calls (seconds).
+
+    Returns:
+        Dict with updated_count, skipped_count, errors.
+    """
+    import re as _re
+    import time as _time
+
+    api_key = os.environ.get("SAM_GOV_API_KEY", "")
+    if not api_key:
+        return {"error": "SAM_GOV_API_KEY not set", "updated_count": 0}
+
+    conn = _get_db(db_path)
+    rows = conn.execute(
+        "SELECT id, description FROM sam_gov_opportunities "
+        "WHERE description LIKE 'https://api.sam.gov%noticedesc%' LIMIT ?",
+        (limit,)
+    ).fetchall()
+
+    updated = 0
+    skipped = 0
+    errors = []
+
+    for row in rows:
+        opp_id = row[0]
+        desc_url = row[1]
+
+        # Add API key
+        sep = "&" if "?" in desc_url else "?"
+        full_url = f"{desc_url}{sep}api_key={api_key}"
+
+        data, err = _safe_get(full_url, timeout=10)
+        if err:
+            errors.append({"id": opp_id, "error": err})
+            if err == "rate_limited":
+                break  # Stop on rate limit
+            _time.sleep(delay)
+            continue
+
+        description = ""
+        if isinstance(data, dict):
+            fetched = data.get("description", "") or data.get("content", "")
+            if isinstance(fetched, str) and len(fetched) > 50:
+                description = fetched
+            elif data.get("_raw"):
+                clean = _re.sub(r"<[^>]+>", " ", data["_raw"])
+                clean = _re.sub(r"\s+", " ", clean).strip()
+                if len(clean) > 50:
+                    description = clean
+
+        if description:
+            content_hash = _content_hash(f"{opp_id}|{description[:500]}")
+            conn.execute(
+                "UPDATE sam_gov_opportunities SET description = ?, content_hash = ?, last_synced = ? WHERE id = ?",
+                (description[:10000], content_hash, _now(), opp_id)
+            )
+            conn.commit()
+            updated += 1
+        else:
+            skipped += 1
+
+        _time.sleep(delay)
+
+    conn.close()
+    return {"updated_count": updated, "skipped_count": skipped, "errors": errors, "total_checked": len(rows)}
 
 
 if __name__ == "__main__":

@@ -132,6 +132,8 @@ class CodePatternScanner:
     def __init__(self, config_path: Optional[Path] = None):
         self._patterns = dict(DEFAULT_PATTERNS)
         self._compiled: Dict[str, List[Tuple[re.Pattern, dict]]] = {}
+        self._allowed_dirs: list = []
+        self._allowed_patterns: set = set()
 
         # Try loading YAML config
         config_file = config_path or (BASE_DIR / "args" / "code_pattern_config.yaml")
@@ -144,14 +146,32 @@ class CodePatternScanner:
         """Load patterns from YAML config."""
         try:
             import yaml
-            with open(path) as f:
+            with open(path, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
 
             patterns = config.get("patterns", {})
             for lang, lang_patterns in patterns.items():
                 self._patterns[lang] = lang_patterns
+
+            # Load framework allowlist
+            fw = config.get("framework_allowlist", {})
+            self._allowed_dirs = fw.get("allowed_dirs", [])
+            self._allowed_patterns = set(fw.get("allowed_patterns", []))
         except (ImportError, Exception) as exc:
             logger.debug("YAML config load failed: %s — using defaults", exc)
+
+    def _is_allowed(self, finding: dict) -> bool:
+        """Check if a finding is allowed by the framework allowlist."""
+        if not self._allowed_patterns:
+            return False
+        if finding.get("name") not in self._allowed_patterns:
+            return False
+        file_path = finding.get("file", "")
+        for d in self._allowed_dirs:
+            # Normalize to forward slashes for cross-platform matching
+            if d.replace("\\", "/") in file_path.replace("\\", "/"):
+                return True
+        return False
 
     def _compile_patterns(self) -> None:
         """Pre-compile regex patterns for performance."""
@@ -290,6 +310,13 @@ class CodePatternScanner:
             for sev in severity_totals:
                 severity_totals[sev] += result.get(sev, 0)
 
+        # Classify findings as allowed (framework-inherent) or unallowed
+        allowed_findings = [f for f in all_findings if self._is_allowed(f)]
+        unallowed_findings = [f for f in all_findings if not self._is_allowed(f)]
+
+        unallowed_critical = sum(1 for f in unallowed_findings if f["severity"] == "critical")
+        unallowed_high = sum(1 for f in unallowed_findings if f["severity"] == "high")
+
         return {
             "scan_type": "code_patterns",
             "status": "completed",
@@ -300,8 +327,11 @@ class CodePatternScanner:
             "high": severity_totals["high"],
             "medium": severity_totals["medium"],
             "low": severity_totals["low"],
+            "allowed_count": len(allowed_findings),
+            "unallowed_critical": unallowed_critical,
+            "unallowed_high": unallowed_high,
             "findings": all_findings,
-            "gate_passed": severity_totals["critical"] == 0 and severity_totals["high"] == 0,
+            "gate_passed": unallowed_critical == 0 and unallowed_high == 0,
         }
 
     def evaluate_gate(self, project_id: str = "") -> dict:

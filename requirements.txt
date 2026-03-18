@@ -38,7 +38,14 @@ requests>=2.31           # HTTP client for ELK/Splunk/Prometheus APIs
 
 # === SaaS Multi-Tenancy (Phase 21) ===
 psycopg2-binary>=2.9     # PostgreSQL adapter for per-tenant databases
-PyJWT>=2.8               # JWT validation for OAuth 2.0/OIDC auth
+PyJWT>=2.12.0            # JWT validation for OAuth 2.0/OIDC auth (CVE-2026-32597)
 cryptography>=42.0       # RSA license keys, artifact signing, TLS
 gunicorn>=22.0           # Production WSGI server for API gateway
 redis>=5.0               # Rate limiting, session cache, pub/sub
+
+# === Security: pinned to patch CVEs (see pip-audit) ===
+black>=26.3.1            # CVE-2026-32274: path traversal
+filelock>=3.20.3         # CVE-2025-68146, CVE-2026-22701: TOCTOU race
+Pillow>=12.1.1           # CVE-2026-25990: OOB write in PSD loader
+pyOpenSSL>=26.0.0        # CVE-2026-27448, CVE-2026-27459: callback bypass
+setuptools>=78.1.1       # CVE-2025-47273: path traversal

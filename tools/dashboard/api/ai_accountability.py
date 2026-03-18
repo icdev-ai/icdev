@@ -25,6 +25,22 @@ def _get_db() -> sqlite3.Connection:
     return conn
 
 
+def _resolve_project_id(explicit: str = None) -> str:
+    """Resolve project ID: explicit > query param > first project in DB > 'icdev-platform'."""
+    pid = explicit or request.args.get("project_id")
+    if pid:
+        return pid
+    try:
+        conn = _get_db()
+        row = conn.execute("SELECT id FROM projects ORDER BY rowid LIMIT 1").fetchone()
+        conn.close()
+        if row:
+            return row["id"]
+    except Exception:
+        pass
+    return "icdev-platform"
+
+
 def _safe_count(conn, table, project_id=None, where_extra=""):
     try:
         if project_id:
@@ -66,7 +82,8 @@ def get_stats():
         try:
             sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
             from ai_accountability_audit import run_accountability_audit
-            result = run_accountability_audit(project_id or "default", db_path=DB_PATH)
+            resolved_pid = _resolve_project_id(project_id)
+            result = run_accountability_audit(resolved_pid, db_path=DB_PATH)
             stats["accountability_score"] = result.get("accountability_score", 0)
         except Exception:
             pass
@@ -152,7 +169,7 @@ def get_overdue():
 def run_audit():
     """Run cross-framework accountability audit."""
     data = request.get_json(silent=True) or {}
-    project_id = data.get("project_id", "default")
+    project_id = _resolve_project_id(data.get("project_id"))
     try:
         sys.path.insert(0, str(BASE_DIR / "tools" / "compliance"))
         from ai_accountability_audit import run_accountability_audit

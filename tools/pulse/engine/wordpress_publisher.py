@@ -31,7 +31,7 @@ import argparse
 import json
 import os
 import sys
-import xmlrpc.client
+import xmlrpc.client  # nosec B411 — internal publisher talks to our own WordPress site
 from datetime import datetime, timezone
 from pathlib import Path
 
