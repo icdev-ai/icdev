@@ -52,9 +52,18 @@ class ScaleEngine:
         wb_cfg = cfg.get("write_batcher", {})
         bp_cfg = cfg.get("backpressure", {})
 
+        # PG handles concurrent writes natively (MVCC) — increase defaults
+        try:
+            from tools.db.storage import get_backend
+            _is_pg = get_backend() == "postgresql"
+        except ImportError:
+            _is_pg = False
+        _def_workers = 20 if _is_pg else 10
+        _def_concurrent = 16 if _is_pg else 5
+
         self._worker_pool = ScaleWorkerPool(
-            max_workers=wp_cfg.get("max_workers", 10),
-            max_concurrent_syncs=wp_cfg.get("max_concurrent_syncs", 5),
+            max_workers=wp_cfg.get("max_workers", _def_workers),
+            max_concurrent_syncs=wp_cfg.get("max_concurrent_syncs", _def_concurrent),
             sync_timeout_seconds=wp_cfg.get("sync_timeout_seconds", 300),
         )
         self._conn_pool = ConnectionPool(
