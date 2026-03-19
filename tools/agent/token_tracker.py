@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS agent_token_usage (
     duration_ms INTEGER NOT NULL DEFAULT 0,
     task_id TEXT,
     cost_estimate_usd REAL NOT NULL DEFAULT 0.0,
-    timestamp TEXT NOT NULL
+    created_at TEXT NOT NULL
 );
 """
 
@@ -109,7 +109,7 @@ def log_usage(
             """
             INSERT INTO agent_token_usage
                 (agent_id, project_id, model_id, input_tokens, output_tokens,
-                 thinking_tokens, duration_ms, task_id, cost_estimate_usd, timestamp)
+                 thinking_tokens, duration_ms, task_id, cost_estimate_usd, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (

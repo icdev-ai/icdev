@@ -8,7 +8,7 @@ Patterns are relative to sync job source root.
 
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 
 def load_ignore_patterns(base_path: str, ignore_file: str = ".syncignore") -> List[str]:

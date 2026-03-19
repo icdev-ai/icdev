@@ -18,12 +18,11 @@ Usage:
 import argparse
 import hashlib
 import json
-import os
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
 # Path bootstrapping
@@ -224,6 +223,25 @@ def promote_gkp(gkp_id: str, auto: bool = False) -> Dict[str, Any]:
         artifact_type = row["artifact_type"]
         payload = json.loads(row["payload"])
         confidence = row["confidence"]
+
+        # Pre-promotion coherence gate (D-WF-8)
+        try:
+            from tools.workflow.coherence_checker import run_checks as coherence_check
+            coherence = coherence_check()
+            if not coherence.overall_pass:
+                _log_audit("genesis.promoter.coherence_warning", gkp_id, {
+                    "failed_checks": coherence.failed_checks,
+                    "warned_checks": coherence.warned_checks,
+                })
+                if auto:
+                    return {
+                        "status": "coherence_blocked",
+                        "gkp_id": gkp_id,
+                        "error": f"Coherence failed: {coherence.failed_checks} failures, {coherence.warned_checks} warnings",
+                    }
+                # Manual promotions proceed with warning logged
+        except Exception:
+            pass  # Graceful degradation — coherence unavailable does not block
 
         # Route to appropriate v1.x import handler
         import_result = _import_to_v1x(artifact_type, payload, confidence)

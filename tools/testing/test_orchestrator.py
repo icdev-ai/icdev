@@ -815,6 +815,37 @@ def main():
         )
         state.compliance_gate_passed = compliance_gate.overall_pass
 
+    # Step 5b: Coherence check
+    logger.info("\n=== Step 5b: Coherence Check ===")
+    try:
+        coherence_cmd = [
+            sys.executable, "tools/workflow/coherence_checker.py",
+            "--all", "--fix", "--gate", "--json",
+        ]
+        coherence_proc = subprocess.run(
+            coherence_cmd, capture_output=True, text=True,
+            env=get_safe_subprocess_env(),
+            timeout=120, cwd=args.project_dir,
+        )
+        if coherence_proc.returncode == 0:
+            logger.info("Coherence check: PASS")
+        else:
+            logger.warning(f"Coherence check: FAIL (exit {coherence_proc.returncode})")
+            try:
+                coherence_data = json.loads(coherence_proc.stdout)
+                failed = coherence_data.get("failed_checks", 0)
+                warned = coherence_data.get("warned_checks", 0)
+                logger.warning(f"  {failed} failures, {warned} warnings")
+            except (json.JSONDecodeError, ValueError):
+                if coherence_proc.stderr:
+                    logger.warning(f"  {coherence_proc.stderr[:300]}")
+    except FileNotFoundError:
+        logger.info("Coherence checker not found, skipping")
+    except subprocess.TimeoutExpired:
+        logger.warning("Coherence check timed out after 120 seconds")
+    except Exception as e:
+        logger.warning(f"Coherence check error: {e}")
+
     # Step 6: Agentic tests (conditional — only if agent infrastructure exists)
     agentic_results = []
     project_dir_path = Path(args.project_dir)

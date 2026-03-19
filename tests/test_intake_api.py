@@ -129,13 +129,15 @@ def chat_app(tmp_path):
     db_path = tmp_path / "test_icdev.db"
     _init_test_db(db_path)
 
-    with patch("icdev.tools.dashboard.config.DB_PATH", str(db_path)), \
-         patch("icdev.tools.dashboard.app.DB_PATH", str(db_path)), \
-         patch("icdev.tools.dashboard.api.projects.DB_PATH", str(db_path)), \
-         patch("icdev.tools.dashboard.auth.DB_PATH", str(db_path)), \
-         patch("icdev.tools.dashboard.api.intake.DB_PATH", db_path), \
-         patch("icdev.tools.requirements.intake_engine.DB_PATH", db_path):
-        from icdev.tools.dashboard.app import create_app
+    # Patch DB_PATH in config first (the canonical location) — other modules
+    # read from config at import time, so this must be in place before they load.
+    # We also patch the per-module copies that are bound as module globals.
+    with patch("tools.dashboard.config.DB_PATH", str(db_path)), \
+         patch("tools.dashboard.api.projects.DB_PATH", str(db_path)), \
+         patch("tools.dashboard.auth.DB_PATH", str(db_path)), \
+         patch("tools.dashboard.api.intake.DB_PATH", db_path), \
+         patch("tools.requirements.intake_engine.DB_PATH", db_path):
+        from tools.dashboard.app import create_app
         app = create_app()
         app.config["TESTING"] = True
         yield app

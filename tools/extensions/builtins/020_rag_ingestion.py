@@ -10,7 +10,6 @@ Trigger: When tools write to tables registered as realtime sources.
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, Optional
 
 # Source tables that trigger real-time RAG ingestion

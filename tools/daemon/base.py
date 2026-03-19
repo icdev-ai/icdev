@@ -18,7 +18,6 @@ Architecture Decision:
 import abc
 import argparse
 import hashlib
-import importlib
 import json
 import os
 import re
@@ -29,7 +28,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Path bootstrapping

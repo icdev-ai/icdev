@@ -613,6 +613,56 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
     return checks
 
 
+def _check_coherence(project_dir: Path) -> List[GotchaCheck]:
+    """Check Meta: GOTCHA-11 — Implementation coherence validation."""
+    checks = []
+    try:
+        # Import checker relative to the project being validated
+        saved_path = list(sys.path)
+        sys.path.insert(0, str(project_dir))
+        try:
+            from tools.workflow.coherence_checker import run_checks
+            report = run_checks()
+        finally:
+            sys.path[:] = saved_path
+
+        if report.overall_pass:
+            checks.append(GotchaCheck(
+                check_id="GOTCHA-11",
+                check_name="Coherence Validation",
+                layer="meta",
+                status="pass",
+                expected="All coherence checks pass",
+                actual=f"{report.passed_checks}/{report.total_checks} passed",
+                fix_suggestion="",
+                message=f"Coherence: {report.passed_checks}/{report.total_checks} checks passed",
+            ))
+        else:
+            checks.append(GotchaCheck(
+                check_id="GOTCHA-11",
+                check_name="Coherence Validation",
+                layer="meta",
+                status="fail",
+                expected="All coherence checks pass",
+                actual=f"{report.failed_checks} failures, {report.warned_checks} warnings",
+                fix_suggestion="Run: python tools/workflow/coherence_checker.py --all --fix --json",
+                message=f"Coherence failures: {report.failed_checks} failed, {report.warned_checks} warned",
+            ))
+    except Exception as e:
+        checks.append(GotchaCheck(
+            check_id="GOTCHA-11",
+            check_name="Coherence Validation",
+            layer="meta",
+            status="pass",
+            expected="Coherence checker available",
+            actual=f"Skipped (not available): {e}",
+            fix_suggestion="",
+            message=f"Coherence check skipped: {e}",
+        ))
+
+    return checks
+
+
 # ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
@@ -628,6 +678,7 @@ CHECK_REGISTRY = {
     "memory": _check_memory,
     "database": _check_database,
     "atlas": _check_atlas,
+    "coherence": _check_coherence,
 }
 
 

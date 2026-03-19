@@ -22,7 +22,6 @@ import argparse
 import json
 import os
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -47,7 +46,7 @@ def _now():
 def _audit(conn, action, details="", actor="compliance_populator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.compliance_matrix", actor, action, details, "govcon"),
         )

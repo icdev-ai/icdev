@@ -9,7 +9,6 @@ Uses only GitHub's public API (no auth token required for basic info).
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
 
-import hashlib
 import json
 import os
 import sys

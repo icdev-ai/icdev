@@ -24,7 +24,6 @@ Usage:
     summary = collector.get_health_summary("child-abc")
 """
 
-import hashlib
 import json
 import sqlite3
 import sys
@@ -396,6 +395,33 @@ class TelemetryCollector:
             }
         finally:
             conn.close()
+
+    def collect_egress(
+        self,
+        child_id: str,
+        egress_endpoint: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Collect network egress data from child (D-NC-6, NemoClaw pattern).
+
+        Optional extension — polls child /health/egress endpoint and
+        stores results in child_telemetry with metric_type='egress'.
+        Fails gracefully if EgressMonitor is unavailable.
+
+        Args:
+            child_id: Child app ID.
+            egress_endpoint: URL of child's egress health endpoint.
+
+        Returns:
+            Egress data dict or None on failure.
+        """
+        try:
+            from tools.registry.egress_monitor import EgressMonitor
+            monitor = EgressMonitor(db_path=self.db_path, timeout=self.timeout)
+            data = monitor.collect_egress(child_id, egress_endpoint)
+            monitor.store_egress(data)
+            return data
+        except Exception:
+            return None
 
     def get_all_children_health(self) -> List[Dict[str, Any]]:
         """Get health summary for all registered children.

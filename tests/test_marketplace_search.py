@@ -285,7 +285,16 @@ class TestCombinedSearch:
         assert result["results"] == []
 
     def test_hybrid_search_with_embeddings(self, marketplace_db_with_embeddings):
-        result = search_assets("stig", db_path=marketplace_db_with_embeddings)
+        # The fixture stores 256-dim fallback embeddings.  Force the query
+        # embedding to use the same fallback so dimensions match even when
+        # Ollama is running locally (which would return 768-dim vectors).
+        def _fallback_generate(text, db_path=None):
+            emb = _generate_embedding_fallback(text)
+            return emb, "hashlib-fallback", 256
+
+        with patch("icdev.tools.marketplace.search_engine.generate_embedding",
+                    side_effect=_fallback_generate):
+            result = search_assets("stig", db_path=marketplace_db_with_embeddings)
         assert result["search_method"] == "hybrid"
         assert result["total"] > 0
         # Results should have both bm25 and semantic scores

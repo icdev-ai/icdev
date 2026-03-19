@@ -8,13 +8,11 @@ normalize -> extract features -> match patterns -> decide -> fix -> PR -> notify
 
 import argparse
 import json
-import os
 import sqlite3
 import subprocess
 import sys
-import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -406,6 +404,15 @@ def resolve_alert(alert_payload: dict, source: str = "generic",
 
     _notify_resolution(rid, decision, {"status": result.get("resolution_status"),
                                         "pr_url": pr_url, "tests_passed": passed})
+
+    # D-EVO-6: Ensure outcome verification table exists for PR tracking
+    if pr_url:
+        try:
+            from tools.monitor.outcome_verifier import _ensure_table as _ov_ensure
+            _ov_ensure(db_path)
+        except ImportError:
+            pass
+
     result.setdefault("message", f"Auto-resolution {result.get('resolution_status', 'completed')}")
     return result
 

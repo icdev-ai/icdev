@@ -229,7 +229,7 @@ class OWASPLLMAssessor(BaseAssessor):
             try:
                 row = conn.execute(
                     """SELECT COUNT(*) as cnt FROM ai_telemetry
-                       WHERE timestamp > datetime('now', '-30 days')"""
+                       WHERE logged_at > datetime('now', '-30 days')"""
                 ).fetchone()
                 return row and row["cnt"] > 0
             except Exception:

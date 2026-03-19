@@ -110,6 +110,11 @@ VALID_EVENT_TYPES = (
     "session.purpose_declared",
     # Child App Generation (Phase 19/36)
     "child_app_generated", "child_app_registered",
+    # Phase 67: Engineering Review Board (D-RB-2, D-RB-10, D-RB-11)
+    "review_board.scan_completed", "review_board.finding_created",
+    "review_board.remediation_completed", "review_board.remediation_failed",
+    "review_board.escalation_created", "review_board.health_scored",
+    "review_board.circuit_breaker_tripped", "review_board.report_generated",
 )
 
 

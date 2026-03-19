@@ -16,7 +16,6 @@ Usage:
 import argparse
 import json
 import os
-import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -32,7 +31,6 @@ except ImportError:
 
     def _load_yaml(path):
         """Minimal YAML subset loader for the companion registry."""
-        import re
         with open(path, encoding="utf-8") as f:
             text = f.read()
         try:

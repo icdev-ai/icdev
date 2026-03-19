@@ -9,7 +9,6 @@ Architecture Decision D254: pass@k from Google ICSE 2025.
 Architecture Decision D256: Mock-and-continue from Amazon Oxidizer."""
 
 import argparse
-import hashlib
 import json
 import sqlite3
 import uuid

@@ -16,7 +16,6 @@ Usage:
 
 import argparse
 import json
-import os
 import signal
 import sqlite3
 import sys
@@ -139,6 +138,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "interval_seconds": 86400,
             "stale_days": 90,
+        },
+        "coherence_health": {
+            "enabled": True,
+            "interval_seconds": 3600,
         },
     },
 }
@@ -480,6 +483,86 @@ def check_memory_maintenance(
                 "note": f"table not found or error: {exc}"}
 
 
+def check_coherence_health(
+    config: Optional[dict] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Check 8: Implementation coherence drift detection.
+
+    Runs the coherence checker to detect implementation drift such as
+    missing __init__.py files, stale imports, unregistered DB tables,
+    or config/code misalignment.
+    """
+    try:
+        from tools.workflow.coherence_checker import run_checks
+        report = run_checks()
+        if not report.overall_pass:
+            return {
+                "status": "warning",
+                "count": report.failed_checks + report.warned_checks,
+                "items": [
+                    {"type": "coherence_drift",
+                     "failed": report.failed_checks,
+                     "warned": report.warned_checks,
+                     "passed": report.passed_checks,
+                     "total": report.total_checks}
+                ],
+            }
+        return {
+            "status": "ok",
+            "count": 0,
+            "items": [],
+        }
+    except Exception as exc:
+        return {
+            "status": "ok",
+            "count": 0,
+            "items": [],
+            "note": f"Coherence checker unavailable: {exc}",
+        }
+
+
+def check_review_board_health(
+    config: dict = None, db_path=None,
+) -> Dict[str, Any]:
+    """Check Review Board daemon health — circuit breakers, critical findings."""
+    try:
+        conn = _get_connection(db_path)
+        try:
+            # Check for tripped circuit breakers
+            try:
+                cb_rows = conn.execute(
+                    "SELECT reflex_name FROM review_board_reflex_state "
+                    "WHERE circuit_breaker_open = 1"
+                ).fetchall()
+            except Exception:
+                cb_rows = []
+
+            # Check for unfixed critical findings
+            try:
+                critical = conn.execute(
+                    "SELECT COUNT(*) FROM review_board_findings "
+                    "WHERE severity = 'critical' AND fix_applied = 0"
+                ).fetchone()
+                critical_count = critical[0] if critical else 0
+            except Exception:
+                critical_count = 0
+
+            items = []
+            for r in cb_rows:
+                items.append({"type": "circuit_breaker_open", "reflex": r[0]})
+            if critical_count > 0:
+                items.append({"type": "critical_findings", "count": critical_count})
+
+            status = "critical" if cb_rows or critical_count > 0 else "ok"
+            return {"status": status, "count": len(items), "items": items}
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"status": "ok", "count": 0, "items": [],
+                "note": f"Review board tables not available: {exc}"}
+
+
 # ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
@@ -491,6 +574,8 @@ CHECK_REGISTRY: Dict[str, Callable] = {
     "failing_tests": check_failing_tests,
     "expiring_isas": check_expiring_isas,
     "memory_maintenance": check_memory_maintenance,
+    "coherence_health": check_coherence_health,
+    "review_board_health": check_review_board_health,
 }
 
 

@@ -36,7 +36,6 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 sys.path.insert(0, str(BASE_DIR))
 from tools.project.manifest_loader import (
     load_manifest,
-    detect_vcs_platform,
     _apply_defaults,
 )
 

@@ -78,7 +78,7 @@ def _content_hash(text):
 def _audit(conn, action, details="", actor="knowledge_base"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.knowledge_base", actor, action, details, "govcon"),
         )

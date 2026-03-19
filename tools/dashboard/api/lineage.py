@@ -6,7 +6,6 @@ Joins digital thread, provenance, and audit trail into unified DAG data
 for the lineage visualization dashboard.
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

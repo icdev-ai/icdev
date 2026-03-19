@@ -28,7 +28,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
@@ -59,7 +58,7 @@ def _now():
 def _audit(conn, action, details="", actor="capability_mapper"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.capability_map", actor, action, details, "govcon"),
         )

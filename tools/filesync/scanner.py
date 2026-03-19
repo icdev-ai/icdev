@@ -9,7 +9,7 @@ FIPS 140-2 hash mode toggle (D-SYNC-13).
 """
 
 import hashlib
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from tools.filesync.ignore_parser import filter_files, load_ignore_patterns
 from tools.filesync.providers.base import SyncTargetProvider

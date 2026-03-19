@@ -22,7 +22,6 @@ import argparse
 import ast
 import hashlib
 import json
-import os
 import re
 import sys
 import textwrap

@@ -974,7 +974,6 @@ def _run_test_pipeline(session_id):
     """Background worker that runs test phases."""
     import json as _json
     import subprocess
-    import time
 
     def _update(phase_id, status, detail=""):
         with _TEST_LOCK:

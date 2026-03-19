@@ -404,10 +404,12 @@ class TestPerplexityEstimate:
 
     def test_fallback_returns_zero(self):
         """When LLM unavailable, returns 0.0 fallback."""
+        from unittest.mock import patch
         from tools.finetune.evaluator import compute_perplexity_estimate
-        # No LLM available in test env
-        score = compute_perplexity_estimate("nonexistent-model", ["hello world"])
-        assert score == 0.0
+        # Mock the local import of LLMRouter to simulate unavailability
+        with patch.dict("sys.modules", {"tools.llm.router": None}):
+            score = compute_perplexity_estimate("nonexistent-model", ["hello world"])
+            assert score == 0.0
 
     def test_empty_texts(self):
         from tools.finetune.evaluator import compute_perplexity_estimate

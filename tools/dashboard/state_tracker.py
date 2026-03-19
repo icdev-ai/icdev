@@ -9,12 +9,11 @@ Clients send ?since_version=N, server returns only changes since that version.
 SSE debounced at 25ms, HTTP polling preserved at 3s.
 """
 
-import json
 import threading
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 try:
     from tools.dashboard.sse_manager import sse_manager

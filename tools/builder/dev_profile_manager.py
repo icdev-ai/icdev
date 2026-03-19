@@ -33,7 +33,6 @@ import copy
 import hashlib
 import json
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -136,7 +135,7 @@ def _log_event(conn, event_type, details, actor="system"):
     """Log to audit trail if table exists."""
     try:
         conn.execute(
-            """INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id)
+            """INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, project_id)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 _generate_id("audit"),

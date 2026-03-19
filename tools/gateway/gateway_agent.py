@@ -13,13 +13,12 @@ Usage:
 Decision D133-D140: See remote_gateway_config.yaml for architecture decisions.
 """
 
-import json
 import logging
 import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -28,7 +27,6 @@ if str(BASE_DIR) not in sys.path:
 import yaml
 from flask import Flask, request, jsonify
 
-from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
 from tools.gateway.security_chain import run_security_chain
 from tools.gateway.command_router import (
     execute_command, is_command_allowed, requires_confirmation
@@ -36,7 +34,6 @@ from tools.gateway.command_router import (
 from tools.gateway.user_binder import (
     create_challenge, verify_challenge, list_bindings, revoke_binding
 )
-from tools.gateway.response_filter import filter_response
 
 # Channel adapter imports
 from tools.gateway.adapters.internal import InternalChatAdapter

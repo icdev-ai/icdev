@@ -22,7 +22,6 @@ Usage:
     python tools/compliance/nist_ai_600_1_assessor.py --project-id proj-123 --json
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

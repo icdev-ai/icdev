@@ -1460,6 +1460,49 @@ def check_maintainability_trend() -> AuditCheck:
         )
 
 
+def check_implementation_coherence() -> AuditCheck:
+    """CODE-006: Implementation coherence validation.
+
+    Runs the coherence checker to detect implementation drift such as
+    missing __init__.py files, stale imports, unregistered DB tables,
+    or config/code misalignment.
+    """
+    try:
+        from tools.workflow.coherence_checker import run_checks
+        report = run_checks()
+        if report.overall_pass:
+            return AuditCheck(
+                check_id="CODE-006", check_name="Implementation Coherence",
+                category="code_quality", status="pass", severity="warning",
+                message=f"Coherence: {report.passed_checks}/{report.total_checks} checks passed",
+                details={
+                    "total": report.total_checks,
+                    "passed": report.passed_checks,
+                    "failed": report.failed_checks,
+                    "warned": report.warned_checks,
+                },
+            )
+        else:
+            return AuditCheck(
+                check_id="CODE-006", check_name="Implementation Coherence",
+                category="code_quality", status="warn", severity="warning",
+                message=f"Coherence drift: {report.failed_checks} failures, {report.warned_checks} warnings",
+                details={
+                    "total": report.total_checks,
+                    "passed": report.passed_checks,
+                    "failed": report.failed_checks,
+                    "warned": report.warned_checks,
+                },
+            )
+    except Exception as e:
+        return AuditCheck(
+            check_id="CODE-006", check_name="Implementation Coherence",
+            category="code_quality", status="skip", severity="warning",
+            message=f"Coherence checker unavailable: {e}",
+            details={"error": str(e)},
+        )
+
+
 # ---------------------------------------------------------------------------
 # Category 8: Documentation Alignment (DOC-001..005)
 # ---------------------------------------------------------------------------
@@ -1683,6 +1726,7 @@ CHECK_REGISTRY: Dict[str, Tuple[Callable, str, str]] = {
     "CODE-003": (check_high_complexity_pct, "code_quality", "warning"),
     "CODE-004": (check_smell_density, "code_quality", "warning"),
     "CODE-005": (check_maintainability_trend, "code_quality", "warning"),
+    "CODE-006": (check_implementation_coherence, "code_quality", "warning"),
 }
 
 # Execution order of categories

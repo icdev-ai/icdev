@@ -249,24 +249,19 @@ class TestErrorHandling:
 
     def test_500_error_handler_structure(self, app):
         """Internal errors return structured JSON with 'error' and 'code'."""
-        # Register a route at a public path (health is public per auth middleware)
-        @app.route("/health-500-trigger")
+        # Register a route under /health/ path prefix so it is recognised
+        # as a public endpoint by the auth middleware (which checks
+        # ``path.startswith(public + "/")`` for "/health").
+        @app.route("/health/trigger-500")
         def trigger_500():
             raise RuntimeError("deliberate test error")
-
-        # Also mark it as public so auth middleware lets it through
-        try:
-            from icdev.tools.saas.auth.middleware import PUBLIC_ENDPOINTS
-            PUBLIC_ENDPOINTS.add("/health-500-trigger")
-        except ImportError:
-            pass
 
         # Disable exception propagation so Flask uses 500 error handler
         app.config["TESTING"] = False
         app.config["PROPAGATE_EXCEPTIONS"] = False
         try:
             test_client = app.test_client()
-            resp = test_client.get("/health-500-trigger")
+            resp = test_client.get("/health/trigger-500")
             assert resp.status_code == 500
             data = resp.get_json()
             assert "error" in data

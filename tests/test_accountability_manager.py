@@ -34,7 +34,7 @@ def conn():
         """CREATE TABLE IF NOT EXISTS audit_trail (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id TEXT, event_type TEXT, actor TEXT, action TEXT,
-        details TEXT, classification TEXT, timestamp TEXT
+        details TEXT, classification TEXT, created_at TEXT
     )"""
     )
     c.commit()

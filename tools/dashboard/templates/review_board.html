@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}{{ app_name }} — Engineering Review Board{% endblock %}
+{% block content %}
+
+<h1>Engineering Review Board</h1>
+
+<div class="intro-panel">
+    <h2>Continuous Multi-Persona Code Analysis</h2>
+    <p>Seven engineering personas automatically analyze the codebase on configurable schedules: <strong>SRE</strong> (reliability), <strong>QA</strong> (coverage), <strong>Security</strong> (red team), <strong>Performance</strong> (profiling), <strong>UX</strong> (accessibility), <strong>Docs</strong> (freshness), <strong>Product</strong> (adoption). Findings are stored in an append-only audit trail (NIST AU compliant).</p>
+</div>
+
+<!-- Health Score Banner -->
+{% if health_score is defined and health_score is not none %}
+<div class="section-card" style="margin-bottom: 20px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap;">
+    <div style="text-align: center; min-width: 120px;">
+        <div style="font-size: 48px; font-weight: bold; color: {% if health_score >= 80 %}var(--color-success, #388e3c){% elif health_score >= 60 %}var(--color-warning, #f57c00){% else %}var(--color-error, #d32f2f){% endif %};">
+            {{ health_score|round(0)|int }}
+        </div>
+        <div style="font-size: 14px; color: var(--text-secondary);">Health Score / 100</div>
+        <div style="font-size: 18px; font-weight: bold;">{{ health_grade }}</div>
+    </div>
+    <div style="flex: 1; min-width: 200px;">
+        <div style="margin-bottom: 4px; font-size: 13px; color: var(--text-secondary);">
+            Trend: <strong>{{ health_trend }}</strong>
+            {% if health_trend == 'improving' %} &#9650;{% elif health_trend == 'degrading' %} &#9660;{% else %} &#9644;{% endif %}
+        </div>
+        {% if health_trend_data %}
+        <svg width="100%" height="60" viewBox="0 0 {{ health_trend_data|length * 20 }} 60" role="img" aria-label="Health score trend" style="max-width: 400px;">
+            {% for point in health_trend_data %}
+            <circle cx="{{ loop.index0 * 20 + 10 }}" cy="{{ 55 - (point.score / 100 * 50) }}" r="3" fill="var(--color-primary, #1976d2)" />
+            {% if not loop.first %}
+            <line x1="{{ (loop.index0 - 1) * 20 + 10 }}" y1="{{ 55 - (health_trend_data[loop.index0 - 1].score / 100 * 50) }}"
+                  x2="{{ loop.index0 * 20 + 10 }}" y2="{{ 55 - (point.score / 100 * 50) }}"
+                  stroke="var(--color-primary, #1976d2)" stroke-width="1.5" />
+            {% endif %}
+            {% endfor %}
+            <line x1="0" y1="55" x2="{{ health_trend_data|length * 20 }}" y2="55" stroke="var(--border-color, #ddd)" stroke-width="0.5" />
+        </svg>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Stat Grid -->
+<div class="stat-grid" role="region" aria-label="Review Board statistics">
+    <div class="stat-card">
+        <div class="stat-value">{{ total_findings }}</div>
+        <div class="stat-label">Total Findings</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--color-error, #d32f2f);">{{ severity_summary.get('critical', 0) }}</div>
+        <div class="stat-label">Critical</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--color-warning, #f57c00);">{{ severity_summary.get('high', 0) }}</div>
+        <div class="stat-label">High</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" style="color: var(--color-info, #1976d2);">{{ severity_summary.get('medium', 0) }}</div>
+        <div class="stat-label">Medium</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ severity_summary.get('low', 0) + severity_summary.get('info', 0) }}</div>
+        <div class="stat-label">Low / Info</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ reflexes|length }}</div>
+        <div class="stat-label">Active Reflexes</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">{{ remediation_stats.get('auto_fixes_last_hour', 0) if remediation_stats else 0 }}</div>
+        <div class="stat-label">Fixes (Last Hour)</div>
+    </div>
+</div>
+
+<!-- Correlation Groups -->
+{% if correlation_groups %}
+<div class="section-card" style="margin-top: 20px;">
+    <h2>Root Cause Clusters</h2>
+    <p style="color:var(--text-secondary); margin-bottom:12px;">Related findings grouped by root cause — fix the root cause to resolve multiple findings at once.</p>
+    <div class="table-container">
+        <table class="data-table" aria-label="Correlated finding groups">
+            <thead>
+                <tr><th>Root Cause</th><th>Severity</th><th>Findings</th><th>Personas</th></tr>
+            </thead>
+            <tbody>
+                {% for g in correlation_groups %}
+                <tr>
+                    <td><strong>{{ g.root_cause|replace('_', ' ')|title }}</strong></td>
+                    <td>
+                        {% if g.severity == 'critical' %}<span class="badge badge-danger">CRITICAL</span>
+                        {% elif g.severity == 'high' %}<span class="badge badge-warning">HIGH</span>
+                        {% else %}<span class="badge badge-info">{{ g.severity|upper }}</span>{% endif %}
+                    </td>
+                    <td>{{ g.finding_count }}</td>
+                    <td>{{ g.personas_involved|join(', ')|upper }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Reflex Status Table -->
+<div class="section-card" style="margin-top: 20px;">
+    <h2>Reflex Status</h2>
+    <p style="color:var(--text-secondary); margin-bottom:12px;">Each reflex represents an engineering persona. Click "Run" to trigger on-demand analysis.</p>
+    <div class="table-container">
+        <table class="data-table" id="rb-reflex-table" aria-label="Review board reflex status">
+            <thead>
+                <tr>
+                    <th>Persona</th>
+                    <th>Enabled</th>
+                    <th>Last Run</th>
+                    <th>Runs</th>
+                    <th>Pass Rate</th>
+                    <th>CB</th>
+                    <th>Last Metric</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in reflexes %}
+                <tr>
+                    <td><strong>{{ r.reflex_name|upper }}</strong></td>
+                    <td>
+                        {% if r.enabled %}
+                            <span class="badge badge-success">On</span>
+                        {% else %}
+                            <span class="badge badge-secondary">Off</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.last_run_at or '—' }}</td>
+                    <td>{{ r.total_runs }}</td>
+                    <td>
+                        {% if r.total_runs > 0 %}
+                            {{ ((r.total_successes / r.total_runs) * 100)|round(0)|int }}%
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if r.circuit_breaker_open %}
+                            <span class="badge badge-danger" title="Circuit breaker tripped">OPEN</span>
+                        {% else %}
+                            <span class="badge badge-success">OK</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.last_metric_value|default('—', true) }}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="runReflex('{{ r.reflex_name }}')" title="Run {{ r.reflex_name }} reflex now">Run</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not reflexes %}
+                <tr><td colspan="8" style="text-align:center; color:var(--text-secondary);">No reflex state data. Run the daemon: <code>python tools/review_board/daemon.py --once</code></td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Findings Table -->
+<div class="section-card" style="margin-top: 20px;">
+    <h2>Recent Findings</h2>
+    <div style="margin-bottom: 12px;">
+        <select id="severity-filter" onchange="filterFindings(this.value)" style="padding:6px 12px; border-radius:4px; border:1px solid var(--border-color);" aria-label="Filter by severity">
+            <option value="">All Severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+        </select>
+    </div>
+    <div class="table-container">
+        <table class="data-table" id="rb-findings-table" aria-label="Review board findings">
+            <thead>
+                <tr>
+                    <th>Severity</th>
+                    <th>Persona</th>
+                    <th>Category</th>
+                    <th>Title</th>
+                    <th>Confidence</th>
+                    <th>Auto-Fix</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for f in findings %}
+                <tr class="finding-row" data-severity="{{ f.severity }}">
+                    <td>
+                        {% if f.severity == 'critical' %}
+                            <span class="badge badge-danger">CRITICAL</span>
+                        {% elif f.severity == 'high' %}
+                            <span class="badge badge-warning">HIGH</span>
+                        {% elif f.severity == 'medium' %}
+                            <span class="badge badge-info">MEDIUM</span>
+                        {% elif f.severity == 'low' %}
+                            <span class="badge badge-secondary">LOW</span>
+                        {% else %}
+                            <span class="badge">INFO</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ f.reflex_name|upper }}</td>
+                    <td>{{ f.category }}</td>
+                    <td title="{{ f.description or '' }}">{{ f.title }}</td>
+                    <td>{{ (f.confidence * 100)|round(0)|int }}%</td>
+                    <td>{% if f.auto_fixable %}<span class="badge badge-success">Yes</span>{% else %}—{% endif %}</td>
+                    <td>{{ f.created_at }}</td>
+                </tr>
+                {% endfor %}
+                {% if not findings %}
+                <tr><td colspan="7" style="text-align:center; color:var(--text-secondary);">No findings yet. Run a reflex or start the daemon.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Recent Audit Events -->
+<div class="section-card" style="margin-top: 20px;">
+    <h2>Recent Audit Events</h2>
+    <div class="table-container">
+        <table class="data-table" id="rb-audit-table" aria-label="Review board audit trail">
+            <thead>
+                <tr>
+                    <th>Event</th>
+                    <th>Reflex</th>
+                    <th>Success</th>
+                    <th>Duration</th>
+                    <th>Metric</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in audit_events %}
+                <tr>
+                    <td>{{ e.event_type }}</td>
+                    <td>{{ e.reflex_name or '—' }}</td>
+                    <td>
+                        {% if e.success == 1 %}
+                            <span class="badge badge-success">Pass</span>
+                        {% elif e.success == 0 %}
+                            <span class="badge badge-danger">Fail</span>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>{% if e.duration_ms %}{{ e.duration_ms }}ms{% else %}—{% endif %}</td>
+                    <td>{% if e.metric_value is not none %}{{ e.metric_value }}{% else %}—{% endif %}</td>
+                    <td>{{ e.created_at }}</td>
+                </tr>
+                {% endfor %}
+                {% if not audit_events %}
+                <tr><td colspan="6" style="text-align:center; color:var(--text-secondary);">No audit events yet.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- CLI Quick Reference -->
+<div class="section-card" style="margin-top: 20px;">
+    <h2>CLI Quick Reference</h2>
+    <pre style="background:var(--bg-secondary); padding:16px; border-radius:6px; overflow-x:auto; font-size:13px;">
+# Run as continuous daemon
+ICDEV_REVIEW_BOARD_ENABLED=true python tools/review_board/daemon.py
+
+# Single pass (run all due reflexes)
+python tools/review_board/daemon.py --once --json
+
+# Run individual persona
+python tools/review_board/daemon.py --reflex sre --json
+python tools/review_board/daemon.py --reflex qa --json
+python tools/review_board/daemon.py --reflex security --json
+
+# Check status
+python tools/review_board/daemon.py --status --json
+
+# Enable/disable a reflex
+python tools/review_board/daemon.py --enable perf
+python tools/review_board/daemon.py --disable docs
+
+# Reset circuit breaker
+python tools/review_board/daemon.py --reset sre
+</pre>
+</div>
+
+{% if error %}
+<div class="alert alert-warning" role="alert" style="margin-top:16px;">
+    <strong>Note:</strong> {{ error }}
+</div>
+{% endif %}
+
+<script>
+function runReflex(name) {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    fetch('/api/review-board/reflex/' + name, {method: 'POST'})
+        .then(r => r.json())
+        .then(data => {
+            btn.textContent = 'Done';
+            setTimeout(() => location.reload(), 1000);
+        })
+        .catch(err => {
+            btn.textContent = 'Error';
+            btn.disabled = false;
+        });
+}
+
+function filterFindings(severity) {
+    const rows = document.querySelectorAll('.finding-row');
+    rows.forEach(row => {
+        if (!severity || row.dataset.severity === severity) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+</script>
+
+{% endblock %}

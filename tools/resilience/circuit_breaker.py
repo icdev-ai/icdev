@@ -37,7 +37,7 @@ import threading
 import time
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence, Type
+from typing import Callable, Dict, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

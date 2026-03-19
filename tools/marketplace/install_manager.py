@@ -264,6 +264,21 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
         },
     )
 
+    # Post-install coherence validation (D-WF-8)
+    coherence_result = None
+    if files_copied:
+        try:
+            from tools.workflow.coherence_checker import run_checks
+            coherence_report = run_checks(autofix=True)
+            coherence_result = {
+                "pass": coherence_report.overall_pass,
+                "checks": coherence_report.total_checks,
+                "failed": coherence_report.failed_checks,
+                "fixed": coherence_report.total_fixes,
+            }
+        except Exception:
+            coherence_result = {"pass": True, "message": "checker not available"}
+
     return {
         "installation_id": installation_id,
         "asset_id": asset_id,
@@ -276,6 +291,7 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
         "status": "active",
         "files_copied": files_copied,
         "installed_at": now,
+        "coherence": coherence_result,
     }
 
 

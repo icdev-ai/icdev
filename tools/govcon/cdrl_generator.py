@@ -86,7 +86,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="cdrl_generator"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.cdrl_generator", actor, action, details, "cpmp"),
         )

@@ -25,7 +25,6 @@ Usage:
     python tools/compliance/atlas_assessor.py --project-id proj-123 --human
 """
 
-import json
 import sys
 from pathlib import Path
 from typing import Dict, Optional
@@ -109,7 +108,7 @@ class ATLASAssessor(BaseAssessor):
                 row = conn.execute(
                     """SELECT COUNT(*) as cnt FROM agent_token_usage
                        WHERE project_id = ?
-                       AND timestamp >= datetime('now', '-30 days')""",
+                       AND created_at >= datetime('now', '-30 days')""",
                     (project.get("id", ""),),
                 ).fetchone()
                 if row and row["cnt"] > 0:

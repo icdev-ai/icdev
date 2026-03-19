@@ -267,9 +267,13 @@ class TestDevSecOpsProfile:
         """GET /devsecops returns 503 when profile_manager import fails."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            # Force ImportError on the inner import
-            with patch.dict("sys.modules",
-                            {"icdev.tools.devsecops.profile_manager": None}):
+            # Force ImportError on the inner import — rest_api uses
+            # ``from tools.devsecops.profile_manager import get_profile``
+            # so both module paths must be poisoned.
+            with patch.dict("sys.modules", {
+                "tools.devsecops.profile_manager": None,
+                "icdev.tools.devsecops.profile_manager": None,
+            }):
                 resp = client.get(
                     "/api/v1/projects/{}/devsecops".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
@@ -332,8 +336,10 @@ class TestZTAMaturity:
         """GET /zta returns 503 when scorer import fails."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules",
-                            {"icdev.tools.devsecops.zta_maturity_scorer": None}):
+            with patch.dict("sys.modules", {
+                "tools.devsecops.zta_maturity_scorer": None,
+                "icdev.tools.devsecops.zta_maturity_scorer": None,
+            }):
                 resp = client.get(
                     "/api/v1/projects/{}/zta".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
@@ -350,7 +356,7 @@ class TestMarketplaceSearch:
         """GET /marketplace/search?q=... returns search results."""
         mock_results = {"results": [{"id": "asset-1", "name": "STIG checker"}],
                         "total": 1}
-        with patch("icdev.tools.marketplace.search_engine.search_assets",
+        with patch("tools.marketplace.search_engine.search_assets",
                     return_value=mock_results):
             resp = client.get("/api/v1/marketplace/search?q=STIG")
             assert resp.status_code == 200
@@ -372,7 +378,7 @@ class TestMarketplaceSearch:
     def test_search_passes_filters(self, client):
         """GET /marketplace/search passes asset_type and impact_level."""
         mock_results = {"results": [], "total": 0}
-        with patch("icdev.tools.marketplace.search_engine.search_assets",
+        with patch("tools.marketplace.search_engine.search_assets",
                     return_value=mock_results) as mock_search:
             resp = client.get(
                 "/api/v1/marketplace/search?q=test&asset_type=skill&impact_level=IL4&limit=10")
@@ -384,15 +390,17 @@ class TestMarketplaceSearch:
 
     def test_search_503_when_tool_missing(self, client):
         """GET /marketplace/search returns 503 when search_engine unavailable."""
-        with patch.dict("sys.modules",
-                        {"icdev.tools.marketplace.search_engine": None}):
+        with patch.dict("sys.modules", {
+            "tools.marketplace.search_engine": None,
+            "icdev.tools.marketplace.search_engine": None,
+        }):
             resp = client.get("/api/v1/marketplace/search?q=test")
             assert resp.status_code == 503
 
     def test_search_caps_limit_at_200(self, client):
         """GET /marketplace/search caps limit at 200."""
         mock_results = {"results": [], "total": 0}
-        with patch("icdev.tools.marketplace.search_engine.search_assets",
+        with patch("tools.marketplace.search_engine.search_assets",
                     return_value=mock_results) as mock_search:
             resp = client.get("/api/v1/marketplace/search?q=test&limit=9999")
             assert resp.status_code == 200
@@ -496,8 +504,10 @@ class TestSimulations:
         """GET /simulations returns 503 when simulation_engine unavailable."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules",
-                            {"icdev.tools.simulation.simulation_engine": None}):
+            with patch.dict("sys.modules", {
+                "tools.simulation.simulation_engine": None,
+                "icdev.tools.simulation.simulation_engine": None,
+            }):
                 resp = client.get(
                     "/api/v1/projects/{}/simulations".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
@@ -535,8 +545,10 @@ class TestMOSAAssessment:
         """GET /mosa returns 503 when mosa_assessor import fails."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules",
-                            {"icdev.tools.compliance.mosa_assessor": None}):
+            with patch.dict("sys.modules", {
+                "tools.compliance.mosa_assessor": None,
+                "icdev.tools.compliance.mosa_assessor": None,
+            }):
                 resp = client.get(
                     "/api/v1/projects/{}/mosa".format(SEED_PROJECT_ID))
                 assert resp.status_code == 503
@@ -574,8 +586,10 @@ class TestSupplyChainGraph:
         """GET /supply-chain/graph returns 503 when unavailable."""
         with patch("icdev.tools.saas.rest_api._import_tenant_db") as mock_imp:
             mock_imp.return_value = _mock_tenant_db(True)
-            with patch.dict("sys.modules",
-                            {"icdev.tools.supply_chain.dependency_graph": None}):
+            with patch.dict("sys.modules", {
+                "tools.supply_chain.dependency_graph": None,
+                "icdev.tools.supply_chain.dependency_graph": None,
+            }):
                 resp = client.get(
                     "/api/v1/projects/{}/supply-chain/graph".format(
                         SEED_PROJECT_ID))

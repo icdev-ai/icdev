@@ -16,17 +16,12 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
-import time
-import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.rag.chunker import chunk_fields
 from tools.rag.source_registry import (
     SOURCE_REGISTRY,
-    get_batch_sources,
-    get_realtime_sources,
     get_source_config,
 )
 from tools.rag.vector_store_factory import VectorStoreFactory
@@ -356,6 +351,16 @@ def get_status(tenant_id: str = "") -> Dict[str, Any]:
         "last_ingestion": last_ingestion,
         "registered_sources": len(SOURCE_REGISTRY),
     }
+
+
+def get_realtime_sources() -> List[str]:
+    """Return list of source types configured for real-time ingestion."""
+    return [name for name, cfg in SOURCE_REGISTRY.items() if cfg.get("mode") == "realtime"]
+
+
+def get_batch_sources() -> List[str]:
+    """Return list of source types configured for batch ingestion."""
+    return [name for name, cfg in SOURCE_REGISTRY.items() if cfg.get("mode") == "batch"]
 
 
 def ingest_single_record(

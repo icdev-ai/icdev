@@ -475,6 +475,79 @@ python tools/knowledge/deviation_rules.py --list-categories --json              
 python tools/knowledge/deviation_rules.py --stats --json                        # Deviation rule statistics
 ```
 
+### Bayesian Teaching Intelligence Commands
+```bash
+# Information-Gain Scoring (D-BT-1 through D-BT-6)
+python tools/intelligence/bayesian_teacher.py --score-pairs --dataset-id "ds-xxx" --json        # Score fine-tuning pairs by info gain
+python tools/intelligence/bayesian_teacher.py --optimal-order --project-id "proj-123" --json     # Optimal compliance teaching order
+python tools/intelligence/bayesian_teacher.py --teaching-dim --items '["AC-2","AC-3","SC-7"]' --json  # Teaching dimension
+python tools/intelligence/bayesian_teacher.py --smart-encode --project-id "proj-123" --json      # SmartEncoding tag compression
+python tools/intelligence/bayesian_teacher.py --health --json                                     # Health check
+```
+
+### Workflow Discipline Engine Commands
+```bash
+# PLAN-APPLY-UNIFY Lifecycle (Phase 66, D-WF-1 through D-WF-7)
+python tools/workflow/loop_engine.py --create --project-id "proj-123" --phase "auth-module" --json   # Create new loop
+python tools/workflow/loop_engine.py --plan --loop-id "wl-xxx" --summary "Implement auth" --json     # Finalize plan
+python tools/workflow/loop_engine.py --add-criteria --loop-id "wl-xxx" --given "..." --when "..." --then "..." --json  # Add acceptance criteria
+python tools/workflow/loop_engine.py --start-apply --loop-id "wl-xxx" --json                         # Start APPLY phase
+python tools/workflow/loop_engine.py --complete-task --loop-id "wl-xxx" --json                        # Complete a task
+python tools/workflow/loop_engine.py --verify-criterion --criterion-id "wac-xxx" --status pass --json # Verify criterion
+python tools/workflow/loop_engine.py --start-unify --loop-id "wl-xxx" --json                         # Start UNIFY phase
+python tools/workflow/loop_engine.py --close --loop-id "wl-xxx" --json                               # Close loop
+python tools/workflow/loop_engine.py --status --loop-id "wl-xxx" --json                              # Loop status
+python tools/workflow/loop_engine.py --list --project-id "proj-123" --json                           # List loops
+python tools/workflow/loop_engine.py --abandon --loop-id "wl-xxx" --json                             # Abandon loop
+python tools/workflow/next_action.py --recommend --project-id "proj-123" --json                       # Next action recommendation
+python tools/workflow/process_verifier.py --verify --loop-id "wl-xxx" --json                         # Verify required processes
+python tools/workflow/handoff_generator.py --generate --loop-id "wl-xxx" --json                      # Generate handoff document
+python tools/workflow/reconciler.py --reconcile --loop-id "wl-xxx" --json                            # Run reconciliation
+
+# Implementation Coherence Engine (D-WF-8)
+python tools/workflow/coherence_checker.py --all --human                                            # Full coherence check (human output)
+python tools/workflow/coherence_checker.py --all --json                                             # Full coherence check (JSON)
+python tools/workflow/coherence_checker.py --all --fix --json                                       # Check + auto-fix safe issues (imports, append-only)
+python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
+python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
+python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+```
+
+### NemoClaw-Adapted Agent Sandboxing Commands
+```bash
+# Credential Broker (D-NC-1)
+python tools/security/credential_broker.py --request --agent-id builder --function code_generation --json  # Request scoped token
+python tools/security/credential_broker.py --revoke --agent-id builder --json                              # Revoke active tokens
+python tools/security/credential_broker.py --audit --agent-id builder --json                               # Audit log
+python tools/security/credential_broker.py --status --json                                                 # Broker status
+python tools/security/credential_broker.py --gate --project-id "proj-123" --json                           # Gate evaluation
+
+# Blueprint Verifier (D-NC-3)
+python tools/security/blueprint_verifier.py --compute --path /path/to/dir --json                           # Compute digest
+python tools/security/blueprint_verifier.py --verify --path /path/to/dir --expected <digest> --json        # Verify against expected
+python tools/security/blueprint_verifier.py --store --entity-type genome --entity-id v1.2.0 --path /path --json  # Store digest
+python tools/security/blueprint_verifier.py --lookup --entity-type genome --entity-id v1.2.0 --json       # Lookup stored digest
+
+# Egress Policy Manager (D-NC-2)
+python tools/security/egress_policy_manager.py --resolve --role builder --json                             # Resolve policy for role
+python tools/security/egress_policy_manager.py --generate --role builder --json                            # Generate K8s NetworkPolicy
+python tools/security/egress_policy_manager.py --validate --role builder --json                            # Validate policy
+python tools/security/egress_policy_manager.py --list-roles --json                                         # List available roles
+
+# Egress Monitor (D-NC-6)
+python tools/registry/egress_monitor.py --collect --child-id child-1 --endpoint http://localhost:8445/health/egress --json  # Collect egress data
+python tools/registry/egress_monitor.py --evaluate --child-id child-1 --json                               # Evaluate against policies
+python tools/registry/egress_monitor.py --summary --child-id child-1 --json                                # Summary report
+
+# Propagation Verifier (D-NC-5)
+python tools/registry/propagation_verifier.py --verify --propagation-id prop-123 --json                    # Verify post-propagation
+python tools/registry/propagation_verifier.py --history --child-id child-1 --json                          # Verification history
+
+# Sandbox Scorer (D-NC-4)
+python tools/registry/sandbox_scorer.py --score --capability-id cap-123 --json                             # Score isolation posture
+python tools/registry/sandbox_scorer.py --score --source-metadata '{"has_broker":true}' --json             # Score with metadata
+```
+
 ### Harness Engineering Commands
 ```bash
 # Maturity assessment (6 dimensions, Level 0-4)
@@ -632,6 +705,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - Before writing tests for an ICDEV module, ALWAYS run `python tools/testing/api_surface_extractor.py --file <module> --json` to verify field names, function signatures, return types, and mock paths — never guess at API surfaces
 - **Cross-platform (Windows→Linux):** All file paths MUST use `pathlib.Path`, all `open()` calls MUST specify `encoding='utf-8'`, never hardcode `/tmp` or `C:\` (use `tempfile.gettempdir()`), never use `subprocess` for Ollama status (use HTTP `/api/tags`), use `datetime.now(timezone.utc)` not `datetime.utcnow()`, use `hashlib.sha256` not `hashlib.md5`, ensure `.gitattributes` with `eol=lf` exists in project root
 - **LLM config via `.env`, not code:** Model names, API keys, and routing settings MUST be configurable via environment variables in `.env` — never hardcode model IDs in Python. Use `${VAR:-default}` expansion in `llm_config.yaml`. When adding new LLM-dependent features, add the env var to `.env.example` with a comment
+- **New tool/module registration checklist:** When adapting or creating ANY new tool/module, ALWAYS complete ALL 8 registration points BEFORE reporting completion: (1) `tools/manifest.md` — add tool entry, (2) `CLAUDE.md` — add CLI commands + config docs + ADR + test entry + DB tables, (3) `args/security_gates.yaml` — add gate if tool has blocking/warning conditions, (4) `tools/mcp/tool_registry.py` + `gap_handlers.py` — register in unified MCP gateway, (5) `.claude/hooks/pre_tool_use.py` — add append-only tables to APPEND_ONLY_TABLES, (6) `tests/conftest.py` — add new table schemas to MINIMAL_ICDEV_SCHEMA, (7) `python tools/dx/companion.py --sync --write --json` — sync instruction files, MCP configs, and skills to all 9 AI coding platforms, (8) `python tools/workflow/coherence_checker.py --all --fix --gate` — run coherence validation to catch schema/config/import drift before reporting completion. Run `python tools/testing/claude_dir_validator.py --json` to verify alignment.
 
 *(Add new guardrails as mistakes happen. Keep under 20 items.)*
 
@@ -941,6 +1015,14 @@ pytest tests/test_finetune_evaluator.py -v         # Evaluator + promotion tests
 pytest tests/test_finetune_router_integration.py -v # Router integration tests (23 tests)
 pytest tests/test_finetune_cloud_providers.py -v   # Cloud provider tests (74 tests)
 pytest tests/test_api_surface_extractor.py -v            # API surface extractor tests (38 tests)
+pytest tests/test_bayesian_teacher.py -v                 # Bayesian teaching intelligence tests (74 tests)
+pytest tests/test_workflow_loop.py -v                    # Workflow discipline engine tests (240+ tests)
+pytest tests/test_blueprint_verifier.py -v               # Blueprint verifier tests (38 tests)
+pytest tests/test_credential_broker.py -v                # Credential broker tests (30 tests)
+pytest tests/test_egress_monitor.py -v                   # Egress monitor tests (17 tests)
+pytest tests/test_egress_policy_manager.py -v            # Egress policy manager tests (29 tests)
+pytest tests/test_propagation_verifier.py -v             # Propagation verifier tests (12 tests)
+pytest tests/test_sandbox_scorer.py -v                   # Sandbox scorer tests (15 tests)
 
 # .claude directory governance
 python tools/testing/claude_dir_validator.py --json   # Validate .claude config alignment (exit 0 = pass)
@@ -1430,6 +1512,20 @@ python tools/registry/absorption_engine.py --candidates --json                  
 python tools/registry/learning_collector.py --unevaluated --json                                      # Get unevaluated behaviors
 python tools/registry/cross_pollinator.py --candidates --json                                         # Find cross-pollination candidates
 
+# Evolution Daemon (D-EVO-1, Phase 36 autonomous lifecycle)
+ICDEV_EVOLUTION_ENABLED=true python tools/registry/evolution_daemon.py   # Run as always-on daemon
+python tools/registry/evolution_daemon.py --once --json                  # Single pass (run all due reflexes)
+python tools/registry/evolution_daemon.py --status --json                # Show status of all 7 reflexes
+python tools/registry/evolution_daemon.py --reflex discover --json       # Run one reflex immediately
+python tools/registry/evolution_daemon.py --reflex evaluate --json       # Evaluate pending behaviors
+python tools/registry/evolution_daemon.py --reflex stage --json          # Create staging environments
+python tools/registry/evolution_daemon.py --reflex test --json           # Test active staging envs
+python tools/registry/evolution_daemon.py --reflex verify --json         # Check stability windows
+python tools/registry/evolution_daemon.py --reflex absorb --json         # Report absorption-ready (HITL)
+python tools/registry/evolution_daemon.py --enable discover              # Enable a reflex
+python tools/registry/evolution_daemon.py --disable absorb               # Disable a reflex
+python tools/registry/evolution_daemon.py --reset test --json            # Reset circuit breaker
+
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
 python tools/cloud/cloud_mode_manager.py --status --json                                               # Current cloud mode and config
@@ -1626,6 +1722,12 @@ python tools/monitor/heartbeat_daemon.py --status --json # Show all check status
 python tools/monitor/auto_resolver.py --analyze --alert-file alert.json --json   # Analyze without acting
 python tools/monitor/auto_resolver.py --resolve --alert-file alert.json --json   # Full pipeline: analyze + fix + PR
 python tools/monitor/auto_resolver.py --history --json                            # Resolution history
+
+# Outcome Verifier (D-EVO-6, self-healing feedback loop)
+python tools/monitor/outcome_verifier.py --check-pending --json                  # Check PR merge status
+python tools/monitor/outcome_verifier.py --check-recurrence --json               # Check failure recurrence
+python tools/monitor/outcome_verifier.py --run-all --json                        # Both checks
+python tools/monitor/outcome_verifier.py --status --json                         # Verification summary
 
 # Selective Skill Injection (Phase 29)
 python tools/agent/skill_selector.py --query "fix the login tests" --json         # Keyword-based category matching
@@ -1843,7 +1945,7 @@ python tools/filesync/sync_engine.py --health --json
 
 | Database | Tables | Purpose |
 |----------|--------|---------|
-| `data/icdev.db` | 391 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360), CPMP (cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history, cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments, cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations, cpmp_sam_contract_awards, cpmp_cor_access_log — Phase 60, D-CPMP-1 through D-CPMP-10), Phase 61 Orchestration (atlas_critique_sessions, atlas_critique_findings, prompt_chain_executions, dispatcher_mode_overrides, session_purposes — D-DISP-1, D-PC-1, D-ORCH-5), Industry Research Engine (research_verticals, research_sessions, research_signals, research_challenges, research_regulatory_map, research_build_buy, research_dossiers, research_trends, research_capability_map, research_forecasts — Phase 63, D-RES-1 through D-RES-21), RAG Subsystem (rag_chunks, rag_ingestion_log, rag_retrieval_log, rag_parent_cache — Phase 64, D-RAG-1 through D-RAG-14), Fine-Tuning (ft_datasets, ft_dataset_examples, ft_training_jobs, ft_training_job_events, ft_model_versions, ft_active_models, ft_evaluations, ft_promotion_log, ft_hyperparam_results — Phase 64 Extension, D-FT-1 through D-FT-22), File Sync (sync_jobs, sync_state, sync_log, sync_conflicts — D-SYNC-1 through D-SYNC-12) |
+| `data/icdev.db` | 391 tables | Main operational DB: projects, agents, A2A tasks, audit trail, compliance (NIST, FedRAMP, CMMC, CSSP, SbD, IV&V, OSCAL, FIPS 199/200), eMASS, cATO evidence, PI tracking, knowledge, deployments, metrics, alerts, maintenance audit, MBSE, Modernization, RICOAS (intake, boundary, supply chain, simulation, integration), Operations & Automation (hook_events, agent_executions, nlq_queries, ci_worktrees, gitlab_task_claims), Multi-Agent Orchestration (agent_token_usage, agent_workflows, agent_subtasks, agent_mailbox, agent_vetoes, agent_memory, agent_collaboration_history), Agentic Generation (child_app_registry, agentic_fitness_assessments), Security Categorization (fips199_categorizations, project_information_types, fips200_assessments), Marketplace (marketplace_assets, marketplace_versions, marketplace_reviews, marketplace_installations, marketplace_scan_results, marketplace_ratings, marketplace_embeddings, marketplace_dependencies), Universal Compliance (data_classifications, framework_applicability, compliance_detection_log, crosswalk_bridges, framework_catalog_versions, cjis_assessments, hipaa_assessments, hitrust_assessments, soc2_assessments, pci_dss_assessments, iso27001_assessments), DevSecOps/ZTA (devsecops_profiles, zta_maturity_scores, zta_posture_evidence, nist_800_207_assessments, devsecops_pipeline_audit), MOSA (mosa_assessments, icd_documents, tsp_documents, mosa_modularity_metrics), Remote Gateway (remote_user_bindings, remote_command_log, remote_command_allowlist), Schema Migrations (schema_migrations — D150 version tracking), Spec-Kit (project_constitutions, spec_registry — D156-D161), Proactive Monitoring (heartbeat_checks, auto_resolution_log — D162-D166), Dashboard Auth & BYOK (dashboard_users, dashboard_api_keys, dashboard_auth_log, dashboard_user_llm_keys — D169-D178), Dev Profiles (dev_profiles, dev_profile_locks, dev_profile_detections — D183-D188), Innovation Engine (innovation_signals, innovation_triage_log, innovation_solutions, innovation_trends, innovation_competitor_scans, innovation_standards_updates, innovation_feedback — D199-D208), AI Security (prompt_injection_log, ai_telemetry, ai_bom, atlas_assessments, atlas_red_team_results, owasp_llm_assessments, nist_ai_rmf_assessments, iso42001_assessments — D209-D219), Evolutionary Intelligence (child_capabilities, child_telemetry, child_learned_behaviors, genome_versions, capability_evaluations, staging_environments, propagation_log — D209-D214), Cloud-Agnostic (cloud_provider_status, cloud_tenant_csp_config, csp_region_certifications — D225-D233), Translation (translation_jobs, translation_units, translation_dependency_mappings, translation_validations — D242-D256), Innovation Adaptation (chat_contexts, chat_messages, chat_tasks, extension_registry, extension_execution_log, memory_consolidation_log — D257-D279), OWASP Agentic Security (tool_chain_events, agent_trust_scores, agent_output_violations — Phase 45), Observability & XAI (otel_spans, prov_entities, prov_activities, prov_relations, shap_attributions, xai_assessments — D280-D289), Production Readiness (production_audits, remediation_audit_log — D291-D300), OSCAL Ecosystem (oscal_validation_log — D306), AI Transparency (omb_m25_21_assessments, omb_m26_04_assessments, nist_ai_600_1_assessments, gao_ai_assessments, model_cards, system_cards, confabulation_checks, ai_use_case_inventory, fairness_assessments — D307-D315), AI Accountability (ai_oversight_plans, ai_caio_registry, ai_appeals, ai_incident_log, ai_ethics_reviews, ai_reassessment_schedule — D316-D321), Code Intelligence (code_quality_metrics, runtime_feedback — D331-D337), Phases 53-57 (owasp_asi_assessments, eu_ai_act_assessments — D339, D349), Creative Engine (creative_competitors, creative_signals, creative_pain_points, creative_feature_gaps, creative_specs, creative_trends — D351-D360), CPMP (cpmp_contracts, cpmp_clins, cpmp_wbs, cpmp_deliverables, cpmp_status_history, cpmp_evm_periods, cpmp_subcontractors, cpmp_cpars_assessments, cpmp_negative_events, cpmp_small_business_plan, cpmp_cdrl_generations, cpmp_sam_contract_awards, cpmp_cor_access_log — Phase 60, D-CPMP-1 through D-CPMP-10), Phase 61 Orchestration (atlas_critique_sessions, atlas_critique_findings, prompt_chain_executions, dispatcher_mode_overrides, session_purposes — D-DISP-1, D-PC-1, D-ORCH-5), Industry Research Engine (research_verticals, research_sessions, research_signals, research_challenges, research_regulatory_map, research_build_buy, research_dossiers, research_trends, research_capability_map, research_forecasts — Phase 63, D-RES-1 through D-RES-21), RAG Subsystem (rag_chunks, rag_ingestion_log, rag_retrieval_log, rag_parent_cache — Phase 64, D-RAG-1 through D-RAG-14), Fine-Tuning (ft_datasets, ft_dataset_examples, ft_training_jobs, ft_training_job_events, ft_model_versions, ft_active_models, ft_evaluations, ft_promotion_log, ft_hyperparam_results — Phase 64 Extension, D-FT-1 through D-FT-22), File Sync (sync_jobs, sync_state, sync_log, sync_conflicts — D-SYNC-1 through D-SYNC-12), Bayesian Teaching (bayesian_teaching_scores — D-BT-1 through D-BT-6), Workflow Discipline Engine (workflow_loops, workflow_acceptance_criteria, workflow_reconciliations, workflow_handoffs — D-WF-1 through D-WF-7), NemoClaw Sandboxing (credential_broker_log, credential_active_tokens, blueprint_digests, egress_policy_audit, propagation_verifications — D-NC-1 through D-NC-6), Evolution Daemon (evolution_audit, evolution_reflex_state — D-EVO-1) |
 | `data/platform.db` | 6 tables | SaaS platform DB: tenants, users, api_keys, subscriptions, usage_records, audit_platform |
 | `data/tenants/{slug}.db` | (per-tenant) | Isolated copy of icdev.db schema per tenant — separate DB per tenant for strongest isolation |
 | `data/memory.db` | 3 tables | Memory system: entries, daily logs, access log |
@@ -1911,6 +2013,11 @@ python tools/filesync/sync_engine.py --health --json
 | `args/security_gates.yaml` | (updated) Added `rag` gate with blocking: rag_injection_without_provenance, rag_cross_tenant_query_detected, rag_content_tracing_in_cui_without_approval; warning: rag_ingestion_stale_over_7_days, rag_retrieval_low_relevance_trend, rag_vector_store_unavailable; thresholds: provenance_required=true, tenant_isolation_required=true, max_ingestion_staleness_days=7 |
 | `args/filesync_config.yaml` | File Sync settings: detection (SHA-256, fast-skip mtime+size), watcher (optional watchdog, periodic scan), transfer (ThreadPoolExecutor, bandwidth throttle), SFTP, provider config, scheduling |
 | `args/verify_loop_config.yaml` | Compiler-in-the-Loop Verification (LeanStral-adapted, D-VL-1): per-language verifier stacks (6 languages), loop settings (max 3 iterations, timeout), LLM repair config (system prompt, temperature, max chars), air-gap settings (prefer_local, local_repair_model), gate thresholds, audit (append-only) |
+| `args/bayesian_teaching_config.yaml` | Bayesian Teaching Intelligence (D-BT-1): scoring weights (posterior_shift 0.35, discriminability 0.25, diversity 0.20, complexity_match 0.20), compliance ordering cascade probabilities, pair scoring, SmartEncoding dictionary, audit settings |
+| `args/credential_broker_config.yaml` | Credential Broker (D-NC-1): token TTL/hash algorithm, function-to-provider mapping, trust revocation threshold, enable toggle (default: disabled for backward compat) |
+| `args/evolution_config.yaml` | Evolution Daemon (D-EVO-1): master enable/disable, trust kernel risk tiers (GREEN/YELLOW/ORANGE), circuit breaker, 7 reflex schedules, capability evaluation 8-dimension weights, scanner-tier LLM config, outcome verification |
+| `args/workflow_loop_config.yaml` | Workflow Discipline Engine (D-WF-1): loop lifecycle (max_tasks 5, abandon_after 72h), reconciliation settings, next action priority weights (staleness 0.30, compliance_gap 0.25, security_risk 0.20, loop_state 0.15, handoff_age 0.10), handoff TTL |
+| `args/security_gates.yaml` | (updated) Added `evolution_lifecycle` gate with blocking: capability_absorbed_without_hitl, staging_test_failed_before_propagation, stability_window_not_elapsed, evaluation_score_below_minimum; thresholds: require_hitl_for_absorb=true, min_evaluation_score=0.65, stability_window_hours=72 |
 
 ### Key Architecture Decisions
 - **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
@@ -2184,6 +2291,7 @@ python tools/filesync/sync_engine.py --health --json
 - **Code Quality Gate:** Avg cyclomatic complexity ≤ 25 (blocking), maintainability score not declining, smell density ≤ 20/KLOC, dead code ≤ 10%
 - **RAG Gate:** Provenance required per retrieval (blocking), cross-tenant query isolation enforced (blocking), content tracing in CUI requires approval (blocking); warn on ingestion staleness >7 days, low relevance trend, vector store unavailable
 - **Fine-Tuning Gate:** CUI boundary violation blocks cloud training (blocking), cloud exceeds classification (blocking), unsigned LoRA for marketplace (blocking), provenance missing (blocking); warn on dataset < 20 examples, eval below baseline, GPU VRAM insufficient, auto-retrain disabled
+- **Coherence Gate:** Schema-code mismatch (blocking), fixture-schema mismatch (blocking), append-only table unprotected (blocking); warn on config-code drift, signature-call risk, manifest incomplete, unused imports. Auto-fix available for imports and append-only via `--fix` flag. Runs in: workflow UNIFY phase, Genesis audit reflex, GKP promotion, CI/CD pipeline, marketplace publish, test orchestrator, production audit, heartbeat daemon
 
 ### Docker & K8s Deployment
 - `docker/Dockerfile.agent-base` — STIG-hardened base for all agents (non-root, minimal packages)
@@ -2518,6 +2626,26 @@ python tools/innovation/signal_ranker.py --calibrate --json
 - **D-VL-10:** GovEval scoring is deterministic (D21 weighted average, no LLM required). Optional LLM-as-judge for subjective quality
 - **D-VL-11:** `formal_verification_results` and `goveval_results` tables are append-only (NIST AU, D6 pattern)
 - **D-VL-12:** Mistral/LeanStral models added to LLM router as `openai_compatible` provider — cloud via `api.mistral.ai/v1` (requires `MISTRAL_API_KEY`), self-hosted via vLLM (`MISTRAL_VLLM_BASE_URL`). LeanStral: 119B sparse MoE, 6.5B active/token, Apache 2.0
+- **D-BT-1:** Information gain via Shannon entropy + KL divergence (deterministic, stdlib-only, air-gap safe)
+- **D-BT-2:** 4-dimension scoring: posterior_shift(0.35) + discriminability(0.25) + diversity(0.20) + complexity_match(0.20)
+- **D-BT-3:** Teaching dimension via greedy set-cover (Goldman & Kearns 1995)
+- **D-BT-4:** SmartEncoding maps string tags to compact integer IDs for efficient token usage
+- **D-BT-5:** Compliance ordering uses NIST control dependency graph for optimal teaching sequence
+- **D-BT-6:** bayesian_teaching_scores is append-only (NIST AU, D6 pattern)
+- **D-NC-1:** Credential broker isolates API keys per agent function with auto-revoking scoped tokens (TTL-capped, SHA-256 hashed)
+- **D-NC-2:** Egress policies are deny-by-default per agent role, generating K8s NetworkPolicy manifests
+- **D-NC-3:** Blueprint verifier computes recursive SHA-256 digests for genome/marketplace/child integrity verification
+- **D-NC-4:** Sandbox scorer adds 8th dimension to capability evaluation (isolation posture: broker, egress, blueprint, propagation)
+- **D-NC-5:** Propagation verifier checks digest + DB schema + health endpoint + CUI markings after capability distribution
+- **D-NC-6:** Egress monitor tracks child network calls and evaluates against parent-defined egress policies
+- **D-WF-1:** PLAN-APPLY-UNIFY lifecycle with 6-state machine (PLANNING→PLANNED→APPLYING→APPLIED→UNIFYING→CLOSED/ABANDONED)
+- **D-WF-2:** Next action uses 5-dimension weighted priority (staleness 0.30, compliance_gap 0.25, security_risk 0.20, loop_state 0.15, handoff_age 0.10)
+- **D-WF-3:** Process verifier queries audit_trail for required event types during APPLY phase — deterministic, no LLM
+- **D-WF-4:** Handoff generator creates markdown documents for cross-session context transfer
+- **D-WF-5:** Reconciler tracks planned-vs-actual with deviation severity classification (minor/moderate/major)
+- **D-WF-6:** workflow_loops/acceptance_criteria allow UPDATE (state transitions); workflow_reconciliations/handoffs are append-only (D6)
+- **D-WF-7:** Loop abandonment requires explicit reason (NIST AU-3 event detail traceability)
+- **D-WF-8:** Coherence Engine — 7 deterministic checks (schema_code, config_code, signature_call, fixture_schema, manifest, append_only, import_usage) with 2-tier auto-fix (auto: imports/append-only, suggest: schema/config/fixture). Wired into: workflow UNIFY reconciler, Genesis audit reflex, GKP promotion gate, CI/CD SDLC pipeline, marketplace publish gate, test orchestrator, heartbeat daemon, production audit. Child apps inherit via DIRECTORY_TREE. LLM-agnostic (stdlib only, air-gap safe)
 
 ### Innovation Security Gates
 | Gate | Condition |

@@ -25,14 +25,12 @@ Usage:
 
 import importlib.util
 import logging
-import os
 import threading
 import time
-import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 logger = logging.getLogger("icdev.extensions")
 

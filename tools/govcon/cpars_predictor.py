@@ -119,7 +119,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="cpars_predictor"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.cpars_predictor", actor, action, details, "cpmp"),
         )

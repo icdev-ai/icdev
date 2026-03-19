@@ -28,7 +28,6 @@ import argparse
 import json
 import os
 import sqlite3
-import sys
 import time
 import uuid
 from datetime import datetime, timezone
@@ -57,7 +56,7 @@ def _now():
 def _audit(conn, action, details="", actor="govcon_engine"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.pipeline", actor, action, details, "govcon"),
         )
@@ -382,10 +381,10 @@ def get_status():
         # Last pipeline run (from audit trail)
         try:
             r = conn.execute(
-                "SELECT timestamp FROM audit_trail WHERE event_type='govcon.pipeline' "
-                "AND action='pipeline_complete' ORDER BY timestamp DESC LIMIT 1"
+                "SELECT created_at FROM audit_trail WHERE event_type='govcon.pipeline' "
+                "AND action='pipeline_complete' ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
-            stats["last_pipeline_run"] = r["timestamp"] if r else None
+            stats["last_pipeline_run"] = r["created_at"] if r else None
         except Exception:
             stats["last_pipeline_run"] = None
 
@@ -414,11 +413,11 @@ def get_pipeline_report():
         # Recent pipeline runs
         try:
             runs = conn.execute(
-                "SELECT timestamp, details FROM audit_trail "
+                "SELECT created_at, details FROM audit_trail "
                 "WHERE event_type='govcon.pipeline' AND action='pipeline_complete' "
-                "ORDER BY timestamp DESC LIMIT 10"
+                "ORDER BY created_at DESC LIMIT 10"
             ).fetchall()
-            status["recent_runs"] = [{"timestamp": r["timestamp"], "details": r["details"]} for r in runs]
+            status["recent_runs"] = [{"timestamp": r["created_at"], "details": r["details"]} for r in runs]
         except Exception:
             status["recent_runs"] = []
 

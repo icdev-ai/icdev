@@ -27,7 +27,7 @@ if str(BASE_DIR) not in sys.path:
 
 from functools import wraps
 
-from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for, flash
+from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for
 
 from tools.dashboard.config import (
     DB_PATH,
@@ -4350,6 +4350,179 @@ def create_app() -> Flask:
             return jsonify({"error": str(exc)}), 500
 
 
+
+    # ---- Phase 67: Engineering Review Board ----
+    @app.route("/review-board")
+    def review_board_page():
+        """Engineering Review Board — multi-persona analysis dashboard."""
+        conn = _get_db()
+        health_score = None
+        health_grade = "N/A"
+        health_trend = "stable"
+        health_trend_data = []
+        correlation_groups = []
+        remediation_stats = {}
+        try:
+            # Reflex states
+            try:
+                reflex_rows = conn.execute(
+                    "SELECT * FROM review_board_reflex_state ORDER BY reflex_name"
+                ).fetchall()
+                reflexes = [dict(r) for r in reflex_rows]
+            except Exception:
+                reflexes = []
+
+            # Recent findings
+            try:
+                finding_rows = conn.execute(
+                    "SELECT * FROM review_board_findings "
+                    "ORDER BY created_at DESC LIMIT 100"
+                ).fetchall()
+                findings = [dict(r) for r in finding_rows]
+            except Exception:
+                findings = []
+
+            # Severity summary
+            try:
+                severity_rows = conn.execute(
+                    "SELECT severity, COUNT(*) as cnt FROM review_board_findings "
+                    "GROUP BY severity"
+                ).fetchall()
+                severity_summary = {r[0]: r[1] for r in severity_rows}
+            except Exception:
+                severity_summary = {}
+
+            # Recent audit events
+            try:
+                audit_rows = conn.execute(
+                    "SELECT * FROM review_board_audit "
+                    "ORDER BY created_at DESC LIMIT 20"
+                ).fetchall()
+                audit_events = [dict(r) for r in audit_rows]
+            except Exception:
+                audit_events = []
+
+            total_findings = sum(severity_summary.values())
+
+            # Health score + trend
+            try:
+                latest_health = conn.execute(
+                    "SELECT score, grade, trend FROM review_board_health_history "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                if latest_health:
+                    health_score = latest_health[0]
+                    health_grade = latest_health[1]
+                    health_trend = latest_health[2]
+                trend_rows = conn.execute(
+                    "SELECT score, created_at FROM review_board_health_history "
+                    "ORDER BY created_at DESC LIMIT 20"
+                ).fetchall()
+                health_trend_data = [{"score": r[0], "created_at": r[1]} for r in reversed(list(trend_rows))]
+            except Exception:
+                pass
+
+            # Correlation groups
+            try:
+                from tools.review_board.correlator import correlate_findings
+                corr = correlate_findings()
+                correlation_groups = corr.get("groups", [])
+            except Exception:
+                pass
+
+            # Remediation stats
+            try:
+                rem_row = conn.execute(
+                    "SELECT COUNT(*) FROM review_board_remediation_log "
+                    "WHERE tier = 'auto_fix' AND status IN ('fixed', 'verified') "
+                    "AND created_at > datetime('now', '-1 hour')"
+                ).fetchone()
+                remediation_stats = {"auto_fixes_last_hour": rem_row[0] if rem_row else 0}
+            except Exception:
+                pass
+
+            return render_template("review_board.html",
+                                   reflexes=reflexes,
+                                   findings=findings,
+                                   severity_summary=severity_summary,
+                                   total_findings=total_findings,
+                                   audit_events=audit_events,
+                                   health_score=health_score,
+                                   health_grade=health_grade,
+                                   health_trend=health_trend,
+                                   health_trend_data=health_trend_data,
+                                   correlation_groups=correlation_groups,
+                                   remediation_stats=remediation_stats)
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            return render_template("review_board.html",
+                                   reflexes=[], findings=[],
+                                   severity_summary={}, total_findings=0,
+                                   audit_events=[], error=str(e))
+        finally:
+            conn.close()
+
+    @app.route("/api/review-board/status", methods=["GET"])
+    def api_review_board_status():
+        """Review Board JSON status."""
+        try:
+            import subprocess as _sp
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = _sp.run(
+                [sys.executable, "tools/review_board/daemon.py", "--status", "--json"],
+                capture_output=True, text=True, timeout=15, cwd=str(BASE_DIR),
+                env=_utf8_env,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return jsonify(json.loads(result.stdout))
+            return jsonify({"error": "no_output", "stderr": result.stderr[:300]}), 500
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/review-board/findings", methods=["GET"])
+    def api_review_board_findings():
+        """Get review board findings with optional severity filter."""
+        severity = flask_request.args.get("severity")
+        limit = int(flask_request.args.get("limit", "100"))
+        conn = _get_db()
+        try:
+            if severity:
+                rows = conn.execute(
+                    "SELECT * FROM review_board_findings "
+                    "WHERE severity = ? ORDER BY created_at DESC LIMIT ?",
+                    (severity, limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM review_board_findings "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            return jsonify({"findings": [dict(r) for r in rows], "count": len(rows)})
+        except Exception as exc:
+            return jsonify({"findings": [], "count": 0, "error": str(exc)})
+        finally:
+            conn.close()
+
+    @app.route("/api/review-board/reflex/<name>", methods=["POST"])
+    def api_review_board_run_reflex(name):
+        """Run a single Review Board reflex on-demand."""
+        allowed = ["sre", "qa", "security", "perf", "ux", "docs", "product"]
+        if name not in allowed:
+            return jsonify({"error": f"Unknown reflex: {name}"}), 400
+        try:
+            import subprocess as _sp
+            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8"}
+            result = _sp.run(
+                [sys.executable, "tools/review_board/daemon.py", "--reflex", name, "--json"],
+                capture_output=True, text=True, timeout=300, cwd=str(BASE_DIR),
+                env=_utf8_env,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return jsonify(json.loads(result.stdout))
+            return jsonify({"status": "completed", "stdout": result.stdout[:500]}), 200
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     return app
 

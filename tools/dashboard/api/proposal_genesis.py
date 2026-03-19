@@ -210,7 +210,7 @@ def api_pg_summary():
         try:
             stats["audit_events_24h"] = conn.execute(
                 "SELECT COUNT(*) as cnt FROM pg_proposal_genesis_audit "
-                "WHERE timestamp > datetime('now', '-1 day')"
+                "WHERE created_at > datetime('now', '-1 day')"
             ).fetchone()["cnt"]
         except Exception:
             stats["audit_events_24h"] = 0

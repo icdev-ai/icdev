@@ -13,7 +13,6 @@ Decision D133: Channel adapters are ABC + implementations.
 Decision D134: Disabled in air-gapped environments (requires_internet: true).
 """
 
-import hashlib
 import hmac
 import json
 import logging

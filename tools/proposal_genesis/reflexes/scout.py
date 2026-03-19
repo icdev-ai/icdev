@@ -11,7 +11,6 @@ Pipeline: Independent schedule (daily), not part of main chain.
 
 import json
 import os
-import re
 import sys
 import uuid
 from datetime import datetime, timezone

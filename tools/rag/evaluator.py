@@ -128,7 +128,6 @@ def _safe_extract_json(text: str, container: str = "{") -> Any:
     Returns:
         Parsed JSON value, or None on failure.
     """
-    import re
     if not text:
         return None
     open_br = container

@@ -43,7 +43,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
@@ -88,6 +87,29 @@ except Exception:
 
 
 # =========================================================================
+# CONFIG (from args/evolution_config.yaml)
+# =========================================================================
+def _load_evolution_config() -> dict:
+    """Load evaluation config from args/evolution_config.yaml."""
+    config_path = BASE_DIR / "args" / "evolution_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("evaluation", {})
+    except Exception:
+        return {}
+
+
+_eval_cfg = _load_evolution_config()
+_injection_cfg = _eval_cfg.get("injection_scan", {})
+_INJECTION_BLOCK_CONFIDENCE = _injection_cfg.get("block_confidence", 0.7)
+_INJECTION_DEMOTE_CONFIDENCE = _injection_cfg.get("demote_confidence", 0.5)
+
+
+# =========================================================================
 # CONSTANTS
 # =========================================================================
 VALID_BEHAVIOR_TYPES = (
@@ -115,7 +137,7 @@ CREATE TABLE IF NOT EXISTS child_learned_behaviors (
     confidence REAL DEFAULT 0.0 CHECK(confidence >= 0.0 AND confidence <= 1.0),
     evaluated INTEGER DEFAULT 0,
     absorbed INTEGER DEFAULT 0,
-    discovered_at TEXT DEFAULT (datetime('now')),
+    created_at TEXT DEFAULT (datetime('now')),
     evaluated_at TEXT,
     absorbed_at TEXT,
     classification TEXT DEFAULT 'CUI',
@@ -266,8 +288,8 @@ class LearningCollector:
             scan_target = f"{description} {json.dumps(evidence) if evidence else ''}"
             scan_result = _pid.scan_text(scan_target, source="child_learned_behavior")
             injection_scan_result = json.dumps(scan_result)
-            if scan_result.get("detected") and scan_result.get("confidence", 0) >= 0.7:
-                # Block high-confidence injection attempts
+            if scan_result.get("detected") and scan_result.get("confidence", 0) >= _INJECTION_BLOCK_CONFIDENCE:
+                # Block high-confidence injection attempts (D-EVO-5, WP-8)
                 self._log_audit_event(
                     None, child_id,
                     "learned_behavior_rejected",
@@ -279,16 +301,34 @@ class LearningCollector:
                     "confidence": scan_result["confidence"],
                     "behavior_id": None,
                 }
-            elif scan_result.get("detected") and scan_result.get("confidence", 0) >= 0.5:
+            elif scan_result.get("detected") and scan_result.get("confidence", 0) >= _INJECTION_DEMOTE_CONFIDENCE:
                 # Accept with warning, tag as external trust
                 trust_level = "external"
+
+        # D-EVO-5: Check child health from telemetry — demote trust if degraded
+        conn = self._get_conn()
+        try:
+            health_row = conn.execute(
+                """SELECT health_status FROM child_telemetry
+                   WHERE child_id = ?
+                   ORDER BY collected_at DESC LIMIT 1""",
+                (child_id,),
+            ).fetchone()
+            if health_row:
+                health = dict(health_row).get("health_status", "unknown")
+                if health in ("degraded", "unhealthy", "offline"):
+                    trust_level = "external"
+        except Exception:
+            pass
+        finally:
+            conn.close()
 
         conn = self._get_conn()
         try:
             cursor = conn.execute(
                 """INSERT INTO child_learned_behaviors
                    (child_id, behavior_type, description, evidence_json,
-                    confidence, evaluated, absorbed, discovered_at,
+                    confidence, evaluated, absorbed, created_at,
                     classification, trust_level, injection_scan_result)
                    VALUES (?, ?, ?, ?, ?, 0, 0, ?, 'CUI', ?, ?)""",
                 (
@@ -464,6 +504,11 @@ class LearningCollector:
                 },
             )
 
+            # D-EVO-5: Auto-queue for staging when score >= auto_queue threshold
+            if evaluation_result.get("outcome") == "auto_queue":
+                result["auto_staged"] = self._auto_stage_capability(
+                    behavior_id, behavior)
+
             return result
 
         except Exception as e:
@@ -551,6 +596,65 @@ class LearningCollector:
 
         return recommendations.get(outcome, f"Score {score:.4f}: Unknown outcome '{outcome}'")
 
+    def _auto_stage_capability(self, behavior_id: str, behavior: dict) -> dict:
+        """Auto-queue a high-scoring behavior for staging (D-EVO-5).
+
+        Called when evaluate_behavior() returns outcome='auto_queue'.
+        Creates a staging environment via StagingManager.
+
+        Args:
+            behavior_id: Row ID in child_learned_behaviors.
+            behavior: The behavior record dict.
+
+        Returns:
+            Dict with staging result or error.
+        """
+        try:
+            from tools.registry.staging_manager import StagingManager
+            sm = StagingManager(db_path=self.db_path)
+
+            # Get current genome version for context
+            genome_version = "0.0.0"
+            conn = self._get_conn()
+            try:
+                row = conn.execute(
+                    "SELECT version FROM genome_versions "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                if row:
+                    genome_version = dict(row).get("version", "0.0.0")
+            except Exception:
+                pass
+            finally:
+                conn.close()
+
+            staging_result = sm.create_staging(
+                capability_id=str(behavior_id),
+                genome_version=genome_version,
+            )
+
+            if staging_result and "error" not in staging_result:
+                _audit(
+                    "learning.auto_staged",
+                    f"Behavior {behavior_id} auto-staged: "
+                    f"staging_id={staging_result.get('staging_id')}",
+                    {"behavior_id": behavior_id,
+                     "staging_id": staging_result.get("staging_id")},
+                )
+                return {
+                    "staged": True,
+                    "staging_id": staging_result.get("staging_id"),
+                }
+            else:
+                return {
+                    "staged": False,
+                    "error": staging_result.get("error", "Unknown staging error"),
+                }
+        except ImportError:
+            return {"staged": False, "error": "StagingManager not available"}
+        except Exception as e:
+            return {"staged": False, "error": str(e)}
+
     def get_unevaluated(self, limit: int = 50) -> list:
         """Return behaviors that have not been evaluated yet.
 
@@ -565,10 +669,10 @@ class LearningCollector:
         try:
             rows = conn.execute(
                 """SELECT id, child_id, behavior_type, description,
-                          evidence_json, confidence, discovered_at
+                          evidence_json, confidence, created_at
                    FROM child_learned_behaviors
                    WHERE evaluated = 0
-                   ORDER BY confidence DESC, discovered_at ASC
+                   ORDER BY confidence DESC, created_at ASC
                    LIMIT ?""",
                 (limit,),
             ).fetchall()
@@ -604,10 +708,10 @@ class LearningCollector:
             rows = conn.execute(
                 """SELECT id, child_id, behavior_type, description,
                           evidence_json, confidence, evaluated, absorbed,
-                          discovered_at, evaluated_at, absorbed_at
+                          created_at, evaluated_at, absorbed_at
                    FROM child_learned_behaviors
                    WHERE child_id = ?
-                   ORDER BY discovered_at DESC""",
+                   ORDER BY created_at DESC""",
                 (child_id,),
             ).fetchall()
 

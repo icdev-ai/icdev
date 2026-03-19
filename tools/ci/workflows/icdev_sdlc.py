@@ -239,6 +239,25 @@ def main():
         # E2E failure is non-blocking warning — log but continue
         print("WARNING: E2E phase had failures — review screenshots before merge")
 
+    # Phase 3c: Coherence — internal consistency validation (D-WF-8)
+    # Catches schema/fixture/config mismatches before review to avoid wasted cycles.
+    try:
+        from tools.workflow.coherence_checker import run_checks as coherence_check
+        print(f"\n{'='*60}")
+        print("  COHERENCE PHASE")
+        print(f"{'='*60}")
+        coherence = coherence_check(autofix=True)
+        if coherence.overall_pass:
+            print(f"Coherence passed ({coherence.passed_checks}/{coherence.total_checks} checks)")
+            if coherence.total_fixes:
+                print(f"  Auto-fixed {coherence.total_fixes} issue(s)")
+        else:
+            print(f"WARNING: Coherence check found {coherence.failed_checks} failure(s), "
+                  f"{coherence.warned_checks} warning(s)")
+            # Non-blocking — log results but continue to review
+    except Exception as e:
+        print(f"WARNING: Coherence check unavailable: {e}")
+
     # Phase 4: Review
     if not run_phase("Review", "icdev_review", issue_number, run_id):
         print("Pipeline aborted at Review phase")

@@ -366,6 +366,10 @@ def main():
         "--minimal-controls", action="store_true",
         help="Show minimal control set to satisfy all frameworks",
     )
+    parser.add_argument(
+        "--optimal-order", action="store_true",
+        help="Order controls by Bayesian information gain (D-BT-4)",
+    )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None)
     args = parser.parse_args()
@@ -376,7 +380,28 @@ def main():
             if args.frameworks else None
         )
 
-        if args.minimal_controls:
+        if args.optimal_order:
+            # D-BT-4: Bayesian information-gain ordering for compliance checks
+            try:
+                from tools.intelligence.bayesian_teacher import optimal_compliance_order
+                ctrl_ids = []
+                if fw_list:
+                    ctrl_ids = fw_list  # Treat as control IDs if --frameworks provided
+                else:
+                    # Default: extract NIST controls from minimal set
+                    mc = get_minimal_controls(args.project_id, None, args.db_path)
+                    ctrl_ids = [c["nist_id"] for c in mc.get("prioritized_controls", [])]
+                if not ctrl_ids:
+                    ctrl_ids = [
+                        "AC-2", "AC-3", "AU-2", "AU-3", "SC-7", "SI-2",
+                        "IA-2", "CM-2", "RA-3", "SA-3", "CA-2",
+                    ]
+                result = optimal_compliance_order(
+                    ctrl_ids, project_id=args.project_id, db_path=args.db_path
+                )
+            except ImportError:
+                result = {"error": "Bayesian Teaching engine not available"}
+        elif args.minimal_controls:
             result = get_minimal_controls(
                 args.project_id, fw_list, args.db_path,
             )

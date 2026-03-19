@@ -772,13 +772,21 @@ def calibrate_weights(db_path=None):
 
     conn = _get_db(db_path)
     try:
-        # Collect signals that have been implemented and have marketplace feedback
-        # Join innovation_signals with marketplace_installations/ratings if available
+        # D-EVO-9: Collect signals with marketplace adoption feedback
+        # Join innovation_signals with marketplace_installations for success correlation
         completed_signals = []
         try:
+            # Try marketplace-enriched query first
             rows = conn.execute(
-                """SELECT s.id, s.innovation_score, s.score_breakdown, s.category
+                """SELECT s.id, s.innovation_score, s.score_breakdown, s.category,
+                          s.status,
+                          COALESCE(mi.install_count, 0) as installs
                    FROM innovation_signals s
+                   LEFT JOIN (
+                       SELECT asset_id, COUNT(*) as install_count
+                       FROM marketplace_installations
+                       GROUP BY asset_id
+                   ) mi ON mi.asset_id = s.solution_asset_id
                    WHERE s.status IN ('completed', 'queued')
                    AND s.innovation_score IS NOT NULL
                    AND s.score_breakdown IS NOT NULL
@@ -787,7 +795,21 @@ def calibrate_weights(db_path=None):
             ).fetchall()
             completed_signals = [dict(r) for r in rows]
         except Exception:
-            pass
+            # Fallback: no marketplace join
+            try:
+                rows = conn.execute(
+                    """SELECT s.id, s.innovation_score, s.score_breakdown, s.category,
+                              s.status, 0 as installs
+                       FROM innovation_signals s
+                       WHERE s.status IN ('completed', 'queued')
+                       AND s.innovation_score IS NOT NULL
+                       AND s.score_breakdown IS NOT NULL
+                       ORDER BY s.discovered_at DESC
+                       LIMIT 500"""
+                ).fetchall()
+                completed_signals = [dict(r) for r in rows]
+            except Exception:
+                pass
 
         if len(completed_signals) < min_data_points:
             return {
@@ -799,9 +821,8 @@ def calibrate_weights(db_path=None):
                 "adjustments": {},
             }
 
-        # Analyze dimension correlations with success
-        # Success heuristic: signals that reached 'completed' status are successes;
-        # 'queued' signals with high scores that stalled may indicate scoring issues
+        # D-EVO-9: Enhanced success heuristic — marketplace installs boost success signal
+        # Success: completed + installs > 0; Partial: completed + 0 installs; Stall: queued
         dimension_success = {dim: [] for dim in DEFAULT_WEIGHTS}
         dimension_stall = {dim: [] for dim in DEFAULT_WEIGHTS}
 
@@ -812,10 +833,16 @@ def calibrate_weights(db_path=None):
             except (json.JSONDecodeError, TypeError):
                 continue
 
-            if sig.get("status") == "completed":
+            # D-EVO-9: Completed with marketplace installs = strong success
+            is_success = (sig.get("status") == "completed"
+                          and sig.get("installs", 0) > 0)
+            is_weak_success = (sig.get("status") == "completed"
+                               and sig.get("installs", 0) == 0)
+            if is_success or is_weak_success:
                 for dim, val in dims.items():
                     if dim in dimension_success:
-                        dimension_success[dim].append(float(val))
+                        dimension_success[dim].extend(
+                            [float(val)] * (2 if is_success else 1))
             else:
                 for dim, val in dims.items():
                     if dim in dimension_stall:
@@ -842,6 +869,13 @@ def calibrate_weights(db_path=None):
                 current_weights[dim] = max(0.02, current_weights[dim] - adj)
             else:
                 adjustments[dim] = {"direction": "unchanged", "step": 0.0}
+
+        # D-EVO-9: Bound adjustments to +/-20% of original weights
+        for dim in current_weights:
+            orig = old_weights.get(dim, 0.1)
+            max_val = orig * 1.20
+            min_val = orig * 0.80
+            current_weights[dim] = max(min_val, min(max_val, current_weights[dim]))
 
         # Re-normalize to sum to 1.0
         total = sum(current_weights.values())

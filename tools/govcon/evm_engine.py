@@ -28,7 +28,6 @@ import json
 import os
 import random
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -81,7 +80,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="evm_engine"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.evm_engine", actor, action, details, "cpmp"),
         )

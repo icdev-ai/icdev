@@ -6,7 +6,6 @@ Full GovCon proposal lifecycle — opportunities, volumes, sections,
 compliance matrix (L/M/N), color team reviews, findings, and status history.
 """
 
-import json
 import os
 import sqlite3
 import sys

@@ -7,7 +7,6 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 Each implementation ~40-60 lines with try/except ImportError.
 """
 
-import json
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path

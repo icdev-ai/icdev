@@ -24,7 +24,6 @@ Usage:
 import argparse
 import json
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -111,7 +110,7 @@ def _audit_log(conn: sqlite3.Connection, project_id: str, event_type: str,
     """Write to audit_trail if it exists."""
     try:
         conn.execute(
-            "INSERT INTO audit_trail (project_id, event_type, actor, action, timestamp) "
+            "INSERT INTO audit_trail (project_id, event_type, actor, action, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (project_id, event_type, actor, action,
              datetime.now(timezone.utc).isoformat()),

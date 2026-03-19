@@ -66,7 +66,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="amendment_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "govcon.amendment", actor, action, details, "govcon"),
         )

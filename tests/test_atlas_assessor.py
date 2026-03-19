@@ -28,7 +28,7 @@ from icdev.tools.compliance.atlas_assessor import ATLASAssessor
 
 _MOCK_DB_SCHEMA = """
 CREATE TABLE agent_token_usage (
-    id INTEGER PRIMARY KEY, project_id TEXT, timestamp TEXT, tokens INTEGER);
+    id INTEGER PRIMARY KEY, project_id TEXT, created_at TEXT, tokens INTEGER);
 CREATE TABLE dashboard_user_llm_keys (
     id INTEGER PRIMARY KEY, user_id TEXT, provider TEXT, encrypted_key TEXT);
 CREATE TABLE dashboard_api_keys (
@@ -120,7 +120,7 @@ class TestM0024AITelemetry:
         """DB with agent_token_usage rows -> M0024 satisfied."""
         conn = sqlite3.connect(str(mock_db_path))
         conn.execute(
-            "INSERT INTO agent_token_usage (project_id, timestamp, tokens) "
+            "INSERT INTO agent_token_usage (project_id, created_at, tokens) "
             "VALUES (?, datetime('now'), ?)",
             ("proj-test", 1500),
         )

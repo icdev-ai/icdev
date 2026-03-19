@@ -6,7 +6,6 @@ Provides REST endpoints for FedRAMP 20x KSI evidence generation,
 summary, and authorization package status.
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

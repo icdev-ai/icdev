@@ -104,6 +104,9 @@ heartbeat:
       enabled: true
       interval_seconds: 86400
       stale_days: 90
+    review_board_health:
+      enabled: true
+      interval_seconds: 1800
 
 # Phase 29: Auto-resolution pipeline (D143-D145)
 auto_resolution:

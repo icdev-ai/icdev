@@ -8,7 +8,6 @@ generate improvement suggestions as GKP artifacts.
 GREEN tier (read-only analytics).  Air-gap safe.
 """
 
-import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path

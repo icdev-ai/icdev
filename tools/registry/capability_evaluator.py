@@ -40,7 +40,6 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
@@ -48,7 +47,6 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 # =========================================================================
 # PATH SETUP
@@ -124,32 +122,35 @@ def _audit(event_type, action, details=None):
 # CAPABILITY EVALUATOR
 # =========================================================================
 class CapabilityEvaluator:
-    """7-dimension scoring engine for capability evaluation (REQ-36-020).
+    """8-dimension scoring engine for capability evaluation (REQ-36-020, D-NC-4).
 
-    Dimensions and weights per specification (Phase 37 integrated):
-        universality       (0.22) - How broadly applicable across children
-        compliance_safety  (0.22) - Maintains or improves compliance posture
-        risk               (0.18) - Risk of adoption (inverted: lower risk = higher score)
-        evidence           (0.14) - Strength of evidence from field testing
-        novelty            (0.09) - Fills a gap vs duplicates existing capability
+    Dimensions and weights per specification (Phase 37 + NemoClaw integrated):
+        universality       (0.20) - How broadly applicable across children
+        compliance_safety  (0.20) - Maintains or improves compliance posture
+        risk               (0.15) - Risk of adoption (inverted: lower risk = higher score)
+        evidence           (0.10) - Strength of evidence from field testing
+        novelty            (0.08) - Fills a gap vs duplicates existing capability
         cost               (0.05) - Cost efficiency (inverted: lower cost = higher score)
         security_assessment(0.10) - Security posture: trust level, injection scan, ATLAS alignment
+        sandbox_security   (0.12) - Sandbox isolation posture (D-NC-4, NemoClaw-adapted)
     """
 
-    DIMENSIONS = {
-        "universality": 0.22,
-        "compliance_safety": 0.22,
-        "risk": 0.18,
-        "evidence": 0.14,
-        "novelty": 0.09,
+    # Defaults (overridden by args/evolution_config.yaml if present)
+    # D-NC-4: 8th dimension (sandbox_security) added for NemoClaw integration
+    _DEFAULT_DIMENSIONS = {
+        "universality": 0.20,
+        "compliance_safety": 0.20,
+        "risk": 0.15,
+        "evidence": 0.10,
+        "novelty": 0.08,
         "cost": 0.05,
         "security_assessment": 0.10,
+        "sandbox_security": 0.12,
     }
 
-    # Outcome thresholds (REQ-36-021)
-    THRESHOLD_AUTO_QUEUE = 0.85
-    THRESHOLD_RECOMMEND = 0.65
-    THRESHOLD_LOG = 0.40
+    _DEFAULT_THRESHOLD_AUTO_QUEUE = 0.85
+    _DEFAULT_THRESHOLD_RECOMMEND = 0.65
+    _DEFAULT_THRESHOLD_LOG = 0.40
 
     def __init__(self, db_path=None):
         """Initialize CapabilityEvaluator.
@@ -158,7 +159,27 @@ class CapabilityEvaluator:
             db_path: Path to SQLite database. Defaults to data/icdev.db.
         """
         self.db_path = Path(db_path) if db_path else DB_PATH
+        cfg = self._load_config()
+        self.DIMENSIONS = cfg.get("weights", self._DEFAULT_DIMENSIONS)
+        thresholds = cfg.get("thresholds", {})
+        self.THRESHOLD_AUTO_QUEUE = thresholds.get("auto_queue", self._DEFAULT_THRESHOLD_AUTO_QUEUE)
+        self.THRESHOLD_RECOMMEND = thresholds.get("recommend", self._DEFAULT_THRESHOLD_RECOMMEND)
+        self.THRESHOLD_LOG = thresholds.get("log", self._DEFAULT_THRESHOLD_LOG)
         self._ensure_tables()
+
+    @staticmethod
+    def _load_config() -> dict:
+        """Load evaluation config from args/evolution_config.yaml."""
+        config_path = BASE_DIR / "args" / "evolution_config.yaml"
+        if not config_path.exists():
+            return {}
+        try:
+            import yaml
+            with open(config_path, encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return data.get("evaluation", {})
+        except Exception:
+            return {}
 
     def _get_conn(self):
         """Get a database connection with row factory."""
@@ -215,6 +236,7 @@ class CapabilityEvaluator:
             "novelty": self._score_novelty(capability_data),
             "cost": self._score_cost(capability_data),
             "security_assessment": self._score_security_assessment(capability_data),
+            "sandbox_security": self._score_sandbox_security(capability_data),
         }
 
         # Weighted average
@@ -585,6 +607,34 @@ class CapabilityEvaluator:
         score -= min(risk_matches * 0.1, 0.2)
 
         return max(0.0, min(1.0, score))
+
+    def _score_sandbox_security(self, data: dict) -> float:
+        """Score sandbox isolation posture of capability source (D-NC-4).
+
+        Delegates to tools.registry.sandbox_scorer for full 6-factor
+        evaluation.  Falls back to heuristic if scorer unavailable.
+
+        Args:
+            data: Capability data dict.
+
+        Returns:
+            Score between 0.0 and 1.0.
+        """
+        try:
+            from tools.registry.sandbox_scorer import score_sandbox
+            result = score_sandbox(
+                capability_data=data,
+                db_path=self.db_path,
+            )
+            return result.get("score", 0.5)
+        except Exception:
+            # Fallback: heuristic based on source type
+            source = data.get("source", "")
+            if source in ("child_report", "child", "marketplace"):
+                return 0.7  # Containerized sources
+            if source in ("innovation", "introspective"):
+                return 0.5  # Parent process
+            return 0.3  # Unknown source
 
 
 # =========================================================================

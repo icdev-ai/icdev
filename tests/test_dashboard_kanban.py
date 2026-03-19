@@ -6,6 +6,7 @@ Verifies the index route returns project list and stat bar context variables.
 Run: pytest tests/test_dashboard_kanban.py -v
 """
 
+import contextlib
 import sqlite3
 import sys
 from pathlib import Path
@@ -153,10 +154,21 @@ def dashboard_app(tmp_path):
     conn2.commit()
     conn2.close()
 
-    with patch("icdev.tools.dashboard.config.DB_PATH", db_path), \
-         patch("icdev.tools.dashboard.app.DB_PATH", db_path), \
-         patch("icdev.tools.dashboard.api.projects.DB_PATH", db_path), \
-         patch("icdev.tools.dashboard.auth.DB_PATH", db_path):
+    # Pre-import modules so patch() can resolve them (avoids
+    # "module 'icdev.tools.dashboard' has no attribute 'app'" errors
+    # when the module hasn't been imported yet).
+    import icdev.tools.dashboard.config as _cfg_mod
+    import icdev.tools.dashboard.app as _app_mod
+    import icdev.tools.dashboard.auth as _auth_mod
+    try:
+        import icdev.tools.dashboard.api.projects as _proj_mod
+    except (ImportError, AttributeError):
+        _proj_mod = None
+
+    with patch.object(_cfg_mod, "DB_PATH", db_path), \
+         patch.object(_app_mod, "DB_PATH", db_path), \
+         patch.object(_auth_mod, "DB_PATH", db_path), \
+         (patch.object(_proj_mod, "DB_PATH", db_path) if _proj_mod else contextlib.nullcontext()):
         from icdev.tools.dashboard.app import create_app
         app = create_app()
         app.config["TESTING"] = True

@@ -1076,3 +1076,160 @@ def handle_runtime_feedback_collect(args: dict) -> dict:
         )
     except Exception as exc:
         return {"error": str(exc)}
+
+
+# ============================================================
+# EVOLUTION DAEMON & REGISTRY EXTENSIONS (D-EVO-1, D-NC-4/5/6)
+# ============================================================
+
+
+def handle_evolution_daemon_status(args: dict) -> dict:
+    """Get evolution daemon status including all 7 reflex states."""
+    return _run_cli("tools/registry/evolution_daemon.py", ["--status"])
+
+
+def handle_egress_monitor_evaluate(args: dict) -> dict:
+    """Evaluate child egress traffic against parent policies (D-NC-6)."""
+    cli_args = []
+    if args.get("child_id"):
+        cli_args.extend(["--evaluate", "--child-id", str(args["child_id"])])
+    if args.get("endpoint"):
+        cli_args.extend(["--endpoint", str(args["endpoint"])])
+    return _run_cli("tools/registry/egress_monitor.py", cli_args)
+
+
+def handle_propagation_verify(args: dict) -> dict:
+    """Verify post-propagation integrity (D-NC-5)."""
+    cli_args = ["--verify"]
+    if args.get("propagation_id"):
+        cli_args.extend(["--propagation-id", str(args["propagation_id"])])
+    return _run_cli("tools/registry/propagation_verifier.py", cli_args)
+
+
+def handle_sandbox_score(args: dict) -> dict:
+    """Compute isolation posture score (D-NC-4)."""
+    cli_args = ["--score"]
+    if args.get("capability_id"):
+        cli_args.extend(["--capability-id", str(args["capability_id"])])
+    if args.get("source_metadata"):
+        import json as _json
+        cli_args.extend(["--source-metadata", _json.dumps(args["source_metadata"])])
+    return _run_cli("tools/registry/sandbox_scorer.py", cli_args)
+
+
+# ============================================================
+# BAYESIAN TEACHING INTELLIGENCE (D-BT-1 through D-BT-6)
+# ============================================================
+
+
+def handle_bayesian_score_pairs(args: dict) -> dict:
+    """Score fine-tuning pairs by information gain (D-BT-1)."""
+    cli_args = ["--score-pairs"]
+    if args.get("dataset_id"):
+        cli_args.extend(["--dataset-id", str(args["dataset_id"])])
+    return _run_cli("tools/intelligence/bayesian_teacher.py", cli_args)
+
+
+def handle_bayesian_optimal_order(args: dict) -> dict:
+    """Compute optimal compliance teaching order (D-BT-5)."""
+    cli_args = ["--optimal-order"]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/intelligence/bayesian_teacher.py", cli_args)
+
+
+def handle_bayesian_teaching_dim(args: dict) -> dict:
+    """Compute teaching dimension for item set (D-BT-3)."""
+    cli_args = ["--teaching-dim"]
+    if args.get("items"):
+        cli_args.extend(["--items", str(args["items"])])
+    return _run_cli("tools/intelligence/bayesian_teacher.py", cli_args)
+
+
+def handle_bayesian_smart_encode(args: dict) -> dict:
+    """Apply SmartEncoding tag compression (D-BT-4)."""
+    cli_args = ["--smart-encode"]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/intelligence/bayesian_teacher.py", cli_args)
+
+
+# ============================================================
+# WORKFLOW DISCIPLINE ENGINE (D-WF-1 through D-WF-7)
+# ============================================================
+
+
+def handle_workflow_loop_create(args: dict) -> dict:
+    """Create a new PLAN-APPLY-UNIFY workflow loop (D-WF-1)."""
+    cli_args = ["--create"]
+    for flag, key in [("--project-id", "project_id"), ("--phase", "phase")]:
+        if args.get(key):
+            cli_args.extend([flag, str(args[key])])
+    return _run_cli("tools/workflow/loop_engine.py", cli_args)
+
+
+def handle_workflow_loop_status(args: dict) -> dict:
+    """Get workflow loop status."""
+    cli_args = ["--status"]
+    for flag, key in [("--loop-id", "loop_id"), ("--project-id", "project_id")]:
+        if args.get(key):
+            cli_args.extend([flag, str(args[key])])
+    return _run_cli("tools/workflow/loop_engine.py", cli_args)
+
+
+def handle_workflow_next_action(args: dict) -> dict:
+    """Recommend single next action (D-WF-2)."""
+    cli_args = ["--recommend"]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/workflow/next_action.py", cli_args)
+
+
+def handle_workflow_reconcile(args: dict) -> dict:
+    """Run UNIFY phase reconciliation (D-WF-5)."""
+    cli_args = ["--reconcile"]
+    if args.get("loop_id"):
+        cli_args.extend(["--loop-id", str(args["loop_id"])])
+    return _run_cli("tools/workflow/reconciler.py", cli_args)
+
+
+# ============================================================
+# NEMOCLAW SECURITY (D-NC-1 through D-NC-3)
+# ============================================================
+
+
+def handle_credential_broker_request(args: dict) -> dict:
+    """Request scoped credential token (D-NC-1)."""
+    cli_args = ["--request"]
+    for flag, key in [("--agent-id", "agent_id"), ("--function", "function")]:
+        if args.get(key):
+            cli_args.extend([flag, str(args[key])])
+    return _run_cli("tools/security/credential_broker.py", cli_args)
+
+
+def handle_credential_broker_status(args: dict) -> dict:
+    """Get credential broker status."""
+    return _run_cli("tools/security/credential_broker.py", ["--status"])
+
+
+def handle_blueprint_verify(args: dict) -> dict:
+    """Compute or verify directory digest (D-NC-3)."""
+    cli_args = []
+    if args.get("expected"):
+        cli_args.extend(["--verify", "--path", str(args["path"]),
+                         "--expected", str(args["expected"])])
+    else:
+        cli_args.extend(["--compute", "--path", str(args["path"])])
+    if args.get("entity_type"):
+        cli_args.extend(["--entity-type", str(args["entity_type"])])
+    if args.get("entity_id"):
+        cli_args.extend(["--entity-id", str(args["entity_id"])])
+    return _run_cli("tools/security/blueprint_verifier.py", cli_args)
+
+
+def handle_egress_policy_resolve(args: dict) -> dict:
+    """Resolve effective egress policy for agent role (D-NC-2)."""
+    cli_args = ["--resolve"]
+    if args.get("role"):
+        cli_args.extend(["--role", str(args["role"])])
+    return _run_cli("tools/security/egress_policy_manager.py", cli_args)

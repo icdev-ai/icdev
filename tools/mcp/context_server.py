@@ -9,13 +9,11 @@ Usage:
     python tools/mcp/context_server.py
 """
 
-import json
 import logging
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

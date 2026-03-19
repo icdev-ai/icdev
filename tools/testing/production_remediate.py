@@ -23,7 +23,6 @@ Architecture decisions: D296-D300.
 import argparse
 import dataclasses
 import json
-import os
 import sqlite3
 import sys
 import time
@@ -38,7 +37,6 @@ DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
 sys.path.insert(0, str(PROJECT_ROOT))
 from tools.testing.production_audit import (
     AuditCheck,
-    AuditReport,
     CHECK_REGISTRY,
     run_audit,
     _run_subprocess,

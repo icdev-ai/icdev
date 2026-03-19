@@ -7,7 +7,6 @@ Adds: cloud_provider_status (D230), cloud_tenant_csp_config,
       csp_region_certifications (D233).
 """
 
-import sqlite3
 
 
 def _table_exists(conn, table):

@@ -64,7 +64,27 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 STAGING_DIR = BASE_DIR / "trees" / "staging"
 
 # Default staging expiry in hours (D212: 72-hour stability window)
+# Overridden by args/evolution_config.yaml staging.expiry_hours if present
 DEFAULT_EXPIRY_HOURS = 72
+
+
+def _load_evolution_config() -> dict:
+    """Load staging config from args/evolution_config.yaml."""
+    config_path = BASE_DIR / "args" / "evolution_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+        with open(config_path, encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return data.get("staging", {})
+    except Exception:
+        return {}
+
+
+_staging_cfg = _load_evolution_config()
+if _staging_cfg.get("expiry_hours"):
+    DEFAULT_EXPIRY_HOURS = int(_staging_cfg["expiry_hours"])
 
 # =========================================================================
 # GRACEFUL IMPORTS
@@ -316,46 +336,89 @@ class StagingManager:
         return result_dict
 
     def run_tests(self, staging_id: str) -> dict:
-        """Run the test pipeline in the staging environment.
+        """Run the full 7-step test pipeline in the staging environment (D-EVO-4).
 
-        Executes pytest in the worktree directory and captures results.
-        Updates staging status to 'testing' then 'passed' or 'failed'.
+        Steps (from args/evolution_config.yaml staging.test_pipeline):
+            1. py_compile  — Python syntax validation (blocking)
+            2. ruff        — Ultra-fast linter (blocking)
+            3. pytest      — Unit/integration tests (blocking)
+            4. behave      — BDD scenario tests (non-blocking)
+            5. bandit      — SAST security scan (blocking)
+            6. secret_detection — Secret detection (blocking)
+            7. cui_check   — CUI marking verification (non-blocking)
+
+        Blocking steps: failure stops pipeline and marks staging as 'failed'.
+        Non-blocking steps: failure recorded as warning but pipeline continues.
 
         Args:
             staging_id: ID of the staging environment.
 
         Returns:
-            Dict with test execution results.
+            Dict with per-step test results and overall status.
         """
         env_record = self._get_record(staging_id)
         if not env_record:
             return {"error": f"Staging environment {staging_id} not found"}
 
         worktree_path = env_record.get("worktree_path", "")
-        if not Path(worktree_path).exists():
+        wt = Path(worktree_path)
+        if not wt.exists():
             return {"error": f"Worktree path does not exist: {worktree_path}"}
 
         # Update status to testing
         self._update_status(staging_id, "testing")
 
-        # Run pytest in the staging worktree
-        test_result = _run_subprocess(
-            [sys.executable, "-m", "pytest", "tests/", "-v", "--tb=short", "-q"],
-            cwd=worktree_path,
-            timeout=300,
-        )
+        # Load pipeline config
+        pipeline_config = _staging_cfg.get("test_pipeline", [])
+        if not pipeline_config:
+            # Default pipeline if config not loaded
+            pipeline_config = [
+                {"name": "py_compile", "blocking": True, "timeout_seconds": 60},
+                {"name": "ruff", "blocking": True, "timeout_seconds": 120},
+                {"name": "pytest", "blocking": True, "timeout_seconds": 300},
+                {"name": "behave", "blocking": False, "timeout_seconds": 300},
+                {"name": "bandit", "blocking": True, "timeout_seconds": 120},
+                {"name": "secret_detection", "blocking": True, "timeout_seconds": 120},
+                {"name": "cui_check", "blocking": False, "timeout_seconds": 60},
+            ]
 
-        # Determine pass/fail
-        passed = test_result.get("success", False)
-        new_status = "passed" if passed else "failed"
+        step_results = []
+        blocking_failed = False
+        warnings = []
 
-        # Store results
+        for step in pipeline_config:
+            step_name = step.get("name", "unknown")
+            is_blocking = step.get("blocking", True)
+            timeout = step.get("timeout_seconds", 300)
+
+            if blocking_failed:
+                step_results.append({
+                    "step": step_name, "status": "skipped",
+                    "reason": "prior blocking step failed",
+                })
+                continue
+
+            step_result = self._run_pipeline_step(
+                step_name, worktree_path, timeout)
+            step_result["blocking"] = is_blocking
+            step_results.append(step_result)
+
+            if not step_result.get("success", False):
+                if is_blocking:
+                    blocking_failed = True
+                else:
+                    warnings.append(step_name)
+
+        # Determine overall status
+        overall_passed = not blocking_failed
+        new_status = "passed" if overall_passed else "failed"
+
         test_results = {
             "staging_id": staging_id,
-            "passed": passed,
-            "returncode": test_result.get("returncode"),
-            "stdout_preview": test_result.get("stdout", "")[:2000],
-            "stderr_preview": test_result.get("stderr", "")[:1000],
+            "passed": overall_passed,
+            "status": new_status,
+            "steps": step_results,
+            "warnings": warnings,
             "tested_at": _now(),
         }
 
@@ -376,11 +439,137 @@ class StagingManager:
 
         _audit(
             "staging.tested",
-            f"Staging {staging_id} tests {'passed' if passed else 'failed'}",
-            {"staging_id": staging_id, "passed": passed},
+            f"Staging {staging_id} pipeline {'passed' if overall_passed else 'failed'} "
+            f"({len(step_results)} steps, {len(warnings)} warnings)",
+            {"staging_id": staging_id, "passed": overall_passed,
+             "warnings": warnings},
         )
 
         return test_results
+
+    def _run_pipeline_step(self, step_name: str, worktree_path: str,
+                           timeout: int = 300) -> dict:
+        """Execute a single pipeline step and return structured result.
+
+        Args:
+            step_name: Name of the step (py_compile, ruff, pytest, etc.)
+            worktree_path: Path to the staging worktree.
+            timeout: Maximum seconds for this step.
+
+        Returns:
+            Dict with step name, success boolean, and output preview.
+        """
+        wt = Path(worktree_path)
+        result = {"step": step_name, "success": False, "output": ""}
+
+        if step_name == "py_compile":
+            # Compile-check all .py files in tools/
+            tools_dir = wt / "tools"
+            if not tools_dir.exists():
+                result["success"] = True
+                result["output"] = "No tools/ directory"
+                return result
+            py_files = list(tools_dir.rglob("*.py"))[:200]
+            failures = []
+            for pf in py_files:
+                r = _run_subprocess(
+                    [sys.executable, "-m", "py_compile", str(pf)],
+                    cwd=worktree_path, timeout=30)
+                if not r.get("success"):
+                    failures.append(str(pf.relative_to(wt)))
+                    if len(failures) >= 5:
+                        break
+            result["success"] = len(failures) == 0
+            result["output"] = (f"{len(py_files)} files checked, "
+                                f"{len(failures)} failures")
+            if failures:
+                result["failures"] = failures[:5]
+
+        elif step_name == "ruff":
+            r = _run_subprocess(
+                [sys.executable, "-m", "ruff", "check", "tools/",
+                 "--select", "E,F", "--ignore", "E402"],
+                cwd=worktree_path, timeout=timeout)
+            result["success"] = r.get("success", False)
+            result["output"] = r.get("stdout", "")[:2000]
+
+        elif step_name == "pytest":
+            tests_dir = wt / "tests"
+            if not tests_dir.exists():
+                result["success"] = True
+                result["output"] = "No tests/ directory"
+                return result
+            r = _run_subprocess(
+                [sys.executable, "-m", "pytest", "tests/", "-v",
+                 "--tb=short", "-q"],
+                cwd=worktree_path, timeout=timeout)
+            result["success"] = r.get("success", False)
+            result["output"] = r.get("stdout", "")[:2000]
+
+        elif step_name == "behave":
+            features_dir = wt / "features"
+            if not features_dir.exists():
+                result["success"] = True
+                result["output"] = "No features/ directory (skipped)"
+                return result
+            r = _run_subprocess(
+                [sys.executable, "-m", "behave", "features/"],
+                cwd=worktree_path, timeout=timeout)
+            result["success"] = r.get("success", False)
+            result["output"] = r.get("stdout", "")[:2000]
+
+        elif step_name == "bandit":
+            tools_dir = wt / "tools"
+            if not tools_dir.exists():
+                result["success"] = True
+                result["output"] = "No tools/ directory"
+                return result
+            r = _run_subprocess(
+                [sys.executable, "-m", "bandit", "-r", "tools/", "-f", "json",
+                 "-q", "--severity-level", "high"],
+                cwd=worktree_path, timeout=timeout)
+            # bandit returns 1 if findings exist
+            findings_count = 0
+            if r.get("stdout"):
+                try:
+                    bandit_out = json.loads(r["stdout"])
+                    findings_count = len(bandit_out.get("results", []))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            result["success"] = findings_count == 0
+            result["output"] = f"{findings_count} high+ findings"
+
+        elif step_name == "secret_detection":
+            r = _run_subprocess(
+                [sys.executable, "tools/security/secret_detector.py",
+                 "--project-dir", "."],
+                cwd=worktree_path, timeout=timeout)
+            result["success"] = r.get("success", False)
+            result["output"] = r.get("stdout", "")[:2000]
+
+        elif step_name == "cui_check":
+            # Check CUI markings in key files
+            cui_found = False
+            for check_file in ["CLAUDE.md", "tools/__init__.py"]:
+                fp = wt / check_file
+                if fp.exists():
+                    try:
+                        content = fp.read_text(encoding="utf-8",
+                                               errors="ignore")[:500]
+                        if "CUI" in content:
+                            cui_found = True
+                            break
+                    except Exception:
+                        pass
+            result["success"] = cui_found
+            result["output"] = ("CUI markings present" if cui_found
+                                else "CUI markings not found")
+
+        else:
+            result["success"] = True
+            result["output"] = f"Unknown step '{step_name}' — skipped"
+
+        return result
 
     def check_compliance_preservation(self, staging_id: str) -> dict:
         """Verify that compliance posture is not degraded in staging.

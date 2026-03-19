@@ -395,10 +395,31 @@ def get_generation_stats(
 # -- CLI -----------------------------------------------------------------------
 
 
+def bayesian_rank_pairs(
+    dataset_id: str,
+    top_k: int = 50,
+    seed: int = 42,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Rank unapproved pairs by Bayesian information gain (D-BT-2, D-KARL-4).
+
+    Uses Bayesian Teaching to surface the most informative training pairs
+    first for human review, following Goldilocks difficulty calibration.
+    """
+    try:
+        from tools.intelligence.bayesian_teacher import score_training_pairs
+        return score_training_pairs(dataset_id, top_k=top_k, seed=seed, db_path=db_path)
+    except ImportError:
+        return {"success": False, "error": "Bayesian Teaching engine not available"}
+    except Exception as e:
+        return {"success": False, "error": f"Bayesian ranking failed: {e}"}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Fine-tuning Q&A pair generator")
     parser.add_argument("--generate", action="store_true", help="Generate from document chunks")
     parser.add_argument("--generate-from-rag", action="store_true", help="Generate from RAG chunks")
+    parser.add_argument("--bayesian-rank", action="store_true", help="Rank pending pairs by Bayesian information gain (D-BT-2)")
     parser.add_argument("--stats", action="store_true", help="Generation statistics")
 
     parser.add_argument("--dataset-id", type=str, default="")
@@ -416,8 +437,7 @@ def main():
     args = parser.parse_args()
 
     if args.generate and args.dataset_id:
-        # For CLI, user provides document ID and we extract chunks from doc_extractor
-        from tools.finetune.doc_extractor import extract_document
+        # CLI --generate requires programmatic API with pre-extracted chunks
         if args.document_id:
             # Try to load chunks from a previous extraction
             result = {"success": False, "error": "Provide --file with --generate to extract and generate pairs"}
@@ -435,10 +455,15 @@ def main():
             tenant_id=args.tenant_id,
             project_id=args.project_id,
         )
+    elif args.bayesian_rank and args.dataset_id:
+        result = bayesian_rank_pairs(
+            dataset_id=args.dataset_id,
+            top_k=args.limit,
+        )
     elif args.stats and args.dataset_id:
         result = get_generation_stats(dataset_id=args.dataset_id)
     else:
-        result = {"success": False, "error": "Specify --generate, --generate-from-rag, or --stats with --dataset-id"}
+        result = {"success": False, "error": "Specify --generate, --generate-from-rag, --bayesian-rank, or --stats with --dataset-id"}
 
     print(json.dumps(result, indent=2, default=str))
 

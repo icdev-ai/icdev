@@ -7,10 +7,9 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 """
 
 import os
-import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 
 class StorageProvider(ABC):

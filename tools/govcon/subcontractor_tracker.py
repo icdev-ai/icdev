@@ -36,7 +36,6 @@ import argparse
 import json
 import os
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,7 +90,7 @@ def _uuid():
 def _audit(conn, action, details="", actor="subcontractor_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_uuid(), _now(), "cpmp.subcontractor_tracker", actor, action, details, "cpmp"),
         )

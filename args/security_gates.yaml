@@ -461,6 +461,20 @@ code_patterns:
     max_high: 0
     max_medium: 10
 
+# Bayesian Teaching Intelligence Gates (D-BT-1 through D-BT-6)
+bayesian_teaching:
+  blocking:
+    - info_gain_scoring_not_configured
+    - smart_encoding_dictionary_empty
+  warning:
+    - compliance_ordering_not_used
+    - pair_scoring_stale_over_30_days
+    - teaching_dimension_not_computed
+  thresholds:
+    min_info_gain_score: 0.50
+    max_scoring_staleness_days: 30
+    smart_encoding_required: true
+
 # Cross-Platform Compatibility Gates (OS-agnostic: Windows → Linux)
 cross_platform:
   blocking:
@@ -855,3 +869,136 @@ agent_benchmark:
       - orchestrator
       - builder
       - compliance
+
+# NemoClaw-Adapted Agent Sandboxing Gates (D-NC-1 through D-NC-3)
+credential_isolation:
+  blocking:
+    - raw_api_key_in_agent_env
+    - credential_broker_bypass_detected
+  warning:
+    - credential_broker_disabled_using_fallback
+    - token_ttl_exceeded_1h
+    - unused_credential_grant
+    - recent_credential_denials
+  thresholds:
+    max_token_ttl_seconds: 3600
+    credential_broker_required: false       # Set true once rollout complete
+
+egress_policy:
+  blocking:
+    - agent_egress_policy_missing_for_il5
+    - wildcard_egress_on_security_agent
+  warning:
+    - wildcard_egress_rule_detected
+    - ssh_access_for_non_builder
+    - egress_policy_not_applied
+  thresholds:
+    require_egress_policy_for_il5: true
+    max_wildcard_rules_per_role: 2
+
+blueprint_integrity:
+  blocking:
+    - genome_digest_mismatch
+    - marketplace_asset_digest_mismatch
+    - child_app_digest_mismatch
+  warning:
+    - digest_not_computed_for_entity
+    - digest_verification_stale
+  thresholds:
+    require_digest_for_propagation: true
+    require_digest_for_marketplace: true
+    verification_max_age_days: 30
+
+# Evolution Daemon Lifecycle Gates (Phase 36, D-EVO-1 through D-EVO-8)
+evolution_lifecycle:
+  blocking:
+    - capability_absorbed_without_hitl
+    - staging_test_failed_before_propagation
+    - stability_window_not_elapsed
+    - evaluation_score_below_minimum
+  warning:
+    - evolution_daemon_running_without_monitoring
+    - discover_reflex_stale_over_24h
+    - staging_environment_expired
+    - absorb_reflex_circuit_broken
+  thresholds:
+    require_hitl_for_absorb: true
+    min_evaluation_score: 0.65
+    stability_window_hours: 72
+    max_staging_age_hours: 168
+    require_test_pass_before_propagation: true
+
+# Phase 66 — Workflow Discipline Engine (PAUL-inspired, D-WF-1 through D-WF-7)
+workflow_loop:
+  blocking:
+    - loop_closed_without_reconciliation
+    - acceptance_criteria_missing_for_plan
+    - required_process_not_invoked
+  warning:
+    - loop_abandoned_without_reason
+    - acceptance_criteria_pending_at_close
+    - task_count_exceeds_plan_limit
+    - handoff_stale_over_72h
+  thresholds:
+    require_reconciliation: true
+    require_acceptance_criteria: true
+    min_acceptance_pass_rate: 0.80
+    max_tasks_per_plan: 5
+    handoff_max_age_hours: 72
+
+# Implementation Coherence Gate (D-WF-8)
+coherence:
+  description: "Implementation coherence — internal consistency validation (D-WF-8)"
+  blocking:
+    - schema_code_mismatch
+    - fixture_schema_mismatch
+    - append_only_unprotected
+  warning:
+    - config_code_drift
+    - signature_call_risk
+    - manifest_incomplete
+    - import_unused
+  thresholds:
+    max_schema_mismatches: 0
+    max_fixture_mismatches: 0
+    coherence_required: true
+
+# Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
+review_board:
+  description: "Continuous multi-persona engineering analysis — SRE, QA, Security, Perf, UX, Docs, Product"
+  blocking:
+    - critical_findings_unresolved
+    - security_reflex_circuit_breaker_open
+    - sre_error_budget_exceeded
+  warning:
+    - high_findings_unacknowledged
+    - qa_coverage_below_threshold
+    - docs_stale_over_90_days
+    - perf_db_size_exceeded
+    - ux_aria_coverage_low
+  thresholds:
+    max_critical_findings: 0
+    max_high_findings_unacknowledged: 10
+    min_qa_coverage_pct: 50
+    max_db_size_mb: 500
+    min_aria_coverage_pct: 80
+    review_board_enabled: false
+
+# Autonomy Engine Gate (Phase 68, D-AE-1 through D-AE-12)
+autonomy:
+  description: "Bayesian trust-graduated self-evolution — safety invariants and trust gating"
+  blocking:
+    - safety_invariant_violated
+    - kill_switch_active
+    - trust_below_required_tier
+    - coherence_failed_after_remediation
+  warning:
+    - trust_score_declining
+    - exploration_rate_high
+    - behavior_penalty_spike
+  thresholds:
+    require_safety_check: true
+    require_coherence_check: true
+    max_exploration_rate_pct: 30
+    min_trust_for_commit: 0.30
+    autonomy_enabled: false

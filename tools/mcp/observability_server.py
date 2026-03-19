@@ -15,7 +15,6 @@ Resources:
     observability://stats     — Live trace/prov/SHAP statistics
 """
 
-import json
 import os
 import sqlite3
 import sys

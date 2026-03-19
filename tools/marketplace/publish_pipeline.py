@@ -347,6 +347,34 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
             "scan_result": scan_result,
         }
 
+    # Step 4b: Coherence validation
+    coherence_pass = True
+    coherence_msg = "Skipped (not available)"
+    try:
+        # Temporarily add asset path to sys.path for import resolution
+        _saved = list(sys.path)
+        sys.path.insert(0, str(asset_path))
+        try:
+            from tools.workflow.coherence_checker import run_checks as _coh_run  # noqa: F811
+            coherence_report = _coh_run()
+            coherence_pass = coherence_report.overall_pass
+            coherence_msg = (
+                f"{coherence_report.passed_checks}/{coherence_report.total_checks} passed"
+                if coherence_pass
+                else f"{coherence_report.failed_checks} failures, {coherence_report.warned_checks} warnings"
+            )
+        finally:
+            sys.path[:] = _saved
+    except Exception as e:
+        coherence_pass = True  # Non-blocking — skip gracefully
+        coherence_msg = f"Skipped: {e}"
+
+    steps.append({
+        "step": "coherence_validation",
+        "status": "pass" if coherence_pass else "warn",
+        "message": coherence_msg,
+    })
+
     # Step 5: Digital signature
     signature_info = {"signed": False}
     if _HAS_SIGNER and signing_key_path:

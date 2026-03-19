@@ -30,7 +30,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import yaml
 

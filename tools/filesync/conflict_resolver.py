@@ -10,7 +10,7 @@ Strategies:
 """
 
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Strategy constants
 STRATEGY_LAST_WRITE_WINS = "last_write_wins"

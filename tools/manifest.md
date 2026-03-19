@@ -222,6 +222,8 @@
 | Profile Detector | tools/builder/profile_detector.py | Auto-detect dev profile from repo analysis or natural language text (D185 advisory-only) | --repo-path, --text, --json | Detected dimensions |
 | Profile MD Generator | tools/builder/profile_md_generator.py | Generate PROFILE.md from resolved dev profile via Jinja2 (D186) | --scope, --scope-id, --output, --store, --json | PROFILE.md path |
 | GOTCHA Validator | tools/builder/gotcha_validator.py | Validate GOTCHA framework compliance for child apps (6 layers + 4 meta checks) | --project-dir, --json, --human, --gate | Validation report |
+| Agentic Test: A2A Callback | tools/builder/agentic_test_templates/test_a2a_callback.py | Template test for A2A callback verification in child apps | (pytest template) | Test results |
+| Agentic Test: Agent Health | tools/builder/agentic_test_templates/test_agent_health.py | Template test for agent health endpoint verification in child apps | (pytest template) | Test results |
 
 ## Security Scanning
 | Tool | File | Description | Input | Output |
@@ -231,6 +233,9 @@
 | Dependency Auditor | tools/security/dependency_auditor.py | Multi-language dep audit (pip-audit, npm-audit, cargo-audit, govulncheck, OWASP DC, dotnet) | --report, --gate | Vulnerabilities |
 | Secret Detector | tools/security/secret_detector.py | detect-secrets wrapper | --report, --gate | Secrets found |
 | Container Scanner | tools/security/container_scanner.py | trivy container scanning | --image | Vulnerabilities |
+| Blueprint Verifier | tools/security/blueprint_verifier.py | NemoClaw-adapted SHA-256 recursive directory digest for genome/marketplace/child integrity (D-NC-3) | --compute, --verify, --store, --lookup, --history, --json | Digest + verification |
+| Credential Broker | tools/security/credential_broker.py | NemoClaw-adapted agent credential isolation: function-scoped tokens, auto-revocation (D-NC-1) | --request, --revoke, --audit, --status, --gate, --json | Token + grant log |
+| Egress Policy Manager | tools/security/egress_policy_manager.py | NemoClaw-adapted per-agent network egress policies with deny-by-default (D-NC-2) | --resolve, --generate, --validate, --diff, --list-roles, --audit, --json | K8s NetworkPolicy |
 
 ## Infrastructure
 | Tool | File | Description | Input | Output |
@@ -261,6 +266,7 @@
 | Health Checker | tools/monitor/health_checker.py | Application health check | --url, --retries | Health status |
 | Heartbeat Daemon | tools/monitor/heartbeat_daemon.py | Proactive daemon: 7 configurable checks (cATO evidence, agent health, CVE SLA, pending intake, failing tests, expiring ISAs, memory maintenance) (D141-D142) | --once, --check, --status, --json | Check results + notifications |
 | Auto-Resolver | tools/monitor/auto_resolver.py | Webhook-triggered auto-resolution: alert → normalize → analyze → fix → PR → notify (D143-D145) | --analyze, --resolve, --alert-file, --source, --dry-run, --json | Resolution log + PR URL |
+| Outcome Verifier | tools/monitor/outcome_verifier.py | Track PR merge status + failure recurrence, update pattern confidence (D-EVO-6) | --check-pending, --check-recurrence, --run-all, --status, --json | Verification log |
 
 ## Dashboard
 | Tool | File | Description | Input | Output |
@@ -327,6 +333,21 @@
 | ICDEV Patch | tools/ci/workflows/icdev_patch.py | Quick fix workflow from issue content | issue-number, run-id | Patched code |
 | ICDEV SDLC | tools/ci/workflows/icdev_sdlc.py | Complete lifecycle: plan+build+test+review | issue-number, run-id | All artifacts |
 | Agent Model Test | tools/testing/test_agent_models.py | Verify opus/sonnet/haiku model availability | — | Pass/fail per model |
+| Base Connector | tools/ci/connectors/base_connector.py | ABC for CI/CD platform connectors (GitHub, GitLab, Mattermost, Slack) | (library) | BaseConnector ABC |
+| Connector Registry | tools/ci/connectors/connector_registry.py | Registry for CI/CD platform connectors — auto-discover and load | (library) | ConnectorRegistry |
+| Mattermost Connector | tools/ci/connectors/mattermost_connector.py | Mattermost integration for CI/CD notifications and triggers (air-gap safe, D140) | (library) | MattermostConnector |
+| Slack Connector | tools/ci/connectors/slack_connector.py | Slack integration for CI/CD notifications and triggers | (library) | SlackConnector |
+| Air Gap Detector | tools/ci/core/air_gap_detector.py | Detect air-gapped environments and disable internet-dependent features (D134/D139) | (library) | AirGapStatus |
+| Comment Handler | tools/ci/core/comment_handler.py | Parse and handle CI/CD comments from issues/PRs (bot loop prevention) | (library) | ParsedComment |
+| Conversation Manager | tools/ci/core/conversation_manager.py | Manage multi-turn CI/CD conversations for issue resolution | (library) | ConversationState |
+| Event Router | tools/ci/core/event_router.py | Route webhook/poll events to appropriate workflow handlers | (library) | RoutedEvent |
+| Failure Parser | tools/ci/core/failure_parser.py | Parse CI/CD failure logs and extract actionable error context | (library) | ParsedFailure |
+| Recovery Engine | tools/ci/core/recovery_engine.py | Auto-recover from CI/CD pipeline failures (retry, workaround, escalate) | (library) | RecoveryAction |
+| ICDEV Comply | tools/ci/workflows/icdev_comply.py | Compliance artifact generation workflow for CI/CD | issue-number, run-id | Compliance artifacts |
+| ICDEV E2E | tools/ci/workflows/icdev_e2e.py | E2E test execution workflow for CI/CD | issue-number, run-id | E2E results |
+| ICDEV Plan+Build | tools/ci/workflows/icdev_plan_build.py | Combined plan + build workflow | issue-number | Plan + committed code |
+| ICDEV Plan+Build+Test | tools/ci/workflows/icdev_plan_build_test.py | Combined plan + build + test workflow | issue-number | Plan + code + test results |
+| ICDEV Plan+Build+Test+Review | tools/ci/workflows/icdev_plan_build_test_review.py | Full SDLC pipeline (explicit variant) | issue-number | All artifacts |
 
 ## Maintenance Audit
 | Tool | File | Description | Input | Output |
@@ -624,6 +645,36 @@
 | Absorption Engine | tools/registry/absorption_engine.py | 72-hour stability window before genome absorption (D212) | --check, --absorb, --candidates, --json | Absorption result |
 | Learning Collector | tools/registry/learning_collector.py | Process child-reported learned behaviors (D213) | --ingest, --evaluate, --unevaluated, --json | Behavior records |
 | Cross-Pollinator | tools/registry/cross_pollinator.py | Broker capabilities between children via parent (HITL required) | --find, --propose, --execute, --json | Pollination result |
+| Evolution Daemon | tools/registry/evolution_daemon.py | Autonomous 7-step capability lifecycle: discover, evaluate, stage, test, approve, verify, absorb (D-EVO-1) | --once, --status, --reflex NAME, --enable, --disable, --reset, --json | Daemon status |
+| Egress Monitor | tools/registry/egress_monitor.py | NemoClaw-adapted child network egress tracking against parent policies (D-NC-6) | --collect, --evaluate, --summary, --json | Violation report |
+| Propagation Verifier | tools/registry/propagation_verifier.py | Post-propagation integrity verification: digest, DB, health, CUI checks (D-NC-5) | --verify, --history, --json | Verification checklist |
+| Sandbox Scorer | tools/registry/sandbox_scorer.py | 8th capability evaluation dimension: isolation posture scoring (D-NC-4) | --score, --capability-id, --source-metadata, --json | Score + breakdown |
+
+## Bayesian Teaching Intelligence (D-BT-1 through D-BT-6)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Bayesian Teacher | tools/intelligence/bayesian_teacher.py | Information-gain scoring, optimal ordering, teaching dimension, SmartEncoding (Shafto/Goodman/Griffiths 2014, Zhu 2015, DeepFlow-inspired) | --score-pairs, --optimal-order, --teaching-dim, --smart-encode, --health, --json | Scores + ordering |
+
+## Engineering Review Board (Phase 67, D-RB-1 through D-RB-7)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Review Board Daemon | tools/review_board/daemon.py | Multi-persona analysis daemon — 7 reflexes (SRE, QA, Security, Perf, UX, Docs, Product) on configurable schedules (D-RB-1) | --once, --status, --reflex, --enable, --disable, --reset, --json | Daemon status, findings |
+| SRE Reflex | tools/review_board/reflexes/sre.py | Reliability checks — backup freshness, error rate, circuit breaker state, disk usage (D-RB-3) | config dict | Findings list |
+| QA Reflex | tools/review_board/reflexes/qa.py | Coverage checks — untested modules, E2E gaps, syntax errors, test-to-code ratio (D-RB-3) | config dict | Findings list |
+| Security Reflex | tools/review_board/reflexes/security.py | Red team checks — secret exposure, CVE SLA, injection patterns, dangerous code (D-RB-3) | config dict | Findings list |
+| Performance Reflex | tools/review_board/reflexes/perf.py | Performance checks — DB file sizes, large tables, audit growth, temp dir size (D-RB-3) | config dict | Findings list |
+| UX Reflex | tools/review_board/reflexes/ux.py | Accessibility checks — ARIA coverage, template quality, form labels (D-RB-3) | config dict | Findings list |
+| Docs Reflex | tools/review_board/reflexes/docs.py | Documentation checks — stale docs, undocumented tools, broken refs, missing phases (D-RB-3) | config dict | Findings list |
+| Product Reflex | tools/review_board/reflexes/product.py | Product analytics — feature usage, gate pass rates, tool distribution (D-RB-3) | config dict | Findings list |
+
+## Workflow Discipline Engine (Phase 66, D-WF-1 through D-WF-7)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Loop Engine | tools/workflow/loop_engine.py | PLAN-APPLY-UNIFY lifecycle manager with state machine and acceptance criteria tracking (D-WF-1) | --create, --plan, --add-criteria, --start-apply, --complete-task, --verify-criterion, --start-unify, --close, --status, --list, --abandon, --json | Loop state |
+| Next Action | tools/workflow/next_action.py | Single next action recommender with 5-dimension weighted priority scoring (D-WF-2) | --recommend, --project-id, --json | Prioritized action |
+| Process Verifier | tools/workflow/process_verifier.py | Verify required processes were executed during APPLY phase via audit_trail queries (D-WF-3) | --verify, --loop-id, --json | Verification result |
+| Handoff Generator | tools/workflow/handoff_generator.py | Session handoff document generation for cross-session context transfers (D-WF-4) | --generate, --loop-id, --json | Handoff markdown |
+| Reconciler | tools/workflow/reconciler.py | UNIFY phase reconciliation: planned-vs-actual delta tracking with deviation classification (D-WF-5) | --reconcile, --loop-id, --json | Reconciliation record |
 
 ## Cloud-Agnostic Architecture (Phase 38 — D223-D231)
 | Tool | File | Description | Input | Output |
@@ -931,6 +982,227 @@
 | publish | DELIVER | GREEN | Knowledge base article generation from wins |
 | analyze | LEARN | GREEN | Win/loss analysis, lesson extraction |
 | train | LEARN | GREEN | Generate fine-tuning pairs from approved content |
+
+## Workflow Discipline Engine (Phase 66)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Loop Engine | tools/workflow/loop_engine.py | PLAN→APPLY→UNIFY lifecycle manager (D-WF-1) | --create, --plan, --start-apply, --complete-task, --start-unify, --close, --status, --list, --json | Loop state + transitions |
+| Reconciler | tools/workflow/reconciler.py | Planned-vs-actual delta for UNIFY phase (D-WF-7) | --reconcile, --get, --loop-id, --json | Reconciliation record |
+| Next Action | tools/workflow/next_action.py | Single next action recommender (D-WF-4) | --recommend, --project-id, --json | Priority-ranked action |
+| Handoff Generator | tools/workflow/handoff_generator.py | Structured session handoff documents (D-WF-5) | --generate, --list, --get, --project-id, --json | Handoff markdown + DB record |
+| Process Verifier | tools/workflow/process_verifier.py | Verify required processes were invoked (D-WF-6) | --verify, --check, --loop-id, --project-id, --json | Pass/fail per process |
+| Intake Bridge | tools/workflow/intake_bridge.py | Intake→workflow loop bridge (D-WF-1 + RICOAS) | --bridge, --check, --session-id, --json | Loop with seeded AC from BDD |
+| Coherence Checker | tools/workflow/coherence_checker.py | Implementation coherence validator — 7 checks + 2-tier auto-fix (D-WF-8). Wired into: Genesis audit, GKP promotion, CI/CD, marketplace, test orchestrator, heartbeat, production audit | --all, --check, --changed-files, --fix, --json, --human, --gate | Coherence report + auto-fix results |
+| Impact Analyzer | tools/workflow/impact_analyzer.py | Cross-subsystem integration gap detection (D-WF-8f) | --analyze, --graph, --changed-files, --changed-tables, --json | Impact recommendations |
+
+## Code Intelligence & Verification
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Formal Verifier | tools/analysis/formal_verifier.py | Property-based security checks (LeanStral-adapted, D-VL-6) | --file, --project-dir, --gate, --generate-properties, --json | Formal check results |
+| Verify Loop | tools/analysis/verify_loop.py | Compiler-in-the-loop verification (LeanStral-adapted, D-VL-1) | --file, --project-dir, --repair, --gate, --json | Verification results |
+| Session Purpose | tools/agent/session_purpose.py | Session purpose declaration for NIST AU-3 (D-ORCH-5) | --declare, --active, --complete, --history, --json | Purpose records |
+| CLI Harmonizer | tools/compat/cli_harmonizer.py | CLI argument normalization | (library) | Harmonized CLI args |
+| CLI Formatter | tools/cli_formatter.py | ANSI terminal output formatter | (library) | Colored CLI output |
+
+## AI Transparency & Accountability (Phase 48-49)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Accountability Manager | tools/compliance/accountability_manager.py | AI oversight plans, CAIO, appeals, ethics (D316-D321) | --summary, --register-oversight, --designate-caio, --json | Accountability records |
+| AI Accountability Audit | tools/compliance/ai_accountability_audit.py | Cross-framework accountability audit (D316-D321) | --project-id, --json | Audit report |
+| AI Impact Assessor | tools/compliance/ai_impact_assessor.py | Algorithmic impact assessment (D320) | --project-id, --ai-system, --json | Impact assessment |
+| AI Incident Response | tools/compliance/ai_incident_response.py | AI incident logging and stats (D318) | --log, --stats, --project-id, --json | Incident records |
+| AI Inventory Manager | tools/compliance/ai_inventory_manager.py | OMB M-25-21 AI system inventory (D312) | --register, --list, --export, --json | Inventory records |
+| AI Reassessment Scheduler | tools/compliance/ai_reassessment_scheduler.py | Reassessment schedule manager (D316) | --create, --overdue, --json | Schedule records |
+| AI Transparency Audit | tools/compliance/ai_transparency_audit.py | Cross-framework transparency audit (D307-D315) | --project-id, --json, --human | Audit report |
+| Classification Resolver | tools/compliance/classification_resolver.py | Dynamic classification resolution per project | (library) | Classification level |
+| Compliance Exporter | tools/compliance/compliance_exporter.py | Multi-format compliance artifact export | --project-id, --format, --json | Exported artifacts |
+| Fairness Assessor | tools/compliance/fairness_assessor.py | AI fairness compliance assessment (D311) | --project-id, --gate, --json | Fairness assessment |
+| GAO AI Assessor | tools/compliance/gao_ai_assessor.py | GAO-21-519SP AI accountability assessment | --project-id, --json | Assessment results |
+| GAO Evidence Builder | tools/compliance/gao_evidence_builder.py | GAO evidence collection from ICDEV data (D313) | --project-id, --json | Evidence bundle |
+| Model Card Generator | tools/compliance/model_card_generator.py | Google-format model cards (D308) | --project-id, --model-name, --json | Model card |
+| Narrative Generator | tools/compliance/narrative_generator.py | Compliance narrative workflow (F4) | --project-id, --batch, --pending, --json | Narrative drafts |
+
+## AI Compliance Assessors (Phase 48-49 — Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| NIST AI 600-1 Assessor | tools/compliance/nist_ai_600_1_assessor.py | NIST AI 600-1 GenAI Profile assessment | --project-id, --json | Assessment results |
+| OMB M-25-21 Assessor | tools/compliance/omb_m25_21_assessor.py | OMB M-25-21 High-Impact AI assessment | --project-id, --json | Assessment results |
+| OMB M-26-04 Assessor | tools/compliance/omb_m26_04_assessor.py | OMB M-26-04 Unbiased AI assessment | --project-id, --json | Assessment results |
+| System Card Generator | tools/compliance/system_card_generator.py | ICDEV-specific system cards (D309) | --project-id, --json | System card |
+
+## Creative Engine (Phase 58)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Creative Engine | tools/creative/creative_engine.py | Customer-centric feature opportunity discovery (D351-D360) | --run, --discover, --scan, --extract, --score, --rank, --generate, --json | Pipeline results |
+| Competitor Discoverer | tools/creative/competitor_discoverer.py | Auto-discover competitors from category pages (D353) | --discover, --list, --confirm, --json | Competitor records |
+| Gap Scorer | tools/creative/gap_scorer.py | 3-dimension composite scoring (D355) | --score-all, --top, --gaps, --json | Scored gaps |
+| Pain Extractor | tools/creative/pain_extractor.py | Deterministic keyword-based pain point extraction (D354) | --extract-all, --json | Pain points |
+| Spec Generator | tools/creative/spec_generator.py | Template-based feature spec generation (D356) | --generate-all, --list, --json | Feature specs |
+| Trend Tracker | tools/creative/trend_tracker.py | Velocity/acceleration trend detection | --detect, --report, --json | Trend data |
+
+## DataBridge
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Connection Manager | tools/databridge/connection_manager.py | DataBridge connection lifecycle management | --create, --list, --test, --json | Connection records |
+| Schema Engine | tools/databridge/schema_engine.py | DataBridge schema discovery and mapping | --discover, --map, --json | Schema maps |
+| Health Base | tools/databridge/connectors/health_base.py | Base class for health-check connectors (D-CF-5) | (library) | HealthConnector ABC |
+| SOAP Base | tools/databridge/connectors/soap_base.py | Base class for SOAP/XML-RPC connectors (D-CF-5) | (library) | SoapConnector ABC |
+| Forge Agent | tools/databridge/forge/forge_agent.py | Generate connector from OpenAPI spec — template + optional LLM (D-CF-2) | (library) — `forge_from_spec()` | Generated connector |
+| Forge Spec Parser | tools/databridge/forge/spec_parser.py | Parse OpenAPI/Swagger specs into normalized schema | (library) | Parsed spec |
+| Forge Static Validator | tools/databridge/forge/static_validator.py | Validate generated connector against ABC contract | (library) | Validation results |
+| Forge Base Selector | tools/databridge/forge/base_selector.py | Select appropriate connector base class from spec | (library) | Base class selection |
+| Forge Integration Tester | tools/databridge/forge/integration_tester.py | Docker/subprocess sandbox testing for generated connectors (D-CF-4) | (library) | Test results |
+| Forge Import Handler | tools/databridge/forge/import_handler.py | Import and register generated connectors | (library) | Registration result |
+| Forge Marketplace Publisher | tools/databridge/forge/marketplace_publisher.py | Publish forge connectors to marketplace (D-CF-8) | (library) | Published asset |
+| Forge Community Hub | tools/databridge/forge/community_hub.py | Browse, rate, and manage community connectors (F10) | --browse, --featured, --json | Connector listings |
+| Scale Worker Pool | tools/databridge/scale/worker_pool.py | ThreadPoolExecutor wrapper for concurrent sync (D-SC-1) | (library) | WorkerPool |
+| Scale Write Batcher | tools/databridge/scale/write_batcher.py | WAL + batch flush for sync log/audit writes (D-SC-3) | (library) | WriteBatcher |
+| Scale Backpressure | tools/databridge/scale/backpressure.py | Backpressure monitoring with optional psutil (D-SC-6) | (library) | Pressure metrics |
+| Scale Chunked Pipeline | tools/databridge/scale/chunked_pipeline.py | Chunked data pipeline for large sync operations | (library) | Pipeline results |
+
+## File Sync (D-SYNC-1 through D-SYNC-12)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Register Competitors | tools/filesync/register_competitors.py | Register competitor sources for sync | --register, --list, --json | Competitor records |
+| Service Manager | tools/filesync/service_manager.py | File sync service lifecycle | --start, --stop, --status, --json | Service status |
+| Versioner | tools/filesync/versioner.py | File version tracking | --snapshot, --diff, --json | Version records |
+
+## Fine-Tuning (Phase 64 Extension)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| A/B Evaluator | tools/finetune/ab_evaluator.py | Model A/B comparison (D-FT-15) | --model-a, --model-b, --json | Comparison results |
+| Azure Provider | tools/finetune/azure_provider.py | Azure OpenAI fine-tuning provider (D-FT-20) | (library) | AzureOpenAIFineTuneProvider |
+| Dataset Manager | tools/finetune/dataset_manager.py | Dataset CRUD and versioning (D-FT-9) | --create, --list, --export, --json | Dataset records |
+| Doc Extractor | tools/finetune/doc_extractor.py | Document extraction for training pairs (D-FT-11) | --extract, --json | Extracted text |
+| GGUF Exporter | tools/finetune/gguf_exporter.py | GGUF model export with Q4_K_M quantization (D-FT-5) | (library) | GGUF files |
+| GPU Detector | tools/finetune/gpu_detector.py | GPU auto-detection for training (D-FT-8) | --json | GPU info |
+| Labeler | tools/finetune/labeler.py | Dataset example labeling engine (D-FT-12) | (library) | Label results |
+| Model Registry | tools/finetune/model_registry.py | Fine-tuned model version tracking (D-FT-7) | (library) | Model records |
+| Pair Generator | tools/finetune/pair_generator.py | Q&A training pair generation from RAG (D-FT-10) | --generate-filtered, --dataset-id, --json | Training pairs |
+| Promotion Manager | tools/finetune/promotion_manager.py | Model auto-promotion pipeline (D-FT-16) | --check, --promote, --json | Promotion results |
+| Retrain Trigger | tools/finetune/retrain_trigger.py | Auto-retrain when threshold exceeded (D-FT-17) | --check, --json | Trigger status |
+| Training Engine | tools/finetune/training_engine.py | Unsloth/cloud QLoRA training (D-FT-2) | --dataset-id, --provider, --json | Training job |
+| Unsloth Provider | tools/finetune/unsloth_provider.py | Local Unsloth QLoRA provider (D-FT-2) | (library) | UnslothLocalProvider |
+
+## Remote Command Gateway (Phase 28)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Command Router | tools/gateway/command_router.py | Route remote commands to ICDEV tools | (library) | Routed results |
+| Event Envelope | tools/gateway/event_envelope.py | HMAC-signed event envelope (D31) | (library) | Signed events |
+| Response Filter | tools/gateway/response_filter.py | IL-aware response classification filter (D135) | (library) | Filtered responses |
+| Security Chain | tools/gateway/security_chain.py | 8-gate security chain for remote commands | (library) | Chain results |
+
+## Genesis Launcher
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Genesis Launcher | tools/genesis/launcher.py | Genesis daemon launcher and control | (library) | Daemon lifecycle |
+
+## Harness Engineering (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| CLI Generator | tools/harness/cli_generator.py | Generate CLI harness for child apps | (library) | CLI scaffold |
+
+## Knowledge Graph & GraphRAG
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Graph RAG | tools/knowledge_graph/graph_rag.py | GraphRAG retrieval with scoring profiles (D-KARL-1) | --query, --profile, --json | Retrieval context |
+| KG Ingester | tools/knowledge_graph/ingester.py | Knowledge graph document ingestion | --file, --project-id, --json | Ingestion result |
+| Insight Generator | tools/knowledge_graph/insight_generator.py | AI insight generation from graph (scanner-tier) | --graph-id, --questions, --bridge-gaps, --json | Insights |
+| Text Network | tools/knowledge_graph/text_network.py | Text-to-knowledge-graph conversion | --text, --project-id, --json | Graph data |
+
+## LLM Providers (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Gemini Provider | tools/llm/gemini_provider.py | Google Vertex AI Gemini LLM provider | (library) | GeminiProvider |
+
+## LLM Provider SDK
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Provider SDK | tools/llm/provider_sdk.py | LLM provider SDK utilities | (library) | Provider helpers |
+
+## Marketplace (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Asset Installer | tools/marketplace/asset_installer.py | Install marketplace assets into project | --install, --json | Installation result |
+| License Client | tools/marketplace/license_client.py | Offline license sync/verify/renew (D-MKT-S4) | (library) | License status |
+| Module Runtime | tools/marketplace/module_runtime.py | Module gating runtime (D-MKT-S4) | (library) | is_module_enabled() |
+| Token Store | tools/marketplace/token_store.py | Local JSON token cache (D-MKT-S4) | (library) | Token management |
+
+## Playground
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Data | tools/playground/seed_data.py | Seed demo/test data into databases | --seed, --json | Seed results |
+
+## Proposal Genesis CRM
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| CRM CLI | tools/proposal_genesis/crm_cli.py | Lightweight CRM account/contact management | --list, --add, --json | CRM records |
+
+## RAG Subsystem (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Auto Indexer | tools/rag/auto_indexer.py | Automatic RAG index maintenance | --index, --json | Index status |
+| PDF Provider | tools/rag/pdf_provider.py | PDF text extraction for RAG ingestion (D-FT-11) | (library) | Extracted text |
+| Reranker Provider | tools/rag/reranker_provider.py | Two-stage re-ranking provider (D-RAG-3) | (library) | Reranked results |
+| Secret Ref | tools/rag/secret_ref.py | Secret reference resolver for RAG | (library) | Resolved refs |
+
+## Requirements (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Complexity Scorer | tools/requirements/complexity_scorer.py | Scale-adaptive complexity scoring | --session-id, --json | Complexity score |
+| Elicitation Techniques | tools/requirements/elicitation_techniques.py | BMAD-inspired elicitation technique engine | --list, --activate, --json | Technique prompts |
+| PRD Generator | tools/requirements/prd_generator.py | Product Requirements Document generation | --session-id, --json | PRD markdown |
+| PRD Validator | tools/requirements/prd_validator.py | PRD quality validation (6 checks) | --session-id, --validate, --json | Validation results |
+
+## Research Engine (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Forecast Generator | tools/research/forecast_generator.py | Cross-engine prediction with surprise scoring (D-RES-17) | --generate, --session-id, --json | Forecast predictions |
+| YouTube Scanner | tools/research/youtube_scanner.py | YouTube video transcript scanning (D-RES-14) | --scan, --queries, --urls, --json | Video signals |
+
+## Security (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Confabulation Detector | tools/security/confabulation_detector.py | Deterministic confabulation detection (D310) | --check-output, --summary, --json | Detection results |
+| Endpoint Security Scanner | tools/security/endpoint_security_scanner.py | API endpoint security assessment | --scan, --json | Scan results |
+
+## Testing (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Claude Dir Validator | tools/testing/claude_dir_validator.py | .claude directory governance validator (9 checks) | --json, --human, --check, --all | Alignment report |
+
+## WriteGuard — Writing Quality Analysis
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Analysis Engine | tools/writing/analysis_engine.py | Unified deterministic quality analysis (grammar, readability, tone, plagiarism, AI detection) | (library) — `analyze(text)` | Quality scores per dimension |
+| Grammar Checker | tools/writing/grammar_checker.py | Thin wrapper re-exporting grammar check from analysis_engine | (library) — `check_grammar(text)` | Grammar issues list |
+| Readability Scorer | tools/writing/readability_scorer.py | Thin wrapper re-exporting readability scoring from analysis_engine | (library) — `score_readability(text)` | Readability metrics (Flesch, grade level) |
+| Tone Profiler | tools/writing/tone_profiler.py | Thin wrapper re-exporting tone profiling from analysis_engine (scanner-tier LLM) | (library) — `profile_tone(text)` | Tone classification + confidence |
+| Plagiarism Detector | tools/writing/plagiarism_detector.py | Thin wrapper re-exporting plagiarism check from analysis_engine (RAG similarity, 0.85 threshold) | (library) — `check_plagiarism(text)` | Similarity scores |
+| AI Content Detector | tools/writing/ai_content_detector.py | Deterministic AI detection — perplexity, burstiness, n-gram stats (D-WG-6, advisory-only) | (library) — `detect_ai_content(text)` | AI probability + signals |
+| LLM Judge | tools/writing/llm_judge.py | Rubric-based semantic evaluation using Prometheus-2 7B (local Ollama) — 5 dimensions per content type | --text, --rubric, --json | Color ratings + scores |
+
+## Pulse AI Blog Engine
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Capability Scanner | tools/pulse/engine/capability_scanner.py | Load capability YAMLs and match to article topics via deterministic keyword scoring (D-PULSE-CAP-1) | --list, --domains, --match, --format-context, --json | Matched capabilities |
+| Demand Detector | tools/pulse/engine/demand_detector.py | Identify unmet capability gaps from SAM.gov pain points, build capability graph (D-PULSE-CAP-2/3) | --detect, --aggregate, --high-demand, --suggest-articles, --graph, --json | Demand signals + suggestions |
+| SAM Bridge | tools/pulse/engine/sam_bridge.py | SAM.gov to Pulse article pipeline — extract pain points from solicitations, generate articles | --run, --dry-run, --list-pending, --stats, --json | Generated articles |
+| Researcher | tools/pulse/engine/researcher.py | Web research engine — scrape DuckDuckGo for developer pain points across Reddit/SO/HN/LinkedIn/DEV.to | (library) — `research(topic)` | Research cache entries |
+| Topic Clusterer | tools/pulse/engine/topic_clusterer.py | Group related pain points into coherent article themes via TF-IDF keyword overlap (stdlib only) | (library) — `cluster_topics(items)` | Topic clusters |
+| SEO Optimizer | tools/pulse/engine/seo_optimizer.py | SEO optimization — title/meta tuning, keyword extraction, JSON-LD schema, YAML frontmatter | (library) — `optimize(post)` | SEO metadata |
+| Image Generator | tools/pulse/engine/image_generator.py | Local GPU-accelerated hero image generation via SDXL Turbo (optional, requires GPU) | (library) — `generate_image(prompt)` | Image file path |
+| Video Finder | tools/pulse/engine/video_finder.py | YouTube/Vimeo video search for blog embeds — no API keys (web scraping + oEmbed) | (library) — `find_videos(query)` | Video URLs + metadata |
+| Video Generator | tools/pulse/engine/video_generator.py | Local GPU-accelerated video generation via LTX-Video 2B (optional, requires GPU) | (library) — `generate_video(prompt)` | Video file path |
+| WordPress Publisher | tools/pulse/engine/wordpress_publisher.py | Publish Pulse posts to WordPress (icdev.ai) via XML-RPC API | (library) — `publish(post)` | Published post URL |
+| Hostinger Publisher | tools/pulse/engine/hostinger_publisher.py | Publish Pulse posts to Hostinger Website Builder via browser automation | (library) — `publish(post)` | Published post URL |
+
+## Testing (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| GovEval Benchmark | tools/testing/goveval.py | 7-dimension Gov/DoD compliance quality benchmark (LeanStral FLTEval-adapted, D-VL-9) | --project-id, --dimension, --gate, --trend, --compare, --json | Dimension scores + gate |
+| Platform Check | tools/testing/platform_check.py | OS environment compatibility validation (D145) | --json | Compatibility report |
+| Claude Dir Validator | tools/testing/claude_dir_validator.py | .claude directory governance validator (9 checks) | --json, --human, --check, --all | Alignment report |
 
 ## Evaluation & Red Teaming (Phase 65)
 | Tool | File | Description | Input | Output |

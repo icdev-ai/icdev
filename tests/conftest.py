@@ -152,6 +152,252 @@ CREATE TABLE IF NOT EXISTS dev_profile_detections (
     accepted_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_dev_profile_detections_tenant ON dev_profile_detections(tenant_id);
+
+-- Bayesian Teaching Intelligence (D-BT-1)
+CREATE TABLE IF NOT EXISTS bayesian_teaching_scores (
+    id TEXT PRIMARY KEY,
+    candidate_id TEXT NOT NULL,
+    candidate_type TEXT DEFAULT 'pair',
+    info_gain_score REAL DEFAULT 0.0,
+    dimensions TEXT DEFAULT '{}',
+    threshold_band TEXT DEFAULT 'medium',
+    context_id TEXT,
+    scored_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Workflow Discipline Engine (D-WF-1 through D-WF-7)
+CREATE TABLE IF NOT EXISTS workflow_loops (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    phase TEXT,
+    status TEXT DEFAULT 'planning' CHECK(status IN ('planning','planned','applying','applied','unifying','closed','abandoned')),
+    plan_summary TEXT,
+    task_count INTEGER DEFAULT 0,
+    planned_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    closed_at TEXT,
+    abandon_reason TEXT
+);
+
+CREATE TABLE IF NOT EXISTS workflow_acceptance_criteria (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    given_clause TEXT,
+    when_clause TEXT,
+    then_clause TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending','passed','failed','skipped')),
+    evidence TEXT,
+    verified_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (loop_id) REFERENCES workflow_loops(id)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_reconciliations (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    planned_items TEXT DEFAULT '[]',
+    actual_items TEXT DEFAULT '[]',
+    deviations TEXT DEFAULT '[]',
+    severity TEXT DEFAULT 'minor',
+    reconciled_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (loop_id) REFERENCES workflow_loops(id)
+);
+
+CREATE TABLE IF NOT EXISTS workflow_handoffs (
+    id TEXT PRIMARY KEY,
+    loop_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (loop_id) REFERENCES workflow_loops(id)
+);
+
+-- NemoClaw Sandboxing (D-NC-1 through D-NC-6)
+CREATE TABLE IF NOT EXISTS credential_broker_log (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    function_name TEXT,
+    action TEXT NOT NULL,
+    provider TEXT,
+    granted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    ttl_seconds INTEGER DEFAULT 3600,
+    revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS blueprint_digests (
+    id TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    file_count INTEGER DEFAULT 0,
+    computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS egress_policy_audit (
+    id TEXT PRIMARY KEY,
+    role TEXT NOT NULL,
+    action TEXT NOT NULL,
+    policy_snapshot TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS propagation_verifications (
+    id TEXT PRIMARY KEY,
+    propagation_id TEXT NOT NULL,
+    checks TEXT DEFAULT '{}',
+    overall_result TEXT DEFAULT 'pending',
+    verified_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Evolution Daemon (D-EVO-1)
+CREATE TABLE IF NOT EXISTS evolution_audit (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    reflex_name TEXT,
+    risk_tier TEXT,
+    details TEXT DEFAULT '{}',
+    success INTEGER DEFAULT 1,
+    duration_ms INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS evolution_reflex_state (
+    reflex_name TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 1,
+    last_run_at TEXT,
+    consecutive_failures INTEGER DEFAULT 0,
+    circuit_breaker_open INTEGER DEFAULT 0
+);
+
+-- Outcome Verifier (D-EVO-6)
+CREATE TABLE IF NOT EXISTS outcome_verification_log (
+    id TEXT PRIMARY KEY,
+    resolution_id TEXT NOT NULL,
+    pr_url TEXT,
+    verification_type TEXT NOT NULL,
+    result TEXT DEFAULT 'pending',
+    confidence_delta REAL DEFAULT 0.0,
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Engineering Review Board (Phase 67, D-RB-1 through D-RB-7)
+CREATE TABLE IF NOT EXISTS review_board_audit (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    reflex_name TEXT,
+    risk_tier TEXT,
+    details TEXT,
+    success INTEGER,
+    duration_ms INTEGER,
+    metric_name TEXT,
+    metric_value REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS review_board_reflex_state (
+    reflex_name TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 1,
+    last_run_at TEXT,
+    consecutive_failures INTEGER DEFAULT 0,
+    circuit_breaker_open INTEGER DEFAULT 0,
+    total_runs INTEGER DEFAULT 0,
+    total_successes INTEGER DEFAULT 0,
+    total_failures INTEGER DEFAULT 0,
+    last_metric_value REAL,
+    last_error TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS review_board_findings (
+    id TEXT PRIMARY KEY,
+    reflex_name TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    category TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT,
+    recommendation TEXT,
+    evidence TEXT,
+    confidence REAL DEFAULT 0.0,
+    auto_fixable INTEGER DEFAULT 0,
+    fix_applied INTEGER DEFAULT 0,
+    sha256 TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS review_board_remediation_log (
+    id TEXT PRIMARY KEY,
+    finding_id TEXT NOT NULL,
+    reflex_name TEXT,
+    category TEXT NOT NULL,
+    severity TEXT,
+    confidence REAL DEFAULT 0.0,
+    tier TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    fix_description TEXT,
+    fix_result TEXT,
+    verification TEXT,
+    dry_run INTEGER DEFAULT 0,
+    duration_ms INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Phase 68: Autonomy Engine (D-AE-1 through D-AE-12)
+CREATE TABLE IF NOT EXISTS autonomy_trust_state (
+    category TEXT PRIMARY KEY,
+    alpha REAL NOT NULL DEFAULT 2.0,
+    beta REAL NOT NULL DEFAULT 8.0,
+    ceiling REAL NOT NULL DEFAULT 1.0,
+    total_observations INTEGER DEFAULT 0,
+    total_successes INTEGER DEFAULT 0,
+    total_failures INTEGER DEFAULT 0,
+    current_tier TEXT DEFAULT 'observer',
+    last_updated TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS autonomy_observations (
+    id TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    alpha_before REAL,
+    beta_before REAL,
+    alpha_after REAL,
+    beta_after REAL,
+    mean_before REAL,
+    mean_after REAL,
+    tier_before TEXT,
+    tier_after TEXT,
+    source TEXT,
+    details TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS autonomy_actions (
+    id TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    trust_mean REAL,
+    thompson_sample REAL,
+    tier_required TEXT,
+    tier_current TEXT,
+    details TEXT,
+    coherence_passed INTEGER,
+    remediation_applied INTEGER,
+    outcome TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS autonomy_behavior_log (
+    id TEXT PRIMARY KEY,
+    signal_type TEXT NOT NULL,
+    finding_id TEXT,
+    pr_url TEXT,
+    alpha_delta REAL DEFAULT 0.0,
+    beta_delta REAL DEFAULT 0.0,
+    category TEXT,
+    details TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------

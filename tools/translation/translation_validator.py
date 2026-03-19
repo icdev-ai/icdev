@@ -8,12 +8,10 @@ Runs syntax, lint, round-trip IR, API surface, type coverage, complexity,
 compliance, and feature mapping checks. On failure, feeds errors back to LLM."""
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
 import subprocess
-import sys
 import uuid
 from pathlib import Path
 

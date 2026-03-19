@@ -30,7 +30,7 @@ import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("icdev.endpoint_security_scanner")
 
@@ -101,8 +101,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             r'isinstance\s*\(', r'validate\s*\(', r'schema\.\w+\s*\(',
             r'_validate_fields\s*\(', r'if\s+not\s+data',
             r"if\s+[\"']\w+[\"']\s+not\s+in\s+data", r'pydantic',
-            r'request\.get_json', r'request\.json', r'request\.form',
-            r'return.*40[0-9]', r'abort\(4',
+            r'abort\s*\(\s*4[0-9]{2}',
         ],
         "java": [r'@Valid', r'@NotNull', r'@NotBlank', r'Validator'],
         "go": [r'validate\.Struct', r'binding:"required"'],
@@ -128,7 +127,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     ],
     "severity": {
         "missing_auth": "critical",
-        "missing_validation_on_write": "medium",
+        "missing_validation_on_write": "high",
         "missing_idor_check": "medium",
     },
     "scan": {

@@ -42,7 +42,6 @@ Usage:
 
 import argparse
 import json
-import math
 import os
 import sqlite3
 import sys

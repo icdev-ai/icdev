@@ -15,7 +15,6 @@ Add new mappings without code changes.
 
 import argparse
 import json
-import sys
 import textwrap
 from pathlib import Path
 

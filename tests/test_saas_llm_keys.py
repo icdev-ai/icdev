@@ -123,11 +123,25 @@ def platform_db(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "icdev.tools.saas.platform_db.get_platform_connection", _mock_conn
     )
+    # Also patch the bare-module path used by local imports inside
+    # tenant_llm_keys._get_conn() (``from tools.saas.platform_db import …``)
+    try:
+        import tools.saas.platform_db as _bare_pdb
+        monkeypatch.setattr(_bare_pdb, "get_platform_connection", _mock_conn)
+    except (ImportError, AttributeError):
+        pass
     # Silence audit logging in tests
     monkeypatch.setattr(
         "icdev.tools.saas.platform_db.log_platform_audit",
         lambda **kw: None,
     )
+    try:
+        monkeypatch.setattr(
+            "tools.saas.platform_db.log_platform_audit",
+            lambda **kw: None,
+        )
+    except (ImportError, AttributeError):
+        pass
 
     return db_path
 

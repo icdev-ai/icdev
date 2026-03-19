@@ -1609,8 +1609,98 @@ TOOL_REGISTRY = {
         "description": "Find capabilities that could be shared between child applications.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    "evolution_daemon_status": {
+        "category": "registry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evolution_daemon_status",
+        "description": "Get evolution daemon status including all 7 reflex states and circuit breakers.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "egress_monitor_evaluate": {
+        "category": "registry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_egress_monitor_evaluate",
+        "description": "Evaluate child application egress traffic against parent-defined policies (D-NC-6).",
+        "input_schema": {"type": "object", "properties": {"child_id": {"type": "string", "description": "Child application ID"}, "endpoint": {"type": "string", "description": "Child health/egress endpoint URL"}}, "required": ["child_id"]},
+    },
+    "propagation_verify": {
+        "category": "registry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_propagation_verify",
+        "description": "Verify post-propagation integrity: digest, DB schema, health endpoint, CUI markings (D-NC-5).",
+        "input_schema": {"type": "object", "properties": {"propagation_id": {"type": "string", "description": "Propagation log entry ID"}}, "required": ["propagation_id"]},
+    },
+    "sandbox_score": {
+        "category": "registry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_sandbox_score",
+        "description": "Compute isolation posture score as 8th capability evaluation dimension (D-NC-4).",
+        "input_schema": {"type": "object", "properties": {"capability_id": {"type": "string"}, "source_metadata": {"type": "object", "description": "Metadata about isolation features (has_broker, has_egress_policy, etc.)"}}},
+    },
     # ============================================================
-    # SECURITY_AGENTIC (9 tools)
+    # INTELLIGENCE (4 tools — Bayesian Teaching, D-BT-1 through D-BT-6)
+    # ============================================================
+    "bayesian_score_pairs": {
+        "category": "intelligence",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_bayesian_score_pairs",
+        "description": "Score fine-tuning pairs by information gain using Shannon entropy + KL divergence (D-BT-1).",
+        "input_schema": {"type": "object", "properties": {"dataset_id": {"type": "string", "description": "Fine-tuning dataset ID"}}, "required": ["dataset_id"]},
+    },
+    "bayesian_optimal_order": {
+        "category": "intelligence",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_bayesian_optimal_order",
+        "description": "Compute optimal compliance teaching order using NIST control dependency graph (D-BT-5).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}}},
+    },
+    "bayesian_teaching_dim": {
+        "category": "intelligence",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_bayesian_teaching_dim",
+        "description": "Compute teaching dimension for a set of items via greedy set-cover (D-BT-3).",
+        "input_schema": {"type": "object", "properties": {"items": {"type": "string", "description": "JSON array of item labels"}}},
+    },
+    "bayesian_smart_encode": {
+        "category": "intelligence",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_bayesian_smart_encode",
+        "description": "Apply SmartEncoding to compress project tags into compact integer IDs (D-BT-4).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}}},
+    },
+    # ============================================================
+    # WORKFLOW (4 tools — Workflow Discipline Engine, D-WF-1 through D-WF-7)
+    # ============================================================
+    "workflow_loop_create": {
+        "category": "workflow",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_workflow_loop_create",
+        "description": "Create a new PLAN-APPLY-UNIFY workflow loop with acceptance criteria tracking (D-WF-1).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}, "phase": {"type": "string", "description": "Phase or feature name for this loop"}}, "required": ["project_id"]},
+    },
+    "workflow_loop_status": {
+        "category": "workflow",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_workflow_loop_status",
+        "description": "Get workflow loop lifecycle status including acceptance criteria and task counts.",
+        "input_schema": {"type": "object", "properties": {"loop_id": {"type": "string"}, "project_id": {"type": "string"}}},
+    },
+    "workflow_next_action": {
+        "category": "workflow",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_workflow_next_action",
+        "description": "Recommend single next action using 5-dimension weighted priority scoring (D-WF-2).",
+        "input_schema": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": ["project_id"]},
+    },
+    "workflow_reconcile": {
+        "category": "workflow",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_workflow_reconcile",
+        "description": "Run UNIFY phase reconciliation: compare planned vs actual, generate deviation records (D-WF-5).",
+        "input_schema": {"type": "object", "properties": {"loop_id": {"type": "string", "description": "Workflow loop ID to reconcile"}}, "required": ["loop_id"]},
+    },
+    # ============================================================
+    # SECURITY_AGENTIC (9 + 4 tools)
     # ============================================================
     "scan_code_patterns": {
         "category": "security_agentic",
@@ -1674,6 +1764,34 @@ TOOL_REGISTRY = {
         "handler": "handle_detect_behavioral_drift",
         "description": "Detect behavioral drift in agent tool usage patterns using z-score baseline.",
         "input_schema": {"type": "object", "properties": {"agent_id": {"type": "string"}}},
+    },
+    "credential_broker_request": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_credential_broker_request",
+        "description": "Request a scoped credential token for an agent function (D-NC-1).",
+        "input_schema": {"type": "object", "properties": {"agent_id": {"type": "string"}, "function": {"type": "string", "description": "LLM function requiring credentials"}}, "required": ["agent_id", "function"]},
+    },
+    "credential_broker_status": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_credential_broker_status",
+        "description": "Get credential broker health, active token count, and recent audit entries.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "blueprint_verify": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_blueprint_verify",
+        "description": "Compute or verify SHA-256 recursive directory digest for integrity (D-NC-3).",
+        "input_schema": {"type": "object", "properties": {"path": {"type": "string", "description": "Directory path to compute digest for"}, "expected": {"type": "string", "description": "Expected digest to verify against"}, "entity_type": {"type": "string", "enum": ["genome", "marketplace_asset", "child_app"]}, "entity_id": {"type": "string"}}, "required": ["path"]},
+    },
+    "egress_policy_resolve": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_egress_policy_resolve",
+        "description": "Resolve the effective egress policy for an agent role (D-NC-2).",
+        "input_schema": {"type": "object", "properties": {"role": {"type": "string", "description": "Agent role (e.g., builder, security, compliance)"}}, "required": ["role"]},
     },
     # ============================================================
     # TESTING (6 tools)
@@ -2082,7 +2200,7 @@ TOOL_REGISTRY = {
         "module": "tools.mcp.rag_server",
         "handler": "handle_rag_retention_migrate",
         "description": "Run tier migration: hot→warm (float16 compression) and warm→cold (metadata only) based on age thresholds.",
-        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "dry_run": {"type": "boolean", "description": "Report candidates without migrating", "default": false}}, "required": []},
+        "input_schema": {"type": "object", "properties": {"tenant_id": {"type": "string"}, "dry_run": {"type": "boolean", "description": "Report candidates without migrating", "default": False}}, "required": []},
     },
     "rag_reindex": {
         "category": "rag",

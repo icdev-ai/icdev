@@ -233,6 +233,44 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "stub_detection_results",
         "context_pressure_events",
         "deviation_rule_events",
+        # Evolution Daemon (D-EVO-1, Phase 36 autonomous lifecycle)
+        "evolution_audit",
+        # Outcome Verifier (D-EVO-6, self-healing feedback loop)
+        "outcome_verification_log",
+        # NemoClaw-Adapted Agent Sandboxing (D-NC-1, D-NC-2, D-NC-3, D-NC-5)
+        "credential_broker_log",
+        "egress_policy_audit",
+        "blueprint_digests",
+        "propagation_verifications",
+        # Bayesian Teaching Intelligence Layer (D-BT-1 through D-BT-6)
+        "bayesian_teaching_scores",
+        # Phase 66 — Workflow Discipline Engine (D-WF-1 through D-WF-7)
+        "workflow_reconciliations",
+        "workflow_handoffs",
+        # WriteGuard (D-WG-9 — analysis results/findings are immutable)
+        "wg_analysis_results",
+        "wg_analysis_findings",
+        # DataBridge (D-DB-6 — sync log, mapping log, messages are append-only)
+        "db_sync_log",
+        "db_mapping_log",
+        "db_messages",
+        # Connector Forge (D-CF sandbox/promotion logs are append-only)
+        "db_forge_sandbox_log",
+        "db_forge_promotions",
+        # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
+        "cf_provision_log",
+        "cf_siem_events",
+        "cf_runbook_executions",
+        "cf_runbook_task_log",
+        # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)
+        "review_board_audit",
+        "review_board_findings",
+        "review_board_remediation_log",
+        "review_board_health_history",
+        # Phase 68 — Autonomy Engine (D-AE-5, D-AE-10, D-AE-12 — observations, actions, behavior append-only)
+        "autonomy_observations",
+        "autonomy_actions",
+        "autonomy_behavior_log",
     ]
 
     if tool_name == "Bash":

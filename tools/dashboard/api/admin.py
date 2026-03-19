@@ -7,7 +7,6 @@ All endpoints require 'admin' role.
 """
 
 import sqlite3
-from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -16,7 +15,6 @@ from tools.dashboard.auth import (
     create_user,
     list_api_keys_for_user,
     list_users,
-    log_auth_event,
     reactivate_user,
     require_role,
     revoke_api_key,

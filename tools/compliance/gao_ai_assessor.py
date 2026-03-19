@@ -20,7 +20,6 @@ Usage:
     python tools/compliance/gao_ai_assessor.py --project-id proj-123 --json
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path

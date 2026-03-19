@@ -27,7 +27,6 @@ import json
 import os
 import re
 import sqlite3
-import sys
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -57,7 +56,7 @@ def _content_hash(text):
 def _audit(conn, action, details="", actor="award_tracker"):
     try:
         conn.execute(
-            "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, session_id) "
+            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (str(uuid.uuid4()), _now(), "govcon.award_tracking", actor, action, details, "govcon"),
         )

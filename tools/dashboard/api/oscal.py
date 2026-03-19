@@ -6,7 +6,6 @@ Provides /api/oscal/* endpoints for the dashboard OSCAL page:
 tool detection, validation log, artifact browser, and catalog lookup.
 """
 
-import json
 import os
 import sqlite3
 from pathlib import Path

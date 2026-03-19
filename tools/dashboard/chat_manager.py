@@ -23,7 +23,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from tools.dashboard.config import DEFAULT_CLASSIFICATION
 
@@ -449,6 +449,24 @@ class ChatManager:
                         "gap_id": gov_advisory.get("gap_id"),
                         "severity": gov_advisory.get("severity"),
                         "total_gaps": gov_advisory.get("total_gaps", 0),
+                    })
+
+                # Inject workflow loop advisory as system message if present (Phase 66)
+                wf_advisory = hook_result.get("workflow_advisory") if isinstance(hook_result, dict) else None
+                if wf_advisory:
+                    ctx.turn_number += 1
+                    wf_content = (
+                        f"[Workflow Status] {wf_advisory.get('message', '')}\n"
+                        f"Action: {wf_advisory.get('action', '')}"
+                    )
+                    self._db_insert_message(
+                        context_id, ctx.turn_number, "system", wf_content,
+                        content_type="workflow_status",
+                    )
+                    _mark_dirty(context_id, "workflow_status", {
+                        "gap_id": wf_advisory.get("gap_id"),
+                        "severity": wf_advisory.get("severity"),
+                        "loop_id": wf_advisory.get("loop_id"),
                     })
 
                 self._db_complete_task(task_id, response)

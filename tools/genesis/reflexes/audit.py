@@ -148,6 +148,27 @@ def _check_dependency_audit() -> Dict[str, Any]:
     return {"check": "dependency_audit", "status": "failed", "error": result.get("error", "unknown")}
 
 
+def _check_coherence() -> Dict[str, Any]:
+    """Run implementation coherence checker (D-WF-8)."""
+    print("  Audit: coherence check...")
+    try:
+        from tools.workflow.coherence_checker import run_checks as coherence_check
+        coherence_report = coherence_check()
+        return {
+            "check": "coherence",
+            "status": "completed",
+            "findings": {
+                "overall_pass": coherence_report.overall_pass,
+                "failed": coherence_report.failed_checks,
+                "warned": coherence_report.warned_checks,
+                "passed": coherence_report.passed_checks,
+                "total": coherence_report.total_checks,
+            },
+        }
+    except Exception as e:
+        return {"check": "coherence", "status": "failed", "error": str(e)}
+
+
 def _generate_audit_report(checks: List[Dict]) -> str:
     """Generate markdown audit report."""
     now = _utcnow()
@@ -155,18 +176,18 @@ def _generate_audit_report(checks: List[Dict]) -> str:
     failed = [c for c in checks if c.get("status") == "failed"]
 
     lines = [
-        f"# Genesis Self-Audit Report",
-        f"",
+        "# Genesis Self-Audit Report",
+        "",
         f"**Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
         f"**Checks Completed:** {len(completed)}/{len(checks)}",
-        f"**Classification:** CUI // SP-CTI",
-        f"",
-        f"---",
-        f"",
-        f"## Results",
-        f"",
-        f"| Check | Status | Key Finding |",
-        f"|-------|--------|-------------|",
+        "**Classification:** CUI // SP-CTI",
+        "",
+        "---",
+        "",
+        "## Results",
+        "",
+        "| Check | Status | Key Finding |",
+        "|-------|--------|-------------|",
     ]
 
     for check in checks:
@@ -208,6 +229,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Audit Reflex."""
     enabled_checks = config.get("checks", [
         "code_quality", "security_scan", "secret_detection", "dependency_audit",
+        "coherence",
     ])
 
     check_map = {
@@ -215,6 +237,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "security_scan": _check_security,
         "secret_detection": _check_secret_detection,
         "dependency_audit": _check_dependency_audit,
+        "coherence": _check_coherence,
     }
 
     checks = []

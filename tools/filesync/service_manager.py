@@ -10,7 +10,6 @@ On non-Windows platforms, generates a systemd unit file or launchd plist.
 Architecture: D-SYNC-9 (daemon mode persistence).
 """
 
-import json
 import os
 import platform
 import subprocess

@@ -139,6 +139,7 @@ DIRECTORY_TREE = [
     "tools/testing", "tools/ci/triggers", "tools/ci/workflows",
     "tools/infra", "tools/maintenance", "tools/mcp", "tools/builder",
     "tools/security",  # D-EPSEC-7: security is always-on, not conditional
+    "tools/workflow",  # Coherence engine — implementation drift detection
     "tools/llm", "tools/compat", "tools/cli", "tools/dx",  # D-CHILD-9: fundamental infra + LLM-agnostic companion
     "args", "context/agentic", "context/compliance", "context/languages",
     "hardprompts/agent", "hardprompts/security",  # D-EPSEC-7

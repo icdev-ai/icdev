@@ -38,7 +38,7 @@ import sys
 import time
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 
 # =========================================================================

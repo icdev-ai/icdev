@@ -9,7 +9,6 @@ Adds: content_hash (D179), user_id/tenant_id (D180), memory_buffer table (D181),
 
 import hashlib
 import sqlite3
-import sys
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
