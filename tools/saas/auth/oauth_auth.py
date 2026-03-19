@@ -5,9 +5,9 @@ CUI // SP-CTI
 import json
 import logging
 import os
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -25,8 +25,7 @@ _JWKS_CACHE_TTL = 3600  # 1 hour
 
 
 def _get_platform_conn():
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

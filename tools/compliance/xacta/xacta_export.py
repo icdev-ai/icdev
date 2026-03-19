@@ -4,6 +4,7 @@
 
 Generates OSCAL JSON and CSV exports compatible with Xacta 360's
 import functionality. Used as fallback when API is unavailable or
+from tools.db.storage import get_connection
 for bulk data transfer.
 
 Formats:
@@ -20,7 +21,6 @@ Usage:
 import argparse
 import csv
 import json
-import sqlite3
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,8 +34,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

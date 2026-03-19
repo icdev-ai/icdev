@@ -40,10 +40,10 @@ import json as json_mod
 import logging
 import os
 import secrets
-import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -73,8 +73,7 @@ PLATFORM_DB_PATH = Path(
 
 def _platform_conn():
     """Open a connection to the platform database."""
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -1532,8 +1531,7 @@ def ai_transparency_stats():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
 
         def _count(table, pid=None):
             try:
@@ -1578,8 +1576,7 @@ def ai_transparency_frameworks():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         frameworks = []
         for table, name in [
             ("omb_m25_21_assessments", "OMB M-25-21"),
@@ -1617,8 +1614,7 @@ def ai_transparency_inventory():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
@@ -1638,8 +1634,7 @@ def ai_transparency_model_cards():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
@@ -1732,8 +1727,7 @@ def ai_accountability_stats():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
 
         def _cnt(table, extra=""):
             try:
@@ -1768,8 +1762,7 @@ def ai_accountability_appeals():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         rows = conn.execute(
             "SELECT * FROM ai_accountability_appeals ORDER BY created_at DESC LIMIT 100"
         ).fetchall()
@@ -1786,8 +1779,7 @@ def ai_accountability_incidents():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         rows = conn.execute(
             "SELECT * FROM ai_incident_log "
             "ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 "
@@ -1806,8 +1798,7 @@ def ai_accountability_overdue():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         rows = conn.execute(
             "SELECT * FROM ai_reassessment_schedule "
             "WHERE next_due < date('now') ORDER BY next_due ASC"

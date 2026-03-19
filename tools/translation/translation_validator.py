@@ -10,9 +10,9 @@ compliance, and feature mapping checks. On failure, feeds errors back to LLM."""
 import argparse
 import json
 import os
-import sqlite3
 import subprocess
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -517,7 +517,7 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
 def _record_validations(db_path, job_id, results):
     """Record validation results in DB."""
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection()
         c = conn.cursor()
         for check_type, result in results.items():
             val_id = str(uuid.uuid4())

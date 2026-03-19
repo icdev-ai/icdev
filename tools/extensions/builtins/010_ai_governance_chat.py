@@ -15,6 +15,7 @@ Exports:
 
 import logging
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 logger = logging.getLogger("icdev.extensions.ai_governance_chat")
@@ -103,8 +104,7 @@ def _check_governance_gaps(project_id: str) -> list:
         return []
 
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
     except Exception:
         return []
 

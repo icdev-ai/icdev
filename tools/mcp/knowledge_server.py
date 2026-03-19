@@ -15,6 +15,7 @@ Runs as an MCP server over stdio with Content-Length framing.
 import os
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -35,8 +36,7 @@ def _import_tool(module_path, func_name):
 
 
 def _get_db() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

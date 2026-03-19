@@ -21,8 +21,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent.parent
@@ -32,8 +32,7 @@ _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")
 # ── helpers ───────────────────────────────────────────────────────────
 
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

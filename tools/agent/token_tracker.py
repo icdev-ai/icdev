@@ -8,6 +8,7 @@ aggregated summaries and cost estimates by project, agent, and model.
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -45,8 +46,7 @@ def _connect(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a connection and guarantee the table is present."""
     path = db_path or DB_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     _ensure_table(conn)
     return conn
 

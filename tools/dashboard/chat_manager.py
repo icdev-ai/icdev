@@ -20,6 +20,7 @@ import sqlite3
 import threading
 import time
 import uuid
+from tools.db.storage import get_connection
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -346,8 +347,7 @@ class ChatManager:
     ) -> List[dict]:
         """Get messages for a context, optionally since a turn number."""
         try:
-            conn = sqlite3.connect(str(DB_PATH))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 """SELECT turn_number, role, content, content_type,
                           is_compressed, compression_tier, classification, created_at
@@ -553,8 +553,7 @@ class ChatManager:
     # ------------------------------------------------------------------
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         return conn
 
     def _db_create_context(self, ctx: ChatContext) -> None:

@@ -29,6 +29,7 @@ import sqlite3
 import sys
 import textwrap
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -183,8 +184,7 @@ def _get_db(path=None):
     """Return an sqlite3 connection with Row factory."""
     p = path or ICDEV_DB
     p.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(p))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

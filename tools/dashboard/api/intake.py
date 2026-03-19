@@ -11,9 +11,9 @@ Wraps existing RICOAS backend tools:
   - tools.requirements.readiness_scorer
 """
 
-import sqlite3
 import sys
 import threading
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -114,8 +114,7 @@ ALLOWED_EXTENSIONS = {
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -731,8 +730,7 @@ def _run_build_pipeline(session_id):
 
     conn = None
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
     except Exception as exc:
         _set_overall("error", f"Database error: {exc}")
         return

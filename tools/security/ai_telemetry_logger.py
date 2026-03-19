@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -72,7 +73,7 @@ class AITelemetryLogger:
         logged_at = datetime.now(timezone.utc).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO ai_telemetry
                    (id, project_id, user_id, agent_id, model_id, provider,
@@ -114,7 +115,7 @@ class AITelemetryLogger:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
 
             # Total volume in window
             row = conn.execute(
@@ -216,7 +217,7 @@ class AITelemetryLogger:
         baseline_end = (now - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
 
             # Get agent list
             if agent_id:
@@ -340,7 +341,7 @@ class AITelemetryLogger:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
 
             where_parts = ["logged_at >= ?"]
             params = [cutoff]

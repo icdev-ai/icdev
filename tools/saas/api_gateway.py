@@ -32,9 +32,9 @@ import argparse
 import logging
 import os
 import secrets
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -77,8 +77,7 @@ def _get_platform_db():
     if not PLATFORM_DB_PATH.exists():
         return None
     try:
-        conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         return conn
     except Exception:
         return None

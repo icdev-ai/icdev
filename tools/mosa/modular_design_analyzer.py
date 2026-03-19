@@ -24,9 +24,9 @@ import ast
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
@@ -492,7 +492,7 @@ def store_metrics(project_id: str, metrics: Dict[str, Any]) -> str:
     record_id = f"mosa-metric-{uuid.uuid4().hex[:12]}"
     now = datetime.now(timezone.utc).isoformat()
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO mosa_modularity_metrics

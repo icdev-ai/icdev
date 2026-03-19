@@ -9,6 +9,7 @@ import sqlite3
 import urllib.request
 import urllib.parse
 import urllib.error
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -20,8 +21,7 @@ DEFAULT_PROMETHEUS_URL = "http://localhost:9090"
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

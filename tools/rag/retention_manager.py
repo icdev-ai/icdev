@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List
@@ -69,7 +69,7 @@ def get_migration_candidates(
 
     # Access internal DB path for direct queries
     db_path = store._db_path
-    conn = sqlite3.connect(str(db_path))
+    conn = get_connection()
 
     now = datetime.utcnow()
     hot_cutoff = (now - timedelta(days=hot_days)).isoformat()
@@ -154,7 +154,7 @@ def migrate_chunks(
     # Log migration to ingestion log
     if (migrated_warm > 0 or migrated_cold > 0) and ICDEV_DB.exists():
         try:
-            conn = sqlite3.connect(str(ICDEV_DB))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO rag_ingestion_log
                    (source_type, source_id, source_table, chunks_created, chunks_skipped,
@@ -214,7 +214,7 @@ def rehydrate_chunks(
         return {"error": "No embedding provider available", "rehydrated": 0}
 
     db_path = store._db_path
-    conn = sqlite3.connect(str(db_path))
+    conn = get_connection()
     rehydrated = 0
 
     import struct

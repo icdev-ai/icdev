@@ -5,11 +5,11 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -49,7 +49,7 @@ def log_execution(execution_id: str, request: AgentPromptRequest,
     """Log agent execution to database (append-only)."""
     path = db_path or DB_PATH
     try:
-        conn = sqlite3.connect(str(path))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO agent_executions
                (execution_id, project_id, agent_type, model, prompt_hash,

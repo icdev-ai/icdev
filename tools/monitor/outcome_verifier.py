@@ -32,6 +32,7 @@ import argparse
 import json
 import sqlite3
 import subprocess
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -83,8 +84,7 @@ def _generate_id(prefix: str = "ov") -> str:
 
 
 def _get_conn(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

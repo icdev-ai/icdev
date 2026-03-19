@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -91,7 +92,7 @@ class AgentTrustScorer:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
 
             # Factor 1: Hard vetoes (agent_vetoes table)
             hard_vetoes = self._count_events(
@@ -165,7 +166,7 @@ class AgentTrustScorer:
         if not self._db_path.exists():
             return None
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             row = conn.execute(
                 "SELECT trust_score FROM agent_trust_scores "
                 "WHERE agent_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -222,7 +223,7 @@ class AgentTrustScorer:
         if not self._db_path.exists():
             return []
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT trust_score, previous_score, score_delta, factor_json, "
                 "trigger_event, created_at FROM agent_trust_scores "
@@ -249,7 +250,7 @@ class AgentTrustScorer:
         if not self._db_path.exists():
             return []
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT agent_id, trust_score, created_at FROM agent_trust_scores "
                 "WHERE (agent_id, created_at) IN ("
@@ -287,7 +288,7 @@ class AgentTrustScorer:
             return result
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             untrusted_threshold = self._thresholds.get("untrusted", 0.30)
 
             # Check for any agent below untrusted threshold
@@ -356,7 +357,7 @@ class AgentTrustScorer:
             trigger = "scheduled_check"
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO agent_trust_scores
                    (id, agent_id, project_id, trust_score, previous_score,

@@ -52,6 +52,7 @@ import os
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -396,8 +397,7 @@ def get_status(db_path=None):
     if not path.exists():
         return {"error": f"Database not found: {path}", "healthy": False}
 
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
 
     try:
         status = {"healthy": True, "timestamp": _now()}

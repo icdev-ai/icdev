@@ -12,11 +12,11 @@ Decision D138: Deploy commands disabled by default on all remote channels.
 
 import json
 import logging
-import sqlite3
 import subprocess
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -299,7 +299,7 @@ def _log_command(envelope: CommandEnvelope, audit_id: str,
                  status: str):
     """Log command execution to remote_command_log table."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             "INSERT INTO remote_command_log "
             "(id, binding_id, channel, raw_command, parsed_tool, parsed_args, "

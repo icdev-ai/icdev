@@ -28,6 +28,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -110,8 +111,7 @@ def _timed(fn: Callable, *args, **kwargs) -> Tuple:
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -634,7 +634,7 @@ def check_ai_inventory() -> AuditCheck:
             message="Database not found", details={},
         )
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         # Check if table exists
         table_exists = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='ai_use_case_inventory'"
@@ -674,7 +674,7 @@ def check_model_cards() -> AuditCheck:
             message="Database not found", details={},
         )
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         table_exists = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='model_cards'"
         ).fetchone()
@@ -719,7 +719,7 @@ def check_ai_transparency_frameworks() -> AuditCheck:
         "gao_ai_assessments",
     ]
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         found_tables = []
         total_records = 0
         for tbl in assessment_tables:
@@ -993,7 +993,7 @@ def check_db_schema() -> AuditCheck:
             message=f"Database not found: {DB_PATH}", details={},
         )
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         tables = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()
@@ -1069,7 +1069,7 @@ def check_dashboard_health() -> AuditCheck:
     session = requests.Session()
     # Create temp API key for auth
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             "INSERT OR IGNORE INTO dashboard_users (id, email, name, role, status) "
             "VALUES ('audit-user', 'audit@icdev.local', 'Audit', 'admin', 'active')"
@@ -1106,7 +1106,7 @@ def check_dashboard_health() -> AuditCheck:
             fail_pages.append(f"{page} ({e})")
     # Cleanup temp key
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute("DELETE FROM dashboard_api_keys WHERE id = 'audit-key'")
         conn.execute("DELETE FROM dashboard_users WHERE id = 'audit-user'")
         conn.commit()
@@ -1523,7 +1523,7 @@ def check_claude_md_table_count() -> AuditCheck:
         claimed = int(match.group(1)) if match else 0
         # Get actual count
         if DB_PATH.exists():
-            conn = sqlite3.connect(str(DB_PATH))
+            conn = get_connection()
             actual = len(conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
             ).fetchall())

@@ -8,9 +8,9 @@ to ensure connection isolation and efficient reuse.
 
 import logging
 import os
-import sqlite3
 import sys
 import threading
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -41,8 +41,7 @@ class TenantConnectionPool:
             return self._tenant_configs[tenant_id]
 
         try:
-            conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             row = conn.execute(
                 "SELECT db_host, db_name, db_port, slug, impact_level "
                 "FROM tenants WHERE id = ?",

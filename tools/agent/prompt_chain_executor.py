@@ -20,6 +20,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -128,8 +129,7 @@ class ChainExecution:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

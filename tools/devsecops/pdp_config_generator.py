@@ -20,7 +20,7 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,8 +101,7 @@ def _load_config() -> dict:
 
 def _get_db():
     """Get database connection."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

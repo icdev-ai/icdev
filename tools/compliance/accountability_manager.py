@@ -24,6 +24,7 @@ Usage:
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -41,8 +42,7 @@ VALID_APPROVAL_STATUSES = ("draft", "submitted", "approved", "rejected")
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

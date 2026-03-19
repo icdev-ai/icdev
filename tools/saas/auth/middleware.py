@@ -18,6 +18,7 @@ import logging
 import os
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -140,7 +141,7 @@ def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str],
         ))
         if not platform_db.exists():
             return
-        conn = sqlite3.connect(str(platform_db))
+        conn = get_connection()
         conn.execute("""
             INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details, ip_address, recorded_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)

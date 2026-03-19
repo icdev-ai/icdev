@@ -10,6 +10,7 @@ Follows D66 provider pattern (ABC + implementations).
 
 import threading
 import time
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -473,7 +474,7 @@ class MetricsCollector:
             db_path = Path(__file__).resolve().parent.parent.parent / "data" / "platform.db"
             if not db_path.exists():
                 return
-            conn = sqlite3.connect(str(db_path))
+            conn = get_connection()
             cursor = conn.cursor()
             cursor.execute(
                 "SELECT status, COUNT(*) FROM tenants GROUP BY status"

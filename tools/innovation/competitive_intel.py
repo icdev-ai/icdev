@@ -26,6 +26,7 @@ Usage:
 """
 
 import argparse, hashlib, json, os, re, sqlite3, sys, uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -94,7 +95,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path)); conn.row_factory = sqlite3.Row
+    conn = get_connection(); conn.row_factory = sqlite3.Row
     return conn
 
 def _now():

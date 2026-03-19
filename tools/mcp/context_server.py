@@ -12,6 +12,7 @@ Usage:
 import logging
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,8 +42,7 @@ except ImportError:
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

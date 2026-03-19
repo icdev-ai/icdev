@@ -14,6 +14,7 @@ Provides:
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -25,8 +26,7 @@ AGENT_CARDS_DIR = Path(__file__).resolve().parent / "agent_cards"
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

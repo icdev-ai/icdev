@@ -30,6 +30,7 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 import os
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
@@ -56,8 +57,7 @@ def _get_connection(db_path=None):
             f"Database not found: {path}\n"
             "Run: python tools/db/init_icdev_db.py"
         )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 

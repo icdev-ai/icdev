@@ -24,6 +24,7 @@ import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
+from tools.db.storage import get_connection
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -53,8 +54,7 @@ DEFAULT_PATTERNS = [
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Open a connection to the ICDEV database."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

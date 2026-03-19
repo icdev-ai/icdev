@@ -14,6 +14,7 @@ import json
 import re
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -125,7 +126,7 @@ def create_link(project_id: str, source_type: str, source_id: str,
         return {"error": "Confidence must be between 0.0 and 1.0"}
 
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     try:
         c.execute(
@@ -175,7 +176,7 @@ def create_link(project_id: str, source_type: str, source_id: str,
 def delete_link(project_id: str, link_id: int, db_path=None) -> bool:
     """Delete a specific link by ID. Returns True if deleted, False otherwise."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     try:
         c.execute(
@@ -205,8 +206,7 @@ def get_forward_trace(project_id: str, source_type: str, source_id: str,
     ]}
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
 
     source_name = _resolve_element_name(source_type, source_id, conn)
     result = {
@@ -263,8 +263,7 @@ def get_backward_trace(project_id: str, target_type: str, target_id: str,
                        max_depth: int = 10, db_path=None) -> dict:
     """Trace backward from a target element. Same tree structure but reversed."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
 
     target_name = _resolve_element_name(target_type, target_id, conn)
     result = {
@@ -323,7 +322,7 @@ def get_full_thread(project_id: str, element_type: str, element_id: str,
     path = db_path or DB_PATH
     forward = get_forward_trace(project_id, element_type, element_id, db_path=path)
     backward = get_backward_trace(project_id, element_type, element_id, db_path=path)
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     name = _resolve_element_name(element_type, element_id, conn)
     conn.close()
     return {
@@ -347,7 +346,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
       (req -> model -> code -> test -> control)
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
 
     # Total DOORS requirements for this project
@@ -522,7 +521,7 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     - controls_without_evidence: NIST controls not linked to any thread element
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
 
     # Requirements without model links
@@ -634,7 +633,7 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     - code has test link but no control link
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     gaps = []
 
@@ -768,7 +767,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
     Creates links with confidence 0.7 and evidence="auto_linked_by_name_match"
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     matches = []
     links_created = 0
@@ -935,7 +934,7 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
     Creates links with confidence 0.6 and evidence="auto_linked_by_keyword_match"
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     mappings = []
     links_created = 0
@@ -1027,7 +1026,7 @@ def generate_traceability_report(project_id: str, db_path=None) -> str:
     integrity = validate_thread_integrity(project_id, db_path=path)
 
     # Collect all trace chains from requirements
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     c.execute("SELECT id, doors_id, title FROM doors_requirements WHERE project_id = ?",
               (project_id,))
@@ -1238,7 +1237,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
     - Invalid types
     """
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     c = conn.cursor()
     issues = []
 

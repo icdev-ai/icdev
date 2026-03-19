@@ -42,6 +42,7 @@ import logging
 import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -107,8 +108,7 @@ def _get_db(db_path: Optional[Path] = None):
             f"ICDEV database not found at {path}. "
             "Run 'python tools/db/init_icdev_db.py' first."
         )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

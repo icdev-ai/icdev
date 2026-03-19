@@ -18,6 +18,7 @@ import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+from tools.db.storage import get_connection
 
 logger = logging.getLogger("databridge.forge.sandbox_manager")
 
@@ -243,7 +244,7 @@ def _log_event(
     """Append sandbox event to db_forge_sandbox_log."""
     db = db_path or str(DB_PATH)
     try:
-        conn = sqlite3.connect(db)
+        conn = get_connection()
         conn.execute(
             """INSERT INTO db_forge_sandbox_log
                (connector_id, sandbox_type, event_type, details, duration_ms, logged_at)

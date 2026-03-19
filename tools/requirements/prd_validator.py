@@ -18,6 +18,7 @@ import argparse
 import json
 import re
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -143,8 +144,7 @@ ACTOR_PATTERNS: list[re.Pattern] = [
 # ---------------------------------------------------------------------------
 
 def _get_connection(db_path=None):
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

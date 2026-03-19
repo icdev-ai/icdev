@@ -14,7 +14,7 @@ Usage:
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -31,8 +31,7 @@ def list_projects(status_filter: str = None, output_format: str = "brief") -> di
     Returns:
         dict with 'projects' list and 'total' count.
     """
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     try:
         if status_filter:
             rows = conn.execute(

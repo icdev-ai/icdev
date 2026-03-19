@@ -30,6 +30,7 @@ import sqlite3
 import sys
 import threading
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
@@ -119,8 +120,7 @@ def _get_platform_conn() -> sqlite3.Connection:
             "Platform database not found at {}. "
             "Run: python tools/saas/platform_db.py --init".format(PLATFORM_DB_PATH)
         )
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -248,8 +248,7 @@ def get_tenant_db_connection(tenant_id: str) -> sqlite3.Connection:
             "Provision the tenant first.".format(db_path)
         )
 
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     logger.debug("Connected to SQLite for tenant %s at %s", tenant_id, db_path)

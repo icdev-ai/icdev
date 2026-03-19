@@ -14,6 +14,7 @@ import secrets
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -45,8 +46,7 @@ _ACTIVE_CHALLENGES: Dict[str, Dict[str, Any]] = {}
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open DB connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

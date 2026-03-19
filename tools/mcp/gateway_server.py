@@ -15,6 +15,7 @@ Transport: stdio (Claude Code integration)
 import json
 import logging
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -192,8 +193,7 @@ def handle_gateway_status(params):
     recent = []
     db_path = BASE_DIR / "data" / "icdev.db"
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         rows = conn.execute(
             "SELECT id, channel, raw_command, execution_status, "
             "execution_time_ms, created_at FROM remote_command_log "

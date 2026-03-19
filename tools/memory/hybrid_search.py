@@ -7,8 +7,8 @@ Supports user-scoped queries (D180), time-decay ranking (D147), and JSON output.
 
 import argparse
 import json
-import sqlite3
 import struct
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -16,7 +16,7 @@ DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 def get_all_entries(user_id=None, tenant_id=None):
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE 1=1"
@@ -197,7 +197,7 @@ def main():
 
     # Log access
     search_type = "hybrid_time_decay" if args.time_decay else "hybrid"
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO memory_access_log (query, results_count, search_type) VALUES (?, ?, ?)",

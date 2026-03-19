@@ -7,6 +7,7 @@ Admin sees all users' usage; others see only their own.
 """
 
 import sqlite3
+from tools.db.storage import get_connection
 
 from flask import Blueprint, g, jsonify, request
 
@@ -16,8 +17,7 @@ usage_api = Blueprint("usage_api", __name__, url_prefix="/api/usage")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

@@ -10,6 +10,7 @@ Each implementation ~40-60 lines with try/except ImportError.
 import os
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -467,7 +468,7 @@ class LocalIAMProvider(IAMProvider):
     def _init_db(self):
         """Create IAM tables if not exists."""
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_service_accounts (
                     id TEXT PRIMARY KEY,
@@ -504,7 +505,7 @@ class LocalIAMProvider(IAMProvider):
         try:
             account_id = f"local-sa-{uuid.uuid4().hex[:12]}"
             now = datetime.now(timezone.utc).isoformat()
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 "INSERT INTO local_service_accounts (id, name, description, created_at) "
                 "VALUES (?, ?, ?, ?)",
@@ -519,8 +520,7 @@ class LocalIAMProvider(IAMProvider):
 
     def get_service_account(self, account_id: str) -> Optional[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             row = conn.execute(
                 "SELECT * FROM local_service_accounts WHERE id = ? AND status = 'active'",
                 (account_id,),
@@ -534,8 +534,7 @@ class LocalIAMProvider(IAMProvider):
 
     def list_service_accounts(self) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT * FROM local_service_accounts WHERE status = 'active' "
                 "ORDER BY created_at DESC"
@@ -549,7 +548,7 @@ class LocalIAMProvider(IAMProvider):
         try:
             role_id = f"role-{uuid.uuid4().hex[:12]}"
             now = datetime.now(timezone.utc).isoformat()
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 "INSERT INTO local_role_assignments (id, account_id, role, scope, assigned_at) "
                 "VALUES (?, ?, ?, ?, ?)",
@@ -564,7 +563,7 @@ class LocalIAMProvider(IAMProvider):
     def check_permission(self, account_id: str, action: str,
                          resource: str = "") -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             row = conn.execute(
                 "SELECT COUNT(*) FROM local_role_assignments "
                 "WHERE account_id = ? AND (role = ? OR role = 'admin')",
@@ -577,7 +576,7 @@ class LocalIAMProvider(IAMProvider):
 
     def delete_service_account(self, account_id: str) -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 "UPDATE local_service_accounts SET status = 'deleted' WHERE id = ?",
                 (account_id,),

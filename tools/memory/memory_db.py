@@ -7,7 +7,7 @@ Supports user-scoped queries (D180) and JSON output.
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -15,7 +15,7 @@ DB_PATH = BASE_DIR / "data" / "memory.db"
 
 
 def search(query, limit=10, user_id=None, tenant_id=None):
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = ("SELECT id, content, type, importance, created_at "
@@ -46,7 +46,7 @@ def search(query, limit=10, user_id=None, tenant_id=None):
 
 
 def list_all(limit=20, user_id=None, tenant_id=None):
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content, type, importance, created_at FROM memory_entries WHERE 1=1"

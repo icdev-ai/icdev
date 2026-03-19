@@ -4,7 +4,7 @@ Flask Blueprint for project API endpoints.
 Queries icdev.db for project data, compliance status, and audit trail entries.
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from flask import Blueprint, jsonify
 
 from tools.dashboard.config import DB_PATH
@@ -13,8 +13,7 @@ projects_api = Blueprint("projects_api", __name__, url_prefix="/api/projects")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

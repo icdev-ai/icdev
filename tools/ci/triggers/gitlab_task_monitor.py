@@ -24,10 +24,10 @@ import json
 import os
 import re
 import signal
-import sqlite3
 import subprocess
 import sys
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -73,7 +73,7 @@ def extract_icdev_tag(text: str) -> Optional[str]:
 def is_claimed(issue_iid: int) -> bool:
     """Check if an issue has already been claimed."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         row = conn.execute(
             "SELECT id FROM gitlab_task_claims WHERE issue_iid = ? AND status NOT IN ('failed')",
             (issue_iid,),
@@ -87,7 +87,7 @@ def is_claimed(issue_iid: int) -> bool:
 def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: str = None) -> str:
     """Claim an issue for processing. Returns claim ID."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO gitlab_task_claims
                (issue_iid, issue_url, icdev_tag, worktree_name, status)
@@ -106,7 +106,7 @@ def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: s
 def update_claim(issue_iid: int, status: str, run_id: str = None):
     """Update claim status."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         if run_id:
             conn.execute(
                 "UPDATE gitlab_task_claims SET status = ?, run_id = ?, completed_at = datetime('now') WHERE issue_iid = ? AND status = 'claimed'",

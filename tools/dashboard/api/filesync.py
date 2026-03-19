@@ -5,8 +5,8 @@
 REST endpoints for sync job CRUD, execution, conflicts, and health.
 """
 
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -21,8 +21,7 @@ filesync_api = Blueprint("filesync_api", __name__, url_prefix="/api/filesync")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

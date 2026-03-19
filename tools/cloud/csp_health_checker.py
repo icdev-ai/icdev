@@ -16,6 +16,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -74,7 +75,7 @@ class CSPHealthChecker:
                        latency_ms: float, error_message: str = ""):
         """Record health check status to cloud_provider_status table."""
         try:
-            conn = sqlite3.connect(self._db_path)
+            conn = get_connection()
             # Check if table exists (migration 007 may not have run yet)
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'"
@@ -166,8 +167,7 @@ class CSPHealthChecker:
     def get_status_history(self, hours: int = 24) -> List[Dict]:
         """Get status history from cloud_provider_status table."""
         try:
-            conn = sqlite3.connect(self._db_path)
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             # Check if table exists
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='cloud_provider_status'"

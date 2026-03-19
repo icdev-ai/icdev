@@ -27,6 +27,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,8 +65,7 @@ class BaseAssessor(ABC):
                 f"Database not found: {self.db_path}\n"
                 "Run: python tools/db/init_icdev_db.py"
             )
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         return conn
 
     def _get_project(self, conn: sqlite3.Connection, project_id: str) -> Dict:

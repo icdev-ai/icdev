@@ -16,6 +16,7 @@ import json
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,7 +59,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 
     # Direct fallback
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
@@ -152,7 +153,7 @@ def create_project(
         )
 
     # Insert into database
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     try:
         conn.execute(
             """INSERT INTO projects

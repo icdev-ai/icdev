@@ -17,6 +17,7 @@ import logging
 import os
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -707,8 +708,7 @@ def handle_nlq_query(args: dict) -> dict:
     """Execute natural language compliance query."""
     try:
         import sqlite3
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         # Simple passthrough — NLQ requires LLM which is not invoked here.
         # Return available tables for the user to formulate queries.
         cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")

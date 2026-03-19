@@ -4,7 +4,7 @@ Flask Blueprint for metrics API.
 Queries metric_snapshots, alerts, and self_healing_events tables.
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
@@ -13,8 +13,7 @@ metrics_api = Blueprint("metrics_api", __name__, url_prefix="/api/metrics")
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

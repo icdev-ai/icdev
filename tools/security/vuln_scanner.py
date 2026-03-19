@@ -13,8 +13,8 @@ Implements:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -315,7 +315,7 @@ def evaluate_gates(aggregated: Dict) -> Dict:
 def _store_findings_in_db(aggregated: Dict, project_id: Optional[str]) -> None:
     """Store critical/high findings in the failure_log table."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
 
         # Collect all findings across all scans
@@ -404,7 +404,7 @@ def _collect_all_findings(aggregated: Dict) -> List[Dict]:
 def _log_audit(project_id: Optional[str], aggregated: Dict) -> None:
     """Log security scan to audit trail."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail

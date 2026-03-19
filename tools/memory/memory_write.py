@@ -9,7 +9,7 @@ and thinking memory type (D182).
 import argparse
 import hashlib
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from datetime import datetime
 
@@ -42,7 +42,7 @@ def write_to_db(content, entry_type, importance, user_id=None, tenant_id=None, s
         tuple: (entry_id, is_duplicate)
     """
     content_hash = compute_content_hash(content)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     # Check for duplicate (D179)
@@ -87,7 +87,7 @@ def write_to_daily_log(content):
         f.write(f"- [{timestamp}] {content}\n")
 
     # Also log to DB
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
     c.execute(
         "INSERT INTO daily_logs (date, content) VALUES (?, ?)",

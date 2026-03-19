@@ -29,6 +29,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from tools.db.storage import get_connection
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -109,7 +110,7 @@ def check_database() -> CheckResult:
         )
 
     try:
-        conn = sqlite3.connect(db_path)
+        conn = get_connection()
         cursor = conn.cursor()
 
         # Get all tables

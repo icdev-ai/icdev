@@ -16,9 +16,9 @@ Usage:
 """
 import argparse
 import json
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,8 +57,7 @@ def _conn(db_path=None):
     p = db_path or DB_PATH
     if not Path(p).exists():
         raise FileNotFoundError(f"DB not found: {p}. Run: python tools/db/init_icdev_db.py")
-    c = sqlite3.connect(str(p))
-    c.row_factory = sqlite3.Row
+    c = get_connection()
     return c
 
 def _project(conn, pid):

@@ -18,8 +18,8 @@ evidence collection to cato_monitor.collect_evidence().
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -47,8 +47,7 @@ except ImportError:
                 f"Database not found: {path}\n"
                 "Run: python tools/db/init_icdev_db.py"
             )
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         return conn
 
     def _verify_project(conn, project_id):

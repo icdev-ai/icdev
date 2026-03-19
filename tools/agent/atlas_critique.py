@@ -26,6 +26,7 @@ import logging
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -159,8 +160,7 @@ def _default_config() -> dict:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Open a connection with row_factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

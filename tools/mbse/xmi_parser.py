@@ -24,6 +24,7 @@ import sqlite3
 import sys
 import uuid
 import xml.etree.ElementTree as ET
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1242,8 +1243,7 @@ def _get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
             f"Database not found: {path}\n"
             "Run: python tools/db/init_icdev_db.py"
         )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

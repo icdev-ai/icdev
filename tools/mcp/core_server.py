@@ -21,6 +21,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,8 +49,7 @@ except ImportError:
 
 def _get_db() -> sqlite3.Connection:
     """Open a connection to the ICDEV database."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -71,7 +71,7 @@ def _audit(event_type: str, actor: str, action: str, project_id: str = None, det
 
     # Direct write fallback
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.databridge.forge.spec_parser import ForgeApiManifest
+from tools.db.storage import get_connection
 
 logger = logging.getLogger("databridge.forge.integration_tester")
 
@@ -113,7 +114,7 @@ def _store_validation(
     """Write integration test result to db_forge_validations."""
     db = db_path or str(DB_PATH)
     try:
-        conn = sqlite3.connect(db)
+        conn = get_connection()
         conn.execute(
             """INSERT INTO db_forge_validations
                (connector_id, stage, passed, details, run_at)

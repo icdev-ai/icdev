@@ -56,6 +56,7 @@ import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -117,8 +118,7 @@ def _load_config():
 def _get_db(db_path=None):
     """Get SQLite connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -187,7 +188,7 @@ class AgentOutputValidator:
 
         entry_id = str(uuid.uuid4())
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO agent_output_violations
                    (id, project_id, agent_id, tool_name, violation_type,
@@ -227,7 +228,7 @@ class AgentOutputValidator:
             return result
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
 
             where = "1=1"
             params: list = []

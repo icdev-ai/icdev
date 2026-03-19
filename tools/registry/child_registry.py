@@ -28,6 +28,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -57,8 +58,7 @@ class ChildRegistry:
                 f"Database not found: {self.db_path}\n"
                 "Run: python tools/db/init_icdev_db.py"
             )
-        conn = sqlite3.connect(str(self.db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         return conn
 
     def _generate_id(self, prefix: str = "child") -> str:

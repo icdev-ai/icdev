@@ -27,8 +27,8 @@ import argparse
 import json
 import os
 import random
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -62,8 +62,7 @@ CONFIDENCE_LEVELS = _CFG.get("forecast_confidence_levels", [0.50, 0.80, 0.95])
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

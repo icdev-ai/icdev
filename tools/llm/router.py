@@ -10,8 +10,8 @@ import copy
 import logging
 import os
 import re
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -603,8 +603,7 @@ class LLMRouter:
             return None
 
         try:
-            conn = sqlite3.connect(str(db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             row = conn.execute(
                 """SELECT ollama_model_name FROM ft_active_models
                    WHERE function_name = ? AND deactivated_at IS NULL

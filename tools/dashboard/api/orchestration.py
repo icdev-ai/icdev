@@ -15,6 +15,7 @@ import os
 import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,8 +31,7 @@ orchestration_api = Blueprint("orchestration_api", __name__, url_prefix="/api/or
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

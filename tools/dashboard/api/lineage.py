@@ -6,8 +6,8 @@ Joins digital thread, provenance, and audit trail into unified DAG data
 for the lineage visualization dashboard.
 """
 
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -22,8 +22,7 @@ lineage_api = Blueprint("lineage_api", __name__, url_prefix="/api/lineage")
 
 
 def _get_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

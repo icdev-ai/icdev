@@ -3,8 +3,8 @@
 """Semantic (vector) search on memory entries. Requires OpenAI API key for embeddings."""
 
 import argparse
-import sqlite3
 import struct
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -83,7 +83,7 @@ def search(query, limit=10, user_id=None, tenant_id=None):
 
     query_embedding = get_embedding(client, query)
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     c = conn.cursor()
 
     sql = "SELECT id, content, type, importance, embedding, created_at FROM memory_entries WHERE embedding IS NOT NULL"

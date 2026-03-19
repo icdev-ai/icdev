@@ -15,8 +15,8 @@ import functools
 import hashlib
 import os
 import secrets
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
 from flask import (
@@ -62,8 +62,7 @@ def key_prefix(raw_key: str) -> str:
 
 def _get_db():
     """Get a connection to the ICDEV database."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

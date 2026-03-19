@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -119,8 +120,7 @@ FRAMEWORK_EVIDENCE_MAP: Dict[str, Dict[str, Any]] = {
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get SQLite connection with Row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

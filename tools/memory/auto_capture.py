@@ -16,6 +16,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -55,8 +56,7 @@ def compute_content_hash(content):
 def _get_connection(db_path=None):
     """Get a DB connection with WAL mode for concurrent safety."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path), timeout=10)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

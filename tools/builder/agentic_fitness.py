@@ -21,8 +21,8 @@ import argparse
 import json
 import logging
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -337,7 +337,7 @@ def persist_assessment(
 
     if path.exists():
         try:
-            conn = sqlite3.connect(str(path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO agentic_fitness_assessments
                    (id, project_id, component_name, spec_text, scores,

@@ -19,8 +19,8 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -53,8 +53,7 @@ def _get_connection(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

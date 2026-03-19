@@ -12,10 +12,10 @@ Pattern: tools/creative/creative_engine.py (daemon, CLI, YAML config).
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import time
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
@@ -78,8 +78,7 @@ def _gen_id(prefix="fsync"):
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

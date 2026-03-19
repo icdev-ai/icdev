@@ -37,6 +37,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS goveval_results (
 
 def _get_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(_CREATE_TABLE)
     return conn

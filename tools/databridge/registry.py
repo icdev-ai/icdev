@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
@@ -75,8 +76,7 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
     db = db_path or str(DB_PATH)
     loaded = 0
     try:
-        conn = sqlite3.connect(db)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         rows = conn.execute(
             "SELECT connector_name, connector_code FROM db_forge_connectors "
             "WHERE status IN ('promoted', 'published')"

@@ -13,9 +13,9 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,7 +56,7 @@ def _run_git(args: list, cwd: str = None) -> subprocess.CompletedProcess:
 def _log_to_db(worktree: WorktreeInfo, status: str):
     """Log worktree state to database."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO ci_worktrees
                (worktree_name, task_id, issue_number, branch_name,
@@ -261,8 +261,7 @@ def get_worktree_status(worktree_name: str) -> dict:
 
     # DB status
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         row = conn.execute(
             "SELECT * FROM ci_worktrees WHERE worktree_name = ?",
             (worktree_name,),

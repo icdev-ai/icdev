@@ -11,6 +11,7 @@ Decision D134: Air-gapped environments use internal chat + optional Mattermost.
 
 import logging
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -92,7 +93,7 @@ class InternalChatAdapter(BaseChannelAdapter):
 
         db_path = BASE_DIR / "data" / "icdev.db"
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = get_connection()
             # Store as a chat turn in the agent_chat_turns table if it exists
             conn.execute(
                 "INSERT OR IGNORE INTO agent_chat_turns "

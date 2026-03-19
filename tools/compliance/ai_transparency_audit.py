@@ -17,8 +17,8 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
@@ -57,8 +57,7 @@ def _safe_import_assess(module_name: str, class_name: str, project_id: str, proj
 
 def _count_table(db_path: Path, table: str, project_id: str) -> int:
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         row = conn.execute(
             f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
             (project_id,),

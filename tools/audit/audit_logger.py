@@ -5,7 +5,7 @@ No UPDATE or DELETE operations — all entries are immutable."""
 
 import argparse
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -146,7 +146,7 @@ def log_event(
     if get_db_connection:
         conn = get_db_connection(path, row_factory=False)
     else:
-        conn = sqlite3.connect(str(path))
+        conn = get_connection()
     c = conn.cursor()
     c.execute(
         """INSERT INTO audit_trail

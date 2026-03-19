@@ -32,6 +32,7 @@ import json
 import logging
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -47,8 +48,7 @@ DEFAULT_DB = BASE_DIR / "data" / "icdev.db"
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a read-only connection to the ICDEV database."""
     path = db_path or DEFAULT_DB
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

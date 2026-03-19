@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -97,7 +98,6 @@ def resolve_secret(auth_secret_ref: str) -> Optional[str]:
 
 def _get_conn(db_path: str) -> sqlite3.Connection:
     """Open a SQLite connection with WAL and row_factory."""
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn

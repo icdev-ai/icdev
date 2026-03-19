@@ -24,6 +24,7 @@ import os
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -67,8 +68,7 @@ class PropagationVerifier:
 
     def _get_db(self) -> sqlite3.Connection:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self._db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 

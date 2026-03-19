@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -28,8 +29,7 @@ code_quality_api = Blueprint("code_quality_api", __name__, url_prefix="/api/code
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

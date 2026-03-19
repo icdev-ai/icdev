@@ -14,9 +14,9 @@ Supports --extract-only, --translate-only, --validate-only, --dry-run, --complia
 
 import argparse
 import json
-import sqlite3
 import time
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -30,7 +30,7 @@ def _create_job(db_path, project_id, source_language, target_language,
     """Create a translation job record in the database."""
     job_id = str(uuid.uuid4())
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO translation_jobs
@@ -52,7 +52,7 @@ def _update_job_status(db_path, job_id, status, **kwargs):
     if not db_path or not job_id:
         return
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection()
         c = conn.cursor()
 
         sets = ["status = ?"]

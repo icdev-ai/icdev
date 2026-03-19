@@ -29,6 +29,7 @@ import re
 import sqlite3
 import sys
 import textwrap
+from tools.db.storage import get_connection
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -113,8 +114,7 @@ def _get_db() -> sqlite3.Connection:
         print(f"ERROR: Database not found at {DB_PATH}", file=sys.stderr)
         print("Run 'python tools/db/init_icdev_db.py' first.", file=sys.stderr)
         sys.exit(1)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

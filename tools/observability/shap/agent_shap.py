@@ -23,6 +23,7 @@ import logging
 import math
 import random
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -197,8 +198,7 @@ class AgentSHAP:
             return []
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT * FROM otel_spans WHERE trace_id = ? ORDER BY start_time",
                 (trace_id,),
@@ -220,7 +220,7 @@ class AgentSHAP:
             return
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             for tool_name, attrs in results.items():
                 conn.execute(
                     """INSERT INTO shap_attributions

@@ -42,6 +42,7 @@ import re
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -391,8 +392,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         # Submit for human review
         update_status(asset_id, "review", db_path)
         # Create review request
-        conn = sqlite3.connect(str(db_path or DB_PATH))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         review_id = _gen_id("rev")
         conn.execute(
             """INSERT INTO marketplace_reviews
@@ -413,7 +413,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         # Auto-publish to tenant-local catalog
         update_status(asset_id, "published", db_path)
         # Update version status
-        conn = sqlite3.connect(str(db_path or DB_PATH))
+        conn = get_connection()
         conn.execute(
             "UPDATE marketplace_versions SET status = 'published' WHERE id = ?",
             (version_id,),

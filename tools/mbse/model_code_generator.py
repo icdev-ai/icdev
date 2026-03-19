@@ -16,6 +16,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -130,8 +131,7 @@ def _to_file_name(name: str, language: str) -> str:
 def _get_connection(db_path=None) -> sqlite3.Connection:
     """Open a SQLite connection with row_factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 
@@ -1014,7 +1014,7 @@ def _log_audit_event(project_id: str, results: dict, db_path=None) -> None:
         # Fallback: direct SQL insert
         try:
             path = db_path or DB_PATH
-            conn = sqlite3.connect(str(path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, affected_files, classification)

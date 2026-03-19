@@ -6,6 +6,7 @@ Writes to knowledge_patterns and failure_log tables in icdev.db."""
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,8 +21,7 @@ VALID_PATTERN_TYPES = (
 
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

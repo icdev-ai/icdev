@@ -52,6 +52,7 @@ import json
 import re
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -338,7 +339,7 @@ class ModularDBInitializer:
 
         # Execute the SQL
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(self.db_path))
+        conn = get_connection()
         tables_created: List[str] = []
         try:
             for stmt in statements:

@@ -27,6 +27,7 @@ import logging
 import math
 import sqlite3
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -99,8 +100,7 @@ RECENCY_HALF_LIFE_DAYS = 30.0
 
 def _get_db() -> sqlite3.Connection:
     """Get a connection to icdev.db."""
-    conn = sqlite3.connect(str(ICDEV_DB))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

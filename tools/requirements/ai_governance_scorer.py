@@ -22,6 +22,7 @@ Usage:
 """
 
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -69,8 +70,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     close_conn = False
     if conn is None:
         path = db_path or (BASE_DIR / "data" / "icdev.db")
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         close_conn = True
 
     weights = _load_gov_config()

@@ -6,7 +6,7 @@ Each handler is called from the unified MCP gateway via tool_registry.py.
 
 from __future__ import annotations
 
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict
 
@@ -16,8 +16,7 @@ ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 def _get_db():
     """Get connection to ICDEV DB."""
-    conn = sqlite3.connect(str(ICDEV_DB))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

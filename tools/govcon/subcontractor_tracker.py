@@ -35,8 +35,8 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -72,8 +72,7 @@ _ISR_SSR_MAX_AGE_DAYS = 180
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

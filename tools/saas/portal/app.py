@@ -37,9 +37,9 @@ import json
 import logging
 import os
 import secrets
-import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -206,8 +206,7 @@ def _inject_cui_banner():
 def _get_platform_conn():
     """Get a connection to the platform database."""
     db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB)))
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
@@ -236,8 +235,7 @@ def _get_tenant_conn(tenant_id):
     if not db_path.exists():
         return None
 
-    tconn = sqlite3.connect(str(db_path))
-    tconn.row_factory = sqlite3.Row
+    tconn = get_connection()
     return tconn
 
 

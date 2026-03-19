@@ -10,6 +10,7 @@ Each implementation ~40-60 lines with try/except ImportError.
 import logging
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -466,7 +467,7 @@ class LocalDockerProvider(RegistryProvider):
     def _init_db(self):
         """Create registry tracking tables if not exists."""
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_repositories (
                     name TEXT PRIMARY KEY,
@@ -501,7 +502,7 @@ class LocalDockerProvider(RegistryProvider):
     def create_repository(self, name: str, **kwargs) -> Optional[Dict]:
         try:
             now = datetime.now(timezone.utc).isoformat()
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 "INSERT OR IGNORE INTO local_repositories (name, created_at) VALUES (?, ?)",
                 (name, now),
@@ -514,8 +515,7 @@ class LocalDockerProvider(RegistryProvider):
 
     def list_repositories(self) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT * FROM local_repositories ORDER BY created_at DESC"
             ).fetchall()
@@ -527,8 +527,7 @@ class LocalDockerProvider(RegistryProvider):
 
     def list_images(self, repository: str) -> List[Dict]:
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 "SELECT * FROM local_images WHERE repository = ? ORDER BY pushed_at DESC",
                 (repository,),
@@ -542,7 +541,7 @@ class LocalDockerProvider(RegistryProvider):
 
     def delete_image(self, repository: str, tag: str) -> bool:
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             cursor = conn.execute(
                 "DELETE FROM local_images WHERE repository = ? AND tag = ?",
                 (repository, tag),

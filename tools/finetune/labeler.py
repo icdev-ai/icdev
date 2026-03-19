@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -27,8 +28,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path or DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

@@ -6,8 +6,8 @@ Provides REST endpoints for FedRAMP 20x KSI evidence generation,
 summary, and authorization package status.
 """
 
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -22,8 +22,7 @@ fedramp_20x_api = Blueprint("fedramp_20x_api", __name__, url_prefix="/api/fedram
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

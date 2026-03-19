@@ -24,6 +24,7 @@ import json
 import os
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -48,8 +49,7 @@ RUBRIC = {
 
 
 def _get_db(db_path: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

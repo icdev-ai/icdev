@@ -24,6 +24,7 @@ import logging
 import os
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -91,7 +92,7 @@ class ProvRecorder:
             return None
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO prov_entities
                    (id, entity_type, label, content_hash, content, attributes,
@@ -142,7 +143,7 @@ class ProvRecorder:
             return None
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO prov_activities
                    (id, activity_type, label, start_time, end_time, attributes,
@@ -187,7 +188,7 @@ class ProvRecorder:
             return False
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO prov_relations
                    (relation_type, subject_id, object_id, attributes,
@@ -230,8 +231,7 @@ class ProvRecorder:
         queue = [entity_id]
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
 
             depth = 0
             while queue and depth < max_depth:
@@ -279,8 +279,7 @@ class ProvRecorder:
             return {"entity": {}, "activity": {}, "relation": []}
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
 
             where = "WHERE project_id = ?" if pid else ""
             params = (pid,) if pid else ()

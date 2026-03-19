@@ -18,6 +18,7 @@ import json
 import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -265,8 +266,7 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
     content_hash = _content_hash(title + description)
 
     try:
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
 
         # Check for duplicate
         existing = conn.execute(

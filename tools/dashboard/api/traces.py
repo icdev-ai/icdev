@@ -8,6 +8,7 @@ for the dashboard trace explorer, provenance viewer, and XAI dashboard.
 
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -26,8 +27,7 @@ traces_api = Blueprint("traces_api", __name__, url_prefix="/api/traces")
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

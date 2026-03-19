@@ -17,7 +17,7 @@ CLI: python tools/builder/scaffolder.py --project-path PATH --name "my-app" --ty
 import argparse
 import json
 import os
-import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import List
 
@@ -1338,7 +1338,7 @@ def _apply_profile_overrides(content, profile, language="python"):
 def _log_audit(project_path: str, name: str, project_type: str, files: List[str]) -> None:
     """Log scaffolding to audit trail."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         c = conn.cursor()
         c.execute(
             """INSERT INTO audit_trail (project_id, event_type, actor, action, details, affected_files, classification)

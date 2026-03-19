@@ -36,9 +36,9 @@ Usage:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -118,8 +118,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

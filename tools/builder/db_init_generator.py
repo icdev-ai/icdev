@@ -26,6 +26,7 @@ import logging
 import re
 import sys
 import textwrap
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -1871,7 +1872,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("    path = Path(db_path) if db_path else DB_PATH")
     parts.append("    path.parent.mkdir(parents=True, exist_ok=True)")
     parts.append("")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        # Core tables -- always present")
     parts.append("        conn.executescript(CORE_SQL)")
@@ -1888,7 +1889,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("        conn.close()")
     parts.append("")
     parts.append("    # Verify")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        cur = conn.cursor()")
     parts.append('        cur.execute("SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name")')
@@ -1924,7 +1925,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append('        raise FileNotFoundError(f"Database not found: {path}")')
     parts.append("")
     parts.append("    sql = _CAPABILITY_SQL_MAP[capability_name]")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        conn.executescript(sql)")
     parts.append("        conn.commit()")
@@ -1932,7 +1933,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("        conn.close()")
     parts.append("")
     parts.append("    # Verify new tables")
-    parts.append("    conn = sqlite3.connect(str(path))")
+    parts.append("    conn = get_connection()")
     parts.append("    try:")
     parts.append("        cur = conn.cursor()")
     parts.append('        cur.execute("SELECT name FROM sqlite_master WHERE type=\'table\' ORDER BY name")')

@@ -53,9 +53,9 @@ import argparse
 import hashlib
 import json
 import os
-import sqlite3
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -96,8 +96,7 @@ def _get_db(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

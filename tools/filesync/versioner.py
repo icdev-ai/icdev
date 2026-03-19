@@ -13,6 +13,7 @@ import os
 import shutil
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
@@ -70,8 +71,7 @@ class FileVersioner:
         self._initialized = False
 
     def _get_db(self):
-        conn = sqlite3.connect(self._db_path)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         if not self._initialized:
             _ensure_versions_table(conn)
             self._initialized = True

@@ -25,6 +25,7 @@ This module uses only Python stdlib (air-gap safe).
 
 import os
 import sqlite3
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional, Union
 
@@ -123,9 +124,8 @@ def get_db_connection(
             f"Database not found: {path}\n"
             "Run: python tools/db/init_icdev_db.py"
         )
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -138,9 +138,8 @@ def get_memory_connection(
     path = get_memory_db_path(db_path)
     if validate and not path.exists():
         raise FileNotFoundError(f"Memory database not found: {path}")
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
     return conn
 
 
@@ -153,7 +152,6 @@ def get_platform_connection(
     path = get_platform_db_path(db_path)
     if validate and not path.exists():
         raise FileNotFoundError(f"Platform database not found: {path}")
-    conn = sqlite3.connect(str(path))
+    conn = get_connection()
     if row_factory:
-        conn.row_factory = sqlite3.Row
     return conn

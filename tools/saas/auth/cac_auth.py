@@ -8,8 +8,8 @@ In production, nginx or ALB terminates mutual TLS and passes:
 """
 import logging
 import os
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
@@ -23,8 +23,7 @@ PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data"
 
 
 def _get_platform_conn():
-    conn = sqlite3.connect(str(PLATFORM_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

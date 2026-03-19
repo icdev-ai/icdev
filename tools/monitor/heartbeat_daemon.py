@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -60,8 +61,7 @@ def _generate_id() -> str:
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a SQLite connection with WAL mode and row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path), timeout=10)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     try:
         conn.execute("PRAGMA journal_mode=WAL")
     except sqlite3.OperationalError:
@@ -456,8 +456,7 @@ def check_memory_maintenance(
 
     # Original: detect stale entries
     try:
-        conn = sqlite3.connect(str(mem_path), timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = get_connection()
         try:
             rows = conn.execute(
                 """SELECT m.id, m.content_type, m.created_at,

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.rag.vector_store_provider import (
+from tools.db.storage import get_connection
     SearchResult,
     VectorChunk,
     VectorStoreProvider,
@@ -71,7 +72,7 @@ class SQLiteVectorStore(VectorStoreProvider):
         self._init_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self._db_path))
+        conn = get_connection()
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         return conn

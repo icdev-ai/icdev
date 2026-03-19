@@ -15,6 +15,7 @@ import json
 import math
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -193,8 +194,7 @@ def compute_time_aware_score(
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get a DB connection with Row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

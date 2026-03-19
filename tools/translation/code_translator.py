@@ -10,8 +10,8 @@ Architecture Decision D256: Mock-and-continue from Amazon Oxidizer."""
 
 import argparse
 import json
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -398,7 +398,7 @@ def translate_units(ir_data, source_language, target_language,
 def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
     """Record a translation unit result in the database."""
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection()
         c = conn.cursor()
         unit_id = str(uuid.uuid4())
         c.execute(

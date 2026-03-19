@@ -26,6 +26,7 @@ import json
 import logging
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -1305,7 +1306,7 @@ def _persist_blueprint(blueprint: Dict[str, Any]) -> bool:
 
     try:
         import sqlite3
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         conn.execute(
             """INSERT OR REPLACE INTO app_blueprints
                (id, app_name, classification, impact_level, capabilities,

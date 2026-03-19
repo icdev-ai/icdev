@@ -22,8 +22,8 @@ import argparse
 import hashlib
 import json
 import re
-import sqlite3
 import time
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -377,7 +377,7 @@ class RAGRetriever:
         query_text = query if record_content else ""
 
         try:
-            conn = sqlite3.connect(str(ICDEV_DB))
+            conn = get_connection()
             conn.execute(
                 """INSERT INTO rag_retrieval_log
                    (query_hash, query_text, results_count, top_score,

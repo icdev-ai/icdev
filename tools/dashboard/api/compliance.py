@@ -4,7 +4,7 @@ Flask Blueprint for compliance API.
 Queries ssp_documents, poam_items, stig_findings, sbom_records.
 """
 
-import sqlite3
+from tools.db.storage import get_connection
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
@@ -13,8 +13,7 @@ compliance_api = Blueprint("compliance_api", __name__, url_prefix="/api/complian
 
 
 def _get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

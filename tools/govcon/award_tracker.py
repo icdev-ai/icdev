@@ -26,8 +26,8 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -39,8 +39,7 @@ _CONFIG_PATH = _ROOT / "args" / "govcon_config.yaml"
 # ── helpers ───────────────────────────────────────────────────────────
 
 def _get_db():
-    conn = sqlite3.connect(str(_DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

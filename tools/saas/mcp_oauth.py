@@ -24,6 +24,7 @@ import json
 import sqlite3
 import time
 import uuid
+from tools.db.storage import get_connection
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timezone
 from pathlib import Path
@@ -113,8 +114,7 @@ class MCPOAuthVerifier:
             if not Path(self.db_path).exists():
                 return {"verified": False, "error": "Platform database not found"}
 
-            conn = sqlite3.connect(str(self.db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
 
             row = conn.execute(
                 "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",

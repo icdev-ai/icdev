@@ -22,8 +22,8 @@ Usage:
     python tools/compliance/nist_ai_600_1_assessor.py --project-id proj-123 --json
 """
 
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -61,8 +61,7 @@ class NISTAI6001Assessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = sqlite3.connect(str(self.db_path))
-                conn.row_factory = sqlite3.Row
+                conn = get_connection()
                 project_id = project.get("id", "")
 
                 # GAI-1-1: Confabulation detection

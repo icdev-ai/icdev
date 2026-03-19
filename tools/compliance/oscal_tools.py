@@ -28,10 +28,10 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -747,7 +747,7 @@ def _log_validation(project_id, artifact_type, file_path, validator_result, db_p
         return
 
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = get_connection()
         conn.execute(
             """INSERT INTO oscal_validation_log
                (project_id, artifact_type, file_path, validator, valid,

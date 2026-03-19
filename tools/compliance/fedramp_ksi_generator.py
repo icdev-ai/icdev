@@ -23,6 +23,7 @@ Usage:
 import argparse
 import json
 import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -33,8 +34,7 @@ KSI_SCHEMA_PATH = BASE_DIR / "context" / "compliance" / "fedramp_20x_ksi_schemas
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

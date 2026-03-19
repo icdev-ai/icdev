@@ -6,9 +6,9 @@ Each function takes a finding dict and returns a result dict.
 Verification functions take the same finding and return {"passed": bool, ...}.
 """
 
-import sqlite3
 import subprocess
 import sys
+from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict
 
@@ -71,7 +71,7 @@ def fix_disk_usage(finding: Dict[str, Any]) -> Dict[str, Any]:
         if size_before_mb < 100:
             continue  # Only vacuum large DBs
         try:
-            conn = sqlite3.connect(str(db_file))
+            conn = get_connection()
             conn.execute("VACUUM")
             conn.close()
             size_after_mb = db_file.stat().st_size / (1024 * 1024)

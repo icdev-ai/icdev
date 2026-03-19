@@ -32,7 +32,7 @@ import argparse
 import copy
 import hashlib
 import json
-import sqlite3
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,8 +58,7 @@ def _generate_id(prefix="dprof"):
 def _get_connection(db_path=None):
     """Get a DB connection with row factory."""
     path = db_path or DB_PATH
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

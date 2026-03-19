@@ -26,6 +26,7 @@ import logging
 import sqlite3
 import threading
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -327,8 +328,7 @@ class SQLiteTracer(Tracer):
         params.append(limit)
 
         try:
-            conn = sqlite3.connect(str(self._db_path))
-            conn.row_factory = sqlite3.Row
+            conn = get_connection()
             rows = conn.execute(
                 f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",
                 params,

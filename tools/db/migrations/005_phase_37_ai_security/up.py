@@ -10,6 +10,7 @@ Adds: prompt_injection_log (D217), ai_telemetry (D218),
 """
 
 import sqlite3
+from tools.db.storage import get_connection
 
 
 def _table_exists(conn, table):
@@ -359,7 +360,7 @@ if __name__ == "__main__":
         print(f"Database not found at {DB_PATH}")
         sys.exit(1)
 
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = get_connection()
     up(conn)
     conn.close()
     print("Migration 005 complete.")

@@ -26,6 +26,7 @@ import json
 import sqlite3
 import sys
 import time
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -96,7 +97,7 @@ class RemediationReport:
 def _detect_project_id() -> str:
     """Detect an existing project ID from the database, or create a default."""
     try:
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = get_connection()
         row = conn.execute("SELECT id FROM projects ORDER BY rowid LIMIT 1").fetchone()
         if row:
             conn.close()

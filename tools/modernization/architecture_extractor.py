@@ -18,6 +18,7 @@ import json
 import re
 import sqlite3
 import uuid
+from tools.db.storage import get_connection
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -75,8 +76,7 @@ def _get_db() -> sqlite3.Connection:
     """Return sqlite3 connection to ICDEV database with WAL mode and Row factory."""
     if not DB_PATH.exists():
         raise FileNotFoundError(f"ICDEV database not found at {DB_PATH}. Run 'python tools/db/init_icdev_db.py' first.")
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

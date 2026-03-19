@@ -20,6 +20,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict
@@ -32,8 +33,7 @@ FREQUENCY_DAYS = {"quarterly": 90, "semi_annual": 182, "annual": 365, "biennial"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     return conn
 
 

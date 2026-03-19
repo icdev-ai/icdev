@@ -40,8 +40,8 @@ ADR D124: PDP modeled as external reference; ICDEV generates PEP configs only.
 import argparse
 import json
 import os
-import sqlite3
 import sys
+from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -110,8 +110,7 @@ def _load_config() -> dict:
 
 def _get_db():
     """Get an ICDEV database connection with WAL mode and Row factory."""
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

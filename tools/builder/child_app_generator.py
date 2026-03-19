@@ -22,6 +22,7 @@ import sqlite3
 import subprocess
 import sys
 import uuid
+from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -1427,7 +1428,7 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         'def init_db(db_path=None):\n'
         '    db_path = db_path or str(DB_PATH)\n'
         '    Path(db_path).parent.mkdir(parents=True, exist_ok=True)\n'
-        '    conn = sqlite3.connect(db_path)\n'
+        '    conn = get_connection()\n'
         '    conn.execute(\n'
         '        "CREATE TABLE IF NOT EXISTS projects "\n'
         '        "(id TEXT PRIMARY KEY, name TEXT, status TEXT '\
@@ -1853,7 +1854,7 @@ def query_parent_rag(query: str, top_k: int = 5) -> dict:
     cache_db = str(Path(__file__).resolve().parent.parent.parent / "data" / "{app_name}.db")
     try:
         qhash = hashlib.sha256(query.encode()).hexdigest()
-        conn = sqlite3.connect(cache_db)
+        conn = get_connection()
         row = conn.execute(
             "SELECT results FROM rag_parent_cache WHERE query_hash = ? AND expires_at > datetime('now')",
             (qhash,)
@@ -1875,7 +1876,7 @@ def query_parent_rag(query: str, top_k: int = 5) -> dict:
     # Cache successful results (1 hour TTL)
     if "error" not in result and result.get("results"):
         try:
-            conn = sqlite3.connect(cache_db)
+            conn = get_connection()
             conn.execute(
                 "INSERT OR REPLACE INTO rag_parent_cache (query_hash, results, expires_at) VALUES (?, ?, datetime('now', '+1 hour'))",
                 (qhash, json.dumps(result))
@@ -2702,7 +2703,7 @@ def step_12_audit_and_registration(
     registered = False
     try:
         if db_path.exists():
-            conn = sqlite3.connect(str(db_path))
+            conn = get_connection()
             conn.execute(
                 "INSERT OR REPLACE INTO child_app_registry "
                 "(id, parent_project_id, child_name, child_path, blueprint_hash, "
@@ -2732,8 +2733,7 @@ def step_12_audit_and_registration(
     genome_version = None
     try:
         if db_path.exists():
-            gconn = sqlite3.connect(str(db_path))
-            gconn.row_factory = sqlite3.Row
+            gconn = get_connection()
             row = gconn.execute(
                 "SELECT version, content_hash, genome_data "
                 "FROM genome_versions ORDER BY created_at DESC LIMIT 1"
