@@ -80,7 +80,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-VALID_ASSET_TYPES = {"skill", "goal", "hardprompt", "context", "args", "compliance", "lora_adapter"}
+VALID_ASSET_TYPES = {"skill", "goal", "hardprompt", "context", "args", "compliance", "lora_adapter", "experiment_program"}
 VALID_IMPACT_LEVELS = {"IL2", "IL4", "IL5", "IL6"}
 VALID_STATUSES = {"draft", "scanning", "review", "published", "deprecated", "revoked"}
 VALID_CATALOG_TIERS = {"tenant_local", "central_vetted"}

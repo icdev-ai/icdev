@@ -212,6 +212,28 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "filter": "status = 'ingested'",
         "description": "PDF documents ingested into RAG",
     },
+    # --- Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10) ---
+    "experiment_results": {
+        "table": "experiment_results",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["hypothesis", "decision_rationale"],
+        "metadata_cols": ["domain", "metric_delta", "improvement_pct", "decision", "created_at"],
+        "priority": 1,
+        "mode": "realtime",
+        "description": "Bayesian Autoresearch experiment results and learnings",
+    },
+    "experiment_candidates": {
+        "table": "experiment_candidates",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["hypothesis", "modifications"],
+        "metadata_cols": ["domain", "category", "status", "info_gain_score", "created_at"],
+        "priority": 2,
+        "mode": "batch",
+        "filter": "status IN ('completed', 'discarded')",
+        "description": "Autoresearch experiment candidate hypotheses",
+    },
 }
 
 

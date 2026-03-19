@@ -222,6 +222,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pg_crm_engagement_scores",
         "pg_capture_activities",
         "pg_teaming_assessments",
+        # Proposal Genesis Enhancement (append-only review/theme/experiment tracking)
+        "pg_review_findings",
+        "pg_theme_tracking",
+        "pg_quality_experiments",
         # File Sync Module (D-SYNC-7 — sync_log is append-only, NIST AU)
         "sync_log",
         # Phase 65 — Adaptive Intelligence (Red Team, Convergence, Stagnation, Benchmarks)
@@ -271,6 +275,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "autonomy_observations",
         "autonomy_actions",
         "autonomy_behavior_log",
+        # Phase 67 — Bayesian Autoresearch (D-AR-4)
+        "experiment_results",
+        "bayesian_experiment_scores",
     ]
 
     if tool_name == "Bash":

@@ -39,7 +39,6 @@ import argparse
 import json
 import os
 import re
-import sqlite3
 import sys
 import uuid
 from tools.db.storage import get_connection
@@ -55,14 +54,14 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-from tools.marketplace.catalog_manager import (
+from tools.marketplace.catalog_manager import (  # noqa: E402
     register_asset, add_version, update_status,
 )
-from tools.marketplace.asset_scanner import run_full_scan
+from tools.marketplace.asset_scanner import run_full_scan  # noqa: E402
 
 # Graceful imports
 try:
-    from tools.audit.audit_logger import log_event as audit_log_event
+    from tools.audit.audit_logger import log_event as audit_log_event  # noqa: E402
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False
@@ -86,6 +85,7 @@ ASSET_TYPE_FILES = {
     "args": "config.yaml",
     "compliance": "controls.json",
     "lora_adapter": "adapter_config.json",
+    "experiment_program": "experiment_config.yaml",
 }
 
 # Alternative names accepted for each type
@@ -97,6 +97,7 @@ ASSET_TYPE_ALTERNATIVES = {
     "args": ["config.yaml", "config.json", "settings.yaml"],
     "compliance": ["controls.json", "overlay.json", "framework.json"],
     "lora_adapter": ["adapter_config.json", "training_metadata.json"],
+    "experiment_program": ["experiment_config.yaml", "program.yaml", "domain_config.yaml"],
 }
 
 

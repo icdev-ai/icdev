@@ -218,10 +218,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "kb_enrichment": kb_result,
         })
 
-    avg_confidence = 0.0
     if draft_results:
         confidences = [r.get("drafts_created", 0) for r in draft_results]
-        avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+        _ = sum(confidences) / len(confidences) if confidences else 0
 
     return {
         "success": True,

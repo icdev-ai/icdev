@@ -66,9 +66,9 @@ def _create_capture_plan(opp: Dict) -> Optional[str]:
     now = _utcnow_iso()
 
     # Derive win strategy from opportunity attributes
-    value = opp.get("estimated_value", 0) or 0
-    agency = opp.get("agency", "") or ""
-    naics = opp.get("naics_code", "") or ""
+    _ = opp.get("estimated_value", 0) or 0
+    _ = opp.get("agency", "") or ""
+    _ = opp.get("naics_code", "") or ""
 
     win_strategy = _derive_win_strategy(opp)
     discriminators = _derive_discriminators(opp)
@@ -244,7 +244,7 @@ def _assess_partner_fit(
     Uses deterministic keyword overlap + capability matching.
     """
     opp_title = (opp.get("title", "") or "").lower()
-    opp_naics = opp.get("naics_code", "") or ""
+    _ = opp.get("naics_code", "") or ""
 
     partner_caps = (partner.get("capabilities", "") or "").lower()
     partner_certs = (partner.get("certifications", "") or "").lower()

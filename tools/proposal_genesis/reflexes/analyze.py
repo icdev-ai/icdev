@@ -330,7 +330,7 @@ def _store_win_loss_record(opportunity_id: str,
                 analysis["competitor_strengths"],
                 analysis["our_strengths"],
                 analysis["our_weaknesses"],
-                json.dumps([l["lesson"] for l in analysis["lessons"]]),
+                json.dumps([item["lesson"] for item in analysis["lessons"]]),
                 now,
             ),
         )

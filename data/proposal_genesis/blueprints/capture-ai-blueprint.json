@@ -1,0 +1,458 @@
+{
+  "blueprint_id": "353a466c-b51b-4212-840c-f7e4f9e1d56d",
+  "app_name": "CaptureAI",
+  "app_type": "capture_management",
+  "description": "AI-powered Capture Management for Government Contracting -- Shipley Phases 0-2",
+  "classification": "CUI",
+  "impact_level": "IL4",
+  "deployment_mode": "integrated",
+  "team_size": 10,
+  "process_formality": "standard",
+  "compliance_frameworks": [],
+  "fitness_scorecard": {
+    "component": "capture_management",
+    "overall_score": 7.5,
+    "scores": {
+      "technical_complexity": 6,
+      "compliance_sensitivity": 4,
+      "user_interaction": 8,
+      "data_sensitivity": 7,
+      "integration_needs": 8,
+      "scalability_needs": 6
+    },
+    "architecture": "multi_agent"
+  },
+  "capabilities": {
+    "core": true,
+    "compliance": false,
+    "security": false,
+    "mbse": false,
+    "cicd": true,
+    "testing": true,
+    "dashboard": true,
+    "knowledge": true,
+    "modernization": false,
+    "infra": false,
+    "db": true,
+    "project": true,
+    "memory": true,
+    "ricoas": false,
+    "supply_chain": false,
+    "simulation": false,
+    "devsecops_zta": false,
+    "ai_security": false,
+    "ai_governance": false,
+    "observability": true,
+    "code_intelligence": false,
+    "govcon": false
+  },
+  "agents": [
+    {
+      "name": "orchestrator",
+      "port": 9443,
+      "role": "Task routing, workflow management, capture pipeline orchestration",
+      "tier": "core"
+    },
+    {
+      "name": "architect",
+      "port": 9444,
+      "role": "Capture strategy design, solution architecture, technical approach",
+      "tier": "core"
+    },
+    {
+      "name": "builder",
+      "port": 9445,
+      "role": "Plan generation, template creation, document assembly",
+      "tier": "core"
+    },
+    {
+      "name": "knowledge",
+      "port": 9449,
+      "role": "Pattern detection, competitive learning, win/loss analytics",
+      "tier": "support"
+    },
+    {
+      "name": "monitor",
+      "port": 9450,
+      "role": "Pipeline health monitoring, deadline alerts, engagement tracking",
+      "tier": "support"
+    }
+  ],
+  "modules": [
+    {
+      "name": "pipeline_manager",
+      "description": "Multi-source opportunity aggregation (SAM.gov, SLED, vehicles, FBO archive)",
+      "enabled": true,
+      "db_tables": [
+        "capture_opportunities",
+        "pipeline_analytics"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "pwin_scorer",
+      "description": "Configurable weighted Pwin/Pgo scoring with Bayesian calibration from win/loss history",
+      "enabled": true,
+      "db_tables": [
+        "pwin_assessments",
+        "pwin_calibration_log"
+      ],
+      "dependencies": [
+        "pipeline_manager"
+      ]
+    },
+    {
+      "name": "competitive_intel",
+      "description": "Competitor profiling, FPDS award analysis, talent velocity tracking, incumbency detection",
+      "enabled": true,
+      "db_tables": [
+        "competitor_profiles",
+        "competitor_awards",
+        "talent_signals"
+      ],
+      "dependencies": [
+        "pipeline_manager"
+      ]
+    },
+    {
+      "name": "win_strategy",
+      "description": "Win theme registry, discriminator library, ghost team strategies, solution shaping",
+      "enabled": true,
+      "db_tables": [
+        "win_themes",
+        "discriminators",
+        "ghost_strategies"
+      ],
+      "dependencies": [
+        "competitive_intel",
+        "pwin_scorer"
+      ]
+    },
+    {
+      "name": "teaming_engine",
+      "description": "Data-driven partner matching, OCI screening, workshare allocation, past-performance aggregation",
+      "enabled": true,
+      "db_tables": [
+        "teaming_partners",
+        "workshare_allocations",
+        "oci_screenings"
+      ],
+      "dependencies": [
+        "competitive_intel"
+      ]
+    },
+    {
+      "name": "customer_crm",
+      "description": "Relationship tracking, engagement scoring, shaping activity history, call-plan management",
+      "enabled": true,
+      "db_tables": [
+        "customer_contacts",
+        "customer_engagements",
+        "shaping_activities"
+      ],
+      "dependencies": []
+    },
+    {
+      "name": "capture_planner",
+      "description": "Structured capture plans aligned to Shipley Phase 2, milestone tracking, action items",
+      "enabled": true,
+      "db_tables": [
+        "capture_plans",
+        "capture_milestones",
+        "capture_action_items"
+      ],
+      "dependencies": [
+        "pipeline_manager",
+        "win_strategy",
+        "teaming_engine",
+        "customer_crm"
+      ]
+    },
+    {
+      "name": "gate_manager",
+      "description": "Formal bid/no-bid decision workflow with configurable Pwin threshold and approval chain",
+      "enabled": true,
+      "db_tables": [
+        "gate_decisions",
+        "gate_criteria",
+        "gate_approvals"
+      ],
+      "dependencies": [
+        "pwin_scorer",
+        "capture_planner"
+      ]
+    },
+    {
+      "name": "process_adapter",
+      "description": "Lightweight Shipley process adaptation for team size (scales formality for 3-person vs 50-person teams)",
+      "enabled": true,
+      "db_tables": [],
+      "dependencies": []
+    },
+    {
+      "name": "compliance_tracker",
+      "description": "Compliance requirement extraction and flow-down tracking per opportunity",
+      "enabled": false,
+      "db_tables": [
+        "capture_compliance_items"
+      ],
+      "dependencies": [
+        "pipeline_manager"
+      ]
+    },
+    {
+      "name": "cost_estimator",
+      "description": "ROM cost estimation based on historical contract data and LCAT rates",
+      "enabled": true,
+      "db_tables": [
+        "capture_cost_estimates"
+      ],
+      "dependencies": [
+        "pipeline_manager",
+        "teaming_engine"
+      ]
+    }
+  ],
+  "db_config": {
+    "engine": "shared",
+    "name": "icdev.db",
+    "path": "data/icdev.db",
+    "initial_tables": "capture_additive",
+    "migration_supported": true,
+    "note": "Adds capture-prefixed tables to existing ICDEV database"
+  },
+  "db_tables": [
+    {
+      "name": "capture_opportunities",
+      "description": "Master opportunity pipeline from all sources",
+      "append_only": false,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "source TEXT NOT NULL",
+        "title TEXT NOT NULL",
+        "agency TEXT",
+        "naics_code TEXT",
+        "set_aside TEXT",
+        "response_date TEXT",
+        "estimated_value_low REAL",
+        "estimated_value_high REAL",
+        "status TEXT DEFAULT 'identified'",
+        "pwin_current REAL",
+        "pgo_current REAL",
+        "shipley_phase TEXT DEFAULT 'phase_0'",
+        "capture_manager TEXT",
+        "created_at TEXT NOT NULL",
+        "updated_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "capture_plans",
+      "description": "Structured capture plans aligned to Shipley Phase 2",
+      "append_only": false,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "opportunity_id TEXT NOT NULL",
+        "version INTEGER DEFAULT 1",
+        "status TEXT DEFAULT 'draft'",
+        "win_strategy_summary TEXT",
+        "team_summary TEXT",
+        "customer_engagement_summary TEXT",
+        "competitive_assessment_summary TEXT",
+        "content_hash TEXT",
+        "created_at TEXT NOT NULL",
+        "updated_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "capture_milestones",
+      "description": "Key milestones and deadlines per capture effort",
+      "append_only": true,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "opportunity_id TEXT NOT NULL",
+        "milestone_type TEXT NOT NULL",
+        "title TEXT NOT NULL",
+        "due_date TEXT",
+        "completed_at TEXT",
+        "status TEXT DEFAULT 'pending'",
+        "created_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "competitor_profiles",
+      "description": "Competitor intelligence per opportunity",
+      "append_only": false,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "opportunity_id TEXT",
+        "competitor_name TEXT NOT NULL",
+        "incumbent INTEGER DEFAULT 0",
+        "strengths TEXT",
+        "weaknesses TEXT",
+        "ghost_strategy TEXT",
+        "fpds_win_count INTEGER DEFAULT 0",
+        "estimated_pwin REAL",
+        "created_at TEXT NOT NULL",
+        "updated_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "pwin_assessments",
+      "description": "Historical Pwin/Pgo assessments (append-only for trend)",
+      "append_only": true,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "opportunity_id TEXT NOT NULL",
+        "assessor TEXT",
+        "pwin REAL NOT NULL",
+        "pgo REAL NOT NULL",
+        "confidence REAL DEFAULT 0.5",
+        "factors_json TEXT",
+        "assessment_date TEXT NOT NULL",
+        "created_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "gate_decisions",
+      "description": "Formal bid/no-bid gate decisions (append-only, NIST AU)",
+      "append_only": true,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "opportunity_id TEXT NOT NULL",
+        "gate_type TEXT NOT NULL",
+        "decision TEXT NOT NULL",
+        "pwin_at_decision REAL",
+        "rationale TEXT",
+        "approver TEXT",
+        "approved_at TEXT",
+        "created_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "customer_contacts",
+      "description": "Customer and stakeholder contact registry",
+      "append_only": false,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "name TEXT NOT NULL",
+        "title TEXT",
+        "organization TEXT",
+        "agency TEXT",
+        "email TEXT",
+        "phone TEXT",
+        "influence_level TEXT DEFAULT 'medium'",
+        "relationship_score REAL DEFAULT 0.0",
+        "created_at TEXT NOT NULL",
+        "updated_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "customer_engagements",
+      "description": "Engagement history with customers (append-only for audit)",
+      "append_only": true,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "contact_id TEXT NOT NULL",
+        "opportunity_id TEXT",
+        "engagement_type TEXT NOT NULL",
+        "summary TEXT",
+        "outcome TEXT",
+        "follow_up_date TEXT",
+        "engagement_date TEXT NOT NULL",
+        "created_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "shaping_activities",
+      "description": "Pre-RFP shaping activities and influence campaigns",
+      "append_only": true,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "opportunity_id TEXT NOT NULL",
+        "activity_type TEXT NOT NULL",
+        "description TEXT",
+        "target_audience TEXT",
+        "status TEXT DEFAULT 'planned'",
+        "outcome TEXT",
+        "activity_date TEXT",
+        "created_at TEXT NOT NULL"
+      ]
+    },
+    {
+      "name": "pipeline_analytics",
+      "description": "Aggregated pipeline metrics (append-only time-series)",
+      "append_only": true,
+      "columns": [
+        "id TEXT PRIMARY KEY",
+        "snapshot_date TEXT NOT NULL",
+        "total_opportunities INTEGER",
+        "total_pipeline_value REAL",
+        "avg_pwin REAL",
+        "opportunities_by_phase_json TEXT",
+        "win_rate_trailing_12m REAL",
+        "created_at TEXT NOT NULL"
+      ]
+    }
+  ],
+  "memory_config": {
+    "memory_md": true,
+    "daily_logs": true,
+    "sqlite_db": true,
+    "semantic_search": true,
+    "embeddings": true
+  },
+  "cicd_config": {
+    "github": true,
+    "gitlab": true,
+    "webhooks": true,
+    "polling": true,
+    "slash_commands": true,
+    "bot_identifier": "[CAPTUREAI-BOT]"
+  },
+  "atlas_config": {
+    "fitness_step": false,
+    "model_phase": false,
+    "phases": [
+      "architect",
+      "trace",
+      "link",
+      "assemble",
+      "stress_test"
+    ],
+    "critique_enabled": false
+  },
+  "grandchild_prevention": {
+    "enabled": true,
+    "config_flag": true,
+    "scaffolder_strip": true,
+    "claude_md_doc": true,
+    "description": "CaptureAI MUST NOT generate child applications. Agentic fitness assessor and app blueprint engine are stripped."
+  },
+  "interop": {
+    "proposal_genesis_handoff": true,
+    "protocol": "A2A JSON-RPC 2.0",
+    "events": [
+      "rfp_released",
+      "competitive_update",
+      "post_award_feedback"
+    ],
+    "schema_version": "1.0.0"
+  },
+  "cloud_provider": {
+    "provider": "aws",
+    "region": "us-gov-west-1",
+    "govcloud": true,
+    "mcp_servers": [],
+    "knowledge_bases": []
+  },
+  "parent_callback": {
+    "enabled": true,
+    "url": "",
+    "auth": "bearer_token"
+  },
+  "file_manifest": [],
+  "generated_at": "2026-03-19T21:09:18.304316+00:00",
+  "generated_by": "icdev/capture_ai_blueprint",
+  "demo_mode": false,
+  "blueprint_hash": "92f649e4f6297fd10462b348ac208c0c0aa3e410e234be0b6981c75eec7a2395"
+}

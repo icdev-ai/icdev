@@ -220,18 +220,11 @@ Respond with JSON only:
 
 def _run_tests_for_file(file_path: str, timeout: int = 120) -> Dict[str, Any]:
     """Run tests related to a specific file."""
-    # Find related test files
-    module_name = Path(file_path).stem
-    test_patterns = [
-        f"tests/**/test_{module_name}.py",
-        f"tests/test_{module_name}.py",
-        f"tests/genesis_auto/test_{module_name}.py",
-    ]
-
+    # Run tests (targeted test discovery planned for future)
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pytest", "-x", "--tb=short", "-q",
-             f"tests/"],
+             "tests/"],
             capture_output=True, text=True, timeout=timeout,
             cwd=str(BASE_DIR),
             env={**os.environ, "PYTHONPATH": str(BASE_DIR)},

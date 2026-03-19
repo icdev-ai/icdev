@@ -109,7 +109,7 @@ SSP, POAM, STIG checklist, SBOM, and OSCAL artifacts generated at build time —
 Terraform, Ansible, Kubernetes manifests generated per your cloud target. STIG-hardened Docker containers. GitLab CI/CD pipeline with security gates that block on CAT1 findings, critical vulnerabilities, or missing CUI markings.
 
 #### 5. Evolve
-Genesis — our autonomous research lab — runs 13 reflexes 24/7. Scanning for CVEs, auditing code quality, generating tests for untested modules, refreshing compliance evidence, and proposing improvements. Your platform gets better while you sleep.
+Genesis — our autonomous research lab — runs 14 reflexes 24/7. Scanning for CVEs, auditing code quality, generating tests for untested modules, refreshing compliance evidence, and proposing improvements. Your platform gets better while you sleep.
 
 ---
 

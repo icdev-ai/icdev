@@ -12,11 +12,12 @@ Usage:
 
 import argparse
 import json
+import os  # noqa: F811 — needed directly (not just as _os)
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
+from functools import wraps
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -26,11 +27,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from functools import wraps
+from tools.db.storage import get_connection  # noqa: E402
 
-from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for
+from flask import Flask, render_template, jsonify, request as flask_request, g, session as flask_session, redirect, url_for  # noqa: E402
 
-from tools.dashboard.config import (
+from tools.dashboard.config import (  # noqa: E402
     DB_PATH,
     CUI_BANNER_TOP,
     CUI_BANNER_BOTTOM,
@@ -41,63 +42,62 @@ from tools.dashboard.config import (
     PORT,
     DEBUG,
 )
-from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event
-from tools.dashboard.websocket import init_socketio, get_socketio
-from tools.dashboard.api.projects import projects_api
-from tools.dashboard.api.agents import agents_api
-from tools.dashboard.api.compliance import compliance_api
-from tools.dashboard.api.audit import audit_api
-from tools.dashboard.api.metrics import metrics_api
-from tools.dashboard.api.events import events_bp
-from tools.dashboard.api.nlq import nlq_bp
-from tools.dashboard.api.batch import batch_api
-from tools.dashboard.api.diagrams import diagrams_api
-from tools.dashboard.api.cicd import cicd_api
-from tools.dashboard.api.intake import intake_api
-from tools.dashboard.api.admin import admin_api
-from tools.dashboard.api.activity import activity_api
-from tools.dashboard.api.usage import usage_api
-from tools.dashboard.api.traces import traces_api, provenance_api, xai_api
-from tools.dashboard.api.oscal import oscal_api
-from tools.dashboard.api.prod_audit import prod_audit_api
-from tools.dashboard.api.ai_transparency import ai_transparency_api
-from tools.dashboard.api.ai_accountability import ai_accountability_api
-from tools.dashboard.api.code_quality import code_quality_api
-from tools.dashboard.api.fedramp_20x import fedramp_20x_api
-from tools.dashboard.api.evidence import evidence_api
-from tools.dashboard.api.lineage import lineage_api
-from tools.dashboard.api.filesync import filesync_api
+from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event  # noqa: E402
+from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
+from tools.dashboard.api.projects import projects_api  # noqa: E402
+from tools.dashboard.api.agents import agents_api  # noqa: E402
+from tools.dashboard.api.compliance import compliance_api  # noqa: E402
+from tools.dashboard.api.audit import audit_api  # noqa: E402
+from tools.dashboard.api.metrics import metrics_api  # noqa: E402
+from tools.dashboard.api.events import events_bp  # noqa: E402
+from tools.dashboard.api.nlq import nlq_bp  # noqa: E402
+from tools.dashboard.api.batch import batch_api  # noqa: E402
+from tools.dashboard.api.diagrams import diagrams_api  # noqa: E402
+from tools.dashboard.api.cicd import cicd_api  # noqa: E402
+from tools.dashboard.api.intake import intake_api  # noqa: E402
+from tools.dashboard.api.admin import admin_api  # noqa: E402
+from tools.dashboard.api.activity import activity_api  # noqa: E402
+from tools.dashboard.api.usage import usage_api  # noqa: E402
+from tools.dashboard.api.traces import traces_api, provenance_api, xai_api  # noqa: E402
+from tools.dashboard.api.oscal import oscal_api  # noqa: E402
+from tools.dashboard.api.prod_audit import prod_audit_api  # noqa: E402
+from tools.dashboard.api.ai_transparency import ai_transparency_api  # noqa: E402
+from tools.dashboard.api.ai_accountability import ai_accountability_api  # noqa: E402
+from tools.dashboard.api.code_quality import code_quality_api  # noqa: E402
+from tools.dashboard.api.fedramp_20x import fedramp_20x_api  # noqa: E402
+from tools.dashboard.api.evidence import evidence_api  # noqa: E402
+from tools.dashboard.api.lineage import lineage_api  # noqa: E402
+from tools.dashboard.api.filesync import filesync_api  # noqa: E402
 try:
-    from tools.dashboard.api.finetune import finetune_api
+    from tools.dashboard.api.finetune import finetune_api  # noqa: E402
     _HAS_FINETUNE_API = True
 except ImportError:
     _HAS_FINETUNE_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
-import os as _os
-_GOVCON_ENABLED = _os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
+_GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
 if _GOVCON_ENABLED:
     try:
-        from tools.dashboard.api.proposals import proposals_api
-        from tools.dashboard.api.govcon import govcon_api
-        from tools.dashboard.api.cpmp import cpmp_api
+        from tools.dashboard.api.proposals import proposals_api  # noqa: E402
+        from tools.dashboard.api.govcon import govcon_api  # noqa: E402
+        from tools.dashboard.api.cpmp import cpmp_api  # noqa: E402
         _HAS_GOVCON = True
     except ImportError:
         _HAS_GOVCON = False
     try:
-        from tools.dashboard.api.proposal_genesis import proposal_genesis_api
+        from tools.dashboard.api.proposal_genesis import proposal_genesis_api  # noqa: E402
         _HAS_PROPOSAL_GENESIS = True
     except ImportError:
         _HAS_PROPOSAL_GENESIS = False
 else:
     _HAS_PROPOSAL_GENESIS = False
-from tools.dashboard.api.orchestration import orchestration_api
+from tools.dashboard.api.orchestration import orchestration_api  # noqa: E402
 try:
-    from tools.dashboard.api.chat import chat_api
+    from tools.dashboard.api.chat import chat_api  # noqa: E402
     _HAS_CHAT_API = True
 except ImportError:
     _HAS_CHAT_API = False
-from tools.dashboard.ux_helpers import register_ux_filters
+from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
@@ -132,7 +132,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
             }
             return render_template("cpmp/portfolio.html", portfolio=portfolio, contracts=contracts, upcoming_deliverables=upcoming)
         except Exception as e:
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             return render_template("cpmp/portfolio.html", portfolio={"total_contracts": 0, "active_contracts": 0, "total_value": 0, "burn_rate": 0, "overdue_deliverables": 0, "health_distribution": {"green": 0, "yellow": 0, "red": 0}}, contracts=[], upcoming_deliverables=[], error=str(e))
 
     @app.route("/cpmp/<contract_id>")
@@ -176,7 +177,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                                    evm=evm, cpars_prediction=cpars_prediction,
                                    cpars_assessments=cpars_assessments)
         except Exception as e:
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             return render_template("404.html", message=f"Error loading contract: {e}"), 500
 
     @app.route("/cpmp/<contract_id>/deliverables/<deliverable_id>")
@@ -196,7 +198,8 @@ def _register_govcon_pages(app: "Flask", _get_db):
                                    contract=contract, deliverable=deliverable,
                                    generations=generations, status_history=status_history)
         except Exception as e:
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             return render_template("404.html", message=f"Error loading deliverable: {e}"), 500
 
     @app.route("/cpmp/cor")
@@ -215,8 +218,9 @@ def _register_govcon_pages(app: "Flask", _get_db):
             else:
                 contracts = []
             return render_template("cpmp/cor_portal.html", contracts=contracts, cor_email=cor_email)
-        except Exception as e:
-            import traceback; traceback.print_exc()
+        except Exception:
+            import traceback
+            traceback.print_exc()
             return render_template("cpmp/cor_portal.html", contracts=[], cor_email=cor_email)
         finally:
             conn.close()
@@ -1707,7 +1711,7 @@ def create_app() -> Flask:
     def login_page():
         """Login page — accepts API key via form or header."""
         # Auto-login when .env key is configured
-        env_key = _os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
+        env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
         if env_key:
             try:
                 user = validate_api_key(env_key)
@@ -3213,6 +3217,39 @@ def create_app() -> Flask:
             return jsonify({"error": str(e)}), 500
 
 
+    @app.route("/api/llm/dual-model", methods=["GET"])
+    def api_llm_dual_model_status():
+        """Get current dual-model mode status."""
+        try:
+            from tools.llm.router import LLMRouter
+            active = LLMRouter.get_dual_model()
+            return jsonify({
+                "dual_model": active,
+                "mode": "speed" if active else "quality",
+                "description": "1.7B text-only + Gemma3 (both VRAM-resident)" if active
+                    else "9B multimodal (single model, higher quality)",
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/llm/dual-model", methods=["POST"])
+    def api_llm_dual_model_toggle():
+        """Toggle dual-model mode. Body: {"enabled": true/false}."""
+        try:
+            from tools.llm.router import LLMRouter
+            data = request.get_json(silent=True) or {}
+            enabled = data.get("enabled")
+            if enabled is None:
+                # Toggle current state
+                enabled = not LLMRouter.get_dual_model()
+            LLMRouter.set_dual_model(bool(enabled))
+            return jsonify({
+                "dual_model": LLMRouter.get_dual_model(),
+                "mode": "speed" if enabled else "quality",
+            })
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/pulse/analytics/<post_id>")
     @require_installed("pulse")
     def api_pulse_analytics(post_id):
@@ -3979,7 +4016,7 @@ def create_app() -> Flask:
         cfg = _genesis_app(app_key)
         app_root = cfg["root"]
         daemon_path = cfg["daemon"]
-        env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": app_root,
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": app_root,
                cfg["env_var"]: "true", "PYTHONUNBUFFERED": "1"}
         result = _sp.run(
             [sys.executable, daemon_path] + args,
@@ -3993,8 +4030,7 @@ def create_app() -> Flask:
 
     def _genesis_db(app_key):
         """Get a DB connection for a Genesis app."""
-        cfg = _genesis_app(app_key)
-        db_path = cfg["db"]
+        _genesis_app(app_key)  # Validate app_key exists
         conn = get_connection()
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
@@ -4155,7 +4191,6 @@ def create_app() -> Flask:
             return jsonify({"error": f"Unknown reflex: {name}"}), 400
         try:
             return jsonify(_genesis_run(app_key, ["--reflex", name, "--json"], timeout=300))
-            return jsonify({"error": "parse_failed", "raw": stdout[:500]}), 500
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
@@ -4180,7 +4215,7 @@ def create_app() -> Flask:
                 return jsonify({"total_gkps": 0, "by_status": {}, "note": str(exc)})
         try:
             import subprocess
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = subprocess.run(
                 [sys.executable, cfg["promoter"], "--stats", "--json"],
                 capture_output=True, text=True, timeout=15, cwd=cfg["root"],
@@ -4258,7 +4293,7 @@ def create_app() -> Flask:
                 return jsonify({"error": str(exc)}), 500
         try:
             import subprocess as _sp
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--promote", gkp_id, "--json"],
                 capture_output=True, text=True, timeout=30, cwd=cfg["root"],
@@ -4293,7 +4328,7 @@ def create_app() -> Flask:
                 return jsonify({"error": str(exc)}), 500
         try:
             import subprocess as _sp
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--reject", gkp_id, "--reason", reason, "--json"],
                 capture_output=True, text=True, timeout=30, cwd=cfg["root"],
@@ -4317,7 +4352,7 @@ def create_app() -> Flask:
             return jsonify({"error": "No promoter configured for this app", "auto_promoted": 0}), 400
         try:
             import subprocess as _sp
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONPATH": cfg["root"]}
             result = _sp.run(
                 [sys.executable, cfg["promoter"], "--auto-promote", "--json"],
                 capture_output=True, text=True, timeout=30, cwd=cfg["root"],
@@ -4453,7 +4488,8 @@ def create_app() -> Flask:
                                    correlation_groups=correlation_groups,
                                    remediation_stats=remediation_stats)
         except Exception as e:
-            import traceback; traceback.print_exc()
+            import traceback
+            traceback.print_exc()
             return render_template("review_board.html",
                                    reflexes=[], findings=[],
                                    severity_summary={}, total_findings=0,
@@ -4466,7 +4502,7 @@ def create_app() -> Flask:
         """Review Board JSON status."""
         try:
             import subprocess as _sp
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8"}
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             result = _sp.run(
                 [sys.executable, "tools/review_board/daemon.py", "--status", "--json"],
                 capture_output=True, text=True, timeout=15, cwd=str(BASE_DIR),
@@ -4511,7 +4547,7 @@ def create_app() -> Flask:
             return jsonify({"error": f"Unknown reflex: {name}"}), 400
         try:
             import subprocess as _sp
-            _utf8_env = {**_os.environ, "PYTHONIOENCODING": "utf-8"}
+            _utf8_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
             result = _sp.run(
                 [sys.executable, "tools/review_board/daemon.py", "--reflex", name, "--json"],
                 capture_output=True, text=True, timeout=300, cwd=str(BASE_DIR),
@@ -4522,6 +4558,61 @@ def create_app() -> Flask:
             return jsonify({"status": "completed", "stdout": result.stdout[:500]}), 200
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+
+    # ── Bayesian Autoresearch Dashboard (Phase 67) ────────────────────────────
+
+    @app.route("/autoresearch")
+    def autoresearch_page():
+        """Bayesian Autoresearch — autonomous experiment dashboard."""
+        return render_template("autoresearch.html")
+
+    @app.route("/api/autoresearch/summary", methods=["GET"])
+    def api_autoresearch_summary():
+        """Get autoresearch summary stats."""
+        try:
+            conn = get_connection()
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM experiment_results"
+            ).fetchone()
+            kept = conn.execute(
+                "SELECT COUNT(*) as cnt FROM experiment_results WHERE decision = 'keep'"
+            ).fetchone()
+            domains = conn.execute(
+                "SELECT DISTINCT domain FROM experiment_results"
+            ).fetchall()
+            best = conn.execute(
+                "SELECT MAX(improvement_pct) as best FROM experiment_results WHERE decision = 'keep'"
+            ).fetchone()
+            conn.close()
+
+            total_count = total["cnt"] if total else 0
+            kept_count = kept["cnt"] if kept else 0
+            return jsonify({
+                "total_experiments": total_count,
+                "acceptance_rate": round(kept_count / max(total_count, 1) * 100, 1),
+                "active_domains": len(domains) if domains else 0,
+                "best_improvement": round(best["best"] or 0, 2) if best else 0,
+            })
+        except Exception:
+            return jsonify({
+                "total_experiments": 0,
+                "acceptance_rate": 0,
+                "active_domains": 0,
+                "best_improvement": 0,
+            })
+
+    @app.route("/api/autoresearch/experiments", methods=["GET"])
+    def api_autoresearch_experiments():
+        """Get experiment results list."""
+        try:
+            conn = get_connection()
+            rows = conn.execute(
+                "SELECT * FROM experiment_results ORDER BY created_at DESC LIMIT 100"
+            ).fetchall()
+            conn.close()
+            return jsonify({"experiments": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"experiments": []})
 
     return app
 

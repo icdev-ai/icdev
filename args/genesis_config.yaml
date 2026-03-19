@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # Genesis v2.0 — Autonomous Research Lab Configuration
 #
-# Controls the always-on Genesis daemon and its 12 Reflexes.
+# Controls the always-on Genesis daemon and its 14 Reflexes.
 # This is the ARGS layer (GOTCHA) — change behavior without editing goals/tools.
 #
 # Override any value via environment variable:
@@ -113,7 +113,7 @@ paths:
   feedback: data/genesis/feedback
   reports: data/genesis/reports
 
-# ── 12 Reflexes ──────────────────────────────────────────────────────────────
+# ── 14 Reflexes ──────────────────────────────────────────────────────────────
 
 reflexes:
 
@@ -328,6 +328,25 @@ reflexes:
       manifest_drift: true
       claude_md_route_drift: true
       readme_staleness: true
+
+  # ── Phase 67 — Bayesian Autoresearch (D-AR-9) ──────────────────────────────
+
+  experiment:
+    enabled: false  # Opt-in (requires ICDEV_AUTORESEARCH_ENABLED=true)
+    risk_tier: orange
+    schedule: "nightly 01:00"
+    description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments"
+    success_metric:
+      name: experiments_accepted_pct
+      threshold: 0
+      operator: gte
+    signal_score_threshold: 0.70
+    max_experiments_per_run: 3
+    export_gkp: true
+    domains:
+      - compliance
+      - code_quality
+      - security
 
 # ── Promoter Configuration ───────────────────────────────────────────────────
 

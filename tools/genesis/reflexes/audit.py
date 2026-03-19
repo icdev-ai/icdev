@@ -173,7 +173,7 @@ def _generate_audit_report(checks: List[Dict]) -> str:
     """Generate markdown audit report."""
     now = _utcnow()
     completed = [c for c in checks if c.get("status") == "completed"]
-    failed = [c for c in checks if c.get("status") == "failed"]
+    _failed = [c for c in checks if c.get("status") == "failed"]  # noqa: F841
 
     lines = [
         "# Genesis Self-Audit Report",

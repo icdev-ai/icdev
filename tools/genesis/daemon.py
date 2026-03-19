@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Genesis Daemon — always-on autonomous research engine (D-GEN-1).
 
-Runs 13 Reflexes as managed threads within a single process.  Each Reflex
+Runs 14 Reflexes as managed threads within a single process.  Each Reflex
 operates on its own schedule and risk tier, governed by the Trust Kernel.
 
 Usage:
@@ -53,7 +53,7 @@ STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
 
 REFLEX_NAMES = [
     "research", "scout", "audit", "comply", "ingest", "market", "report",
-    "publish", "test", "learn", "heal", "evolve", "docs",
+    "publish", "test", "learn", "heal", "evolve", "docs", "experiment",
 ]
 
 # Backward-compat aliases for module-level access used by other code
@@ -88,7 +88,7 @@ class GenesisTrustKernel(TrustKernelBase):
 # Genesis Daemon
 # ---------------------------------------------------------------------------
 class GenesisDaemon(DaemonBase):
-    """Main daemon process managing 13 Reflexes (D-GEN-1)."""
+    """Main daemon process managing 14 Reflexes (D-GEN-1)."""
 
     daemon_name = "Genesis Daemon"
     daemon_version = DAEMON_VERSION
@@ -355,9 +355,14 @@ ReflexState = GenesisReflexState
 TrustKernel = GenesisTrustKernel
 
 # Keep schedule helpers accessible at module level
-_parse_schedule = lambda s: __import__('tools.daemon.base', fromlist=['parse_schedule']).parse_schedule(s)
-_is_due = lambda sched, last: __import__('tools.daemon.base', fromlist=['is_due']).is_due(sched, last)
-_evaluate_metric = lambda mc, v: __import__('tools.daemon.base', fromlist=['evaluate_metric']).evaluate_metric(mc, v)
+def _parse_schedule(s):
+    return __import__('tools.daemon.base', fromlist=['parse_schedule']).parse_schedule(s)
+
+def _is_due(sched, last):
+    return __import__('tools.daemon.base', fromlist=['is_due']).is_due(sched, last)
+
+def _evaluate_metric(mc, v):
+    return __import__('tools.daemon.base', fromlist=['evaluate_metric']).evaluate_metric(mc, v)
 
 # Keep _run_reflex accessible for reflexes that call it directly
 def _run_reflex(name: str, config: Dict[str, Any], trust) -> Tuple[bool, float, Dict]:

@@ -200,7 +200,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     Strategy: SAM.gov opportunities first, then demand topics as fallback.
     """
     max_articles = config.get("max_articles_per_day", 2)
-    min_score = config.get("require_writeguard_pass", True) and 80 or 0
+    _min_score = config.get("require_writeguard_pass", True) and 80 or 0  # noqa: F841
 
     # Phase 1: Try SAM.gov → Pulse bridge first
     sam_results = _run_sam_bridge(max_articles=max_articles)

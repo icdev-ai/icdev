@@ -3,9 +3,22 @@
 {% block content %}
 <h1>ICDEV Pulse — Content Engine</h1>
 
-<div class="intro-panel">
-    <h2>AI-Powered Blog Pipeline</h2>
-    <p>Research → Draft (Qwen3.5) → Quality Check (WriteGuard) → Rewrite (Claude Sonnet) → Review → Publish</p>
+<div class="intro-panel" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h2>AI-Powered Blog Pipeline</h2>
+        <p>Research → Draft → Quality Check (WriteGuard) → Rewrite → Review → Publish</p>
+    </div>
+    <div id="dual-model-toggle" style="text-align: right; min-width: 200px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85em;">
+            <span id="dm-label" style="white-space: nowrap;">Loading...</span>
+            <div style="position: relative; width: 48px; height: 24px;">
+                <input type="checkbox" id="dm-switch" style="opacity:0; width:0; height:0;" onchange="toggleDualModel(this.checked)">
+                <span id="dm-slider" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#888; border-radius:12px; transition:.3s;"></span>
+                <span id="dm-knob" style="position:absolute; content:''; height:18px; width:18px; left:3px; top:3px; background:white; border-radius:50%; transition:.3s;"></span>
+            </div>
+        </label>
+        <div id="dm-detail" style="font-size: 0.75em; color: var(--muted); margin-top: 2px;"></div>
+    </div>
 </div>
 
 {% if error %}
@@ -944,5 +957,48 @@ async function generateVideo(postId) {
         btn.textContent = 'Gen';
     }
 }
+
+/* --- Dual-Model Toggle --- */
+function updateDualModelUI(data) {
+    const sw = document.getElementById('dm-switch');
+    const slider = document.getElementById('dm-slider');
+    const knob = document.getElementById('dm-knob');
+    const label = document.getElementById('dm-label');
+    const detail = document.getElementById('dm-detail');
+    if (!sw) return;
+    sw.checked = data.dual_model;
+    slider.style.background = data.dual_model ? 'var(--accent, #4a9eff)' : '#888';
+    knob.style.left = data.dual_model ? '27px' : '3px';
+    label.textContent = data.dual_model ? 'Speed Mode' : 'Quality Mode';
+    detail.textContent = data.description || '';
+}
+
+async function loadDualModelStatus() {
+    try {
+        const resp = await fetch('/api/llm/dual-model');
+        const data = await resp.json();
+        updateDualModelUI(data);
+    } catch(e) {
+        document.getElementById('dm-label').textContent = 'Unavailable';
+    }
+}
+
+async function toggleDualModel(enabled) {
+    try {
+        const resp = await fetch('/api/llm/dual-model', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: enabled})
+        });
+        const data = await resp.json();
+        updateDualModelUI(data);
+        showToast(enabled ? 'Speed Mode: 1.7B + Gemma3 (dual VRAM)' : 'Quality Mode: 9B (single model)', 'info');
+    } catch(e) {
+        showToast('Failed to toggle: ' + e.message, 'error');
+    }
+}
+
+// Init on page load
+document.addEventListener('DOMContentLoaded', loadDualModelStatus);
 </script>
 {% endblock %}

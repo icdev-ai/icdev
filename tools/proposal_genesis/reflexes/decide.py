@@ -5,12 +5,19 @@
 Evaluates tracked opportunities using a 6-dimension deterministic weighted
 average to produce a go/no-go recommendation and win probability estimate.
 
+Enhancement §3.1: Bayesian Teaching Intelligence integration adds info-gain-
+based weight calibration.  Three-tier fallback:
+  1. Bayesian info-gain from historical win/loss data (D-BT-1/D-BT-2)
+  2. Gap-based calibration from pg_bid_decision_outcomes (D-PG-9)
+  3. Static SCORE_WEIGHTS defaults
+
 Pipeline: on_demand (triggered after Map or manually).
 GREEN tier (read-only analysis, writes only to pg_bid_decisions).
 Scanner-tier LLM only (zero Claude tokens — fully deterministic).
 """
 
 import json
+import math
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -51,15 +58,176 @@ NO_BID_THRESHOLD = 0.35    # < 0.35 → no_bid
 
 
 # ---------------------------------------------------------------------------
+# Bayesian Teaching Intelligence (Enhancement §3.1, D-BT-1/D-BT-2)
+# ---------------------------------------------------------------------------
+
+def _get_bayesian_weights() -> Optional[Dict[str, float]]:
+    """Compute info-gain-weighted dimension weights from historical outcomes.
+
+    Queries pg_bid_decisions joined with pg_bid_decision_outcomes, builds
+    teaching examples (dimension scores + won/lost label), then uses
+    Bayesian posterior_shift to compute per-dimension info-gain.  Returns
+    normalized weights clamped to [0.05, 0.40], or None on any failure
+    (graceful degradation — callers fall through to gap-based calibration).
+    """
+    try:
+        # Late import — bayesian_teacher may not be available in all envs
+        from tools.intelligence.bayesian_teacher import (  # type: ignore
+            _posterior_shift,
+        )
+    except (ImportError, Exception):
+        return None
+
+    conn = get_connection()
+    try:
+        rows = conn.execute("""
+            SELECT bdo.outcome, bd.score_breakdown
+            FROM pg_bid_decision_outcomes bdo
+            JOIN pg_bid_decisions bd ON bd.id = bdo.bid_decision_id
+            WHERE bdo.outcome IN ('won', 'lost')
+            AND bd.score_breakdown IS NOT NULL
+        """).fetchall()
+    except Exception:
+        return None
+    finally:
+        conn.close()
+
+    # Need meaningful sample size for Bayesian estimation
+    if len(rows) < 8:
+        return None
+
+    # Parse score breakdowns into labelled examples
+    examples: List[Dict[str, Any]] = []
+    for row in rows:
+        try:
+            breakdown = json.loads(row["score_breakdown"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        # Ensure all dimensions present
+        if not all(d in breakdown for d in SCORE_WEIGHTS):
+            continue
+        examples.append({
+            "scores": {d: float(breakdown[d]) for d in SCORE_WEIGHTS},
+            "outcome": row["outcome"],  # 'won' or 'lost'
+        })
+
+    if len(examples) < 8:
+        return None
+
+    won = [e for e in examples if e["outcome"] == "won"]
+    lost = [e for e in examples if e["outcome"] == "lost"]
+    if not won or not lost:
+        return None
+
+    # Per-dimension info-gain via posterior_shift
+    # Prior: uniform over [won, lost] → [0.5, 0.5]
+    prior = [0.5, 0.5]
+    dim_info_gain: Dict[str, float] = {}
+
+    for dim in SCORE_WEIGHTS:
+        # Compute mean score per outcome for this dimension
+        won_scores = [e["scores"][dim] for e in won]
+        lost_scores = [e["scores"][dim] for e in lost]
+        won_mean = sum(won_scores) / len(won_scores)
+        lost_mean = sum(lost_scores) / len(lost_scores)
+
+        # Likelihood: Gaussian-like L(outcome | dim_score)
+        # Approximate: if won_mean > lost_mean, this dimension is
+        # informative.  Use separation as likelihood ratio.
+        # L(won | high_score) ∝ exp(-|score - won_mean|)
+        # We construct a synthetic observation at the midpoint and
+        # measure how much it shifts the prior.
+        midpoint = (won_mean + lost_mean) / 2.0
+        spread = max(abs(won_mean - lost_mean), 0.01)
+
+        # Likelihood for each hypothesis (won/lost) given the midpoint
+        lk_won = math.exp(-((midpoint - won_mean) ** 2) / (2 * spread ** 2 + 0.01))
+        lk_lost = math.exp(-((midpoint - lost_mean) ** 2) / (2 * spread ** 2 + 0.01))
+        z = lk_won + lk_lost
+        if z > 0:
+            likelihood = [lk_won / z, lk_lost / z]
+        else:
+            likelihood = [0.5, 0.5]
+
+        ps = _posterior_shift(prior, likelihood)
+
+        # Also compute variance-based discriminability
+        # Higher variance within won-vs-lost gap → more discriminative
+        gap = abs(won_mean - lost_mean)
+        discriminability = min(1.0, gap * 2.0)
+
+        # Combined: 70% posterior_shift + 30% discriminability
+        dim_info_gain[dim] = 0.7 * ps + 0.3 * discriminability
+
+    # Normalize to sum to 1.0 and clamp to [0.05, 0.40]
+    total_ig = sum(dim_info_gain.values())
+    if total_ig <= 0:
+        return None
+
+    raw_weights = {k: dim_info_gain[k] / total_ig for k in dim_info_gain}
+    clamped = {k: max(0.05, min(0.40, v)) for k, v in raw_weights.items()}
+    clamp_total = sum(clamped.values())
+    if clamp_total <= 0:
+        return None
+    bayesian_weights = {k: round(v / clamp_total, 4) for k, v in clamped.items()}
+
+    # Persist for observability (non-blocking)
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO pg_proposal_genesis_config "
+            "(key, value, updated_at) VALUES (?, ?, ?)",
+            ("bayesian_score_weights", json.dumps(bayesian_weights),
+             _utcnow_iso()),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+
+    return bayesian_weights
+
+
+def _compute_teaching_dimension(weights: Dict[str, float]) -> List[str]:
+    """Return top 3 most discriminative dimensions (simplified Goldman & Kearns).
+
+    Sorts dimensions by weight (info-gain) descending and returns the top 3.
+    These form the minimum distinguishing set for bid/no-bid classification.
+    """
+    sorted_dims = sorted(weights.items(), key=lambda x: x[1], reverse=True)
+    return [dim for dim, _w in sorted_dims[:3]]
+
+
+def _optimal_assessment_order(weights: Dict[str, float]) -> List[str]:
+    """Return dimensions sorted by weight (highest info-gain first).
+
+    Used for early termination: if the first 2-3 dimensions predict NO_BID
+    with high confidence, skip remaining dimensions to save computation.
+    """
+    sorted_dims = sorted(weights.items(), key=lambda x: x[1], reverse=True)
+    return [dim for dim, _w in sorted_dims]
+
+
+# ---------------------------------------------------------------------------
 # Calibration feedback loop (D-PG-9)
 # ---------------------------------------------------------------------------
 
 def _get_calibrated_weights() -> Dict[str, float]:
-    """Load calibrated weights from DB, falling back to defaults.
+    """Load calibrated weights via three-tier fallback.
 
-    Calibration computes dimension averages for won vs lost opportunities,
-    then adjusts weights toward dimensions that better predict wins.
+    Tier 1: Bayesian info-gain from historical win/loss data (§3.1).
+    Tier 2: Gap-based calibration stored in pg_proposal_genesis_config.
+    Tier 3: Static SCORE_WEIGHTS defaults.
+
+    Returns weights dict (always sums to ~1.0) and never raises.
     """
+    # Tier 1: Bayesian info-gain (best — data-driven, principled)
+    bayesian = _get_bayesian_weights()
+    if bayesian is not None:
+        return bayesian
+
+    # Tier 2: Gap-based calibration (good — empirical)
     conn = get_connection()
     try:
         row = conn.execute(
@@ -76,6 +244,8 @@ def _get_calibrated_weights() -> Dict[str, float]:
         pass
     finally:
         conn.close()
+
+    # Tier 3: Static defaults
     return dict(SCORE_WEIGHTS)
 
 
@@ -306,75 +476,138 @@ def _get_teaming_fit(opportunity_id: str) -> float:
 def score_opportunity(opp: Dict) -> Dict:
     """Score an opportunity across 6 dimensions.
 
-    Returns dict with dimension scores, composite score, decision, rationale.
+    Enhancement §3.1: uses Bayesian-optimized dimension ordering for early
+    termination.  If the top 3 dimensions predict NO_BID with high
+    confidence (partial_composite < NO_BID_THRESHOLD * 0.7), remaining
+    dimensions are skipped and the decision is marked ``early_no_bid``.
+
+    Returns dict with dimension scores, composite score, decision, rationale,
+    scoring_method, and optional teaching_dimension.
     """
     opp_id = opp.get("id", "")
 
-    # Dimension 1: Capability Fit (from R6 Map coverage)
-    cap_fit = _get_capability_coverage(opp_id)
+    # --- Determine scoring method and weights ---
+    bayesian_weights = _get_bayesian_weights()
+    if bayesian_weights is not None:
+        weights = bayesian_weights
+        scoring_method = "bayesian"
+    else:
+        weights = _get_calibrated_weights()
+        # Distinguish gap-calibrated from static
+        scoring_method = (
+            "calibrated"
+            if weights != SCORE_WEIGHTS
+            else "static"
+        )
 
-    # Dimension 2: Past Performance (proxy: quality of existing drafts)
-    past_perf = _get_quality_score_avg(opp_id)
+    # Teaching dimension (top-3 discriminative dims, when Bayesian available)
+    teaching_dim: Optional[List[str]] = None
+    if scoring_method == "bayesian":
+        teaching_dim = _compute_teaching_dimension(weights)
 
-    # Dimension 3: Competitive Position (from teaming + engagement)
-    teaming = _get_teaming_fit(opp_id)
-    engagement = _get_engagement_score(opp_id)
-    competitive = min(1.0, (teaming * 0.6 + engagement * 0.4))
+    # --- Dimension evaluators (lazy, keyed by dimension name) ---
+    # Pre-fetch shared values used by multiple dimensions
+    _teaming: Optional[float] = None
+    _engagement: Optional[float] = None
 
-    # Dimension 4: Compliance Readiness (set-aside match + NAICS familiarity)
-    compliance = 0.5  # baseline
-    set_aside = (opp.get("set_aside") or "").lower()
-    if set_aside in ("total small business", "8(a)", "hubzone",
-                     "sdvosb", "wosb", "edwosb"):
-        compliance += 0.2  # small biz set-asides = compliance advantage
-    naics = opp.get("naics_code") or ""
-    if naics.startswith("5415") or naics.startswith("5112"):
-        compliance += 0.15  # core IT NAICS
-    compliance = min(1.0, compliance)
+    def _eval_capability_fit() -> float:
+        return _get_capability_coverage(opp_id)
 
-    # Dimension 5: Resource Availability (proxy: capture plan exists)
-    plan = _get_capture_plan_status(opp_id)
-    resource = 0.3  # baseline
-    if plan:
-        resource = 0.6
-        if plan.get("win_strategy"):
-            resource += 0.2
-        if plan.get("teaming_strategy"):
-            resource += 0.1
-    resource = min(1.0, resource)
+    def _eval_past_performance() -> float:
+        return _get_quality_score_avg(opp_id)
 
-    # Dimension 6: Strategic Alignment (estimated value + agency engagement)
-    strategic = 0.5  # baseline
-    est_value = opp.get("estimated_value") or 0
-    if isinstance(est_value, str):
-        try:
-            est_value = float(est_value.replace(",", "").replace("$", ""))
-        except (ValueError, TypeError):
-            est_value = 0
-    if est_value > 1_000_000:
-        strategic += 0.2
-    elif est_value > 500_000:
-        strategic += 0.1
-    if engagement > 0.5:
-        strategic += 0.15
-    strategic = min(1.0, strategic)
+    def _eval_competitive_position() -> float:
+        nonlocal _teaming, _engagement
+        if _teaming is None:
+            _teaming = _get_teaming_fit(opp_id)
+        if _engagement is None:
+            _engagement = _get_engagement_score(opp_id)
+        return min(1.0, (_teaming * 0.6 + _engagement * 0.4))
+
+    def _eval_compliance_readiness() -> float:
+        score = 0.5  # baseline
+        set_aside = (opp.get("set_aside") or "").lower()
+        if set_aside in ("total small business", "8(a)", "hubzone",
+                         "sdvosb", "wosb", "edwosb"):
+            score += 0.2
+        naics = opp.get("naics_code") or ""
+        if naics.startswith("5415") or naics.startswith("5112"):
+            score += 0.15
+        return min(1.0, score)
+
+    def _eval_resource_availability() -> float:
+        plan = _get_capture_plan_status(opp_id)
+        score = 0.3  # baseline
+        if plan:
+            score = 0.6
+            if plan.get("win_strategy"):
+                score += 0.2
+            if plan.get("teaming_strategy"):
+                score += 0.1
+        return min(1.0, score)
+
+    def _eval_strategic_alignment() -> float:
+        nonlocal _engagement
+        if _engagement is None:
+            _engagement = _get_engagement_score(opp_id)
+        score = 0.5  # baseline
+        est_value = opp.get("estimated_value") or 0
+        if isinstance(est_value, str):
+            try:
+                est_value = float(est_value.replace(",", "").replace("$", ""))
+            except (ValueError, TypeError):
+                est_value = 0
+        if est_value > 1_000_000:
+            score += 0.2
+        elif est_value > 500_000:
+            score += 0.1
+        if _engagement > 0.5:
+            score += 0.15
+        return min(1.0, score)
+
+    evaluators = {
+        "capability_fit": _eval_capability_fit,
+        "past_performance": _eval_past_performance,
+        "competitive_position": _eval_competitive_position,
+        "compliance_readiness": _eval_compliance_readiness,
+        "resource_availability": _eval_resource_availability,
+        "strategic_alignment": _eval_strategic_alignment,
+    }
+
+    # --- Evaluate dimensions in optimal order (early termination) ---
+    order = _optimal_assessment_order(weights)
+    dimensions: Dict[str, float] = {}
+    early_terminated = False
+    EARLY_TERM_DIMS = 3  # Check after this many dimensions
+
+    for idx, dim in enumerate(order):
+        dimensions[dim] = evaluators[dim]()
+
+        # Early termination: after top 3 dims, if partial composite
+        # predicts NO_BID with high confidence, skip the rest.
+        if idx == EARLY_TERM_DIMS - 1 and len(order) > EARLY_TERM_DIMS:
+            evaluated_weight = sum(weights[d] for d in dimensions)
+            if evaluated_weight > 0:
+                partial_composite = sum(
+                    dimensions[d] * weights[d] for d in dimensions
+                ) / evaluated_weight
+            else:
+                partial_composite = 0.0
+
+            if partial_composite < NO_BID_THRESHOLD * 0.7:
+                # Fill remaining dimensions with 0.0 (worst-case assumption)
+                for remaining_dim in order[EARLY_TERM_DIMS:]:
+                    dimensions[remaining_dim] = 0.0
+                early_terminated = True
+                break
 
     # Composite weighted average
-    dimensions = {
-        "capability_fit": cap_fit,
-        "past_performance": past_perf,
-        "competitive_position": competitive,
-        "compliance_readiness": compliance,
-        "resource_availability": resource,
-        "strategic_alignment": strategic,
-    }
-    weights = _get_calibrated_weights()
-    composite = sum(
-        dimensions[k] * weights[k] for k in weights
-    )
+    composite = sum(dimensions[k] * weights[k] for k in weights)
 
     # Decision
-    if composite >= BID_THRESHOLD:
+    if early_terminated:
+        decision = "no_bid"
+    elif composite >= BID_THRESHOLD:
         decision = "bid"
     elif composite < NO_BID_THRESHOLD:
         decision = "no_bid"
@@ -391,20 +624,32 @@ def score_opportunity(opp: Dict) -> Dict:
         parts.append(f"Strengths: {', '.join(strengths)}.")
     if weaknesses:
         parts.append(f"Gaps: {', '.join(weaknesses)}.")
-    if decision == "bid":
+    if early_terminated:
+        evaluated_names = [d for d in order[:EARLY_TERM_DIMS]]
+        parts.append(
+            f"Early termination after {EARLY_TERM_DIMS} dimensions "
+            f"({', '.join(evaluated_names)})."
+        )
+        parts.append("Recommend: NO BID — early termination, insufficient coverage.")
+    elif decision == "bid":
         parts.append("Recommend: BID.")
     elif decision == "no_bid":
         parts.append("Recommend: NO BID — insufficient coverage.")
     else:
         parts.append("Recommend: DEFER — needs further evaluation.")
 
-    return {
+    result: Dict[str, Any] = {
         "dimensions": dimensions,
         "composite": round(composite, 4),
         "win_probability": round(composite, 4),  # proxy
         "decision": decision,
         "rationale": " ".join(parts),
+        "scoring_method": scoring_method,
+        "early_terminated": early_terminated,
     }
+    if teaching_dim is not None:
+        result["teaching_dimension"] = teaching_dim
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -412,11 +657,22 @@ def score_opportunity(opp: Dict) -> Dict:
 # ---------------------------------------------------------------------------
 
 def _store_decision(opportunity_id: str, result: Dict) -> Optional[str]:
-    """Write bid decision to pg_bid_decisions."""
+    """Write bid decision to pg_bid_decisions.
+
+    Includes scoring_method in score_breakdown for audit trail.
+    """
     conn = get_connection()
     dec_id = _generate_id("pgdec")
     now = _utcnow_iso()
     try:
+        # Enrich score_breakdown with scoring metadata for audit trail
+        breakdown = dict(result.get("dimensions", {}))
+        breakdown["_scoring_method"] = result.get("scoring_method", "static")
+        if result.get("early_terminated"):
+            breakdown["_early_terminated"] = True
+        if result.get("teaching_dimension"):
+            breakdown["_teaching_dimension"] = result["teaching_dimension"]
+
         conn.execute(
             "INSERT INTO pg_bid_decisions "
             "(id, opportunity_id, decision, win_probability, "
@@ -427,7 +683,7 @@ def _store_decision(opportunity_id: str, result: Dict) -> Optional[str]:
                 opportunity_id,
                 result["decision"],
                 result["win_probability"],
-                json.dumps(result["dimensions"]),
+                json.dumps(breakdown),
                 result["rationale"],
                 "pg_decide",
                 now,
@@ -501,12 +757,16 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
         if dec_id:
             decided += 1
-            decisions_made.append({
+            entry: Dict[str, Any] = {
                 "opportunity_id": opp_id,
                 "decision": result["decision"],
                 "win_probability": result["win_probability"],
                 "decision_id": dec_id,
-            })
+                "scoring_method": result.get("scoring_method", "static"),
+            }
+            if result.get("early_terminated"):
+                entry["early_terminated"] = True
+            decisions_made.append(entry)
 
         _audit_decide(
             f"bid_decision_{result['decision']}",
@@ -516,6 +776,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 "composite": result["composite"],
                 "decision": result["decision"],
                 "dimensions": result["dimensions"],
+                "scoring_method": result.get("scoring_method", "static"),
+                "early_terminated": result.get("early_terminated", False),
+                "teaching_dimension": result.get("teaching_dimension"),
             },
             success=dec_id is not None,
         )

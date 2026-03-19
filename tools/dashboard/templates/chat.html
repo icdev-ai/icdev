@@ -48,6 +48,7 @@
                 <span id="chat-status" class="badge" style="font-size: 0.7rem;"></span>
                 <button id="btn-ricoas-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-blue); color: #fff; border: none; border-radius: 3px; cursor: pointer; display: none;" title="Toggle RICOAS sidebar">RICOAS</button>
                 <button id="btn-gov-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; background: var(--accent-purple, #7c4dff); color: #fff; border: none; border-radius: 3px; cursor: pointer;" title="Toggle AI Governance sidebar">Gov</button>
+                <button id="btn-intel-toggle" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 4px; background: #00bfa5; color: #fff; border: none; border-radius: 3px; cursor: pointer;" title="Toggle Intelligence sidebar (RAG, Bayesian, Code Quality, Genesis)">Intel</button>
                 <button id="btn-close-context" class="btn btn-sm" style="font-size: 0.7rem; padding: 2px 8px; margin-left: 8px; display: none; background: var(--accent-red, #d44); color: #fff; border: none; border-radius: 3px; cursor: pointer;">Close</button>
             </div>
         </div>
@@ -184,6 +185,54 @@
                 <p style="font-size: 0.8rem; color: var(--text-secondary);">Loading governance status...</p>
             </div>
         </div>
+
+        <!-- Intelligence Section (Bayesian, RAG, Code Quality, Genesis) -->
+        <div id="intel-sidebar" style="display: none; padding: 12px;">
+            <div style="padding-bottom: 8px; border-bottom: 1px solid var(--border-color); margin-bottom: 8px;">
+                <strong style="color: #00bfa5;">Intelligence</strong>
+                <span style="font-size: 0.7rem; color: var(--text-secondary); margin-left: 4px;">RAG + Bayesian + Quality + Genesis</span>
+            </div>
+
+            <!-- RAG Knowledge Sources -->
+            <div class="intel-section" id="intel-rag">
+                <h4 style="margin: 8px 0 4px; font-size: 0.82rem; color: #2196f3;">Knowledge Sources (RAG)</h4>
+                <div id="intel-rag-content" style="font-size: 0.78rem; color: var(--text-secondary);">
+                    No sources retrieved yet. RAG context is automatically injected when you ask questions.
+                </div>
+            </div>
+
+            <!-- Bayesian Learning -->
+            <div class="intel-section" id="intel-bayesian" style="margin-top: 12px;">
+                <h4 style="margin: 0 0 4px; font-size: 0.82rem; color: #00bfa5;">Bayesian Learning</h4>
+                <div id="intel-bayesian-content" style="font-size: 0.78rem; color: var(--text-secondary);">
+                    Discuss compliance topics to get information-gain optimized recommendations for control implementation order.
+                </div>
+            </div>
+
+            <!-- Code Quality -->
+            <div class="intel-section" id="intel-code-quality" style="margin-top: 12px;">
+                <h4 style="margin: 0 0 4px; font-size: 0.82rem; color: #ff9800;">Code Quality</h4>
+                <div id="intel-code-quality-content" style="font-size: 0.78rem; color: var(--text-secondary);">
+                    Discuss code or implementation topics to get maintainability insights, smell detection, and complexity alerts.
+                </div>
+            </div>
+
+            <!-- Genesis Activity -->
+            <div class="intel-section" id="intel-genesis" style="margin-top: 12px;">
+                <h4 style="margin: 0 0 4px; font-size: 0.82rem; color: #e040fb;">Genesis Research Lab</h4>
+                <div id="intel-genesis-content" style="font-size: 0.78rem; color: var(--text-secondary);">
+                    Discuss improvements or research to see autonomous Genesis findings and pending knowledge packets.
+                </div>
+            </div>
+
+            <!-- Context Health -->
+            <div class="intel-section" id="intel-health" style="margin-top: 12px;">
+                <h4 style="margin: 0 0 4px; font-size: 0.82rem; color: #ff5252;">Context Health</h4>
+                <div id="intel-health-content" style="font-size: 0.78rem;">
+                    <span style="color: #4caf50;">Healthy</span> — Pressure and stuck detection monitored every 10 turns.
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -197,6 +246,79 @@
     content: '\26A0';
     margin-right: 6px;
 }
+
+/* Bayesian learning advisory (D-BT-1) */
+.msg-bayesian_advisory {
+    border-left: 3px solid #00bfa5 !important;
+    background: rgba(0, 191, 165, 0.05) !important;
+}
+.msg-bayesian_advisory::before {
+    content: '\1F9E0';
+    margin-right: 6px;
+}
+
+/* RAG source attribution (D-RAG-2) */
+.msg-rag_attribution {
+    border-left: 3px solid #2196f3 !important;
+    background: rgba(33, 150, 243, 0.05) !important;
+    font-size: 0.82rem;
+}
+.msg-rag_attribution::before {
+    content: '\1F4DA';
+    margin-right: 6px;
+}
+
+/* Code quality advisory (Phase 52) */
+.msg-code_quality_advisory {
+    border-left: 3px solid #ff9800 !important;
+    background: rgba(255, 152, 0, 0.05) !important;
+}
+.msg-code_quality_advisory::before {
+    content: '\1F527';
+    margin-right: 6px;
+}
+
+/* Genesis insight (D-GEN-1) */
+.msg-genesis_advisory {
+    border-left: 3px solid #e040fb !important;
+    background: rgba(224, 64, 251, 0.05) !important;
+}
+.msg-genesis_advisory::before {
+    content: '\1F52C';
+    margin-right: 6px;
+}
+
+/* Intake enrichment (RICOAS) */
+.msg-intake_advisory {
+    border-left: 3px solid #4caf50 !important;
+    background: rgba(76, 175, 80, 0.05) !important;
+}
+.msg-intake_advisory::before {
+    content: '\1F4CB';
+    margin-right: 6px;
+}
+
+/* Context health (D-GSD-4) */
+.msg-context_health {
+    border-left: 3px solid #ff5252 !important;
+    background: rgba(255, 82, 82, 0.05) !important;
+    font-size: 0.82rem;
+}
+.msg-context_health::before {
+    content: '\26A1';
+    margin-right: 6px;
+}
+
+/* Workflow status (Phase 66) */
+.msg-workflow_status {
+    border-left: 3px solid #448aff !important;
+    background: rgba(68, 138, 255, 0.05) !important;
+}
+.msg-workflow_status::before {
+    content: '\1F504';
+    margin-right: 6px;
+}
+
 .gov-stat-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border-color); font-size: 0.8rem; }
 .gov-stat-label { color: var(--text-secondary); }
 .gov-stat-value { font-weight: 600; }
@@ -205,6 +327,9 @@
 .gov-gap-severity.high { background: var(--accent-red, #d44); color: #fff; }
 .gov-gap-severity.medium { background: var(--accent-yellow, #fa0); color: #000; }
 .gov-gap-severity.low { background: var(--accent-blue); color: #fff; }
+
+/* Advisory action link */
+.advisory-action { font-size: 0.75rem; color: var(--accent-blue); cursor: pointer; text-decoration: underline; display: block; margin-top: 4px; }
 </style>
 
 <!-- New Context Modal -->
@@ -325,6 +450,92 @@
     window._chatOnStateChange.push(function(data) {
         if (data && data.change_type === 'governance_advisory' && sidebar.style.display !== 'none') {
             refreshGovernanceSidebar();
+        }
+    });
+})();
+
+// Intelligence sidebar (Bayesian + RAG + Code Quality + Genesis)
+(function() {
+    var btn = document.getElementById('btn-intel-toggle');
+    var sidebar = document.getElementById('intel-sidebar');
+    var rightSidebar = document.getElementById('right-sidebar');
+    if (!btn || !sidebar) return;
+
+    btn.addEventListener('click', function() {
+        var visible = sidebar.style.display !== 'none';
+        sidebar.style.display = visible ? 'none' : 'block';
+        if (!visible) {
+            rightSidebar.style.display = 'block';
+        } else {
+            var ricoas = document.getElementById('ricoas-sidebar');
+            var gov = document.getElementById('gov-sidebar');
+            if ((!ricoas || ricoas.style.display === 'none') &&
+                (!gov || gov.style.display === 'none')) {
+                rightSidebar.style.display = 'none';
+            }
+        }
+    });
+
+    // Update sidebar panels on advisory state changes
+    if (typeof window._chatOnStateChange === 'undefined') {
+        window._chatOnStateChange = [];
+    }
+    window._chatOnStateChange.push(function(data) {
+        if (!data) return;
+        var ct = data.change_type || '';
+
+        // RAG sources
+        if (ct === 'rag_attribution') {
+            var ragEl = document.getElementById('intel-rag-content');
+            if (ragEl && data.source_count) {
+                ragEl.innerHTML = '<span style="color:#2196f3;font-weight:600;">' + data.source_count +
+                    ' source(s)</span> used in last response. View the [Knowledge Sources] message in chat for details.';
+            }
+        }
+
+        // Bayesian learning
+        if (ct === 'bayesian_advisory') {
+            var bayEl = document.getElementById('intel-bayesian-content');
+            if (bayEl) {
+                var domain = data.fitness_domain || 'compliance';
+                bayEl.innerHTML = '<span style="color:#00bfa5;font-weight:600;">Active</span> — ' +
+                    'Bayesian info-gain analysis running for <em>' + domain + '</em>. ' +
+                    'See [Bayesian Learning] messages for recommended next actions.';
+            }
+        }
+
+        // Code quality
+        if (ct === 'code_quality_advisory') {
+            var cqEl = document.getElementById('intel-code-quality-content');
+            if (cqEl) {
+                var score = data.score ? (data.score * 100).toFixed(0) + '%' : 'N/A';
+                var sev = data.severity || 'info';
+                var color = sev === 'high' ? '#d44' : sev === 'medium' ? '#ff9800' : '#4caf50';
+                cqEl.innerHTML = '<span style="color:' + color + ';font-weight:600;">Score: ' + score + '</span> — ' +
+                    'See [Code Quality] messages for smell and complexity details.';
+            }
+        }
+
+        // Genesis
+        if (ct === 'genesis_advisory') {
+            var genEl = document.getElementById('intel-genesis-content');
+            if (genEl) {
+                genEl.innerHTML = '<span style="color:#e040fb;font-weight:600;">Activity detected</span> — ' +
+                    'See [Genesis Insight] messages for research findings and pending GKPs.';
+            }
+        }
+
+        // Context health
+        if (ct === 'context_health') {
+            var healthEl = document.getElementById('intel-health-content');
+            if (healthEl) {
+                var level = data.pressure_level || 'unknown';
+                var stuck = data.is_stuck;
+                var hColor = stuck ? '#ff5252' : (level === 'high' ? '#ff9800' : '#4caf50');
+                var hText = stuck ? 'STUCK — agent may need intervention' :
+                    (level === 'high' ? 'High pressure (' + level + ')' : 'Healthy');
+                healthEl.innerHTML = '<span style="color:' + hColor + ';font-weight:600;">' + hText + '</span>';
+            }
         }
     });
 })();

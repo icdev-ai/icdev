@@ -1002,3 +1002,24 @@ autonomy:
     max_exploration_rate_pct: 30
     min_trust_for_commit: 0.30
     autonomy_enabled: false
+
+# Bayesian Autoresearch Gates (Phase 67, D-AR-1 through D-AR-10)
+autoresearch:
+  description: "Karpathy-loop autonomous experiment engine — Bayesian-guided self-improvement"
+  blocking:
+    - experiment_modifies_forbidden_path
+    - experiment_exceeds_time_budget
+    - experiment_fails_coherence_check
+    - experiment_disables_security_gate
+  warning:
+    - experiment_acceptance_rate_below_threshold
+    - experiment_consecutive_failures_high
+    - hypothesis_dedup_rate_above_threshold
+  thresholds:
+    min_acceptance_rate_pct: 10
+    max_consecutive_failures: 3
+    max_dedup_rate_pct: 80
+    time_budget_max_seconds: 600
+    require_test_pass: true
+    require_coherence_check: true
+    autoresearch_enabled: false

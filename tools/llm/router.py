@@ -49,6 +49,9 @@ class LLMRouter:
     responsive provider + model pair.
     """
 
+    # Runtime dual-model toggle (None = use config/env, True/False = explicit)
+    _dual_model_runtime: Optional[bool] = None
+
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
@@ -59,6 +62,40 @@ class LLMRouter:
         self._cache_ttl: float = 1800.0
 
         self._load_config()
+
+    # -------------------------------------------------------------------
+    # Dual-model mode (RTX 4060 Ti 8GB VRAM — 2 models resident)
+    # -------------------------------------------------------------------
+    @classmethod
+    def set_dual_model(cls, enabled: bool) -> None:
+        """Toggle dual-model mode at runtime (e.g. from dashboard)."""
+        cls._dual_model_runtime = enabled
+        logger.info("Dual-model mode %s (runtime toggle)", "ENABLED" if enabled else "DISABLED")
+
+    @classmethod
+    def get_dual_model(cls) -> bool:
+        """Check if dual-model mode is active."""
+        if cls._dual_model_runtime is not None:
+            return cls._dual_model_runtime
+        env = os.environ.get("ICDEV_DUAL_MODEL", "").lower()
+        return env in ("true", "1", "yes")
+
+    @staticmethod
+    def is_dual_model_active(cfg: dict) -> bool:
+        """Check dual-model from config + env + runtime toggle."""
+        # Runtime toggle takes priority
+        if LLMRouter._dual_model_runtime is not None:
+            return LLMRouter._dual_model_runtime
+        # Env var next
+        env = os.environ.get("ICDEV_DUAL_MODEL", "").lower()
+        if env in ("true", "1", "yes"):
+            return True
+        if env in ("false", "0", "no"):
+            return False
+        # Config value (supports ${ICDEV_DUAL_MODEL:-false} expansion)
+        dm = cfg.get("dual_model", {})
+        val = str(dm.get("enabled", "false")).lower()
+        return val in ("true", "1", "yes")
 
     # -------------------------------------------------------------------
     # Config loading
@@ -682,6 +719,14 @@ class LLMRouter:
         workers = cfg.get("worker_functions", [])
         scanners = cfg.get("scanner_functions", [])
 
+        # Dual-model mode: swap tier1 for smaller model to fit 2 models in VRAM
+        if self.is_dual_model_active(cfg):
+            dm = cfg.get("dual_model", {})
+            override_tier1 = dm.get("tier1_override")
+            if override_tier1:
+                tier1 = override_tier1
+                logger.debug("Dual-model active: tier1 swapped to %s", tier1)
+
         if function in planners:
             # Claude plans directly
             logger.debug("Two-tier: %s → planner (Claude direct)", function)
@@ -732,6 +777,10 @@ class LLMRouter:
         elif function in scanners:
             # Check for per-function model override
             overrides = cfg.get("function_model_overrides", {})
+            # Dual-model mode: merge dual overrides on top of base overrides
+            if self.is_dual_model_active(cfg):
+                dm_overrides = cfg.get("dual_model", {}).get("function_overrides", {})
+                overrides = {**overrides, **dm_overrides}
             scanner_model = overrides.get(function, tier1)
             logger.debug("Two-tier: %s → scanner (%s only)", function, scanner_model)
             result = self._invoke_model_direct(scanner_model, request)

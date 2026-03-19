@@ -108,7 +108,7 @@ def _find_competitor_overlaps() -> List[Dict]:
 
             where = " OR ".join(query_parts)
             competitors = conn.execute(
-                f"SELECT DISTINCT awardee_name, COUNT(*) as award_count "
+                f"SELECT DISTINCT awardee_name, COUNT(*) as award_count "  # nosec B608 — where clauses from parameterized builder
                 f"FROM govcon_awards WHERE {where} "
                 f"GROUP BY awardee_name ORDER BY award_count DESC LIMIT 5",
                 params,

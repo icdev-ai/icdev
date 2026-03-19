@@ -34,7 +34,7 @@ python tools/compliance/ssp_generator.py --project-id "" --json
 
 ## MCP
 
-2 servers. Config: `.amazonq/mcp.json` — run `python tools/dx/mcp_config_generator.py --platform amazon_q --write`.
+0 servers. Config: `.amazonq/mcp.json` — run `python tools/dx/mcp_config_generator.py --platform amazon_q --write`.
 
 ---
 

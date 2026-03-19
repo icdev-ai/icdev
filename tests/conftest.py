@@ -6,7 +6,6 @@ D155: Project-root conftest.py centralizes test DB setup, Flask test clients,
 and auth header helpers. Prevents duplication across 20+ test files.
 """
 
-import json
 import os
 import sqlite3
 import sys
@@ -15,10 +14,20 @@ from unittest.mock import patch
 
 import pytest
 
-# Ensure project root is on sys.path
+# Ensure project root is on sys.path (MUST be first to avoid tools package shadowing)
 BASE_DIR = Path(__file__).resolve().parent.parent
-if str(BASE_DIR) not in sys.path:
-    sys.path.insert(0, str(BASE_DIR))
+_base_str = str(BASE_DIR)
+# Remove any tools subdirectory entries that could shadow the tools package
+_to_remove = [p for p in sys.path if p.startswith(_base_str + os.sep + "tools")]
+for p in _to_remove:
+    sys.path.remove(p)
+# Ensure project root is first
+if _base_str in sys.path:
+    sys.path.remove(_base_str)
+sys.path.insert(0, _base_str)
+
+# Force SQLite backend for tests (PostgreSQL not required)
+os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +406,61 @@ CREATE TABLE IF NOT EXISTS autonomy_behavior_log (
     category TEXT,
     details TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Phase 67: Bayesian Autoresearch
+CREATE TABLE IF NOT EXISTS experiment_programs (
+    id TEXT PRIMARY KEY, domain TEXT NOT NULL UNIQUE,
+    objective_metric TEXT NOT NULL, objective_direction TEXT NOT NULL,
+    measurement_command TEXT NOT NULL, metric_path TEXT,
+    modifiable_paths TEXT, forbidden_paths TEXT,
+    time_budget_seconds INTEGER NOT NULL DEFAULT 300,
+    keep_threshold REAL NOT NULL DEFAULT 0.005,
+    category_order TEXT, categories TEXT, config TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experiment_candidates (
+    id TEXT PRIMARY KEY, domain TEXT NOT NULL,
+    hypothesis TEXT NOT NULL, category TEXT,
+    modifications TEXT, source TEXT DEFAULT 'manual',
+    signal_id TEXT, status TEXT NOT NULL DEFAULT 'created',
+    embedding BLOB, content_hash TEXT,
+    info_gain_score REAL, thompson_sample REAL,
+    estimated_impact TEXT, risk_level TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experiment_results (
+    id TEXT PRIMARY KEY, experiment_id TEXT NOT NULL,
+    domain TEXT NOT NULL, hypothesis TEXT NOT NULL,
+    category TEXT, pre_metric REAL, post_metric REAL,
+    metric_delta REAL, improvement_pct REAL,
+    decision TEXT NOT NULL, decision_rationale TEXT,
+    duration_ms INTEGER, git_branch TEXT, git_commit TEXT,
+    tests_passed INTEGER, coherence_passed INTEGER,
+    files_modified TEXT, details TEXT,
+    classification TEXT DEFAULT 'CUI', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experiment_landscapes (
+    id TEXT PRIMARY KEY, domain TEXT NOT NULL,
+    category TEXT NOT NULL, alpha REAL NOT NULL DEFAULT 2.0,
+    beta_val REAL NOT NULL DEFAULT 8.0,
+    total_experiments INTEGER NOT NULL DEFAULT 0,
+    total_kept INTEGER NOT NULL DEFAULT 0,
+    total_discarded INTEGER NOT NULL DEFAULT 0,
+    best_improvement REAL DEFAULT 0.0,
+    cumulative_improvement REAL DEFAULT 0.0,
+    last_experiment_at TEXT, updated_at TEXT NOT NULL,
+    UNIQUE(domain, category)
+);
+CREATE TABLE IF NOT EXISTS bayesian_experiment_scores (
+    id TEXT PRIMARY KEY, candidate_id TEXT NOT NULL,
+    domain TEXT NOT NULL, info_gain_score REAL NOT NULL,
+    dimensions TEXT, threshold_band TEXT,
+    thompson_sample REAL, prior_distribution TEXT,
+    selected INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI', scored_at TEXT NOT NULL
 );
 """
 

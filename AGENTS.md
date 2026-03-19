@@ -66,10 +66,8 @@ python tools/project/validate_manifest.py --file icdev.yaml --json
 
 ## MCP Servers
 
-This project has 2 MCP servers available. Configure them in your tool to get full ICDEV capability:
+This project has 0 MCP servers available. Configure them in your tool to get full ICDEV capability:
 
-| `icdev-unified` | `python tools/mcp/unified_server.py` |
-| `playwright` | `python tools/mcp/playwright_server.py` |
 
 
 See `.mcp.json` for full server definitions. Use `python tools/dx/mcp_config_generator.py --platform codex --json` to generate Codex-compatible MCP config.

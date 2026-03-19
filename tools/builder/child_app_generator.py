@@ -18,7 +18,6 @@ import logging
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 import uuid
@@ -181,6 +180,8 @@ CONDITIONAL_DIRS = {
     "knowledge_graph": ["tools/knowledge_graph", "context/knowledge_graph"],
     # Genesis v2.0 Autonomous Research Lab (D-GEN-1 through D-GEN-12)
     "genesis": ["tools/genesis", "tools/genesis/reflexes", "data/genesis"],
+    # Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)
+    "autoresearch": ["tools/autoresearch", "args/experiment_programs"],
     # DataBridge + Connector Forge (D-CF-1 through D-CF-10)
     "databridge": [
         "tools/databridge", "tools/databridge/forge",
@@ -1002,14 +1003,14 @@ def _generate_dashboard_stub(
         stub_content += fn + "\n"
 
     stub_content += (
-        f'    return app\n'
-        f'\n'
-        f'\n'
-        f'app = create_app()\n'
-        f'\n'
-        f'\n'
-        f'if __name__ == "__main__":\n'
-        f'    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")\n'
+        '    return app\n'
+        '\n'
+        '\n'
+        'app = create_app()\n'
+        '\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    app.run(host="0.0.0.0", port=5000, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")\n'
     )
 
     dash_dir = child_root / "tools" / "dashboard"
@@ -1046,7 +1047,6 @@ def _strip_govcon_from_dashboard(content: str) -> str:
     # --- State: govcon init block removal ---
     in_govcon_init = False
     govcon_init_done = False
-    govcon_init_indent = 0
     # --- State: inline route block removal ---
     skip_route_block = False
 
@@ -1317,8 +1317,8 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
 
     if demo_mode:
         memory_content += (
-            f"- **Mode:** DEMONSTRATION ONLY\n"
-            f"  - This is a demo application. Do NOT use for operational or classified data.\n"
+            "- **Mode:** DEMONSTRATION ONLY\n"
+            "  - This is a demo application. Do NOT use for operational or classified data.\n"
         )
 
     # Agent details — only if the app has agents
@@ -1347,22 +1347,22 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
 
     if active_caps:
         memory_content += (
-            f"\n"
-            f"## Capabilities\n"
+            "\n"
+            "## Capabilities\n"
         )
         for cap in active_caps:
             memory_content += f"- {cap}\n"
 
     memory_content += (
-        f"\n"
-        f"## User Preferences\n"
-        f"(To be populated during first session)\n"
-        f"\n"
-        f"## Key Facts\n"
-        f"- This is a generated child application of ICDEV\n"
-        f"- This application CANNOT generate child applications "
-        f"(grandchild prevention)\n"
-        f"- ATLAS workflow does not include fitness assessment step\n"
+        "\n"
+        "## User Preferences\n"
+        "(To be populated during first session)\n"
+        "\n"
+        "## Key Facts\n"
+        "- This is a generated child application of ICDEV\n"
+        "- This application CANNOT generate child applications "
+        "(grandchild prevention)\n"
+        "- ATLAS workflow does not include fitness assessment step\n"
     )
     if parent_cb.get("enabled"):
         memory_content += (
@@ -2498,13 +2498,13 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
     # Title + ICDEV intro
     sections.append(f"# {app_name}\n")
     sections.append(
-        f"**Built with [ICDEV](https://github.com/icdev) — the Intelligent "
-        f"Coding Development platform.**\n\n"
-        f"ICDEV is a meta-builder that autonomously constructs Gov/DoD applications "
-        f"using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
-        f"Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
-        f"→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
-        f"compliance, and self-healing capabilities.\n"
+        "**Built with [ICDEV](https://github.com/icdev) — the Intelligent "
+        "Coding Development platform.**\n\n"
+        "ICDEV is a meta-builder that autonomously constructs Gov/DoD applications "
+        "using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
+        "Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
+        "→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
+        "compliance, and self-healing capabilities.\n"
     )
 
     # Classification badge

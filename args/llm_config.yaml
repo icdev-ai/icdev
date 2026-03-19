@@ -209,6 +209,18 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
+  # Dual-model optimized: text-only Qwen3 1.7B for simultaneous VRAM residency
+  # alongside Gemma3 (multimodal). Total VRAM: ~6.5GB / 8GB RTX 4060 Ti.
+  # Use this as tier1_model when OLLAMA_MAX_LOADED_MODELS=2.
+  qwen3-dual:
+    provider: ollama
+    model_id: "qwen3:1.7b"
+    max_output_tokens: 16384
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # -- Vision Models (Local) --
   gemma3-local:
     provider: ollama
@@ -542,6 +554,18 @@ two_tier:
   enabled: true
   tier1_model: qwen3-local    # Worker — research, draft, scan (free/local)
   tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
+
+  # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
+  # Toggle via: env ICDEV_DUAL_MODEL=true, or dashboard toggle, or API
+  # When enabled: tier1 → qwen3-dual (1.7B text-only), overrides swap to dual variants
+  # When disabled: tier1 → qwen3-local (9B multimodal), original overrides
+  dual_model:
+    enabled: ${ICDEV_DUAL_MODEL:-false}
+    tier1_override: qwen3-dual           # replaces tier1_model when active
+    function_overrides:                   # replaces function_model_overrides entries
+      pulse_rewrite: qwen3-dual          # 1.7B text-only instead of 9B
+      # pulse_draft stays gemma3-local (already dual-resident)
+      # wg_rewrite stays claude-sonnet-api (cloud, no VRAM impact)
 
   planner_functions:
     - agent_architect

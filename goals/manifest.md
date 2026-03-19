@@ -56,5 +56,5 @@
 | Orchestration Improvements | goals/multi_agent_orchestration.md | Phase 61: Dispatcher-only orchestrator mode (D-DISP-1), declarative prompt chains (D-PC-1/2/3), ATLAS adversarial critique phase, session purpose declaration (D-ORCH-5), async result injection (D-ORCH-7), tiered file access (D-ORCH-8), real-time orchestration dashboard |
 | Industry Research | goals/industry_research.md | Industry Research Engine: 8-stage pipeline (SCOPE→DOSSIER), 6 verticals, 8 data streams, 6-dimension challenge scoring, build/buy/partner analysis, template-based dossier generation, cross-engine registration, HITL fitness trigger (Phase 63, D-RES-1 through D-RES-13) **(parent-only)** |
 | RAG Subsystem | goals/rag_subsystem.md | Universal RAG: multi-source ingestion, adaptive chunking, two-stage retrieval (vector + qwen3 re-rank), two-tier LLM injection, tiered retention, PROV-AGENT provenance, child app federation (Phase 64, D-RAG-1 through D-RAG-14) |
-| Genesis Daemon | goals/genesis_daemon.md | v2.0 autonomous research lab — 12 Reflexes, Trust Kernel, circuit breakers, always-on daemon |
+| Genesis Daemon | goals/genesis_daemon.md | v2.0 autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers, always-on daemon |
 | Genesis Promoter | goals/genesis_promoter.md | Knowledge Bridge — GKP export/import, dedup, auto-promote, human review gateway |

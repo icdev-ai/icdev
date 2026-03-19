@@ -707,7 +707,6 @@ def handle_worktree_manage(args: dict) -> dict:
 def handle_nlq_query(args: dict) -> dict:
     """Execute natural language compliance query."""
     try:
-        import sqlite3
         conn = get_connection()
         # Simple passthrough — NLQ requires LLM which is not invoked here.
         # Return available tables for the user to formulate queries.
@@ -1233,3 +1232,46 @@ def handle_egress_policy_resolve(args: dict) -> dict:
     if args.get("role"):
         cli_args.extend(["--role", str(args["role"])])
     return _run_cli("tools/security/egress_policy_manager.py", cli_args)
+
+
+# ── Autoresearch (Phase 67, D-AR-1 through D-AR-10) ─────────────────────────
+
+
+def handle_autoresearch_create(args: dict) -> dict:
+    """Create a new autoresearch experiment candidate."""
+    cli_args = ["--create", "--domain", str(args.get("domain", "compliance")),
+                "--hypothesis", str(args.get("hypothesis", ""))]
+    return _run_cli("tools/autoresearch/experiment_engine.py", cli_args)
+
+
+def handle_autoresearch_loop(args: dict) -> dict:
+    """Run autonomous Bayesian Autoresearch loop for a domain."""
+    cli_args = ["--loop", "--domain", str(args.get("domain", "compliance")),
+                "--max-experiments", str(args.get("max_experiments", 5))]
+    if args.get("overnight"):
+        cli_args.append("--overnight")
+    return _run_cli("tools/autoresearch/experiment_engine.py", cli_args)
+
+
+def handle_autoresearch_status(args: dict) -> dict:
+    """Get current autoresearch status across all domains."""
+    return _run_cli("tools/autoresearch/experiment_engine.py", ["--status"])
+
+
+def handle_autoresearch_select(args: dict) -> dict:
+    """Select next experiment via Bayesian scoring + Thompson Sampling."""
+    cli_args = ["--select", "--domain", str(args.get("domain", "compliance"))]
+    return _run_cli("tools/autoresearch/bayesian_selector.py", cli_args)
+
+
+def handle_autoresearch_evaluate(args: dict) -> dict:
+    """Evaluate a single domain fitness metric."""
+    cli_args = ["--evaluate", str(args.get("domain", "compliance"))]
+    if args.get("project_id"):
+        cli_args.extend(["--project-id", str(args["project_id"])])
+    return _run_cli("tools/autoresearch/fitness_evaluator.py", cli_args)
+
+
+def handle_autoresearch_health(args: dict) -> dict:
+    """Health check for autoresearch subsystem."""
+    return _run_cli("tools/autoresearch/experiment_engine.py", ["--health"])

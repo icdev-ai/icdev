@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Proposal Genesis Daemon — autonomous proposal intelligence engine (D-PG-1).
 
-Runs 14 Reflexes across 4 phases (CAPTURE, PROPOSE, DELIVER, LEARN) as
+Runs 25 Reflexes across 4 phases (CAPTURE, PROPOSE, DELIVER, LEARN) as
 managed threads within a single process.  Phase A implements R1, R5, R6, R7, R8.
 
 Usage:
@@ -55,29 +55,36 @@ PID_FILE = BASE_DIR / ".tmp" / "proposal_genesis" / "daemon.pid"
 REFLEX_NAMES = [
     # Phase 1: CAPTURE
     "discover", "scout", "shape", "engage",
+    "regulate", "vehicle", "talent", "team",
     # Phase 2: PROPOSE
     "extract", "map", "draft", "polish", "decide",
+    "review", "price", "comply_cmmc", "trace",
     # Phase 3: DELIVER
-    "monitor", "fulfill", "publish",
+    "monitor", "fulfill", "publish", "bridge",
     # Phase 4: LEARN
-    "analyze", "train",
+    "analyze", "train", "adapt",
 ]
 
-# Phase groupings
+# Phase groupings (original 14 + 11 new)
 PHASE_A_REFLEXES = ["discover", "extract", "map", "draft", "polish"]
 PHASE_B_REFLEXES = ["scout", "shape"]
 PHASE_C_REFLEXES = ["engage"]
 PHASE_D_REFLEXES = ["publish"]
 PHASE_E_REFLEXES = ["monitor", "fulfill"]
 PHASE_F_REFLEXES = ["decide", "analyze", "train"]
+# 3-Engine Research Enhancement reflexes
+PHASE_G_REFLEXES = ["review", "price", "comply_cmmc", "trace"]
+PHASE_H_REFLEXES = ["regulate", "vehicle", "talent", "team"]
+PHASE_I_REFLEXES = ["bridge", "adapt"]
 
-# Pipeline chain: discover -> extract -> map -> draft -> polish -> decide
+# Pipeline chain: discover -> extract -> map -> draft -> polish -> review -> decide
 PIPELINE_CHAIN = {
     "discover": "extract",
     "extract": "map",
     "map": "draft",
     "draft": "polish",
-    "polish": "decide",
+    "polish": "review",
+    "review": "decide",
 }
 
 # Backward-compat aliases
@@ -113,7 +120,7 @@ class PGTrustKernel(TrustKernelBase):
 # Proposal Genesis Daemon
 # ---------------------------------------------------------------------------
 class ProposalGenesisDaemon(DaemonBase):
-    """Main daemon managing 14 Proposal Reflexes (D-PG-1)."""
+    """Main daemon managing 25 Proposal Reflexes (D-PG-1)."""
 
     daemon_name = "Proposal Genesis Daemon"
     daemon_version = DAEMON_VERSION
@@ -398,9 +405,16 @@ def _log_audit(event_type: str, reflex_name: str = None,
 ReflexState = PGReflexState
 TrustKernel = PGTrustKernel
 
-_parse_schedule = lambda s: __import__('tools.daemon.base', fromlist=['parse_schedule']).parse_schedule(s)
-_is_due = lambda sched, last: __import__('tools.daemon.base', fromlist=['is_due']).is_due(sched, last)
-_evaluate_metric = lambda mc, v: __import__('tools.daemon.base', fromlist=['evaluate_metric']).evaluate_metric(mc, v)
+def _parse_schedule(s):
+    return __import__('tools.daemon.base', fromlist=['parse_schedule']).parse_schedule(s)
+
+
+def _is_due(sched, last):
+    return __import__('tools.daemon.base', fromlist=['is_due']).is_due(sched, last)
+
+
+def _evaluate_metric(mc, v):
+    return __import__('tools.daemon.base', fromlist=['evaluate_metric']).evaluate_metric(mc, v)
 
 
 # ---------------------------------------------------------------------------

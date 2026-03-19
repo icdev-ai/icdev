@@ -178,10 +178,17 @@ capabilities:
   genesis:
     always_on: false
     trigger: { flag: "genesis_enabled" }
-    description: "Autonomous research lab — 13 Reflexes, Trust Kernel, circuit breakers, GKP promoter (D-GEN-1 through D-GEN-12)"
+    description: "Autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers, GKP promoter (D-GEN-1 through D-GEN-12)"
     source_dirs: ["tools/genesis", "tools/genesis/reflexes"]
     includes: ["tools/genesis/*.py", "tools/genesis/reflexes/*.py", "args/genesis_config.yaml"]
     db_tables: ["genesis_audit", "genesis_reflex_state", "genesis_gkp"]
+  autoresearch:
+    always_on: false
+    trigger: { overall_score_minimum: 3 }
+    description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments with info-gain selection, Thompson Sampling, pgvector dedup, 6 fitness domains (D-AR-1 through D-AR-10)"
+    source_dirs: ["tools/autoresearch"]
+    includes: ["tools/autoresearch/*.py", "args/autoresearch_config.yaml", "args/experiment_programs/*.yaml"]
+    db_tables: ["experiment_programs", "experiment_candidates", "experiment_results", "experiment_landscapes", "bayesian_experiment_scores"]
   databridge:
     always_on: false
     trigger: { flag: "databridge_enabled" }

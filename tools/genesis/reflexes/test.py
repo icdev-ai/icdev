@@ -174,14 +174,14 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
         "import pytest",
         "",
         "",
-        f"# --- Module Import ---",
+        "# --- Module Import ---",
         "",
         f"def test_{module_name}_imports():",
-        f'    """Verify module can be imported without errors."""',
+        '    """Verify module can be imported without errors."""',
         "    try:",
         f"        import {import_path}",
         "    except ImportError as e:",
-        f'        pytest.skip(f"Import dependency missing: {{e}}")',
+        '        pytest.skip(f"Import dependency missing: {e}")',
         "",
     ]
 
@@ -189,7 +189,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
     if pub_funcs:
         lines.extend([
             "",
-            f"# --- Function Signature Tests ---",
+            "# --- Function Signature Tests ---",
             "",
         ])
         for func in pub_funcs[:15]:  # Cap at 15 functions
@@ -206,7 +206,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 f"        from {import_path} import {fname}",
                 f"        assert callable({fname}), '{fname} is not callable'",
                 "    except ImportError:",
-                f'        pytest.skip("Module not importable")',
+                '        pytest.skip("Module not importable")',
                 "",
             ])
 
@@ -223,7 +223,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                     "    try:",
                     f"        from {import_path} import {fname}",
                     f"        sig = inspect.signature({fname})",
-                    f"        params = list(sig.parameters.keys())",
+                    "        params = list(sig.parameters.keys())",
                 ])
                 for p in non_default_params[:5]:
                     pname = p["name"]
@@ -233,7 +233,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                     )
                 lines.extend([
                     "    except ImportError:",
-                    f'        pytest.skip("Module not importable")',
+                    '        pytest.skip("Module not importable")',
                     "",
                 ])
 
@@ -252,38 +252,38 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                     lines.extend([
                         f"def test_{module_name}_{fname}_invocation():",
                         f'    """Verify {fname} can be called with test inputs."""',
-                        f'    try:',
+                        '    try:',
                         f"        from {import_path} import {fname}",
-                        f'    except ImportError:',
-                        f'        pytest.skip("Module not importable")',
-                        f'        return',
-                        f'    mock_conn = MagicMock()',
-                        f'    mock_conn.execute.return_value.fetchone.return_value = None',
-                        f'    mock_conn.execute.return_value.fetchall.return_value = []',
-                        f'    with patch("tools.db.storage.get_connection", return_value=mock_conn):',
-                        f"        try:",
+                        '    except ImportError:',
+                        '        pytest.skip("Module not importable")',
+                        '        return',
+                        '    mock_conn = MagicMock()',
+                        '    mock_conn.execute.return_value.fetchone.return_value = None',
+                        '    mock_conn.execute.return_value.fetchall.return_value = []',
+                        '    with patch("tools.db.storage.get_connection", return_value=mock_conn):',
+                        "        try:",
                         f"            result = {fname}({', '.join(param_values)})",
                     ])
                     if return_type:
                         rt = return_type.lower()
                         if "dict" in rt:
-                            lines.append(f"            assert isinstance(result, dict)")
+                            lines.append("            assert isinstance(result, dict)")
                         elif "list" in rt:
-                            lines.append(f"            assert isinstance(result, (list, tuple))")
+                            lines.append("            assert isinstance(result, (list, tuple))")
                         elif "bool" in rt:
-                            lines.append(f"            assert isinstance(result, bool)")
+                            lines.append("            assert isinstance(result, bool)")
                         elif "int" in rt:
-                            lines.append(f"            assert isinstance(result, (int, float))")
+                            lines.append("            assert isinstance(result, (int, float))")
                         elif "str" in rt:
-                            lines.append(f"            assert isinstance(result, str)")
+                            lines.append("            assert isinstance(result, str)")
                     lines.extend([
-                        f"        except (TypeError, ValueError, KeyError, AttributeError):",
-                        f"            pass  # Expected with mock data",
-                        f"        except Exception as e:",
-                        f'            if "no such table" in str(e).lower():',
-                        f"                pass  # DB not initialized",
-                        f"            else:",
-                        f"                raise",
+                        "        except (TypeError, ValueError, KeyError, AttributeError):",
+                        "            pass  # Expected with mock data",
+                        "        except Exception as e:",
+                        '            if "no such table" in str(e).lower():',
+                        "                pass  # DB not initialized",
+                        "            else:",
+                        "                raise",
                         "",
                     ])
 
@@ -291,7 +291,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
     if pub_classes:
         lines.extend([
             "",
-            f"# --- Class Tests ---",
+            "# --- Class Tests ---",
             "",
         ])
         for cls in pub_classes[:5]:
@@ -303,7 +303,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                 f"        from {import_path} import {cname}",
                 f"        assert isinstance({cname}, type), '{cname} is not a class'",
                 "    except ImportError:",
-                f'        pytest.skip("Module not importable")',
+                '        pytest.skip("Module not importable")',
                 "",
             ])
 
@@ -324,7 +324,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
                     )
                 lines.extend([
                     "    except ImportError:",
-                    f'        pytest.skip("Module not importable")',
+                    '        pytest.skip("Module not importable")',
                     "",
                 ])
 
@@ -332,10 +332,10 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
     if constants:
         lines.extend([
             "",
-            f"# --- Constants ---",
+            "# --- Constants ---",
             "",
             f"def test_{module_name}_constants():",
-            f'    """Verify module exports expected constants."""',
+            '    """Verify module exports expected constants."""',
             "    try:",
             f"        import {import_path} as mod",
         ])
@@ -346,7 +346,7 @@ def _generate_test_code(module_info: Dict, api_surface: Dict) -> str:
             )
         lines.extend([
             "    except ImportError:",
-            f'        pytest.skip("Module not importable")',
+            '        pytest.skip("Module not importable")',
             "",
         ])
 

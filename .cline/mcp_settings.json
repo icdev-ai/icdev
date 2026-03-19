@@ -12,14 +12,18 @@
       "disabled": false
     },
     "playwright": {
-      "command": "npx",
+      "command": "docker",
       "args": [
-        "@playwright/mcp@latest",
+        "run",
+        "-i",
+        "--rm",
+        "--init",
+        "--pull=never",
+        "--add-host=host.docker.internal:host-gateway",
+        "mcr.microsoft.com/playwright/mcp:latest",
+        "--headless",
         "--isolated",
-        "--config",
-        "./playwright-mcp-config.json",
-        "--output-dir",
-        "playwright"
+        "--caps=vision"
       ],
       "env": {},
       "disabled": false

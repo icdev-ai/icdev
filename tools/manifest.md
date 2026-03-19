@@ -933,12 +933,12 @@
 
 | Tool | Path | Purpose |
 |------|------|---------|
-| daemon | `tools/genesis/daemon.py` | Always-on daemon: 13 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
+| daemon | `tools/genesis/daemon.py` | Always-on daemon: 14 Reflexes, Trust Kernel, circuit breakers, schedule engine (D-GEN-1). Subclass of DaemonBase |
 | promoter | `tools/genesis/promoter.py` | Knowledge Bridge: GKP export/import, dedup, auto-promote, human review gateway (D-GEN-4) |
 | feedback_collector | `tools/genesis/feedback_collector.py` | Pull v1.x telemetry (failures, quality, coverage, heals) for v2.0 consumption (D-GEN-11) |
 | reporter | `tools/genesis/reporter.py` | Weekly autonomous markdown report: reflex activity, promotions, circuit breakers (D-GEN-12) |
 
-### 12 Reflexes (tools/genesis/reflexes/)
+### 14 Reflexes (tools/genesis/reflexes/)
 
 | Reflex | Risk Tier | Schedule | Purpose |
 |--------|-----------|----------|---------|
@@ -955,6 +955,7 @@
 | heal | YELLOW | continuous/5min | Pattern-match audit trail errors → auto-remediation (log-only v2.0) |
 | evolve | ORANGE | nightly 02:00 | Pick worst-quality file → LLM analysis → propose GKP code_patch for human review |
 | docs | GREEN | daily 06:00 | Documentation drift detection → GKP report |
+| experiment | ORANGE | nightly 01:00 | Bayesian Autoresearch — Karpathy-loop autonomous experiments (D-AR-9) |
 
 ## Proposal Genesis — Autonomous Proposal Intelligence
 
@@ -1211,3 +1212,12 @@
 | Convergence Gates | tools/genesis/convergence.py | Detect phantom improvements and reflex plateau (3 drift vectors + ambiguity, Ouroboros-inspired) | (library — called by daemon post-reflex hook) | Drift scores + recommendation |
 | Stagnation Detector | tools/genesis/stagnation_detector.py | Detect stuck reflexes, break plateaus via 5 lateral thinking personas (Ouroboros-inspired) | (library — called by daemon when convergence flags stagnation) | Pattern detection + alternatives |
 | Agent Benchmark | tools/evaluation/agent_benchmark.py | Scenario-based 2-tier evaluation of ICDEV agents (12 scenarios, 4 agent types, TheAgentCompany-inspired) | --run-all, --agent-type, --scenario, --trend, --gate, --list, --json | Per-agent scores + trend + gate |
+
+## Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Experiment Engine | tools/autoresearch/experiment_engine.py | Core Karpathy Loop — create, run, evaluate, decide, autonomous loop (D-AR-1) | --create, --run, --evaluate, --decide, --loop, --status, --health, --domain, --experiment-id, --max-experiments, --overnight, --json | Experiment results + decisions |
+| Bayesian Selector | tools/autoresearch/bayesian_selector.py | Bayesian info-gain experiment selection + Thompson Sampling + pgvector dedup (D-AR-5, D-AR-6) | --score, --select, --estimate, --category-order, --health, --domain, --json | Scored candidates + selection |
+| Fitness Evaluator | tools/autoresearch/fitness_evaluator.py | Wraps 6 ICDEV tools into single-metric [0,1] scorers (D-AR-7) | --evaluate, --evaluate-all, --list-domains, --health, --project-id, --project-dir, --json | Domain metric values |
+| Hypothesis Generator | tools/autoresearch/hypothesis_generator.py | Scanner-tier LLM + template fallback hypothesis creation (D-AR-1) | --domain, --max, --from-signals, --health, --json | Hypothesis candidates |
+| Experiment Reflex | tools/genesis/reflexes/experiment.py | 14th Genesis reflex — Bayesian Autoresearch at ORANGE tier (D-AR-9) | config dict, trust kernel | Reflex results + GKP export |

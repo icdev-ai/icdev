@@ -7844,6 +7844,213 @@ CREATE TABLE IF NOT EXISTS pg_teaming_assessments (
 CREATE INDEX IF NOT EXISTS idx_pg_team_assess_opp ON pg_teaming_assessments(opportunity_id);
 
 -- ================================================================
+-- Proposal Genesis Enhancement (3-Engine Research, §3.11-§3.18)
+-- ================================================================
+
+-- §3.11 Compliance Matrix (R5 enhancement + R22 Trace)
+CREATE TABLE IF NOT EXISTS pg_compliance_matrix (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    requirement_id      TEXT NOT NULL,
+    requirement_text    TEXT NOT NULL,
+    source_section      TEXT NOT NULL CHECK(source_section IN ('L', 'M', 'C', 'attachment', 'amendment')),
+    evaluation_factor   TEXT,
+    evaluation_weight   REAL,
+    assigned_volume     TEXT,
+    assigned_section    TEXT,
+    compliance_status   TEXT DEFAULT 'gap' CHECK(compliance_status IN ('addressed', 'partial', 'gap', 'na')),
+    amendment_version   INTEGER DEFAULT 0,
+    notes               TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_opp ON pg_compliance_matrix(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_cmatrix_status ON pg_compliance_matrix(compliance_status);
+
+-- §3.12 AI Color Team Review Simulator (R15 Review)
+CREATE TABLE IF NOT EXISTS pg_review_findings (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    review_type         TEXT NOT NULL CHECK(review_type IN ('blue', 'pink', 'red', 'green', 'gold')),
+    review_iteration    INTEGER DEFAULT 1,
+    section_id          TEXT,
+    severity            TEXT NOT NULL CHECK(severity IN ('critical', 'major', 'minor', 'observation')),
+    category            TEXT NOT NULL CHECK(category IN ('compliance', 'persuasion', 'readability', 'formatting', 'pricing', 'strategy')),
+    finding_text        TEXT NOT NULL,
+    recommendation      TEXT,
+    resolution_status   TEXT DEFAULT 'open' CHECK(resolution_status IN ('open', 'addressed', 'deferred', 'wontfix')),
+    resolution_notes    TEXT,
+    created_at          TEXT NOT NULL,
+    resolved_at         TEXT,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_review_opp ON pg_review_findings(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_pg_review_type ON pg_review_findings(review_type);
+
+-- §3.13 Cost Volume Automation (R17 Price)
+CREATE TABLE IF NOT EXISTS pg_cost_volumes (
+    id                      TEXT PRIMARY KEY,
+    opportunity_id          TEXT NOT NULL,
+    contract_type           TEXT NOT NULL CHECK(contract_type IN ('ffp', 't_and_m', 'cpff', 'cpaf', 'idiq', 'hybrid')),
+    pricing_strategy        TEXT CHECK(pricing_strategy IN ('lpta', 'best_value', 'tradeoff')),
+    total_evaluated_price   REAL,
+    direct_labor_cost       REAL,
+    fringe_rate             REAL,
+    overhead_rate           REAL,
+    g_and_a_rate            REAL,
+    fee_rate                REAL,
+    subcontractor_cost      REAL,
+    odc_cost                REAL,
+    ptw_estimate_low        REAL,
+    ptw_estimate_high       REAL,
+    calc_benchmark_median   REAL,
+    period_of_performance   TEXT,
+    status                  TEXT DEFAULT 'draft' CHECK(status IN ('draft', 'reviewed', 'approved', 'submitted')),
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_costvol_opp ON pg_cost_volumes(opportunity_id);
+
+CREATE TABLE IF NOT EXISTS pg_lcat_allocations (
+    id                  TEXT PRIMARY KEY,
+    cost_volume_id      TEXT NOT NULL,
+    task_description    TEXT NOT NULL,
+    labor_category      TEXT NOT NULL,
+    bls_soc_code        TEXT,
+    fte_count           REAL NOT NULL,
+    hourly_rate         REAL,
+    annual_cost         REAL,
+    basis_of_estimate   TEXT,
+    created_at          TEXT NOT NULL,
+    FOREIGN KEY (cost_volume_id) REFERENCES pg_cost_volumes(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_lcat_vol ON pg_lcat_allocations(cost_volume_id);
+
+-- §3.14 CMMC Supply Chain Validator (R18 Comply_CMMC)
+CREATE TABLE IF NOT EXISTS pg_cmmc_supply_chain (
+    id                      TEXT PRIMARY KEY,
+    opportunity_id          TEXT NOT NULL,
+    team_member_name        TEXT NOT NULL,
+    team_member_cage        TEXT,
+    role                    TEXT CHECK(role IN ('prime', 'sub_tier1', 'sub_tier2', 'consultant')),
+    required_cmmc_level     INTEGER NOT NULL,
+    actual_cmmc_level       INTEGER,
+    assessment_type         TEXT CHECK(assessment_type IN ('self', 'c3pao', 'dibcac')),
+    sprs_score              INTEGER,
+    poam_status             TEXT CHECK(poam_status IN ('none', 'open', 'closed')),
+    certification_expiry    TEXT,
+    compliance_status       TEXT DEFAULT 'unknown' CHECK(compliance_status IN ('compliant', 'poam', 'non_compliant', 'unknown', 'expired')),
+    flow_down_generated     INTEGER DEFAULT 0,
+    checked_at              TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_cmmc_opp ON pg_cmmc_supply_chain(opportunity_id);
+
+-- §3.15 GSA "American AI" Clause Compliance
+CREATE TABLE IF NOT EXISTS pg_ai_clause_compliance (
+    id                          TEXT PRIMARY KEY,
+    opportunity_id              TEXT NOT NULL,
+    clause_type                 TEXT NOT NULL CHECK(clause_type IN ('gsar_552_239_7001', 'omb_m26_04', 'omb_m25_21')),
+    model_cards_generated       INTEGER DEFAULT 0,
+    bias_evaluations_generated  INTEGER DEFAULT 0,
+    source_disclosure_generated INTEGER DEFAULT 0,
+    system_card_generated       INTEGER DEFAULT 0,
+    american_ai_certified       INTEGER DEFAULT 0,
+    ip_rights_documented        INTEGER DEFAULT 0,
+    bundle_path                 TEXT,
+    status                      TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'generated', 'reviewed', 'attached')),
+    created_at                  TEXT NOT NULL,
+    updated_at                  TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_aiclause_opp ON pg_ai_clause_compliance(opportunity_id);
+
+-- §3.16 Talent Intelligence (R20 Talent)
+CREATE TABLE IF NOT EXISTS pg_talent_signals (
+    id                          TEXT PRIMARY KEY,
+    competitor_name             TEXT NOT NULL,
+    role_title                  TEXT NOT NULL,
+    location                    TEXT,
+    clearance_required          TEXT,
+    salary_low                  REAL,
+    salary_high                 REAL,
+    tools_mentioned             TEXT,
+    certifications_mentioned    TEXT,
+    source_url                  TEXT,
+    posting_date                TEXT,
+    scan_date                   TEXT NOT NULL,
+    correlated_opportunity_id   TEXT,
+    signal_type                 TEXT CHECK(signal_type IN ('velocity_spike', 'role_cluster', 'new_capability', 'pricing_intel', 'general')),
+    created_at                  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_talent_comp ON pg_talent_signals(competitor_name);
+CREATE INDEX IF NOT EXISTS idx_pg_talent_date ON pg_talent_signals(scan_date);
+
+CREATE TABLE IF NOT EXISTS pg_talent_velocity (
+    id                      TEXT PRIMARY KEY,
+    competitor_name         TEXT NOT NULL,
+    week_start              TEXT NOT NULL,
+    posting_count           INTEGER NOT NULL,
+    velocity_zscore         REAL,
+    dominant_role_category  TEXT,
+    dominant_location       TEXT,
+    dominant_clearance      TEXT,
+    created_at              TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pg_talvel_comp ON pg_talent_velocity(competitor_name);
+
+-- §3.17 Win Theme & Discriminator Registry
+CREATE TABLE IF NOT EXISTS pg_win_themes (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    theme_type          TEXT NOT NULL CHECK(theme_type IN ('win_theme', 'discriminator', 'ghost')),
+    theme_statement     TEXT NOT NULL,
+    supporting_evidence TEXT,
+    target_eval_factor  TEXT,
+    ghost_competitor    TEXT,
+    priority            INTEGER DEFAULT 1,
+    status              TEXT DEFAULT 'active' CHECK(status IN ('active', 'archived', 'superseded')),
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_wintheme_opp ON pg_win_themes(opportunity_id);
+
+CREATE TABLE IF NOT EXISTS pg_theme_tracking (
+    id                      TEXT PRIMARY KEY,
+    theme_id                TEXT NOT NULL,
+    section_id              TEXT NOT NULL,
+    implementation_status   TEXT DEFAULT 'pending' CHECK(implementation_status IN ('pending', 'implemented', 'partial', 'missing')),
+    density_score           REAL,
+    reviewer_notes          TEXT,
+    checked_at              TEXT NOT NULL,
+    FOREIGN KEY (theme_id) REFERENCES pg_win_themes(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_themetrack_theme ON pg_theme_tracking(theme_id);
+
+-- §3.18 Teaming Coordination Hub enhancements (extends pg_teaming_partners)
+CREATE TABLE IF NOT EXISTS pg_teaming_workshare (
+    id                  TEXT PRIMARY KEY,
+    opportunity_id      TEXT NOT NULL,
+    partner_id          TEXT NOT NULL,
+    clin_number         TEXT,
+    workshare_pct       REAL NOT NULL,
+    labor_categories    TEXT,
+    status              TEXT DEFAULT 'proposed' CHECK(status IN ('proposed', 'agreed', 'contracted', 'disputed')),
+    ta_status           TEXT DEFAULT 'none' CHECK(ta_status IN ('none', 'draft', 'negotiating', 'executed', 'expired')),
+    ta_expiry_date      TEXT,
+    oci_risk            TEXT DEFAULT 'none' CHECK(oci_risk IN ('none', 'low', 'medium', 'high', 'disqualifying')),
+    socioeconomic_status TEXT,
+    reliability_score   REAL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    FOREIGN KEY (opportunity_id) REFERENCES proposal_opportunities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_pg_workshare_opp ON pg_teaming_workshare(opportunity_id);
+
+-- ================================================================
 -- File Sync Module (D-SYNC-1 through D-SYNC-10)
 -- ================================================================
 
@@ -8590,6 +8797,119 @@ CREATE TABLE IF NOT EXISTS autonomy_behavior_log (
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_abl_signal ON autonomy_behavior_log(signal_type);
+
+-- ============================================================
+-- Phase 67 — Bayesian Autoresearch (D-AR-1 through D-AR-10)
+-- ============================================================
+
+-- Experiment programs (reference data, allows UPDATE)
+CREATE TABLE IF NOT EXISTS experiment_programs (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL UNIQUE,
+    objective_metric TEXT NOT NULL,
+    objective_direction TEXT NOT NULL CHECK(objective_direction IN ('maximize', 'minimize')),
+    measurement_command TEXT NOT NULL,
+    metric_path     TEXT,
+    modifiable_paths TEXT,
+    forbidden_paths TEXT,
+    time_budget_seconds INTEGER NOT NULL DEFAULT 300,
+    keep_threshold  REAL NOT NULL DEFAULT 0.005,
+    category_order  TEXT,
+    categories      TEXT,
+    config          TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Experiment candidates (allows UPDATE for status transitions)
+CREATE TABLE IF NOT EXISTS experiment_candidates (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL,
+    hypothesis      TEXT NOT NULL,
+    category        TEXT,
+    modifications   TEXT,
+    source          TEXT DEFAULT 'manual' CHECK(source IN (
+        'manual', 'innovation', 'creative', 'research', 'genesis', 'llm_generated'
+    )),
+    signal_id       TEXT,
+    status          TEXT NOT NULL DEFAULT 'created' CHECK(status IN (
+        'created', 'scoring', 'selected', 'running', 'completed', 'discarded', 'failed', 'deduped'
+    )),
+    embedding       BLOB,
+    content_hash    TEXT,
+    info_gain_score REAL,
+    thompson_sample REAL,
+    estimated_impact TEXT CHECK(estimated_impact IN ('high', 'medium', 'low')),
+    risk_level      TEXT CHECK(risk_level IN ('high', 'medium', 'low')),
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ec_domain ON experiment_candidates(domain);
+CREATE INDEX IF NOT EXISTS idx_ec_status ON experiment_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_ec_hash ON experiment_candidates(content_hash);
+
+-- Experiment results (append-only, NIST AU-2 — D-AR-4)
+CREATE TABLE IF NOT EXISTS experiment_results (
+    id              TEXT PRIMARY KEY,
+    experiment_id   TEXT NOT NULL,
+    domain          TEXT NOT NULL,
+    hypothesis      TEXT NOT NULL,
+    category        TEXT,
+    pre_metric      REAL,
+    post_metric     REAL,
+    metric_delta    REAL,
+    improvement_pct REAL,
+    decision        TEXT NOT NULL CHECK(decision IN ('keep', 'discard', 'timeout', 'error')),
+    decision_rationale TEXT,
+    duration_ms     INTEGER,
+    git_branch      TEXT,
+    git_commit      TEXT,
+    tests_passed    INTEGER,
+    coherence_passed INTEGER,
+    files_modified  TEXT,
+    details         TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_er_domain ON experiment_results(domain);
+CREATE INDEX IF NOT EXISTS idx_er_decision ON experiment_results(decision);
+CREATE INDEX IF NOT EXISTS idx_er_created ON experiment_results(created_at);
+
+-- Experiment landscapes (allows UPDATE — posteriors evolve)
+CREATE TABLE IF NOT EXISTS experiment_landscapes (
+    id              TEXT PRIMARY KEY,
+    domain          TEXT NOT NULL,
+    category        TEXT NOT NULL,
+    alpha           REAL NOT NULL DEFAULT 2.0,
+    beta_val        REAL NOT NULL DEFAULT 8.0,
+    total_experiments INTEGER NOT NULL DEFAULT 0,
+    total_kept      INTEGER NOT NULL DEFAULT 0,
+    total_discarded INTEGER NOT NULL DEFAULT 0,
+    best_improvement REAL DEFAULT 0.0,
+    cumulative_improvement REAL DEFAULT 0.0,
+    last_experiment_at TEXT,
+    updated_at      TEXT NOT NULL,
+    UNIQUE(domain, category)
+);
+
+-- Bayesian experiment scores (append-only, NIST AU-2 — D-AR-4)
+CREATE TABLE IF NOT EXISTS bayesian_experiment_scores (
+    id              TEXT PRIMARY KEY,
+    candidate_id    TEXT NOT NULL,
+    domain          TEXT NOT NULL,
+    info_gain_score REAL NOT NULL,
+    dimensions      TEXT,
+    threshold_band  TEXT,
+    thompson_sample REAL,
+    prior_distribution TEXT,
+    selected        INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI',
+    scored_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bes_domain ON bayesian_experiment_scores(domain);
+CREATE INDEX IF NOT EXISTS idx_bes_candidate ON bayesian_experiment_scores(candidate_id);
 """
 
 

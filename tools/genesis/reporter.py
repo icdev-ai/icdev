@@ -120,18 +120,18 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
 
     # Build markdown
     lines = [
-        f"# Genesis Weekly Report",
-        f"",
+        "# Genesis Weekly Report",
+        "",
         f"**Period:** {since[:10]} to {now.strftime('%Y-%m-%d')}",
         f"**Generated:** {_utcnow_iso()}",
-        f"**Classification:** CUI // SP-CTI",
-        f"",
-        f"---",
-        f"",
-        f"## Executive Summary",
-        f"",
-        f"| Metric | Value |",
-        f"|--------|-------|",
+        "**Classification:** CUI // SP-CTI",
+        "",
+        "---",
+        "",
+        "## Executive Summary",
+        "",
+        "| Metric | Value |",
+        "|--------|-------|",
         f"| Total Reflex Runs | {total_runs} |",
         f"| Successes | {successes} ({success_rate:.1f}%) |",
         f"| Failures | {failures} |",
@@ -139,13 +139,13 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         f"| GKPs Rejected | {len(rejected)} |",
         f"| GKPs Pending Review | {len(pending)} |",
         f"| Circuit Breakers Open | {len(breakers)} |",
-        f"",
-        f"---",
-        f"",
-        f"## Reflex Activity",
-        f"",
-        f"| Reflex | Runs | OK | Fail | Last Metric |",
-        f"|--------|------|----|------|-------------|",
+        "",
+        "---",
+        "",
+        "## Reflex Activity",
+        "",
+        "| Reflex | Runs | OK | Fail | Last Metric |",
+        "|--------|------|----|------|-------------|",
     ]
 
     for s in summary:
@@ -159,11 +159,11 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
         )
 
     lines.extend([
-        f"",
-        f"---",
-        f"",
-        f"## Knowledge Promotions",
-        f"",
+        "",
+        "---",
+        "",
+        "## Knowledge Promotions",
+        "",
     ])
 
     if promoted:
@@ -192,10 +192,10 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
     # Circuit breakers
     if breakers:
         lines.extend([
-            f"---",
-            f"",
-            f"## Circuit Breakers (ATTENTION REQUIRED)",
-            f"",
+            "---",
+            "",
+            "## Circuit Breakers (ATTENTION REQUIRED)",
+            "",
         ])
         for b in breakers:
             lines.append(f"- **{b['reflex_name']}** — OPEN since {b.get('circuit_breaker_tripped_at', 'unknown')} "
@@ -206,10 +206,10 @@ def generate_report(lookback_days: int = 7) -> Dict[str, Any]:
 
     # Recommendations
     lines.extend([
-        f"---",
-        f"",
-        f"## Recommendations",
-        f"",
+        "---",
+        "",
+        "## Recommendations",
+        "",
     ])
 
     if pending:

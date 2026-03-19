@@ -126,6 +126,7 @@ def get_db_connection(
         )
     conn = get_connection()
     if row_factory:
+        pass  # get_connection() handles row_factory internally
     return conn
 
 
@@ -140,6 +141,7 @@ def get_memory_connection(
         raise FileNotFoundError(f"Memory database not found: {path}")
     conn = get_connection()
     if row_factory:
+        pass  # get_connection() handles row_factory internally
     return conn
 
 
@@ -154,4 +156,5 @@ def get_platform_connection(
         raise FileNotFoundError(f"Platform database not found: {path}")
     conn = get_connection()
     if row_factory:
+        pass  # get_connection() handles row_factory internally
     return conn

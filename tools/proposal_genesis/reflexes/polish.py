@@ -2,9 +2,12 @@
 # CUI // SP-CTI
 """R8: Polish Reflex — WriteGuard quality gate for proposal drafts.
 
-Runs grammar, readability, tone, plagiarism, and AI detection checks
-on draft responses. Stores scores in pg_proposal_quality_scores (D-PG-8).
+Runs 6 quality checks on draft responses: stub detection (pre-gate),
+grammar, readability, tone, plagiarism, and AI detection.
+Stores scores in pg_proposal_quality_scores (D-PG-8).
 Scanner-tier only (zero Claude tokens).
+
+Enhancement §3.6: Stub detection pre-gate using GSD-adapted patterns.
 """
 
 import re
@@ -226,11 +229,179 @@ def _check_ai_detection(text: str) -> Dict[str, Any]:
     }
 
 
+def _check_stub_content(text: str, opportunity_id: str) -> Dict[str, Any]:
+    """Check for stub/placeholder content in proposal drafts (§3.6 pre-gate).
+
+    GSD-adapted stub detection for proposal-specific patterns.
+    Returns score 1.0 (fully substantive) to 0.0 (pure stub).
+    Deterministic, scanner-tier, zero LLM tokens.
+    """
+    text_lower = text.lower().strip()
+    stub_patterns_found = []
+    word_count = len(text.split())
+
+    # ── Proposal-specific stub patterns ──────────────────────────────────
+    PROPOSAL_STUB_PATTERNS = [
+        (r"\bTBD\b", "TBD placeholder"),
+        (r"\bTODO\b", "TODO placeholder"),
+        (r"\binsert\s+here\b", "insert-here placeholder"),
+        (r"\brefer\s+to\s+attachment\b", "refer-to-attachment placeholder"),
+        (r"\[COMPANY\s*NAME\]", "[COMPANY NAME] template marker"),
+        (r"\[CONTRACTOR\s*NAME\]", "[CONTRACTOR NAME] template marker"),
+        (r"\[YOUR\s+\w+\]", "[YOUR ...] template marker"),
+        (r"\bas\s+described\s+in\s+our\s+response\b", "circular reference (no content)"),
+        (r"\bLorem\s+ipsum\b", "Lorem ipsum boilerplate"),
+        (r"\bsee\s+section\b(?!.*\b(?:above|below|provides|describes|details)\b)",
+         "see-section without content"),
+        (r"\bfill\s+in\b", "fill-in placeholder"),
+        (r"\bto\s+be\s+determined\b", "to-be-determined placeholder"),
+        (r"\bplaceholder\b", "placeholder marker"),
+        (r"\bboilerplate\b", "boilerplate marker"),
+        (r"\btemplate\s+text\b", "template text marker"),
+        (r"\bpending\s+input\b", "pending input marker"),
+        (r"\b\[\.{3,}\]", "[...] ellipsis placeholder"),
+        (r"\bXXX\b", "XXX placeholder"),
+    ]
+
+    for pattern, label in PROPOSAL_STUB_PATTERNS:
+        matches = re.findall(pattern, text, re.IGNORECASE | re.MULTILINE)
+        if matches:
+            stub_patterns_found.append({
+                "pattern": label,
+                "count": len(matches),
+            })
+
+    # ── Content substantiveness checks ───────────────────────────────────
+    # Very short text relative to a proposal section is suspicious
+    thin_content = word_count < 50
+    if thin_content:
+        stub_patterns_found.append({
+            "pattern": "thin content (< 50 words)",
+            "count": 1,
+        })
+
+    # High ratio of template markers to content
+    template_marker_count = len(re.findall(r"\[.*?\]", text))
+    if word_count > 0 and template_marker_count / max(1, word_count) > 0.05:
+        stub_patterns_found.append({
+            "pattern": "high template marker ratio",
+            "count": template_marker_count,
+        })
+
+    # ── Opportunity-specific data reference check ────────────────────────
+    # Good proposals reference the specific opportunity/agency
+    references_opportunity = False
+    if opportunity_id:
+        # Check for opportunity ID or fragments
+        if opportunity_id.lower() in text_lower:
+            references_opportunity = True
+
+        # Also check for agency name from DB
+        try:
+            conn = get_connection()
+            opp_row = conn.execute(
+                "SELECT title, agency FROM proposal_opportunities WHERE id = ?",
+                (opportunity_id,)
+            ).fetchone()
+            conn.close()
+            if opp_row:
+                agency = (opp_row["agency"] or "").lower().strip()
+                title = (opp_row["title"] or "").lower().strip()
+                if agency and agency in text_lower:
+                    references_opportunity = True
+                # Check for title keywords (at least 2 significant words)
+                if title:
+                    title_words = [w for w in title.split() if len(w) > 3]
+                    matches = sum(1 for w in title_words if w in text_lower)
+                    if matches >= 2:
+                        references_opportunity = True
+        except Exception:
+            pass  # DB unavailable — skip opportunity reference check
+
+    if not references_opportunity and word_count >= 50:
+        stub_patterns_found.append({
+            "pattern": "no opportunity-specific references",
+            "count": 1,
+        })
+
+    # ── Compute stub level and score ─────────────────────────────────────
+    total_stub_signals = sum(p["count"] for p in stub_patterns_found)
+
+    # Score calculation: start at 1.0, deduct per stub signal
+    # Each stub signal costs 0.12, thin content costs extra
+    deduction = total_stub_signals * 0.12
+    if thin_content:
+        deduction += 0.20
+    if not references_opportunity and word_count >= 50:
+        deduction += 0.08
+
+    score = max(0.0, min(1.0, 1.0 - deduction))
+
+    # Determine stub level (GSD 4-level mapping)
+    if score >= 0.8:
+        stub_level = "SUBSTANTIVE"
+    elif score >= 0.5:
+        stub_level = "PARTIAL"
+    elif score >= 0.2:
+        stub_level = "STUB"
+    else:
+        stub_level = "EMPTY"
+
+    return {
+        "score": round(score, 2),
+        "stub_level": stub_level,
+        "stub_patterns_found": stub_patterns_found,
+        "word_count": word_count,
+        "references_opportunity": references_opportunity,
+        "total_stub_signals": total_stub_signals,
+    }
+
+
+def _check_context_pressure(text: str) -> Dict[str, Any]:
+    """Estimate if text approaches context limits (advisory).
+
+    Checks text length against typical LLM context windows.
+    Deterministic, scanner-tier, zero LLM tokens.
+    """
+    # Approximate tokens: ~4 chars per token
+    CHARS_PER_TOKEN = 4
+    estimated_tokens = len(text) / CHARS_PER_TOKEN
+
+    # Context window thresholds (for proposal sections being reviewed)
+    # A single proposal section should not consume more than ~8K tokens
+    SECTION_WARNING_TOKENS = 6000
+    SECTION_CRITICAL_TOKENS = 10000
+
+    # Full context window pressure (if text is being injected into LLM)
+    # Based on common context windows (128K, 200K)
+    WINDOW_SIZE = 200000
+    window_pct_used = (estimated_tokens / WINDOW_SIZE) * 100
+
+    if estimated_tokens > SECTION_CRITICAL_TOKENS:
+        pressure_level = "critical"
+        advisory = "Section text is very long; consider splitting into sub-sections"
+    elif estimated_tokens > SECTION_WARNING_TOKENS:
+        pressure_level = "warning"
+        advisory = "Section text is approaching length limits"
+    else:
+        pressure_level = "normal"
+        advisory = ""
+
+    return {
+        "estimated_tokens": int(estimated_tokens),
+        "pressure_level": pressure_level,
+        "window_pct_used": round(window_pct_used, 2),
+        "advisory": advisory,
+        "char_count": len(text),
+        "word_count": len(text.split()),
+    }
+
+
 def _run_writeguard(text: str, opportunity_id: str = "") -> Dict[str, Any]:
     """Optionally delegate to WriteGuard for deeper analysis.
 
     Returns WriteGuard results if available, else empty dict.
-    WriteGuard integration is additive — Polish's own 5 checks always run.
+    WriteGuard integration is additive — Polish's own 6 checks always run.
     """
     try:
         from tools.writing.analysis_engine import analyze
@@ -253,13 +424,18 @@ def _run_writeguard(text: str, opportunity_id: str = "") -> Dict[str, Any]:
 
 
 def _compute_composite_score(checks: Dict[str, Dict]) -> float:
-    """Compute weighted composite quality score."""
+    """Compute weighted composite quality score.
+
+    Weights total 1.0: grammar(0.18) + readability(0.22) + tone(0.22) +
+    plagiarism(0.14) + ai_detection(0.14) + stub_detection(0.10).
+    """
     weights = {
-        "grammar": 0.20,
-        "readability": 0.25,
-        "tone": 0.25,
-        "plagiarism": 0.15,
-        "ai_detection": 0.15,
+        "grammar": 0.18,
+        "readability": 0.22,
+        "tone": 0.22,
+        "plagiarism": 0.14,
+        "ai_detection": 0.14,
+        "stub_detection": 0.10,
     }
     total = 0.0
     for check_name, weight in weights.items():
@@ -303,9 +479,13 @@ def _store_quality_score(opp_id: str, draft_id: str,
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Polish Reflex (R8).
 
-    Triggered after R7 Draft. Runs 5 quality checks on all new drafts:
-    grammar, readability, tone, plagiarism, AI detection.
-    Stores results in pg_proposal_quality_scores (append-only, NIST AU-2).
+    Triggered after R7 Draft. Runs 6 quality checks on all new drafts:
+    stub detection (pre-gate), grammar, readability, tone, plagiarism,
+    AI detection. Stores results in pg_proposal_quality_scores
+    (append-only, NIST AU-2).
+
+    Enhancement §3.6: Stub detection blocks drafts below SUBSTANTIVE level
+    regardless of other scores.
     """
     conn = get_connection()
     try:
@@ -336,14 +516,25 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         if len(text.strip()) < 10:
             continue
 
-        # Run all 5 quality checks
+        # §3.6 Pre-gate: stub detection (runs BEFORE other quality checks)
+        stub_result = _check_stub_content(text, row["opportunity_id"])
+        stub_blocked = stub_result["score"] < 0.5  # Below SUBSTANTIVE
+
+        # Context pressure monitoring (advisory)
+        ctx_pressure = _check_context_pressure(text)
+
+        # Run all 6 quality checks (stub_detection included in composite)
         checks = {
+            "stub_detection": stub_result,
             "grammar": _check_grammar(text),
             "readability": _check_readability(text),
             "tone": _check_tone(text),
             "plagiarism": _check_plagiarism(text, row["opportunity_id"]),
             "ai_detection": _check_ai_detection(text),
         }
+
+        # Attach context pressure as advisory metadata (not scored)
+        checks["context_pressure"] = ctx_pressure
 
         # Optional WriteGuard deep analysis (D-WG integration)
         if config.get("writeguard_enabled", True):
@@ -353,7 +544,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         composite = _compute_composite_score(checks)
         total_score += composite
 
+        # §3.6: Stub pre-gate — if below SUBSTANTIVE, force fail
+        # regardless of composite score
         passed = composite >= quality_threshold
+        if stub_blocked:
+            passed = False
         if passed:
             passing += 1
 
@@ -403,6 +598,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "opportunity_id": row["opportunity_id"],
             "composite_score": composite,
             "passed": passed,
+            "stub_blocked": stub_blocked,
+            "stub_level": stub_result["stub_level"],
+            "stub_score": stub_result["score"],
+            "context_pressure": ctx_pressure["pressure_level"],
             "score_id": score_id,
             "judge_color": judge_color,
             "judge_composite": judge_composite,

@@ -6,10 +6,11 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(
-    0, str(Path(__file__).resolve().parent.parent / "tools" / "compliance")
-)
-from accountability_manager import (
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+from tools.compliance.accountability_manager import (
     VALID_APPEAL_STATUSES,
     VALID_FREQUENCIES,
     VALID_REVIEW_TYPES,

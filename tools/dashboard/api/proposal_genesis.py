@@ -62,22 +62,53 @@ def api_pg_status():
     """GET /api/proposal-genesis/status — Daemon status with reflex details."""
     data, err = _run_daemon_cmd(["--status", "--json"])
     if err:
-        return jsonify({"error": err}), 500
+        return jsonify({"daemon_status": "error", "error": err}), 500
+    # Ensure top-level daemon_status key exists for frontend consumers
+    if isinstance(data, dict) and "daemon_status" not in data:
+        daemon_info = data.get("daemon", {})
+        if daemon_info.get("enabled"):
+            data["daemon_status"] = "running"
+        else:
+            data["daemon_status"] = "disabled"
     return jsonify(data)
 
 
 # ── Reflex Control ────────────────────────────────────────────────────────────
 
+# All 25 reflexes across 4 phases (CAPTURE, PROPOSE, DELIVER, LEARN)
+_ALLOWED_REFLEXES = [
+    # Phase 1: CAPTURE
+    "discover", "scout", "shape", "engage",
+    "regulate", "vehicle", "talent", "team",
+    # Phase 2: PROPOSE
+    "extract", "map", "draft", "polish", "decide",
+    "review", "price", "comply_cmmc", "trace",
+    # Phase 3: DELIVER
+    "monitor", "fulfill", "publish", "bridge",
+    # Phase 4: LEARN
+    "analyze", "train", "adapt",
+]
+
+
 @proposal_genesis_api.route("/reflex/<name>", methods=["POST"])
 def api_pg_run_reflex(name):
     """POST /api/proposal-genesis/reflex/<name> — Run a single reflex."""
-    allowed = [
-        "discover", "scout", "shape", "engage",
-        "extract", "map", "draft", "polish", "decide",
-        "monitor", "fulfill", "publish",
-        "analyze", "train",
-    ]
-    if name not in allowed:
+    if name not in _ALLOWED_REFLEXES:
+        return jsonify({"error": f"Unknown reflex: {name}"}), 400
+    data, err = _run_daemon_cmd(["--reflex", name, "--json"], timeout=300)
+    if err:
+        return jsonify({"error": err}), 500
+    return jsonify(data)
+
+
+@proposal_genesis_api.route("/run-reflex", methods=["POST"])
+def api_pg_run_reflex_by_body():
+    """POST /api/proposal-genesis/run-reflex — Run a reflex via JSON body {"reflex": "name"}."""
+    body = request.get_json(force=True, silent=True) or {}
+    name = body.get("reflex", "").strip()
+    if not name:
+        return jsonify({"error": "Missing required field: reflex"}), 400
+    if name not in _ALLOWED_REFLEXES:
         return jsonify({"error": f"Unknown reflex: {name}"}), 400
     data, err = _run_daemon_cmd(["--reflex", name, "--json"], timeout=300)
     if err:
@@ -87,7 +118,7 @@ def api_pg_run_reflex(name):
 
 @proposal_genesis_api.route("/pipeline", methods=["POST"])
 def api_pg_run_pipeline():
-    """POST /api/proposal-genesis/pipeline — Run discover→extract→map→draft→polish."""
+    """POST /api/proposal-genesis/pipeline — Run discover->extract->map->draft->polish."""
     data, err = _run_daemon_cmd(["--pipeline", "--json"], timeout=600)
     if err:
         return jsonify({"error": err}), 500

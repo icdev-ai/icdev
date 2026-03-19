@@ -2223,6 +2223,80 @@ TOOL_REGISTRY = {
         "description": "List available vector store backends (SQLite, ChromaDB, FAISS) and embedding provider status.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    # ============================================================
+    # AUTORESEARCH (6 tools — Phase 67, D-AR-1 through D-AR-10)
+    # ============================================================
+    "autoresearch_create": {
+        "category": "autoresearch",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_autoresearch_create",
+        "description": "Create a new autoresearch experiment candidate for a domain.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Experiment domain (compliance, code_quality, security, rag_quality, pulse_quality, skill_quality)"},
+                "hypothesis": {"type": "string", "description": "Experiment hypothesis text"},
+                "category": {"type": "string", "description": "Experiment category within domain"},
+            },
+            "required": ["domain", "hypothesis"],
+        },
+    },
+    "autoresearch_loop": {
+        "category": "autoresearch",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_autoresearch_loop",
+        "description": "Run autonomous Bayesian Autoresearch loop for a domain (Karpathy pattern).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Experiment domain"},
+                "max_experiments": {"type": "integer", "description": "Max experiments per run", "default": 5},
+                "overnight": {"type": "boolean", "description": "Overnight mode (up to 20 experiments)", "default": False},
+            },
+            "required": ["domain"],
+        },
+    },
+    "autoresearch_status": {
+        "category": "autoresearch",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_autoresearch_status",
+        "description": "Get current autoresearch status across all domains.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    "autoresearch_select": {
+        "category": "autoresearch",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_autoresearch_select",
+        "description": "Select next experiment via Bayesian scoring + Thompson Sampling.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Experiment domain"},
+            },
+            "required": ["domain"],
+        },
+    },
+    "autoresearch_evaluate": {
+        "category": "autoresearch",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_autoresearch_evaluate",
+        "description": "Evaluate a single domain fitness metric (0-1 scalar).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Domain to evaluate"},
+                "project_id": {"type": "string", "description": "Project ID for compliance/security"},
+            },
+            "required": ["domain"],
+        },
+    },
+    "autoresearch_health": {
+        "category": "autoresearch",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_autoresearch_health",
+        "description": "Health check for autoresearch subsystem.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
 }
 
 

@@ -74,6 +74,8 @@ GOAL_FILE_MAP: Dict[str, str] = {
     # Genesis v2.0 Autonomous Research Lab
     "genesis_daemon": "genesis_daemon.md",
     "genesis_promoter": "genesis_promoter.md",
+    # Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)
+    "autoresearch": "autoresearch.md",
 }
 
 # ============================================================
@@ -109,8 +111,9 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
     "rag_subsystem": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
     "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
-    "genesis_daemon": "Autonomous research lab — 13 Reflexes, Trust Kernel, circuit breakers",
+    "genesis_daemon": "Autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers",
     "genesis_promoter": "Knowledge Bridge — GKP export/import, dedup, auto-promote, human review",
+    "autoresearch": "Bayesian Autoresearch — Karpathy-loop autonomous experiments with info-gain selection",
 }
 
 # ============================================================
@@ -148,6 +151,7 @@ GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
     "multi_agent_orchestration": "Multi-Agent Orchestration",
     "genesis_daemon": "Genesis Daemon",
     "genesis_promoter": "Genesis Promoter",
+    "autoresearch": "Bayesian Autoresearch",
 }
 
 # ============================================================

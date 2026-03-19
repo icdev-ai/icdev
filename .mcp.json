@@ -1,5 +1,5 @@
 {
-  "mcpServers": {
+  "servers": {
     "icdev-unified": {
       "command": "python",
       "args": [
@@ -12,14 +12,7 @@
     },
     "playwright": {
       "command": "npx",
-      "args": [
-        "@playwright/mcp@latest",
-        "--isolated",
-        "--config",
-        "./playwright-mcp-config.json",
-        "--output-dir",
-        "playwright"
-      ]
+        "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }

@@ -16,8 +16,8 @@ import struct
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.rag.vector_store_provider import (
 from tools.db.storage import get_connection
+from tools.rag.vector_store_provider import (
     SearchResult,
     VectorChunk,
     VectorStoreProvider,
