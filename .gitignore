@@ -101,3 +101,8 @@ icdev/data/*.db
 
 # PostgreSQL data directory (Docker bind mount)
 data/pgdata/
+
+# Marketplace modules and child apps (synced to D:\ICDEV_BACKUP)
+marketplace-saas/
+intaas-frontend/
+intaas-saas/
