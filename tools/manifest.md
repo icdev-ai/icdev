@@ -1146,6 +1146,13 @@
 | PDF Provider | tools/rag/pdf_provider.py | PDF text extraction for RAG ingestion (D-FT-11) | (library) | Extracted text |
 | Reranker Provider | tools/rag/reranker_provider.py | Two-stage re-ranking provider (D-RAG-3) | (library) | Reranked results |
 | Secret Ref | tools/rag/secret_ref.py | Secret reference resolver for RAG | (library) | Resolved refs |
+| Codebase Indexer | tools/rag/codebase_indexer.py | AST-based Python + text codebase indexer for assistant widget (D-CA-1, D-CA-2) | --scan, --scope, --json | Index status |
+
+## Codebase Assistant (Phase 69)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Assistant Config | tools/dashboard/assistant_config.py | Route-to-module mapping + security exclusions (D-CA-4, D-CA-9) | --json | Config data |
+| Assistant Manager | tools/dashboard/assistant_manager.py | Codebase Q&A query handler with RAG + cache (D-CA-5 to D-CA-8) | (library) | Query results |
 
 ## Requirements (Additional)
 | Tool | File | Description | Input | Output |

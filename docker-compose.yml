@@ -39,6 +39,36 @@ x-healthcheck-defaults: &healthcheck-defaults
 services:
 
   # ====================================================================
+  # PostgreSQL Database
+  # ====================================================================
+  icdev-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: icdev-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: icdev
+      POSTGRES_PASSWORD: icdev_dev_2026
+      POSTGRES_DB: icdev
+    volumes:
+      - ./data/pgdata:/var/lib/postgresql/data
+    networks:
+      - icdev-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U icdev -d icdev"]
+      <<: *healthcheck-defaults
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ====================================================================
   # Database Initialization (one-time — runs init_icdev_db.py and exits)
   # ====================================================================
   icdev-init:
@@ -743,3 +773,4 @@ networks:
 volumes:
   icdev-data:
     driver: local
+  # icdev-pgdata uses bind mount ./data/pgdata (not a Docker volume)

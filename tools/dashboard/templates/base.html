@@ -6,6 +6,8 @@
     <title>{% block title %}ICDEV Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
     {% block head %}{% endblock %}
 </head>
 <body data-auto-refresh="true">
@@ -136,6 +138,12 @@
     <!-- Notification container for toasts -->
     <div class="notification-container" id="notification-container" aria-live="polite"></div>
 
+    <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+    {% include "includes/assistant_widget.html" ignore missing %}
+
+    <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
+    <script>window.ROUTE_MODULE_MAP = {{ route_module_map|default({})|tojson }};</script>
+
     <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
     <script defer src="{{ url_for('static', filename='vendor/mermaid/mermaid.min.js') }}"></script>
@@ -150,6 +158,12 @@
     {% if govcon_enabled %}
     <script defer src="{{ url_for('static', filename='js/proposals.js') }}"></script>
     {% endif %}
+    <!-- Vendor: Markdown + Syntax Highlighting (Phase 69 — D-CU-2) -->
+    <script defer src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/hljs/highlight.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/chat-renderers.js') }}"></script>
+    <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
+    <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

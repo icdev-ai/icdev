@@ -154,6 +154,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
         "rag_ingestion_log",
         "rag_retrieval_log",
+        # Phase 69 — Codebase Assistant (D-CA-6)
+        "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)
         "genesis_audit",
         # Knowledge Graph (D-KARL-1)

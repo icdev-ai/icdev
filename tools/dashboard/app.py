@@ -739,6 +739,13 @@ def create_app() -> Flask:
         role = flask_request.args.get("role", "")
         role_config = ROLE_VIEWS.get(role, None)
         current_user = getattr(g, "current_user", None)
+        # Route-to-module map for assistant widget auto-scoping (D-CA-4)
+        try:
+            from tools.dashboard.assistant_config import ROUTE_MODULE_MAP
+            _route_map = ROUTE_MODULE_MAP
+        except ImportError:
+            _route_map = {}
+
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
@@ -750,6 +757,7 @@ def create_app() -> Flask:
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
             "govcon_enabled": _HAS_GOVCON,
+            "route_module_map": _route_map,
         }
 
     # ---- Auto-register A2A agents from card files ----
@@ -1271,7 +1279,7 @@ def create_app() -> Flask:
                 session = conn.execute(
                     "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
                 ).fetchone()
-            except sqlite3.OperationalError:
+            except Exception:
                 session = None
             if not session:
                 return render_template("404.html", message="Session not found"), 404
@@ -1587,7 +1595,7 @@ def create_app() -> Flask:
                     "SELECT * FROM child_app_registry ORDER BY created_at DESC"
                 ).fetchall()
                 children_rows = [dict(r) for r in children_rows]
-            except sqlite3.OperationalError:
+            except Exception:
                 children_rows = []
 
             # Fetch latest heartbeat per child from telemetry
@@ -1600,7 +1608,7 @@ def create_app() -> Flask:
                 for hb in heartbeats:
                     hb_dict = dict(hb)
                     heartbeat_map[hb_dict["child_id"]] = hb_dict["last_heartbeat"]
-            except sqlite3.OperationalError:
+            except Exception:
                 pass
 
             # Fetch capability count per child
@@ -1612,7 +1620,7 @@ def create_app() -> Flask:
                 for c in caps:
                     c_dict = dict(c)
                     capability_map[c_dict["child_id"]] = c_dict["cnt"]
-            except sqlite3.OperationalError:
+            except Exception:
                 pass
 
             # Enrich children with heartbeat and capability data
@@ -1783,7 +1791,7 @@ def create_app() -> Flask:
                        FROM translation_jobs ORDER BY created_at DESC LIMIT 100"""
                 ).fetchall()
                 jobs = [dict(r) for r in jobs]
-            except sqlite3.OperationalError:
+            except Exception:
                 jobs = []
 
             # Summary stats
@@ -1801,7 +1809,7 @@ def create_app() -> Flask:
                 ).fetchone()
                 if row and row["avg_score"]:
                     avg_api_score = round(row["avg_score"] * 100, 1)
-            except sqlite3.OperationalError:
+            except Exception:
                 pass
 
             return render_template(
@@ -1827,7 +1835,7 @@ def create_app() -> Flask:
                     "SELECT * FROM translation_jobs WHERE id = ?", (job_id,)
                 ).fetchone()
                 job = dict(job) if job else None
-            except sqlite3.OperationalError:
+            except Exception:
                 job = None
 
             if not job:
@@ -1843,7 +1851,7 @@ def create_app() -> Flask:
                        ORDER BY created_at""", (job_id,)
                 ).fetchall()
                 units = [dict(u) for u in units]
-            except sqlite3.OperationalError:
+            except Exception:
                 units = []
 
             # Fetch validations
@@ -1854,7 +1862,7 @@ def create_app() -> Flask:
                        ORDER BY created_at""", (job_id,)
                 ).fetchall()
                 validations = [dict(v) for v in validations]
-            except sqlite3.OperationalError:
+            except Exception:
                 validations = []
 
             # Fetch dependency mappings
@@ -1866,7 +1874,7 @@ def create_app() -> Flask:
                        ORDER BY domain, source_import""", (job_id,)
                 ).fetchall()
                 deps = [dict(d) for d in deps]
-            except sqlite3.OperationalError:
+            except Exception:
                 deps = []
 
             return render_template(
@@ -1893,7 +1901,7 @@ def create_app() -> Flask:
                 for r in rows:
                     r_dict = dict(r)
                     status_dist[r_dict["status"]] = r_dict["cnt"]
-            except sqlite3.OperationalError:
+            except Exception:
                 pass
 
             # Language pair frequency
@@ -1907,7 +1915,7 @@ def create_app() -> Flask:
                 for r in rows:
                     r_dict = dict(r)
                     lang_pairs[r_dict["pair"]] = r_dict["cnt"]
-            except sqlite3.OperationalError:
+            except Exception:
                 pass
 
             return jsonify({
@@ -3237,7 +3245,7 @@ def create_app() -> Flask:
         """Toggle dual-model mode. Body: {"enabled": true/false}."""
         try:
             from tools.llm.router import LLMRouter
-            data = request.get_json(silent=True) or {}
+            data = flask_request.get_json(silent=True) or {}
             enabled = data.get("enabled")
             if enabled is None:
                 # Toggle current state
@@ -4613,6 +4621,80 @@ def create_app() -> Flask:
             return jsonify({"experiments": [dict(r) for r in rows]})
         except Exception:
             return jsonify({"experiments": []})
+
+    # ================================================================
+    # Phase 69: Chat Personas API (D-CU-3)
+    # ================================================================
+
+    @app.route("/api/chat/personas")
+    def api_chat_personas():
+        """Return agent persona registry as JSON."""
+        try:
+            import yaml
+            personas_path = BASE_DIR / "args" / "chat_personas.yaml"
+            if personas_path.exists():
+                with open(personas_path, encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                return jsonify(data)
+            return jsonify({"personas": {}})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ================================================================
+    # Phase 69: Codebase Assistant API (D-CA-5 to D-CA-8)
+    # ================================================================
+
+    @app.route("/api/assistant/query", methods=["POST"])
+    def api_assistant_query():
+        """Handle codebase assistant queries."""
+        try:
+            from tools.dashboard.assistant_manager import query
+            data = flask_request.get_json(force=True, silent=True) or {}
+            result = query(
+                question=data.get("question", ""),
+                scope=data.get("scope"),
+                context_id=data.get("context_id"),
+                page_path=data.get("page_path"),
+            )
+            return jsonify(result)
+        except Exception as exc:
+            app.logger.error("Assistant query error: %s", exc)
+            return jsonify({"answer": f"Error: {exc}", "citations": [], "source": "error"}), 500
+
+    @app.route("/api/assistant/status")
+    def api_assistant_status():
+        """Return codebase indexer status."""
+        try:
+            from tools.dashboard.assistant_manager import get_status
+            return jsonify(get_status())
+        except Exception as exc:
+            return jsonify({"indexed_files": 0, "index_status": "unavailable", "error": str(exc)})
+
+    @app.route("/api/assistant/scope", methods=["POST"])
+    def api_assistant_scope():
+        """Set assistant scope to a specific module."""
+        try:
+            from tools.dashboard.assistant_config import files_in_scope
+            data = flask_request.get_json(force=True, silent=True) or {}
+            scope = data.get("scope", "")
+            files = files_in_scope(scope) if scope else []
+            return jsonify({"ok": True, "files_in_scope": len(files)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @app.route("/api/assistant/suggestions")
+    def api_assistant_suggestions():
+        """Return contextual question suggestions for the widget."""
+        try:
+            from tools.dashboard.assistant_manager import get_suggestions
+            page_path = flask_request.args.get("page_path", "")
+            return jsonify({"suggestions": get_suggestions(page_path)})
+        except Exception:
+            return jsonify({"suggestions": [
+                "How is the ICDEV codebase structured?",
+                "What does the LLM router do?",
+                "How does the RAG retriever work?",
+            ]})
 
     return app
 

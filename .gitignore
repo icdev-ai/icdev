@@ -98,3 +98,6 @@ data/license_tokens.json
 
 # Local ICDEV databases (icdev package)
 icdev/data/*.db
+
+# PostgreSQL data directory (Docker bind mount)
+data/pgdata/

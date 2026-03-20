@@ -606,6 +606,7 @@ two_tier:
     - ft_pair_generation
     - pulse_draft          # Drafting uses gemma3 (no thinking mode issues)
     - pulse_rewrite        # Rewriting uses qwen3.5 (think:false via provider)
+    - codebase_query       # Phase 69: codebase assistant widget (D-CA-5)
 
   # Per-function model overrides (scanner tier)
   # Override tier1_model for specific functions

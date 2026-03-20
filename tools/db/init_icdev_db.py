@@ -3773,7 +3773,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     turn_number INTEGER NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('user','assistant','system','intervention')),
     content TEXT NOT NULL,
-    content_type TEXT DEFAULT 'text' CHECK(content_type IN ('text','tool_result','error','intervention','summary')),
+    content_type TEXT DEFAULT 'text' CHECK(content_type IN ('text','tool_result','error','intervention','summary','code_block','markdown','phase_transition','citation','action_card')),
     metadata TEXT,
     is_compressed INTEGER DEFAULT 0,
     compression_tier TEXT,
@@ -3799,6 +3799,40 @@ CREATE TABLE IF NOT EXISTS chat_tasks (
 );
 CREATE INDEX IF NOT EXISTS idx_chat_task_ctx ON chat_tasks(context_id);
 CREATE INDEX IF NOT EXISTS idx_chat_task_status ON chat_tasks(status);
+
+-- ============================================================
+-- Phase 69: Codebase Assistant (D-CA-1 to D-CA-10)
+-- ============================================================
+
+-- Codebase file index for assistant widget
+CREATE TABLE IF NOT EXISTS codebase_index (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    file_hash TEXT NOT NULL,
+    file_type TEXT NOT NULL CHECK(file_type IN ('python','template','goal','config','docs','args')),
+    module TEXT,
+    symbols TEXT,
+    last_indexed_at TEXT DEFAULT (datetime('now')),
+    chunk_count INTEGER DEFAULT 0,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_codebase_module ON codebase_index(module);
+CREATE INDEX IF NOT EXISTS idx_codebase_hash ON codebase_index(file_hash);
+
+-- Q&A cache for popular codebase questions (D-CA-6)
+CREATE TABLE IF NOT EXISTS codebase_qa_cache (
+    id TEXT PRIMARY KEY,
+    question_hash TEXT NOT NULL,
+    question_text TEXT NOT NULL,
+    answer_text TEXT NOT NULL,
+    source_citations TEXT,
+    scope TEXT,
+    hit_count INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_hit_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_qa_cache_hash ON codebase_qa_cache(question_hash);
 
 -- ============================================================
 -- Phase 44: Active Extension Hooks (D261-D264)
