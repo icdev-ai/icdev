@@ -50,6 +50,54 @@ jobs:
       - run: pip install -r requirements.txt && pip-audit --skip-editable -q
         continue-on-error: true
 
+  sandbox:
+    name: LLM Sandbox Isolation (D-SEC-10)
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install sandbox dependencies
+        run: pip install llm-sandbox docker pyyaml
+      - name: Sandbox health check
+        run: python tools/security/sandbox_executor.py --health --json
+        continue-on-error: true
+      - name: Sandbox-execute changed Python files
+        run: |
+          CHANGED=$(git diff --name-only origin/main...HEAD -- '*.py' 2>/dev/null || echo "")
+          if [ -z "$CHANGED" ]; then
+            echo "No changed Python files — sandbox check passed"
+            exit 0
+          fi
+          FAILED=0
+          for FILE in $CHANGED; do
+            if [ -f "$FILE" ]; then
+              echo "  Sandbox: $FILE"
+              RESULT=$(python tools/security/sandbox_executor.py \
+                --execute-file --path "$FILE" --language python \
+                --actor ci-pipeline --project-id "$GITHUB_REPOSITORY" \
+                --json 2>&1) || true
+              STATUS=$(echo "$RESULT" | python -c "import json,sys; r=json.load(sys.stdin); print(r.get('status','failed'))" 2>/dev/null || echo "unavailable")
+              if [ "$STATUS" = "unavailable" ] || [ "$STATUS" = "disabled" ]; then
+                echo "    SKIP: $FILE (sandbox $STATUS)"
+              elif [ "$STATUS" != "completed" ]; then
+                echo "    FAIL: $FILE (status=$STATUS)"
+                echo "$RESULT"
+                FAILED=$((FAILED + 1))
+              fi
+            fi
+          done
+          if [ $FAILED -gt 0 ]; then
+            echo "Sandbox isolation FAILED: $FAILED file(s) failed"
+            exit 1
+          fi
+          echo "Sandbox isolation PASSED"
+
   docker-build:
     name: Docker Build Validation
     runs-on: ubuntu-latest

@@ -6,6 +6,7 @@ stages:
   - lint
   - test
   - security
+  - sandbox
   - bdd
   - docker
   - helm
@@ -66,6 +67,55 @@ security:openclaw-gate:
   allow_failure: false
   rules:
     - if: '$ICDEV_OPENCLAW_ENABLED == "true"'
+
+security:sandbox:
+  stage: sandbox
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  before_script:
+    - apk add --no-cache python3 py3-pip
+    - pip install --quiet llm-sandbox docker pyyaml --break-system-packages
+  script:
+    - |
+      echo "=== LLM Sandbox Isolation Check (D-SEC-10) ==="
+      # Health check
+      python3 tools/security/sandbox_executor.py --health --json | tee sandbox-health.json
+      # Get changed Python files relative to main branch
+      CHANGED_FILES=$(git diff --name-only origin/main...HEAD -- '*.py' 2>/dev/null || find tools/ -name '*.py' -newer .git/HEAD | head -20)
+      if [ -z "$CHANGED_FILES" ]; then
+        echo "No changed Python files — sandbox check passed (nothing to verify)"
+        exit 0
+      fi
+      FAILED=0
+      for FILE in $CHANGED_FILES; do
+        if [ -f "$FILE" ]; then
+          echo "  Sandbox: $FILE"
+          python3 tools/security/sandbox_executor.py \
+            --execute-file --path "$FILE" --language python \
+            --actor ci-pipeline --project-id "$CI_PROJECT_ID" \
+            --json > /tmp/sandbox-result.json 2>&1 || true
+          STATUS=$(python3 -c "import json; r=json.load(open('/tmp/sandbox-result.json')); print(r.get('status','failed'))" 2>/dev/null || echo "failed")
+          if [ "$STATUS" != "completed" ]; then
+            echo "    FAIL: $FILE (status=$STATUS)"
+            cat /tmp/sandbox-result.json
+            FAILED=$((FAILED + 1))
+          fi
+        fi
+      done
+      if [ $FAILED -gt 0 ]; then
+        echo "Sandbox isolation FAILED: $FAILED file(s) failed container execution"
+        exit 1
+      fi
+      echo "Sandbox isolation PASSED: all changed files verified"
+  artifacts:
+    when: always
+    paths:
+      - sandbox-health.json
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH'
 
 bdd:
   stage: bdd

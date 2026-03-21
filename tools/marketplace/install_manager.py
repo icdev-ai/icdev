@@ -111,6 +111,87 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 
 
 # ---------------------------------------------------------------------------
+# Sandbox verification (D-SEC-10)
+# ---------------------------------------------------------------------------
+
+def _sandbox_verify_asset(source_path, asset_id):
+    """Verify asset Python files execute cleanly in LLM Sandbox container.
+
+    Runs a compile-check on each .py file inside a Docker container with
+    network isolation. Gracefully degrades when sandbox is unavailable
+    (returns None — does not block installation).
+
+    Args:
+        source_path: Path to the asset source directory.
+        asset_id: Asset ID for audit trail.
+
+    Returns:
+        dict with status, checked, failures — or None if sandbox unavailable.
+    """
+    try:
+        from tools.security.sandbox_executor import SandboxExecutor
+    except ImportError:
+        return None
+
+    executor = SandboxExecutor()
+    if not executor._enabled or not executor._available:
+        return None
+
+    source = Path(source_path)
+    if not source.exists() or not source.is_dir():
+        return None
+
+    py_files = list(source.rglob("*.py"))
+    if not py_files:
+        return {"status": "pass", "checked": 0, "failures": []}
+
+    failures = []
+    checked = 0
+
+    for py_file in py_files[:20]:  # Cap at 20 files
+        try:
+            code = py_file.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+
+        compile_code = (
+            "import sys\n"
+            f"src = '''{code[:4000]}'''\n"
+            "try:\n"
+            "    compile(src, '<sandbox>', 'exec')\n"
+            "    print('OK')\n"
+            "except SyntaxError as e:\n"
+            "    print(f'SYNTAX_ERROR: {e}')\n"
+            "    sys.exit(1)\n"
+        )
+
+        result = executor.execute(
+            code=compile_code,
+            language="python",
+            executor_type="marketplace_install",
+            network_enabled=False,
+            timeout_seconds=15,
+            actor="install-manager",
+            project_id=asset_id,
+        )
+
+        checked += 1
+
+        if result.status in ("disabled", "unavailable"):
+            return None  # Sandbox went away — graceful degradation
+
+        if result.exit_code != 0:
+            failures.append({
+                "file": py_file.name,
+                "error": result.error or result.stderr[:200],
+                "status": result.status,
+            })
+
+    status = "fail" if failures else "pass"
+    return {"status": status, "checked": checked, "failures": failures}
+
+
+# ---------------------------------------------------------------------------
 # Core operations
 # ---------------------------------------------------------------------------
 

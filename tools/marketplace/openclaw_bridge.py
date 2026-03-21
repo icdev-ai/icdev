@@ -319,14 +319,12 @@ def _parse_skill_md(skill_path):
     return frontmatter, body
 
 
-def _sandboxed_run(script_path, timeout=30):
-    """Run script in restricted subprocess (no network, limited fs).
+def _sandboxed_run_fallback(script_path, timeout=30):
+    """Subprocess fallback for sandbox — restricted env, runs --help only.
 
-    Only runs --help to check if script is well-formed.
-    Never executes with real inputs in quarantine.
+    Used when Docker/llm-sandbox is unavailable.
     """
     env = os.environ.copy()
-    # Strip network and credential env vars
     for key in list(env.keys()):
         if key.startswith((
             "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
@@ -350,11 +348,55 @@ def _sandboxed_run(script_path, timeout=30):
             "returncode": result.returncode,
             "stdout_preview": result.stdout[:500] if result.stdout else "",
             "stderr_preview": result.stderr[:500] if result.stderr else "",
+            "isolation": "subprocess",
         }
     except subprocess.TimeoutExpired:
         return {"status": "fail", "error": f"Script timed out after {timeout}s"}
     except Exception as exc:
         return {"status": "fail", "error": str(exc)}
+
+
+def _sandboxed_run(script_path, timeout=30):
+    """Run script in LLM Sandbox container (D-SEC-10) with subprocess fallback.
+
+    Attempts full Docker container isolation first (network disabled,
+    resource-limited). Falls back to restricted subprocess if Docker
+    or llm-sandbox is unavailable.
+    """
+    try:
+        from tools.security.sandbox_executor import SandboxExecutor
+
+        executor = SandboxExecutor()
+        if executor._enabled and executor._available:
+            result = executor.execute_file(
+                file_path=Path(script_path),
+                language="python",
+                executor_type="openclaw_import",
+                network_enabled=False,
+                timeout_seconds=timeout,
+                actor="openclaw-bridge",
+            )
+
+            if result.status in ("disabled", "unavailable"):
+                # Fall through to subprocess fallback
+                return _sandboxed_run_fallback(script_path, timeout)
+
+            return {
+                "status": "pass" if result.exit_code == 0 else (
+                    "fail" if result.status == "failed" else "warning"
+                ),
+                "returncode": result.exit_code,
+                "stdout_preview": result.stdout[:500] if result.stdout else "",
+                "stderr_preview": result.stderr[:500] if result.stderr else "",
+                "sandbox_status": result.status,
+                "container_id": result.container_id,
+                "isolation": "container",
+            }
+    except ImportError:
+        pass
+
+    # Fallback to restricted subprocess
+    return _sandboxed_run_fallback(script_path, timeout)
 
 
 def analyze_script_safety(script_path):
@@ -698,7 +740,51 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     gate_results["behavioral_sandbox"] = {
         "status": "warning" if any(s.get("status") == "fail" for s in sandbox_results) else "pass",
         "results": sandbox_results,
+        "isolation": sandbox_results[0].get("isolation", "subprocess") if sandbox_results else "none",
     }
+
+    # Gate 9b: Full sandbox execution — compile-check all .py files in quarantine (D-SEC-10)
+    sandbox_full_results = []
+    try:
+        from tools.security.sandbox_executor import SandboxExecutor
+        executor = SandboxExecutor()
+        if executor._enabled and executor._available:
+            for py_file in quarantine_path.rglob("*.py"):
+                code = py_file.read_text(encoding="utf-8", errors="replace")
+                compile_code = (
+                    "import sys\n"
+                    f"src = '''{code[:4000]}'''\n"
+                    "try:\n"
+                    "    compile(src, '<sandbox>', 'exec')\n"
+                    "    print('OK')\n"
+                    "except SyntaxError as e:\n"
+                    "    print(f'SYNTAX_ERROR: {e}')\n"
+                    "    sys.exit(1)\n"
+                )
+                result = executor.execute(
+                    code=compile_code,
+                    language="python",
+                    executor_type="openclaw_full_sandbox",
+                    network_enabled=False,
+                    timeout_seconds=15,
+                    actor="openclaw-bridge",
+                )
+                sandbox_full_results.append({
+                    "file": py_file.name,
+                    "status": "pass" if result.exit_code == 0 else "fail",
+                    "sandbox_status": result.status,
+                })
+    except ImportError:
+        pass
+
+    if sandbox_full_results:
+        full_failed = any(r["status"] == "fail" for r in sandbox_full_results)
+        gate_results["sandbox_full_execution"] = {
+            "status": "fail" if full_failed else "pass",
+            "results": sandbox_full_results,
+        }
+        if full_failed:
+            scan_status = "failed"
 
     # Gate 10: Code pattern scan (dangerous patterns: eval, exec, subprocess)
     code_pattern_findings = []
