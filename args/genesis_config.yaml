@@ -348,6 +348,22 @@ reflexes:
       - code_quality
       - security
 
+  # ── Phase 72 — Adaptive Skill Synthesizer (Hermes adaptation) ──────────────
+
+  synthesize:
+    enabled: true
+    risk_tier: yellow
+    schedule: "weekly Wed 12:00"
+    description: "Detect recurring tool patterns, generate GOTCHA goal workflow drafts"
+    success_metric:
+      name: patterns_detected
+      threshold: 0
+      operator: gte  # 0 = no patterns (healthy), > 0 = new patterns found
+    min_pattern_frequency: 3
+    min_chain_length: 3
+    lookback_days: 7
+    max_goals_per_run: 3
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

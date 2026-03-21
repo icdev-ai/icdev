@@ -7778,6 +7778,55 @@ CREATE INDEX IF NOT EXISTS idx_genesis_gkp_status ON genesis_gkp(promotion_statu
 CREATE INDEX IF NOT EXISTS idx_genesis_gkp_reflex ON genesis_gkp(genesis_reflex);
 CREATE INDEX IF NOT EXISTS idx_genesis_gkp_created ON genesis_gkp(created_at);
 
+-- Notification Gateway delivery log (Phase 72 — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS notification_log (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    adapter         TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'info'
+        CHECK(severity IN ('info','warning','error','critical')),
+    title           TEXT,
+    delivered       BOOLEAN NOT NULL DEFAULT FALSE,
+    error           TEXT,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notification_log_event ON notification_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_notification_log_created ON notification_log(created_at);
+
+-- PII Redaction audit trail (Phase 72, D-RDT-2 — append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS redaction_audit (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    function        TEXT NOT NULL,
+    detection_count INTEGER NOT NULL DEFAULT 0,
+    entity_types_json TEXT,
+    impact_level    TEXT NOT NULL DEFAULT 'IL4',
+    action          TEXT NOT NULL DEFAULT 'redacted'
+        CHECK(action IN ('redacted','skipped','error')),
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_redaction_audit_session ON redaction_audit(session_id);
+CREATE INDEX IF NOT EXISTS idx_redaction_audit_created ON redaction_audit(created_at);
+
+-- Genesis Synthesize Reflex — detected tool-chain patterns (Phase 72, Hermes adaptation)
+CREATE TABLE IF NOT EXISTS genesis_tool_patterns (
+    id              TEXT PRIMARY KEY,
+    chain_hash      TEXT NOT NULL UNIQUE,
+    tool_chain      TEXT NOT NULL,
+    frequency       INTEGER NOT NULL DEFAULT 0,
+    caller_diversity INTEGER NOT NULL DEFAULT 0,
+    chain_length    INTEGER NOT NULL DEFAULT 0,
+    composite_score REAL NOT NULL DEFAULT 0.0,
+    sessions        TEXT,
+    status          TEXT NOT NULL DEFAULT 'detected'
+        CHECK(status IN ('detected','goal_generated','dismissed','archived')),
+    first_seen      TEXT NOT NULL,
+    last_seen       TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_genesis_tool_patterns_status ON genesis_tool_patterns(status);
+CREATE INDEX IF NOT EXISTS idx_genesis_tool_patterns_score ON genesis_tool_patterns(composite_score);
+
 -- ============================================================
 -- PROPOSAL GENESIS — AUTONOMOUS PROPOSAL INTELLIGENCE (D-PG-1 through D-PG-10)
 -- ============================================================

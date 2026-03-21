@@ -456,6 +456,11 @@ class LLMRouter:
 
         Returns session_id for de-anonymization, or None if skipped.
         """
+        # D-RDT-4: Config toggle — skip redaction if explicitly disabled
+        rdcfg = self._config.get("redaction", {})
+        if not rdcfg.get("enabled", True):
+            return None
+
         sanitizer = self._get_sanitizer()
         if sanitizer is None:
             return None
@@ -500,6 +505,71 @@ class LLMRouter:
         except Exception as exc:
             logger.debug("Pre-invoke redaction failed (non-blocking): %s", exc)
             return None
+
+    def _post_invoke_deanonymize(
+        self, response, redaction_session: Optional[str]
+    ):
+        """Restore original values in LLM response using redaction registry.
+
+        Round-trip de-anonymization: surrogates inserted by _pre_invoke_redaction
+        are replaced with original values so the caller sees real data.
+        Only operates when redaction_session is not None (redaction was applied).
+        """
+        if not redaction_session:
+            return response
+        # Check config toggle
+        rdcfg = self._config.get("redaction", {})
+        if not rdcfg.get("deanonymize_response", True):
+            return response
+        try:
+            sanitizer = self._get_sanitizer()
+            if sanitizer is None:
+                return response
+            # De-anonymize text content in response
+            if hasattr(response, "text") and response.text:
+                response.text = sanitizer.de_anonymize_response(response.text)
+            elif hasattr(response, "content") and isinstance(response.content, str):
+                response.content = sanitizer.de_anonymize_response(response.content)
+            elif isinstance(response, dict):
+                for key in ("text", "content"):
+                    if key in response and isinstance(response[key], str):
+                        response[key] = sanitizer.de_anonymize_response(response[key])
+        except Exception as exc:
+            logger.debug("Post-invoke de-anonymization failed (non-blocking): %s", exc)
+        return response
+
+    def _audit_redaction(
+        self, function: str, redaction_session: Optional[str],
+        detection_count: int = 0, entity_types: Optional[list] = None,
+        impact_level: str = "IL4",
+    ):
+        """Log redaction event to append-only redaction_audit table."""
+        if not redaction_session or detection_count == 0:
+            return
+        rdcfg = self._config.get("redaction", {})
+        if not rdcfg.get("audit_enabled", True):
+            return
+        try:
+            conn = get_connection()
+            conn.execute("""
+                INSERT INTO redaction_audit
+                    (id, session_id, function, detection_count,
+                     entity_types_json, impact_level, action, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                f"raud-{redaction_session[:8]}-{function[:20]}",
+                redaction_session,
+                function,
+                detection_count,
+                json.dumps(entity_types or []),
+                impact_level,
+                "redacted",
+                datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            ))
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.debug("Redaction audit log failed (non-blocking): %s", exc)
 
     # -------------------------------------------------------------------
     # Two-tier routing helpers (D-TT1: qwen3 worker → Claude planner)
@@ -982,6 +1052,9 @@ class LLMRouter:
                 except Exception:
                     pass  # Best-effort — never block on telemetry
 
+                # D-RDT-2: Post-invoke de-anonymization — restore originals
+                response = self._post_invoke_deanonymize(response, _redaction_session)
+
                 return response
             except Exception as exc:
                 logger.warning(
@@ -1008,6 +1081,9 @@ class LLMRouter:
 
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""
+        # D-RDT-3: Pre-invoke redaction for streaming path (parity with invoke)
+        _redaction_session = self._pre_invoke_redaction(function, request)
+
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
 

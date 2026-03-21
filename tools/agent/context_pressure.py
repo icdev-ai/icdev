@@ -50,6 +50,8 @@ DEFAULT_CONFIG = {
 
     # Actions
     "auto_checkpoint": False,          # Auto-trigger checkpoint on critical
+    "auto_compress": False,            # Phase 72: Auto-compress on warning/critical
+    "preserve_recent_turns": 5,        # Keep N most recent messages uncompressed
     "log_to_db": True,                 # Store events in DB
 }
 
@@ -161,6 +163,15 @@ def estimate_context_usage(session_id: str = None, db_path: Path = None) -> dict
         result["error"] = str(e)
     finally:
         conn.close()
+
+    # Phase 72 (D-CMP-1): Auto-compress on warning/critical
+    if (config.get("auto_compress", False)
+            and result["pressure_level"] in ("warning", "critical")):
+        compress_result = trigger_auto_compression(
+            budget_tokens=config["context_window_tokens"],
+            preserve_recent_n=config.get("preserve_recent_turns", 5),
+        )
+        result["auto_compression"] = compress_result
 
     # Log to DB if configured
     if config["log_to_db"] and result["pressure_level"] != "normal":
@@ -356,6 +367,53 @@ def _log_stuck_event(result: dict, db_path: Path = None):
         pass  # Best effort
     finally:
         conn.close()
+
+
+# ── Phase 72: Auto-Compression (D-CMP-1, Hermes adaptation) ─────────────────
+
+def trigger_auto_compression(
+    budget_tokens: int = 200000,
+    preserve_recent_n: int = 5,
+) -> dict:
+    """Trigger history compression when context pressure is elevated.
+
+    Delegates to tools/memory/history_compressor.py for actual compression.
+    This function is called automatically when auto_compress is enabled
+    and pressure reaches WARNING or CRITICAL.
+
+    Args:
+        budget_tokens: Target context window size in tokens.
+        preserve_recent_n: Number of most recent messages to preserve verbatim.
+
+    Returns:
+        Dict with compression results.
+    """
+    result = {
+        "triggered_at": _now(),
+        "budget_tokens": budget_tokens,
+        "preserve_recent": preserve_recent_n,
+    }
+    try:
+        from tools.memory.history_compressor import HistoryCompressor
+        compressor = HistoryCompressor()
+
+        # Compress using 3-tier budget with recent preservation
+        compress_out = compressor.compress(
+            budget_tokens=budget_tokens,
+            preserve_recent_n=preserve_recent_n,
+        )
+        result["status"] = "compressed"
+        result["original_tokens"] = compress_out.get("original_tokens", 0)
+        result["compressed_tokens"] = compress_out.get("compressed_tokens", 0)
+        result["savings_pct"] = compress_out.get("savings_pct", 0)
+    except ImportError:
+        result["status"] = "unavailable"
+        result["error"] = "history_compressor module not found"
+    except Exception as exc:
+        result["status"] = "error"
+        result["error"] = str(exc)
+
+    return result
 
 
 # ── Combined Health Check ────────────────────────────────────────────────────

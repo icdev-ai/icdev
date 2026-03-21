@@ -570,6 +570,15 @@ settings:
 #                     pattern matching where review adds no value.
 #
 # Set enabled: false to fall back to normal chain-based routing.
+# ── PII Redaction (D-RDT-1 through D-RDT-4, Phase 72 Hermes adaptation) ────
+# Pre-LLM redaction + post-LLM de-anonymization for CUI/PII protection.
+redaction:
+  enabled: true                    # Master toggle for pre-invoke PII redaction
+  enforce_at_il4_plus: true        # Auto-enable at IL4+ even if global toggle is off
+  skip_for_local_only: true        # Skip redaction when routing is Ollama-only
+  deanonymize_response: true       # Restore originals in LLM response
+  audit_enabled: true              # Log redaction events to redaction_audit table
+
 two_tier:
   enabled: true
   tier1_model: qwen3-local    # Worker — research, draft, scan (free/local)

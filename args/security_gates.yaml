@@ -1124,6 +1124,18 @@ sandbox_integration:
     genesis_confidence_penalty: 0.10
     ci_cd_fail_on_error: true
 
+synthesize_goal_review:
+  description: "Gate for auto-generated goal workflows from Synthesize reflex — human approval required"
+  blocking:
+    - no_human_review_completed
+    - goal_references_forbidden_tool
+    - goal_chain_contains_destructive_ops
+    - cui_markings_missing_from_goal
+  warning:
+    - low_pattern_frequency
+    - single_session_source
+    - llm_polish_failed
+
 openclaw_export:
   description: "Gate for exporting ICDEV skills to OpenClaw format — prevents data leakage"
   blocking:

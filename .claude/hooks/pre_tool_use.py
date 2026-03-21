@@ -303,6 +303,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "rag_evaluation_results",
         # Phase 70 — Redaction & Data Protection (D-RDT-1)
         "redaction_audit",
+        # Phase 72 — Notification Gateway (Hermes adaptation)
+        "notification_log",
         # Phase 72 — ICDEV Studio (D364, D365 — case history + automation runs)
         "studio_case_history",
         "studio_automation_runs",
