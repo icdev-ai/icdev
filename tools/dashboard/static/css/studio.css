@@ -1134,12 +1134,23 @@
   flex-shrink: 0;
 }
 
-.wf-studio__tool-icon--compliance { background: rgba(99, 102, 241, 0.12); color: var(--studio-accent-light); }
-.wf-studio__tool-icon--security   { background: rgba(239, 68, 68, 0.12); color: var(--studio-error); }
-.wf-studio__tool-icon--build      { background: rgba(34, 197, 94, 0.12); color: var(--studio-success); }
-.wf-studio__tool-icon--deploy     { background: rgba(59, 130, 246, 0.12); color: var(--studio-info); }
-.wf-studio__tool-icon--test       { background: rgba(245, 158, 11, 0.12); color: var(--studio-warning); }
-.wf-studio__tool-icon--analysis   { background: rgba(168, 85, 247, 0.12); color: #c084fc; }
+.wf-studio__tool-icon--compliance    { background: rgba(99, 102, 241, 0.12); color: var(--studio-accent-light); }
+.wf-studio__tool-icon--ai_security  { background: rgba(236, 72, 153, 0.12); color: #f472b6; }
+.wf-studio__tool-icon--security     { background: rgba(239, 68, 68, 0.12); color: var(--studio-error); }
+.wf-studio__tool-icon--build        { background: rgba(34, 197, 94, 0.12); color: var(--studio-success); }
+.wf-studio__tool-icon--testing      { background: rgba(245, 158, 11, 0.12); color: var(--studio-warning); }
+.wf-studio__tool-icon--code_intel   { background: rgba(14, 165, 233, 0.12); color: #38bdf8; }
+.wf-studio__tool-icon--deploy       { background: rgba(59, 130, 246, 0.12); color: var(--studio-info); }
+.wf-studio__tool-icon--devsecops    { background: rgba(139, 92, 246, 0.12); color: #a78bfa; }
+.wf-studio__tool-icon--requirements { background: rgba(20, 184, 166, 0.12); color: #2dd4bf; }
+.wf-studio__tool-icon--mbse         { background: rgba(6, 182, 212, 0.12); color: #22d3ee; }
+.wf-studio__tool-icon--modernization{ background: rgba(249, 115, 22, 0.12); color: #fb923c; }
+.wf-studio__tool-icon--maintenance  { background: rgba(161, 161, 170, 0.12); color: #a1a1aa; }
+.wf-studio__tool-icon--monitoring   { background: rgba(34, 197, 94, 0.12); color: #4ade80; }
+.wf-studio__tool-icon--analysis     { background: rgba(168, 85, 247, 0.12); color: #c084fc; }
+.wf-studio__tool-icon--knowledge    { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+.wf-studio__tool-icon--govcon       { background: rgba(100, 116, 139, 0.12); color: #94a3b8; }
+.wf-studio__tool-icon--test         { background: rgba(245, 158, 11, 0.12); color: var(--studio-warning); }
 
 /* Canvas */
 .wf-canvas {
