@@ -351,6 +351,96 @@ def api_transition_case(case_id: str):
     return jsonify(result)
 
 
+# ── Citizen Automations (Phase 72d) ────────────────────────
+
+@studio_api.route("/automations/triggers", methods=["GET"])
+def api_automation_triggers():
+    from tools.studio.automation_builder import get_trigger_types
+    return jsonify({"triggers": get_trigger_types()})
+
+
+@studio_api.route("/automations/operators", methods=["GET"])
+def api_automation_operators():
+    from tools.studio.automation_builder import get_condition_operators
+    return jsonify({"operators": get_condition_operators()})
+
+
+@studio_api.route("/automations/actions", methods=["GET"])
+def api_automation_actions():
+    from tools.studio.automation_builder import get_action_types
+    return jsonify({"actions": get_action_types()})
+
+
+@studio_api.route("/automations/templates", methods=["GET"])
+def api_automation_templates():
+    from tools.studio.automation_builder import get_automation_templates
+    return jsonify({"templates": get_automation_templates()})
+
+
+@studio_api.route("/automations", methods=["GET"])
+def api_list_automations():
+    from tools.studio.automation_builder import list_automations
+    return jsonify({"automations": list_automations()})
+
+
+@studio_api.route("/automations", methods=["POST"])
+def api_create_automation():
+    from tools.studio.automation_builder import create_automation
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    trigger = data.get("trigger", {})
+    actions = data.get("actions", [])
+    if not name or not trigger or not actions:
+        return jsonify({"error": "name, trigger, and actions are required"}), 400
+    result = create_automation(
+        name, trigger, actions,
+        description=data.get("description", ""),
+        conditions=data.get("conditions"),
+    )
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+@studio_api.route("/automations/<auto_id>", methods=["GET"])
+def api_get_automation(auto_id: str):
+    from tools.studio.automation_builder import get_automation
+    auto = get_automation(auto_id)
+    if not auto:
+        return jsonify({"error": "Automation not found"}), 404
+    return jsonify(auto)
+
+
+@studio_api.route("/automations/<auto_id>/toggle", methods=["POST"])
+def api_toggle_automation(auto_id: str):
+    from tools.studio.automation_builder import toggle_automation
+    data = request.get_json(silent=True) or {}
+    return jsonify(toggle_automation(auto_id, data.get("enabled", True)))
+
+
+@studio_api.route("/automations/<auto_id>", methods=["DELETE"])
+def api_delete_automation(auto_id: str):
+    from tools.studio.automation_builder import delete_automation
+    result = delete_automation(auto_id)
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@studio_api.route("/automations/<auto_id>/simulate", methods=["POST"])
+def api_simulate_automation(auto_id: str):
+    from tools.studio.automation_builder import simulate_automation
+    data = request.get_json(silent=True) or {}
+    return jsonify(simulate_automation(auto_id, data.get("test_event")))
+
+
+@studio_api.route("/automations/runs", methods=["GET"])
+def api_automation_runs():
+    from tools.studio.automation_builder import list_automation_runs
+    auto_id = request.args.get("automation_id")
+    return jsonify({"runs": list_automation_runs(automation_id=auto_id)})
+
+
 # ── NL App Builder (Phase 72b) ────────────────────────────
 
 @studio_api.route("/app-builder/extract", methods=["POST"])
