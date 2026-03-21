@@ -31,6 +31,30 @@ blockchain:
     - crypto compliance
     - digital asset
 
+# AI agent frameworks domain
+ai_agent_frameworks:
+  name: "AI agent frameworks"
+  g2_category_url: "https://www.g2.com/categories/ai-agents"
+  capterra_category_url: "https://www.capterra.com/ai-agent-software/"
+  trustradius_category_url: ""
+  producthunt_topic: "ai-agents"
+  keywords:
+    - AI agent
+    - autonomous agent
+    - self-improving agent
+    - agent framework
+    - tool calling
+    - function calling
+    - MCP
+    - agent protocol
+    - skill learning
+    - memory system
+    - multi-agent
+    - agent orchestration
+    - hermes agent
+    - claude code
+    - openai codex
+
 # Knowledge graph tools domain
 knowledge_graph:
   name: "knowledge graph"

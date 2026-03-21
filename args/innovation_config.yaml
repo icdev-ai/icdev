@@ -396,6 +396,9 @@ competitive_intel:
     - name: iron_bank
       website: https://ironbank.dso.mil
       category: govtech
+    - name: hermes_agent
+      repo: nousresearch/hermes-agent
+      category: ai_agent_framework
 
 # =========================================================================
 # Standards Body Monitoring
