@@ -428,6 +428,26 @@ class LLMRouter:
     # D-RDT-1: Pre-invoke redaction hook (all modules, all LLM calls)
     # -------------------------------------------------------------------
 
+    # Singleton sanitizer — avoid re-creating on every invoke() call (D-RDT-9)
+    _redaction_sanitizer = None
+    _redaction_sanitizer_ts = 0.0
+    _REDACTION_CACHE_TTL = 1800  # 30 minutes
+
+    def _get_sanitizer(self):
+        """Get or create cached GovConSanitizer singleton."""
+        import time as _t
+        now = _t.time()
+        if (LLMRouter._redaction_sanitizer is not None
+                and (now - LLMRouter._redaction_sanitizer_ts) < self._REDACTION_CACHE_TTL):
+            return LLMRouter._redaction_sanitizer
+        try:
+            from tools.redaction.govcon_sanitizer import GovConSanitizer
+            LLMRouter._redaction_sanitizer = GovConSanitizer()
+            LLMRouter._redaction_sanitizer_ts = now
+            return LLMRouter._redaction_sanitizer
+        except ImportError:
+            return None
+
     def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
 
@@ -436,13 +456,11 @@ class LLMRouter:
 
         Returns session_id for de-anonymization, or None if skipped.
         """
-        try:
-            from tools.redaction.govcon_sanitizer import GovConSanitizer
-        except ImportError:
-            return None  # Redaction module not available — proceed unsanitized
+        sanitizer = self._get_sanitizer()
+        if sanitizer is None:
+            return None
 
         try:
-            sanitizer = GovConSanitizer()
 
             # Check if routing is local-only for this function
             chain = self._get_chain_for_function(function)
