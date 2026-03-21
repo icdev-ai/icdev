@@ -2047,6 +2047,12 @@ python tools/studio/case_manager.py --json types                                
 python tools/studio/case_manager.py --json cases                                           # List all cases
 python tools/studio/case_manager.py --json board <type_id>                                 # Get Kanban board
 
+# Dashboard Builder — custom widget layouts with role defaults
+python tools/studio/dashboard_builder.py --json widgets                                    # List 15 widget types
+python tools/studio/dashboard_builder.py --json roles                                      # List role defaults (pm, isso, developer)
+python tools/studio/dashboard_builder.py --json list                                       # List saved dashboards
+python tools/studio/dashboard_builder.py --json create-default pm                          # Create PM default dashboard
+
 # Automation Builder — event-driven rules (trigger → condition → action)
 python tools/studio/automation_builder.py --json triggers                                   # List trigger types
 python tools/studio/automation_builder.py --json operators                                  # List condition operators
@@ -2067,5 +2073,6 @@ python tools/studio/nl_app_builder.py --json refine <session_id> --classificatio
 # /studio/forms        — Form Builder (drag-drop field editor)
 # /studio/cases        — Case Management (Kanban board + lifecycle)
 # /studio/automations  — Automation Studio (trigger → condition → action)
+# /studio/dashboards   — Dashboard Builder (widget grid + role defaults)
 # /studio/marketplace  — Marketplace Storefront (browse, search, install)
 ```

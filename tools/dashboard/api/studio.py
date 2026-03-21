@@ -351,6 +351,71 @@ def api_transition_case(case_id: str):
     return jsonify(result)
 
 
+# ── Dashboard Builder (Phase 72e) ──────────────────────────
+
+@studio_api.route("/dashboards/widgets", methods=["GET"])
+def api_widget_types():
+    from tools.studio.dashboard_builder import get_widget_types
+    return jsonify({"widgets": get_widget_types()})
+
+
+@studio_api.route("/dashboards/role-defaults", methods=["GET"])
+def api_role_defaults():
+    from tools.studio.dashboard_builder import get_role_defaults
+    return jsonify(get_role_defaults())
+
+
+@studio_api.route("/dashboards", methods=["GET"])
+def api_list_dashboards():
+    from tools.studio.dashboard_builder import list_dashboards
+    return jsonify({"dashboards": list_dashboards(role=request.args.get("role"))})
+
+
+@studio_api.route("/dashboards", methods=["POST"])
+def api_create_dashboard():
+    from tools.studio.dashboard_builder import create_dashboard, create_from_role_default
+    data = request.get_json(silent=True) or {}
+    if data.get("from_role"):
+        result = create_from_role_default(data["from_role"])
+    else:
+        name = data.get("name", "").strip()
+        layout = data.get("layout", [])
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        result = create_dashboard(name, layout, shared=data.get("shared", False))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+@studio_api.route("/dashboards/<dash_id>", methods=["GET"])
+def api_get_dashboard(dash_id: str):
+    from tools.studio.dashboard_builder import get_dashboard
+    dash = get_dashboard(dash_id)
+    if not dash:
+        return jsonify({"error": "Dashboard not found"}), 404
+    return jsonify(dash)
+
+
+@studio_api.route("/dashboards/<dash_id>", methods=["PATCH"])
+def api_update_dashboard(dash_id: str):
+    from tools.studio.dashboard_builder import update_dashboard
+    data = request.get_json(silent=True) or {}
+    result = update_dashboard(dash_id, name=data.get("name"), layout=data.get("layout"), shared=data.get("shared"))
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@studio_api.route("/dashboards/<dash_id>", methods=["DELETE"])
+def api_delete_dashboard(dash_id: str):
+    from tools.studio.dashboard_builder import delete_dashboard
+    result = delete_dashboard(dash_id)
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
 # ── Citizen Automations (Phase 72d) ────────────────────────
 
 @studio_api.route("/automations/triggers", methods=["GET"])

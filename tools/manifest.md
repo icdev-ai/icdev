@@ -1286,6 +1286,7 @@
 | Studio API | tools/dashboard/api/studio.py | Flask Blueprint: workflow CRUD, tool catalog, marketplace storefront API | REST endpoints under /api/studio/ | JSON responses |
 | Form Builder | tools/studio/form_builder.py | Form schema CRUD, JSON Schema output, 10 field types, 4 pre-built templates, submissions | --json field-types, templates, list, get <id> | Form schemas + submissions |
 | Case Manager | tools/studio/case_manager.py | Case lifecycle engine: FSM state machine, Kanban board, SLA rules, 3 lifecycle templates | --json templates, types, cases, board <type_id> | Case data + board view |
+| Dashboard Builder | tools/studio/dashboard_builder.py | Custom widget layouts: 15 widget types, 3 role defaults (PM/ISSO/Dev), save/share | --json widgets, roles, list, create-default <role> | Dashboard layouts |
 | Automation Builder | tools/studio/automation_builder.py | Citizen automation: trigger/condition/action rules, 10 triggers, 8 actions, 5 templates, simulate | --json triggers, operators, actions, templates, list, runs, simulate <id> | Automation rules + run history |
 | NL App Builder | tools/studio/nl_app_builder.py | NL-to-blueprint pipeline: extract capabilities from description, create session, refine, build child app | --json extract <desc>, create <desc> --name, refine <id> | Blueprint preview + build result |
 | Studio CSS | tools/dashboard/static/css/studio.css | Premium design system: glass cards, gradients, animations, 8px grid | (asset) | CSS |
