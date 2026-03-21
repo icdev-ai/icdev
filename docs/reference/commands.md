@@ -2035,7 +2035,13 @@ python tools/studio/workflow_editor.py --json templates                         
 python tools/studio/workflow_editor.py --json list                                     # List saved studio workflows
 python tools/studio/workflow_editor.py --json get <workflow_id>                        # Get workflow by ID
 
+# NL App Builder — describe what you want, get a working app
+python tools/studio/nl_app_builder.py --json extract "description of app"                  # Extract capabilities
+python tools/studio/nl_app_builder.py --json create "description" --name my-app            # Create builder session
+python tools/studio/nl_app_builder.py --json refine <session_id> --classification IL5      # Refine session
+
 # Dashboard Pages
+# /studio/app-builder  — NL App Builder (describe → get app)
 # /studio/workflows    — Visual Workflow Builder (drag-drop DAG editor)
 # /studio/marketplace  — Marketplace Storefront (browse, search, install)
 ```
