@@ -162,7 +162,7 @@ def get_active(project_id: str = None, db_path=None) -> dict:
         if project_id:
             query += " AND project_id = ?"
             params.append(project_id)
-        query += " ORDER BY created_at DESC, rowid DESC LIMIT 1"
+        query += " ORDER BY created_at DESC LIMIT 1"
 
         row = conn.execute(query, params).fetchone()
         return dict(row) if row else None

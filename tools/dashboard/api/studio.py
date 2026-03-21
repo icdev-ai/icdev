@@ -7,7 +7,6 @@ Registration in app.py is a single line:
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 

@@ -93,7 +93,9 @@ class TestSessionPurpose(unittest.TestCase):
 
     def test_get_active_latest(self):
         """Test that most recent active purpose is returned."""
+        import time
         declare(purpose="First", db_path=self.db_path)
+        time.sleep(0.01)  # Ensure distinct created_at timestamps
         declare(purpose="Second", db_path=self.db_path)
         active = get_active(db_path=self.db_path)
         self.assertEqual(active["purpose"], "Second")

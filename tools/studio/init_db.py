@@ -152,6 +152,24 @@ STUDIO_TABLES: dict[str, str] = {
 APPEND_ONLY_TABLES = ["studio_case_history", "studio_automation_runs"]
 
 
+def _table_exists(conn, name: str) -> bool:
+    """Check if a table exists (works on both SQLite and PostgreSQL)."""
+    from tools.db.storage import get_backend
+    backend = get_backend()
+    if backend == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema = 'public' AND table_name = %s",
+            (name,),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (name,),
+        ).fetchone()
+    return row is not None
+
+
 def init_studio_tables(*, verbose: bool = False) -> dict:
     """Create all studio tables.  Returns summary dict."""
     conn = get_connection()
@@ -159,12 +177,7 @@ def init_studio_tables(*, verbose: bool = False) -> dict:
     skipped: list[str] = []
     try:
         for name, ddl in STUDIO_TABLES.items():
-            # Check if already exists
-            row = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
-                (name,),
-            ).fetchone()
-            if row:
+            if _table_exists(conn, name):
                 skipped.append(name)
                 if verbose:
                     print(f"  exists: {name}")

@@ -259,7 +259,7 @@ def update_workflow(
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE studio_workflows SET {', '.join(sets)} WHERE workflow_id = ?",
+            f"UPDATE studio_workflows SET {', '.join(sets)} WHERE workflow_id = ?",  # noqa: S608  # nosec B608 — column names are hardcoded, not user input
             vals,
         )
         conn.commit()
@@ -323,6 +323,7 @@ def list_builtin_templates() -> list[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="ICDEV Studio Workflow Editor")
+    parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("catalog", help="Show tool catalog")
@@ -332,7 +333,6 @@ def main() -> None:
     p_get = sub.add_parser("get", help="Get workflow by ID")
     p_get.add_argument("workflow_id")
 
-    parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     result: Any = None
