@@ -175,6 +175,182 @@ def api_marketplace_install(asset_id: str):
         return jsonify({"error": str(exc)}), 500
 
 
+# ── Form Builder (Phase 72c) ──────────────────────────────
+
+@studio_api.route("/forms/field-types", methods=["GET"])
+def api_form_field_types():
+    from tools.studio.form_builder import get_field_types
+    return jsonify({"field_types": get_field_types()})
+
+
+@studio_api.route("/forms/templates", methods=["GET"])
+def api_form_templates():
+    from tools.studio.form_builder import get_form_templates
+    return jsonify({"templates": get_form_templates()})
+
+
+@studio_api.route("/forms", methods=["GET"])
+def api_list_forms():
+    from tools.studio.form_builder import list_forms
+    status = request.args.get("status")
+    return jsonify({"forms": list_forms(status=status)})
+
+
+@studio_api.route("/forms", methods=["POST"])
+def api_create_form():
+    from tools.studio.form_builder import create_form
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    fields = data.get("fields", [])
+    if not name or not fields:
+        return jsonify({"error": "name and fields are required"}), 400
+    result = create_form(name, fields, description=data.get("description", ""))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+@studio_api.route("/forms/<form_id>", methods=["GET"])
+def api_get_form(form_id: str):
+    from tools.studio.form_builder import get_form
+    form = get_form(form_id)
+    if not form:
+        return jsonify({"error": "Form not found"}), 404
+    return jsonify(form)
+
+
+@studio_api.route("/forms/<form_id>", methods=["PATCH"])
+def api_update_form(form_id: str):
+    from tools.studio.form_builder import update_form
+    data = request.get_json(silent=True) or {}
+    result = update_form(
+        form_id, name=data.get("name"), fields=data.get("fields"),
+        description=data.get("description"), status=data.get("status"),
+    )
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@studio_api.route("/forms/<form_id>", methods=["DELETE"])
+def api_delete_form(form_id: str):
+    from tools.studio.form_builder import delete_form
+    result = delete_form(form_id)
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@studio_api.route("/forms/<form_id>/submissions", methods=["GET"])
+def api_list_submissions(form_id: str):
+    from tools.studio.form_builder import list_submissions
+    return jsonify({"submissions": list_submissions(form_id)})
+
+
+@studio_api.route("/forms/<form_id>/submissions", methods=["POST"])
+def api_submit_form(form_id: str):
+    from tools.studio.form_builder import submit_form
+    data = request.get_json(silent=True) or {}
+    result = submit_form(form_id, data.get("data", {}))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+# ── Case Management (Phase 72c) ───────────────────────────
+
+@studio_api.route("/cases/templates", methods=["GET"])
+def api_case_lifecycle_templates():
+    from tools.studio.case_manager import get_lifecycle_templates
+    return jsonify({"templates": get_lifecycle_templates()})
+
+
+@studio_api.route("/cases/types", methods=["GET"])
+def api_list_case_types():
+    from tools.studio.case_manager import list_case_types
+    return jsonify({"types": list_case_types()})
+
+
+@studio_api.route("/cases/types", methods=["POST"])
+def api_create_case_type():
+    from tools.studio.case_manager import create_case_type
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    lifecycle = data.get("lifecycle", {})
+    if not name or not lifecycle:
+        return jsonify({"error": "name and lifecycle are required"}), 400
+    result = create_case_type(name, lifecycle, description=data.get("description", ""))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+@studio_api.route("/cases/types/<type_id>", methods=["GET"])
+def api_get_case_type(type_id: str):
+    from tools.studio.case_manager import get_case_type
+    ct = get_case_type(type_id)
+    if not ct:
+        return jsonify({"error": "Case type not found"}), 404
+    return jsonify(ct)
+
+
+@studio_api.route("/cases/types/<type_id>/board", methods=["GET"])
+def api_case_board(type_id: str):
+    from tools.studio.case_manager import get_case_board
+    result = get_case_board(type_id)
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@studio_api.route("/cases", methods=["GET"])
+def api_list_cases():
+    from tools.studio.case_manager import list_cases
+    return jsonify({"cases": list_cases(
+        type_id=request.args.get("type_id"),
+        state=request.args.get("state"),
+        priority=request.args.get("priority"),
+    )})
+
+
+@studio_api.route("/cases", methods=["POST"])
+def api_create_case():
+    from tools.studio.case_manager import create_case
+    data = request.get_json(silent=True) or {}
+    result = create_case(
+        data.get("type_id", ""), data.get("title", "").strip(),
+        description=data.get("description", ""),
+        priority=data.get("priority", "medium"),
+        assigned_to=data.get("assigned_to"),
+        form_submission_id=data.get("form_submission_id"),
+    )
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+@studio_api.route("/cases/<case_id>", methods=["GET"])
+def api_get_case(case_id: str):
+    from tools.studio.case_manager import get_case
+    case = get_case(case_id)
+    if not case:
+        return jsonify({"error": "Case not found"}), 404
+    return jsonify(case)
+
+
+@studio_api.route("/cases/<case_id>/transition", methods=["POST"])
+def api_transition_case(case_id: str):
+    from tools.studio.case_manager import transition_case
+    data = request.get_json(silent=True) or {}
+    to_state = data.get("to_state", "").strip()
+    if not to_state:
+        return jsonify({"error": "to_state is required"}), 400
+    result = transition_case(case_id, to_state, comment=data.get("comment", ""))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result)
+
+
 # ── NL App Builder (Phase 72b) ────────────────────────────
 
 @studio_api.route("/app-builder/extract", methods=["POST"])

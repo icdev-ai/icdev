@@ -2035,6 +2035,18 @@ python tools/studio/workflow_editor.py --json templates                         
 python tools/studio/workflow_editor.py --json list                                     # List saved studio workflows
 python tools/studio/workflow_editor.py --json get <workflow_id>                        # Get workflow by ID
 
+# Form Builder — create custom forms with JSON Schema output
+python tools/studio/form_builder.py --json field-types                                     # List field types
+python tools/studio/form_builder.py --json templates                                       # List form templates
+python tools/studio/form_builder.py --json list                                            # List saved forms
+python tools/studio/form_builder.py --json get <form_id>                                   # Get form by ID
+
+# Case Manager — FSM lifecycle, Kanban board, SLA tracking
+python tools/studio/case_manager.py --json templates                                       # List lifecycle templates
+python tools/studio/case_manager.py --json types                                           # List case types
+python tools/studio/case_manager.py --json cases                                           # List all cases
+python tools/studio/case_manager.py --json board <type_id>                                 # Get Kanban board
+
 # NL App Builder — describe what you want, get a working app
 python tools/studio/nl_app_builder.py --json extract "description of app"                  # Extract capabilities
 python tools/studio/nl_app_builder.py --json create "description" --name my-app            # Create builder session
@@ -2043,5 +2055,7 @@ python tools/studio/nl_app_builder.py --json refine <session_id> --classificatio
 # Dashboard Pages
 # /studio/app-builder  — NL App Builder (describe → get app)
 # /studio/workflows    — Visual Workflow Builder (drag-drop DAG editor)
+# /studio/forms        — Form Builder (drag-drop field editor)
+# /studio/cases        — Case Management (Kanban board + lifecycle)
 # /studio/marketplace  — Marketplace Storefront (browse, search, install)
 ```

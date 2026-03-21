@@ -1284,6 +1284,8 @@
 | Studio DB Init | tools/studio/init_db.py | Initialize 9 studio_* tables (PG + SQLite compatible, idempotent) | --json, --verbose | Table creation summary |
 | Workflow Editor | tools/studio/workflow_editor.py | Workflow CRUD, tool catalog (5 categories, 22 tools), YAML validation | --json catalog, templates, list, get <id> | Tool catalog, templates, workflows |
 | Studio API | tools/dashboard/api/studio.py | Flask Blueprint: workflow CRUD, tool catalog, marketplace storefront API | REST endpoints under /api/studio/ | JSON responses |
+| Form Builder | tools/studio/form_builder.py | Form schema CRUD, JSON Schema output, 10 field types, 4 pre-built templates, submissions | --json field-types, templates, list, get <id> | Form schemas + submissions |
+| Case Manager | tools/studio/case_manager.py | Case lifecycle engine: FSM state machine, Kanban board, SLA rules, 3 lifecycle templates | --json templates, types, cases, board <type_id> | Case data + board view |
 | NL App Builder | tools/studio/nl_app_builder.py | NL-to-blueprint pipeline: extract capabilities from description, create session, refine, build child app | --json extract <desc>, create <desc> --name, refine <id> | Blueprint preview + build result |
 | Studio CSS | tools/dashboard/static/css/studio.css | Premium design system: glass cards, gradients, animations, 8px grid | (asset) | CSS |
 | Workflow Studio JS | tools/dashboard/static/js/workflow-studio.js | DAG canvas editor: drag-drop nodes, SVG edges, zoom, validate, YAML import/export | (asset) | JS |
