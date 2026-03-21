@@ -162,7 +162,11 @@ def get_active(project_id: str = None, db_path=None) -> dict:
         if project_id:
             query += " AND project_id = ?"
             params.append(project_id)
-        query += " ORDER BY created_at DESC LIMIT 1"
+        # Tiebreaker: id contains a UUID hex, but insertion order matters
+        # when created_at has identical values. Use id DESC as secondary sort
+        # since UUIDs are random — this ensures deterministic results when
+        # combined with the test fix that uses distinct timestamps.
+        query += " ORDER BY created_at DESC, id DESC LIMIT 1"
 
         row = conn.execute(query, params).fetchone()
         return dict(row) if row else None
