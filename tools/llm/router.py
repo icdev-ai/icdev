@@ -425,6 +425,65 @@ class LLMRouter:
         return result["action"]
 
     # -------------------------------------------------------------------
+    # D-RDT-1: Pre-invoke redaction hook (all modules, all LLM calls)
+    # -------------------------------------------------------------------
+
+    def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
+        """Sanitize PII in request messages before sending to any LLM.
+
+        Applies to ALL modules. Checks if the function is in the enforced
+        scope and whether routing is local-only (skips if configured).
+
+        Returns session_id for de-anonymization, or None if skipped.
+        """
+        try:
+            from tools.redaction.govcon_sanitizer import GovConSanitizer
+        except ImportError:
+            return None  # Redaction module not available — proceed unsanitized
+
+        try:
+            sanitizer = GovConSanitizer()
+
+            # Check if routing is local-only for this function
+            chain = self._get_chain_for_function(function)
+            is_local = all(
+                self._get_model_config(m).get("provider") == "ollama"
+                for m in chain
+                if self._get_model_config(m)
+            )
+
+            # Extract text from messages
+            for msg in (request.messages or []):
+                if isinstance(msg, dict):
+                    content = msg.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        sanitized, meta = sanitizer.sanitize_for_llm(
+                            content,
+                            function_name=function,
+                            impact_level=request.classification or "IL4",
+                            is_local_only=is_local,
+                        )
+                        if not meta.get("skipped", True):
+                            msg["content"] = sanitized
+
+            # Also sanitize system_prompt if present
+            if request.system_prompt and request.system_prompt.strip():
+                sanitized, meta = sanitizer.sanitize_for_llm(
+                    request.system_prompt,
+                    function_name=function,
+                    impact_level=request.classification or "IL4",
+                    is_local_only=is_local,
+                )
+                if not meta.get("skipped", True):
+                    request.system_prompt = sanitized
+
+            return sanitizer.session_id
+
+        except Exception as exc:
+            logger.debug("Pre-invoke redaction failed (non-blocking): %s", exc)
+            return None
+
+    # -------------------------------------------------------------------
     # Two-tier routing helpers (D-TT1: qwen3 worker → Claude planner)
     # -------------------------------------------------------------------
 
@@ -834,6 +893,10 @@ class LLMRouter:
                     "Prompt injection detected with high confidence — request blocked. "
                     "Review the input content for injection patterns."
             )
+
+        # D-RDT-1: Pre-invoke redaction — sanitize PII before sending to LLM
+        # Applies to ALL modules. Skips for local-only routing if configured.
+        _redaction_session = self._pre_invoke_redaction(function, request)
 
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
