@@ -76,6 +76,10 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
     """Attempt two-tier LLM draft via tools.llm.router.
 
     Returns (draft_text, method) or (None, None) if unavailable.
+
+    Phase 70: Proposal content is sanitized before LLM invocation.
+    proposal_drafting routes to local Ollama only (args/llm_config.yaml).
+    Sanitizer runs as defense-in-depth even for local routing.
     """
     try:
         from tools.llm.router import LLMRouter
@@ -127,6 +131,21 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
             f"- Mention automation and repeatability\n"
             f"- Keep to ~400 words, use bullet points for clarity\n"
         )
+
+        # Phase 70: Sanitize prompt before LLM invocation (defense-in-depth)
+        # proposal_drafting already routes to local Ollama only via llm_config.yaml,
+        # but sanitizer catches PII as additional protection layer.
+        try:
+            from tools.redaction.govcon_sanitizer import GovConSanitizer
+            _sanitizer = GovConSanitizer()
+            prompt, _redaction_meta = _sanitizer.sanitize_for_llm(
+                prompt,
+                function_name="proposal_drafting",
+                impact_level="IL4",
+                is_local_only=True,  # Routes to Ollama — skip_for_local honored
+            )
+        except ImportError:
+            pass  # Redaction module not installed — proceed unsanitized
 
         response = router.invoke(
             function_name="proposal_drafting",

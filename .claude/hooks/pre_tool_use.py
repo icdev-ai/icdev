@@ -301,6 +301,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 71 — CRAG Evaluation (D-RAG-23)
         "rag_evaluation_campaigns",
         "rag_evaluation_results",
+        # Phase 70 — Redaction & Data Protection (D-RDT-1)
+        "redaction_audit",
     ]
 
     if tool_name == "Bash":

@@ -1275,3 +1275,41 @@ def handle_autoresearch_evaluate(args: dict) -> dict:
 def handle_autoresearch_health(args: dict) -> dict:
     """Health check for autoresearch subsystem."""
     return _run_cli("tools/autoresearch/experiment_engine.py", ["--health"])
+
+
+# ── Redaction & Data Protection (Phase 70 — D-RDT-1) ─────────────────
+
+def handle_redaction_detect(args: dict) -> dict:
+    """Detect PII/sensitive data in text."""
+    cli_args = ["--detect", str(args.get("text", ""))]
+    return _run_cli("tools/redaction/detector.py", cli_args)
+
+
+def handle_redaction_anonymize(args: dict) -> dict:
+    """Anonymize PII in text."""
+    cli_args = ["--anonymize", str(args.get("text", "")), "--show-text"]
+    if args.get("impact_level"):
+        cli_args.extend(["--il", str(args["impact_level"])])
+    if args.get("session_id"):
+        cli_args.extend(["--session", str(args["session_id"])])
+    return _run_cli("tools/redaction/anonymizer.py", cli_args)
+
+
+def handle_redaction_sanitize_proposal(args: dict) -> dict:
+    """Sanitize proposal content for LLM."""
+    cli_args = ["--sanitize", str(args.get("text", "")), "--show-text"]
+    if args.get("function_name"):
+        cli_args.extend(["--function", str(args["function_name"])])
+    if args.get("impact_level"):
+        cli_args.extend(["--il", str(args["impact_level"])])
+    return _run_cli("tools/redaction/govcon_sanitizer.py", cli_args)
+
+
+def handle_redaction_scan_db(args: dict) -> dict:
+    """Scan proposal DB tables for PII."""
+    cli_args = ["--scan"]
+    if args.get("table"):
+        cli_args.extend(["--table", str(args["table"])])
+    if args.get("sample_size"):
+        cli_args.extend(["--sample-size", str(args["sample_size"])])
+    return _run_cli("tools/redaction/db_scanner.py", cli_args)

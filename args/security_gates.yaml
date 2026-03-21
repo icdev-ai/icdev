@@ -1138,3 +1138,20 @@ openclaw_export:
     require_human_approval: true
     strip_cui_required: true
     strip_internal_metadata: true
+
+# Phase 70 — Redaction & Data Protection (D-RDT-1)
+redaction_data_protection:
+  description: "Gate for sensitive data protection — blocks if PII/CUI detected in cloud-bound prompts"
+  blocking:
+    - pii_detected_in_cloud_prompt
+    - cui_data_in_unprotected_channel
+    - program_name_in_cloud_prompt
+    - pricing_data_in_cloud_prompt
+  warning:
+    - redaction_module_not_installed
+    - presidio_unavailable_using_regex_fallback
+    - deny_list_empty
+  thresholds:
+    max_pii_detections_allowed: 0
+    require_local_only_for_proposals: true
+    audit_all_detections: true

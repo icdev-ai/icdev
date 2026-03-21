@@ -9109,6 +9109,39 @@ CREATE TABLE IF NOT EXISTS bayesian_experiment_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_bes_domain ON bayesian_experiment_scores(domain);
 CREATE INDEX IF NOT EXISTS idx_bes_candidate ON bayesian_experiment_scores(candidate_id);
+
+-- ============================================================
+-- REDACTION & DATA PROTECTION (Phase 70 — D-RDT-1)
+-- ============================================================
+
+-- Conversation-scoped real<->surrogate mapping (reversible anonymization)
+CREATE TABLE IF NOT EXISTS redaction_registry (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    real_hash TEXT NOT NULL,
+    surrogate TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    UNIQUE(session_id, entity_type, real_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_redaction_registry_session ON redaction_registry(session_id);
+CREATE INDEX IF NOT EXISTS idx_redaction_registry_expires ON redaction_registry(expires_at);
+
+-- Append-only audit trail for all redaction/anonymization events (NIST AU)
+CREATE TABLE IF NOT EXISTS redaction_audit (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    text_length INTEGER NOT NULL,
+    detection_count INTEGER NOT NULL,
+    entity_types TEXT NOT NULL,
+    impact_level TEXT NOT NULL,
+    module TEXT DEFAULT 'unknown',
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_redaction_audit_session ON redaction_audit(session_id);
+CREATE INDEX IF NOT EXISTS idx_redaction_audit_ts ON redaction_audit(timestamp);
 """
 
 

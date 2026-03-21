@@ -742,6 +742,29 @@ CREATE TABLE IF NOT EXISTS rag_evaluation_results (
     details TEXT DEFAULT '{}',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Phase 70: Redaction & Data Protection
+CREATE TABLE IF NOT EXISTS redaction_registry (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    real_hash TEXT NOT NULL,
+    surrogate TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    UNIQUE(session_id, entity_type, real_hash)
+);
+CREATE TABLE IF NOT EXISTS redaction_audit (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    timestamp TEXT NOT NULL,
+    text_length INTEGER NOT NULL,
+    detection_count INTEGER NOT NULL,
+    entity_types TEXT NOT NULL,
+    impact_level TEXT NOT NULL,
+    module TEXT DEFAULT 'unknown',
+    classification TEXT DEFAULT 'CUI'
+);
 """
 
 # ---------------------------------------------------------------------------

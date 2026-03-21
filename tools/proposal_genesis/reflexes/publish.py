@@ -175,8 +175,29 @@ def _generate_case_study(draft: Dict, kb_blocks: List[Dict]) -> Dict[str, str]:
     body = "\n".join(sections)
     slug = _slugify(title)
 
+    raw_title = f"Case Study: {_sanitize_title(title)}"
+
+    # Phase 70: Sanitize case study through PulseSanitizer
+    # Removes agency names, program names, contract numbers, generalizes
+    # past performance details before staging as Pulse draft.
+    try:
+        from tools.redaction.pulse_sanitizer import PulseSanitizer
+        ps = PulseSanitizer()
+        sanitized = ps.sanitize_article(
+            title=raw_title, body=body, tags=tags, domain=domain,
+        )
+        return {
+            "title": sanitized["title"],
+            "slug": slug,
+            "body": sanitized["body"],
+            "domain": domain,
+            "tags": sanitized["tags"],
+        }
+    except ImportError:
+        pass  # Redaction module not installed — use raw output
+
     return {
-        "title": f"Case Study: {_sanitize_title(title)}",
+        "title": raw_title,
         "slug": slug,
         "body": body,
         "domain": domain,

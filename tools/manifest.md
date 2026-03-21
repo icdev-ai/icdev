@@ -1263,3 +1263,16 @@
 | Runbook Executor | tools/sre/runbook_executor.py | Runbook executor: register runbooks, match alerts, risk-tiered execution, dry-run, rollback | --register, --match, --execute, --dry-run, --rollback, --list, --json | Execution results + rollback status |
 | Incident Commander | tools/sre/incident_commander.py | Incident commander: full incident lifecycle (detected→closed), auto-escalation, MTTR tracking, postmortem | --create, --escalate, --resolve, --close, --postmortem, --mttr, --list, --json | Incident status + MTTR metrics |
 | SRE Config | args/sre_config.yaml | SRE config: SLO definitions, burn rate thresholds, runbook registry, escalation policies, incident severity levels | (data) | YAML config |
+
+## Redaction & Data Protection (Phase 70 — D-RDT-1)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Redaction Detector | tools/redaction/detector.py | Presidio + custom recognizer PII/sensitive data detection engine | --detect, --detect-file, --list-entities, --health, --json, --gate | Detection results |
+| Redaction Anonymizer | tools/redaction/anonymizer.py | Anonymization engine with IL-aware operators (surrogate/redact/mask/hash) | --anonymize, --anonymize-file, --il, --session, --show-text, --health, --json, --gate | Anonymized text + metadata |
+| GovCon Recognizers | tools/redaction/govcon_recognizers.py | Custom Presidio recognizers for contract#, CAGE, pricing, program names, orgs | --list, --json | Recognizer definitions |
+| Redaction Registry | tools/redaction/registry.py | Conversation-scoped real↔surrogate mapping with SQLite persistence | --session, --list, --cleanup, --health, --json | Mapping entries |
+| GovCon Sanitizer | tools/redaction/govcon_sanitizer.py | Pre-LLM hook: sanitizes proposal content before cloud LLM invocation | --sanitize, --sanitize-file, --function, --il, --local-only, --show-text, --health, --json, --gate | Sanitized text + metadata |
+| Pulse Sanitizer | tools/redaction/pulse_sanitizer.py | Pulse case study de-identification (agency, program, pricing, past perf) | --sanitize-article, --title, --body, --tags, --health, --json, --gate | Sanitized article |
+| DB PII Scanner | tools/redaction/db_scanner.py | Scan proposal DB tables for PII density per column | --scan, --table, --sample-size, --health, --json, --gate | PII density report |
+| Redaction Config | args/redaction_config.yaml | Global redaction config: entities, thresholds, operators, IL overrides, scope, audit | (data) | YAML config |
+| GovCon Redaction Config | args/redaction_govcon.yaml | GovCon-specific: program deny-list, contract patterns, pricing patterns, past perf rules, Pulse sanitization | (data) | YAML config |

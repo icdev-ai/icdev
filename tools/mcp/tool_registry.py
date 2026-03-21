@@ -2720,6 +2720,37 @@ TOOL_REGISTRY = {
         "description": "Incident dashboard: open incidents, MTTR statistics, escalation status, and postmortem backlog.",
         "input_schema": {"type": "object", "properties": {"status_filter": {"type": "string", "description": "Filter by incident status"}, "days": {"type": "integer", "description": "Lookback window in days", "default": 30}}},
     },
+    # ============================================================
+    # REDACTION & DATA PROTECTION (Phase 70 — D-RDT-1)
+    # ============================================================
+    "redaction_detect": {
+        "category": "redaction",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_redaction_detect",
+        "description": "Detect PII/sensitive data in text using Presidio + custom GovCon recognizers.",
+        "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to scan for PII"}, "impact_level": {"type": "string", "description": "Impact level", "enum": ["IL2", "IL4", "IL5", "IL6"], "default": "IL4"}}, "required": ["text"]},
+    },
+    "redaction_anonymize": {
+        "category": "redaction",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_redaction_anonymize",
+        "description": "Anonymize PII in text with IL-aware operators (surrogate, redact, mask, hash).",
+        "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Text to anonymize"}, "impact_level": {"type": "string", "description": "Impact level", "enum": ["IL2", "IL4", "IL5", "IL6"], "default": "IL4"}, "session_id": {"type": "string", "description": "Session ID for consistent surrogates"}}, "required": ["text"]},
+    },
+    "redaction_sanitize_proposal": {
+        "category": "redaction",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_redaction_sanitize_proposal",
+        "description": "Sanitize proposal content for LLM — removes program names, past perf details, pricing.",
+        "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Proposal text to sanitize"}, "function_name": {"type": "string", "description": "LLM function name", "default": "proposal_drafting"}, "impact_level": {"type": "string", "description": "Impact level", "default": "IL4"}}, "required": ["text"]},
+    },
+    "redaction_scan_db": {
+        "category": "redaction",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_redaction_scan_db",
+        "description": "Scan proposal database tables for PII density per column.",
+        "input_schema": {"type": "object", "properties": {"table": {"type": "string", "description": "Specific table to scan (omit for all GovCon tables)"}, "sample_size": {"type": "integer", "description": "Sample rows per column", "default": 20}}},
+    },
 }
 
 

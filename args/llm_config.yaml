@@ -449,6 +449,26 @@ routing:
     chain: [claude-sonnet, leanstral, gpt-4o, gemini-2.5-pro, qwen3-local]
     effort: high
 
+  # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
+  # Proposal content contains CUI program names, past performance, pricing.
+  # Route to Ollama only — never send raw proposal content to cloud LLMs.
+  # WriteGuard rewrite (wg_rewrite) stays on Claude (rewrites style, not content).
+  proposal_drafting:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
+  requirement_extraction:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
+  bid_scoring:
+    chain: [qwen3-local, llama-local]
+    effort: low
+
+  color_review:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium

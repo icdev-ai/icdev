@@ -43,6 +43,13 @@ cryptography>=42.0       # RSA license keys, artifact signing, TLS
 gunicorn>=22.0           # Production WSGI server for API gateway
 redis>=5.0               # Rate limiting, session cache, pub/sub
 
+# === Redaction & Data Protection (Phase 70) ===
+# Optional: enhanced PII detection. Falls back to regex without these.
+# presidio-analyzer>=2.2   # NLP-based PII detection (50+ entity types)
+# presidio-anonymizer>=2.2 # Anonymization operators (surrogate, redact, mask, hash)
+# spacy>=3.7              # NER backend for Presidio (requires: python -m spacy download en_core_web_sm)
+faker>=33.0              # Realistic surrogate generation for reversible anonymization
+
 # === Security: pinned to patch CVEs (see pip-audit) ===
 black>=26.3.1            # CVE-2026-32274: path traversal
 filelock>=3.20.3         # CVE-2025-68146, CVE-2026-22701: TOCTOU race
