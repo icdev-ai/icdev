@@ -119,10 +119,12 @@ def _status_windows() -> Dict:
     daemon_running = False
     try:
         result = subprocess.run(
-            ["wmic", "process", "where",
-             "CommandLine like '%sync_engine%--daemon%'",
-             "get", "ProcessId"],
-            capture_output=True, text=True, timeout=5,
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process -Filter "
+             "\"Name='pythonw.exe' OR Name='python.exe'\" | "
+             "Where-Object { $_.CommandLine -match 'sync_engine.*daemon' } | "
+             "Select-Object -ExpandProperty ProcessId"],
+            capture_output=True, text=True, timeout=8,
         )
         pids = [l.strip() for l in result.stdout.strip().split("\n") if l.strip().isdigit()]
         daemon_running = len(pids) > 0
