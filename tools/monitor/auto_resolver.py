@@ -498,7 +498,9 @@ def _notify_resolution(resolution_id: str, decision: str, details: dict) -> None
         data = json.dumps({"event_type": "auto_resolution",
                            "data": {"resolution_id": resolution_id, "decision": decision,
                                     "details": details}}).encode("utf-8")
-        req = urllib.request.Request("http://localhost:5000/api/events/ingest",
+        import os as _os
+        _dash_port = _os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
+        req = urllib.request.Request(f"http://localhost:{_dash_port}/api/events/ingest",
                                     data=data, method="POST")
         req.add_header("Content-Type", "application/json")
         urllib.request.urlopen(req, timeout=5)

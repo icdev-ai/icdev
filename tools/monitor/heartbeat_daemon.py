@@ -228,8 +228,10 @@ def _notify(
             "details": details,
             "timestamp": _utcnow_iso(),
         }).encode("utf-8")
+        import os as _os
+        _dash_port = _os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
         req = urllib.request.Request(
-            "http://localhost:5000/api/events/ingest",
+            f"http://localhost:{_dash_port}/api/events/ingest",
             data=payload,
             headers={"Content-Type": "application/json"},
             method="POST",

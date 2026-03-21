@@ -110,9 +110,10 @@ def _get_allowed_origins():
     if origins_env:
         return [o.strip() for o in origins_env.split(",") if o.strip()]
     # Default: allow localhost for development
+    _dash_port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
     return [
         "http://localhost:3000",
-        "http://localhost:5000",
+        f"http://localhost:{_dash_port}",
         "http://localhost:8080",
         "https://localhost:8443",
     ]

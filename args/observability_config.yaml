@@ -36,4 +36,5 @@ agent_executor:
 dashboard:
   sse_enabled: true
   sse_heartbeat_seconds: 15
-  event_ingest_endpoint: "http://127.0.0.1:5000/api/events/ingest"
+  # Runtime: port from ICDEV_DASHBOARD_PORT env var (default: 5000)
+  event_ingest_endpoint: "http://127.0.0.1:{ICDEV_DASHBOARD_PORT}/api/events/ingest"
