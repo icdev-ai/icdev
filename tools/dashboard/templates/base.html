@@ -107,9 +107,10 @@
 
             <!-- Utility -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard'] %}active{% endif %}">More</a>
+                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/notifications'] %}active{% endif %}">More</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/usage">Usage</a></li>
+                    <li><a href="/notifications">Notifications</a></li>
                     <li><a href="/quick-paths">Quick Paths</a></li>
                     <li><a href="/wizard" style="color: var(--accent-blue-light);">Get Started</a></li>
                 </ul>
