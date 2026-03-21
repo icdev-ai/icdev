@@ -360,6 +360,9 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-DB-23:** Placeholder translation (? -> %s) handled transparently by StorageConnection wrapper
 - **D-DB-24:** Supabase for marketplace-saas (PostgreSQL + Auth + RLS + Realtime)
 - **D-DB-25:** Alembic for PostgreSQL schema versioning (replaces table-recreation pattern)
+- **D-DB-26:** Extended SQL translation layer (4 new rules): `LIKE` → `ILIKE` for case-insensitive matching, `GROUP_CONCAT` → `string_agg()`, `GLOB` → `~` regex, `last_insert_rowid()` → `lastval()`. All 13 translation rules in `translate_sql()`.
+- **D-DB-27:** Eliminated 8 direct `SELECT last_insert_rowid()` SQL calls — replaced with `cursor.lastrowid` property (cross-DB via StorageCursor wrapper).
+- **D-DB-28:** Migrated 8 production tools from direct `sqlite3.connect()` to `get_connection()` — ensures all SQL goes through the translation layer. Remaining direct calls are infrastructure-only (init, migration, backup, code generators).
 
 ### D-SYNC — File Sync
 
