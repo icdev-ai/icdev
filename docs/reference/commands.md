@@ -2047,6 +2047,15 @@ python tools/studio/case_manager.py --json types                                
 python tools/studio/case_manager.py --json cases                                           # List all cases
 python tools/studio/case_manager.py --json board <type_id>                                 # Get Kanban board
 
+# Automation Builder — event-driven rules (trigger → condition → action)
+python tools/studio/automation_builder.py --json triggers                                   # List trigger types
+python tools/studio/automation_builder.py --json operators                                  # List condition operators
+python tools/studio/automation_builder.py --json actions                                    # List action types
+python tools/studio/automation_builder.py --json templates                                  # List automation templates
+python tools/studio/automation_builder.py --json list                                       # List saved automations
+python tools/studio/automation_builder.py --json runs                                       # List recent runs
+python tools/studio/automation_builder.py --json simulate <automation_id>                   # Dry-run simulation
+
 # NL App Builder — describe what you want, get a working app
 python tools/studio/nl_app_builder.py --json extract "description of app"                  # Extract capabilities
 python tools/studio/nl_app_builder.py --json create "description" --name my-app            # Create builder session
@@ -2057,5 +2066,6 @@ python tools/studio/nl_app_builder.py --json refine <session_id> --classificatio
 # /studio/workflows    — Visual Workflow Builder (drag-drop DAG editor)
 # /studio/forms        — Form Builder (drag-drop field editor)
 # /studio/cases        — Case Management (Kanban board + lifecycle)
+# /studio/automations  — Automation Studio (trigger → condition → action)
 # /studio/marketplace  — Marketplace Storefront (browse, search, install)
 ```

@@ -5227,6 +5227,11 @@ def create_app() -> Flask:
         """Studio — NL App Builder."""
         return render_template("studio/app_builder.html")
 
+    @app.route("/studio/automations")
+    def studio_automations():
+        """Studio — Citizen Automation Studio."""
+        return render_template("studio/automations.html")
+
     @app.route("/studio/forms")
     def studio_forms():
         """Studio — Form Builder."""
