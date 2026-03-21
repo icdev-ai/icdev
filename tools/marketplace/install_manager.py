@@ -295,8 +295,21 @@ def install_asset(asset_id, version_id, tenant_id, project_id,
                 f"Version not found: {version_id} for asset {asset_id}"
             )
 
-        # Copy asset files to install_path
+        # Sandbox verification (D-SEC-10) — verify asset code in container
         source_path = version["file_path"]
+        if source_path and Path(source_path).exists() and Path(source_path).is_dir():
+            sandbox_result = _sandbox_verify_asset(source_path, asset_id)
+            if sandbox_result and sandbox_result.get("status") == "fail":
+                failure_details = "; ".join(
+                    f.get("file", "?") + ": " + f.get("error", "unknown")
+                    for f in sandbox_result.get("failures", [])[:3]
+                )
+                raise ValueError(
+                    f"Sandbox verification failed for {asset_id}: {failure_details}. "
+                    f"Asset code did not pass container isolation check (D-SEC-10)."
+                )
+
+        # Copy asset files to install_path
         files_copied = False
         if source_path and Path(source_path).exists():
             dest = Path(install_path)

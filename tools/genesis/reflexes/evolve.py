@@ -96,6 +96,7 @@ def _compute_confidence(
     risk: str,
     tests_passed: bool,
     metrics_improved: bool,
+    sandbox_passed: bool = True,
 ) -> Tuple[float, str]:
     """Compute GKP confidence based on quality gates.
 
@@ -104,16 +105,25 @@ def _compute_confidence(
     if not tests_passed:
         return 0.35, "tests_failed"
 
+    # Sandbox failure reduces confidence by 0.10 (D-SEC-10)
+    sandbox_penalty = 0.0 if sandbox_passed else 0.10
+    sandbox_suffix = "" if sandbox_passed else "+sandbox_failed"
+
     if risk == "low" and metrics_improved:
-        return 0.75, "low_risk_tests_pass_metrics_improved"
+        tag = "low_risk_tests_pass_metrics_improved"
+        return 0.75 - sandbox_penalty, tag + sandbox_suffix
     if risk == "low":
-        return 0.65, "low_risk_tests_pass"
+        tag = "low_risk_tests_pass"
+        return 0.65 - sandbox_penalty, tag + sandbox_suffix
     if risk == "medium" and metrics_improved:
-        return 0.60, "medium_risk_metrics_improved"
+        tag = "medium_risk_metrics_improved"
+        return 0.60 - sandbox_penalty, tag + sandbox_suffix
     if risk == "medium":
-        return 0.50, "medium_risk_tests_pass"
+        tag = "medium_risk_tests_pass"
+        return 0.50 - sandbox_penalty, tag + sandbox_suffix
     # high risk
-    return 0.45, "high_risk_human_review"
+    tag = "high_risk_human_review"
+    return 0.45 - sandbox_penalty, tag + sandbox_suffix
 
 
 def _get_worst_quality_file(
@@ -218,6 +228,61 @@ Respond with JSON only:
     return None
 
 
+def _sandbox_verify_file(file_path: str, timeout: int = 30) -> bool:
+    """Verify a file executes cleanly in LLM Sandbox container (D-SEC-10).
+
+    Runs a compile-check inside a Docker container with network isolation.
+    Returns True if sandbox passed or unavailable (graceful degradation).
+    Returns False if the file failed sandbox execution.
+    """
+    try:
+        from tools.security.sandbox_executor import SandboxExecutor
+    except ImportError:
+        return True  # Graceful degradation
+
+    executor = SandboxExecutor()
+    if not executor._enabled or not executor._available:
+        return True  # Graceful degradation
+
+    path = Path(file_path) if not Path(file_path).is_absolute() else Path(file_path)
+    if not path.exists():
+        full_path = BASE_DIR / file_path
+        if not full_path.exists():
+            return True  # File not found — skip, don't block
+        path = full_path
+
+    try:
+        code = path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return True  # Can't read — skip
+
+    compile_code = (
+        "import sys\n"
+        f"src = '''{code[:6000]}'''\n"
+        "try:\n"
+        "    compile(src, '<sandbox>', 'exec')\n"
+        "    print('OK')\n"
+        "except SyntaxError as e:\n"
+        "    print(f'SYNTAX_ERROR: {e}')\n"
+        "    sys.exit(1)\n"
+    )
+
+    result = executor.execute(
+        code=compile_code,
+        language="python",
+        executor_type="genesis_evolve",
+        network_enabled=False,
+        timeout_seconds=timeout,
+        actor="genesis-evolve",
+        project_id="genesis",
+    )
+
+    if result.status in ("disabled", "unavailable"):
+        return True  # Graceful degradation
+
+    return result.exit_code == 0
+
+
 def _run_tests_for_file(file_path: str, timeout: int = 120) -> Dict[str, Any]:
     """Run tests related to a specific file."""
     # Run tests (targeted test discovery planned for future)
@@ -270,6 +335,7 @@ def _export_mutation_proposal(
                 "analysis_model": "phi4-reasoning",
                 "confidence_rationale": confidence_rationale,
                 "tests_run": True,
+                "sandbox_verified": sandbox_passed,
                 "fresh_metrics_available": fresh_metrics is not None,
             },
         )
@@ -330,6 +396,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             },
         }
 
+    # Step 3.5: Sandbox isolation check (D-SEC-10)
+    print("  Evolve: sandbox verification...")
+    sandbox_passed = _sandbox_verify_file(target["file_path"])
+    if not sandbox_passed:
+        print("  Evolve: SANDBOX FAILED — file does not compile cleanly in container")
+
     # Step 4: Run tests as quality gate
     risk = analysis.get("risk", "medium").lower()
     print(f"  Evolve: running test suite (risk={risk})...")
@@ -358,7 +430,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             )
 
     # Step 6: Compute quality-gated confidence
-    confidence, rationale = _compute_confidence(risk, tests_passed, metrics_improved)
+    confidence, rationale = _compute_confidence(risk, tests_passed, metrics_improved, sandbox_passed)
     print(f"  Evolve: confidence={confidence:.2f} ({rationale})")
 
     # Step 7: Export as GKP proposal with computed confidence
@@ -392,6 +464,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "fresh_metrics": fresh_metrics,
             "metrics_improved": metrics_improved,
             "tests_passed": tests_passed,
+            "sandbox_passed": sandbox_passed,
             "confidence": confidence,
             "confidence_rationale": rationale,
             "gkp_id": gkp_id,

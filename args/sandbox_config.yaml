@@ -1,7 +1,8 @@
 # CUI // SP-CTI
-# Phase 71 — Sandbox Executor Configuration (D-SEC-10)
+# Phase 71/72 — Sandbox Executor Configuration (D-SEC-10, D-SEC-11)
 # Container-isolated code execution for marketplace validation,
-# agent output verification, and capability evaluation.
+# agent output verification, capability evaluation, CodeLens testing,
+# CI/CD contributor verification, and Genesis mutation safety.
 
 sandbox:
   enabled: true
@@ -30,3 +31,27 @@ sandbox:
 
   # Audit
   audit_all_executions: true
+
+  # --- Integration-specific overrides (Phase 72, D-SEC-11) ---
+
+  # CodeLens / test_orchestrator: sandbox isolation step 2.5
+  codelens:
+    max_files: 15             # Cap files per run to keep total time < 120s
+    timeout_per_file: 15      # Seconds per file sandbox execution
+    skip_on_unavailable: true # Graceful degradation — don't block pipeline
+
+  # CI/CD: contributor PR verification
+  ci_cd:
+    timeout_per_file: 30      # More time in CI (Docker-in-Docker overhead)
+    fail_on_error: true       # Block merge if sandbox fails
+
+  # Marketplace / OpenClaw: asset installation verification
+  marketplace:
+    max_files: 20             # Cap files per asset
+    timeout_per_file: 15
+    block_on_failure: true    # Reject install if sandbox fails
+
+  # Genesis Evolve: mutation code verification
+  genesis:
+    timeout_per_file: 30
+    confidence_penalty: 0.10  # Reduce confidence by this amount on sandbox failure
