@@ -177,6 +177,78 @@ def _strip_hero_image_from_content(content: str) -> str:
     return content
 
 
+def _resolve_local_images(content: str, wp) -> str:
+    """Find local image paths in HTML/markdown content and upload to WordPress.
+
+    Catches patterns like:
+      src="/static/screenshots/foo.png"
+      src="tools/dashboard/static/screenshots/foo.png"
+      ![alt](/static/screenshots/foo.png)
+
+    Uploads each local file to WP media library and replaces the path with the
+    returned public URL.  If the file doesn't exist or upload fails, the
+    reference is left unchanged (better than silently dropping the image).
+    """
+    import re
+
+    # Directories to search for local images (most-specific first)
+    search_dirs = [
+        PROJECT_ROOT / "tools" / "dashboard" / "static" / "screenshots",
+        PROJECT_ROOT / "tools" / "dashboard" / "static",
+        PROJECT_ROOT / "playwright" / "screenshots",
+        PROJECT_ROOT,
+    ]
+
+    # Match src="..." or markdown ![...](...) with local-looking paths
+    # Local = starts with / (but not //) or doesn't start with http
+    local_img_re = re.compile(
+        r'(?:'
+        r'(?:src=["\'])(/static/screenshots/[^"\']+)["\']'  # HTML src
+        r'|'
+        r'!\[[^\]]*\]\((/static/screenshots/[^)]+)\)'  # Markdown ![](...)
+        r'|'
+        r'(?:src=["\'])((?:tools/|playwright/)[^"\']+\.(?:png|jpg|jpeg|webp|gif))["\']'
+        r')'
+    )
+
+    replacements = {}
+    for m in local_img_re.finditer(content):
+        local_path = m.group(1) or m.group(2) or m.group(3)
+        if local_path in replacements:
+            continue  # Already processed
+
+        # Resolve to absolute filesystem path
+        resolved = None
+        # Strip leading slash for filesystem lookup
+        clean = local_path.lstrip("/")
+        for search_dir in search_dirs:
+            candidate = search_dir / clean
+            if candidate.exists():
+                resolved = candidate
+                break
+            # Also try just the filename
+            candidate = search_dir / Path(clean).name
+            if candidate.exists():
+                resolved = candidate
+                break
+
+        if not resolved:
+            _log(f"Local image not found on disk: {local_path}", "WARN")
+            continue
+
+        result = _upload_image(wp, str(resolved), resolved.stem)
+        if result and result.get("url"):
+            replacements[local_path] = result["url"]
+            _log(f"Uploaded inline image: {local_path} -> {result['url']}")
+        else:
+            _log(f"Failed to upload inline image: {local_path}", "WARN")
+
+    for old_path, new_url in replacements.items():
+        content = content.replace(old_path, new_url)
+
+    return content
+
+
 def _pulse_to_wp(post: dict, status: str = "publish") -> dict:
     """Map Pulse post fields to WordPress XML-RPC post struct."""
     content = post.get("body_html") or post.get("body_markdown", "")
@@ -247,6 +319,9 @@ def publish_post(post_id: str, as_draft: bool = False) -> dict:
     wp = _get_client()
     wp_status = "draft" if as_draft else "publish"
     wp_post = _pulse_to_wp(post, status=wp_status)
+
+    # 2a. Resolve any local image paths in post_content → upload to WP
+    wp_post["post_content"] = _resolve_local_images(wp_post["post_content"], wp)
 
     # 2b. Upload hero image if available
     image_attachment = None

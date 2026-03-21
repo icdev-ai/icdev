@@ -117,7 +117,12 @@ The future of enterprise software isn't "build vs. buy." It's "describe and depl
 
 
 def _capture_screenshots(challenge: dict, port: int) -> list[dict]:
-    """Launch headless Chrome and capture screenshots of the running app."""
+    """Launch headless Chrome and capture screenshots of the running app.
+
+    Returns list of dicts with 'name', 'filename', and 'abs_path' (absolute
+    filesystem path).  The abs_path is what downstream consumers (WordPress
+    uploader, Pulse pipeline) need to locate the file on disk.
+    """
     screenshots_dir = Path(BASE_DIR) / "tools" / "dashboard" / "static" / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -152,7 +157,7 @@ def _capture_screenshots(challenge: dict, port: int) -> list[dict]:
                     captured.append({
                         "name": name,
                         "filename": filename,
-                        "path": f"/static/screenshots/{filename}",
+                        "abs_path": str(filepath),
                     })
                 except Exception:
                     continue
@@ -166,9 +171,67 @@ def _capture_screenshots(challenge: dict, port: int) -> list[dict]:
     return captured
 
 
+def _upload_screenshots_to_wp(screenshots: list[dict], title: str) -> list[dict]:
+    """Upload screenshot files to WordPress media library.
+
+    Each screenshot dict must have 'abs_path' (filesystem path).
+    Returns the list enriched with 'wp_url' for each successfully uploaded image.
+    Falls back gracefully — if upload fails, the screenshot is skipped.
+    """
+    import os
+    import xmlrpc.client  # nosec B411
+
+    env_path = BASE_DIR / ".env"
+    if env_path.exists() and not os.getenv("WP_PASSWORD"):
+        for _line in env_path.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
+    wp_url = os.getenv("WP_XMLRPC_URL", "")
+    wp_user = os.getenv("WP_USERNAME", "")
+    wp_pass = os.getenv("WP_PASSWORD", "")
+    blog_id = os.getenv("WP_BLOG_ID", "1")
+
+    if not wp_pass:
+        return screenshots  # No WP credentials — leave as-is
+
+    wp = xmlrpc.client.ServerProxy(wp_url)
+
+    for ss in screenshots:
+        abs_path = ss.get("abs_path", "")
+        fpath = Path(abs_path)
+        if not fpath.exists():
+            continue
+        try:
+            media = {
+                "name": fpath.name,
+                "type": "image/png",
+                "bits": xmlrpc.client.Binary(fpath.read_bytes()),
+                "overwrite": True,
+            }
+            result = wp.wp.uploadFile(blog_id, wp_user, wp_pass, media)
+            ss["wp_url"] = result.get("url", "")
+        except Exception:
+            pass  # Upload failed — screenshot will be skipped in article
+
+    return screenshots
+
+
 def _embed_screenshots(article: str, screenshots: list[dict], challenge: dict) -> str:
-    """Embed screenshot references into the article at appropriate points."""
-    if not screenshots:
+    """Upload screenshots to WordPress, then embed WP URLs into the article.
+
+    Only screenshots with a valid 'wp_url' are embedded.  Local filesystem
+    paths are NEVER written into article content — they would not resolve on
+    the published WordPress site.
+    """
+    # Upload first — enrich each screenshot dict with 'wp_url'
+    screenshots = _upload_screenshots_to_wp(screenshots, challenge.get("title", ""))
+
+    # Keep only screenshots that were successfully uploaded
+    uploaded = [ss for ss in screenshots if ss.get("wp_url")]
+    if not uploaded:
         return article
 
     # Build screenshot markdown block
@@ -182,10 +245,10 @@ def _embed_screenshots(article: str, screenshots: list[dict], challenge: dict) -
         "knowledge_graph": "Knowledge Graph",
     }
 
-    for ss in screenshots:
+    for ss in uploaded:
         label = labels.get(ss["name"], ss["name"].replace("_", " ").title())
         screenshot_section += f"### {label}\n\n"
-        screenshot_section += f"![{label}]({ss['path']})\n\n"
+        screenshot_section += f"![{label}]({ss['wp_url']})\n\n"
 
     # Insert before the "Get Started" section
     if "## Get Started" in article:
