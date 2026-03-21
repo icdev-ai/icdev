@@ -4324,6 +4324,27 @@ def create_app() -> Flask:
 
     # ── Genesis v2.0 — Autonomous Research Lab Dashboard ──────────────────────
 
+    @app.route("/notifications")
+    def notifications_page():
+        """Notification Gateway — adapter config, delivery history, routing rules."""
+        try:
+            from tools.notifications.gateway import NotificationGateway
+            gw = NotificationGateway()
+            health = gw.health()
+        except Exception:
+            health = {"enabled": False, "adapters": {}, "error": "Gateway unavailable"}
+        # Recent delivery log
+        history = []
+        try:
+            conn = _get_db()
+            history = conn.execute(
+                "SELECT * FROM notification_log ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+            conn.close()
+        except Exception:
+            pass
+        return render_template("notifications.html", health=health, history=history)
+
     @app.route("/genesis")
     def genesis():
         """Genesis v2.0 — Autonomous Research Lab dashboard (multi-app)."""
