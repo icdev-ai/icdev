@@ -27,7 +27,6 @@ import json
 import logging
 import math
 import re
-import sqlite3
 import struct
 import sys
 import uuid
@@ -47,14 +46,10 @@ logger = logging.getLogger("icdev.knowledge_graph.disambiguator")
 # Database helpers
 # ---------------------------------------------------------------------------
 
-def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
+def _get_db(db_path: Optional[str] = None):
     """Get a connection to icdev.db."""
-    if db_path:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-    else:
-        from tools.db.storage import get_connection
-        conn = get_connection()
+    from tools.db.storage import get_connection
+    conn = get_connection(db_path=db_path)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     return conn

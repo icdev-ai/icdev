@@ -418,7 +418,7 @@ def categorize_project(project_id, method="information_type", manual_c=None,
         )
 
         # Insert new categorization
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO fips199_categorizations
             (project_id, categorization_date, confidentiality_impact,
              integrity_impact, availability_impact, overall_categorization,
@@ -436,7 +436,7 @@ def categorize_project(project_id, method="information_type", manual_c=None,
             ),
         )
 
-        cat_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        cat_id = cur.lastrowid
 
         # Update project with categorization columns
         conn.execute(

@@ -79,19 +79,12 @@ def _get_config() -> Dict[str, Any]:
 # Database
 # ---------------------------------------------------------------------------
 
-def _get_db() -> sqlite3.Connection:
+def _get_db():
     """Get connection to icdev.db."""
-    try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
-    except Exception:
-        db_path = BASE_DIR / "data" / "icdev.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def _now() -> str:

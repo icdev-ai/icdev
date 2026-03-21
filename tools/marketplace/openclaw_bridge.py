@@ -227,10 +227,8 @@ def _get_db():
     """Get database connection for OpenClaw tables."""
     if _HAS_DB:
         return get_connection()
-    import sqlite3
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+    from tools.db.storage import get_connection as _get_conn
+    return _get_conn(db_path=str(DB_PATH))
 
 
 def _utcnow():

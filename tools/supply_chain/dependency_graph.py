@@ -23,7 +23,6 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import sys
 import uuid
 from collections import deque
@@ -158,7 +157,7 @@ def add_dependency(project_id, source_component, target_component,
     try:
         # metadata stores optional vendor link
         metadata = json.dumps({"vendor_id": vendor_id}) if vendor_id else None
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO supply_chain_dependencies
                (project_id, source_type, source_id, target_type, target_id,
                 dependency_type, criticality, metadata, created_at)
@@ -168,7 +167,7 @@ def add_dependency(project_id, source_component, target_component,
              criticality, metadata, datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()
-        dep_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        dep_id = cur.lastrowid
         _log_audit(conn, project_id, "supply_chain_risk_escalated",
                    f"Added dependency: {source_component} -> {target_component}",
                    {"dependency_id": dep_id, "type": dependency_type,

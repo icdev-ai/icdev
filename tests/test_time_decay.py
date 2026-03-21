@@ -52,13 +52,13 @@ def _insert_entry(db_path, content, memory_type="event", importance=5,
     """Insert a test memory entry with optional timestamp."""
     conn = sqlite3.connect(str(db_path))
     ts = created_at or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
+    cur = conn.execute(
         "INSERT INTO memory_entries (content, type, importance, created_at) "
         "VALUES (?, ?, ?, ?)",
         (content, memory_type, importance, ts),
     )
     conn.commit()
-    last_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    last_id = cur.lastrowid
     conn.close()
     return last_id
 

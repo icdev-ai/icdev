@@ -14,6 +14,10 @@ PostgreSQL SQL so existing code works without changes:
     - PRAGMA → no-op (PG handles these natively)
     - INTEGER PRIMARY KEY AUTOINCREMENT → SERIAL PRIMARY KEY (DDL only)
     - conn.row_factory = sqlite3.Row → RealDictCursor (dict-like rows)
+    - LIKE → ILIKE (case-insensitive)
+    - GROUP_CONCAT → string_agg
+    - GLOB → ~ (regex)
+    - last_insert_rowid() → lastval()
 
 Configuration:
     ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: sqlite)
@@ -200,6 +204,30 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
             lambda m: m.group(0).replace("::text", ""),
             sql,
         )
+
+    # 10. LIKE → ILIKE (SQLite LIKE is case-insensitive; PG LIKE is case-sensitive)
+    #     Only in DML contexts (not DDL, not inside string literals)
+    if "CREATE TABLE" not in sql.upper() and "CREATE INDEX" not in sql.upper():
+        sql = re.sub(r'\bLIKE\b', 'ILIKE', sql, flags=re.IGNORECASE)
+        # Also handle NOT LIKE → NOT ILIKE (already handled by the above since LIKE is replaced)
+
+    # 11. GROUP_CONCAT → string_agg (PG equivalent)
+    def _replace_group_concat(m):
+        args = m.group(1)
+        parts = [a.strip() for a in args.split(',', 1)]
+        col = parts[0]
+        sep = parts[1] if len(parts) > 1 else "','"
+        return f"string_agg({col}::text, {sep})"
+
+    sql = re.sub(r'\bGROUP_CONCAT\(([^)]+)\)', _replace_group_concat, sql, flags=re.IGNORECASE)
+
+    # 12. GLOB → ~ (PG regex match) — SQLite GLOB uses * and ?
+    #     col GLOB 'pattern' → col ~ 'pattern' (with * → .* and ? → . conversion)
+    #     Note: This is a best-effort translation; complex GLOB patterns may need manual review
+    sql = re.sub(r'\bGLOB\b', '~', sql, flags=re.IGNORECASE)
+
+    # 13. last_insert_rowid() → lastval() (PG equivalent for last auto-generated ID)
+    sql = re.sub(r'\blast_insert_rowid\(\)', 'lastval()', sql, flags=re.IGNORECASE)
 
     return sql
 

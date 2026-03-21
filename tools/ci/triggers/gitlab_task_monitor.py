@@ -88,14 +88,14 @@ def claim_issue(issue_iid: int, issue_url: str, icdev_tag: str, worktree_name: s
     """Claim an issue for processing. Returns claim ID."""
     try:
         conn = get_connection()
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO gitlab_task_claims
                (issue_iid, issue_url, icdev_tag, worktree_name, status)
                VALUES (?, ?, ?, ?, 'claimed')""",
             (issue_iid, issue_url, icdev_tag, worktree_name),
         )
         conn.commit()
-        claim_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        claim_id = cur.lastrowid
         conn.close()
         return str(claim_id)
     except Exception as e:

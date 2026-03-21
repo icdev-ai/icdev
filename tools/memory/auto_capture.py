@@ -14,7 +14,6 @@ Usage:
 import argparse
 import hashlib
 import json
-import sqlite3
 import sys
 from tools.db.storage import get_connection
 from pathlib import Path
@@ -124,7 +123,7 @@ def capture(
             conn.close()
             return {"status": "duplicate", "buffer_id": existing["id"]}
 
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO memory_buffer
                (content, content_hash, type, importance, source,
                 user_id, tenant_id, session_id, tool_name, metadata)
@@ -134,7 +133,7 @@ def capture(
              json.dumps(metadata) if metadata else None),
         )
         conn.commit()
-        buffer_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        buffer_id = cur.lastrowid
 
         # Check buffer size for auto-flush threshold
         count = conn.execute("SELECT COUNT(*) FROM memory_buffer").fetchone()[0]

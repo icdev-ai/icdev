@@ -126,22 +126,12 @@ def _edge_id(source_id: str, target_id: str, relationship: str) -> str:
 # Database helpers (same patterns as graph_rag.py)
 # ---------------------------------------------------------------------------
 
-def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
+def _get_db(db_path: Optional[Path] = None):
     """Get a connection to icdev.db."""
-    try:
-        from tools.db.storage import get_connection
-        conn = get_connection(db_path=str(db_path) if db_path else None)
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
-    except Exception:
-        import os
-        path = db_path or Path(
-            os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
-        )
-        conn = sqlite3.connect(str(path))
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
+    from tools.db.storage import get_connection
+    conn = get_connection(db_path=str(db_path) if db_path else None)
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:

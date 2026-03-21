@@ -24,7 +24,6 @@ CLI:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 from tools.db.storage import get_connection
 from collections import deque
@@ -205,7 +204,7 @@ def triage_cve(project_id, cve_id, component, cvss_score, severity,
         upstream_json = json.dumps(upstream)
         downstream_json = json.dumps(downstream)
 
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO cve_triage
                (project_id, cve_id, package_name, package_version,
                 severity, cvss_score, exploitability,
@@ -221,7 +220,7 @@ def triage_cve(project_id, cve_id, component, cvss_score, severity,
         )
         conn.commit()
 
-        triage_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        triage_id = cur.lastrowid
 
         _log_audit(conn, project_id, "cve_triaged",
                    f"Triaged {cve_id} (severity={severity}, blast_radius={blast_radius})",

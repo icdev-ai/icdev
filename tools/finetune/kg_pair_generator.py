@@ -72,17 +72,11 @@ DEFAULT_CONFIG = {
 # Database
 # ---------------------------------------------------------------------------
 
-def _get_db() -> sqlite3.Connection:
-    try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
-        conn.execute("PRAGMA journal_mode=WAL")
-        return conn
-    except Exception:
-        db_path = BASE_DIR / "data" / "icdev.db"
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        return conn
+def _get_db():
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    conn.execute("PRAGMA journal_mode=WAL")
+    return conn
 
 
 def _now() -> str:

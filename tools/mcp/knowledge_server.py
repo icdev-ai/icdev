@@ -127,14 +127,14 @@ def handle_add_pattern(args: dict) -> dict:
     # Fallback: direct DB insert
     conn = _get_db()
     try:
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO knowledge_patterns
                (name, pattern_type, description, detection_rule, solution, auto_healable, confidence)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (name, pattern_type, description, detection_rule, solution, auto_healable, confidence),
         )
         conn.commit()
-        pattern_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        pattern_id = cur.lastrowid
     finally:
         conn.close()
 

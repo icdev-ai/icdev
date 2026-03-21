@@ -82,7 +82,7 @@ def log_incident(
     conn = _get_connection(db_path)
     try:
         _ensure_table(conn)
-        conn.execute(
+        cur = conn.execute(
             """INSERT INTO ai_incident_log
                (project_id, incident_type, ai_system, severity,
                 description, status, reported_by)
@@ -91,7 +91,7 @@ def log_incident(
              description, reported_by),
         )
         conn.commit()
-        incident_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        incident_id = cur.lastrowid
 
         # Audit trail
         try:
