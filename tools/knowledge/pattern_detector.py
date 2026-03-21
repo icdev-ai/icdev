@@ -8,11 +8,14 @@ import argparse
 import json
 import re
 import sqlite3
-from tools.db.storage import get_connection
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # D-EVO-7: Confidence decay config (from args/evolution_config.yaml)

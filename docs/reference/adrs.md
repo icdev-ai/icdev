@@ -706,3 +706,18 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-SC-5:** Semaphore enforces max_concurrent_syncs (makes existing config value real)
 - **D-SC-6:** stdlib only (concurrent.futures, threading, queue); psutil optional for backpressure
 - **D-SC-7:** Append-only audit trail preserved (INSERT only in WriteBatcher, NIST AU)
+
+### D-RDT — Redaction & Data Protection (Phase 70)
+
+- **D-RDT-1:** Proposal functions (proposal_drafting, requirement_extraction, bid_scoring, color_review) route to local Ollama only — cloud LLMs never see raw proposal content
+- **D-RDT-2:** WriteGuard rewrite (wg_rewrite) stays on Claude — rewrites style/grammar, not sensitive content
+- **D-RDT-3:** Chat-time anonymization (adapted from AI Automators ep3 design), not ingestion-time — documents stored raw, anonymized at LLM boundary
+- **D-RDT-4:** Two-pass detection: surrogate entities (PERSON, LOCATION) at 0.7 threshold with Faker replacements; hard-redact entities (SSN, credit card) at 0.3 threshold with [REDACTED] placeholders
+- **D-RDT-5:** Conversation-scoped surrogate registries with 72-hour TTL, persisted to SQLite
+- **D-RDT-6:** Past performance generalization via deterministic rules (dates→quarters, amounts→ranges, counts→rounded) — no LLM needed
+- **D-RDT-7:** GovCon deny-lists and custom terms in YAML config (GOTCHA args/ pattern)
+- **D-RDT-8:** Ollama gemma3 for NER (replaces spaCy — Python 3.14 compatible, air-gap safe, zero new dependencies)
+- **D-RDT-9:** Central pre-invoke hook in router.invoke() protects ALL 50+ LLM callers — no per-module integration
+- **D-RDT-10:** Scope mode: all (default) — every LLM call redacted unless exempt; enforced modules never skip even for local routing
+- **D-RDT-11:** Performance: singleton sanitizer (30min TTL), module-level Ollama cache (60s TTL), pre-compiled regex, cached YAML configs
+- **D-RDT-12:** Child apps inherit redaction automatically (tools/redaction/ not in PARENT_ONLY_DIRS)

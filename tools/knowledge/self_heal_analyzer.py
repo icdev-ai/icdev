@@ -8,12 +8,15 @@ import argparse
 import json
 import sqlite3
 import subprocess
+import sys
 import time
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Thresholds

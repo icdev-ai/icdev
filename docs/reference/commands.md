@@ -1975,3 +1975,51 @@ python tools/sre/incident_commander.py --update --incident-id inc-xxx --status m
 python tools/sre/incident_commander.py --dashboard --json                              # Incident dashboard
 python tools/sre/incident_commander.py --gate                                          # Gate check (CI/CD)
 ```
+
+## Redaction & Data Protection (Phase 70 — D-RDT-1)
+
+```bash
+# Detector — PII/sensitive data detection (regex + Ollama NER + deny-lists)
+python tools/redaction/detector.py --detect "John Smith SSN 123-45-6789" --json       # Detect PII in text
+python tools/redaction/detector.py --detect-file /path/to/file.txt --json             # Detect PII in file
+python tools/redaction/detector.py --list-entities --json                              # List all supported entity types
+python tools/redaction/detector.py --health --json                                     # Health check
+python tools/redaction/detector.py --health --gate                                     # Gate check (CI/CD)
+
+# NER Recognizer — Ollama gemma3 + regex for PERSON/ORGANIZATION (air-gap safe)
+python tools/redaction/ner_recognizer.py --extract "John Smith from DISA" --json       # Extract named entities
+python tools/redaction/ner_recognizer.py --no-ollama --extract "text" --json           # Regex-only mode
+python tools/redaction/ner_recognizer.py --health --json                               # Health check
+
+# Anonymizer — IL-aware anonymization (surrogate, redact, mask, hash)
+python tools/redaction/anonymizer.py --anonymize "sensitive text" --json               # Anonymize (metadata only)
+python tools/redaction/anonymizer.py --anonymize "text" --show-text --json             # Anonymize (show output)
+python tools/redaction/anonymizer.py --anonymize "text" --il IL6 --json               # Anonymize at IL6 (hard redact)
+python tools/redaction/anonymizer.py --session abc123 --anonymize "text" --json        # Consistent surrogates per session
+python tools/redaction/anonymizer.py --health --json --gate                            # Gate check
+
+# GovCon Sanitizer — pre-LLM hook for proposal/sensitive content
+python tools/redaction/govcon_sanitizer.py --sanitize "proposal text" --json           # Sanitize for LLM
+python tools/redaction/govcon_sanitizer.py --sanitize "text" --show-text --json        # Show sanitized output
+python tools/redaction/govcon_sanitizer.py --sanitize "text" --il IL5 --json           # Specify impact level
+python tools/redaction/govcon_sanitizer.py --sanitize "text" --local-only --json       # Simulate local routing
+python tools/redaction/govcon_sanitizer.py --health --json --gate                      # Gate check
+
+# Pulse Sanitizer — case study de-identification
+python tools/redaction/pulse_sanitizer.py --sanitize-article --title "T" --body "B" --json  # Sanitize article
+python tools/redaction/pulse_sanitizer.py --health --json --gate                       # Gate check
+
+# GovCon Recognizers — custom Presidio-compatible recognizer definitions
+python tools/redaction/govcon_recognizers.py --list --json                             # List recognizer definitions
+
+# Registry — conversation-scoped surrogate mapping
+python tools/redaction/registry.py --session abc123 --list --json                      # List session mappings
+python tools/redaction/registry.py --cleanup --json                                    # Remove expired entries
+python tools/redaction/registry.py --health --json                                     # Health check
+
+# DB PII Scanner — scan proposal tables for PII density
+python tools/redaction/db_scanner.py --scan --json                                     # Scan all GovCon tables
+python tools/redaction/db_scanner.py --scan --table proposal_knowledge_base --json     # Scan specific table
+python tools/redaction/db_scanner.py --scan --sample-size 50 --json                    # Custom sample size
+python tools/redaction/db_scanner.py --health --json --gate                            # Gate check
+```
