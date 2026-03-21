@@ -2697,7 +2697,7 @@ TOOL_REGISTRY = {
         "module": "tools.mcp.gap_handlers",
         "handler": "handle_runbook_execute",
         "description": "Execute a runbook against an alert, respecting risk tier and recording full audit trail.",
-        "input_schema": {"type": "object", "properties": {"runbook_id": {"type": "string", "description": "Runbook identifier"}, "alert_message": {"type": "string", "description": "Alert message that triggered execution"}, "dry_run": {"type": "boolean", "description": "If true, validate without executing", "default": false}}, "required": ["runbook_id"]},
+        "input_schema": {"type": "object", "properties": {"runbook_id": {"type": "string", "description": "Runbook identifier"}, "alert_message": {"type": "string", "description": "Alert message that triggered execution"}, "dry_run": {"type": "boolean", "description": "If true, validate without executing", "default": False}}, "required": ["runbook_id"]},
     },
     "incident_create": {
         "category": "sre",
