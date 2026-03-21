@@ -374,7 +374,7 @@ class A2AAgentServer:
 
     def _get_db(self) -> sqlite3.Connection:
         """Get a database connection."""
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _persist_task(self, task: Task) -> None:

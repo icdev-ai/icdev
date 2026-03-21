@@ -160,7 +160,7 @@ def _default_config() -> dict:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Open a connection with row_factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

@@ -521,7 +521,7 @@ class LocalMonitoringProvider(MonitoringProvider):
     def _init_db(self):
         """Create metrics table if not exists."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_metrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -559,7 +559,7 @@ class LocalMonitoringProvider(MonitoringProvider):
     def send_metric(self, namespace: str, metric_name: str, value: float,
                     dimensions: Optional[Dict] = None) -> bool:
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT INTO local_metrics (namespace, metric_name, value, dimensions, recorded_at) "
                 "VALUES (?, ?, ?, ?, ?)",
@@ -588,7 +588,7 @@ class LocalMonitoringProvider(MonitoringProvider):
                       start_time: Optional[str] = None,
                       end_time: Optional[str] = None) -> List[Dict]:
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             query = "SELECT * FROM local_metrics WHERE namespace = ? AND metric_name = ?"
             params: list = [namespace, metric_name]
             if start_time:
@@ -608,7 +608,7 @@ class LocalMonitoringProvider(MonitoringProvider):
     def create_alarm(self, name: str, namespace: str, metric_name: str,
                      threshold: float, comparison: str = "GreaterThanThreshold") -> bool:
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT OR REPLACE INTO local_alarms "
                 "(name, namespace, metric_name, threshold, comparison, created_at) "

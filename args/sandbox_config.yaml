@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+# Phase 71 — Sandbox Executor Configuration (D-SEC-10)
+# Container-isolated code execution for marketplace validation,
+# agent output verification, and capability evaluation.
+
+sandbox:
+  enabled: true
+  runtime: docker           # docker | kubernetes | podman
+
+  # Resource limits
+  default_timeout_seconds: 30
+  max_timeout_seconds: 300
+  default_max_memory_mb: 512
+  max_memory_mb: 2048
+  default_cpu_count: 1
+
+  # Network isolation (default: no network access)
+  network_enabled: false
+
+  # Container images per language
+  images:
+    python: "python:3.12-slim"
+    javascript: "node:20-slim"
+    java: "eclipse-temurin:21-jre-jammy"
+    go: "golang:1.22-bookworm"
+
+  # Lifecycle
+  cleanup_containers: true
+  max_concurrent_sessions: 4
+
+  # Audit
+  audit_all_executions: true

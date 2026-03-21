@@ -28,7 +28,7 @@ finetune_api = Blueprint("finetune_api", __name__, url_prefix="/api/finetune")
 def _get_db() -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(DB_PATH)
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

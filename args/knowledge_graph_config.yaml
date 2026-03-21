@@ -63,3 +63,13 @@ ingestion:
     - .json
     - .yaml
     - .yml
+
+# D-KARL-7: Entity enrichment (centrality + embeddings)
+enrichment:
+  centrality:
+    degree_weight: 0.6
+    betweenness_weight: 0.4
+    max_exact_nodes: 500
+  embeddings:
+    enabled: true
+    batch_size: 20

@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 from tools.db.storage import get_connection
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -67,11 +67,10 @@ def get_migration_candidates(
             "warm_to_cold": [],
         }
 
-    # Access internal DB path for direct queries
-    db_path = store._db_path
+    # Access DB via centralized connection
     conn = get_connection()
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     hot_cutoff = (now - timedelta(days=hot_days)).isoformat()
     warm_cutoff = (now - timedelta(days=warm_days)).isoformat()
 
@@ -213,7 +212,6 @@ def rehydrate_chunks(
     except Exception:
         return {"error": "No embedding provider available", "rehydrated": 0}
 
-    db_path = store._db_path
     conn = get_connection()
     rehydrated = 0
 

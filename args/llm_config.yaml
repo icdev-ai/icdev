@@ -634,3 +634,34 @@ rag:
       - ui_analysis
       - diagram_extraction
       - compliance_diagram
+
+# -----------------------------------------------------------------------
+# Token Budget Enforcement (Paperclip-inspired per-agent hard-stops)
+# -----------------------------------------------------------------------
+# Per-agent monthly USD caps. Warning fires at threshold; hard_stop blocks.
+# Set enabled: false to disable enforcement globally.
+token_budgets:
+  enabled: true
+  default_monthly_usd: 50.00
+  warning_threshold: 0.8          # warn at 80% spend
+  hard_stop: true                  # block at 100% (false = warn-only)
+
+  # Per-agent overrides (agent_id from agent_registry.py cards)
+  per_agent:
+    orchestrator-agent:
+      monthly_usd: 100.00         # orchestrator needs higher cap
+    builder-agent:
+      monthly_usd: 75.00
+    compliance-agent:
+      monthly_usd: 30.00
+    security-agent:
+      monthly_usd: 30.00
+    knowledge-agent:
+      monthly_usd: 20.00
+    monitor-agent:
+      monthly_usd: 10.00
+    # Scanner-tier agents (Ollama-only, zero cloud cost) — generous caps
+    genesis-daemon:
+      monthly_usd: 5.00           # mostly Ollama, minimal cloud
+    proposal-genesis-daemon:
+      monthly_usd: 5.00

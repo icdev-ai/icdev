@@ -318,7 +318,7 @@ def generate_assessment_report(app_id, output_dir=None, db_path=None):
         # --- Fetch latest assessment ---
         assess_row = conn.execute(
             "SELECT * FROM migration_assessments WHERE legacy_app_id = ? "
-            "ORDER BY rowid DESC LIMIT 1", (app_id,)
+            "ORDER BY assessed_at DESC LIMIT 1", (app_id,)
         ).fetchone()
         if assess_row is None:
             raise ValueError(
@@ -623,7 +623,7 @@ def generate_progress_report(plan_id, pi_number=None, output_dir=None, db_path=N
         if pi_number:
             progress_rows = conn.execute(
                 "SELECT * FROM migration_progress WHERE plan_id = ? AND pi_number = ? "
-                "ORDER BY rowid DESC",
+                "ORDER BY id DESC",
                 (plan_id, pi_number),
             ).fetchall()
         else:
@@ -880,7 +880,7 @@ def generate_ato_impact_report(plan_id, output_dir=None, db_path=None):
         if app_id:
             assess_row = conn.execute(
                 "SELECT * FROM migration_assessments WHERE legacy_app_id = ? "
-                "ORDER BY rowid DESC LIMIT 1", (app_id,)
+                "ORDER BY assessed_at DESC LIMIT 1", (app_id,)
             ).fetchone()
             if assess_row:
                 assessment = dict(assess_row)
@@ -1150,7 +1150,7 @@ def generate_executive_summary(app_id, output_dir=None, db_path=None):
         # --- Fetch latest assessment ---
         assess_row = conn.execute(
             "SELECT * FROM migration_assessments WHERE legacy_app_id = ? "
-            "ORDER BY rowid DESC LIMIT 1", (app_id,)
+            "ORDER BY assessed_at DESC LIMIT 1", (app_id,)
         ).fetchone()
         if assess_row is None:
             raise ValueError(

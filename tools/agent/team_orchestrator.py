@@ -72,7 +72,7 @@ class Workflow:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -528,6 +528,16 @@ class TeamOrchestrator:
                         if completed_st.status == "completed":
                             completed_count += 1
                             sorter.done(st_id)
+                            # SSE progress for DAG workflows
+                            try:
+                                from tools.dashboard.sse_manager import emit_progress
+                                emit_progress(
+                                    workflow.id, "dag_workflow",
+                                    st_id, completed_count, len(workflow.subtasks),
+                                    detail=f"{completed_st.skill_id} completed",
+                                )
+                            except Exception:
+                                pass
                             _audit_log(
                                 event_type="subtask_completed",
                                 actor=workflow.created_by,
@@ -910,6 +920,153 @@ class TeamOrchestrator:
             conn.close()
 
     # -------------------------------------------------------------------
+    # Batch execution (adapted from Agent Harness pattern)
+    # -------------------------------------------------------------------
+    def execute_batch(
+        self,
+        items: List[Dict],
+        handler: callable,
+        batch_size: int = 5,
+        project_id: str = "",
+        workflow_name: str = "batch",
+        on_progress: callable = None,
+    ) -> Dict:
+        """Execute a list of homogeneous items in configurable batches.
+
+        Processes items in parallel batches (default batch_size=5), collecting
+        results and broadcasting progress.  Inspired by the Agent Harness
+        ``llm_batch_agents`` phase pattern.
+
+        Args:
+            items: List of dicts, each describing one work item.
+            handler: Callable(item: dict) -> dict that processes a single item.
+            batch_size: Max concurrent items per batch (default 5).
+            project_id: Project identifier for tracking / audit.
+            workflow_name: Human-readable label for the batch.
+            on_progress: Optional callback(completed, total, last_result) for
+                         progress updates (e.g. SSE broadcast).
+
+        Returns:
+            Dict with results list, summary stats, and batch metadata.
+        """
+        total = len(items)
+        results: List[Dict] = []
+        failed = 0
+        batch_num = 0
+        workflow_id = f"batch-{uuid.uuid4().hex[:12]}"
+
+        _audit_log(
+            event_type="batch_started",
+            actor="orchestrator-agent",
+            action=f"Batch '{workflow_name}' started: {total} items, batch_size={batch_size}",
+            project_id=project_id,
+            details={
+                "workflow_id": workflow_id,
+                "total_items": total,
+                "batch_size": batch_size,
+            },
+            db_path=self._db_path,
+        )
+
+        # Process in batches
+        for i in range(0, total, batch_size):
+            batch_num += 1
+            batch = items[i:i + batch_size]
+            batch_results = []
+
+            with ThreadPoolExecutor(max_workers=min(batch_size, len(batch))) as executor:
+                futures = {
+                    executor.submit(self._execute_batch_item, handler, item): idx
+                    for idx, item in enumerate(batch)
+                }
+
+                for future in as_completed(futures):
+                    idx = futures[future]
+                    try:
+                        result = future.result()
+                        batch_results.append(result)
+                        if not result.get("success", False):
+                            failed += 1
+                    except Exception as exc:
+                        batch_results.append({
+                            "success": False,
+                            "error": str(exc),
+                            "item_index": i + idx,
+                        })
+                        failed += 1
+
+            results.extend(batch_results)
+
+            # Progress callback after each batch completes
+            if on_progress:
+                try:
+                    on_progress(len(results), total, batch_results[-1] if batch_results else None)
+                except Exception:
+                    pass  # Never let callback errors break the batch
+
+            # SSE progress broadcast (best-effort)
+            try:
+                from tools.dashboard.sse_manager import emit_progress
+                emit_progress(
+                    workflow_id, "batch_workflow",
+                    f"batch_{batch_num}", len(results), total,
+                    status="running" if len(results) < total else "completed",
+                    detail=f"{workflow_name}: batch {batch_num} done",
+                )
+            except Exception:
+                pass
+
+            logger.info(
+                "Batch '%s': %d/%d items complete (batch %d)",
+                workflow_name, len(results), total, batch_num,
+            )
+
+        summary = {
+            "workflow_id": workflow_id,
+            "workflow_name": workflow_name,
+            "total": total,
+            "completed": total - failed,
+            "failed": failed,
+            "batch_size": batch_size,
+            "batches_executed": batch_num,
+            "results": results,
+            "classification": "CUI",
+        }
+
+        _audit_log(
+            event_type="batch_completed",
+            actor="orchestrator-agent",
+            action=f"Batch '{workflow_name}' finished: {total - failed}/{total} succeeded",
+            project_id=project_id,
+            details={
+                "workflow_id": workflow_id,
+                "completed": total - failed,
+                "failed": failed,
+            },
+            db_path=self._db_path,
+        )
+
+        return summary
+
+    @staticmethod
+    def _execute_batch_item(handler: callable, item: Dict) -> Dict:
+        """Execute a single batch item via the provided handler."""
+        start = time.time()
+        try:
+            result = handler(item)
+            if not isinstance(result, dict):
+                result = {"output": result}
+            result.setdefault("success", True)
+            result["duration_ms"] = int((time.time() - start) * 1000)
+            return result
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "duration_ms": int((time.time() - start) * 1000),
+            }
+
+    # -------------------------------------------------------------------
     # Status query
     # -------------------------------------------------------------------
     def get_workflow_status(self, workflow_id: str) -> dict:
@@ -986,6 +1143,10 @@ def main():
     parser.add_argument(
         "--timeout", type=int, default=600,
         help="Workflow execution timeout in seconds (default: 600)",
+    )
+    parser.add_argument(
+        "--batch-size", type=int, default=5,
+        help="Items per concurrent batch for --execute-batch (default: 5)",
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", help="Override database path")

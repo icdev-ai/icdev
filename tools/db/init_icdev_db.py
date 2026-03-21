@@ -155,6 +155,10 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'marketplace_review_submitted', 'marketplace_review_completed',
         'marketplace_scan_completed', 'marketplace_federation_sync',
         'marketplace_rating_submitted',
+        'openclaw_skill_imported', 'openclaw_skill_promoted',
+        'openclaw_skill_rejected', 'openclaw_skill_exported',
+        'openclaw_export_approved', 'openclaw_export_rejected',
+        'openclaw_quarantine_expired',
         'compliance_detected', 'compliance_confirmed',
         'multi_regime_assessed', 'multi_regime_gate_evaluated',
         'data_category_assigned', 'data_category_detected',
@@ -1992,6 +1996,63 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_agent ON agent_token_usage(agent_id);
 CREATE INDEX IF NOT EXISTS idx_token_usage_project ON agent_token_usage(project_id);
 CREATE INDEX IF NOT EXISTS idx_token_usage_created ON agent_token_usage(created_at);
 
+-- Per-agent monthly token budgets (Paperclip-inspired hard-stops)
+CREATE TABLE IF NOT EXISTS agent_token_budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(agent_id, month)
+);
+
+-- Atomic task checkout — lease-based single-assignee enforcement
+CREATE TABLE IF NOT EXISTS agent_task_leases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL UNIQUE,
+    agent_id TEXT NOT NULL,
+    leased_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    released_at TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released', 'expired')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_task_leases_agent ON agent_task_leases(agent_id);
+CREATE INDEX IF NOT EXISTS idx_task_leases_status ON agent_task_leases(status);
+CREATE INDEX IF NOT EXISTS idx_task_leases_expires ON agent_task_leases(expires_at);
+
+-- Scout Daemon — daily autonomous self-improvement scanner
+CREATE TABLE IF NOT EXISTS scout_scans (
+    id TEXT PRIMARY KEY,
+    scan_date TEXT NOT NULL,
+    pillar_results TEXT,
+    digest_path TEXT,
+    total_findings INTEGER DEFAULT 0,
+    signals_fed INTEGER DEFAULT 0,
+    repos_added INTEGER DEFAULT 0,
+    genesis_status TEXT,
+    genesis_branch TEXT,
+    duration_ms INTEGER,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS scout_audit (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    pillar TEXT,
+    details TEXT,
+    success INTEGER,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scout_audit_event ON scout_audit(event_type);
+CREATE INDEX IF NOT EXISTS idx_scout_audit_created ON scout_audit(created_at);
+
 -- Multi-agent workflow tracking
 CREATE TABLE IF NOT EXISTS agent_workflows (
     id TEXT PRIMARY KEY,
@@ -2442,6 +2503,68 @@ CREATE TABLE IF NOT EXISTS marketplace_dependencies (
 );
 CREATE INDEX IF NOT EXISTS idx_mkt_dep_asset ON marketplace_dependencies(asset_id);
 CREATE INDEX IF NOT EXISTS idx_mkt_dep_target ON marketplace_dependencies(depends_on_slug);
+
+-- ============================================================
+-- OPENCLAW SKILL BRIDGE (Phase 69)
+-- ============================================================
+
+-- Quarantine-first import tracker for external OpenClaw skills
+-- Zero-trust: all imports start at trust_score=0.30 (untrusted)
+-- No registration/renewal required — free community assets
+CREATE TABLE IF NOT EXISTS openclaw_imports (
+    id TEXT PRIMARY KEY,
+    source_url TEXT,
+    source_path TEXT NOT NULL,
+    openclaw_slug TEXT,
+    openclaw_author TEXT,
+    skill_name TEXT NOT NULL,
+    skill_version TEXT DEFAULT '1.0.0',
+    quarantine_path TEXT NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    has_executable_content INTEGER DEFAULT 0,
+    scan_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(scan_status IN ('pending', 'scanning', 'passed', 'failed')),
+    gate_results TEXT,
+    review_required INTEGER DEFAULT 0,
+    review_id TEXT,
+    trust_score REAL DEFAULT 0.30,
+    status TEXT NOT NULL DEFAULT 'quarantined'
+        CHECK(status IN ('quarantined', 'scanning', 'review_pending',
+                         'promoted', 'rejected', 'expired')),
+    imported_by TEXT NOT NULL,
+    promoted_by TEXT,
+    promoted_at TIMESTAMP,
+    rejected_by TEXT,
+    rejected_reason TEXT,
+    marketplace_asset_id TEXT,
+    tenant_id TEXT NOT NULL,
+    metadata TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_oc_import_status ON openclaw_imports(status);
+CREATE INDEX IF NOT EXISTS idx_oc_import_tenant ON openclaw_imports(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_oc_import_slug ON openclaw_imports(openclaw_slug);
+CREATE INDEX IF NOT EXISTS idx_oc_import_hash ON openclaw_imports(sha256_hash);
+
+-- Export audit trail (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS openclaw_exports (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    version_id TEXT NOT NULL,
+    output_path TEXT,
+    exported_by TEXT NOT NULL,
+    review_id TEXT,
+    review_status TEXT DEFAULT 'pending'
+        CHECK(review_status IN ('pending', 'approved', 'rejected')),
+    stripping_log TEXT,
+    sha256_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'approved', 'exported', 'rejected')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_oc_export_asset ON openclaw_exports(asset_id);
+CREATE INDEX IF NOT EXISTS idx_oc_export_status ON openclaw_exports(status);
 
 -- ============================================================
 -- UNIVERSAL COMPLIANCE PLATFORM (Phase 23)
@@ -3006,10 +3129,11 @@ CREATE TABLE IF NOT EXISTS heartbeat_checks (
     last_run TEXT NOT NULL,
     next_run TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK(status IN ('pending', 'ok', 'warning', 'critical', 'error')),
+        CHECK(status IN ('pending', 'ok', 'warning', 'critical', 'error', 'healthy')),
     result_summary TEXT,
     items_found INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
+    details TEXT,
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_hb_check_type ON heartbeat_checks(check_type);
@@ -3135,6 +3259,8 @@ CREATE TABLE IF NOT EXISTS innovation_signals (
         CHECK(status IN ('new', 'scored', 'triaged', 'approved', 'suggested',
                          'blocked', 'logged', 'solution_generated', 'published')),
     category TEXT,
+    score REAL,
+    raw_data TEXT,
     innovation_score REAL,
     score_breakdown TEXT,
     implementation_status TEXT,
@@ -3824,8 +3950,11 @@ CREATE TABLE IF NOT EXISTS codebase_qa_cache (
     id TEXT PRIMARY KEY,
     question_hash TEXT NOT NULL,
     question_text TEXT NOT NULL,
+    question TEXT,
     answer_text TEXT NOT NULL,
+    answer TEXT,
     source_citations TEXT,
+    citations TEXT DEFAULT '[]',
     scope TEXT,
     hit_count INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now')),
@@ -5976,6 +6105,7 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
     content TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     embedding BLOB,
+    embedding_vec BLOB,
     source_type TEXT NOT NULL,
     source_id TEXT NOT NULL DEFAULT '',
     source_table TEXT NOT NULL DEFAULT '',
@@ -6301,6 +6431,41 @@ CREATE TABLE IF NOT EXISTS ft_hyperparam_results (
 );
 CREATE INDEX IF NOT EXISTS idx_ft_hp_search
     ON ft_hyperparam_results(search_id);
+
+-- ============================================================
+-- RAG-TO-FT PIPELINE (D-KARL-5)
+-- ============================================================
+
+-- Pipeline execution tracking (append-only)
+CREATE TABLE IF NOT EXISTS ft_pipeline_runs (
+    id TEXT PRIMARY KEY,
+    run_type TEXT NOT NULL DEFAULT 'rag_to_ft',
+    source_type TEXT,
+    chunks_processed INTEGER DEFAULT 0,
+    pairs_generated INTEGER DEFAULT 0,
+    pairs_approved INTEGER DEFAULT 0,
+    retrain_triggered INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'running' CHECK(status IN ('running','completed','failed','dry_run')),
+    error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_pipeline_source
+    ON ft_pipeline_runs(source_type, status);
+
+-- Quality monitoring snapshots (append-only, D-KARL-8)
+CREATE TABLE IF NOT EXISTS ft_quality_snapshots (
+    id TEXT PRIMARY KEY,
+    snapshot_type TEXT NOT NULL CHECK(snapshot_type IN ('rag_eval','ft_eval')),
+    metric_name TEXT NOT NULL,
+    metric_value REAL NOT NULL,
+    baseline_value REAL,
+    below_threshold INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ft_quality_type
+    ON ft_quality_snapshots(snapshot_type, metric_name);
 
 -- ============================================================
 -- WRITEGUARD SUBSYSTEM (Phase 65, D-WG-1 through D-WG-14)

@@ -194,7 +194,7 @@ def compute_time_aware_score(
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get a DB connection with Row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

@@ -213,7 +213,7 @@ class LearningCollector:
 
     def _get_conn(self):
         """Get a database connection with row factory."""
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -343,7 +343,20 @@ class LearningCollector:
             )
             conn.commit()
 
-            behavior_id = str(cursor.lastrowid)
+            # Cross-DB compatible: cursor.lastrowid works for SQLite;
+            # fall back to SELECT for PostgreSQL or other backends.
+            try:
+                behavior_id = str(cursor.lastrowid)
+                if not behavior_id or behavior_id == "0":
+                    raise ValueError("lastrowid not available")
+            except Exception:
+                row = conn.execute(
+                    """SELECT id FROM child_learned_behaviors
+                       WHERE child_id = ? AND created_at = ?
+                       ORDER BY id DESC LIMIT 1""",
+                    (child_id, now),
+                ).fetchone()
+                behavior_id = str(dict(row)["id"]) if row else "0"
 
             _audit(
                 "learning.behavior_ingested",

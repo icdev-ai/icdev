@@ -56,7 +56,7 @@ def compute_content_hash(content):
 def _get_connection(db_path=None):
     """Get a DB connection with WAL mode for concurrent safety."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

@@ -339,7 +339,7 @@ class ModularDBInitializer:
 
         # Execute the SQL
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         tables_created: List[str] = []
         try:
             for stmt in statements:

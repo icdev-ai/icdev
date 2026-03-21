@@ -60,7 +60,7 @@ def _get_connection(db_path=None):
             f"Database not found: {path}\n"
             "Run: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 

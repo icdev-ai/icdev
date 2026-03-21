@@ -84,7 +84,7 @@ def _generate_id(prefix: str = "ov") -> str:
 
 
 def _get_conn(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

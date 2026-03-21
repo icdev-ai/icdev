@@ -245,7 +245,7 @@ class WriteBatcher:
 
     def _open_conn(self) -> sqlite3.Connection:
         """Open a WAL-mode SQLite connection."""
-        conn = get_connection()
+        conn = get_connection(db_path=str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn

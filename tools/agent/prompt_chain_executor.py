@@ -129,7 +129,7 @@ class ChainExecution:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Get a database connection with row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -140,7 +140,7 @@ def _now() -> str:
         return utc_now_iso()
     except Exception:
         import datetime
-        return datetime.datetime.utcnow().isoformat() + "Z"
+        return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _sha256(text: str) -> str:

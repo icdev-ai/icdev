@@ -103,7 +103,7 @@ def _get_db(db_path: Optional[str] = None) -> sqlite3.Connection:
     path = db_path or str(_DB_PATH)
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

@@ -98,7 +98,7 @@ def _detect_project_id() -> str:
     """Detect an existing project ID from the database, or create a default."""
     try:
         conn = get_connection()
-        row = conn.execute("SELECT id FROM projects ORDER BY rowid LIMIT 1").fetchone()
+        row = conn.execute("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1").fetchone()
         if row:
             conn.close()
             return row[0]
@@ -711,7 +711,7 @@ def run_remediation(
             conn = _get_db()
             conn.execute(
                 """UPDATE remediation_audit_log SET report_json = ?
-                   WHERE rowid = (SELECT MAX(rowid) FROM remediation_audit_log)""",
+                   WHERE id = (SELECT MAX(id) FROM remediation_audit_log)""",
                 (json.dumps(report.to_dict()),),
             )
             conn.commit()

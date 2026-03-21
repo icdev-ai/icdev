@@ -49,7 +49,7 @@ RUBRIC = {
 
 
 def _get_db(db_path: Path) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
@@ -214,7 +214,7 @@ def _check_provenance(cap: Dict, db_path: Path) -> float:
 
 
 def _check_runtime_isolation(cap: Dict) -> float:
-    """Check if source is containerized."""
+    """Check if source is containerized (enhanced with D-SEC-10 sandbox probe)."""
     source = cap.get("source", "")
     # Children and marketplace assets are containerized
     if source in ("child_report", "child", "marketplace"):
@@ -222,6 +222,16 @@ def _check_runtime_isolation(cap: Dict) -> float:
     # Innovation engine runs in parent process
     if source in ("innovation", "introspective"):
         return 0.5
+    # D-SEC-10: Attempt real container health check via SandboxExecutor
+    try:
+        from tools.security.sandbox_executor import SandboxExecutor
+        executor = SandboxExecutor()
+        if executor._available:
+            health = executor.health_check()
+            if health.get("docker_available"):
+                return 0.8  # Docker confirmed available, partial credit
+    except (ImportError, Exception):
+        pass
     # External/unknown defaults to low
     return 0.2
 

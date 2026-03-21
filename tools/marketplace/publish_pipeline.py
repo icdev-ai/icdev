@@ -393,7 +393,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         # Submit for human review
         update_status(asset_id, "review", db_path)
         # Create review request
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path) if db_path else None)
         review_id = _gen_id("rev")
         conn.execute(
             """INSERT INTO marketplace_reviews
@@ -414,7 +414,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
         # Auto-publish to tenant-local catalog
         update_status(asset_id, "published", db_path)
         # Update version status
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path) if db_path else None)
         conn.execute(
             "UPDATE marketplace_versions SET status = 'published' WHERE id = ?",
             (version_id,),

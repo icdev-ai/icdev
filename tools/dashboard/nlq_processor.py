@@ -44,7 +44,7 @@ QUERY_TIMEOUT_SECONDS = 10
 def extract_schema(db_path: Path = None) -> dict:
     """Extract database schema: table names, columns, types, row counts."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     schema = {}
 
     tables = conn.execute(
@@ -202,7 +202,7 @@ def _generate_sql_fallback(query: str, schema: dict) -> Optional[str]:
 def execute_safely(sql: str, db_path: Path = None) -> dict:
     """Execute SQL with row limit and timeout. Returns results dict."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
 
     # Set timeout
     conn.execute(f"PRAGMA busy_timeout = {QUERY_TIMEOUT_SECONDS * 1000}")
@@ -245,7 +245,7 @@ def log_nlq_query(query_text: str, generated_sql: str, result_count: int,
                   error_message: str = None):
     """Log NLQ query to audit table."""
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(DB_PATH))
         conn.execute(
             """INSERT INTO nlq_queries
                (query_text, generated_sql, result_count, execution_time_ms,

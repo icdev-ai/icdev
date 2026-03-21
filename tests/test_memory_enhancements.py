@@ -338,25 +338,20 @@ class TestThinkingType:
 # ---------------------------------------------------------------------------
 
 class TestEmbedMemoryD72:
-    def test_get_embedding_client_tries_provider_first(self, monkeypatch):
+    def test_get_embedding_client_tries_provider_first(self):
         """Verify embed_memory tries LLM provider before OpenAI."""
+        from unittest.mock import patch, MagicMock
         from icdev.tools.memory import embed_memory
 
-        class MockProvider:
-            def embed(self, text):
-                return [0.1] * 10
+        mock_provider = MagicMock()
+        mock_provider.embed.return_value = [0.1] * 10
 
-        called = {"provider": False}
-
-        def mock_get_provider():
-            called["provider"] = True
-            return MockProvider()
-
-        monkeypatch.setattr("icdev.tools.llm.get_embedding_provider", mock_get_provider)
-        client, name = embed_memory.get_embedding_client()
-        assert called["provider"] is True
+        # The icdev package imports from icdev.tools.llm, so patch BOTH paths
+        with patch("tools.llm.get_embedding_provider", return_value=mock_provider), \
+             patch("icdev.tools.llm.get_embedding_provider", return_value=mock_provider):
+            client, name = embed_memory.get_embedding_client()
         assert name == "llm_provider"
-        assert hasattr(client, "embed")
+        assert client is mock_provider
 
 
 # ---------------------------------------------------------------------------

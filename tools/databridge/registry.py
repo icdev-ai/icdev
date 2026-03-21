@@ -76,7 +76,7 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
     db = db_path or str(DB_PATH)
     loaded = 0
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
             "SELECT connector_name, connector_code FROM db_forge_connectors "
             "WHERE status IN ('promoted', 'published')"

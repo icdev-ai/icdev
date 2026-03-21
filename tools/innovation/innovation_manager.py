@@ -397,7 +397,7 @@ def get_status(db_path=None):
     if not path.exists():
         return {"error": f"Database not found: {path}", "healthy": False}
 
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
 
     try:
         status = {"healthy": True, "timestamp": _now()}

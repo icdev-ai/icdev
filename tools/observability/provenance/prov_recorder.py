@@ -92,7 +92,7 @@ class ProvRecorder:
             return None
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prov_entities
                    (id, entity_type, label, content_hash, content, attributes,
@@ -143,7 +143,7 @@ class ProvRecorder:
             return None
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prov_activities
                    (id, activity_type, label, start_time, end_time, attributes,
@@ -188,7 +188,7 @@ class ProvRecorder:
             return False
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prov_relations
                    (relation_type, subject_id, object_id, attributes,
@@ -231,7 +231,7 @@ class ProvRecorder:
         queue = [entity_id]
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
 
             depth = 0
             while queue and depth < max_depth:
@@ -279,7 +279,7 @@ class ProvRecorder:
             return {"entity": {}, "activity": {}, "relation": []}
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
 
             where = "WHERE project_id = ?" if pid else ""
             params = (pid,) if pid else ()

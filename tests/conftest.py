@@ -26,8 +26,8 @@ if _base_str in sys.path:
     sys.path.remove(_base_str)
 sys.path.insert(0, _base_str)
 
-# Force SQLite backend for tests (PostgreSQL not required)
-os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
+# Force SQLite backend for tests (override .env PostgreSQL setting)
+os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +462,286 @@ CREATE TABLE IF NOT EXISTS bayesian_experiment_scores (
     selected INTEGER DEFAULT 0,
     classification TEXT DEFAULT 'CUI', scored_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS agent_token_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    project_id TEXT NOT NULL DEFAULT '',
+    model_id TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    thinking_tokens INTEGER NOT NULL DEFAULT 0,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    task_id TEXT,
+    cost_estimate_usd REAL NOT NULL DEFAULT 0.0,
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS agent_token_budgets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id TEXT NOT NULL,
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT '',
+    UNIQUE(agent_id, month)
+);
+
+CREATE TABLE IF NOT EXISTS agent_task_leases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL UNIQUE,
+    agent_id TEXT NOT NULL,
+    leased_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    released_at TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'released', 'expired')),
+    classification TEXT DEFAULT 'CUI'
+);
+
+CREATE TABLE IF NOT EXISTS scout_scans (
+    id TEXT PRIMARY KEY,
+    scan_date TEXT NOT NULL,
+    pillar_results TEXT,
+    digest_path TEXT,
+    total_findings INTEGER DEFAULT 0,
+    signals_fed INTEGER DEFAULT 0,
+    repos_added INTEGER DEFAULT 0,
+    genesis_status TEXT,
+    genesis_branch TEXT,
+    duration_ms INTEGER,
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS scout_audit (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    pillar TEXT,
+    details TEXT,
+    success INTEGER,
+    duration_ms INTEGER,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
+-- OpenClaw Bridge (Phase 69)
+CREATE TABLE IF NOT EXISTS openclaw_imports (
+    id TEXT PRIMARY KEY,
+    source_url TEXT,
+    source_path TEXT NOT NULL,
+    openclaw_slug TEXT,
+    openclaw_author TEXT,
+    skill_name TEXT NOT NULL,
+    skill_version TEXT DEFAULT '1.0.0',
+    quarantine_path TEXT NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    has_executable_content INTEGER DEFAULT 0,
+    scan_status TEXT NOT NULL DEFAULT 'pending',
+    gate_results TEXT,
+    review_required INTEGER DEFAULT 0,
+    review_id TEXT,
+    trust_score REAL DEFAULT 0.30,
+    status TEXT NOT NULL DEFAULT 'quarantined',
+    imported_by TEXT NOT NULL,
+    promoted_by TEXT,
+    promoted_at TIMESTAMP,
+    rejected_by TEXT,
+    rejected_reason TEXT,
+    marketplace_asset_id TEXT,
+    tenant_id TEXT NOT NULL,
+    metadata TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS openclaw_exports (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    version_id TEXT NOT NULL,
+    output_path TEXT,
+    exported_by TEXT NOT NULL,
+    review_id TEXT,
+    review_status TEXT DEFAULT 'pending',
+    stripping_log TEXT,
+    sha256_hash TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS daemon_checkpoints (
+    id              TEXT PRIMARY KEY,
+    daemon_name     TEXT NOT NULL,
+    reflex_name     TEXT NOT NULL,
+    phase           TEXT NOT NULL,
+    partial_results TEXT,
+    created_at      TEXT NOT NULL,
+    UNIQUE(daemon_name, reflex_name)
+);
+
+-- LLM Gateway Audit (append-only)
+CREATE TABLE IF NOT EXISTS llm_gateway_audit (
+    id TEXT PRIMARY KEY,
+    request_id TEXT,
+    agent_id TEXT,
+    function_name TEXT,
+    model_id TEXT,
+    pre_check_result TEXT,
+    post_check_result TEXT,
+    created_at TEXT
+);
+
+-- Prompt Registry
+CREATE TABLE IF NOT EXISTS prompt_versions (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    version INTEGER,
+    template TEXT,
+    status TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS prompt_ab_tests (
+    id TEXT PRIMARY KEY,
+    prompt_name TEXT,
+    version_a INTEGER,
+    version_b INTEGER,
+    status TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS prompt_audit_log (
+    id TEXT PRIMARY KEY,
+    prompt_name TEXT,
+    action TEXT,
+    created_at TEXT
+);
+
+-- LLM Cost Intelligence
+CREATE TABLE IF NOT EXISTS llm_cost_alerts (
+    id TEXT PRIMARY KEY,
+    alert_type TEXT,
+    severity TEXT,
+    model_id TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS llm_cost_recommendations (
+    id TEXT PRIMARY KEY,
+    rec_type TEXT,
+    function_name TEXT,
+    status TEXT,
+    created_at TEXT
+);
+
+-- Model Drift Monitoring
+CREATE TABLE IF NOT EXISTS model_quality_scores (
+    id TEXT PRIMARY KEY,
+    model_id TEXT,
+    function_name TEXT,
+    quality_score REAL,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS model_drift_events (
+    id TEXT PRIMARY KEY,
+    model_id TEXT,
+    drift_type TEXT,
+    severity TEXT,
+    created_at TEXT
+);
+
+-- Agent Topology
+CREATE TABLE IF NOT EXISTS agent_topology_snapshots (
+    id TEXT PRIMARY KEY,
+    snapshot_at TEXT,
+    node_count INTEGER,
+    edge_count INTEGER
+);
+
+-- SRE SLO & Incident Management
+CREATE TABLE IF NOT EXISTS sre_slos (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    target REAL,
+    window_days INTEGER,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sre_slo_measurements (
+    id TEXT PRIMARY KEY,
+    slo_id TEXT,
+    value REAL,
+    measured_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sre_runbooks (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    alert_pattern TEXT,
+    risk_tier TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sre_runbook_executions (
+    id TEXT PRIMARY KEY,
+    runbook_id TEXT,
+    status TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sre_incidents (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    severity TEXT,
+    status TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sre_incident_events (
+    id TEXT PRIMARY KEY,
+    incident_id TEXT,
+    event_type TEXT,
+    created_at TEXT
+);
+
+-- CRAG Evaluation Framework (D-RAG-23)
+CREATE TABLE IF NOT EXISTS rag_evaluation_campaigns (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    scoring_mode TEXT DEFAULT 'both' CHECK(scoring_mode IN ('ragas','crag','both')),
+    test_set_path TEXT,
+    task_type TEXT DEFAULT 'T1' CHECK(task_type IN ('T1','T2','T3')),
+    total_cases INTEGER DEFAULT 0,
+    aggregate_crag_score REAL,
+    aggregate_ragas_score REAL,
+    status TEXT DEFAULT 'running' CHECK(status IN ('running','completed','failed')),
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rag_evaluation_results (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    query TEXT NOT NULL,
+    question_type TEXT CHECK(question_type IN (
+        'simple','simple_condition','set','comparison',
+        'aggregation','multi_hop','post_processing','false_premise'
+    )),
+    entity_popularity TEXT CHECK(entity_popularity IN ('head','torso','tail')),
+    crag_score REAL,
+    ragas_ndcg REAL,
+    ragas_mrr REAL,
+    ragas_faithfulness REAL,
+    ragas_relevancy REAL,
+    answer TEXT,
+    ground_truth TEXT,
+    is_false_premise INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -536,6 +816,129 @@ CREATE TABLE IF NOT EXISTS audit_platform (
     resource_id TEXT,
     details TEXT,
     ip_address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Knowledge Graph (D-KARL-1 through D-KARL-8)
+CREATE TABLE IF NOT EXISTS kg_graphs (
+    id TEXT PRIMARY KEY, project_id TEXT, name TEXT NOT NULL,
+    description TEXT, entity_count INTEGER DEFAULT 0,
+    edge_count INTEGER DEFAULT 0, metadata TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_nodes (
+    id TEXT PRIMARY KEY, graph_id TEXT NOT NULL,
+    label TEXT NOT NULL, entity_type TEXT NOT NULL,
+    properties TEXT DEFAULT '{}', embedding BLOB,
+    centrality REAL DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_edges (
+    id TEXT PRIMARY KEY, graph_id TEXT NOT NULL,
+    source_id TEXT NOT NULL, target_id TEXT NOT NULL,
+    relationship TEXT NOT NULL, weight REAL DEFAULT 1.0,
+    properties TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_retrieval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, query_hash TEXT NOT NULL,
+    profile TEXT, project_id TEXT, node_count INTEGER DEFAULT 0,
+    edge_count INTEGER DEFAULT 0, top_score REAL DEFAULT 0.0,
+    compressed INTEGER DEFAULT 0, duration_ms REAL DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Fine-Tuning datasets and examples (D-FT-9)
+CREATE TABLE IF NOT EXISTS ft_datasets (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, purpose TEXT DEFAULT 'general',
+    description TEXT, base_model TEXT, version INTEGER DEFAULT 1,
+    example_count INTEGER DEFAULT 0, classification TEXT DEFAULT 'CUI',
+    status TEXT DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ft_dataset_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id TEXT,
+    system_prompt TEXT DEFAULT '', user_input TEXT,
+    expected_output TEXT, source TEXT DEFAULT 'manual',
+    source_chunk_id TEXT, source_document_id TEXT,
+    quality_score REAL DEFAULT 0.0, compliance_score REAL DEFAULT 0.0,
+    relevance_score REAL DEFAULT 0.0, approved INTEGER DEFAULT 0,
+    labeled_by TEXT, labeled_at TIMESTAMP, content_hash TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- RAG-to-FT Pipeline (D-KARL-5)
+CREATE TABLE IF NOT EXISTS ft_pipeline_runs (
+    id TEXT PRIMARY KEY, run_type TEXT NOT NULL DEFAULT 'rag_to_ft',
+    source_type TEXT, chunks_processed INTEGER DEFAULT 0,
+    pairs_generated INTEGER DEFAULT 0, pairs_approved INTEGER DEFAULT 0,
+    retrain_triggered INTEGER DEFAULT 0, status TEXT DEFAULT 'running',
+    error TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Quality Monitoring (D-KARL-8)
+CREATE TABLE IF NOT EXISTS ft_quality_snapshots (
+    id TEXT PRIMARY KEY, snapshot_type TEXT NOT NULL,
+    metric_name TEXT NOT NULL, metric_value REAL NOT NULL,
+    baseline_value REAL, below_threshold INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Hyperparameter Search
+CREATE TABLE IF NOT EXISTS ft_hp_searches (
+    id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'grid',
+    search_space TEXT NOT NULL DEFAULT '{}',
+    max_trials INTEGER DEFAULT 9,
+    completed_trials INTEGER DEFAULT 0,
+    best_trial_id TEXT,
+    best_score REAL,
+    best_params TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ft_hp_trials (
+    id TEXT PRIMARY KEY,
+    search_id TEXT NOT NULL,
+    trial_number INTEGER NOT NULL,
+    params TEXT NOT NULL DEFAULT '{}',
+    training_job_id TEXT,
+    eval_score REAL,
+    eval_metrics TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'pending',
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Phase 71 — Sandbox Executor (D-SEC-10)
+CREATE TABLE IF NOT EXISTS sandbox_execution_log (
+    id TEXT PRIMARY KEY,
+    executor_type TEXT NOT NULL,
+    language TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    runtime TEXT NOT NULL,
+    exit_code INTEGER,
+    runtime_ms INTEGER,
+    stdout_preview TEXT,
+    stderr_preview TEXT,
+    network_enabled INTEGER DEFAULT 0,
+    memory_limit_mb INTEGER,
+    timeout_seconds INTEGER,
+    container_id TEXT,
+    artifact_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'completed' CHECK(status IN ('running','completed','failed','timeout')),
+    actor TEXT,
+    project_id TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """

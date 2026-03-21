@@ -54,7 +54,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, Response, g, jsonify, request, stream_with_context
+from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
 
 logger = logging.getLogger("saas.rest_api")
 
@@ -73,7 +73,7 @@ PLATFORM_DB_PATH = Path(
 
 def _platform_conn():
     """Open a connection to the platform database."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(PLATFORM_DB_PATH))
     return conn
 
 
@@ -1475,7 +1475,9 @@ def stream_platform_events():
     def _generate():
         nonlocal last_id
         # Limit iterations to prevent infinite loops in non-browser contexts
-        max_iterations = 600  # ~5 minutes at 0.5s sleep
+        # Use fewer iterations in test mode to avoid hanging
+        testing = current_app.config.get("TESTING", False)
+        max_iterations = 2 if testing else 600  # ~5 minutes at 0.5s sleep
         iteration = 0
         while iteration < max_iterations:
             iteration += 1
@@ -1507,7 +1509,8 @@ def stream_platform_events():
                 yield "event: error\ndata: {}\n\n".format(
                     json_mod.dumps({"error": str(exc)}))
 
-            time.sleep(0.5)
+            if not testing:
+                time.sleep(0.5)
 
     return Response(
         stream_with_context(_generate()),
@@ -1531,7 +1534,7 @@ def ai_transparency_stats():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
 
         def _count(table, pid=None):
             try:
@@ -1576,7 +1579,7 @@ def ai_transparency_frameworks():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
         frameworks = []
         for table, name in [
             ("omb_m25_21_assessments", "OMB M-25-21"),
@@ -1614,7 +1617,7 @@ def ai_transparency_inventory():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
@@ -1634,7 +1637,7 @@ def ai_transparency_model_cards():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
@@ -1727,7 +1730,7 @@ def ai_accountability_stats():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
 
         def _cnt(table, extra=""):
             try:
@@ -1762,7 +1765,7 @@ def ai_accountability_appeals():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
         rows = conn.execute(
             "SELECT * FROM ai_accountability_appeals ORDER BY created_at DESC LIMIT 100"
         ).fetchall()
@@ -1779,7 +1782,7 @@ def ai_accountability_incidents():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
         rows = conn.execute(
             "SELECT * FROM ai_incident_log "
             "ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 "
@@ -1798,7 +1801,7 @@ def ai_accountability_overdue():
     try:
         _, get_db_path, _ = _import_tenant_db()
         db_path = get_db_path(g.tenant_id)
-        conn = get_connection()
+        conn = get_connection(db_path=db_path)
         rows = conn.execute(
             "SELECT * FROM ai_reassessment_schedule "
             "WHERE next_due < date('now') ORDER BY next_due ASC"

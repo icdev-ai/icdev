@@ -6,6 +6,12 @@ REM Internal scheduling (is_due) handles per-reflex intervals.
 
 cd /d "C:\Users\schuo\Downloads\ICDev"
 
+REM Quiet hours: skip if before 8 AM or after 11 PM
+for /f "tokens=1 delims=: " %%h in ("%time%") do set HOUR=%%h
+set HOUR=%HOUR: =%
+if %HOUR% LSS 8 exit /b 0
+if %HOUR% GEQ 23 exit /b 0
+
 REM Enable the daemon for this run
 set ICDEV_REVIEW_BOARD_ENABLED=true
 set PYTHONIOENCODING=utf-8

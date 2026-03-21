@@ -51,7 +51,7 @@ RATE_MAX_PER_HOUR = 10
 # ---------------------------------------------------------------------------
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

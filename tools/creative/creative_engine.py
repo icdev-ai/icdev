@@ -118,7 +118,7 @@ def _load_config():
 def _get_db(db_path=None):
     """Get SQLite connection with row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

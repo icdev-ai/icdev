@@ -57,7 +57,7 @@ def _safe_import_assess(module_name: str, class_name: str, project_id: str, proj
 
 def _count_table(db_path: Path, table: str, project_id: str) -> int:
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
             f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
             (project_id,),

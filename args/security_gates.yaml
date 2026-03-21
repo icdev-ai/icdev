@@ -702,10 +702,14 @@ rag:
     - rag_ingestion_stale_over_7_days
     - rag_retrieval_low_relevance_trend
     - rag_vector_store_unavailable
+    - rag_quality_degradation_detected       # D-KARL-8: quality_monitor threshold breach
+    - rag_corrective_all_strategies_failed   # D-KARL-3: corrective_rag no results
   thresholds:
     provenance_required: true
     tenant_isolation_required: true
     max_ingestion_staleness_days: 7
+    quality_min_relevance: 0.6               # D-KARL-8: minimum RAG relevance score
+    quality_consecutive_failures_retrain: 3  # D-KARL-8: failures before auto-retrain
 
 code_quality:
   blocking:
@@ -746,6 +750,8 @@ fine_tuning:
     - eval_score_below_baseline
     - gpu_vram_insufficient
     - auto_retrain_disabled
+    - ft_pipeline_run_failed                 # D-KARL-5: rag_ft_pipeline error state
+    - ft_kg_pair_generation_zero_output      # D-KARL-6: kg_pair_generator produced no pairs
   thresholds:
     min_dataset_examples: 20
     min_bleu_for_promotion: 0.30
@@ -1023,3 +1029,97 @@ autoresearch:
     require_test_pass: true
     require_coherence_check: true
     autoresearch_enabled: false
+
+# OpenClaw Skill Import/Export Gates (Phase 69)
+openclaw_import:
+  description: "Zero-trust gate for importing external OpenClaw community skills"
+  blocking:
+    - sast_critical_or_high_findings
+    - secrets_detected_in_skill
+    - prompt_injection_detected
+    - dangerous_code_patterns_critical
+    - executable_content_without_review
+    - sha256_hash_mismatch
+    - dependency_critical_vulnerabilities
+  warning:
+    - medium_sast_findings
+    - behavioral_sandbox_anomaly
+    - trust_score_below_degraded
+    - unpinned_script_dependencies
+  thresholds:
+    max_critical_sast: 0
+    max_high_sast: 0
+    max_secrets: 0
+    max_prompt_injections: 0
+    max_critical_code_patterns: 0
+    require_review_for_scripts: true
+    initial_trust_score: 0.30
+    trust_decay_on_violation: 0.15
+    auto_promote_no_scripts: false
+    quarantine_max_age_days: 30
+    require_sbom_for_deps: true
+    require_registration: false
+    require_renewal: false
+
+llm_gateway:
+  description: "LLM Gateway pre/post-check gates — injection, PII, rate limiting"
+  blocking:
+    - injection_score_above_0_7
+    - pii_detected_in_output
+    - rate_limit_exceeded
+  warning:
+    - injection_score_0_3_to_0_7
+    - input_length_above_80_pct_of_max
+
+model_drift:
+  description: "Model quality and latency drift detection gates"
+  blocking:
+    - quality_degradation_above_20_pct
+    - latency_p95_above_2x_baseline
+  warning:
+    - quality_degradation_above_10_pct
+    - token_inflation_above_20_pct
+
+sre_slo:
+  description: "SRE SLO burn rate and error budget gates"
+  blocking:
+    - slo_burn_rate_above_10x_for_1h
+    - error_budget_exhausted
+  warning:
+    - burn_rate_above_2x
+    - error_budget_below_20_pct
+
+prompt_registry:
+  description: "Prompt version registry gates — active version and deprecation"
+  blocking:
+    - no_active_version_for_registered_prompt
+  warning:
+    - deprecated_prompts_still_in_use
+
+# Sandbox Execution Gates (Phase 71, D-SEC-10)
+sandbox_execution:
+  blocking:
+    - sandbox_execution_critical_violation
+    - sandbox_network_access_unauthorized
+  warning:
+    - sandbox_execution_timeout
+    - sandbox_high_memory_usage
+  thresholds:
+    max_execution_timeout_seconds: 300
+    network_access_requires_approval: true
+    max_concurrent_executions: 4
+
+openclaw_export:
+  description: "Gate for exporting ICDEV skills to OpenClaw format — prevents data leakage"
+  blocking:
+    - cui_markings_present_after_strip
+    - internal_metadata_leak
+    - export_review_not_completed
+    - classification_level_exceeded
+  warning:
+    - export_contains_icdev_references
+    - no_export_license_specified
+  thresholds:
+    require_human_approval: true
+    strip_cui_required: true
+    strip_internal_metadata: true

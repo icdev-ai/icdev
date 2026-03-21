@@ -114,7 +114,7 @@ ALLOWED_EXTENSIONS = {
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -730,7 +730,7 @@ def _run_build_pipeline(session_id):
 
     conn = None
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(DB_PATH))
     except Exception as exc:
         _set_overall("error", f"Database error: {exc}")
         return

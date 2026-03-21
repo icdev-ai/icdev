@@ -213,7 +213,7 @@ class ToolChainValidator:
 
         entry_id = str(uuid.uuid4())
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO tool_chain_events
                    (id, project_id, agent_id, session_id, tool_name,
@@ -263,7 +263,7 @@ class ToolChainValidator:
             return result
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
 
             where = "1=1"
             params: list = []

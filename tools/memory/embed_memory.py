@@ -58,7 +58,7 @@ def embed_all(user_id=None, json_output=False):
             print(json.dumps({"error": "no_provider", "embedded": 0}))
         return
 
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     c = conn.cursor()
 
     sql = "SELECT id, content FROM memory_entries WHERE embedding IS NULL"

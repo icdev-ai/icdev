@@ -469,7 +469,7 @@ class PromptInjectionDetector:
 
         entry_id = str(uuid.uuid4())
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO prompt_injection_log
                    (id, project_id, user_id, source, text_hash,
@@ -524,7 +524,7 @@ class PromptInjectionDetector:
 
         if self._db_path.exists():
             try:
-                conn = get_connection()
+                conn = get_connection(db_path=str(self._db_path))
                 cursor = conn.execute(
                     """SELECT action, COUNT(*) FROM prompt_injection_log
                        WHERE project_id = ? AND action IN ('block', 'flag')

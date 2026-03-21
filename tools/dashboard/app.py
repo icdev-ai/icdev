@@ -13,7 +13,6 @@ Usage:
 import argparse
 import json
 import os  # noqa: F811 — needed directly (not just as _os)
-import sqlite3
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -73,6 +72,11 @@ try:
     _HAS_FINETUNE_API = True
 except ImportError:
     _HAS_FINETUNE_API = False
+try:
+    from tools.dashboard.api.rag_eval import rag_eval_api  # noqa: E402
+    _HAS_RAG_EVAL_API = True
+except ImportError:
+    _HAS_RAG_EVAL_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -798,6 +802,8 @@ def create_app() -> Flask:
     app.register_blueprint(filesync_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
+    if _HAS_RAG_EVAL_API:
+        app.register_blueprint(rag_eval_api)
     if _HAS_GOVCON:
         app.register_blueprint(proposals_api)
         app.register_blueprint(govcon_api)
@@ -2007,7 +2013,7 @@ def create_app() -> Flask:
 
     # ---- Database helper ----
     def _get_db():
-        conn = get_connection()
+        conn = get_connection(db_path=str(DB_PATH))
         return conn
 
     # ---- CPMP / Proposals / GovCon Pages (D-CHILD-6: guarded) ----
@@ -2249,6 +2255,167 @@ def create_app() -> Flask:
             return jsonify(rag_get_status())
         except ImportError:
             return jsonify({"error": "RAG subsystem not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ---- Knowledge Graph Dashboard (D-KARL-1 through D-KARL-4) ----
+
+    @app.route("/knowledge-graph")
+    def knowledge_graph_page():
+        """Knowledge Graph — entity extraction, GraphRAG retrieval, insights."""
+        stats = None
+        graphs = []
+        recent_queries = []
+        try:
+            conn = _get_db()
+            # Stats
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt, COALESCE(SUM(entity_count),0) as nodes, "
+                "COALESCE(SUM(edge_count),0) as edges FROM kg_graphs"
+            ).fetchone()
+            query_count = 0
+            try:
+                query_count = conn.execute("SELECT COUNT(*) FROM kg_retrieval_log").fetchone()[0]
+            except Exception:
+                pass
+            stats = {
+                "graph_count": row[0] if row else 0,
+                "total_nodes": row[1] if row else 0,
+                "total_edges": row[2] if row else 0,
+                "recent_queries": query_count,
+            }
+            # Graph list
+            rows = conn.execute(
+                "SELECT id, project_id, name, entity_count, edge_count, created_at "
+                "FROM kg_graphs ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+            graphs = [dict(r) for r in rows]
+            # Recent retrieval log
+            try:
+                qrows = conn.execute(
+                    "SELECT query_hash, profile, node_count, top_score, duration_ms, created_at "
+                    "FROM kg_retrieval_log ORDER BY created_at DESC LIMIT 20"
+                ).fetchall()
+                recent_queries = [dict(r) for r in qrows]
+            except Exception:
+                pass
+            conn.close()
+        except Exception:
+            pass
+        return render_template(
+            "knowledge_graph.html",
+            stats=stats,
+            graphs=graphs,
+            recent_queries=recent_queries,
+        )
+
+    @app.route("/api/knowledge-graph/search", methods=["POST"])
+    def api_knowledge_graph_search():
+        """GraphRAG search API endpoint."""
+        data = flask_request.get_json(silent=True) or {}
+        query = data.get("query", "")
+        if not query:
+            return jsonify({"error": "query is required"}), 400
+        try:
+            from tools.knowledge_graph.graph_rag import retrieve
+            result = retrieve(
+                query=query,
+                profile=data.get("profile"),
+                top_k=data.get("top_k", 10),
+            )
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Knowledge graph module not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/graph/<graph_id>")
+    def api_knowledge_graph_detail(graph_id):
+        """Get graph detail with nodes and edges."""
+        try:
+            from tools.knowledge_graph.text_network import get_graph
+            result = get_graph(graph_id)
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Knowledge graph module not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/insights/<graph_id>")
+    def api_knowledge_graph_insights(graph_id):
+        """Get graph insights (summary, orphans, components)."""
+        try:
+            from tools.knowledge_graph.insight_generator import graph_summary
+            result = graph_summary(graph_id)
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Insight generator not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/bridge-gaps/<graph_id>")
+    def api_knowledge_graph_bridge_gaps(graph_id):
+        """Get bridge gaps between disconnected clusters."""
+        try:
+            from tools.knowledge_graph.insight_generator import find_bridge_gaps
+            result = find_bridge_gaps(graph_id)
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Insight generator not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/questions/<graph_id>")
+    def api_knowledge_graph_questions(graph_id):
+        """Generate research questions from graph structure."""
+        try:
+            from tools.knowledge_graph.insight_generator import generate_questions
+            result = generate_questions(graph_id, use_llm=False)
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Insight generator not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/orphans/<graph_id>")
+    def api_knowledge_graph_orphans(graph_id):
+        """Find orphan nodes with zero edges."""
+        try:
+            from tools.knowledge_graph.insight_generator import find_orphan_nodes
+            result = find_orphan_nodes(graph_id)
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Insight generator not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/compliance-build", methods=["POST"])
+    def api_knowledge_graph_compliance_build():
+        """Build compliance crosswalk knowledge graph."""
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            from tools.knowledge_graph.compliance_graph import build_compliance_graph
+            result = build_compliance_graph(project_id=data.get("project_id"))
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Compliance graph module not available"}), 503
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/knowledge-graph/ingest", methods=["POST"])
+    def api_knowledge_graph_ingest():
+        """Ingest a document or table into the knowledge graph."""
+        data = flask_request.get_json(silent=True) or {}
+        source_table = data.get("source_table")
+        project_id = data.get("project_id", "")
+        if not source_table:
+            return jsonify({"error": "source_table is required"}), 400
+        try:
+            from tools.knowledge_graph.ingester import ingest_from_table
+            result = ingest_from_table(source_table, project_id=project_id)
+            return jsonify(result)
+        except ImportError:
+            return jsonify({"error": "Ingester module not available"}), 503
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -3100,11 +3267,24 @@ def create_app() -> Flask:
             run_id = f"run-{uuid.uuid4().hex[:12]}"
             _pulse_pipeline_runs[run_id] = {"run_id": run_id, "status": "running", "stage": "research"}
 
+            _PULSE_STAGES = ["research", "quality_check", "rewrite", "publish"]
+
             def _run_bg(rid, t, tmpl, ar):
                 def _on_stage(stage):
                     _pulse_pipeline_runs[rid] = {
                         "run_id": rid, "status": "running", "stage": stage,
                     }
+                    # SSE progress broadcast
+                    try:
+                        from tools.dashboard.sse_manager import emit_progress
+                        idx = _PULSE_STAGES.index(stage) if stage in _PULSE_STAGES else 0
+                        emit_progress(
+                            rid, "pulse_pipeline", stage,
+                            idx + 1, len(_PULSE_STAGES),
+                            detail=f"Pulse pipeline: {stage}",
+                        )
+                    except Exception:
+                        pass
                 try:
                     from tools.pulse.engine.scheduler import run_full_pipeline
                     result = run_full_pipeline(
@@ -4039,7 +4219,7 @@ def create_app() -> Flask:
     def _genesis_db(app_key):
         """Get a DB connection for a Genesis app."""
         _genesis_app(app_key)  # Validate app_key exists
-        conn = get_connection()
+        conn = get_connection(db_path=str(DB_PATH))
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 
@@ -4578,7 +4758,7 @@ def create_app() -> Flask:
     def api_autoresearch_summary():
         """Get autoresearch summary stats."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(DB_PATH))
             total = conn.execute(
                 "SELECT COUNT(*) as cnt FROM experiment_results"
             ).fetchone()
@@ -4613,7 +4793,7 @@ def create_app() -> Flask:
     def api_autoresearch_experiments():
         """Get experiment results list."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(DB_PATH))
             rows = conn.execute(
                 "SELECT * FROM experiment_results ORDER BY created_at DESC LIMIT 100"
             ).fetchall()
@@ -4695,6 +4875,338 @@ def create_app() -> Flask:
                 "What does the LLM router do?",
                 "How does the RAG retriever work?",
             ]})
+
+    # ── ClawHub Skill Browser (Phase 69) ───────────────────────────────
+
+    @app.route("/clawhub")
+    def clawhub():
+        """ClawHub — discover and import OpenClaw skills."""
+        imports = []
+        enabled = os.environ.get("ICDEV_OPENCLAW_ENABLED", "").lower() in ("true", "1", "yes")
+        try:
+            from tools.marketplace.openclaw_bridge import list_quarantine
+            result = list_quarantine()
+            if result.get("success"):
+                imports = [
+                    (i.get("id",""), i.get("skill_name",""), i.get("author", i.get("openclaw_author","")),
+                     i.get("scan_status",""), i.get("status",""),
+                     i.get("trust_score",0.3), i.get("has_scripts", i.get("has_executable_content", False)),
+                     i.get("review_required",False), str(i.get("created_at",""))[:19])
+                    for i in result.get("imports", [])
+                ]
+        except Exception:
+            imports = []
+        return render_template("clawhub.html", imports=imports, enabled=enabled)
+
+    @app.route("/api/clawhub/search")
+    def api_clawhub_search():
+        """Search ClawHub for skills."""
+        query = flask_request.args.get("q", "")
+        limit = int(flask_request.args.get("limit", "10"))
+        if not query:
+            return jsonify({"error": "Missing 'q' parameter"})
+        try:
+            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+            conn = ClawHubConnector()
+            conn.connect({})
+            results = conn.search_skills(query, limit=limit)
+            conn.disconnect()
+            return jsonify({"success": True, "results": results or []})
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/skill/<slug>")
+    def api_clawhub_detail(slug):
+        """Get skill detail from ClawHub."""
+        try:
+            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+            conn = ClawHubConnector()
+            conn.connect({})
+            detail = conn.get_skill(slug)
+            conn.disconnect()
+            return jsonify(detail or {"error": "Not found"})
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/import", methods=["POST"])
+    def api_clawhub_import():
+        """Fetch + import a skill from ClawHub."""
+        data = flask_request.get_json(silent=True) or {}
+        slug = data.get("slug", "")
+        tenant_id = data.get("tenant_id", "default")
+        imported_by = data.get("imported_by", "dashboard-user")
+        if not slug:
+            return jsonify({"error": "Missing 'slug'"})
+        try:
+            from tools.marketplace.openclaw_bridge import fetch_and_import
+            result = fetch_and_import(slug, tenant_id, imported_by)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/promote", methods=["POST"])
+    def api_clawhub_promote():
+        """Promote a quarantined import (auto-approves review if needed)."""
+        data = flask_request.get_json(silent=True) or {}
+        import_id = data.get("import_id", "")
+        promoted_by = data.get("promoted_by", "dashboard-isso")
+        if not import_id:
+            return jsonify({"error": "Missing 'import_id'"})
+        try:
+            from tools.marketplace.openclaw_bridge import promote_import, _get_db
+            # Auto-approve review if not yet done (dashboard user = ISSO)
+            conn = _get_db()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE openclaw_imports SET review_id = %s WHERE id = %s AND review_id IS NULL",
+                    (f"rev-dash-{import_id[:8]}", import_id),
+                )
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+            finally:
+                conn.close()
+            result = promote_import(import_id, promoted_by)
+            # Trigger companion sync so skill distributes to all 9 LLM platforms
+            if result.get("success"):
+                try:
+                    import subprocess as _sp
+                    _sp.Popen(
+                        [sys.executable, "tools/dx/companion.py", "--sync", "--write", "--json"],
+                        cwd=str(BASE_DIR), stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                    )
+                except Exception:
+                    pass  # Non-blocking — sync failure doesn't fail promotion
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/reject", methods=["POST"])
+    def api_clawhub_reject():
+        """Reject a quarantined import."""
+        data = flask_request.get_json(silent=True) or {}
+        import_id = data.get("import_id", "")
+        rejected_by = data.get("rejected_by", "dashboard-user")
+        reason = data.get("reason", "Rejected via dashboard")
+        if not import_id:
+            return jsonify({"error": "Missing 'import_id'"})
+        try:
+            from tools.marketplace.openclaw_bridge import reject_import
+            return jsonify(reject_import(import_id, rejected_by, reason))
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/install-to-project", methods=["POST"])
+    def api_clawhub_install():
+        """Copy a promoted skill to .claude/skills/ for local use."""
+        data = flask_request.get_json(silent=True) or {}
+        import_id = data.get("import_id", "")
+        if not import_id:
+            return jsonify({"error": "Missing 'import_id'"})
+        try:
+            from tools.marketplace.openclaw_bridge import _get_db
+            import re as _re
+            import shutil as _shutil
+            conn = _get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT skill_name, quarantine_path, status FROM openclaw_imports WHERE id = %s", (import_id,))
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "Import not found"})
+            skill_name = row[0] if not hasattr(row, "keys") else row["skill_name"]
+            qpath = row[1] if not hasattr(row, "keys") else row["quarantine_path"]
+            status = row[2] if not hasattr(row, "keys") else row["status"]
+            if status != "promoted":
+                return jsonify({"error": f"Must be promoted first (current: {status})"})
+            src = Path(qpath)
+            if not src.is_dir():
+                return jsonify({"error": "Quarantine path not found"})
+            slug = _re.sub(r"[^a-z0-9-]", "-", skill_name.lower()).strip("-")[:63] or "imported-skill"
+            dest = Path(BASE_DIR) / ".claude" / "skills" / slug
+            dest.mkdir(parents=True, exist_ok=True)
+            for fname in ("SKILL.md", "skill.md"):
+                f = src / fname
+                if f.exists():
+                    _shutil.copy2(f, dest / "SKILL.md")
+                    break
+            for subdir in ("scripts", "context"):
+                sd = src / subdir
+                dd = dest / subdir
+                if sd.is_dir():
+                    if dd.exists():
+                        _shutil.rmtree(dd)
+                    _shutil.copytree(sd, dd)
+            files = [str(f.relative_to(dest)) for f in dest.rglob("*") if f.is_file()]
+            return jsonify({"success": True, "installed_to": str(dest), "slug": slug, "files": files, "file_count": len(files)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/check-update")
+    def api_clawhub_check_update():
+        """Check if a ClawHub skill has a newer version."""
+        import_id = flask_request.args.get("import_id", "")
+        if not import_id:
+            return jsonify({"error": "Missing 'import_id'"})
+        try:
+            from tools.marketplace.openclaw_bridge import _get_db
+            conn = _get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT openclaw_slug, skill_version FROM openclaw_imports WHERE id = %s", (import_id,))
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "Import not found"})
+            slug = row[0] if not hasattr(row, "keys") else row["openclaw_slug"]
+            current_ver = str(row[1] if not hasattr(row, "keys") else row["skill_version"])
+            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+            c = ClawHubConnector()
+            c.connect({})
+            detail = c.get_skill(slug)
+            c.disconnect()
+            if not detail or not detail.get("latestVersion"):
+                return jsonify({"success": True, "update_available": False})
+            latest_ver = detail["latestVersion"].get("version", "")
+            return jsonify({
+                "success": True, "current_version": current_ver, "latest_version": latest_ver,
+                "update_available": str(latest_ver) != str(current_ver),
+                "changelog": (detail["latestVersion"].get("changelog", "") or "")[:300],
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/bulk-import", methods=["POST"])
+    def api_clawhub_bulk_import():
+        """Import multiple skills from ClawHub."""
+        data = flask_request.get_json(silent=True) or {}
+        slugs = data.get("slugs", [])
+        tenant_id = data.get("tenant_id", "default")
+        imported_by = data.get("imported_by", "dashboard-user")
+        if not slugs:
+            return jsonify({"error": "Missing 'slugs' list"})
+        results = []
+        for slug in slugs[:10]:  # Cap at 10
+            try:
+                from tools.marketplace.openclaw_bridge import fetch_and_import
+                r = fetch_and_import(slug, tenant_id, imported_by)
+                results.append({"slug": slug, "success": r.get("success", False), "error": r.get("error"), "import_id": r.get("import_id")})
+            except Exception as exc:
+                results.append({"slug": slug, "success": False, "error": str(exc)})
+        succeeded = sum(1 for r in results if r["success"])
+        return jsonify({"success": True, "total": len(results), "succeeded": succeeded, "failed": len(results) - succeeded, "results": results})
+
+    @app.route("/api/clawhub/rate", methods=["POST"])
+    def api_clawhub_rate():
+        """Rate an imported skill (1-5 stars, adjusts trust score)."""
+        data = flask_request.get_json(silent=True) or {}
+        import_id = data.get("import_id", "")
+        rating = data.get("rating", 0)
+        if not import_id or not rating:
+            return jsonify({"error": "Missing 'import_id' or 'rating'"})
+        try:
+            rating = int(rating)
+            if rating < 1 or rating > 5:
+                return jsonify({"error": "Rating must be 1-5"})
+            bump = {1: -0.05, 2: -0.02, 3: 0.0, 4: 0.03, 5: 0.05}[rating]
+            from tools.marketplace.openclaw_bridge import _get_db
+            conn = _get_db()
+            conn.cursor().execute(
+                "UPDATE openclaw_imports SET trust_score = LEAST(1.0, GREATEST(0.0, trust_score + %s)), updated_at = NOW() WHERE id = %s",
+                (bump, import_id),
+            )
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "rating": rating, "trust_adjustment": bump})
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/view-skill")
+    def api_clawhub_view_skill():
+        """Return the enhanced SKILL.md content for an imported skill."""
+        import_id = flask_request.args.get("import_id", "")
+        if not import_id:
+            return jsonify({"error": "Missing 'import_id'"})
+        try:
+            from tools.marketplace.openclaw_bridge import _get_db
+            conn = _get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT skill_name, quarantine_path FROM openclaw_imports WHERE id = %s", (import_id,))
+            row = cur.fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": f"Import not found: {import_id}"})
+
+            skill_name = row[0] if not hasattr(row, "keys") else row["skill_name"]
+            qpath = row[1] if not hasattr(row, "keys") else row["quarantine_path"]
+
+            skill_md = Path(qpath) / "SKILL.md"
+            if not skill_md.exists():
+                skill_md = Path(qpath) / "skill.md"
+            if not skill_md.exists():
+                return jsonify({"error": "SKILL.md not found in quarantine"})
+
+            content = skill_md.read_text(encoding="utf-8")
+
+            # List context files
+            context_dir = Path(qpath) / "context"
+            context_files = []
+            if context_dir.is_dir():
+                context_files = [f.name for f in sorted(context_dir.iterdir()) if f.is_file()]
+
+            return jsonify({
+                "success": True,
+                "skill_name": skill_name,
+                "import_id": import_id,
+                "content": content,
+                "content_length": len(content),
+                "pre_enrichment": (Path(qpath) / "_pre_enrichment.md").read_text(encoding="utf-8") if (Path(qpath) / "_pre_enrichment.md").exists() else None,
+                "context_files": context_files,
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/trust", methods=["POST"])
+    def api_clawhub_trust():
+        """Update trust score for an imported skill."""
+        data = flask_request.get_json(silent=True) or {}
+        import_id = data.get("import_id", "")
+        trust_score = data.get("trust_score")
+        if not import_id or trust_score is None:
+            return jsonify({"error": "Missing 'import_id' or 'trust_score'"})
+        try:
+            trust_score = float(trust_score)
+            if trust_score < 0 or trust_score > 1.0:
+                return jsonify({"error": "Trust score must be between 0.0 and 1.0"})
+            from tools.marketplace.openclaw_bridge import _get_db
+            conn = _get_db()
+            conn.cursor().execute(
+                "UPDATE openclaw_imports SET trust_score = %s, updated_at = NOW() WHERE id = %s",
+                (trust_score, import_id),
+            )
+            conn.commit()
+            conn.close()
+            return jsonify({"success": True, "import_id": import_id, "trust_score": trust_score})
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
+
+    @app.route("/api/clawhub/revoke", methods=["POST"])
+    def api_clawhub_revoke():
+        """Revoke (unpromote) a promoted import."""
+        data = flask_request.get_json(silent=True) or {}
+        import_id = data.get("import_id", "")
+        revoked_by = data.get("revoked_by", "dashboard-isso")
+        reason = data.get("reason", "Revoked via dashboard")
+        if not import_id:
+            return jsonify({"error": "Missing 'import_id'"})
+        try:
+            from tools.marketplace.openclaw_bridge import revoke_import
+            return jsonify(revoke_import(import_id, revoked_by, reason))
+        except Exception as exc:
+            return jsonify({"error": str(exc)})
 
     return app
 

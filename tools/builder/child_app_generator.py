@@ -188,6 +188,8 @@ CONDITIONAL_DIRS = {
         "tools/databridge/forge/templates", "tools/databridge/connectors",
         "context/databridge",
     ],
+    # SRE Automation Module (AIOps/LLMOps Phase)
+    "sre": ["tools/sre"],
 }
 
 

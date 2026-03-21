@@ -675,7 +675,7 @@ def run_remediation(
             conn = _get_db()
             conn.execute(
                 """UPDATE remediation_audit_log SET report_json = ?
-                   WHERE rowid = (SELECT MAX(rowid) FROM remediation_audit_log)""",
+                   WHERE id = (SELECT MAX(id) FROM remediation_audit_log)""",
                 (json.dumps(report.to_dict()),),
             )
             conn.commit()

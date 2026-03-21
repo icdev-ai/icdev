@@ -10,7 +10,7 @@ import os
 import sys
 import uuid
 from tools.db.storage import get_connection
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -25,12 +25,12 @@ proposals_api = Blueprint("proposals_api", __name__, url_prefix="/api/proposals"
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
 def _now():
-    return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _uuid():
@@ -182,7 +182,7 @@ def get_opportunity(opp_id):
         # Days to deadline
         try:
             due = datetime.strptime(opp["due_date"], "%Y-%m-%d")
-            days_left = (due - datetime.utcnow()).days
+            days_left = (due - datetime.now(timezone.utc).replace(tzinfo=None)).days
         except (ValueError, TypeError):
             days_left = None
 
@@ -1026,7 +1026,7 @@ def get_stats(opp_id):
 
         try:
             due = datetime.strptime(opp["due_date"], "%Y-%m-%d")
-            days_left = (due - datetime.utcnow()).days
+            days_left = (due - datetime.now(timezone.utc).replace(tzinfo=None)).days
         except (ValueError, TypeError):
             days_left = None
 

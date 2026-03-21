@@ -72,7 +72,7 @@ class SQLiteVectorStore(VectorStoreProvider):
         self._init_schema()
 
     def _get_conn(self) -> sqlite3.Connection:
-        conn = get_connection()
+        conn = get_connection(db_path=str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         return conn

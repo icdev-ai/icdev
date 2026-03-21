@@ -266,7 +266,7 @@ def register_pattern(pattern: dict, db_path: Path = DB_PATH) -> dict:
     content_hash = _content_hash(title + description)
 
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
 
         # Check for duplicate
         existing = conn.execute(

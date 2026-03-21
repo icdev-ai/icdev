@@ -1,0 +1,37 @@
+[
+  {
+    "query": "What is NIST 800-53?",
+    "question_type": "simple",
+    "entity_popularity": "head",
+    "ground_truth": "NIST 800-53 is a catalog of security and privacy controls for federal information systems.",
+    "is_false_premise": false
+  },
+  {
+    "query": "Compare FedRAMP and CMMC certification processes.",
+    "question_type": "comparison",
+    "entity_popularity": "head",
+    "ground_truth": "FedRAMP focuses on cloud service providers while CMMC targets defense industrial base contractors.",
+    "is_false_premise": false
+  },
+  {
+    "query": "List all NIST 800-53 control families.",
+    "question_type": "set",
+    "entity_popularity": "head",
+    "ground_truth": "AC, AT, AU, CA, CM, CP, IA, IR, MA, MP, PE, PL, PM, PS, PT, RA, SA, SC, SI, SR",
+    "is_false_premise": false
+  },
+  {
+    "query": "How many controls does the AC family contain in NIST 800-53 Rev 5?",
+    "question_type": "aggregation",
+    "entity_popularity": "head",
+    "ground_truth": "25 controls (AC-1 through AC-25)",
+    "is_false_premise": false
+  },
+  {
+    "query": "What is the CMMC requirement for quantum encryption at Level 1?",
+    "question_type": "false_premise",
+    "entity_popularity": "tail",
+    "ground_truth": "CMMC Level 1 does not require quantum encryption. This is a false premise.",
+    "is_false_premise": true
+  }
+]

@@ -518,9 +518,109 @@ class DaemonBase(abc.ABC):
                          for name in cls.reflex_names},
         }
 
+    # --- Checkpoint / Resumability (adapted from Agent Harness pattern) ---
+    def save_checkpoint(self, reflex_name: str, phase: str,
+                        partial_results: Dict[str, Any]) -> str:
+        """Save a mid-reflex checkpoint for resumability.
+
+        When a reflex has multi-step execution (e.g. scanning 50 items),
+        it can save checkpoints so that interruption doesn't lose progress.
+        On restart, ``load_checkpoint`` detects partial state and the reflex
+        can resume from the last completed phase.
+
+        Args:
+            reflex_name: Which reflex is checkpointing.
+            phase: Current phase/step identifier (e.g. "scan_item_23").
+            partial_results: Accumulated results so far.
+
+        Returns:
+            Checkpoint ID.
+        """
+        checkpoint_id = generate_id("ckpt")
+        conn = get_connection()
+        try:
+            conn.execute("""
+                INSERT INTO daemon_checkpoints
+                    (id, daemon_name, reflex_name, phase, partial_results,
+                     created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(daemon_name, reflex_name) DO UPDATE SET
+                    id = excluded.id,
+                    phase = excluded.phase,
+                    partial_results = excluded.partial_results,
+                    created_at = excluded.created_at
+            """, (
+                checkpoint_id, self.daemon_name, reflex_name, phase,
+                json.dumps(partial_results, default=str),
+                utcnow_iso(),
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+        return checkpoint_id
+
+    def load_checkpoint(self, reflex_name: str) -> Optional[Dict[str, Any]]:
+        """Load the most recent checkpoint for a reflex, if any.
+
+        Returns:
+            Dict with ``phase`` and ``partial_results``, or None if no
+            checkpoint exists.
+        """
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM daemon_checkpoints "
+                "WHERE daemon_name = ? AND reflex_name = ?",
+                (self.daemon_name, reflex_name),
+            ).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            if result.get("partial_results"):
+                try:
+                    result["partial_results"] = json.loads(result["partial_results"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            return result
+        finally:
+            conn.close()
+
+    def clear_checkpoint(self, reflex_name: str) -> None:
+        """Remove checkpoint after a reflex completes successfully."""
+        conn = get_connection()
+        try:
+            conn.execute(
+                "DELETE FROM daemon_checkpoints "
+                "WHERE daemon_name = ? AND reflex_name = ?",
+                (self.daemon_name, reflex_name),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _ensure_checkpoint_table(self) -> None:
+        """Create the daemon_checkpoints table if needed."""
+        conn = get_connection()
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daemon_checkpoints (
+                    id              TEXT PRIMARY KEY,
+                    daemon_name     TEXT NOT NULL,
+                    reflex_name     TEXT NOT NULL,
+                    phase           TEXT NOT NULL,
+                    partial_results TEXT,
+                    created_at      TEXT NOT NULL,
+                    UNIQUE(daemon_name, reflex_name)
+                );
+            """)
+            conn.commit()
+        finally:
+            conn.close()
+
     # --- Core lifecycle ---
     def _init_states(self) -> None:
         """Ensure all reflex states exist in DB."""
+        self._ensure_checkpoint_table()
         for state in self.reflex_states.values():
             state.load()
 
@@ -560,6 +660,7 @@ class DaemonBase(abc.ABC):
 
             if success and metric_passed:
                 state.record_success(metric_value)
+                self.clear_checkpoint(name)  # Resumability: clear on success
                 self.log_audit(
                     f"{self.event_prefix}.reflex.completed", name, risk_tier,
                     details, success=True, duration_ms=duration_ms,
@@ -607,26 +708,57 @@ class DaemonBase(abc.ABC):
     def run_due_reflexes(self) -> List[Dict[str, Any]]:
         """Run all reflexes that are currently due."""
         results = []
-        for name in self.reflex_names:
-            if self._shutdown_event.is_set():
-                break
+        due_reflexes = []
 
+        # First pass: determine which reflexes are due
+        for name in self.reflex_names:
             schedule = self.schedules.get(name)
             if not schedule:
                 continue
-
             state = self.reflex_states[name].load()
             if not state.get("enabled", 1):
                 continue
             if state.get("circuit_breaker_open", 0):
                 continue
-
             if is_due(schedule, state.get("last_run_at")):
-                print(f"INFO: Running reflex '{name}' (due)")
-                result = self.run_reflex(name)
-                results.append(result)
-                # Hook for pipeline chain triggering
-                self.on_reflex_completed(name, result)
+                due_reflexes.append(name)
+
+        total_due = len(due_reflexes)
+
+        for idx, name in enumerate(due_reflexes):
+            if self._shutdown_event.is_set():
+                break
+
+            print(f"INFO: Running reflex '{name}' (due)")
+
+            # SSE progress broadcast (best-effort)
+            try:
+                from tools.dashboard.sse_manager import emit_progress
+                emit_progress(
+                    f"{self.event_prefix}-cycle", f"{self.event_prefix}_reflex",
+                    name, idx, total_due,
+                    detail=f"Running reflex: {name}",
+                )
+            except Exception:
+                pass
+
+            result = self.run_reflex(name)
+            results.append(result)
+            # Hook for pipeline chain triggering
+            self.on_reflex_completed(name, result)
+
+        # Final SSE progress: cycle complete
+        if due_reflexes:
+            try:
+                from tools.dashboard.sse_manager import emit_progress
+                emit_progress(
+                    f"{self.event_prefix}-cycle", f"{self.event_prefix}_reflex",
+                    "cycle_complete", total_due, total_due,
+                    status="completed",
+                    detail=f"{len(results)} reflexes executed",
+                )
+            except Exception:
+                pass
 
         return results
 
@@ -664,6 +796,15 @@ class DaemonBase(abc.ABC):
                             details={"reason": "config_disabled"})
                         print(f"INFO: {self.daemon_name} disabled -- shutting down")
                         break
+
+                # Quiet hours — sleep between 11 PM and 8 AM local time
+                current_hour = datetime.now().hour
+                if current_hour >= 23 or current_hour < 8:
+                    for _ in range(60):
+                        if self._shutdown_event.is_set():
+                            break
+                        time.sleep(1)
+                    continue
 
                 try:
                     self.run_due_reflexes()

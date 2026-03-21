@@ -28,7 +28,7 @@ proposal_genesis_api = Blueprint(
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

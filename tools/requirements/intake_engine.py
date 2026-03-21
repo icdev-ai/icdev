@@ -56,7 +56,7 @@ def _get_connection(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -486,6 +486,10 @@ def create_session(
     """
     session_id = _generate_id("sess")
     conn = _get_connection(db_path)
+
+    # Normalise empty project_id to None so FK constraint allows NULL
+    if not project_id:
+        project_id = None
 
     # Validate project exists if provided
     if project_id:

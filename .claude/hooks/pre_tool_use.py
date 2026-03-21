@@ -97,6 +97,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 22 — Marketplace
         "marketplace_reviews",
         "marketplace_scan_results",
+        # Phase 69 — OpenClaw Bridge
+        "openclaw_exports",
         # Multi-Agent Orchestration
         "agent_vetoes",
         # Dashboard Auth (D169-D172)
@@ -162,6 +164,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "kg_retrieval_log",
         # Phase 64 Extension — Fine-Tuning (D-FT-3, D-FT-9, D-FT-14, D-FT-16, D-FT-13)
         "ft_dataset_examples",
+        # RAG-to-FT Pipeline (D-KARL-5, D-KARL-8)
+        "ft_pipeline_runs",
+        "ft_quality_snapshots",
         "ft_training_job_events",
         "ft_evaluations",
         "ft_promotion_log",
@@ -280,6 +285,22 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 67 — Bayesian Autoresearch (D-AR-4)
         "experiment_results",
         "bayesian_experiment_scores",
+        # Scout Daemon (D-SCT-1 — daily autonomous scan audit trail)
+        "scout_audit",
+        # Phase 70 — AIOps/LLMOps Adaptation (append-only audit/event tables)
+        "llm_gateway_audit",
+        "prompt_audit_log",
+        "llm_cost_alerts",
+        "model_drift_events",
+        "sre_slo_measurements",
+        "sre_runbook_executions",
+        "sre_incident_events",
+        "agent_topology_snapshots",
+        # Phase 71 — Sandbox Executor (D-SEC-10)
+        "sandbox_execution_log",
+        # Phase 71 — CRAG Evaluation (D-RAG-23)
+        "rag_evaluation_campaigns",
+        "rag_evaluation_results",
     ]
 
     if tool_name == "Bash":

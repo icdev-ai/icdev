@@ -129,7 +129,7 @@ def _get_db(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -218,7 +218,7 @@ def _get_latest_by_fingerprint(conn, table="creative_pain_points"):
     Returns dict mapping keyword_fingerprint -> row dict.
     """
     rows = conn.execute(
-        f"SELECT * FROM {table} ORDER BY rowid ASC"
+        f"SELECT * FROM {table} ORDER BY last_seen ASC"  # noqa: S608 — table from hardcoded constant
     ).fetchall()
     latest = {}
     for row in rows:
@@ -538,7 +538,7 @@ def score_all_new(db_path=None):
         rows = conn.execute(
             """SELECT * FROM creative_pain_points
                WHERE status = 'new'
-               ORDER BY rowid ASC"""
+               ORDER BY last_seen ASC"""
         ).fetchall()
     finally:
         conn.close()
@@ -629,7 +629,7 @@ def get_top_scored(limit=20, min_score=0.0, db_path=None):
             """SELECT * FROM creative_pain_points
                WHERE status = 'scored'
                AND composite_score IS NOT NULL
-               ORDER BY rowid ASC"""
+               ORDER BY last_seen ASC"""
         ).fetchall()
 
         # Deduplicate by keyword_fingerprint (latest row wins)
@@ -699,7 +699,7 @@ def identify_feature_gaps(db_path=None):
                WHERE status = 'scored'
                AND composite_score IS NOT NULL
                AND composite_score >= ?
-               ORDER BY rowid ASC""",
+               ORDER BY last_seen ASC""",
             (suggest_threshold,),
         ).fetchall()
 

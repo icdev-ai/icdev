@@ -51,7 +51,7 @@ def _load_config() -> Dict[str, Any]:
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a connection to the ICDEV database."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

@@ -108,7 +108,7 @@ def _get_db(db_path: Optional[Path] = None):
             f"ICDEV database not found at {path}. "
             "Run 'python tools/db/init_icdev_db.py' first."
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

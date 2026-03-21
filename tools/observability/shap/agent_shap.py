@@ -198,7 +198,7 @@ class AgentSHAP:
             return []
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 "SELECT * FROM otel_spans WHERE trace_id = ? ORDER BY start_time",
                 (trace_id,),
@@ -220,7 +220,7 @@ class AgentSHAP:
             return
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             for tool_name, attrs in results.items():
                 conn.execute(
                     """INSERT INTO shap_attributions

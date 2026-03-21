@@ -65,7 +65,7 @@ class BaseAssessor(ABC):
                 f"Database not found: {self.db_path}\n"
                 "Run: python tools/db/init_icdev_db.py"
             )
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _get_project(self, conn: sqlite3.Connection, project_id: str) -> Dict:

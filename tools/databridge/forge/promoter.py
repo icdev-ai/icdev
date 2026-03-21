@@ -154,6 +154,6 @@ def deprecate_connector(
 
 
 def _get_conn(db_path: str) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn

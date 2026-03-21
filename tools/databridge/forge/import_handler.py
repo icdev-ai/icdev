@@ -128,6 +128,6 @@ def _find_connector_file(install_path: str) -> Optional[Path]:
 
 
 def _get_conn(db_path: str) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn

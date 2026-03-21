@@ -16,6 +16,7 @@ Architecture:
     - Maps signal categories to GOTCHA layers (goal/tool/arg/context/hardprompt)
     - Optional spec quality checking via spec_quality_checker.py (D156)
     - Results stored in innovation_solutions table (append-only, D6)
+    - Implementation blueprints with concrete file paths, DB tables, and GOTCHA checklist (Phase 71)
 
 Usage:
     python tools/innovation/solution_generator.py --generate --signal-id "sig-xxx" --json
@@ -197,7 +198,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -314,6 +315,165 @@ def _build_acceptance_criteria(gotcha_layer, signal):
     return "\n".join(criteria)
 
 
+def _build_implementation_blueprint(gotcha_layer, signal, metadata):
+    """Generate implementation blueprint with specific files and actions (Phase 71 lesson).
+
+    Maps signal to concrete work packages: new files, modified files,
+    DB tables, config changes, and GOTCHA registration items.
+
+    Args:
+        gotcha_layer: Resolved GOTCHA layer.
+        signal: Signal dict from DB.
+        metadata: Parsed metadata dict (may contain module_impact from triage).
+
+    Returns:
+        Formatted markdown string with the blueprint.
+    """
+    title = signal.get("title", "untitled")
+    category = signal.get("category") or "uncategorized"
+    url = signal.get("url") or ""
+
+    # Derive a snake_case tool/subsystem name from the signal title
+    tool_name = title.lower().replace(" ", "_").replace("-", "_")
+    tool_name = "".join(c for c in tool_name if c.isalnum() or c == "_")[:40]
+    subsystem = CATEGORY_LAYER_MAP.get(category, "tool")
+
+    # Build "Files to Modify" from triage module_impact if available, else use layer defaults
+    module_impact = metadata.get("module_impact", {})
+    matched_modules = module_impact.get("matched_modules", [])
+
+    modify_rows = ""
+    if matched_modules:
+        rows = []
+        for mod in matched_modules[:8]:  # cap at 8 rows for readability
+            mod_path = mod if isinstance(mod, str) else mod.get("path", str(mod))
+            rows.append(f"| `{mod_path}` | Integrate {tool_name} capability |")
+        modify_rows = "\n".join(rows)
+    else:
+        # Layer-specific generic modifications
+        layer_modify = {
+            "tool": (
+                f"| `tools/manifest.md` | Add `{tool_name}` tool entry |\n"
+                f"| `tools/mcp/tool_registry.py` | Register `{tool_name}` in MCP gateway |\n"
+                f"| `args/security_gates.yaml` | Add gate entry if blocking conditions apply |"
+            ),
+            "goal": (
+                f"| `goals/manifest.md` | Add `{tool_name}` goal entry |\n"
+                f"| `tools/manifest.md` | Register any new tools referenced by goal |"
+            ),
+            "arg": (
+                "| `tools/manifest.md` | Document config file |\n"
+                "| `docs/reference/commands.md` | Add CLI usage examples |"
+            ),
+            "context": (
+                "| `tools/manifest.md` | Reference new context file |\n"
+                "| `docs/reference/commands.md` | Add context load documentation |"
+            ),
+            "hardprompt": (
+                "| `tools/manifest.md` | Register hardprompt template |\n"
+                "| `tools/llm/router.py` | Wire function routing if new LLM function |"
+            ),
+        }
+        modify_rows = layer_modify.get(gotcha_layer, layer_modify["tool"])
+
+    # Build "New Files" section based on layer
+    if gotcha_layer == "tool":
+        new_files_section = (
+            f"| `tools/{subsystem}/{tool_name}.py` | Primary tool implementation | ~200-400 |\n"
+            f"| `tests/test_{tool_name}.py` | Unit + integration tests | ~150-300 |\n"
+            f"| `args/{tool_name}_config.yaml` | Configuration (if needed) | ~50 |"
+        )
+        db_section = (
+            f"- New table: `{tool_name}_entries` (if signal implies persistent data storage)\n"
+            "- No DB changes (if signal is stateless/config only)"
+        )
+        config_section = (
+            f"- `args/{tool_name}_config.yaml` — Add configuration block with ICDEV_ env overrides\n"
+            "- `args/security_gates.yaml` — Add gate (if blocking conditions identified)"
+        )
+    elif gotcha_layer == "goal":
+        new_files_section = (
+            f"| `goals/{tool_name}.md` | Goal workflow definition | ~100-200 |\n"
+            f"| `tests/test_{tool_name}_goal.py` | Goal structure + integration tests | ~80-150 |"
+        )
+        db_section = "- No DB changes anticipated (goal files are static workflow definitions)"
+        config_section = (
+            f"- `args/{tool_name}_config.yaml` — Add if goal requires tunable parameters\n"
+            "- `args/security_gates.yaml` — Add gate if workflow has blocking conditions"
+        )
+    elif gotcha_layer == "arg":
+        new_files_section = (
+            f"| `args/{tool_name}_config.yaml` | New configuration file | ~50-100 |\n"
+            f"| `tests/test_{tool_name}_config.py` | Config parsing + validation tests | ~50-100 |"
+        )
+        db_section = "- No DB changes anticipated (args are file-based configuration)"
+        config_section = (
+            f"- `args/{tool_name}_config.yaml` — Primary deliverable; document all ICDEV_ overrides"
+        )
+    elif gotcha_layer == "context":
+        new_files_section = (
+            f"| `context/{tool_name}.json` | New reference data file | ~50-200 |\n"
+            f"| `tests/test_{tool_name}_context.py` | Context load + field validation tests | ~50-100 |"
+        )
+        db_section = "- No DB changes anticipated (context files are static reference data)"
+        config_section = (
+            f"- Add provenance metadata header to `context/{tool_name}.json`"
+        )
+    else:  # hardprompt
+        new_files_section = (
+            f"| `hardprompts/{tool_name}.md` | New LLM instruction template | ~50-150 |\n"
+            f"| `tests/test_{tool_name}_prompt.py` | Template render + format tests | ~50-100 |"
+        )
+        db_section = "- No DB changes anticipated (hardprompts are static templates)"
+        config_section = (
+            "- `args/llm_config.yaml` — Add routing entry if new LLM function introduced"
+        )
+
+    # GOTCHA 8-point registration checklist (always the same)
+    gotcha_checklist = (
+        "- [ ] `tools/manifest.md` — Add tool entry\n"
+        "- [ ] `docs/reference/commands.md` — Add CLI commands\n"
+        "- [ ] `args/security_gates.yaml` — Add gate if blocking conditions\n"
+        "- [ ] `tools/mcp/tool_registry.py` — Register in MCP gateway\n"
+        "- [ ] `.claude/hooks/pre_tool_use.py` — Add append-only tables\n"
+        "- [ ] `tests/conftest.py` — Add table schemas to MINIMAL_ICDEV_SCHEMA\n"
+        "- [ ] `python tools/dx/companion.py --sync --write --json` — Companion sync\n"
+        "- [ ] `python tools/workflow/coherence_checker.py --all --fix --gate` — Coherence check"
+    )
+
+    # Optional source analysis section when signal has a URL
+    source_section = ""
+    if url and url not in ("N/A", "", "None"):
+        source_section = (
+            f"\n### Source Analysis\n"
+            f"Signal URL: `{url}`\n\n"
+            "Recommended pre-implementation steps:\n"
+            "1. Fetch and parse the resource (paper, repo, RFC) for implementation details\n"
+            "2. Extract key algorithms, data structures, or API patterns\n"
+            "3. Identify licensing requirements before incorporating any code\n"
+            "4. Map external concepts to GOTCHA layer artifacts"
+        )
+
+    blueprint = (
+        f"### New Files\n"
+        f"| File | Purpose | Est. LOC |\n"
+        f"|------|---------|----------|\n"
+        f"{new_files_section}\n\n"
+        f"### Files to Modify\n"
+        f"| File | Change |\n"
+        f"|------|--------|\n"
+        f"{modify_rows}\n\n"
+        f"### Database Changes\n"
+        f"{db_section}\n\n"
+        f"### Configuration Changes\n"
+        f"{config_section}\n\n"
+        f"### GOTCHA Registration Checklist\n"
+        f"{gotcha_checklist}"
+        f"{source_section}"
+    )
+    return blueprint
+
+
 # =========================================================================
 # SPEC TEMPLATE & GENERATION
 # =========================================================================
@@ -357,6 +517,9 @@ CUI // SP-CTI
 ## Marketplace
 - Asset Type: {asset_type}
 - Estimated Effort: {effort} ({effort_label}, ~{effort_days} days, {effort_points} story points)
+
+## Implementation Blueprint
+{implementation_blueprint}
 """
 
 
@@ -408,6 +571,7 @@ def generate_solution_spec(signal_id, db_path=None):
         compliance_notes = metadata.get("compliance_notes") or BOUNDARY_NOTES.get(boundary_tier, BOUNDARY_NOTES["GREEN"])
         innovation_score = signal.get("innovation_score") if signal.get("innovation_score") is not None else (signal.get("community_score") or 0.0)
         asset_type = layer_info.get("asset_type", "tool")
+        implementation_blueprint = _build_implementation_blueprint(gotcha_layer, signal, metadata)
 
         spec_content = _SPEC_TEMPLATE.format(
             title=signal.get("title", "Untitled"),
@@ -426,7 +590,8 @@ def generate_solution_spec(signal_id, db_path=None):
             test_bdd=layer_info.get("test_bdd", "").format(title=signal.get("title", "Feature")),
             asset_type=asset_type, effort=effort,
             effort_label=effort_details["label"],
-            effort_days=effort_details["days"], effort_points=effort_details["story_points"])
+            effort_days=effort_details["days"], effort_points=effort_details["story_points"],
+            implementation_blueprint=implementation_blueprint)
 
         spec_quality_score = None
         if _HAS_SPEC_CHECKER:

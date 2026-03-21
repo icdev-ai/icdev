@@ -239,6 +239,50 @@ python tools/rag/corrective_rag.py --parallel --query "zero trust" --profile com
 # KARL pass-rate filtered pair generation (D-KARL-4)
 python tools/finetune/pair_generator.py --generate-filtered --dataset-id "ds-xxx" --source-table "research_signals" --json
 python tools/finetune/pair_generator.py --generate-filtered --dataset-id "ds-xxx" --source-table "research_signals" --num-attempts 5 --min-pass-rate 0.2 --max-pass-rate 0.8 --json
+
+# KG enrichment — centrality + embeddings (D-KARL-7)
+python tools/knowledge_graph/enricher.py --graph-id <id> --centrality --json
+python tools/knowledge_graph/enricher.py --graph-id <id> --embeddings --json
+python tools/knowledge_graph/enricher.py --graph-id <id> --all --json
+
+# Compliance crosswalk graph
+python tools/knowledge_graph/compliance_graph.py --build --json
+python tools/knowledge_graph/compliance_graph.py --crosswalk AC-2 --target cmmc --json
+python tools/knowledge_graph/compliance_graph.py --coverage fedramp --json
+
+# Automated RAG-to-FT pipeline (D-KARL-5)
+python tools/finetune/rag_ft_pipeline.py --run --json
+python tools/finetune/rag_ft_pipeline.py --dry-run --json
+python tools/finetune/rag_ft_pipeline.py --run --source-type innovation_signals --json
+python tools/finetune/rag_ft_pipeline.py --status --json
+
+# KG-to-FT pair generation (D-KARL-6)
+python tools/finetune/kg_pair_generator.py --graph-id <id> --dataset-id <id> --json
+python tools/finetune/kg_pair_generator.py --graph-id <id> --strategy entity_relationship --no-store --json
+python tools/finetune/kg_pair_generator.py --graph-id <id> --strategy compliance_crosswalk --json
+
+# Quality monitoring — RAG eval feedback loop (D-KARL-8)
+python tools/finetune/quality_monitor.py --check --json
+python tools/finetune/quality_monitor.py --status --json
+
+# Entity disambiguation
+python tools/knowledge_graph/disambiguator.py --find-duplicates --json
+python tools/knowledge_graph/disambiguator.py --merge --source <id> --target <id> --json
+python tools/knowledge_graph/disambiguator.py --add-alias --node-id <id> --alias "name" --json
+python tools/knowledge_graph/disambiguator.py --resolve "AC-2" --context "compliance" --json
+
+# Cross-project graph federation
+python tools/knowledge_graph/federation.py --search "query" --json
+python tools/knowledge_graph/federation.py --shared proj-a proj-b --json
+python tools/knowledge_graph/federation.py --create-view "name" --projects proj-a,proj-b --json
+python tools/knowledge_graph/federation.py --coverage fedramp --json
+
+# Temporal reasoning
+python tools/knowledge_graph/temporal.py --range --start 2026-03-01 --end 2026-03-21 --json
+python tools/knowledge_graph/temporal.py --evolution --graph-id <id> --interval day --json
+python tools/knowledge_graph/temporal.py --recent --days 7 --json
+python tools/knowledge_graph/temporal.py --stale --stale-days 90 --json
+python tools/knowledge_graph/temporal.py --diff --graph-id <id> --date-a 2026-03-01 --date-b 2026-03-15 --json
 ```
 
 ---
@@ -1452,6 +1496,11 @@ python tools/finetune/promotion_manager.py --check --model-version-id "mv-xxx" -
 python tools/finetune/promotion_manager.py --promote --model-version-id "mv-xxx" --function code_generation --json  # Promote model
 python tools/finetune/gpu_detector.py --json                                                       # GPU detection
 python tools/finetune/retrain_trigger.py --check --json                                            # Check retrain triggers
+python tools/finetune/hp_search.py --create --dataset-id <id> --json                               # Create HP search
+python tools/finetune/hp_search.py --run-next --search-id <id> --json                              # Run next trial
+python tools/finetune/hp_search.py --record --trial-id <id> --score 0.85 --json                    # Record trial result
+python tools/finetune/hp_search.py --status --search-id <id> --json                                # Search status
+python tools/finetune/hp_search.py --list --json                                                    # List all searches
 
 # Observability, Traceability & Explainable AI (Phase 46)
 python -c "from tools.observability import get_tracer; print(type(get_tracer()).__name__)"           # Check active tracer
@@ -1624,6 +1673,16 @@ python tools/agent/session_purpose.py --declare "Implement auth module" --projec
 python tools/agent/session_purpose.py --active --project-id "proj-123" --json            # Get active purpose
 python tools/agent/session_purpose.py --complete "<id>" --json                           # Complete purpose
 python tools/agent/session_purpose.py --history --project-id "proj-123" --json           # Purpose history
+
+# Agent Topology
+python tools/agent/topology.py --build --json                                          # Build topology graph
+python tools/agent/topology.py --spof --json                                           # Detect single points of failure
+python tools/agent/topology.py --air-gap-check --json                                  # Validate air-gap compliance
+python tools/agent/topology.py --providers --json                                      # List provider dependencies
+python tools/agent/topology.py --snapshot --json                                       # Take topology snapshot
+python tools/agent/topology.py --compare --json                                        # Compare snapshots for drift
+python tools/agent/topology.py --stats --json                                          # Topology statistics
+python tools/agent/topology.py --gate                                                  # Gate check (CI/CD)
 
 # File Sync
 python tools/filesync/sync_engine.py --create --name "Backup" --source /src --dest /dst --json
@@ -1809,4 +1868,109 @@ python tools/marketplace/catalog_manager.py --get --slug "tenant-abc/my-skill" -
 
 # Provenance
 python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
+
+# OpenClaw Bridge — Zero-trust import/export for ClawHub (clawhub.ai) skills (Phase 69)
+# Import a skill from local OpenClaw directory
+python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --tenant-id "tenant-abc" --imported-by "user@mil" --json
+
+# Import with ClawHub URL for provenance tracking
+python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --clawhub-url "https://clawhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
+
+# List quarantined imports
+python tools/marketplace/openclaw_bridge.py --list-quarantine --json
+python tools/marketplace/openclaw_bridge.py --list-quarantine --status review_pending --json
+
+# Promote a quarantined import (after review, ISSO/security officer)
+python tools/marketplace/openclaw_bridge.py --promote --import-id "oci-abc123" --promoted-by "isso@dod.mil" --json
+
+# Reject a quarantined import
+python tools/marketplace/openclaw_bridge.py --reject --import-id "oci-abc123" --rejected-by "isso@dod.mil" --reason "Contains eval() calls" --json
+
+# Export an ICDEV skill to OpenClaw format (strips CUI, requires approval)
+python tools/marketplace/openclaw_bridge.py --export --asset-id "asset-abc" --version-id "ver-abc" --output-path /path/to/output --exported-by "user@mil" --json
+
+# List pending exports
+python tools/marketplace/openclaw_bridge.py --list-exports --json
+
+# Health check
+python tools/marketplace/openclaw_bridge.py --health --json
+
+# Revoke a promoted import (rollback)
+python tools/marketplace/openclaw_bridge.py --revoke --import-id "oci-abc123" --revoked-by "isso@dod.mil" --reason "Causing errors" --json
+
+# Discover skills on ClawHub (vector search — requires network)
+python tools/marketplace/openclaw_bridge.py --discover "code review automation" --limit 10 --json
+
+# Fetch + import a skill from ClawHub by slug (download → quarantine → scan → translate)
+python tools/marketplace/openclaw_bridge.py --fetch self-improving-agent --tenant-id "tenant-abc" --imported-by "user@mil" --json
+
+# Gate check (CI/CD)
+python tools/marketplace/openclaw_bridge.py --gate --json
+
+# ClawHub DataBridge Connector (standalone)
+python tools/databridge/connectors/clawhub_connector.py --search "self-improvement" --json
+python tools/databridge/connectors/clawhub_connector.py --get self-improving-agent --json
+python tools/databridge/connectors/clawhub_connector.py --download self-improving-agent --output .tmp/ --json
+python tools/databridge/connectors/clawhub_connector.py --health --json
+```
+
+---
+
+## LLM Tools — Gateway, Prompt Registry, Cost Intelligence, Model Monitor
+
+```bash
+# LLM Gateway
+python tools/llm/gateway.py --stats --json                                             # Gateway usage statistics
+python tools/llm/gateway.py --audit --json --limit 50                                  # Audit log (last N requests)
+python tools/llm/gateway.py --check-text "text to check" --json                        # Content safety check
+python tools/llm/gateway.py --gate                                                     # Gate check (CI/CD)
+
+# Prompt Registry
+python tools/llm/prompt_registry.py --list --json                                      # List all registered prompts
+python tools/llm/prompt_registry.py --register --name "prompt_name" --template "template text" --json  # Register new prompt
+python tools/llm/prompt_registry.py --activate --name "prompt_name" --version 2 --json # Activate specific version
+python tools/llm/prompt_registry.py --rollback --name "prompt_name" --version 1 --json # Rollback to previous version
+python tools/llm/prompt_registry.py --diff --name "prompt_name" --v1 1 --v2 2 --json   # Diff two prompt versions
+python tools/llm/prompt_registry.py --import-hardprompts --json                        # Import from hardprompts/ directory
+python tools/llm/prompt_registry.py --start-ab --name "prompt_name" --version-a 1 --version-b 2 --json  # Start A/B test
+python tools/llm/prompt_registry.py --gate                                             # Gate check (CI/CD)
+
+# Cost Intelligence
+python tools/llm/cost_intelligence.py --dashboard --json                               # Cost dashboard overview
+python tools/llm/cost_intelligence.py --anomalies --json                               # Detect cost anomalies
+python tools/llm/cost_intelligence.py --project --json                                 # Per-project cost breakdown
+python tools/llm/cost_intelligence.py --recommend --json                               # Cost optimization recommendations
+python tools/llm/cost_intelligence.py --edge-vs-cloud --function code_generation --json # Edge vs cloud cost comparison
+python tools/llm/cost_intelligence.py --alerts --json                                  # Active cost alerts
+python tools/llm/cost_intelligence.py --gate                                           # Gate check (CI/CD)
+
+# Model Monitor
+python tools/llm/model_monitor.py --record --model qwen3-local --function code_generation --score 0.85 --json  # Record quality score
+python tools/llm/model_monitor.py --detect-drift --json                                # Detect model quality drift
+python tools/llm/model_monitor.py --health --json                                      # Model health dashboard
+python tools/llm/model_monitor.py --gate                                               # Gate check (CI/CD)
+```
+
+---
+
+## SRE Tools — SLO Manager, Runbook Executor, Incident Commander
+
+```bash
+# SLO Manager
+python tools/sre/slo_manager.py --define --name "api_latency_p99" --target 0.999 --window 30 --json  # Define an SLO
+python tools/sre/slo_manager.py --record --slo-name "api_latency_p99" --value 0.9995 --json          # Record SLO measurement
+python tools/sre/slo_manager.py --dashboard --json                                     # SLO dashboard overview
+python tools/sre/slo_manager.py --gate                                                 # Gate check (CI/CD)
+
+# Runbook Executor
+python tools/sre/runbook_executor.py --register --name "restart_service" --alert-pattern "service_down" --json  # Register runbook
+python tools/sre/runbook_executor.py --execute --runbook-id rb-xxx --dry-run --json    # Execute runbook (dry run)
+python tools/sre/runbook_executor.py --list --json                                     # List registered runbooks
+python tools/sre/runbook_executor.py --gate                                            # Gate check (CI/CD)
+
+# Incident Commander
+python tools/sre/incident_commander.py --declare --title "API outage" --severity sev1 --json  # Declare incident
+python tools/sre/incident_commander.py --update --incident-id inc-xxx --status mitigated --json  # Update incident status
+python tools/sre/incident_commander.py --dashboard --json                              # Incident dashboard
+python tools/sre/incident_commander.py --gate                                          # Gate check (CI/CD)
 ```

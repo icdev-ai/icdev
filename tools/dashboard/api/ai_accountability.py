@@ -20,7 +20,7 @@ ai_accountability_api = Blueprint("ai_accountability_api", __name__, url_prefix=
 
 
 def _get_db() -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 
@@ -31,7 +31,7 @@ def _resolve_project_id(explicit: str = None) -> str:
         return pid
     try:
         conn = _get_db()
-        row = conn.execute("SELECT id FROM projects ORDER BY rowid LIMIT 1").fetchone()
+        row = conn.execute("SELECT id FROM projects ORDER BY created_at ASC LIMIT 1").fetchone()
         conn.close()
         if row:
             return row["id"]

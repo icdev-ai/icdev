@@ -467,7 +467,7 @@ class LocalDockerProvider(RegistryProvider):
     def _init_db(self):
         """Create registry tracking tables if not exists."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS local_repositories (
                     name TEXT PRIMARY KEY,
@@ -502,7 +502,7 @@ class LocalDockerProvider(RegistryProvider):
     def create_repository(self, name: str, **kwargs) -> Optional[Dict]:
         try:
             now = datetime.now(timezone.utc).isoformat()
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 "INSERT OR IGNORE INTO local_repositories (name, created_at) VALUES (?, ?)",
                 (name, now),
@@ -515,7 +515,7 @@ class LocalDockerProvider(RegistryProvider):
 
     def list_repositories(self) -> List[Dict]:
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 "SELECT * FROM local_repositories ORDER BY created_at DESC"
             ).fetchall()
@@ -527,7 +527,7 @@ class LocalDockerProvider(RegistryProvider):
 
     def list_images(self, repository: str) -> List[Dict]:
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 "SELECT * FROM local_images WHERE repository = ? ORDER BY pushed_at DESC",
                 (repository,),
@@ -541,7 +541,7 @@ class LocalDockerProvider(RegistryProvider):
 
     def delete_image(self, repository: str, tag: str) -> bool:
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             cursor = conn.execute(
                 "DELETE FROM local_images WHERE repository = ? AND tag = ?",
                 (repository, tag),

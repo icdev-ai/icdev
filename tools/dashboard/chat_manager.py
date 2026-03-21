@@ -432,7 +432,7 @@ class ChatManager:
     ) -> List[dict]:
         """Get messages for a context, optionally since a turn number."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(DB_PATH))
             rows = conn.execute(
                 """SELECT turn_number, role, content, content_type,
                           is_compressed, compression_tier, classification, created_at
@@ -722,7 +722,7 @@ class ChatManager:
     # ------------------------------------------------------------------
 
     def _get_db(self) -> sqlite3.Connection:
-        conn = get_connection()
+        conn = get_connection(db_path=str(DB_PATH))
         return conn
 
     def _db_create_context(self, ctx: ChatContext) -> None:

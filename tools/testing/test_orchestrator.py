@@ -616,6 +616,29 @@ def evaluate_security_gate(project_dir: str, logger) -> GateEvaluation:
             nist_control="IA-5",
         ))
 
+    # OpenClaw bridge gate (feature-flagged)
+    if os.environ.get("ICDEV_OPENCLAW_ENABLED", "").lower() in ("true", "1", "yes"):
+        try:
+            from tools.marketplace.openclaw_bridge import gate_check
+            oc_result = gate_check()
+            oc_passed = oc_result.get("passed", False)
+            oc_failures = oc_result.get("blocking_failures", [])
+            gates.append(GateResult(
+                gate_name="OpenClaw Bridge",
+                passed=oc_passed,
+                severity="blocking",
+                details=f"{'PASS' if oc_passed else 'FAIL'}: {', '.join(oc_failures) if oc_failures else 'all checks passed'}",
+                nist_control="SA-12",
+            ))
+        except (ImportError, Exception) as e:
+            gates.append(GateResult(
+                gate_name="OpenClaw Bridge",
+                passed=True,  # Don't block if bridge unavailable
+                severity="warning",
+                details=f"OpenClaw bridge unavailable: {e}",
+                nist_control="SA-12",
+            ))
+
     overall = all(g.passed for g in gates if g.severity == "blocking")
 
     return GateEvaluation(

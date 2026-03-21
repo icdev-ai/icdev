@@ -33,7 +33,7 @@ def _get_connection(db_path=None):
     """Get database connection."""
     path = db_path or DB_PATH
     if path.exists():
-        conn = get_connection()
+        conn = get_connection(db_path=str(path))
         return conn
     return None
 

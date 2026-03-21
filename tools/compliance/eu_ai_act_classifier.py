@@ -64,7 +64,7 @@ class EUAIActClassifier(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = get_connection()
+                conn = get_connection(db_path=str(self.db_path))
                 project_id = project.get("id", "")
 
                 # EUAI-01: Risk Classification — AI inventory registered

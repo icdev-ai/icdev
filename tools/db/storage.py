@@ -433,7 +433,7 @@ def _get_pg_connection(db_url: str = None):
 
 def _get_sqlite_connection(db_path: str = None):
     """Create a SQLite connection with Row factory."""
-    path = db_path or DB_PATH
+    path = db_path or os.environ.get("ICDEV_DB_PATH", DB_PATH)
     # Ensure parent directory exists
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=30)

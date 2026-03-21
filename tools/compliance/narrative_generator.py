@@ -208,7 +208,7 @@ class NarrativeGenerator:
         self._ensure_table()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = get_connection()
+        conn = get_connection(db_path=str(self._db_path))
         return conn
 
     def _ensure_table(self) -> None:

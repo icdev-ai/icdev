@@ -170,7 +170,7 @@ def _find_project_by_directory(directory: str, db_path: str) -> dict:
     if not db.exists():
         return None
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
             "SELECT * FROM projects WHERE directory_path = ? LIMIT 1",
             (directory,),
@@ -211,7 +211,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
         return summary
 
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
 
         # SSP
         ssp = conn.execute(
@@ -291,7 +291,7 @@ def _get_dev_profile_summary(project_id: str, db_path: str) -> dict:
         return summary
 
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         row = conn.execute(
             "SELECT dimensions FROM dev_profiles WHERE scope = 'project' AND scope_id = ? ORDER BY version DESC LIMIT 1",
             (project_id,),
@@ -329,7 +329,7 @@ def _get_recent_activity(project_id: str, limit: int = 5, db_path: str = None) -
 
     entries = []
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
             "SELECT event_type, actor, action, created_at FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
             (project_id, limit),
@@ -358,7 +358,7 @@ def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
 
     sessions = []
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
             "SELECT id, customer_name, status, readiness_score, created_at FROM intake_sessions WHERE project_id = ? AND status != 'completed' ORDER BY created_at DESC",
             (project_id,),
@@ -647,7 +647,7 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
     db_id = str(uuid.uuid4())
 
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         now = datetime.now(timezone.utc).isoformat()
         conn.execute(
             """INSERT INTO projects

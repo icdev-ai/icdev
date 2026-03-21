@@ -73,7 +73,7 @@ class AITelemetryLogger:
         logged_at = datetime.now(timezone.utc).isoformat()
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO ai_telemetry
                    (id, project_id, user_id, agent_id, model_id, provider,
@@ -115,7 +115,7 @@ class AITelemetryLogger:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
 
             # Total volume in window
             row = conn.execute(
@@ -217,7 +217,7 @@ class AITelemetryLogger:
         baseline_end = (now - timedelta(hours=window_hours)).isoformat()
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
 
             # Get agent list
             if agent_id:
@@ -341,7 +341,7 @@ class AITelemetryLogger:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
 
             where_parts = ["logged_at >= ?"]
             params = [cutoff]

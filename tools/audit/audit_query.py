@@ -13,7 +13,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 def query_by_project(project_id: str, limit: int = 50, db_path: Path = None) -> list:
     """Get audit entries for a project."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute(
         """SELECT * FROM audit_trail WHERE project_id = ?
@@ -27,7 +27,7 @@ def query_by_project(project_id: str, limit: int = 50, db_path: Path = None) -> 
 
 def query_by_type(event_type: str, limit: int = 50, db_path: Path = None) -> list:
     """Get audit entries by event type."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute(
         """SELECT * FROM audit_trail WHERE event_type = ?
@@ -41,7 +41,7 @@ def query_by_type(event_type: str, limit: int = 50, db_path: Path = None) -> lis
 
 def query_by_actor(actor: str, limit: int = 50, db_path: Path = None) -> list:
     """Get audit entries by actor."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute(
         """SELECT * FROM audit_trail WHERE actor = ?
@@ -55,7 +55,7 @@ def query_by_actor(actor: str, limit: int = 50, db_path: Path = None) -> list:
 
 def query_recent(limit: int = 50, db_path: Path = None) -> list:
     """Get most recent audit entries."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
     c.execute("SELECT * FROM audit_trail ORDER BY created_at DESC LIMIT ?", (limit,))
     rows = [dict(r) for r in c.fetchall()]
@@ -66,7 +66,7 @@ def query_recent(limit: int = 50, db_path: Path = None) -> list:
 def verify_completeness(project_id: str, db_path: Path = None) -> dict:
     """Verify audit trail completeness for a project.
     Checks that key lifecycle events exist."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     c = conn.cursor()
 
     required_events = [

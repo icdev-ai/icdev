@@ -62,7 +62,7 @@ class OMBM2521Assessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = get_connection()
+                conn = get_connection(db_path=str(self._db_path))
                 project_id = project.get("id", "")
 
                 # M25-INV-1: AI use case inventory exists

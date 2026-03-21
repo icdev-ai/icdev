@@ -70,7 +70,7 @@ IMPACT_DIMENSIONS = [
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

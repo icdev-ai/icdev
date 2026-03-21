@@ -31,6 +31,29 @@ blockchain:
     - crypto compliance
     - digital asset
 
+# Knowledge graph tools domain
+knowledge_graph:
+  name: "knowledge graph"
+  g2_category_url: "https://www.g2.com/categories/graph-databases"
+  capterra_category_url: "https://www.capterra.com/graph-database-software/"
+  trustradius_category_url: "https://www.trustradius.com/graph-databases"
+  producthunt_topic: "knowledge-graph"
+  keywords:
+    - knowledge graph
+    - graph database
+    - Neo4j
+    - TigerGraph
+    - Amazon Neptune
+    - property graph
+    - RDF
+    - ontology
+    - graph analytics
+    - graph neural network
+    - linked data
+    - semantic web
+    - entity resolution
+    - relationship extraction
+
 # =========================================================================
 # Source Adapters
 # =========================================================================
@@ -134,6 +157,7 @@ sources:
       - OpenZeppelin/openzeppelin-contracts
       - paradigmxyz/reth
       - foundry-rs/foundry
+      - paperclipai/paperclip
       - crytic/slither
     labels: [enhancement, feature-request, feature, wishlist, "help wanted"]
     max_results: 100

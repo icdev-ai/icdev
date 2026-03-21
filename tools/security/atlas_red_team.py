@@ -64,7 +64,7 @@ class ATLASRedTeamScanner:
         if not self._db_path.exists():
             return
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute("""CREATE TABLE IF NOT EXISTS atlas_red_team_results (
                 id TEXT PRIMARY KEY, project_id TEXT,
                 technique TEXT NOT NULL, technique_name TEXT NOT NULL,
@@ -393,7 +393,7 @@ class ATLASRedTeamScanner:
             return None
         entry_id = str(uuid.uuid4())
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             conn.execute(
                 """INSERT INTO atlas_red_team_results
                    (id, project_id, technique, technique_name, passed,
@@ -416,7 +416,7 @@ class ATLASRedTeamScanner:
         if not self._db_path.exists():
             return []
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             wh, params = [], []
             if project_id:
                 wh.append("project_id = ?"); params.append(project_id)
@@ -440,7 +440,7 @@ class ATLASRedTeamScanner:
         if not self._db_path.exists():
             return {"error": "Database not found", "techniques": {}}
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             where, params = "", []
             if project_id:
                 where = " WHERE project_id = ?"; params = [project_id]

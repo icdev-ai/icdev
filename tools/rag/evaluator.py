@@ -294,28 +294,43 @@ class RAGEvaluator:
         query: str,
         context: str,
         answer: str,
+        ground_truth: str = "",
+        scoring_mode: str = "ragas",
     ) -> Dict[str, Any]:
-        """Evaluate generation quality (LLM-as-judge metrics).
+        """Evaluate generation quality (LLM-as-judge + optional CRAG metrics).
 
         Args:
             query: Original query.
             context: Injected RAG context.
             answer: LLM-generated answer.
+            ground_truth: Expected answer (required for CRAG scoring).
+            scoring_mode: "ragas", "crag", or "both" (D-RAG-23).
 
         Returns:
-            Dict with faithfulness and answer_relevancy scores.
+            Dict with faithfulness, answer_relevancy, and optional crag_score.
         """
         metrics: Dict[str, Any] = {"query": query}
 
-        try:
-            metrics["faithfulness"] = round(faithfulness(query, context, answer), 4)
-        except Exception:
-            pass
+        if scoring_mode in ("ragas", "both"):
+            try:
+                metrics["faithfulness"] = round(faithfulness(query, context, answer), 4)
+            except Exception:
+                pass
 
-        try:
-            metrics["answer_relevancy"] = round(answer_relevancy(query, answer), 4)
-        except Exception:
-            pass
+            try:
+                metrics["answer_relevancy"] = round(answer_relevancy(query, answer), 4)
+            except Exception:
+                pass
+
+        if scoring_mode in ("crag", "both") and ground_truth:
+            try:
+                from tools.rag.crag_evaluator import CRAGScorer
+                scorer = CRAGScorer()
+                crag_result = scorer.score_answer(answer, ground_truth)
+                metrics["crag_score"] = crag_result.get("score", 0.0)
+                metrics["crag_label"] = crag_result.get("label", "")
+            except ImportError:
+                pass
 
         return metrics
 

@@ -206,7 +206,7 @@ def _inject_cui_banner():
 def _get_platform_conn():
     """Get a connection to the platform database."""
     db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB)))
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

@@ -144,7 +144,7 @@ ACTOR_PATTERNS: list[re.Pattern] = [
 # ---------------------------------------------------------------------------
 
 def _get_connection(db_path=None):
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

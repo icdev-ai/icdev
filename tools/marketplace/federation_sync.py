@@ -64,7 +64,7 @@ IL_HIERARCHY = {"IL2": 0, "IL4": 1, "IL5": 2, "IL6": 3}
 
 def _get_db(db_path=None):
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

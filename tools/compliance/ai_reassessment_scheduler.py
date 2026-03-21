@@ -33,7 +33,7 @@ FREQUENCY_DAYS = {"quarterly": 90, "semi_annual": 182, "annual": 365, "biennial"
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

@@ -20,7 +20,6 @@ Usage:
 """
 
 import sys
-from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -59,7 +58,7 @@ class OWASPASIAssessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = get_connection()
+                conn = self._get_connection()
                 project_id = project.get("id", "")
 
                 # ASI-01: Goal Hijacking — prompt injection detection active

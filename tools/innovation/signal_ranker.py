@@ -6,14 +6,15 @@
 # POC: ICDEV System Administrator
 """Innovation Scoring Engine — score and rank innovation signals using weighted multi-dimension analysis.
 
-Scores innovation signals discovered by web_scanner.py using a 5-dimension weighted
+Scores innovation signals discovered by web_scanner.py using a 6-dimension weighted
 average (D21 deterministic scoring pattern):
 
-  1. community_demand  (0.30) — GitHub stars, SO votes, upvotes, issue frequency
-  2. impact_breadth    (0.25) — Potential number of ICDEV projects/tenants affected
-  3. feasibility       (0.20) — Can ICDEV build this with existing tools/layers?
+  1. community_demand  (0.25) — GitHub stars, SO votes, upvotes, issue frequency
+  2. impact_breadth    (0.20) — Potential number of ICDEV projects/tenants affected
+  3. feasibility       (0.15) — Can ICDEV build this with existing tools/layers?
   4. compliance_alignment (0.15) — Does it strengthen compliance posture?
   5. novelty           (0.10) — Not already addressed by existing ICDEV capabilities
+  6. technical_depth   (0.15) — How concretely does it map to ICDEV modules?
 
 Architecture:
     - Weights loaded from args/innovation_config.yaml under scoring.weights (D26 pattern)
@@ -76,11 +77,12 @@ except ImportError:
 # DEFAULT CONFIGURATION
 # =========================================================================
 DEFAULT_WEIGHTS = {
-    "community_demand": 0.30,
-    "impact_breadth": 0.25,
-    "feasibility": 0.20,
-    "compliance_alignment": 0.15,
-    "novelty": 0.10,
+    "community_demand": 0.25,      # was 0.30
+    "impact_breadth": 0.20,        # was 0.25
+    "feasibility": 0.15,           # was 0.20
+    "compliance_alignment": 0.15,  # unchanged
+    "novelty": 0.10,               # unchanged
+    "technical_depth": 0.15,       # NEW — Phase 71: concrete module mapping
 }
 
 DEFAULT_THRESHOLDS = {
@@ -121,7 +123,7 @@ def _get_db(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -293,8 +295,10 @@ def _score_impact_breadth(signal, conn):
     else:
         try:
             placeholders = ",".join("?" for _ in relevant_types)
+            # SEC: placeholders is only "?,?,?" — no user input in the SQL string
             affected = conn.execute(
-                f"SELECT COUNT(*) as cnt FROM projects WHERE status = 'active' AND type IN ({placeholders})",
+                "SELECT COUNT(*) as cnt FROM projects WHERE status = 'active'"  # nosec B608
+                f" AND type IN ({placeholders})",
                 relevant_types,
             ).fetchone()["cnt"]
         except Exception:
@@ -496,11 +500,132 @@ def _score_novelty(signal, conn):
     return max(0.0, min(1.0, novelty))
 
 
+# High-value subsystems — matching these boosts technical_depth score
+HIGH_VALUE_SUBSYSTEMS = {
+    "rag": 0.15,
+    "finetune": 0.15,
+    "compliance": 0.12,
+    "security": 0.12,
+    "knowledge_graph": 0.10,
+    "testing": 0.08,
+    "marketplace": 0.08,
+    "innovation": 0.05,
+}
+
+
+def _score_technical_depth(signal, config=None):
+    """Score technical depth — how concretely the signal maps to ICDEV modules.
+
+    Phase 71 lesson: surface-level scoring misses the key question —
+    which specific tools/modules would this enhance?
+
+    Reads tools/manifest.md to find concrete integration points.
+    Higher score = more specific, actionable integration paths.
+
+    Args:
+        signal: Dict of signal row from DB.
+        config: Loaded innovation config (optional).
+
+    Returns:
+        Float in [0.0, 1.0].
+    """
+    manifest_path = BASE_DIR / "tools" / "manifest.md"
+
+    title = (signal.get("title") or "").lower()
+    description = (signal.get("description") or "").lower()
+    signal_text = f"{title} {description}"
+
+    # Extract significant keywords from signal text
+    stop_words = {
+        "the", "and", "for", "that", "this", "with", "from", "are", "was",
+        "have", "has", "not", "but", "can", "will", "all", "been", "they",
+        "how", "use", "new", "when", "what", "who", "why", "does", "into",
+        "its", "also", "more", "just", "than", "some", "such", "these",
+    }
+    keywords = set()
+    for token in signal_text.split():
+        cleaned = token.strip(".,;:!?()[]{}\"'`-_/")
+        if len(cleaned) > 3 and cleaned not in stop_words:
+            keywords.add(cleaned)
+
+    if not keywords:
+        return 0.5  # No keywords to match — unknown depth
+
+    # Attempt to load and parse tools/manifest.md
+    if not manifest_path.exists():
+        # Fallback: keyword heuristic against known ICDEV subsystem names
+        subsystem_hits = sum(
+            1 for sub in HIGH_VALUE_SUBSYSTEMS if sub in signal_text
+        )
+        return max(0.0, min(1.0, subsystem_hits * 0.15 + 0.2))
+
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest_lines = f.readlines()
+    except OSError:
+        return 0.5  # Cannot read manifest — fallback
+
+    # Parse markdown table rows: lines containing | are table rows
+    matched_modules = []
+    matched_paths = set()
+
+    for line in manifest_lines:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        # Split columns, skip separator rows (---|---|---)
+        cols = [c.strip() for c in stripped.split("|") if c.strip()]
+        if not cols or all(set(c) <= set("-: ") for c in cols):
+            continue
+        # Each tool entry: first col is typically path/name, rest is description
+        row_text = " ".join(cols).lower()
+        # Count keyword overlaps between signal and this manifest entry
+        matches = sum(1 for kw in keywords if kw in row_text)
+        if matches >= 2:
+            matched_modules.append(row_text)
+            # Extract path prefix for layer diversity detection
+            first_col = cols[0].lower()
+            # Identify the top-level directory (tools/, args/, context/, etc.)
+            for prefix in ("tools/", "args/", "context/", "hardprompts/", "goals/"):
+                if prefix in first_col:
+                    matched_paths.add(prefix)
+                    break
+            # Also capture specific subsystem folder names from the path
+            for sub in HIGH_VALUE_SUBSYSTEMS:
+                if sub in first_col or sub in row_text:
+                    matched_paths.add(f"subsystem:{sub}")
+
+    n_matches = len(matched_modules)
+
+    if n_matches == 0:
+        return max(0.0, min(1.0, 0.1))
+
+    # Base score: saturates at ~10 matched modules = 0.6
+    base_score = min(0.6, n_matches * 0.06)
+
+    # Subsystem boost: credit for matching high-value subsystems
+    subsystem_boost = 0.0
+    for sub, boost_val in HIGH_VALUE_SUBSYSTEMS.items():
+        if any(f"subsystem:{sub}" == p for p in matched_paths):
+            subsystem_boost += boost_val
+    subsystem_boost = min(0.30, subsystem_boost)
+
+    # Layer diversity bonus: reward signals that span multiple GOTCHA layers
+    gotcha_layers_hit = sum(
+        1 for prefix in ("tools/", "args/", "context/", "hardprompts/", "goals/")
+        if prefix in matched_paths
+    )
+    layer_diversity_bonus = min(0.10, (gotcha_layers_hit - 1) * 0.05) if gotcha_layers_hit > 1 else 0.0
+
+    score = base_score + subsystem_boost + layer_diversity_bonus
+    return max(0.0, min(1.0, score))
+
+
 # =========================================================================
 # SCORING FUNCTIONS
 # =========================================================================
 def score_signal(signal_id, db_path=None):
-    """Score a single innovation signal across all 5 dimensions.
+    """Score a single innovation signal across all 6 dimensions.
 
     Reads the signal from DB, computes each dimension score, calculates
     the weighted average, updates the signal row, and returns the result.
@@ -533,6 +658,7 @@ def score_signal(signal_id, db_path=None):
             "feasibility": _score_feasibility(signal, config),
             "compliance_alignment": _score_compliance_alignment(signal, config),
             "novelty": _score_novelty(signal, conn),
+            "technical_depth": _score_technical_depth(signal, config),
         }
 
         # Weighted average (D21 deterministic pattern)
@@ -605,7 +731,7 @@ def score_signal(signal_id, db_path=None):
 def score_all_new(db_path=None):
     """Score all signals with status='new'.
 
-    Iterates through unscored signals and applies the 5-dimension scoring.
+    Iterates through unscored signals and applies the 6-dimension scoring.
     Respects max_signals_per_scan from config to prevent overload.
 
     Args:

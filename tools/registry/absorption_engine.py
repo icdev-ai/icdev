@@ -157,7 +157,7 @@ class AbsorptionEngine:
 
     def _get_conn(self):
         """Get a database connection with row factory."""
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn

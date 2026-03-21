@@ -30,7 +30,7 @@ RAG_DB_PATH = BASE_DIR / "data" / "rag" / "rag_vectors.db"
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

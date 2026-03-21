@@ -73,7 +73,7 @@ class EventRouter:
     def _ensure_tables(self):
         """Create ci_pipeline_runs table if not exists."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ci_pipeline_runs (
                     id TEXT PRIMARY KEY,
@@ -205,7 +205,7 @@ class EventRouter:
         if not session_key:
             return None
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT run_id FROM ci_pipeline_runs "
                 "WHERE session_key = ? AND status IN ('running', 'recovering') "
@@ -288,7 +288,7 @@ class EventRouter:
         max_queued = self._config.get("max_queued_events_per_session", 20)
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             # Check queue depth
             cursor = conn.execute(
                 "SELECT COUNT(*) FROM ci_event_queue "
@@ -328,7 +328,7 @@ class EventRouter:
     ):
         """Record a new pipeline run in the database."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute(
                 "INSERT INTO ci_pipeline_runs "
                 "(id, session_key, run_id, platform, workflow, status, trigger_source, event_id) "
@@ -374,7 +374,7 @@ class EventRouter:
     def update_pipeline_status(self, run_id: str, status: str):
         """Update pipeline run status (called by workflow scripts on completion)."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             completed_at = now if status in ("completed", "failed") else None
             conn.execute(
@@ -395,7 +395,7 @@ class EventRouter:
         """
         results = []
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT id, envelope_json FROM ci_event_queue "
                 "WHERE session_key = ? AND status = 'queued' "
@@ -431,7 +431,7 @@ class EventRouter:
     def _update_queue_status(self, queue_id: int, status: str):
         """Update queue entry status."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "UPDATE ci_event_queue SET status = ?, processed_at = ? "

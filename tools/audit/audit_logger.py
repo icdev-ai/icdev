@@ -115,6 +115,11 @@ VALID_EVENT_TYPES = (
     "review_board.remediation_completed", "review_board.remediation_failed",
     "review_board.escalation_created", "review_board.health_scored",
     "review_board.circuit_breaker_tripped", "review_board.report_generated",
+    # Phase 69 — OpenClaw Bridge
+    "openclaw_skill_imported", "openclaw_skill_promoted",
+    "openclaw_skill_rejected", "openclaw_skill_exported",
+    "openclaw_export_approved", "openclaw_export_rejected",
+    "openclaw_quarantine_expired",
 )
 
 

@@ -176,7 +176,7 @@ def create_link(project_id: str, source_type: str, source_id: str,
 def delete_link(project_id: str, link_id: int, db_path=None) -> bool:
     """Delete a specific link by ID. Returns True if deleted, False otherwise."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     try:
         c.execute(
@@ -346,7 +346,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
       (req -> model -> code -> test -> control)
     """
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
 
     # Total DOORS requirements for this project
@@ -521,7 +521,7 @@ def find_orphans(project_id: str, db_path=None) -> dict:
     - controls_without_evidence: NIST controls not linked to any thread element
     """
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
 
     # Requirements without model links
@@ -633,7 +633,7 @@ def find_gaps(project_id: str, db_path=None) -> dict:
     - code has test link but no control link
     """
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     gaps = []
 
@@ -767,7 +767,7 @@ def auto_link_by_name(project_id: str, db_path=None) -> dict:
     Creates links with confidence 0.7 and evidence="auto_linked_by_name_match"
     """
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     matches = []
     links_created = 0
@@ -934,7 +934,7 @@ def auto_link_to_controls(project_id: str, db_path=None) -> dict:
     Creates links with confidence 0.6 and evidence="auto_linked_by_keyword_match"
     """
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     mappings = []
     links_created = 0
@@ -1026,7 +1026,7 @@ def generate_traceability_report(project_id: str, db_path=None) -> str:
     integrity = validate_thread_integrity(project_id, db_path=path)
 
     # Collect all trace chains from requirements
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     c.execute("SELECT id, doors_id, title FROM doors_requirements WHERE project_id = ?",
               (project_id,))
@@ -1237,7 +1237,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
     - Invalid types
     """
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     c = conn.cursor()
     issues = []
 

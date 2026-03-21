@@ -113,6 +113,7 @@ def marketplace_db(tmp_path):
     """Temporary SQLite database with marketplace tables."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA foreign_keys = OFF")
     conn.executescript(MARKETPLACE_SCHEMA)
     conn.close()
     return db_path

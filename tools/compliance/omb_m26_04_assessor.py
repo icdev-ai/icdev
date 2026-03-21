@@ -59,7 +59,7 @@ class OMBM2604Assessor(BaseAssessor):
 
         try:
             if self.db_path.exists():
-                conn = get_connection()
+                conn = get_connection(db_path=str(self._db_path))
                 project_id = project.get("id", "")
 
                 # M26-DOC-1: Model cards

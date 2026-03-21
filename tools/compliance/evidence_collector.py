@@ -120,7 +120,7 @@ FRAMEWORK_EVIDENCE_MAP: Dict[str, Dict[str, Any]] = {
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Get SQLite connection with Row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

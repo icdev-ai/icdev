@@ -398,7 +398,7 @@ def translate_units(ir_data, source_language, target_language,
 def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
     """Record a translation unit result in the database."""
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
         unit_id = str(uuid.uuid4())
         c.execute(

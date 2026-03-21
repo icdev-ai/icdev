@@ -45,7 +45,7 @@ def _get_db(db_path=None) -> sqlite3.Connection:
     if get_db_connection:
         return get_db_connection(db_path or DB_PATH)
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

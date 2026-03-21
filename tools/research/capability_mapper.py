@@ -104,7 +104,7 @@ def _get_db(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 

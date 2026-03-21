@@ -34,7 +34,7 @@ KSI_SCHEMA_PATH = BASE_DIR / "context" / "compliance" / "fedramp_20x_ksi_schemas
 
 
 def _get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

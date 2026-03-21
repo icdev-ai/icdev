@@ -13,7 +13,7 @@ metrics_api = Blueprint("metrics_api", __name__, url_prefix="/api/metrics")
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

@@ -32,6 +32,7 @@ sources:
           - foundry-rs/foundry
           - crytic/slither
           - chainalysis/blockchain-compliance
+          - paperclipai/paperclip
         labels: [bug, enhancement, security, compliance]
         max_results: 100
       - type: discussions
@@ -232,11 +233,12 @@ signal_categories:
 # =========================================================================
 scoring:
   weights:
-    community_demand: 0.30    # GitHub stars, SO votes, upvotes, issue frequency
-    impact_breadth: 0.25      # Number of ICDEV tenants/projects potentially affected
-    feasibility: 0.20         # Can ICDEV build this with existing tools?
+    community_demand: 0.25    # GitHub stars, SO votes, upvotes, issue frequency
+    impact_breadth: 0.20      # Number of ICDEV tenants/projects potentially affected
+    feasibility: 0.15         # Can ICDEV build this with existing tools?
     compliance_alignment: 0.15 # Does it strengthen (not weaken) compliance posture?
     novelty: 0.10             # Not already addressed by existing ICDEV capabilities
+    technical_depth: 0.15     # Phase 71: How concretely does it map to ICDEV modules?
   thresholds:
     auto_queue: 0.80          # Score >= 0.80: auto-queue for solution generation
     suggest: 0.50             # Score 0.50-0.79: suggest to human, require approval

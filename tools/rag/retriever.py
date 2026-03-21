@@ -21,14 +21,17 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import re
 import time
 from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.rag.vector_store_factory import VectorStoreFactory
-from tools.rag.vector_store_provider import SearchResult
+from tools.rag.vector_store_factory import VectorStoreFactory  # noqa: E402
+from tools.rag.vector_store_provider import SearchResult  # noqa: E402
+
+logger = logging.getLogger("icdev.rag.retriever")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
@@ -236,6 +239,7 @@ class RAGRetriever:
         source_types: Optional[List[str]] = None,
         project_id: str = "",
         rerank: Optional[bool] = None,
+        query_label: Optional[str] = None,
     ) -> List[SearchResult]:
         """Execute full two-stage retrieval pipeline.
 
@@ -253,8 +257,14 @@ class RAGRetriever:
         vector_top_k = self._retrieval_cfg.get("vector_top_k", 50)
         final_top_k = top_k or self._retrieval_cfg.get("final_top_k", 5)
         fusion_method = self._retrieval_cfg.get("fusion_method", "rrf")
-        bm25_weight = self._retrieval_cfg.get("bm25_boost_weight", 0.3)
-        rrf_k = self._retrieval_cfg.get("rrf_k", 60)
+        # D-RAG-24: Per-label adaptive weights (Know Your RAG)
+        label_weights = self._retrieval_cfg.get("label_weights", {})
+        if query_label and query_label in label_weights:
+            bm25_weight = label_weights[query_label].get("bm25_weight", 0.3)
+            rrf_k = label_weights[query_label].get("rrf_k", 60)
+        else:
+            bm25_weight = self._retrieval_cfg.get("bm25_boost_weight", 0.3)
+            rrf_k = self._retrieval_cfg.get("rrf_k", 60)
         time_decay_enabled = self._retrieval_cfg.get("time_decay_enabled", True)
         do_rerank = rerank if rerank is not None else self._rerank_cfg.get("enabled", True)
         min_score = self._retrieval_cfg.get("min_score_threshold", 0.1)

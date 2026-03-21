@@ -223,7 +223,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -680,7 +680,7 @@ def merge_with_existing(new_pain_points, db_path=None):
                           first_seen, keywords
                    FROM creative_pain_points
                    WHERE keyword_fingerprint = ?
-                   ORDER BY rowid DESC LIMIT 1""",
+                   ORDER BY last_seen DESC LIMIT 1""",
                 (fingerprint,),
             ).fetchone()
 
@@ -971,11 +971,11 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
             SELECT cp.*
             FROM creative_pain_points cp
             INNER JOIN (
-                SELECT keyword_fingerprint, MAX(rowid) as max_rowid
+                SELECT keyword_fingerprint, MAX(last_seen) as max_last_seen
                 FROM creative_pain_points
                 GROUP BY keyword_fingerprint
             ) latest ON cp.keyword_fingerprint = latest.keyword_fingerprint
-                     AND cp.rowid = latest.max_rowid
+                     AND cp.last_seen = latest.max_last_seen
         """
         conditions = []
         params = []

@@ -58,7 +58,7 @@ class ChildRegistry:
                 f"Database not found: {self.db_path}\n"
                 "Run: python tools/db/init_icdev_db.py"
             )
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         return conn
 
     def _generate_id(self, prefix: str = "child") -> str:

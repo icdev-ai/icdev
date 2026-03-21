@@ -39,7 +39,7 @@ govcon_api = Blueprint("govcon_api", __name__, url_prefix="/api/govcon")
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

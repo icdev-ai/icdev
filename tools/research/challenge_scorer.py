@@ -195,7 +195,7 @@ def _get_db(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -652,7 +652,7 @@ def cluster_signals(session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM research_signals WHERE session_id = ? ORDER BY rowid ASC",
+            "SELECT * FROM research_signals WHERE session_id = ? ORDER BY discovered_at ASC",
             (session_id,),
         ).fetchall()
 
@@ -950,14 +950,14 @@ def score_all_new(session_id=None, db_path=None):
             rows = conn.execute(
                 """SELECT * FROM research_challenges
                    WHERE status = 'new' AND session_id = ?
-                   ORDER BY rowid ASC""",
+                   ORDER BY last_seen ASC""",
                 (session_id,),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM research_challenges
                    WHERE status = 'new'
-                   ORDER BY rowid ASC"""
+                   ORDER BY last_seen ASC"""
             ).fetchall()
     finally:
         conn.close()
@@ -1048,7 +1048,7 @@ def get_top_challenges(session_id, limit=20, db_path=None):
             """SELECT * FROM research_challenges
                WHERE session_id = ?
                AND composite_score IS NOT NULL
-               ORDER BY rowid ASC""",
+               ORDER BY last_seen ASC""",
             (session_id,),
         ).fetchall()
 
@@ -1107,7 +1107,7 @@ def list_challenges(session_id, db_path=None):
         rows = conn.execute(
             """SELECT * FROM research_challenges
                WHERE session_id = ?
-               ORDER BY composite_score DESC NULLS LAST, rowid ASC""",
+               ORDER BY CASE WHEN composite_score IS NULL THEN 1 ELSE 0 END, composite_score DESC, last_seen ASC""",
             (session_id,),
         ).fetchall()
 
@@ -1172,7 +1172,7 @@ def _print_human(args, result):
                     print(f"  {i:3d}  {ch['category']:>14s}  "
                           f"{ch['signal_count']:7d}  {ch['title'][:40]}")
         else:
-            print(f"\n  No signals to cluster.")
+            print("\n  No signals to cluster.")
 
     elif args.score_one:
         print(f"\n  Challenge: {result.get('challenge_id', '')}")
@@ -1225,7 +1225,7 @@ def _print_human(args, result):
                     print(f"       {dim_str}")
                 print()
         else:
-            print(f"\n  No results.")
+            print("\n  No results.")
 
     elif args.challenges:
         if isinstance(result, list):
@@ -1244,7 +1244,7 @@ def _print_human(args, result):
                       f"{ch.get('category', ''):>14s}  "
                       f"{ch.get('title', '')[:40]}")
         else:
-            print(f"\n  No challenges found.")
+            print("\n  No challenges found.")
 
     print()
     print("=" * 70)

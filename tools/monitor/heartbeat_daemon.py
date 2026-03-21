@@ -61,7 +61,7 @@ def _generate_id() -> str:
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
     """Open a SQLite connection with WAL mode and row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
     except sqlite3.OperationalError:

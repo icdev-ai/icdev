@@ -71,7 +71,7 @@ class FileVersioner:
         self._initialized = False
 
     def _get_db(self):
-        conn = get_connection()
+        conn = get_connection(db_path=str(self._db_path))
         if not self._initialized:
             _ensure_versions_table(conn)
             self._initialized = True

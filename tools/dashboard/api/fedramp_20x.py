@@ -22,7 +22,7 @@ fedramp_20x_api = Blueprint("fedramp_20x_api", __name__, url_prefix="/api/fedram
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

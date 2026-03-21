@@ -328,7 +328,7 @@ class SQLiteTracer(Tracer):
         params.append(limit)
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             rows = conn.execute(
                 f"SELECT * FROM otel_spans WHERE {where} ORDER BY start_time DESC LIMIT ?",
                 params,

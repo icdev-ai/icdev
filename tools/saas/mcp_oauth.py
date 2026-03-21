@@ -114,7 +114,7 @@ class MCPOAuthVerifier:
             if not Path(self.db_path).exists():
                 return {"verified": False, "error": "Platform database not found"}
 
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
 
             row = conn.execute(
                 "SELECT ak.*, u.email, u.role FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE ak.key_hash = ? AND ak.is_active = 1",

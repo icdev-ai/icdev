@@ -36,8 +36,11 @@ Categories:
     testing (6)
     installer (4)
     misc (8)
+    llmops (10)
+    agent_topology (3)
+    sre (8)
 
-Total: 230 tools, 6 resources
+Total: 251 tools, 6 resources
 """
 
 
@@ -1039,6 +1042,51 @@ TOOL_REGISTRY = {
         "handler": "handle_asset_scan",
         "description": "Run 7-gate security scanning pipeline on a marketplace asset",
         "input_schema": {"type": "object", "properties": {"asset_id": {"type": "string"}, "version_id": {"type": "string"}, "asset_path": {"type": "string"}, "gates": {"type": "string", "description": "Comma-separated gate names"}, "classification": {"type": "string"}}, "required": ["asset_id", "version_id", "asset_path"]},
+    },
+    # ============================================================
+    # OPENCLAW BRIDGE (6 tools)
+    # ============================================================
+    "openclaw_import": {
+        "category": "marketplace",
+        "module": "tools.mcp.marketplace_server",
+        "handler": "handle_openclaw_import",
+        "description": "Import an OpenClaw skill into quarantine with 10-gate zero-trust security scanning",
+        "input_schema": {"type": "object", "properties": {"source_path": {"type": "string", "description": "Path to OpenClaw skill directory"}, "tenant_id": {"type": "string"}, "imported_by": {"type": "string"}, "clawhub_url": {"type": "string", "description": "ClawHub URL for provenance"}}, "required": ["source_path", "tenant_id", "imported_by"]},
+    },
+    "openclaw_promote": {
+        "category": "marketplace",
+        "module": "tools.mcp.marketplace_server",
+        "handler": "handle_openclaw_promote",
+        "description": "Promote a quarantined OpenClaw import to the ICDEV marketplace (requires passed gates + review)",
+        "input_schema": {"type": "object", "properties": {"import_id": {"type": "string"}, "promoted_by": {"type": "string"}}, "required": ["import_id", "promoted_by"]},
+    },
+    "openclaw_reject": {
+        "category": "marketplace",
+        "module": "tools.mcp.marketplace_server",
+        "handler": "handle_openclaw_reject",
+        "description": "Reject a quarantined OpenClaw import with reason",
+        "input_schema": {"type": "object", "properties": {"import_id": {"type": "string"}, "rejected_by": {"type": "string"}, "reason": {"type": "string"}}, "required": ["import_id", "rejected_by", "reason"]},
+    },
+    "openclaw_export": {
+        "category": "marketplace",
+        "module": "tools.mcp.marketplace_server",
+        "handler": "handle_openclaw_export",
+        "description": "Export an ICDEV skill to OpenClaw format (strips CUI, requires human approval)",
+        "input_schema": {"type": "object", "properties": {"asset_id": {"type": "string"}, "version_id": {"type": "string"}, "output_path": {"type": "string"}, "exported_by": {"type": "string"}}, "required": ["asset_id", "version_id", "output_path", "exported_by"]},
+    },
+    "openclaw_list_quarantine": {
+        "category": "marketplace",
+        "module": "tools.mcp.marketplace_server",
+        "handler": "handle_openclaw_list_quarantine",
+        "description": "List quarantined OpenClaw skill imports",
+        "input_schema": {"type": "object", "properties": {"status": {"type": "string", "description": "Filter by status"}}},
+    },
+    "openclaw_list_exports": {
+        "category": "marketplace",
+        "module": "tools.mcp.marketplace_server",
+        "handler": "handle_openclaw_list_exports",
+        "description": "List OpenClaw skill export records",
+        "input_schema": {"type": "object", "properties": {"status": {"type": "string", "description": "Filter by status"}}},
     },
     # ============================================================
     # DEVSECOPS (12 tools)
@@ -2224,6 +2272,225 @@ TOOL_REGISTRY = {
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     # ============================================================
+    # RAG EVALUATION (Phase 71 — D-RAG-23, D-RAG-24, D-KARL-9)
+    # ============================================================
+    "crag_benchmark_run": {
+        "category": "rag",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_crag_benchmark_run",
+        "description": "Run a CRAG benchmark evaluation campaign with 8 question types and hallucination-penalizing scoring (D-RAG-23).",
+        "input_schema": {"type": "object", "properties": {"test_set_path": {"type": "string", "description": "Path to CRAG test set JSON"}, "task_type": {"type": "string", "description": "T1, T2, or T3"}, "campaign_name": {"type": "string"}}, "required": []},
+    },
+    "query_classify": {
+        "category": "rag",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_query_classify",
+        "description": "Classify a RAG query into 4-label taxonomy: fact_single, summary, reasoning, unanswerable (D-RAG-24).",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "Query to classify"}, "context": {"type": "string", "description": "Optional context passage"}}, "required": ["query"]},
+    },
+    "sandbox_execute": {
+        "category": "security",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_sandbox_execute",
+        "description": "Execute code in a sandboxed Docker container with resource limits and network isolation (D-SEC-10).",
+        "input_schema": {"type": "object", "properties": {"code": {"type": "string", "description": "Code to execute"}, "language": {"type": "string", "description": "Programming language (python, javascript, java, go)"}, "timeout_seconds": {"type": "integer"}, "network_enabled": {"type": "boolean", "default": False}}, "required": ["code", "language"]},
+    },
+    "quality_feedback_run": {
+        "category": "rag",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_quality_feedback_run",
+        "description": "Run quality feedback loop: check RAG quality, generate targeted training pairs, trigger retrain if needed (D-KARL-9).",
+        "input_schema": {"type": "object", "properties": {"dry_run": {"type": "boolean", "default": False}}, "required": []},
+    },
+    # ============================================================
+    # KNOWLEDGE GRAPH (D-KARL-1 through D-KARL-8)
+    # ============================================================
+    "kg_search": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_search",
+        "description": "Search the ICDEV Knowledge Graph using GraphRAG with scoring profiles (compliance, exploratory, provenance, security).",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "Natural language search query"}, "profile": {"type": "string", "description": "Scoring profile (compliance/exploratory/provenance/security). Auto-detected if omitted."}, "project_id": {"type": "string"}, "top_k": {"type": "integer", "default": 10}}, "required": ["query"]},
+    },
+    "kg_enrich": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_enrich",
+        "description": "Compute centrality scores and/or entity embeddings for a knowledge graph (D-KARL-7).",
+        "input_schema": {"type": "object", "properties": {"graph_id": {"type": "string", "description": "Knowledge graph ID to enrich"}, "centrality": {"type": "boolean", "default": True}, "embeddings": {"type": "boolean", "default": False}}, "required": ["graph_id"]},
+    },
+    "kg_generate_ft_pairs": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_generate_ft_pairs",
+        "description": "Generate fine-tuning training pairs from knowledge graph structures (D-KARL-6). Uses entity-relationship, community cluster, and compliance crosswalk strategies.",
+        "input_schema": {"type": "object", "properties": {"graph_id": {"type": "string", "description": "Knowledge graph ID"}, "dataset_id": {"type": "string", "description": "Target FT dataset ID"}, "strategy": {"type": "string", "description": "Strategy: entity_relationship, community_cluster, compliance_crosswalk"}}, "required": ["graph_id"]},
+    },
+    "kg_compliance_build": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_compliance_build",
+        "description": "Build the compliance crosswalk knowledge graph with NIST/FedRAMP/CMMC controls as nodes and crosswalk edges.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    "kg_compliance_crosswalk": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_compliance_crosswalk",
+        "description": "Look up crosswalk mappings for a specific control (e.g., AC-2) to a target framework (fedramp, cmmc).",
+        "input_schema": {"type": "object", "properties": {"control_id": {"type": "string", "description": "Source control identifier (e.g., AC-2)"}, "target": {"type": "string", "description": "Target framework: fedramp, cmmc, nist"}}, "required": ["control_id", "target"]},
+    },
+    "kg_compliance_coverage": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_compliance_coverage",
+        "description": "Compute coverage statistics for a compliance framework in the crosswalk graph.",
+        "input_schema": {"type": "object", "properties": {"framework": {"type": "string", "description": "Framework to check coverage for: fedramp, cmmc, nist"}}, "required": ["framework"]},
+    },
+    # --- Disambiguator ---
+    "kg_find_duplicates": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_find_duplicates",
+        "description": "Find duplicate entities in the knowledge graph based on label similarity and embedding distance.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    "kg_merge_entities": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_merge_entities",
+        "description": "Merge two duplicate entities, combining edges and metadata into the target node.",
+        "input_schema": {"type": "object", "properties": {"source_id": {"type": "string", "description": "Node ID to merge from (will be removed)"}, "target_id": {"type": "string", "description": "Node ID to merge into (will be kept)"}}, "required": ["source_id", "target_id"]},
+    },
+    "kg_add_alias": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_add_alias",
+        "description": "Add an alias label to a knowledge graph node for improved search recall.",
+        "input_schema": {"type": "object", "properties": {"node_id": {"type": "string", "description": "Node ID to add alias to"}, "alias": {"type": "string", "description": "Alias label to add"}}, "required": ["node_id", "alias"]},
+    },
+    "kg_resolve_ambiguous": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_resolve_ambiguous",
+        "description": "Resolve an ambiguous label to a specific node using context (e.g., resolve 'AC-2' in 'compliance' context).",
+        "input_schema": {"type": "object", "properties": {"label": {"type": "string", "description": "Ambiguous label to resolve"}, "context": {"type": "string", "description": "Context hint for disambiguation (e.g., compliance, security)"}}, "required": ["label"]},
+    },
+    # --- Federation ---
+    "kg_federated_search": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_federated_search",
+        "description": "Search across knowledge graphs from multiple projects with merged results.",
+        "input_schema": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query"}, "projects": {"type": "array", "items": {"type": "string"}, "description": "Optional list of project IDs to search (all if omitted)"}}, "required": ["query"]},
+    },
+    "kg_shared_entities": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_shared_entities",
+        "description": "Find entities shared between two projects' knowledge graphs.",
+        "input_schema": {"type": "object", "properties": {"project_a": {"type": "string", "description": "First project ID"}, "project_b": {"type": "string", "description": "Second project ID"}}, "required": ["project_a", "project_b"]},
+    },
+    "kg_create_view": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_create_view",
+        "description": "Create a federated view combining knowledge graphs from multiple projects.",
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string", "description": "View name"}, "projects": {"type": "array", "items": {"type": "string"}, "description": "List of project IDs to include"}}, "required": ["name", "projects"]},
+    },
+    "kg_cross_project_coverage": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_cross_project_coverage",
+        "description": "Compute cross-project coverage statistics for a compliance framework across all federated graphs.",
+        "input_schema": {"type": "object", "properties": {"framework": {"type": "string", "description": "Framework to check coverage for: fedramp, cmmc, nist"}}, "required": ["framework"]},
+    },
+    # --- Temporal ---
+    "kg_time_range": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_time_range",
+        "description": "Query knowledge graph nodes and edges created or modified within a time range.",
+        "input_schema": {"type": "object", "properties": {"start": {"type": "string", "description": "Start date (ISO 8601)"}, "end": {"type": "string", "description": "End date (ISO 8601)"}}, "required": ["start", "end"]},
+    },
+    "kg_graph_evolution": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_graph_evolution",
+        "description": "Show how a knowledge graph evolved over time — node/edge counts per interval.",
+        "input_schema": {"type": "object", "properties": {"graph_id": {"type": "string", "description": "Knowledge graph ID"}, "interval": {"type": "string", "description": "Time interval: hour, day, week, month", "default": "day"}}, "required": ["graph_id"]},
+    },
+    "kg_recent_changes": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_recent_changes",
+        "description": "List recently created or modified nodes and edges in the knowledge graph.",
+        "input_schema": {"type": "object", "properties": {"days": {"type": "integer", "description": "Number of days to look back", "default": 7}}, "required": []},
+    },
+    "kg_stale_entities": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_stale_entities",
+        "description": "Find knowledge graph entities that have not been updated within a staleness threshold.",
+        "input_schema": {"type": "object", "properties": {"stale_days": {"type": "integer", "description": "Number of days without update to consider stale", "default": 90}}, "required": []},
+    },
+    "kg_temporal_diff": {
+        "category": "knowledge_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_kg_temporal_diff",
+        "description": "Compute the diff between two snapshots of a knowledge graph at different dates.",
+        "input_schema": {"type": "object", "properties": {"graph_id": {"type": "string", "description": "Knowledge graph ID"}, "date_a": {"type": "string", "description": "First snapshot date (ISO 8601)"}, "date_b": {"type": "string", "description": "Second snapshot date (ISO 8601)"}}, "required": ["graph_id", "date_a", "date_b"]},
+    },
+    "ft_pipeline_run": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_pipeline_run",
+        "description": "Run automated RAG-to-FT pipeline: detect new chunks, generate pairs, auto-approve, trigger retrain (D-KARL-5).",
+        "input_schema": {"type": "object", "properties": {"source_type": {"type": "string", "description": "Specific source type to process (optional)"}, "dry_run": {"type": "boolean", "default": False}}, "required": []},
+    },
+    "ft_quality_check": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_quality_check",
+        "description": "Check RAG quality metrics against thresholds and recommend retraining if degraded (D-KARL-8).",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    "ft_hp_create": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_hp_create",
+        "description": "Create a new hyperparameter search over LoRA params (grid or random) for a fine-tuning dataset.",
+        "input_schema": {"type": "object", "properties": {"dataset_id": {"type": "string", "description": "Dataset ID to search over"}, "method": {"type": "string", "description": "Search method: grid or random", "default": "grid"}, "max_trials": {"type": "integer", "default": 9}}, "required": ["dataset_id"]},
+    },
+    "ft_hp_run_next": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_hp_run_next",
+        "description": "Launch the next pending trial in a hyperparameter search.",
+        "input_schema": {"type": "object", "properties": {"search_id": {"type": "string", "description": "HP search ID"}}, "required": ["search_id"]},
+    },
+    "ft_hp_record": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_hp_record",
+        "description": "Record evaluation results for a completed HP search trial.",
+        "input_schema": {"type": "object", "properties": {"trial_id": {"type": "string", "description": "Trial ID"}, "score": {"type": "number", "description": "Evaluation score (0-1)"}}, "required": ["trial_id", "score"]},
+    },
+    "ft_hp_status": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_hp_status",
+        "description": "Get status and progress of a hyperparameter search.",
+        "input_schema": {"type": "object", "properties": {"search_id": {"type": "string", "description": "HP search ID"}}, "required": ["search_id"]},
+    },
+    "ft_hp_list": {
+        "category": "finetune",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ft_hp_list",
+        "description": "List all hyperparameter searches with summary stats.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    # ============================================================
     # AUTORESEARCH (6 tools — Phase 67, D-AR-1 through D-AR-10)
     # ============================================================
     "autoresearch_create": {
@@ -2296,6 +2563,162 @@ TOOL_REGISTRY = {
         "handler": "handle_autoresearch_health",
         "description": "Health check for autoresearch subsystem.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    # ============================================================
+    # LLM OPS (4 tools — Phase 70, AIOps/LLMOps Ecosystem Adaptation)
+    # ============================================================
+    "llm_gateway_stats": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_llm_gateway_stats",
+        "description": "Get LLM Gateway statistics: injection attempts blocked, PII scrubs, rate-limit hits, and audit trail entries.",
+        "input_schema": {"type": "object", "properties": {"format": {"type": "string", "enum": ["json", "table"], "default": "json"}}},
+    },
+    "llm_gateway_check": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_llm_gateway_check",
+        "description": "Run pre-invoke checks on a prompt: injection detection, PII scan, length validation.",
+        "input_schema": {"type": "object", "properties": {"text": {"type": "string", "description": "Prompt text to check"}}, "required": ["text"]},
+    },
+    "prompt_registry_list": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_prompt_registry_list",
+        "description": "List all registered prompt templates with version, status, and A/B test state.",
+        "input_schema": {"type": "object", "properties": {"function_filter": {"type": "string", "description": "Filter by LLM function name"}}},
+    },
+    "prompt_registry_register": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_prompt_registry_register",
+        "description": "Register a new prompt template version with content hash and audit trail.",
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt template name"}, "template": {"type": "string", "description": "Prompt template content"}, "function": {"type": "string", "description": "LLM function this prompt serves"}}, "required": ["name", "template", "function"]},
+    },
+    "prompt_registry_activate": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_prompt_registry_activate",
+        "description": "Activate a specific version of a prompt template for production use.",
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string", "description": "Prompt template name"}, "version": {"type": "integer", "description": "Version number to activate"}}, "required": ["name", "version"]},
+    },
+    "cost_intelligence_dashboard": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cost_intelligence_dashboard",
+        "description": "LLM spend dashboard: per-agent costs, per-model breakdown, budget utilization, and anomaly flags.",
+        "input_schema": {"type": "object", "properties": {"agent": {"type": "string", "description": "Filter by agent name"}, "days": {"type": "integer", "description": "Lookback window in days", "default": 30}}},
+    },
+    "cost_intelligence_anomalies": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cost_intelligence_anomalies",
+        "description": "Detect spend anomalies using z-score analysis on token usage patterns.",
+        "input_schema": {"type": "object", "properties": {"threshold": {"type": "number", "description": "Z-score threshold for anomaly detection", "default": 2.0}}},
+    },
+    "cost_intelligence_recommend": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_cost_intelligence_recommend",
+        "description": "Generate cost optimization recommendations: edge-vs-cloud routing, model downsizing, caching opportunities.",
+        "input_schema": {"type": "object", "properties": {"function": {"type": "string", "description": "Specific LLM function to analyze"}}},
+    },
+    "model_monitor_health": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_model_monitor_health",
+        "description": "Model health dashboard: quality scores, latency percentiles, token usage trends per model.",
+        "input_schema": {"type": "object", "properties": {"model": {"type": "string", "description": "Filter by model name"}, "days": {"type": "integer", "description": "Lookback window in days", "default": 7}}},
+    },
+    "model_monitor_drift": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_model_monitor_drift",
+        "description": "Run statistical drift detection (Welch's t-test) on model quality and latency metrics.",
+        "input_schema": {"type": "object", "properties": {"model": {"type": "string", "description": "Model to check for drift"}, "significance": {"type": "number", "description": "P-value threshold", "default": 0.05}}, "required": ["model"]},
+    },
+    # ============================================================
+    # AGENT TOPOLOGY (3 tools — Phase 70, AIOps/LLMOps Ecosystem Adaptation)
+    # ============================================================
+    "topology_build": {
+        "category": "agent_topology",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_topology_build",
+        "description": "Build agent dependency graph: agents → functions → models → providers with edge metadata.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "topology_spof": {
+        "category": "agent_topology",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_topology_spof",
+        "description": "Detect single points of failure in the agent topology graph.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "topology_airgap": {
+        "category": "agent_topology",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_topology_airgap",
+        "description": "Analyze which functions can operate in air-gapped environments without cloud providers.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    # ============================================================
+    # SRE (6 tools — Phase 70, AIOps/LLMOps Ecosystem Adaptation)
+    # ============================================================
+    "slo_define": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_slo_define",
+        "description": "Define or update a service-level objective with target, threshold, and measurement source.",
+        "input_schema": {"type": "object", "properties": {"service": {"type": "string", "description": "Service name"}, "slo_type": {"type": "string", "description": "SLO type", "enum": ["availability", "latency_p95", "latency_p99", "error_rate", "throughput"]}, "target": {"type": "number", "description": "Target value (e.g., 99.9 for availability)"}, "window_days": {"type": "integer", "description": "Measurement window in days", "default": 30}}, "required": ["service", "slo_type", "target"]},
+    },
+    "slo_measure": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_slo_measure",
+        "description": "Record an SLO measurement and calculate current burn rate against error budget.",
+        "input_schema": {"type": "object", "properties": {"slo_id": {"type": "string", "description": "SLO identifier"}, "value": {"type": "number", "description": "Measured value"}, "source": {"type": "string", "description": "Measurement source", "enum": ["prometheus", "manual", "synthetic"], "default": "manual"}}, "required": ["slo_id", "value"]},
+    },
+    "slo_dashboard": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_slo_dashboard",
+        "description": "SLO dashboard: all objectives with current status, burn rate, and remaining error budget.",
+        "input_schema": {"type": "object", "properties": {"service": {"type": "string", "description": "Filter by service name"}}},
+    },
+    "runbook_register": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_runbook_register",
+        "description": "Register an automated runbook with alert pattern matching and risk-tiered execution policy.",
+        "input_schema": {"type": "object", "properties": {"name": {"type": "string", "description": "Runbook name"}, "alert_pattern": {"type": "string", "description": "Regex pattern to match alert messages"}, "risk_tier": {"type": "string", "description": "Execution risk tier", "enum": ["green", "yellow", "orange", "red"], "default": "yellow"}, "command": {"type": "string", "description": "Command or script to execute"}}, "required": ["name", "alert_pattern", "command"]},
+    },
+    "runbook_execute": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_runbook_execute",
+        "description": "Execute a runbook against an alert, respecting risk tier and recording full audit trail.",
+        "input_schema": {"type": "object", "properties": {"runbook_id": {"type": "string", "description": "Runbook identifier"}, "alert_message": {"type": "string", "description": "Alert message that triggered execution"}, "dry_run": {"type": "boolean", "description": "If true, validate without executing", "default": false}}, "required": ["runbook_id"]},
+    },
+    "incident_create": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_incident_create",
+        "description": "Create a new incident with severity, auto-triage, and escalation timeline.",
+        "input_schema": {"type": "object", "properties": {"title": {"type": "string", "description": "Incident title"}, "severity": {"type": "string", "description": "Severity level", "enum": ["sev1", "sev2", "sev3", "sev4"]}, "description": {"type": "string", "description": "Incident description"}, "service": {"type": "string", "description": "Affected service"}}, "required": ["title", "severity"]},
+    },
+    "incident_update": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_incident_update",
+        "description": "Update incident status, add timeline events, record resolution, or generate postmortem.",
+        "input_schema": {"type": "object", "properties": {"incident_id": {"type": "string", "description": "Incident identifier"}, "status": {"type": "string", "description": "New status", "enum": ["detected", "triaging", "mitigating", "resolved", "postmortem", "closed"]}, "note": {"type": "string", "description": "Timeline note"}}, "required": ["incident_id", "status"]},
+    },
+    "incident_dashboard": {
+        "category": "sre",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_incident_dashboard",
+        "description": "Incident dashboard: open incidents, MTTR statistics, escalation status, and postmortem backlog.",
+        "input_schema": {"type": "object", "properties": {"status_filter": {"type": "string", "description": "Filter by incident status"}, "days": {"type": "integer", "description": "Lookback window in days", "default": 30}}},
     },
 }
 

@@ -73,7 +73,7 @@ def decrypt_key(ciphertext: str) -> str:
 
 
 def _get_db():
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

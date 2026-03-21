@@ -60,7 +60,7 @@ class ConversationManager:
     def _ensure_tables(self):
         """Create conversation tables if not exist."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ci_conversations (
                     id TEXT PRIMARY KEY,
@@ -124,7 +124,7 @@ class ConversationManager:
         session_id = str(uuid.uuid4())[:12]
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute(
                 "INSERT INTO ci_conversations "
                 "(id, session_key, run_id, platform, issue_number, "
@@ -149,7 +149,7 @@ class ConversationManager:
     def get_active_session(self, session_key: str) -> Optional[dict]:
         """Get active conversation session for a session key."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT id, session_key, run_id, platform, issue_number, "
                 "status, total_turns, last_agent_action "
@@ -248,7 +248,7 @@ class ConversationManager:
     def get_session_context(self, session_id: str, max_turns: int = 10) -> dict:
         """Get recent conversation context for agent prompt building."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT turn_number, role, content, content_type, action_taken "
                 "FROM ci_conversation_turns "
@@ -281,7 +281,7 @@ class ConversationManager:
     def close_session(self, session_id: str, reason: str = "completed") -> dict:
         """Close a conversation session."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "UPDATE ci_conversations SET status = ?, updated_at = ? "
@@ -396,7 +396,7 @@ class ConversationManager:
     def _is_duplicate(self, session_id: str, comment_id: str) -> bool:
         """Check if comment_id already processed (dedup)."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT id FROM ci_conversation_turns "
                 "WHERE session_id = ? AND comment_id = ?",
@@ -411,7 +411,7 @@ class ConversationManager:
     def _next_turn_number(self, session_id: str) -> int:
         """Get next turn number for a session."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT MAX(turn_number) FROM ci_conversation_turns "
                 "WHERE session_id = ?",
@@ -430,7 +430,7 @@ class ConversationManager:
     ):
         """Log a conversation turn (append-only)."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute(
                 "INSERT INTO ci_conversation_turns "
                 "(session_id, turn_number, role, content, content_type, "
@@ -448,7 +448,7 @@ class ConversationManager:
         """Update session metadata."""
         try:
             now = datetime.now(timezone.utc).isoformat()
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             conn.execute(
                 "UPDATE ci_conversations SET total_turns = ?, "
                 "last_agent_action = ?, updated_at = ? WHERE id = ?",
@@ -462,7 +462,7 @@ class ConversationManager:
     def _get_session(self, session_id: str) -> Optional[dict]:
         """Get session by ID."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT id, session_key, run_id, platform, issue_number, status "
                 "FROM ci_conversations WHERE id = ?",

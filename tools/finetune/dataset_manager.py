@@ -34,7 +34,7 @@ VALID_STATUSES = ("draft", "labeling", "ready", "archived")
 
 
 def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

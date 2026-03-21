@@ -81,7 +81,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(str(path)).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -674,10 +674,20 @@ def run_discovery(domain=None, db_path=None):
     Returns discovery summary.
     """
     config = _load_config()
-    domain_config = config.get("domain", {})
     discovery_config = config.get("competitor_discovery", {})
 
-    if not domain:
+    # Resolve domain config: check primary 'domain' key, then secondary sections
+    domain_config = config.get("domain", {})
+    if domain:
+        # If --domain was passed, try to find matching config section
+        primary_name = domain_config.get("name", "")
+        if primary_name and domain.lower() != primary_name.lower():
+            # Check secondary domain sections (e.g., 'blockchain', 'knowledge_graph')
+            for key, val in config.items():
+                if isinstance(val, dict) and val.get("name", "").lower() == domain.lower():
+                    domain_config = val
+                    break
+    else:
         domain = domain_config.get("name", "")
     if not domain:
         return {"error": "No domain specified. Use --domain or set domain.name in config."}
@@ -732,8 +742,17 @@ def run_discovery(domain=None, db_path=None):
             errors.append(f"trustradius: {exc}")
 
     if not all_competitors and not errors:
-        return {"error": "No category URLs configured. Set g2_category_url, "
-                         "capterra_category_url, or trustradius_category_url in config."}
+        # Collect available domains for a helpful error message
+        available_domains = []
+        for key, val in config.items():
+            if isinstance(val, dict) and val.get("name"):
+                has_url = any(val.get(u) for u in ("g2_category_url", "capterra_category_url", "trustradius_category_url"))
+                if has_url:
+                    available_domains.append(val["name"])
+        hint = f" Available domains with URLs: {', '.join(available_domains)}" if available_domains else ""
+        return {"error": f"No category URLs configured for domain '{domain}'. "
+                         f"Set g2_category_url, capterra_category_url, or "
+                         f"trustradius_category_url in the domain config.{hint}"}
 
     # Filter by min review count
     filtered = []

@@ -14,6 +14,7 @@ entering the build pipeline.
 Pipeline Stages:
     1. Classify Signal     — Map to signal_categories from innovation_config.yaml
     2. GOTCHA Fit Check    — Signal must map to at least one GOTCHA layer
+    2.5 Module Impact      — Map to specific ICDEV tools/files (Phase 71 enhancement)
     3. Boundary Impact     — Estimate ATO boundary impact (GREEN/YELLOW/ORANGE/RED)
     4. Compliance Pre-Check — Detect compliance-weakening anti-patterns
     5. Duplicate/License   — Content-hash dedup + blocked license detection
@@ -152,7 +153,7 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not Path(path).exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -348,12 +349,158 @@ def _stage_gotcha_fit(signal, config):
     # Pick the best-matching layer (most keyword hits)
     best_layer = None
     if matched_layers:
-        best_layer = max(matched_layers, key=lambda l: layer_scores.get(l, 0))
+        best_layer = max(matched_layers, key=lambda layer: layer_scores.get(layer, 0))
 
     return "pass", {
         "matched_layers": matched_layers,
         "best_layer": best_layer,
         "layer_scores": layer_scores,
+    }
+
+
+# =========================================================================
+# STAGE 2.5: MODULE-LEVEL IMPACT MAPPING (Phase 71 enhancement)
+# =========================================================================
+def _map_module_impact(signal, conn, config):
+    """Map signal to specific ICDEV modules that would be enhanced (Phase 71 lesson).
+
+    Goes beyond GOTCHA layer matching to identify exact tools/files that
+    would benefit from this signal's integration.
+
+    Args:
+        signal: Dict with title and description.
+        conn: DB connection (for checking active solutions).
+        config: Innovation config.
+
+    Returns:
+        Dict with:
+          - matched_modules: List of {file, tool_name, description, subsystem, relevance_score}
+          - estimated_new_files: int (how many new files likely needed)
+          - estimated_modified_files: int (how many existing files to modify)
+          - subsystems_affected: List of unique subsystems
+          - parallel_safe: bool (no overlap with in-progress solutions)
+          - conflict_solutions: List of solution IDs with overlapping modules
+    """
+    manifest_path = BASE_DIR / "tools" / "manifest.md"
+
+    # Parse manifest entries: look for markdown table rows with file paths
+    tool_entries = []
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    # Match table rows that contain a tools/ path
+                    if not line.startswith("|"):
+                        continue
+                    cols = [c.strip() for c in line.split("|") if c.strip()]
+                    if len(cols) < 2:
+                        continue
+                    # Find the column that looks like a file path
+                    file_col = None
+                    for col in cols:
+                        if col.startswith("tools/") and col.endswith(".py"):
+                            file_col = col
+                            break
+                    if file_col is None:
+                        continue
+                    # Use remaining cols as name + description
+                    other_cols = [c for c in cols if c != file_col]
+                    tool_name = other_cols[0] if other_cols else Path(file_col).stem
+                    description = " ".join(other_cols[1:]) if len(other_cols) > 1 else ""
+                    # Derive subsystem from path: tools/<subsystem>/...
+                    parts = Path(file_col).parts
+                    subsystem = parts[1] if len(parts) >= 3 else "other"
+                    tool_entries.append({
+                        "file": file_col,
+                        "tool_name": tool_name,
+                        "description": description,
+                        "subsystem": subsystem,
+                    })
+        except Exception:
+            pass  # Manifest unreadable — graceful degradation
+
+    # Extract keywords from signal title + description
+    text = f"{signal.get('title', '')} {signal.get('description', '')}".lower()
+    # Split into tokens, filter short/stop words
+    _stop = {"the", "a", "an", "and", "or", "in", "of", "to", "for", "is",
+             "are", "be", "with", "that", "this", "it", "on", "at", "by",
+             "from", "as", "its", "will", "can", "into", "new", "add",
+             "create", "implement", "update", "improve", "enhance", "support"}
+    tokens = [
+        w for w in re.findall(r"\b[a-z][a-z0-9_]{2,}\b", text)
+        if w not in _stop
+    ]
+    keywords = list(dict.fromkeys(tokens))  # deduplicate, preserve order
+
+    # Score each tool entry against keywords
+    matched_modules = []
+    for entry in tool_entries:
+        haystack = f"{entry['tool_name']} {entry['description']}".lower()
+        hits = sum(1 for kw in keywords if kw in haystack)
+        if hits == 0:
+            continue
+        # Relevance score: hits / total unique keywords (0..1)
+        relevance = round(hits / max(len(keywords), 1), 4)
+        if relevance >= 0.3:
+            matched_modules.append({
+                "file": entry["file"],
+                "tool_name": entry["tool_name"],
+                "description": entry["description"],
+                "subsystem": entry["subsystem"],
+                "relevance_score": relevance,
+            })
+
+    # Sort by relevance descending
+    matched_modules.sort(key=lambda m: m["relevance_score"], reverse=True)
+
+    # Estimate file counts
+    creation_keywords = {"new", "add", "create", "implement", "introduce", "build"}
+    title_lower = signal.get("title", "").lower()
+    likely_new = any(kw in title_lower for kw in creation_keywords)
+    estimated_new_files = 2 if likely_new else 0
+    if likely_new and len(matched_modules) >= 3:
+        estimated_new_files = 3
+    estimated_modified_files = len(matched_modules)
+
+    # Unique subsystems
+    subsystems_affected = list(dict.fromkeys(
+        m["subsystem"] for m in matched_modules
+    ))
+
+    # Check for parallel conflicts: solutions in 'building' status whose
+    # gotcha_layer overlaps with the top matched subsystems
+    conflict_solutions = []
+    parallel_safe = True
+    try:
+        building_rows = conn.execute(
+            """SELECT id, gotcha_layer, category
+               FROM innovation_solutions
+               WHERE status = 'building'"""
+        ).fetchall()
+        # Gather signal category from metadata if available
+        sig_category = signal.get("category", "")
+        for row in building_rows:
+            row_layer = row["gotcha_layer"] or ""
+            row_cat = row["category"] or ""
+            # Conflict if the building solution shares a subsystem keyword
+            # or matches the signal category
+            if row_cat and sig_category and row_cat == sig_category:
+                conflict_solutions.append(row["id"])
+                parallel_safe = False
+            elif any(sub in row_layer for sub in subsystems_affected[:3]):
+                conflict_solutions.append(row["id"])
+                parallel_safe = False
+    except Exception:
+        pass  # innovation_solutions may not exist yet; treat as safe
+
+    return {
+        "matched_modules": matched_modules,
+        "estimated_new_files": estimated_new_files,
+        "estimated_modified_files": estimated_modified_files,
+        "subsystems_affected": subsystems_affected,
+        "parallel_safe": parallel_safe,
+        "conflict_solutions": conflict_solutions,
     }
 
 
@@ -594,7 +741,7 @@ def _stage_duplicate_license(signal, config, conn):
                 for i in issues
                 if i["type"] == "blocked_license"
             ]
-            flat_lics = [l for sublist in lics for l in sublist]
+            flat_lics = [lic for sublist in lics for lic in sublist]
             reasons.append(f"Blocked license(s) detected: {', '.join(flat_lics)}")
         return "block", {
             "issues": issues,
@@ -698,6 +845,39 @@ def triage_signal(signal_id, db_path=None):
             elif stage_name == "boundary_impact":
                 boundary_tier = details.get("tier", "GREEN")
 
+        # --- Stage 2.5: Module-level impact mapping (Phase 71 enhancement) ---
+        # Non-blocking — informational only; never prevents a signal from passing
+        module_impact = None
+        if not blocked:
+            try:
+                module_impact = _map_module_impact(signal, conn, config)
+                _log_triage_stage(
+                    conn, signal_id, 2, "module_impact_mapping", "pass",
+                    {
+                        "matched_module_count": len(module_impact["matched_modules"]),
+                        "subsystems_affected": module_impact["subsystems_affected"],
+                        "estimated_new_files": module_impact["estimated_new_files"],
+                        "estimated_modified_files": module_impact["estimated_modified_files"],
+                        "parallel_safe": module_impact["parallel_safe"],
+                        "conflict_solutions": module_impact["conflict_solutions"],
+                    },
+                )
+                stage_results.append({
+                    "stage": 2.5,
+                    "name": "module_impact_mapping",
+                    "result": "pass",
+                    "details": module_impact,
+                })
+            except Exception:
+                module_impact = {
+                    "matched_modules": [],
+                    "estimated_new_files": 0,
+                    "estimated_modified_files": 0,
+                    "subsystems_affected": [],
+                    "parallel_safe": True,
+                    "conflict_solutions": [],
+                }
+
         # --- Stage 5 (needs DB for dedup) ---
         if not blocked:
             result, details = _stage_duplicate_license(signal, config, conn)
@@ -746,6 +926,27 @@ def triage_signal(signal_id, db_path=None):
                WHERE id = ?""",
             (triage_result, gotcha_layer, boundary_tier, category, signal_id),
         )
+
+        # Merge module_impact into signal metadata (Stage 2.5 persistence)
+        if module_impact is not None:
+            try:
+                meta_row = conn.execute(
+                    "SELECT metadata FROM innovation_signals WHERE id = ?",
+                    (signal_id,),
+                ).fetchone()
+                raw_meta = (meta_row["metadata"] if meta_row else None) or "{}"
+                try:
+                    existing_meta = json.loads(raw_meta)
+                except (json.JSONDecodeError, TypeError):
+                    existing_meta = {}
+                existing_meta["module_impact"] = module_impact
+                conn.execute(
+                    "UPDATE innovation_signals SET metadata = ? WHERE id = ?",
+                    (json.dumps(existing_meta), signal_id),
+                )
+            except Exception:
+                pass  # Non-blocking: metadata update failure must not abort triage
+
         conn.commit()
 
         outcome = {
@@ -760,6 +961,7 @@ def triage_signal(signal_id, db_path=None):
             "block_stage": block_stage,
             "warnings": warnings,
             "stages": stage_results,
+            "module_impact": module_impact,
             "thresholds": {
                 "auto_queue": auto_queue_threshold,
                 "suggest": suggest_threshold,

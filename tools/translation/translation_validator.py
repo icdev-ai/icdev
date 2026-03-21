@@ -517,7 +517,7 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
 def _record_validations(db_path, job_id, results):
     """Record validation results in DB."""
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         c = conn.cursor()
         for check_type, result in results.items():
             val_id = str(uuid.uuid4())

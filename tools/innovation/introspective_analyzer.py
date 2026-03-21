@@ -103,7 +103,7 @@ def _get_db(db_path=None):
     path = Path(db_path) if db_path else DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

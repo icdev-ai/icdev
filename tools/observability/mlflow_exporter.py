@@ -107,7 +107,7 @@ class MLflowExporter:
     def _read_unexported_spans(self, limit: int) -> List[Dict]:
         """Read spans that haven't been exported yet."""
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(self._db_path))
             # Note: we track export via a simple approach — spans older than last export
             rows = conn.execute(
                 """SELECT * FROM otel_spans
@@ -153,7 +153,7 @@ class MLflowExporter:
 
         if self._db_path.exists():
             try:
-                conn = get_connection()
+                conn = get_connection(db_path=str(self._db_path))
                 count = conn.execute("SELECT COUNT(*) FROM otel_spans").fetchone()[0]
                 conn.close()
                 result["total_spans"] = count

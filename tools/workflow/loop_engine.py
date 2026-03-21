@@ -58,7 +58,7 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 

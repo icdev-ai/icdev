@@ -42,6 +42,31 @@ security:bandit:
       - bandit-report.json
   allow_failure: true
 
+security:openclaw-gate:
+  stage: security
+  script:
+    - |
+      if [ "${ICDEV_OPENCLAW_ENABLED}" = "true" ]; then
+        echo "Running OpenClaw bridge gate check..."
+        python tools/marketplace/openclaw_bridge.py --gate --json | tee openclaw-gate.json
+        PASSED=$(python -c "import json,sys; r=json.load(open('openclaw-gate.json')); sys.exit(0 if r.get('passed') else 1)" 2>&1 && echo true || echo false)
+        if [ "$PASSED" = "false" ]; then
+          echo "OpenClaw gate FAILED — blocking failures detected"
+          cat openclaw-gate.json
+          exit 1
+        fi
+        echo "OpenClaw gate PASSED"
+      else
+        echo "OpenClaw bridge disabled (ICDEV_OPENCLAW_ENABLED not set) — skipping"
+      fi
+  artifacts:
+    when: always
+    paths:
+      - openclaw-gate.json
+  allow_failure: false
+  rules:
+    - if: '$ICDEV_OPENCLAW_ENABLED == "true"'
+
 bdd:
   stage: bdd
   script:

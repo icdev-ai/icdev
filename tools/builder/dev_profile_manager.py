@@ -58,7 +58,7 @@ def _generate_id(prefix="dprof"):
 def _get_connection(db_path=None):
     """Get a DB connection with row factory."""
     path = db_path or DB_PATH
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn

@@ -104,7 +104,7 @@ def _check_governance_gaps(project_id: str) -> list:
         return []
 
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(DB_PATH))
     except Exception:
         return []
 

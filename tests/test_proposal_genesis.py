@@ -235,7 +235,7 @@ class TestDaemonModule:
 
     def test_reflex_names_constant(self):
         from tools.proposal_genesis.daemon import REFLEX_NAMES
-        assert len(REFLEX_NAMES) == 14
+        assert len(REFLEX_NAMES) == 24
         assert "discover" in REFLEX_NAMES
         assert "polish" in REFLEX_NAMES
         assert "train" in REFLEX_NAMES
@@ -254,8 +254,8 @@ class TestDaemonModule:
         assert PIPELINE_CHAIN["extract"] == "map"
         assert PIPELINE_CHAIN["map"] == "draft"
         assert PIPELINE_CHAIN["draft"] == "polish"
-        assert PIPELINE_CHAIN["polish"] == "decide"
-        assert "decide" not in PIPELINE_CHAIN
+        assert PIPELINE_CHAIN["polish"] == "review"
+        assert PIPELINE_CHAIN["review"] == "decide"
 
     def test_reflex_state_init(self):
         from tools.proposal_genesis.daemon import ReflexState
@@ -353,8 +353,10 @@ class TestPolishReflex:
         }
         score = _compute_composite_score(checks)
         assert 0 <= score <= 1.0
-        # Weighted: 0.9*0.2 + 0.8*0.25 + 0.85*0.25 + 1.0*0.15 + 0.7*0.15
-        expected = 0.9 * 0.2 + 0.8 * 0.25 + 0.85 * 0.25 + 1.0 * 0.15 + 0.7 * 0.15
+        # Weighted: grammar(0.18) + readability(0.22) + tone(0.22) +
+        # plagiarism(0.14) + ai_detection(0.14) + stub_detection(0.10)
+        # stub_detection not in checks dict, so contributes 0
+        expected = 0.9 * 0.18 + 0.8 * 0.22 + 0.85 * 0.22 + 1.0 * 0.14 + 0.7 * 0.14
         assert abs(score - round(expected, 3)) < 0.01
 
     def test_count_syllables(self):
@@ -493,8 +495,13 @@ class TestProposalGenesisAPI:
         app.config["TESTING"] = True
         app.register_blueprint(proposal_genesis_api)
 
-        # Patch DB_PATH in the module
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return c
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
 
     def test_summary_endpoint(self, app, pg_db):
@@ -506,12 +513,11 @@ class TestProposalGenesisAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/summary")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["opportunities"] >= 1
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/summary")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["opportunities"] >= 1
 
     def test_quality_scores_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -525,13 +531,12 @@ class TestProposalGenesisAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/quality-scores")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["scores"][0]["composite_score"] == 0.82
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/quality-scores")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["scores"][0]["composite_score"] == 0.82
 
     def test_audit_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -544,31 +549,28 @@ class TestProposalGenesisAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/audit")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["events"][0]["event_type"] == "pg.reflex.completed"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/audit")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["events"][0]["event_type"] == "pg.reflex.completed"
 
     def test_pulse_links_endpoint(self, app, pg_db):
         conn, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/pulse-links")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert "links" in data
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/pulse-links")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "links" in data
 
     def test_reflex_unknown(self, app, pg_db):
         conn, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.post("/api/proposal-genesis/reflex/invalid_reflex")
-                assert resp.status_code == 400
-                data = resp.get_json()
-                assert "error" in data
+        with app.test_client() as client:
+            resp = client.post("/api/proposal-genesis/reflex/invalid_reflex")
+            assert resp.status_code == 400
+            data = resp.get_json()
+            assert "error" in data
 
     def test_capture_plans_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -587,13 +589,12 @@ class TestProposalGenesisAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/capture-plans")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["plans"][0]["opportunity_title"] == "Cloud Modernization"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/capture-plans")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["plans"][0]["opportunity_title"] == "Cloud Modernization"
 
     def test_teaming_assessments_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -618,14 +619,13 @@ class TestProposalGenesisAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/teaming-assessments")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["assessments"][0]["partner_name"] == "SecureTech Inc"
-                assert data["assessments"][0]["fit_score"] == 0.72
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/teaming-assessments")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["assessments"][0]["partner_name"] == "SecureTech Inc"
+            assert data["assessments"][0]["fit_score"] == 0.72
 
     def test_summary_includes_phase_b_stats(self, app, pg_db):
         conn, db_path = pg_db
@@ -643,13 +643,12 @@ class TestProposalGenesisAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/summary")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["capture_plans"] >= 1
-                assert data["teaming_assessments"] >= 1
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/summary")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["capture_plans"] >= 1
+            assert data["teaming_assessments"] >= 1
 
 
 # ── Scout Reflex Tests (Phase B) ────────────────────────────────────────────
@@ -1199,7 +1198,14 @@ class TestProposalGenesisPhaseCAPI:
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.register_blueprint(proposal_genesis_api)
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
+
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return c
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
 
     def test_crm_accounts_endpoint(self, app, pg_db):
@@ -1213,14 +1219,13 @@ class TestProposalGenesisPhaseCAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/crm-accounts")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["accounts"][0]["name"] == "DoD"
-                assert data["accounts"][0]["account_type"] == "government"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/crm-accounts")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["accounts"][0]["name"] == "DoD"
+            assert data["accounts"][0]["account_type"] == "government"
 
     def test_crm_accounts_with_engagement_score(self, app, pg_db):
         conn, db_path = pg_db
@@ -1241,14 +1246,13 @@ class TestProposalGenesisPhaseCAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/crm-accounts")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                acct = next((a for a in data["accounts"] if a["name"] == "DHS"), None)
-                assert acct is not None
-                assert acct["latest_engagement_score"] == 0.65
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/crm-accounts")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            acct = next((a for a in data["accounts"] if a["name"] == "DHS"), None)
+            assert acct is not None
+            assert acct["latest_engagement_score"] == 0.65
 
     def test_crm_interactions_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -1269,14 +1273,13 @@ class TestProposalGenesisPhaseCAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/crm-interactions")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["interactions"][0]["account_name"] == "Army"
-                assert data["interactions"][0]["interaction_type"] == "rfi_response"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/crm-interactions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["interactions"][0]["account_name"] == "Army"
+            assert data["interactions"][0]["interaction_type"] == "rfi_response"
 
     def test_engagement_scores_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -1298,14 +1301,13 @@ class TestProposalGenesisPhaseCAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/engagement-scores")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] >= 1
-                assert data["scores"][0]["account_name"] == "Navy"
-                assert data["scores"][0]["score"] == 0.72
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/engagement-scores")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] >= 1
+            assert data["scores"][0]["account_name"] == "Navy"
+            assert data["scores"][0]["score"] == 0.72
 
     def test_summary_includes_phase_c_stats(self, app, pg_db):
         conn, db_path = pg_db
@@ -1332,42 +1334,38 @@ class TestProposalGenesisPhaseCAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/summary")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["crm_accounts"] >= 1
-                assert data["crm_interactions"] >= 1
-                assert data["avg_engagement"] > 0
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/summary")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["crm_accounts"] >= 1
+            assert data["crm_interactions"] >= 1
+            assert data["avg_engagement"] > 0
 
     def test_crm_accounts_empty(self, app, pg_db):
         conn, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/crm-accounts")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 0
-                assert data["accounts"] == []
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/crm-accounts")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 0
+            assert data["accounts"] == []
 
     def test_crm_interactions_empty(self, app, pg_db):
         conn, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/crm-interactions")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 0
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/crm-interactions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 0
 
     def test_engagement_scores_empty(self, app, pg_db):
         conn, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/engagement-scores")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 0
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/engagement-scores")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 0
 
 
 # ── Phase C Daemon Integration Tests ────────────────────────────────────────
@@ -1555,7 +1553,14 @@ class TestProposalGenesisPhaseD:
         app = Flask(__name__)
         app.config["TESTING"] = True
         app.register_blueprint(proposal_genesis_api)
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
+
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return c
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
 
     def test_published_articles_empty(self, app, pg_db):
@@ -1964,18 +1969,23 @@ class TestProposalGenesisPhaseEAPI:
         app.config["TESTING"] = True
         app.register_blueprint(proposal_genesis_api)
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return c
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
 
     def test_contract_health_endpoint_empty(self, app, pg_db):
         _, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/contract-health")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["contracts"] == []
-                assert data["count"] == 0
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/contract-health")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["contracts"] == []
+            assert data["count"] == 0
 
     def test_contract_health_endpoint_with_data(self, app, pg_db):
         conn, db_path = pg_db
@@ -1988,14 +1998,13 @@ class TestProposalGenesisPhaseEAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/contract-health")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["contracts"][0]["contract_number"] == "FA8750-25-C-0001"
-                assert data["contracts"][0]["health_score"] == 0.72
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/contract-health")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["contracts"][0]["contract_number"] == "FA8750-25-C-0001"
+            assert data["contracts"][0]["health_score"] == 0.72
 
     def test_overdue_deliverables_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -2012,13 +2021,12 @@ class TestProposalGenesisPhaseEAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/overdue-deliverables")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["deliverables"][0]["days_overdue"] == 41
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/overdue-deliverables")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["deliverables"][0]["days_overdue"] == 41
 
     def test_cdrl_generations_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -2041,14 +2049,13 @@ class TestProposalGenesisPhaseEAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/cdrl-generations")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["generations"][0]["cdrl_type"] == "sbom"
-                assert data["generations"][0]["status"] == "generated"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/cdrl-generations")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["generations"][0]["cdrl_type"] == "sbom"
+            assert data["generations"][0]["status"] == "generated"
 
     def test_cpars_predictions_endpoint(self, app, pg_db):
         conn, db_path = pg_db
@@ -2062,13 +2069,12 @@ class TestProposalGenesisPhaseEAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/cpars-predictions")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["predictions"][0]["parsed"]["health"]["health"] == "green"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/cpars-predictions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["predictions"][0]["parsed"]["health"]["health"] == "green"
 
     def test_summary_phase_e_stats(self, app, pg_db):
         conn, db_path = pg_db
@@ -2090,15 +2096,14 @@ class TestProposalGenesisPhaseEAPI:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/summary")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["active_contracts"] == 1
-                assert data["at_risk_contracts"] == 1
-                assert data["overdue_deliverables"] == 1
-                assert data["cdrls_generated"] == 1
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/summary")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["active_contracts"] == 1
+            assert data["at_risk_contracts"] == 1
+            assert data["overdue_deliverables"] == 1
+            assert data["cdrls_generated"] == 1
 
 
 # ── Phase F: Daemon Tests ─────────────────────────────────────────────────
@@ -2483,18 +2488,23 @@ class TestProposalGenesisPhaseF_API:
         app.config["TESTING"] = True
         app.register_blueprint(proposal_genesis_api)
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
+        def _mock_get_db():
+            c = sqlite3.connect(str(db_path))
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return c
+
+        with patch("tools.dashboard.api.proposal_genesis._get_db", side_effect=_mock_get_db):
             yield app
 
     def test_bid_decisions_empty(self, app, pg_db):
         _, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/bid-decisions")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["decisions"] == []
-                assert data["count"] == 0
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/bid-decisions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["decisions"] == []
+            assert data["count"] == 0
 
     def test_bid_decisions_with_data(self, app, pg_db):
         conn, db_path = pg_db
@@ -2511,24 +2521,22 @@ class TestProposalGenesisPhaseF_API:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/bid-decisions")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["decisions"][0]["decision"] == "bid"
-                assert data["decisions"][0]["scores"]["capability_fit"] == 0.8
-                assert data["decisions"][0]["opportunity_title"] == "Cyber Defense"
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/bid-decisions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["decisions"][0]["decision"] == "bid"
+            assert data["decisions"][0]["scores"]["capability_fit"] == 0.8
+            assert data["decisions"][0]["opportunity_title"] == "Cyber Defense"
 
     def test_win_loss_records_empty(self, app, pg_db):
         _, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/win-loss-records")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["records"] == []
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/win-loss-records")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["records"] == []
 
     def test_win_loss_records_with_data(self, app, pg_db):
         conn, db_path = pg_db
@@ -2546,23 +2554,21 @@ class TestProposalGenesisPhaseF_API:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/win-loss-records")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["records"][0]["outcome"] == "lost"
-                assert data["records"][0]["lessons_parsed"] == ["Improve pricing strategy"]
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/win-loss-records")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["records"][0]["outcome"] == "lost"
+            assert data["records"][0]["lessons_parsed"] == ["Improve pricing strategy"]
 
     def test_win_loss_lessons_empty(self, app, pg_db):
         _, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/win-loss-lessons")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["lessons"] == []
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/win-loss-lessons")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["lessons"] == []
 
     def test_win_loss_lessons_with_filter(self, app, pg_db):
         conn, db_path = pg_db
@@ -2585,27 +2591,25 @@ class TestProposalGenesisPhaseF_API:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                # All lessons
-                resp = client.get("/api/proposal-genesis/win-loss-lessons")
-                assert resp.get_json()["count"] == 2
+        with app.test_client() as client:
+            # All lessons
+            resp = client.get("/api/proposal-genesis/win-loss-lessons")
+            assert resp.get_json()["count"] == 2
 
-                # Filter by category
-                resp = client.get("/api/proposal-genesis/win-loss-lessons?category=technical")
-                data = resp.get_json()
-                assert data["count"] == 1
-                assert data["lessons"][0]["category"] == "technical"
+            # Filter by category
+            resp = client.get("/api/proposal-genesis/win-loss-lessons?category=technical")
+            data = resp.get_json()
+            assert data["count"] == 1
+            assert data["lessons"][0]["category"] == "technical"
 
     def test_training_pairs_empty(self, app, pg_db):
         _, db_path = pg_db
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/training-pairs")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["pairs"] == []
-                assert data["by_source"] == {}
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/training-pairs")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["pairs"] == []
+            assert data["by_source"] == {}
 
     def test_training_pairs_with_data(self, app, pg_db):
         conn, db_path = pg_db
@@ -2621,15 +2625,14 @@ class TestProposalGenesisPhaseF_API:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/training-pairs")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["count"] == 2
-                assert "approved_draft" in data["by_source"]
-                assert "win_loss_lesson" in data["by_source"]
-                assert data["by_source"]["approved_draft"]["count"] == 1
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/training-pairs")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["count"] == 2
+            assert "approved_draft" in data["by_source"]
+            assert "win_loss_lesson" in data["by_source"]
+            assert data["by_source"]["approved_draft"]["count"] == 1
 
     def test_summary_phase_f_stats(self, app, pg_db):
         conn, db_path = pg_db
@@ -2660,13 +2663,12 @@ class TestProposalGenesisPhaseF_API:
         )
         conn.commit()
 
-        with patch("tools.dashboard.api.proposal_genesis.DB_PATH", db_path):
-            with app.test_client() as client:
-                resp = client.get("/api/proposal-genesis/summary")
-                assert resp.status_code == 200
-                data = resp.get_json()
-                assert data["bid_decisions"] == 2
-                assert data["bid_recommendations"] == 1
-                assert data["win_loss_records"] == 1
-                assert data["win_loss_lessons"] == 1
-                assert data["training_pairs"] == 1
+        with app.test_client() as client:
+            resp = client.get("/api/proposal-genesis/summary")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["bid_decisions"] == 2
+            assert data["bid_recommendations"] == 1
+            assert data["win_loss_records"] == 1
+            assert data["win_loss_lessons"] == 1
+            assert data["training_pairs"] == 1

@@ -640,7 +640,7 @@ class LLMRouter:
             return None
 
         try:
-            conn = get_connection()
+            conn = get_connection(db_path=str(db_path))
             row = conn.execute(
                 """SELECT ollama_model_name FROM ft_active_models
                    WHERE function_name = ? AND deactivated_at IS NULL
@@ -807,6 +807,24 @@ class LLMRouter:
         Raises:
             RuntimeError: If no provider in the chain can serve the request.
         """
+        # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
+        if request.agent_id:
+            try:
+                from tools.agent.token_tracker import check_budget, BudgetExceededError
+                budget = check_budget(request.agent_id)
+                if budget["action"] == "block":
+                    raise BudgetExceededError(request.agent_id, budget)
+                if budget["action"] == "warn":
+                    logger.warning(
+                        "Budget warning for %s: %s", request.agent_id, budget["message"]
+                    )
+            except ImportError:
+                pass  # token_tracker not available — skip budget check
+            except BudgetExceededError:
+                raise  # re-raise budget errors
+            except Exception as exc:
+                logger.debug("Budget check failed (non-blocking): %s", exc)
+
         # Scan for prompt injection before invoking (D217)
         # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
         if not request.skip_injection_scan:

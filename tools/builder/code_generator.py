@@ -391,7 +391,7 @@ class {class_name}Repository:
     def create(self, item: {class_name}) -> {class_name}:
         """Create a new {entity} record."""
         import sqlite3
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         try:
             c = conn.cursor()
             c.execute(
@@ -408,7 +408,7 @@ class {class_name}Repository:
     def get(self, item_id: str) -> Optional[{class_name}]:
         """Get a {entity} by ID."""
         import sqlite3
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         try:
             c = conn.cursor()
             c.execute("SELECT * FROM {entity} WHERE id = ?", (item_id,))
@@ -422,7 +422,7 @@ class {class_name}Repository:
     def list_all(self) -> List[{class_name}]:
         """List all {entity} records."""
         import sqlite3
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         try:
             c = conn.cursor()
             c.execute("SELECT * FROM {entity} ORDER BY created_at DESC")
@@ -433,7 +433,7 @@ class {class_name}Repository:
     def delete(self, item_id: str) -> bool:
         """Delete a {entity} by ID."""
         import sqlite3
-        conn = get_connection()
+        conn = get_connection(db_path=str(self.db_path))
         try:
             c = conn.cursor()
             c.execute("DELETE FROM {entity} WHERE id = ?", (item_id,))

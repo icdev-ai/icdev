@@ -27,7 +27,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 def _get_connection(db_path=None):
     p = str(db_path or DB_PATH)
-    conn = get_connection()
+    conn = get_connection(db_path=str(db_path))
     return conn
 
 

@@ -8,6 +8,7 @@ and chat page rendering.
 Run: pytest tests/test_intake_api.py -v
 """
 
+import os
 import sqlite3
 import sys
 from pathlib import Path
@@ -129,12 +130,19 @@ def chat_app(tmp_path):
     db_path = tmp_path / "test_icdev.db"
     _init_test_db(db_path)
 
-    # Patch DB_PATH in config first (the canonical location) — other modules
-    # read from config at import time, so this must be in place before they load.
-    # We also patch the per-module copies that are bound as module globals.
-    with patch("tools.dashboard.config.DB_PATH", str(db_path)), \
-         patch("tools.dashboard.api.projects.DB_PATH", str(db_path)), \
-         patch("tools.dashboard.auth.DB_PATH", str(db_path)), \
+    # Patch _get_db in all dashboard modules to return connections to the test
+    # DB.  Patching DB_PATH alone is insufficient because get_connection() may
+    # resolve paths independently.
+    def _make_conn():
+        c = sqlite3.connect(str(db_path))
+        c.row_factory = sqlite3.Row
+        return c
+
+    with patch.dict(os.environ, {"ICDEV_DB_PATH": str(db_path)}), \
+         patch("tools.dashboard.config.DB_PATH", str(db_path)), \
+         patch("tools.dashboard.auth._get_db", side_effect=lambda: _make_conn()), \
+         patch("tools.dashboard.api.projects._get_db", side_effect=lambda: _make_conn()), \
+         patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()), \
          patch("tools.dashboard.api.intake.DB_PATH", db_path), \
          patch("tools.requirements.intake_engine.DB_PATH", db_path):
         from tools.dashboard.app import create_app

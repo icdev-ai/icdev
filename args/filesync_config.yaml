@@ -74,9 +74,9 @@ filesync:
   # Scheduling (daemon mode, D-SYNC-9)
   scheduling:
     quiet_hours:
-      start: "02:00"
-      end: "06:00"
-      timezone: "UTC"
+      start: "23:00"
+      end: "08:00"
+      timezone: "America/New_York"
 
   # CUI compliance (D-SYNC-12)
   classification: "CUI // SP-CTI"

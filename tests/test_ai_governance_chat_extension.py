@@ -361,6 +361,7 @@ class TestExtensionManagerAutoLoad:
     """Test that the extension manager auto-loads builtins correctly."""
 
     def test_auto_load_builtins_loads_from_builtins_dir(self):
+        sys.path.insert(0, str(ROOT / "tools" / "extensions"))
         from extension_manager import ExtensionManager
         mgr = ExtensionManager()
         # The builtins directory exists and has at least one file

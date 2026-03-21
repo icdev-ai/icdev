@@ -747,7 +747,7 @@ def _log_validation(project_id, artifact_type, file_path, validator_result, db_p
         return
 
     try:
-        conn = get_connection()
+        conn = get_connection(db_path=str(db_path))
         conn.execute(
             """INSERT INTO oscal_validation_log
                (project_id, artifact_type, file_path, validator, valid,

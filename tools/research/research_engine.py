@@ -66,7 +66,7 @@ def _get_db(db_path=None):
         raise FileNotFoundError(
             f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py"
         )
-    conn = get_connection()
+    conn = get_connection(db_path=str(path))
     return conn
 
 
@@ -428,7 +428,7 @@ def run_pipeline(session_id=None, vertical=None, name=None, description=None,
                 )
                 if "error" in session_result:
                     return session_result
-                session_id = session_result["session_id"]
+                session_id = session_result.get("session_id") or session_result.get("id")
                 result["session"] = session_result
             except Exception as e:
                 return {"error": f"Failed to create session: {e}"}

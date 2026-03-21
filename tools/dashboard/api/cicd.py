@@ -29,7 +29,7 @@ cicd_api = Blueprint("cicd_api", __name__)
 
 def _get_db():
     """Get database connection with row_factory."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     return conn
 
 

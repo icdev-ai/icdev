@@ -68,7 +68,7 @@ class PropagationVerifier:
 
     def _get_db(self) -> sqlite3.Connection:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
-        conn = get_connection()
+        conn = get_connection(db_path=str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
         return conn
 

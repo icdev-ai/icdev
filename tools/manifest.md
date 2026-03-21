@@ -461,6 +461,11 @@
 | Ollama Native Provider | tools/llm/ollama_provider.py | Native Ollama REST API provider using /api/chat — faster than OpenAI-compat for local models, native vision support | LLMRequest | LLMResponse |
 | Embedding Provider | tools/llm/embedding_provider.py | Embedding providers: OpenAI, Bedrock Titan, Ollama (nomic-embed-text) | text | float[] |
 | LLM Config | args/llm_config.yaml | Master config: providers, models, per-function routing chains, embedding config, pricing | — | — |
+| LLM Gateway | tools/llm/gateway.py | LLM Gateway/Proxy: pre/post-invoke security checks (injection detection, PII scrubbing, rate limiting), audit trail, gate check | --invoke, --check, --rate-status, --gate, --json | Gateway response + audit |
+| LLM Gateway Config | args/llm_gateway_config.yaml | Gateway config: injection rules, PII patterns, rate limits, audit settings, gate thresholds | (data) | YAML config |
+| Prompt Registry | tools/llm/prompt_registry.py | Prompt version control: version, activate, rollback, diff, A/B test prompt templates with audit trail | --register, --activate, --rollback, --diff, --ab-test, --list, --json | Prompt versions + diffs |
+| Cost Intelligence | tools/llm/cost_intelligence.py | Cost intelligence: anomaly detection, monthly projection, optimization recommendations, edge-vs-cloud comparison | --report, --anomalies, --project, --optimize, --edge-vs-cloud, --json | Cost analysis + recommendations |
+| Model Drift Monitor | tools/llm/model_monitor.py | Model drift monitor: quality scoring, latency/token tracking, statistical drift detection (Welch's t-test), gate check | --check, --report, --drift, --gate, --model, --json | Drift analysis + gate status |
 
 ## Bedrock Client (Opus 4.6 Multi-Agent — Phase A)
 | Tool | File | Description | Input | Output |
@@ -483,6 +488,7 @@
 | Authority | tools/agent/authority.py | Domain authority matrix (YAML): check_authority, record_veto, record_override | --check, --veto, --override, --history, --json | Veto status |
 | Mailbox | tools/agent/mailbox.py | HMAC-SHA256 signed inter-agent messaging: send, broadcast, receive, verify | --send, --inbox, --verify, --json | Messages |
 | Agent Memory | tools/agent/agent_memory.py | Project-scoped per-agent + team memory: store, recall, inject context, prune | --store, --recall, --inject, --prune, --json | Memory entries |
+| Agent Topology | tools/agent/topology.py | Agent topology: graph-based dependency mapping of providers/models/functions/agents, SPOF detection, air-gap analysis | --map, --spof, --air-gap, --visualize, --json | Topology graph + SPOF report |
 
 ## Observability Hooks (Phase 39)
 | Tool | File | Description | Input | Output |
@@ -563,7 +569,12 @@
 | Provenance Tracker | tools/marketplace/provenance_tracker.py | Supply chain provenance recording and verification | --record/--get/--verify/--report | Provenance chain JSON |
 | Compatibility Checker | tools/marketplace/compatibility_checker.py | IL + version + dependency compatibility checks | --asset-id, --consumer-il | Compatibility result |
 | Federation Sync | tools/marketplace/federation_sync.py | Sync tenant-local ↔ central vetted registry | --promote/--pull/--status | Sync result JSON |
-| Marketplace MCP | tools/mcp/marketplace_server.py | MCP server (11 tools, 2 resources) for marketplace | stdio | JSON-RPC 2.0 |
+| ClawHub Connector | tools/databridge/connectors/clawhub_connector.py | DataBridge connector for ClawHub API — vector search, skill detail, zip download | --search/--get/--download/--list/--health | Skill data JSON |
+| OpenClaw ScriptGen | tools/marketplace/openclaw_scriptgen.py | Generate Python companion scripts for actionable skill steps (LLM-agnostic) | --generate/--analyze | Script + analysis JSON |
+| OpenClaw Enricher | tools/marketplace/openclaw_enricher.py | 3-engine skill enrichment (Innovation + Creative + Research) with merge discovery | --enrich/--discover-similar | Enrichment result JSON |
+| OpenClaw Compat | tools/marketplace/openclaw_compat.py | Compatibility checker & translator for OpenClaw → ICDEV skills | --check/--translate/--full, --output | Compat report / translated SKILL.md |
+| OpenClaw Bridge | tools/marketplace/openclaw_bridge.py | Zero-trust import/export for ClawHub (clawhub.ai) skills with 10-gate scanning, quarantine, provenance | --import/--export/--promote/--reject/--list-quarantine/--list-exports/--health/--gate | Import/export/scan JSON |
+| Marketplace MCP | tools/mcp/marketplace_server.py | MCP server (17 tools, 2 resources) for marketplace | stdio | JSON-RPC 2.0 |
 
 ## DevSecOps & Zero Trust Architecture (Phase 24-25)
 | Tool | File | Description | Input | Output |
@@ -673,6 +684,7 @@
 | Loop Engine | tools/workflow/loop_engine.py | PLAN-APPLY-UNIFY lifecycle manager with state machine and acceptance criteria tracking (D-WF-1) | --create, --plan, --add-criteria, --start-apply, --complete-task, --verify-criterion, --start-unify, --close, --status, --list, --abandon, --json | Loop state |
 | Next Action | tools/workflow/next_action.py | Single next action recommender with 5-dimension weighted priority scoring (D-WF-2) | --recommend, --project-id, --json | Prioritized action |
 | Process Verifier | tools/workflow/process_verifier.py | Verify required processes were executed during APPLY phase via audit_trail queries (D-WF-3) | --verify, --loop-id, --json | Verification result |
+| Tool Curator | tools/workflow/tool_curator.py | Phase-level tool curation enforcement — restrict available tools per goal phase (Agent Harness pattern) | --goal, --phase, --tool, --validate, --list-goals, --json | Allowed/blocked + reason |
 | Handoff Generator | tools/workflow/handoff_generator.py | Session handoff document generation for cross-session context transfers (D-WF-4) | --generate, --loop-id, --json | Handoff markdown |
 | Reconciler | tools/workflow/reconciler.py | UNIFY phase reconciliation: planned-vs-actual delta tracking with deviation classification (D-WF-5) | --reconcile, --loop-id, --json | Reconciliation record |
 
@@ -1084,6 +1096,10 @@
 | Retrain Trigger | tools/finetune/retrain_trigger.py | Auto-retrain when threshold exceeded (D-FT-17) | --check, --json | Trigger status |
 | Training Engine | tools/finetune/training_engine.py | Unsloth/cloud QLoRA training (D-FT-2) | --dataset-id, --provider, --json | Training job |
 | Unsloth Provider | tools/finetune/unsloth_provider.py | Local Unsloth QLoRA provider (D-FT-2) | (library) | UnslothLocalProvider |
+| RAG-FT Pipeline | tools/finetune/rag_ft_pipeline.py | Automated RAG-to-FT pipeline (D-KARL-5) | --run, --dry-run, --status, --json | Pipeline results |
+| KG Pair Generator | tools/finetune/kg_pair_generator.py | KG community-based FT pair generation (D-KARL-6) | --graph-id, --dataset-id, --strategy, --json | Generated pairs |
+| Quality Monitor | tools/finetune/quality_monitor.py | RAG eval feedback loop with retrain triggers (D-KARL-8) | --check, --status, --json | Quality status |
+| HP Search | tools/finetune/hp_search.py | Hyperparameter search orchestrator for fine-tuning (grid/random search over LoRA params) | --create, --run-next, --record, --status, --list, --json | Search/trial results |
 
 ## Remote Command Gateway (Phase 28)
 | Tool | File | Description | Input | Output |
@@ -1110,6 +1126,11 @@
 | KG Ingester | tools/knowledge_graph/ingester.py | Knowledge graph document ingestion | --file, --project-id, --json | Ingestion result |
 | Insight Generator | tools/knowledge_graph/insight_generator.py | AI insight generation from graph (scanner-tier) | --graph-id, --questions, --bridge-gaps, --json | Insights |
 | Text Network | tools/knowledge_graph/text_network.py | Text-to-knowledge-graph conversion | --text, --project-id, --json | Graph data |
+| KG Enricher | tools/knowledge_graph/enricher.py | Centrality + embedding computation (D-KARL-7) | --graph-id, --centrality, --embeddings, --json | Enrichment results |
+| Compliance Graph | tools/knowledge_graph/compliance_graph.py | Compliance crosswalk as knowledge graph — NIST/FedRAMP/CMMC controls as nodes with crosswalk edges | --build, --crosswalk, --coverage, --target, --json | Graph/crosswalk/coverage results |
+| Disambiguator | tools/knowledge_graph/disambiguator.py | Entity disambiguation — find duplicates, merge entities, add aliases, resolve ambiguous labels | --find-duplicates, --merge, --add-alias, --resolve, --json | Disambiguation results |
+| Federation | tools/knowledge_graph/federation.py | Cross-project graph federation — federated search, shared entities, federated views, cross-project coverage | --search, --shared, --create-view, --coverage, --json | Federation results |
+| Temporal | tools/knowledge_graph/temporal.py | Temporal reasoning — time range queries, graph evolution, recent changes, stale entities, temporal diffs | --range, --evolution, --recent, --stale, --diff, --json | Temporal results |
 
 ## LLM Providers (Additional)
 | Tool | File | Description | Input | Output |
@@ -1143,10 +1164,15 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Auto Indexer | tools/rag/auto_indexer.py | Automatic RAG index maintenance | --index, --json | Index status |
+| Corrective RAG | tools/rag/corrective_rag.py | Parallel multi-strategy retrieval (D-KARL-3) | --parallel, --query, --profile, --json | Merged results |
 | PDF Provider | tools/rag/pdf_provider.py | PDF text extraction for RAG ingestion (D-FT-11) | (library) | Extracted text |
 | Reranker Provider | tools/rag/reranker_provider.py | Two-stage re-ranking provider (D-RAG-3) | (library) | Reranked results |
 | Secret Ref | tools/rag/secret_ref.py | Secret reference resolver for RAG | (library) | Resolved refs |
 | Codebase Indexer | tools/rag/codebase_indexer.py | AST-based Python + text codebase indexer for assistant widget (D-CA-1, D-CA-2) | --scan, --scope, --json | Index status |
+| CRAG Evaluator | tools/rag/crag_evaluator.py | CRAG benchmark evaluation — 8 question types, hallucination-penalizing scoring (D-RAG-23) | --benchmark-crag, --classify-question, --score, --gate, --json | Campaign results |
+| Query Classifier | tools/rag/query_classifier.py | 4-label taxonomy classifier for RAG queries (D-RAG-24) | --classify --query, --classify-batch --input, --json | Label + confidence |
+| Quality Feedback Loop | tools/rag/quality_feedback_loop.py | Closed-loop RAG quality → retrain pipeline (D-KARL-9) | --run, --dry-run, --status, --json | Cycle results |
+| Statement Extractor | tools/finetune/statement_extractor.py | Grounded Q&A pair generation via statement extraction (D-FT-23) | --extract, --extract-from-rag, --stats, --json | Pairs + taxonomy labels |
 
 ## Codebase Assistant (Phase 69)
 | Tool | File | Description | Input | Output |
@@ -1173,6 +1199,7 @@
 |------|------|-------------|-------|--------|
 | Confabulation Detector | tools/security/confabulation_detector.py | Deterministic confabulation detection (D310) | --check-output, --summary, --json | Detection results |
 | Endpoint Security Scanner | tools/security/endpoint_security_scanner.py | API endpoint security assessment | --scan, --json | Scan results |
+| Sandbox Executor | tools/security/sandbox_executor.py | Container-isolated code execution with resource limits, network isolation, and audit logging (D-SEC-10) | --execute --code, --execute-file --path, --health, --gate, --language, --timeout, --memory, --json | SandboxResult JSON |
 
 ## Testing (Additional)
 | Tool | File | Description | Input | Output |
@@ -1228,3 +1255,11 @@
 | Fitness Evaluator | tools/autoresearch/fitness_evaluator.py | Wraps 6 ICDEV tools into single-metric [0,1] scorers (D-AR-7) | --evaluate, --evaluate-all, --list-domains, --health, --project-id, --project-dir, --json | Domain metric values |
 | Hypothesis Generator | tools/autoresearch/hypothesis_generator.py | Scanner-tier LLM + template fallback hypothesis creation (D-AR-1) | --domain, --max, --from-signals, --health, --json | Hypothesis candidates |
 | Experiment Reflex | tools/genesis/reflexes/experiment.py | 14th Genesis reflex — Bayesian Autoresearch at ORANGE tier (D-AR-9) | config dict, trust kernel | Reflex results + GKP export |
+
+## SRE — Site Reliability Engineering
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| SLO Manager | tools/sre/slo_manager.py | SLO manager: define SLOs, record measurements, burn rate calculation, dashboard, gate check | --define, --record, --burn-rate, --dashboard, --gate, --json | SLO status + burn rates |
+| Runbook Executor | tools/sre/runbook_executor.py | Runbook executor: register runbooks, match alerts, risk-tiered execution, dry-run, rollback | --register, --match, --execute, --dry-run, --rollback, --list, --json | Execution results + rollback status |
+| Incident Commander | tools/sre/incident_commander.py | Incident commander: full incident lifecycle (detected→closed), auto-escalation, MTTR tracking, postmortem | --create, --escalate, --resolve, --close, --postmortem, --mttr, --list, --json | Incident status + MTTR metrics |
+| SRE Config | args/sre_config.yaml | SRE config: SLO definitions, burn rate thresholds, runbook registry, escalation policies, incident severity levels | (data) | YAML config |
