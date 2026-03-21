@@ -175,35 +175,10 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         # BOOLEAN is native in PG
         # TEXT, REAL, INTEGER are compatible
 
-    # 9. Cast all datetime expressions to text for TEXT column comparisons
-    #    SQLite stores dates as TEXT; PG NOW() returns timestamptz.
-    #    Wrap datetime expressions in (...)::text so they compare with TEXT columns.
-    if "NOW()" in sql and "CREATE TABLE" not in sql.upper():
-        # Cast NOW() +/- INTERVAL '...' → (NOW() +/- INTERVAL '...')::text
-        sql = re.sub(
-            r"NOW\(\)\s*([-+])\s*INTERVAL\s*'([^']+)'",
-            r"(NOW() \1 INTERVAL '\2')::text",
-            sql,
-        )
-        # Cast NOW() - (CAST(... AS INTERVAL)) → (NOW() - ...)::text
-        sql = re.sub(
-            r"NOW\(\)\s*([-+])\s*(\(CAST\([^)]+\)\s*AS\s+INTERVAL\))",
-            r"(NOW() \1 \2)::text",
-            sql,
-        )
-        # Cast standalone NOW() → NOW()::text (not already cast, not in arithmetic)
-        sql = re.sub(
-            r"NOW\(\)(?!::text)(?!\s*[-+])",
-            "NOW()::text",
-            sql,
-        )
-        # Don't cast in DEFAULT clauses
-        sql = sql.replace("DEFAULT NOW()::text", "DEFAULT NOW()")
-        sql = re.sub(
-            r"DEFAULT\s+\(NOW\(\)[^)]*\)::text",
-            lambda m: m.group(0).replace("::text", ""),
-            sql,
-        )
+    # 9. Datetime expressions: leave as native PG timestamp (no ::text cast).
+    #    PostgreSQL columns are proper TIMESTAMP type after migration from SQLite.
+    #    NOW() and NOW() +/- INTERVAL compare natively with timestamp columns.
+    #    Previous ::text cast broke timestamp comparisons (operator mismatch).
 
     # 10. LIKE → ILIKE (SQLite LIKE is case-insensitive; PG LIKE is case-sensitive)
     #     Only in DML contexts (not DDL, not inside string literals)
