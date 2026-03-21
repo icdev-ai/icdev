@@ -1155,3 +1155,17 @@ redaction_data_protection:
     max_pii_detections_allowed: 0
     require_local_only_for_proposals: true
     audit_all_detections: true
+
+# Phase 72 — ICDEV Studio (D361-D366)
+studio_workflow:
+  description: "Gate for Studio user-created workflows — validates before execution"
+  blocking:
+    - workflow_circular_dependency
+    - workflow_references_nonexistent_tool
+    - workflow_yaml_parse_error
+  warning:
+    - workflow_disconnected_steps
+    - workflow_missing_timeout
+  thresholds:
+    max_steps_per_workflow: 50
+    max_workflow_timeout_seconds: 3600

@@ -1277,3 +1277,13 @@
 | DB PII Scanner | tools/redaction/db_scanner.py | Scan proposal DB tables for PII density per column | --scan, --table, --sample-size, --health, --json, --gate | PII density report |
 | Redaction Config | args/redaction_config.yaml | Global redaction config: entities, thresholds, operators, IL overrides, scope, audit | (data) | YAML config |
 | GovCon Redaction Config | args/redaction_govcon.yaml | GovCon-specific: program deny-list, contract patterns, pricing patterns, past perf rules, Pulse sanitization | (data) | YAML config |
+
+## ICDEV Studio — Low-Code/No-Code Platform (Phase 72 — D361-D366)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Studio DB Init | tools/studio/init_db.py | Initialize 9 studio_* tables (PG + SQLite compatible, idempotent) | --json, --verbose | Table creation summary |
+| Workflow Editor | tools/studio/workflow_editor.py | Workflow CRUD, tool catalog (5 categories, 22 tools), YAML validation | --json catalog, templates, list, get <id> | Tool catalog, templates, workflows |
+| Studio API | tools/dashboard/api/studio.py | Flask Blueprint: workflow CRUD, tool catalog, marketplace storefront API | REST endpoints under /api/studio/ | JSON responses |
+| Studio CSS | tools/dashboard/static/css/studio.css | Premium design system: glass cards, gradients, animations, 8px grid | (asset) | CSS |
+| Workflow Studio JS | tools/dashboard/static/js/workflow-studio.js | DAG canvas editor: drag-drop nodes, SVG edges, zoom, validate, YAML import/export | (asset) | JS |
+| Marketplace JS | tools/dashboard/static/js/marketplace.js | Asset browser: search, filter, sort, detail modal, one-click install | (asset) | JS |

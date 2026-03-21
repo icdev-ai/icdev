@@ -964,6 +964,97 @@ CREATE TABLE IF NOT EXISTS sandbox_execution_log (
     classification TEXT DEFAULT 'CUI',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Phase 72 — ICDEV Studio
+CREATE TABLE IF NOT EXISTS studio_workflows (
+    workflow_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    template_yaml TEXT NOT NULL,
+    category TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    version INTEGER DEFAULT 1,
+    shared INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS studio_forms (
+    form_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    schema_json TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','published','archived'))
+);
+CREATE TABLE IF NOT EXISTS studio_form_submissions (
+    submission_id TEXT PRIMARY KEY,
+    form_id TEXT NOT NULL REFERENCES studio_forms(form_id),
+    data_json TEXT NOT NULL,
+    submitted_by TEXT,
+    submitted_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_case_types (
+    type_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    lifecycle_json TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_cases (
+    case_id TEXT PRIMARY KEY,
+    type_id TEXT NOT NULL REFERENCES studio_case_types(type_id),
+    title TEXT NOT NULL,
+    description TEXT,
+    current_state TEXT NOT NULL,
+    priority TEXT DEFAULT 'medium' CHECK(priority IN ('critical','high','medium','low')),
+    assigned_to TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    due_date TEXT,
+    form_submission_id TEXT REFERENCES studio_form_submissions(submission_id)
+);
+CREATE TABLE IF NOT EXISTS studio_case_history (
+    history_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL REFERENCES studio_cases(case_id),
+    from_state TEXT,
+    to_state TEXT NOT NULL,
+    changed_by TEXT,
+    changed_at TEXT DEFAULT (datetime('now')),
+    comment TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_automations (
+    automation_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    trigger_json TEXT NOT NULL,
+    condition_json TEXT,
+    action_json TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_automation_runs (
+    run_id TEXT PRIMARY KEY,
+    automation_id TEXT NOT NULL REFERENCES studio_automations(automation_id),
+    trigger_event TEXT,
+    status TEXT CHECK(status IN ('triggered','running','success','failed','skipped')),
+    result_json TEXT,
+    started_at TEXT DEFAULT (datetime('now')),
+    completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_dashboards (
+    dashboard_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    layout_json TEXT NOT NULL,
+    role_default TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    shared INTEGER DEFAULT 0
+);
 """
 
 # ---------------------------------------------------------------------------

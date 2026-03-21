@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
     {% block head %}{% endblock %}
+    {% block extra_css %}{% endblock %}
 </head>
 <body data-auto-refresh="true">
     <!-- Skip to main content (accessibility) -->
@@ -89,6 +90,15 @@
                 </ul>
             </li>
             {% endif %}
+
+            <!-- Studio (Phase 72) -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/studio' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Studio</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/studio/workflows">Workflow Builder</a></li>
+                    <li><a href="/studio/marketplace">Marketplace</a></li>
+                </ul>
+            </li>
 
             <!-- Utility -->
             <li class="nav-dropdown">

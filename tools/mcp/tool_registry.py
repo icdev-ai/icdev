@@ -2751,6 +2751,35 @@ TOOL_REGISTRY = {
         "description": "Scan proposal database tables for PII density per column.",
         "input_schema": {"type": "object", "properties": {"table": {"type": "string", "description": "Specific table to scan (omit for all GovCon tables)"}, "sample_size": {"type": "integer", "description": "Sample rows per column", "default": 20}}},
     },
+    # Phase 72 — ICDEV Studio
+    "studio_list_workflows": {
+        "category": "studio",
+        "module": "tools.studio.workflow_editor",
+        "handler": "list_workflows",
+        "description": "List all saved Studio workflows.",
+        "input_schema": {"type": "object", "properties": {"shared_only": {"type": "boolean", "default": False}}},
+    },
+    "studio_tool_catalog": {
+        "category": "studio",
+        "module": "tools.studio.workflow_editor",
+        "handler": "get_tool_catalog",
+        "description": "Get the full tool catalog for the workflow palette.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "studio_list_templates": {
+        "category": "studio",
+        "module": "tools.studio.workflow_editor",
+        "handler": "list_builtin_templates",
+        "description": "List built-in workflow templates from args/workflow_templates/.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "studio_init_db": {
+        "category": "studio",
+        "module": "tools.studio.init_db",
+        "handler": "init_studio_tables",
+        "description": "Initialize Studio database tables (idempotent).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
 }
 
 

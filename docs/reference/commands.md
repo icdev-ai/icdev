@@ -2022,4 +2022,20 @@ python tools/redaction/db_scanner.py --scan --json                              
 python tools/redaction/db_scanner.py --scan --table proposal_knowledge_base --json     # Scan specific table
 python tools/redaction/db_scanner.py --scan --sample-size 50 --json                    # Custom sample size
 python tools/redaction/db_scanner.py --health --json --gate                            # Gate check
+
+# ── ICDEV Studio (Phase 72) ──────────────────────────────────────────────
+
+# Studio DB Init — create studio_* tables
+python tools/studio/init_db.py --json                                                  # Init tables (idempotent)
+python tools/studio/init_db.py --verbose                                               # Verbose output
+
+# Workflow Editor — tool catalog, templates, CRUD
+python tools/studio/workflow_editor.py --json catalog                                  # List tool catalog
+python tools/studio/workflow_editor.py --json templates                                # List built-in workflow templates
+python tools/studio/workflow_editor.py --json list                                     # List saved studio workflows
+python tools/studio/workflow_editor.py --json get <workflow_id>                        # Get workflow by ID
+
+# Dashboard Pages
+# /studio/workflows    — Visual Workflow Builder (drag-drop DAG editor)
+# /studio/marketplace  — Marketplace Storefront (browse, search, install)
 ```

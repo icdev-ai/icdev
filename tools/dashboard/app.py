@@ -102,6 +102,7 @@ try:
 except ImportError:
     _HAS_CHAT_API = False
 from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
+from tools.dashboard.api.studio import studio_api  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
@@ -813,6 +814,7 @@ def create_app() -> Flask:
     app.register_blueprint(orchestration_api)
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
+    app.register_blueprint(studio_api)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -5207,6 +5209,18 @@ def create_app() -> Flask:
             return jsonify(revoke_import(import_id, revoked_by, reason))
         except Exception as exc:
             return jsonify({"error": str(exc)})
+
+    # ── ICDEV Studio (Phase 72) ─────────────────────────────────────
+
+    @app.route("/studio/workflows")
+    def studio_workflows():
+        """Studio — Visual Workflow Editor."""
+        return render_template("studio/workflow_studio.html")
+
+    @app.route("/studio/marketplace")
+    def studio_marketplace():
+        """Studio — Marketplace Storefront."""
+        return render_template("studio/marketplace.html")
 
     return app
 

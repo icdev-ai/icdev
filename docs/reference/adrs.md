@@ -721,3 +721,11 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-RDT-10:** Scope mode: all (default) — every LLM call redacted unless exempt; enforced modules never skip even for local routing
 - **D-RDT-11:** Performance: singleton sanitizer (30min TTL), module-level Ollama cache (60s TTL), pre-compiled regex, cached YAML configs
 - **D-RDT-12:** Child apps inherit redaction automatically (tools/redaction/ not in PARENT_ONLY_DIRS)
+
+### Phase 72 — ICDEV Studio (Low-Code/No-Code Platform)
+- **D361:** Build own visual workflow engine — no n8n embedding (fair-code license incompatible with gov redistribution)
+- **D362:** Canvas rendering via vanilla JS + SVG — no React/npm deps, air-gap safe, consistent with existing dashboard
+- **D363:** Forms serialize to JSON Schema (draft-07) — industry standard, portable, auto-generates DB + API + UI
+- **D364:** Case state machines use finite-state-machine pattern — deterministic, auditable, NIST AU compliant
+- **D365:** Citizen automations are event-sourced — full replay for debugging and compliance audit
+- **D366:** NL App Builder uses two-tier LLM (Ollama draft + Claude refine) — consistent with existing router architecture
