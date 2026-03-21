@@ -454,6 +454,11 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-NC-5:** Propagation verifier checks digest + DB schema + health endpoint + CUI markings after capability distribution
 - **D-NC-6:** Egress monitor tracks child network calls and evaluates against parent-defined egress policies
 
+### D-SEC — Security Enforcement
+
+- **D-SEC-10:** Container-isolated code execution via llm-sandbox (Docker/Podman/K8s) with resource limits, network isolation, and append-only audit logging (Phase 71)
+- **D-SEC-11:** LLM Sandbox integration across 5 entry points: CodeLens test pipeline (step 2.5), CI/CD contributor PR verification (GitLab + GitHub), OpenClaw bridge import (Gate 9 upgrade + Gate 9b full execution), Marketplace pre-install verification, Genesis Evolve mutation safety with confidence penalty. All with graceful degradation when Docker unavailable (Phase 72)
+
 ### D-WF — Workflow Discipline Engine
 
 - **D-WF-1:** PLAN-APPLY-UNIFY lifecycle with 6-state machine (PLANNING→PLANNED→APPLYING→APPLIED→UNIFYING→CLOSED/ABANDONED)

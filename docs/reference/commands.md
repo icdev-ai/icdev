@@ -928,6 +928,7 @@ pytest tests/test_production_remediate.py -v          # Remediation tests (25 te
 # Test orchestrator (full pipeline: unit + BDD + E2E + gates)
 python tools/testing/test_orchestrator.py --project-dir /path/to/project
 python tools/testing/test_orchestrator.py --project-dir /path --skip-e2e --project-id "proj-123"
+python tools/testing/test_orchestrator.py --project-dir /path --skip-sandbox  # Skip LLM sandbox isolation (D-SEC-11)
 
 # E2E tests (Playwright MCP)
 python tools/testing/e2e_runner.py --discover         # List available E2E test specs

@@ -1109,6 +1109,21 @@ sandbox_execution:
     network_access_requires_approval: true
     max_concurrent_executions: 4
 
+# Sandbox Integration Gates (Phase 72, D-SEC-11)
+sandbox_integration:
+  blocking:
+    - marketplace_install_sandbox_failure
+    - openclaw_full_sandbox_failure
+    - ci_cd_sandbox_failure
+  warning:
+    - codelens_sandbox_unavailable
+    - genesis_sandbox_failure
+  thresholds:
+    codelens_max_files: 15
+    marketplace_max_files: 20
+    genesis_confidence_penalty: 0.10
+    ci_cd_fail_on_error: true
+
 openclaw_export:
   description: "Gate for exporting ICDEV skills to OpenClaw format — prevents data leakage"
   blocking:
