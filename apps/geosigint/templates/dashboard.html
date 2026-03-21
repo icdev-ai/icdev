@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% set active = "dashboard" %}
+{% block title %}Dashboard — GeoSIGINT{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Signal Intelligence Dashboard</h1>
+    <p class="page-header__sub">Real-time RF spectrum monitoring and pattern analysis</p>
+</div>
+
+<!-- Stat cards -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-card__value">{{ "{:,}".format(stats.signals) }}</div>
+        <div class="stat-card__label">Signal Detections</div>
+        <div class="stat-card__icon">&#128225;</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card__value">{{ stats.emitters }}</div>
+        <div class="stat-card__label">Active Emitters</div>
+        <div class="stat-card__icon">&#128752;</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card__value">{{ stats.stations }}</div>
+        <div class="stat-card__label">Receiver Stations</div>
+        <div class="stat-card__icon">&#128225;</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card__value">{{ stats.patterns }}</div>
+        <div class="stat-card__label">Detected Patterns</div>
+        <div class="stat-card__icon">&#128200;</div>
+    </div>
+    <div class="stat-card stat-card--warn">
+        <div class="stat-card__value">{{ stats.anomalies }}</div>
+        <div class="stat-card__label">Active Anomalies</div>
+        <div class="stat-card__icon">&#9888;</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-card__value">{{ "{:,}".format(stats.kg_edges) }}</div>
+        <div class="stat-card__label">KG Relationships</div>
+        <div class="stat-card__icon">&#128279;</div>
+    </div>
+</div>
+
+<!-- Charts row -->
+<div class="grid-2">
+    <div class="card">
+        <div class="card__header">Signal Activity (30 days)</div>
+        <div class="card__body">
+            <canvas id="timeline-chart" height="200"></canvas>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card__header">Modulation Distribution</div>
+        <div class="card__body">
+            <canvas id="mod-chart" height="200"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Bottom row -->
+<div class="grid-2">
+    <div class="card">
+        <div class="card__header">Recent Anomalies</div>
+        <div class="card__body">
+            <table class="table">
+                <thead>
+                    <tr><th>Type</th><th>Severity</th><th>Description</th><th>Time</th></tr>
+                </thead>
+                <tbody>
+                {% for a in anomalies %}
+                    <tr>
+                        <td><span class="badge badge--{{ a.anomaly_type }}">{{ a.anomaly_type }}</span></td>
+                        <td><span class="severity severity--{{ a.severity }}">{{ a.severity }}</span></td>
+                        <td>{{ a.description[:80] }}</td>
+                        <td class="text-muted">{{ a.detected_at[:16] }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card__header">Space Weather (7 days)</div>
+        <div class="card__body">
+            <table class="table">
+                <thead>
+                    <tr><th>Date</th><th>K-Index</th><th>Solar Flux</th><th>Conditions</th></tr>
+                </thead>
+                <tbody>
+                {% for w in weather %}
+                    <tr>
+                        <td>{{ w.timestamp[:10] }}</td>
+                        <td><span class="k-index k-index--{{ w.k_index }}">{{ w.k_index }}</span></td>
+                        <td>{{ "%.1f"|format(w.solar_flux) }} SFU</td>
+                        <td><span class="badge badge--{{ w.conditions }}">{{ w.conditions }}</span></td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Simple canvas bar chart for timeline
+(function() {
+    const data = {{ timeline | tojson }};
+    const canvas = document.getElementById('timeline-chart');
+    if (!canvas || !data.length) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width = canvas.parentElement.clientWidth;
+    const h = canvas.height = 200;
+    const max = Math.max(...data.map(d => d.count));
+    const barW = Math.max(2, (w - 40) / data.length - 2);
+    ctx.fillStyle = '#1e1e2e';
+    ctx.fillRect(0, 0, w, h);
+    data.forEach((d, i) => {
+        const barH = (d.count / max) * (h - 40);
+        const x = 20 + i * (barW + 2);
+        const y = h - 20 - barH;
+        ctx.fillStyle = '#6366f1';
+        ctx.fillRect(x, y, barW, barH);
+    });
+    // X labels
+    ctx.fillStyle = '#888';
+    ctx.font = '10px monospace';
+    [0, Math.floor(data.length/2), data.length-1].forEach(i => {
+        if (data[i]) ctx.fillText(data[i].day.slice(5), 20 + i*(barW+2), h-4);
+    });
+})();
+
+// Donut chart for modulation
+(function() {
+    const data = {{ mod_dist | tojson }};
+    const canvas = document.getElementById('mod-chart');
+    if (!canvas || !data.length) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width = canvas.parentElement.clientWidth;
+    const h = canvas.height = 200;
+    const cx = w/2, cy = h/2, r = 70, ir = 40;
+    const total = data.reduce((s,d) => s + d.count, 0);
+    const colors = ['#6366f1','#ec4899','#22c55e','#f59e0b','#3b82f6','#ef4444','#a855f7','#14b8a6'];
+    let angle = -Math.PI/2;
+    ctx.fillStyle = '#1e1e2e';
+    ctx.fillRect(0, 0, w, h);
+    data.forEach((d, i) => {
+        const slice = (d.count / total) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, angle, angle + slice);
+        ctx.arc(cx, cy, ir, angle + slice, angle, true);
+        ctx.closePath();
+        ctx.fillStyle = colors[i % colors.length];
+        ctx.fill();
+        // Label
+        const mid = angle + slice/2;
+        const lx = cx + Math.cos(mid) * (r + 16);
+        const ly = cy + Math.sin(mid) * (r + 16);
+        ctx.fillStyle = '#ccc';
+        ctx.font = '11px monospace';
+        ctx.fillText(d.modulation, lx - 10, ly + 4);
+        angle += slice;
+    });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Real-Time Cyber Threat Intelligence Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/css/app.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav__brand">
+            <span class="nav__title">Real-Time Cyber Threat Intelli</span>
+        </div>
+        <div class="nav__links">
+            <a href="/" class="nav__link {% if active == 'dashboard' %}nav__link--active{% endif %}">Dashboard</a><a href="/threat_map" class="nav__link {% if active == 'threat_map' %}nav__link--active{% endif %}">Threat Map</a><a href="/vulnerabilities" class="nav__link {% if active == 'vulnerabilities' %}nav__link--active{% endif %}">Vulnerabilities</a><a href="/indicators" class="nav__link {% if active == 'indicators' %}nav__link--active{% endif %}">Indicators</a><a href="/knowledge_graph" class="nav__link {% if active == 'knowledge_graph' %}nav__link--active{% endif %}">Knowledge Graph</a>
+        </div>
+        <div class="nav__status"><span class="status-dot status-dot--green"></span> Operational</div>
+    </nav>
+    <main class="main">{% block content %}{% endblock %}</main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="/static/js/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
