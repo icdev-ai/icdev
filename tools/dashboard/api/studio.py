@@ -173,3 +173,57 @@ def api_marketplace_install(asset_id: str):
         return jsonify({"error": "Marketplace module not available"}), 503
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ── NL App Builder (Phase 72b) ────────────────────────────
+
+@studio_api.route("/app-builder/extract", methods=["POST"])
+def api_app_builder_extract():
+    """Extract capabilities from a natural language description."""
+    from tools.studio.nl_app_builder import extract_from_description
+    data = request.get_json(silent=True) or {}
+    desc = data.get("description", "").strip()
+    if not desc:
+        return jsonify({"error": "description is required"}), 400
+    return jsonify(extract_from_description(desc))
+
+
+@studio_api.route("/app-builder/sessions", methods=["POST"])
+def api_app_builder_create():
+    """Create a new NL app builder session."""
+    from tools.studio.nl_app_builder import create_builder_session
+    data = request.get_json(silent=True) or {}
+    desc = data.get("description", "").strip()
+    if not desc:
+        return jsonify({"error": "description is required"}), 400
+    result = create_builder_session(desc, app_name=data.get("app_name"))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result), 201
+
+
+@studio_api.route("/app-builder/sessions/<session_id>/refine", methods=["PATCH"])
+def api_app_builder_refine(session_id: str):
+    """Refine an existing builder session."""
+    from tools.studio.nl_app_builder import refine_session
+    data = request.get_json(silent=True) or {}
+    result = refine_session(
+        session_id,
+        app_name=data.get("app_name"),
+        toggle_capabilities=data.get("toggle_capabilities"),
+        classification=data.get("classification"),
+    )
+    if result.get("status") == "error":
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+@studio_api.route("/app-builder/sessions/<session_id>/build", methods=["POST"])
+def api_app_builder_build(session_id: str):
+    """Execute the build from a confirmed session."""
+    from tools.studio.nl_app_builder import execute_build
+    data = request.get_json(silent=True) or {}
+    result = execute_build(session_id, output_dir=data.get("output_dir"))
+    if result.get("status") == "error":
+        return jsonify(result), 400
+    return jsonify(result)

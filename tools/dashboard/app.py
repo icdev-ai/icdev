@@ -5222,6 +5222,11 @@ def create_app() -> Flask:
         """Studio — Marketplace Storefront."""
         return render_template("studio/marketplace.html")
 
+    @app.route("/studio/app-builder")
+    def studio_app_builder():
+        """Studio — NL App Builder."""
+        return render_template("studio/app_builder.html")
+
     return app
 
 

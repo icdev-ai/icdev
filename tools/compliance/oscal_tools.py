@@ -31,9 +31,13 @@ import shutil
 import subprocess
 import sys
 import time
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
+
+_BASE = Path(__file__).resolve().parent.parent.parent
+sys.path.insert(0, str(_BASE))
+
+from tools.db.storage import get_connection
 
 logger = logging.getLogger(__name__)
 
