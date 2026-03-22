@@ -1448,3 +1448,17 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Macro Data | tools\trading\data\macro_data.py | Auto-registered: data/macro_data.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Alert Engine | tools\trading\market_intel\alert_engine.py | Auto-registered: market_intel/alert_engine.py | --json | JSON |
+| Auto Trader | tools\trading\market_intel\auto_trader.py | Auto-registered: market_intel/auto_trader.py | --json | JSON |
+| Batch Scanner | tools\trading\market_intel\batch_scanner.py | Auto-registered: market_intel/batch_scanner.py | --json | JSON |
+| Cascade Engine | tools\trading\market_intel\cascade_engine.py | Auto-registered: market_intel/cascade_engine.py | --json | JSON |
+| Expert Agents | tools\trading\market_intel\expert_agents.py | Auto-registered: market_intel/expert_agents.py | --json | JSON |
+| Forecaster | tools\trading\market_intel\forecaster.py | Auto-registered: market_intel/forecaster.py | --json | JSON |
+| Kg Seeder | tools\trading\market_intel\kg_seeder.py | Auto-registered: market_intel/kg_seeder.py | --json | JSON |
+| Scenario Engine | tools\trading\market_intel\scenario_engine.py | Auto-registered: market_intel/scenario_engine.py | --json | JSON |
+| Universe | tools\trading\market_intel\universe.py | Auto-registered: market_intel/universe.py | --json | JSON |

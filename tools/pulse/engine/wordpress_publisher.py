@@ -203,34 +203,43 @@ def _resolve_local_images(content: str, wp) -> str:
     # Local = starts with / (but not //) or doesn't start with http
     local_img_re = re.compile(
         r'(?:'
-        r'(?:src=["\'])(/static/screenshots/[^"\']+)["\']'  # HTML src
+        r'(?:src=["\'])(/static/screenshots/[^"\']+)["\']'  # HTML src="/static/..."
         r'|'
-        r'!\[[^\]]*\]\((/static/screenshots/[^)]+)\)'  # Markdown ![](...)
+        r'!\[[^\]]*\]\((/static/screenshots/[^)]+)\)'  # Markdown ![](/static/...)
         r'|'
-        r'(?:src=["\'])((?:tools/|playwright/)[^"\']+\.(?:png|jpg|jpeg|webp|gif))["\']'
+        r'(?:src=["\'])((?:tools/|playwright/)[^"\']+\.(?:png|jpg|jpeg|webp|gif))["\']'  # HTML src="playwright/..."
+        r'|'
+        r'!\[[^\]]*\]\(((?:tools/|playwright/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)'  # Markdown ![](playwright/...)
+        r'|'
+        r'!\[[^\]]*\]\(((?:[A-Z]:\\|/)[^)]+\.(?:png|jpg|jpeg|webp|gif))\)'  # Markdown ![](C:\abs\path.png)
         r')'
     )
 
     replacements = {}
     for m in local_img_re.finditer(content):
-        local_path = m.group(1) or m.group(2) or m.group(3)
+        local_path = m.group(1) or m.group(2) or m.group(3) or m.group(4) or m.group(5)
         if local_path in replacements:
             continue  # Already processed
 
         # Resolve to absolute filesystem path
         resolved = None
-        # Strip leading slash for filesystem lookup
-        clean = local_path.lstrip("/")
-        for search_dir in search_dirs:
-            candidate = search_dir / clean
-            if candidate.exists():
-                resolved = candidate
-                break
-            # Also try just the filename
-            candidate = search_dir / Path(clean).name
-            if candidate.exists():
-                resolved = candidate
-                break
+        # Check if it's already an absolute path
+        abs_candidate = Path(local_path)
+        if abs_candidate.is_absolute() and abs_candidate.exists():
+            resolved = abs_candidate
+        else:
+            # Strip leading slash for filesystem lookup
+            clean = local_path.lstrip("/")
+            for search_dir in search_dirs:
+                candidate = search_dir / clean
+                if candidate.exists():
+                    resolved = candidate
+                    break
+                # Also try just the filename
+                candidate = search_dir / Path(clean).name
+                if candidate.exists():
+                    resolved = candidate
+                    break
 
         if not resolved:
             _log(f"Local image not found on disk: {local_path}", "WARN")
