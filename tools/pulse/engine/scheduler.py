@@ -1134,12 +1134,29 @@ def run_pipeline_from_draft(
         "priority_score": 1.0,
     }
 
+    # Capability matching (deterministic, zero-LLM)
+    capabilities_referenced = []
+    try:
+        from tools.pulse.engine.capability_scanner import match_capabilities
+        cap_keywords = [kw for kw in topic.split() if len(kw) > 2]
+        matched_caps = match_capabilities(cap_keywords, top_n=5)
+        if matched_caps:
+            capabilities_referenced = [
+                {"slug": c["slug"], "name": c["name"], "domain": c["domain"],
+                 "score": c.get("match_score", 0)}
+                for c in matched_caps
+            ]
+            logger.info("Matched %d capabilities for draft pipeline", len(matched_caps))
+    except Exception as e:
+        logger.warning("Capability matching skipped in draft pipeline: %s", e)
+
     return post_processing(
         body_markdown=body_markdown,
         cluster=cluster,
         source_urls=source_urls,
         mark_used=False,
         auto_rewrite=True,
+        capabilities_referenced=capabilities_referenced,
     )
 
 
