@@ -14,6 +14,7 @@ Checks:
   5. manifest       — New tool files documented in tools/manifest.md
   6. append_only    — Append-only tables protected in pre_tool_use.py
   7. import_usage   — Unused imports in recently changed files
+  8. api_wiring     — API handlers read from DB, not hardcoded literals
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 Follows claude_dir_validator.py pattern (dataclass results, check registry).
@@ -760,6 +761,156 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Check 8: api_wiring — verify API handlers read from DB, not hardcoded
+# ---------------------------------------------------------------------------
+
+# Patterns indicating a function reads from storage (DB/connector/file)
+_DB_CALL_PATTERNS = re.compile(
+    r"(?:"
+    r"\.execute\(|\.fetchone\(|\.fetchall\(|\.fetchmany\("
+    r"|get_conn\(|get_connection\("
+    r"|\.read\(|\.query\("
+    r"|open\(|Path\("
+    r"|from\s+\S+\s+import\s+"  # lazy imports inside function
+    r"|subprocess\.run\("       # tool dispatch via subprocess
+    r"|import\s+\S*(?:db|storage|connector|model)"
+    r")",
+    re.IGNORECASE,
+)
+
+# Patterns indicating hardcoded return data (literal dict/list in return)
+_HARDCODED_RETURN = re.compile(
+    r"return\s+jsonify\s*\(\s*\{[^}]*\}\s*\)",
+    re.DOTALL,
+)
+
+
+def check_api_wiring(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Check 8: verify API/dashboard route handlers read from DB.
+
+    Scans Flask route handlers for functions that return jsonify()
+    with literal dicts but have no DB/storage calls in their body.
+    These are likely hardcoded placeholders that should read from a
+    database or connector.
+
+    Detects the pattern that caused the AlphaDesk lifecycle bug:
+    API handlers returning static data instead of querying the DB.
+    """
+    # Find all dashboard/API Python files
+    scan_dirs = [
+        PROJECT_ROOT / "tools" / "dashboard" / "api",
+        PROJECT_ROOT / "tools" / "dashboard",
+        PROJECT_ROOT / "tools" / "trading" / "dashboard",
+        PROJECT_ROOT / "tools" / "trading" / "dashboard" / "api",
+    ]
+    # Also check child apps
+    apps_dir = PROJECT_ROOT / "apps"
+    if apps_dir.exists():
+        for app_dir in apps_dir.iterdir():
+            if app_dir.is_dir():
+                for sub in ["tools/dashboard", "tools/dashboard/api"]:
+                    p = app_dir / sub
+                    if p.exists():
+                        scan_dirs.append(p)
+
+    if changed_files:
+        py_files = [
+            f for f in changed_files
+            if f.suffix == ".py" and f.exists()
+        ]
+    else:
+        py_files = []
+        for d in scan_dirs:
+            if d.exists():
+                py_files.extend(d.glob("*.py"))
+
+    hardcoded_apis: List[str] = []
+
+    for py_path in py_files:
+        source = _read_text(py_path)
+        if not source or "@app.route" not in source:
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(py_path))
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef):
+                continue
+
+            # Check if this function has a route decorator
+            is_route = False
+            for dec in node.decorator_list:
+                dec_src = ast.dump(dec)
+                if "route" in dec_src.lower():
+                    is_route = True
+                    break
+            if not is_route:
+                continue
+
+            # Get function body source
+            func_lines = source.splitlines()[
+                node.lineno - 1: node.end_lineno
+            ]
+            func_body = "\n".join(func_lines)
+
+            # Skip small health/version endpoints (< 5 lines)
+            if len(func_lines) <= 5:
+                continue
+
+            # Check: does it have any DB/storage call?
+            has_db_call = bool(_DB_CALL_PATTERNS.search(func_body))
+
+            # Check: does it return jsonify with a literal?
+            has_literal_return = bool(
+                _HARDCODED_RETURN.search(func_body)
+            )
+
+            if has_literal_return and not has_db_call:
+                rel = (
+                    py_path.relative_to(PROJECT_ROOT)
+                    if py_path.is_relative_to(PROJECT_ROOT)
+                    else py_path
+                )
+                hardcoded_apis.append(
+                    f"{rel}:{node.lineno}: "
+                    f"{node.name}() returns hardcoded data "
+                    f"(no DB/storage call)"
+                )
+
+    if hardcoded_apis:
+        return CoherenceCheck(
+            check_id="api_wiring",
+            check_name="API Wiring",
+            status="warn",
+            expected=["All API handlers read from DB/storage"],
+            actual=hardcoded_apis,
+            missing=[],
+            extra=hardcoded_apis,
+            message=(
+                f"{len(hardcoded_apis)} API handler(s) return "
+                f"hardcoded data without DB/storage calls — "
+                f"likely placeholder code"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="api_wiring",
+        check_name="API Wiring",
+        status="pass",
+        expected=["All API handlers read from DB/storage"],
+        actual=[f"Scanned {len(py_files)} API files"],
+        missing=[],
+        extra=[],
+        message="All API handlers have DB/storage calls",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -771,6 +922,7 @@ CHECK_REGISTRY = {
     "manifest": check_manifest,
     "append_only": check_append_only,
     "import_usage": check_import_usage,
+    "api_wiring": check_api_wiring,
 }
 
 
@@ -787,6 +939,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "config_code": "suggest",    # suggest YAML additions
     "fixture_schema": "suggest", # suggest test fixture DDL
     "signature_call": "skip",    # too risky to auto-modify call sites
+    "api_wiring": "suggest",     # suggest DB integration for hardcoded APIs
 }
 
 
