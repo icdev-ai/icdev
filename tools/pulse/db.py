@@ -198,6 +198,7 @@ def init_db():
             ("judge_color", "TEXT"),
             ("judge_composite", "REAL"),
             ("judge_combined", "REAL"),
+            ("seo_score", "REAL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE pulse_posts ADD COLUMN {col} {coltype}")

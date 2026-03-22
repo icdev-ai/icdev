@@ -246,24 +246,52 @@ _TOPIC_VISUAL_MAP = {
     "ai": "artificial intelligence neural network visualization, machine learning workflow, data processing pipeline",
     "embedded": "circuit board with microcontroller, IoT sensor network, firmware deployment",
     "blockchain": "distributed ledger with connected nodes, cryptographic chain links, consensus visualization",
+    # Financial / Market Intelligence
+    "market intelligence": "stock market trading terminal with candlestick charts, green and red price bars, financial data screens showing tickers and volume",
+    "trading": "stock market trading terminal with candlestick charts, green and red price bars, financial data screens, multiple monitors",
+    "market": "financial trading floor with multiple monitors showing stock tickers, price charts, and market data heatmaps",
+    "stock": "wall street trading screens with candlestick charts, stock price tickers, volume bars, financial dashboard",
+    "finance": "financial analytics dashboard with charts, graphs, portfolio metrics, and real-time market data feeds",
+    "portfolio": "investment portfolio dashboard with asset allocation pie charts, performance graphs, risk metrics on screens",
+    "signal": "trading signal dashboard with buy and sell indicators, confidence scores, alert notifications on dark screens",
+    "scenario": "what-if scenario simulation dashboard with cascade flow diagrams, impact analysis charts, decision trees",
+    "knowledge graph": "interactive network graph visualization with connected nodes and edges, relationship mapping, entity connections",
+    # Intelligence / Research
+    "intelligence": "intelligence operations center with multiple data feeds, analysis dashboards, correlation maps on large screens",
+    "research": "research lab with data visualization dashboards, trend analysis charts, scientific publication graphs",
+    "proposal": "government proposal review workspace with compliance checklists, document sections, evaluation matrices on screens",
+    "govcon": "government contracting office with SAM.gov data on screens, proposal volumes, compliance matrices",
 }
 
 
-def _build_image_prompt(title: str, category: str = "") -> str:
+def _build_image_prompt(title: str, category: str = "", topic: str = "") -> str:
     """Build a topic-aware image generation prompt from article metadata.
 
     Maps article topics to concrete visual elements that SDXL Turbo
     can render effectively, rather than generic abstract art.
+
+    Parameters
+    ----------
+    title : str
+        Article title.
+    category : str
+        Optional category or cluster name.
+    topic : str
+        Optional topic description or keywords for richer matching.
     """
-    # Find matching visual elements from topic keywords
-    combined = f"{title} {category}".lower()
-    visuals = []
+    # Combine all available text for keyword matching
+    combined = f"{title} {category} {topic}".lower()
+    # Collect matches with keyword length as priority (longer = more specific)
+    matches = []
     for keyword, visual in _TOPIC_VISUAL_MAP.items():
         if keyword in combined:
-            visuals.append(visual)
+            matches.append((len(keyword), keyword, visual))
+    # Sort by keyword length descending so most specific match wins
+    matches.sort(key=lambda x: x[0], reverse=True)
+    visuals = [v for _, _, v in matches]
 
     if visuals:
-        # Use the single most relevant visual (keeps images distinct)
+        # Use the most specific matching visual
         scene = visuals[0]
         # Vary the art style based on title hash for diversity
         h = hashlib.md5(title.encode(), usedforsecurity=False).hexdigest()
@@ -300,6 +328,7 @@ def generate_image(
     steps: int = DEFAULT_STEPS,
     guidance_scale: float = DEFAULT_GUIDANCE,
     seed: Optional[int] = None,
+    topic: str = "",
 ) -> Dict[str, Any]:
     """Generate a hero image using SDXL Turbo on local GPU.
 
@@ -321,6 +350,8 @@ def generate_image(
         CFG guidance (0.0 for SDXL Turbo, which is guidance-free).
     seed : int or None
         Random seed for reproducibility. None for random.
+    topic : str
+        Optional topic or keywords for richer prompt matching.
 
     Returns
     -------
@@ -334,7 +365,7 @@ def generate_image(
     width = (width // 8) * 8
     height = (height // 8) * 8
 
-    prompt = prompt_override or _build_image_prompt(title, category)
+    prompt = prompt_override or _build_image_prompt(title, category, topic)
 
     # Build output path
     if not output_path:
@@ -466,7 +497,7 @@ def create_post_image(title: str, topic: str = "") -> dict:
     Alias for generate_hero_image() matching the scheduler's expected API.
     Returns dict with 'path', 'url', 'method'.
     """
-    result = generate_hero_image(title=title, category=topic)
+    result = generate_hero_image(title=title, category=topic, topic=topic)
     # Normalize to scheduler's expected keys
     result["url"] = result.get("path", "")
     return result

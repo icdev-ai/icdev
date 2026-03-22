@@ -113,6 +113,31 @@
     <div id="rewrite-status" style="font-size: 12px; color: var(--text-dim); margin-top: 8px;"></div>
 </div>
 
+<!-- SEO Score Panel -->
+<div class="card" style="margin-bottom: 16px; border-left: 3px solid {{ '#22c55e' if (post.seo_score or 0) >= 80 else '#f59e0b' if (post.seo_score or 0) >= 60 else '#ef4444' }};">
+    <h3 style="margin: 0 0 8px 0; font-size: 14px;">SEO Score</h3>
+    <div class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));">
+        <div class="stat-card mini">
+            <div class="label">Score</div>
+            <div class="value {{ 'green' if (post.seo_score or 0) >= 80 else 'orange' if (post.seo_score or 0) >= 60 else 'red' }}" style="font-size: 20px;">
+                {{ '%.0f'|format(post.seo_score) if post.seo_score else '—' }}
+            </div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">SEO Title</div>
+            <div class="value" style="font-size: 12px; word-break: break-word;">{{ post.seo_title or '—' }}</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Meta Description</div>
+            <div class="value" style="font-size: 11px; word-break: break-word;">{{ (post.seo_description or '—')[:80] }}{% if (post.seo_description or '')|length > 80 %}...{% endif %}</div>
+        </div>
+        <div class="stat-card mini">
+            <div class="label">Keywords</div>
+            <div class="value" style="font-size: 11px; word-break: break-word;">{{ post.seo_keywords or '—' }}</div>
+        </div>
+    </div>
+</div>
+
 <!-- TL;DR -->
 {% if post.tldr %}
 <div class="card" style="margin-bottom: 16px; border-left: 3px solid var(--primary);">

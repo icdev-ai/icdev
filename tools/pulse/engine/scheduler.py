@@ -310,7 +310,17 @@ def _enrich_media(run_id: str, post_data: dict, cluster: dict,
     """Generate hero image, generated video, find YouTube videos, and cross-link; mutates post_data in place."""
     logger.info("[%s] Generating hero image...", run_id)
     try:
-        image_result = create_post_image(post_data["title"], cluster.get("name", ""))
+        # Build rich topic string from cluster for better image prompt matching
+        pain_pts = cluster.get("pain_points", [])
+        if isinstance(pain_pts, str):
+            try:
+                pain_pts = json.loads(pain_pts)
+            except (json.JSONDecodeError, TypeError):
+                pain_pts = [pain_pts]
+        topic_parts = [cluster.get("name", ""), cluster.get("description", "")]
+        topic_parts.extend(pain_pts if isinstance(pain_pts, list) else [])
+        rich_topic = " ".join(str(p) for p in topic_parts if p)
+        image_result = create_post_image(post_data["title"], rich_topic)
         if image_result.get("path"):
             post_data["hero_image_path"] = image_result["path"]
         post_data["og_image_url"] = image_result.get("url") or image_result.get("path", "")
@@ -433,6 +443,14 @@ def _apply_seo(run_id: str, post_data: dict) -> None:
     post_data["body_markdown"] = _inject_cross_links(
         run_id, post_data.get("body_markdown", ""), post_data.get("title", ""),
     )
+
+    # Compute and store SEO score
+    from tools.pulse.engine.seo_optimizer import analyze_seo_score
+    seo_analysis = analyze_seo_score(post_data)
+    post_data["seo_score"] = seo_analysis.get("score", 0)
+    logger.info("[%s] SEO score: %d/100 (%s) — %d recommendations",
+                run_id, seo_analysis["score"], seo_analysis["grade"],
+                len(seo_analysis.get("recommendations", [])))
 
     seo_data = post_data.pop("seo", {})
     post_data["seo_title"] = seo_data.get("title", post_data.get("title", ""))
@@ -577,6 +595,25 @@ def post_processing(
         post_data["body_markdown"] = _resolve_placeholders(post_data.get("body_markdown", ""), hero or None, videos)
 
         _apply_seo(run_id, post_data)
+
+        # Auto-match capabilities if none were provided upstream
+        if not capabilities_referenced:
+            try:
+                from tools.pulse.engine.capability_scanner import match_capabilities
+                title_text = post_data.get("title", "")
+                topic_text = cluster.get("name", "")
+                cap_keywords = [kw for kw in f"{title_text} {topic_text}".split() if len(kw) > 2]
+                matched = match_capabilities(cap_keywords, top_n=5)
+                if matched:
+                    capabilities_referenced = [
+                        {"slug": c["slug"], "name": c["name"], "domain": c["domain"],
+                         "score": c.get("match_score", 0)}
+                        for c in matched
+                    ]
+                    logger.info("[%s] Auto-matched %d capabilities", run_id, len(capabilities_referenced))
+            except Exception as e:
+                logger.warning("[%s] Capability auto-match failed: %s", run_id, e)
+
         if capabilities_referenced:
             post_data["capabilities_referenced"] = json.dumps(capabilities_referenced)
         post_id = _save_post(run_id, post_data, cluster)
