@@ -775,15 +775,27 @@ class TeamOrchestrator:
         return subtask
 
     def _block_downstream(self, failed_id: str, workflow: Workflow):
-        """Mark all subtasks that depend on the failed subtask as blocked."""
+        """Recursively block all subtasks that transitively depend on failed_id.
+
+        Cascades through the full dependency graph — if A fails, B depends on A,
+        and C depends on B, then both B and C are blocked (not just B).
+        """
+        newly_blocked = []
         for st_id, st in workflow.subtasks.items():
-            if failed_id in st.depends_on and st.status in ("pending", "queued"):
+            if failed_id in st.depends_on and st.status in (
+                "pending", "queued",
+            ):
                 st.status = "blocked"
                 self._update_subtask_status(st, workflow.id)
                 logger.info(
                     "Subtask '%s' blocked due to failed dependency '%s'",
                     st_id, failed_id,
                 )
+                newly_blocked.append(st_id)
+
+        # Recursively block transitive dependents
+        for blocked_id in newly_blocked:
+            self._block_downstream(blocked_id, workflow)
 
     # -------------------------------------------------------------------
     # Result aggregation

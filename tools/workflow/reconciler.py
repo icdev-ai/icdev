@@ -198,6 +198,48 @@ def reconcile(loop_id: str, lessons: str = "", db_path: Optional[Path] = None) -
         except (ImportError, Exception):
             pass  # Graceful — coherence checker is optional
 
+        # 6. Artifact verification — check planned files exist
+        artifact_missing: List[str] = []
+        try:
+            tasks = conn.execute(
+                "SELECT * FROM workflow_tasks WHERE loop_id = ?",
+                (loop_id,),
+            ).fetchall()
+            project_dir = Path(loop.get("project_id", "") or ".")
+            for task in tasks:
+                desc = (task["description"] or "").lower()
+                # Detect file-creation tasks by keywords
+                if any(
+                    kw in desc
+                    for kw in (
+                        "create ", "generate ", "write ",
+                        "build ", "implement ",
+                    )
+                ):
+                    # Extract potential file paths from description
+                    import re as _re
+                    paths = _re.findall(
+                        r'[\w/\\]+\.(?:py|yaml|json|md|html|ts|js)',
+                        task["description"] or "",
+                    )
+                    for p in paths:
+                        full = project_dir / p
+                        if not full.exists():
+                            artifact_missing.append(
+                                f"{task['id']}: {p} not found"
+                            )
+            if artifact_missing:
+                deviations.append({
+                    "type": "missing_artifact",
+                    "detail": (
+                        f"{len(artifact_missing)} planned file(s) "
+                        f"not created: "
+                        + "; ".join(artifact_missing[:5])
+                    ),
+                })
+        except Exception:
+            pass  # Graceful — tasks table may not exist
+
         # Overall result
         min_pass_rate = config.get("reconciliation", {}).get("min_pass_rate", 0.80)
         pass_rate = ac_pass / max(ac_total, 1)

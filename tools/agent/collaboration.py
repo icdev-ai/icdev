@@ -132,10 +132,23 @@ def _invoke_llm(system_prompt: str, user_prompt: str,
         content = "\n".join(json_lines)
 
     try:
-        return json.loads(content)
+        parsed = json.loads(content)
     except (json.JSONDecodeError, ValueError):
-        logger.warning("Failed to parse Bedrock response as JSON")
-        return {"raw_content": resp.content}
+        logger.warning("Failed to parse LLM response as JSON")
+        return {"raw_content": resp.content, "_parse_failed": True}
+
+    # Validate against output_schema if provided
+    if output_schema and isinstance(parsed, dict):
+        required = output_schema.get("required", [])
+        missing = [k for k in required if k not in parsed]
+        if missing:
+            logger.warning(
+                "LLM response missing required fields: %s",
+                missing,
+            )
+            parsed["_missing_fields"] = missing
+
+    return parsed
 
 
 def _load_schema(schema_name: str) -> Optional[dict]:

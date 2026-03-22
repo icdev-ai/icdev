@@ -551,6 +551,17 @@ class PromptChainExecutor:
             )
 
             if step_result.status == "completed":
+                # Validate output is parseable if it looks like JSON
+                output = step_result.output
+                if output and output.strip().startswith("{"):
+                    try:
+                        json.loads(output)
+                    except (json.JSONDecodeError, ValueError):
+                        logger.warning(
+                            "Step '%s' output looks like JSON but "
+                            "is malformed — downstream steps may fail",
+                            step.step_id,
+                        )
                 execution.steps_completed += 1
                 step_outputs[step.step_id] = step_result.output
                 prev_output = step_result.output
