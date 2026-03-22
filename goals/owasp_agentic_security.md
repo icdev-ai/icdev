@@ -20,7 +20,7 @@ Close 8 security gaps identified from OWASP agentic AI security analysis that ar
 ## When to Use
 
 - After Phase 37 (MITRE ATLAS Integration) is complete and operational
-- When adding new agents or MCP servers to the ICDEV multi-agent system
+- When adding new agents or MCP servers to the ICDEV™ multi-agent system
 - Before ATO submission for systems that include agentic AI components
 - After security incidents involving unexpected agent behavior or output
 - When child applications (Phase 36) report anomalous behavioral patterns
@@ -32,7 +32,7 @@ Close 8 security gaps identified from OWASP agentic AI security analysis that ar
 ## Prerequisites
 
 - [ ] Phase 37 complete (prompt injection detection, AI telemetry, ATLAS assessment operational)
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] Configuration: `args/owasp_agentic_config.yaml` (behavioral drift, tool chain, output validation, trust scoring, MCP authorization settings)
 - [ ] Threat catalog: `context/compliance/owasp_agentic_threats.json` (OWASP T1-T17 threat definitions)
 - [ ] Security gates configured: `args/security_gates.yaml` (owasp_agentic section)
@@ -134,13 +134,13 @@ python tools/security/agent_output_validator.py --scan --project-id "proj-123" -
 
 ### Step 4: Formal Threat Model (Gap 4)
 
-Maintain a living STRIDE + OWASP agentic threat model for the ICDEV multi-agent system.
+Maintain a living STRIDE + OWASP agentic threat model for the ICDEV™ multi-agent system.
 
 **Goal:** `goals/agentic_threat_model.md`
 
 **What it covers:**
 - STRIDE analysis (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege) applied to all 15 agents
-- OWASP Agentic AI Threats T1-T17 mapped to ICDEV agent architecture
+- OWASP Agentic AI Threats T1-T17 mapped to ICDEV™ agent architecture
 - Attack surface inventory: MCP servers, A2A protocol, dashboard endpoints, remote gateway channels
 - Review cadence: quarterly, or after adding new agents/MCP servers
 

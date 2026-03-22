@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """LCAT Mapper -- parse PWS/SOW, map tasks to Labor Categories with BLS SOC codes.
 
 Extracts task descriptions from Performance Work Statements, maps to standardized
@@ -284,7 +284,7 @@ def generate_boe(opportunity_id, tasks=None, allocations=None):
         lines.append(f"| {i} | {alloc.get('labor_category', 'N/A')} | {alloc.get('bls_soc_code', 'N/A')} | {alloc.get('fte_count', 0):.1f} | {desc} |")
 
     lines.extend(["", "## Methodology", "",
-        "FTE estimates derived from task complexity analysis using ICDEV deterministic classifier.",
+        "FTE estimates derived from task complexity analysis using ICDEV™ deterministic classifier.",
         "Labor categories mapped to BLS Standard Occupational Classification (SOC) codes.",
         "All estimates are subject to prime contractor review and adjustment.",
         "", "# CUI // SP-CTI"])

@@ -69,7 +69,7 @@ class EgressMonitor:
         """
         try:
             req = urllib.request.Request(endpoint_url, method="GET")
-            req.add_header("User-Agent", "ICDEV-EgressMonitor/1.0")
+            req.add_header("User-Agent", "ICDEV™-EgressMonitor/1.0")
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return {

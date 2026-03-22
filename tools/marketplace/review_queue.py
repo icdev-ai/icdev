@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Review Queue — Human review workflows for cross-tenant asset sharing.
 
 Manages the review lifecycle for marketplace assets that require ISSO or
@@ -679,7 +679,7 @@ def escalate_review(review_id, escalation_reason, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Marketplace Review Queue — human review for cross-tenant asset sharing"
+        description="ICDEV™ Marketplace Review Queue — human review for cross-tenant asset sharing"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", type=Path, default=None, help="Override database path")

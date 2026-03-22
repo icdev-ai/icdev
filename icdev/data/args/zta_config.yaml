@@ -2,7 +2,7 @@
 # Used by: tools/devsecops/zta_maturity_scorer.py, service_mesh_generator.py, pdp_config_generator.py
 # ADR D120: ZTA maturity model uses DoD 7-pillar scoring (Traditional > Advanced > Optimal)
 # ADR D121: Service mesh and policy engine are profile-selectable (Istio/Linkerd, Kyverno/OPA)
-# ADR D124: PDP modeled as external reference; ICDEV generates PEP configs, not PDP itself
+# ADR D124: PDP modeled as external reference; ICDEV™ generates PEP configs, not PDP itself
 
 # =============================================================================
 # ZTA 7-Pillar Maturity Model (DoD Zero Trust Strategy + NIST SP 800-207)
@@ -196,7 +196,7 @@ policy_engine_options:
     policy_types: [ConstraintTemplate, Constraint]
 
 # =============================================================================
-# Policy Decision Point (PDP) References (D124: external, not implemented by ICDEV)
+# Policy Decision Point (PDP) References (D124: external, not implemented by ICDEV™)
 # =============================================================================
 pdp_references:
   - id: disa_icam

@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """RAG ingestion manager — real-time + batch pipeline (D-RAG-9).
 
-Reads from ICDEV source tables, chunks content, embeds via Ollama
+Reads from ICDEV™ source tables, chunks content, embeds via Ollama
 nomic-embed-text (D-RAG-10), and stores in vector store with dedup.
 
 Usage:

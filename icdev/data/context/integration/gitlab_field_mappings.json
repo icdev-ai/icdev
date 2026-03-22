@@ -28,6 +28,6 @@
   "merge_request_template": {
     "title_prefix": "[RICOAS]",
     "description_sections": ["requirements_summary", "compliance_impact", "boundary_tier", "test_plan"],
-    "labels": ["ICDEV", "RICOAS"]
+    "labels": ["ICDEV™", "RICOAS"]
   }
 }

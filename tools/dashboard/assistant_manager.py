@@ -347,8 +347,8 @@ def query(
 
     scope_label = scope or "global (all modules)"
     system_prompt = (
-        "You are the ICDEV Codebase Assistant. Answer questions about the "
-        "ICDEV codebase accurately and concisely. When referencing code, "
+        "You are the ICDEV™ Codebase Assistant. Answer questions about the "
+        "ICDEV™ codebase accurately and concisely. When referencing code, "
         "cite the file path and line number (e.g. tools/pulse/scheduler.py:42).\n\n"
         f"Current scope: {scope_label}\n"
     )
@@ -504,9 +504,9 @@ def get_suggestions(
 
     if not scope:
         return [
-            "What modules make up the ICDEV architecture?",
+            "What modules make up the ICDEV™ architecture?",
             "How does the GOTCHA framework work?",
-            "What databases does ICDEV use?",
+            "What databases does ICDEV™ use?",
         ]
 
     try:

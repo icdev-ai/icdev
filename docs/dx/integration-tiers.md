@@ -1,6 +1,6 @@
 # Integration Tiers
 
-ICDEV abstracts its complexity through three tiers. Each tier gives developers a different level of interaction — from fully invisible to fully explicit. Most teams combine Tier 1 (automatic pipeline) with Tier 2 (Claude Code conversations).
+ICDEV™ abstracts its complexity through three tiers. Each tier gives developers a different level of interaction — from fully invisible to fully explicit. Most teams combine Tier 1 (automatic pipeline) with Tier 2 (Claude Code conversations).
 
 ---
 
@@ -8,7 +8,7 @@ ICDEV abstracts its complexity through three tiers. Each tier gives developers a
 
 ### Concept
 
-ICDEV runs as infrastructure. Developers push code. Compliance, security, testing, and artifact generation happen automatically in the CI/CD pipeline. The developer never types an ICDEV command.
+ICDEV™ runs as infrastructure. Developers push code. Compliance, security, testing, and artifact generation happen automatically in the CI/CD pipeline. The developer never types an ICDEV™ command.
 
 ### How It Works
 
@@ -40,7 +40,7 @@ Developer pushes code
 ### Setup
 
 1. Drop an [`icdev.yaml`](icdev-yaml-spec.md) in your repo root
-2. Add the ICDEV GitHub Action or GitLab CI include (see [CI/CD Integration](ci-cd-integration.md))
+2. Add the ICDEV™ GitHub Action or GitLab CI include (see [CI/CD Integration](ci-cd-integration.md))
 3. Push. That's it.
 
 ### What the Developer Sees
@@ -48,7 +48,7 @@ Developer pushes code
 - Green/red status checks on PRs
 - Inline PR comments for security findings
 - Automated compliance reports in the `artifacts/` directory
-- Nothing else. ICDEV is invisible.
+- Nothing else. ICDEV™ is invisible.
 
 ### When to Use
 
@@ -63,7 +63,7 @@ Developer pushes code
 
 ### Concept
 
-Developers talk to Claude Code in plain English. Claude reads the project's `icdev.yaml`, dev profile, and compliance posture, then orchestrates the right ICDEV tools automatically. The developer never calls a Python script.
+Developers talk to Claude Code in plain English. Claude reads the project's `icdev.yaml`, dev profile, and compliance posture, then orchestrates the right ICDEV™ tools automatically. The developer never calls a Python script.
 
 ### How It Works
 
@@ -115,7 +115,7 @@ Developer: "Build a REST API for user management with RBAC"
 
 ### Slash Commands (Shortcuts)
 
-For frequently used workflows, ICDEV provides slash commands that are shorthand for common requests:
+For frequently used workflows, ICDEV™ provides slash commands that are shorthand for common requests:
 
 | Command | What It Does | Equivalent Natural Language |
 |---------|-------------|----------------------------|
@@ -135,7 +135,7 @@ You don't need to memorize these. Just talk to Claude naturally — it knows whe
 - Day-to-day feature development
 - Exploring compliance status or fixing findings
 - Requirements intake with stakeholders
-- Any task where you'd normally need to look up which ICDEV tool to run
+- Any task where you'd normally need to look up which ICDEV™ tool to run
 
 ---
 
@@ -143,11 +143,11 @@ You don't need to memorize these. Just talk to Claude naturally — it knows whe
 
 ### Concept
 
-For teams building automation on top of ICDEV — custom CI/CD scripts, integration tools, or batch operations — ICDEV exposes its full capability through REST API, MCP Streamable HTTP, and direct Python CLI.
+For teams building automation on top of ICDEV™ — custom CI/CD scripts, integration tools, or batch operations — ICDEV™ exposes its full capability through REST API, MCP Streamable HTTP, and direct Python CLI.
 
 ### REST API
 
-The SaaS API gateway exposes all ICDEV functionality via standard HTTP:
+The SaaS API gateway exposes all ICDEV™ functionality via standard HTTP:
 
 ```bash
 # Authenticate
@@ -177,7 +177,7 @@ Full API documentation: Swagger UI at `/api/v1/docs` when running the API gatewa
 
 ### MCP Streamable HTTP
 
-For Claude Code clients connecting to ICDEV as an MCP server:
+For Claude Code clients connecting to ICDEV™ as an MCP server:
 
 ```
 POST /mcp/v1/
@@ -190,7 +190,7 @@ Content-Type: application/json
 
 ### Direct Python CLI
 
-Every ICDEV tool can be called directly. This is the lowest-level interface:
+Every ICDEV™ tool can be called directly. This is the lowest-level interface:
 
 ```bash
 # Scaffold a project
@@ -212,7 +212,7 @@ python tools/builder/profile_detector.py --repo-path /path/to/repo --json
 - Integration with external tools (Jira, ServiceNow, GitLab)
 - Batch operations across multiple projects
 - Building custom dashboards or reporting tools
-- Automated testing of ICDEV itself
+- Automated testing of ICDEV™ itself
 
 ---
 
@@ -248,7 +248,7 @@ Tier 3 (API/CLI)    ░░░░░░░░░░░░░░░░████
 
 ## How the Tiers Connect
 
-All three tiers ultimately call the same underlying ICDEV tools. The difference is the interface:
+All three tiers ultimately call the same underlying ICDEV™ tools. The difference is the interface:
 
 ```
 Tier 1 (Pipeline)     Tier 2 (Claude)     Tier 3 (API)

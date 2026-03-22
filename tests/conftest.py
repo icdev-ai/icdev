@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Shared pytest fixtures for ICDEV test suite.
+"""Shared pytest fixtures for ICDEV™ test suite.
 
 D155: Project-root conftest.py centralizes test DB setup, Flask test clients,
 and auth header helpers. Prevents duplication across 20+ test files.
@@ -31,7 +31,7 @@ os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 
 
 # ---------------------------------------------------------------------------
-# Minimal ICDEV schema (subset for fast test DB creation)
+# Minimal ICDEV™ schema (subset for fast test DB creation)
 # ---------------------------------------------------------------------------
 MINIMAL_ICDEV_SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
@@ -965,7 +965,7 @@ CREATE TABLE IF NOT EXISTS sandbox_execution_log (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Phase 72 — ICDEV Studio
+-- Phase 72 — ICDEV™ Studio
 CREATE TABLE IF NOT EXISTS studio_workflows (
     workflow_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -1094,7 +1094,7 @@ def _seed_platform_db(conn):
 
 
 def _seed_icdev_db(conn):
-    """Insert minimal seed data into ICDEV DB."""
+    """Insert minimal seed data into ICDEV™ DB."""
     conn.execute(
         "INSERT OR IGNORE INTO projects (id, name, type, classification, status, directory_path, impact_level) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -1112,7 +1112,7 @@ def _seed_icdev_db(conn):
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def icdev_db(tmp_path):
-    """Temporary ICDEV database with minimal schema and seed data."""
+    """Temporary ICDEV™ database with minimal schema and seed data."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
@@ -1193,7 +1193,7 @@ def admin_headers():
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def compliance_db(tmp_path):
-    """ICDEV database seeded with compliance data for testing.
+    """ICDEV™ database seeded with compliance data for testing.
 
     Seeds nist_controls with AC-2, AC-3, SC-7, SI-4 in mixed statuses
     and STIG findings at various severity levels.

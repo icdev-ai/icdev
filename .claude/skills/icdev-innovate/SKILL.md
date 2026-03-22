@@ -1,17 +1,17 @@
 ---
 name: icdev-innovate
-description: "Run the ICDEV Innovation Engine — autonomous self-improvement through web intelligence, introspective analysis, competitive monitoring, and standards tracking."
+description: "Run the ICDEV™ Innovation Engine — autonomous self-improvement through web intelligence, introspective analysis, competitive monitoring, and standards tracking."
 context: fork
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"]
 ---
 
-# ICDEV Innovation Engine
+# ICDEV™ Innovation Engine
 
 CUI // SP-CTI
 
 ## Overview
 
-The Innovation Engine enables ICDEV to continuously and autonomously improve itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
+The Innovation Engine enables ICDEV™ to continuously and autonomously improve itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
 
 Use this skill when you want to:
 - Discover new innovation opportunities from the web or internal telemetry
@@ -183,7 +183,7 @@ Standards ────┘                                               (ATLAS/T
 4. **GOTCHA Fit** — Must map to Goal/Tool/Arg/Context/HardPrompt
 5. **Duplicate Detection** — Content hash dedup (similarity > 0.85)
 6. **Budget Cap** — Max 10 auto-solutions per PI
-7. **All existing ICDEV security gates** — SAST, deps, secrets, CUI, STIG
+7. **All existing ICDEV™ security gates** — SAST, deps, secrets, CUI, STIG
 
 ## Error Handling
 

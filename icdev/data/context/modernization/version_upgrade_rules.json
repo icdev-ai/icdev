@@ -2,7 +2,7 @@
   "metadata": {
     "classification": "CUI // SP-CTI",
     "title": "Version Upgrade Transformation Rules",
-    "system": "ICDEV Modernization Engine",
+    "system": "ICDEV™ Modernization Engine",
     "version": "1.0.0",
     "created": "2026-02-16",
     "description": "Regex-based transformation rules for legacy-to-modern version upgrades.",

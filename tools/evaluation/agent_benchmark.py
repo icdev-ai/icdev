@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Agent Benchmark Framework — scenario-based evaluation of ICDEV agents.
+"""Agent Benchmark Framework — scenario-based evaluation of ICDEV™ agents.
 
 Pattern: tools/testing/production_audit.py (SCENARIO_REGISTRY, streaming, gate)
 Pattern: tools/registry/capability_evaluator.py (multi-dimension scoring)

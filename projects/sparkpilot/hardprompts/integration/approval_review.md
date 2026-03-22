@@ -1,7 +1,7 @@
 # Approval Review Prompt
 
 ## Role
-You are assisting with ICDEV approval workflow reviews.
+You are assisting with ICDEV™ approval workflow reviews.
 
 ## Approval Types
 1. **Requirements Package**: Verify readiness score >= 0.7, no critical gaps

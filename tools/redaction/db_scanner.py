@@ -193,7 +193,7 @@ class DBScanner:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Database PII Scanner")
+    parser = argparse.ArgumentParser(description="ICDEV™ Database PII Scanner")
     parser.add_argument("--scan", action="store_true", help="Scan tables for PII")
     parser.add_argument("--table", type=str, default=None,
                         help="Specific table to scan")

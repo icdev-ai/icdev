@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV Capability Domain: GovCon Intelligence
+# ICDEV™ Capability Domain: GovCon Intelligence
 # Auto-generated from icdev_capability_catalog.json + CLAUDE.md
 # Last refreshed: 2026-03-13
 
@@ -8,7 +8,7 @@ description: "SAM.gov opportunity scanning, proposal lifecycle management, and c
 capabilities:
   - slug: sam-scanner
     name: "SAM.gov Opportunity Intelligence"
-    description: "Automated SAM.gov scanning, requirement extraction from solicitations, capability mapping against ICDEV features, win probability estimation"
+    description: "Automated SAM.gov scanning, requirement extraction from solicitations, capability mapping against ICDEV™ features, win probability estimation"
     cli_examples: []
     related_controls: ["PL-2", "SA-4"]
     article_hooks:

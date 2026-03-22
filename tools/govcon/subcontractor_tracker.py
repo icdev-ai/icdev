@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — Subcontractor Tracker (Phase 60, D-CPMP-1)
+# ICDEV™ GovProposal — Subcontractor Tracker (Phase 60, D-CPMP-1)
 # FAR 52.219-9 small business subcontracting compliance, ISR/SSR generation.
 
 """
@@ -695,7 +695,7 @@ def detect_noncompliance(contract_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV GovProposal Subcontractor Tracker (Phase 60, FAR 52.219-9)"
+        description="ICDEV™ GovProposal Subcontractor Tracker (Phase 60, FAR 52.219-9)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--create", action="store_true", help="Create a subcontractor")

@@ -2,22 +2,22 @@
 // Controlled by: Department of Defense
 // CUI Category: CTI
 // Distribution: D
-// POC: ICDEV System Administrator
+// POC: ICDEV™ System Administrator
 //
-// ICDEV Dashboard — Mermaid Diagram Integration
+// ICDEV™ Dashboard — Mermaid Diagram Integration
 // Provides dark-themed Mermaid rendering, interactive click handlers,
 // live editor with debounce, and SVG export.
-// Pattern: charts.js IIFE + window.ICDEV namespace (D94)
+// Pattern: charts.js IIFE + window.ICDEV™ namespace (D94)
 // ADR: D-M1 (local-only), D-M3 (click handlers), D-M4 (editor), D-M6 (dark theme)
 
 (function () {
     'use strict';
 
-    var NS = window.ICDEV || (window.ICDEV = {});
+    var NS = window.ICDEV™ || (window.ICDEV™ = {});
 
     // ========================================================================
     // DARK THEME CONFIGURATION (D-M6)
-    // Matches ICDEV CSS custom properties from style.css
+    // Matches ICDEV™ CSS custom properties from style.css
     // ========================================================================
 
     var THEME_CONFIG = {
@@ -170,7 +170,7 @@
     NS.initMermaid = function initMermaid() {
         if (_initialized) return;
         if (typeof mermaid === 'undefined') {
-            console.warn('[ICDEV Mermaid] mermaid.js library not loaded — skipping init');
+            console.warn('[ICDEV™ Mermaid] mermaid.js library not loaded — skipping init');
             return;
         }
         _initialized = true;
@@ -190,7 +190,7 @@
             var containers = document.querySelectorAll('pre.mermaid');
             containers.forEach(function (el) { _attachClickHandlers(el); });
         }).catch(function (err) {
-            console.error('[ICDEV Mermaid] Batch render error:', err);
+            console.error('[ICDEV™ Mermaid] Batch render error:', err);
         });
     };
 

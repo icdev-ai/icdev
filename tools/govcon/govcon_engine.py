@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Intelligence Engine — Phase 59 (Sub-Phase 59E)
+# ICDEV™ GovCon Intelligence Engine — Phase 59 (Sub-Phase 59E)
 # Pipeline orchestrator: DISCOVER → EXTRACT → MAP → DRAFT
 
 """
@@ -8,7 +8,7 @@ GovCon Intelligence Engine — unified orchestrator for the capture-to-delivery 
 Pipeline stages:
     1. DISCOVER  — Scan SAM.gov for new opportunities + award notices
     2. EXTRACT   — Mine "shall/must/will" requirements from opportunity descriptions
-    3. MAP       — Match requirements to ICDEV capability catalog, identify gaps
+    3. MAP       — Match requirements to ICDEV™ capability catalog, identify gaps
     4. DRAFT     — Auto-draft responses via two-tier LLM (qwen3 → Claude review)
 
 Daemon mode runs on schedule with quiet hours.
@@ -149,7 +149,7 @@ def stage_extract(config):
 
 
 def stage_map(config):
-    """Stage 3: Map requirements to ICDEV capabilities, analyze gaps."""
+    """Stage 3: Map requirements to ICDEV™ capabilities, analyze gaps."""
     results = {"stage": "map", "mapped": 0, "gaps": 0, "errors": []}
 
     # Map capabilities
@@ -495,7 +495,7 @@ def run_daemon():
 # ── CLI ──────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Intelligence Engine (Phase 59E)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Intelligence Engine (Phase 59E)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--run", action="store_true", help="Run full pipeline")
     group.add_argument("--stage", choices=STAGES, help="Run a specific stage")
@@ -522,7 +522,7 @@ def main():
 
     if args.human:
         print(f"\n{'=' * 60}")
-        print("  ICDEV GovCon Intelligence Engine")
+        print("  ICDEV™ GovCon Intelligence Engine")
         print(f"{'=' * 60}")
         if "summary" in result:
             s = result["summary"]

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Capability Evaluator -- 7-dimension scoring for capability genome absorption.
 
 REQ-36-020: Evaluate newly discovered capabilities (from Innovation Engine or
@@ -641,7 +641,7 @@ class CapabilityEvaluator:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Capability Evaluator -- 7-dimension scoring (REQ-36-020)"
+        description="ICDEV™ Capability Evaluator -- 7-dimension scoring (REQ-36-020)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Scout Daemon — Daily Autonomous ICDEV Self-Improvement Scanner.
+"""Scout Daemon — Daily Autonomous ICDEV™ Self-Improvement Scanner.
 
 Single unified daemon that scans three pillars daily:
-1. Self-Introspection — analyze ICDEV's own codebase
+1. Self-Introspection — analyze ICDEV™'s own codebase
 2. Trending Open Source — GitHub, HackerNews, Reddit, arXiv
 3. Competitive Intel — monitor competitors, identify new ones
 
@@ -439,7 +439,7 @@ def run_single_pillar(pillar_name: str, config: dict = None) -> dict:
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Scout Daemon — Daily Autonomous ICDEV Self-Improvement Scanner"
+        description="Scout Daemon — Daily Autonomous ICDEV™ Self-Improvement Scanner"
     )
     parser.add_argument("--once", action="store_true",
                         help="Single scan pass (Task Scheduler mode, with retry)")

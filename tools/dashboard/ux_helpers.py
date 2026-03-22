@@ -1,10 +1,10 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Dashboard UX Helpers
+# ICDEV™ Dashboard UX Helpers
 # Server-side utilities for user-friendly display
 """
-UX Helpers for the ICDEV Dashboard
+UX Helpers for the ICDEV™ Dashboard
 ===================================
-Provides server-side utilities that make the ICDEV dashboard intuitive for
+Provides server-side utilities that make the ICDEV™ dashboard intuitive for
 non-technical government users: human-friendly timestamps, glossary tooltips,
 score badges, error recovery guidance, quick-path workflows, and a getting-
 started wizard.
@@ -407,9 +407,9 @@ ERROR_RECOVERY = {
         "time": "1-2 weeks for alternative COAs, 3-6 months for re-authorization",
     },
     "database_not_initialized": {
-        "what": "The ICDEV database has not been set up yet",
+        "what": "The ICDEV™ database has not been set up yet",
         "why": (
-            "ICDEV needs its database to track projects, compliance, "
+            "ICDEV™ needs its database to track projects, compliance, "
             "and audit trails"
         ),
         "fix": (

@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Automated incident lifecycle management for ICDEV SRE module.
+"""Automated incident lifecycle management for ICDEV™ SRE module.
 
 Handles incident creation, triage, escalation, resolution, postmortem,
 and MTTR statistics tracking.
@@ -612,7 +612,7 @@ def check_incident_health() -> dict:
 
 def main():
     """CLI entry point for incident commander."""
-    parser = argparse.ArgumentParser(description="ICDEV SRE Incident Commander")
+    parser = argparse.ArgumentParser(description="ICDEV™ SRE Incident Commander")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--gate", action="store_true", help="Run gate check (exit 1 if open sev1/sev2 or MTTR issues)")
 

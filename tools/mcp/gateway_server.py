@@ -6,7 +6,7 @@ Provides 5 MCP tools for managing remote command access:
     1. bind_user       — Initiate or complete a user binding ceremony
     2. list_bindings   — List active/pending/revoked bindings
     3. revoke_binding  — Revoke an active binding
-    4. send_command    — Execute an ICDEV command as if from a channel
+    4. send_command    — Execute an ICDEV™ command as if from a channel
     5. gateway_status  — Show gateway health, active channels, recent commands
 
 Transport: stdio (Claude Code integration)
@@ -117,7 +117,7 @@ def handle_revoke_binding(params):
 
 
 def handle_send_command(params):
-    """Execute an ICDEV command as if from a channel (for testing/admin)."""
+    """Execute an ICDEV™ command as if from a channel (for testing/admin)."""
     import yaml
     from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
     from tools.gateway.command_router import execute_command
@@ -255,7 +255,7 @@ TOOLS = {
         },
     },
     "send_command": {
-        "description": "Execute an ICDEV command via the remote gateway (for testing/admin)",
+        "description": "Execute an ICDEV™ command via the remote gateway (for testing/admin)",
         "handler": handle_send_command,
         "inputSchema": {
             "type": "object",

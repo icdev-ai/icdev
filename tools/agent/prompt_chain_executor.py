@@ -42,7 +42,7 @@ logger = logging.getLogger("icdev.prompt_chain_executor")
 # ---------------------------------------------------------------------------
 # Agent-to-function mapping for LLMRouter
 # ---------------------------------------------------------------------------
-# Maps the short agent name used in prompt_chains.yaml to the ICDEV
+# Maps the short agent name used in prompt_chains.yaml to the ICDEV™
 # LLMRouter function name that governs model selection for that agent.
 AGENT_FUNCTION_MAP = {
     "orchestrator": "task_decomposition",
@@ -671,7 +671,7 @@ class PromptChainExecutor:
                     {"role": "user", "content": resolved_prompt},
                 ],
                 system_prompt=(
-                    f"You are the {step.agent} agent in an ICDEV multi-agent system. "
+                    f"You are the {step.agent} agent in an ICDEV™ multi-agent system. "
                     f"Provide your expert analysis from the {step.agent} perspective."
                 ),
                 agent_id=f"{step.agent}-agent",
@@ -875,7 +875,7 @@ class PromptChainExecutor:
 def main():
     """CLI for prompt chain execution."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Prompt Chain Executor — declarative LLM-to-LLM reasoning chains"
+        description="ICDEV™ Prompt Chain Executor — declarative LLM-to-LLM reasoning chains"
     )
     parser.add_argument(
         "--chain",

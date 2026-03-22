@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Fitness Evaluator — wraps ICDEV tools into single-metric scorers (D-AR-7).
+"""Fitness Evaluator — wraps ICDEV™ tools into single-metric scorers (D-AR-7).
 
-Each evaluator runs an existing ICDEV tool and normalizes the output
+Each evaluator runs an existing ICDEV™ tool and normalizes the output
 to a float in [0, 1]. Read-only, advisory-only (D110).
 
 Usage:
@@ -30,7 +30,7 @@ def _now() -> str:
 
 
 def _run_tool(cmd: str, timeout: int = 120) -> dict:
-    """Run an ICDEV tool via subprocess and parse JSON output."""
+    """Run an ICDEV™ tool via subprocess and parse JSON output."""
     try:
         result = subprocess.run(
             [sys.executable] + cmd.split(),

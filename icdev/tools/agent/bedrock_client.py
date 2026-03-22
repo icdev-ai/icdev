@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Centralized Amazon Bedrock API wrapper for ICDEV multi-agent system.
+"""Centralized Amazon Bedrock API wrapper for ICDEV™ multi-agent system.
 
 Bedrock-specific client used by agents (team_orchestrator, collaboration,
 agent_executor) that specifically target AWS Bedrock.  Supports Opus 4.6 GA
@@ -908,7 +908,7 @@ class BedrockClient:
 def main():
     """CLI for quick Bedrock invocations and model probing."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Bedrock Client — centralized model invocation"
+        description="ICDEV™ Bedrock Client — centralized model invocation"
     )
     parser.add_argument("--prompt", help="Prompt text to send")
     parser.add_argument(

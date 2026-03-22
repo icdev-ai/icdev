@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-"""MCP Wrapper Generator — scans ICDEV tools and produces MCP-compatible wrappers.
+"""MCP Wrapper Generator — scans ICDEV™ tools and produces MCP-compatible wrappers.
 
 Discovers CLI tools that support ``--json`` output and generates thin MCP
 tool handlers that invoke them via subprocess, enabling any MCP-compatible
-client to call ICDEV tools without custom integration code.
+client to call ICDEV™ tools without custom integration code.
 
 Architecture decision: deterministic scanning + template-based generation
 (no LLM in the critical path).
@@ -52,7 +52,7 @@ def _is_cli_tool(path: pathlib.Path) -> bool:
 # ---------------------------------------------------------------------------
 
 def scan_tools(tools_dir: str | None = None) -> dict:
-    """Discover ICDEV CLI tools eligible for MCP wrapping.
+    """Discover ICDEV™ CLI tools eligible for MCP wrapping.
 
     Returns
     -------

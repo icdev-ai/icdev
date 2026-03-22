@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV SRE Automation Configuration
+# ICDEV™ SRE Automation Configuration
 
 slo:
   default_window_days: 30

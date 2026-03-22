@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Teaming Coordination Hub -- partner scoring, workshare, TA/NDA, OCI.
 
 Provides deterministic analysis for teaming decisions on government

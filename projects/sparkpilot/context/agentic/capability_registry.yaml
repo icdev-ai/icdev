@@ -95,9 +95,9 @@ capabilities:
   modernization:
     always_on: false
     trigger: { never: true }
-    description: "Excluded from child apps — legacy modernization stays in parent ICDEV"
+    description: "Excluded from child apps — legacy modernization stays in parent ICDEV™"
     source_dirs: []
-    note: "Child apps do not include modernization. Use A2A callback to parent ICDEV."
+    note: "Child apps do not include modernization. Use A2A callback to parent ICDEV™."
   # D-CHILD-1: Enterprise capabilities added in Phase 62
   ricoas:
     always_on: false

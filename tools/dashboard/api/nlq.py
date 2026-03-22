@@ -2,7 +2,7 @@
 """NLQ (Natural Language Query) API blueprint — compliance database queries.
 
 Endpoints:
-    POST /api/nlq/query   — Execute NLQ against ICDEV database
+    POST /api/nlq/query   — Execute NLQ against ICDEV™ database
     GET  /api/nlq/schema  — Return database schema for context
     GET  /api/nlq/history — Query history (audit trail)
 
@@ -30,7 +30,7 @@ def _get_db():
 
 @nlq_bp.route("/api/nlq/query", methods=["POST"])
 def execute_nlq():
-    """Execute a natural language query against the ICDEV database."""
+    """Execute a natural language query against the ICDEV™ database."""
     from tools.dashboard.nlq_processor import process_nlq_query
 
     data = request.get_json(force=True)

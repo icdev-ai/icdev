@@ -2,7 +2,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Azure OpenAI LLM Provider.
 
 Supports Azure OpenAI Service including Azure Government endpoints

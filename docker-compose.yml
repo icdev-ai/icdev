@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Docker Compose — GovCloud Full Profile (all services enabled)
+# ICDEV™ Docker Compose — GovCloud Full Profile (all services enabled)
 #
 # Usage:
 #   docker compose up -d                    # Start all services

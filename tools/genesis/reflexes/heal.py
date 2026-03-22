@@ -220,7 +220,7 @@ def _get_healing_patterns() -> List[Dict[str, Any]]:
 
 
 def _get_builtin_patterns() -> List[Dict[str, Any]]:
-    """Return built-in healing patterns for common ICDEV failures."""
+    """Return built-in healing patterns for common ICDEV™ failures."""
     return [
         {
             "id": "builtin-stale-evidence",

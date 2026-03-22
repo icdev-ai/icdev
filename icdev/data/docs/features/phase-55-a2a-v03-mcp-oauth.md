@@ -9,18 +9,18 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 11 (Multi-Agent Architecture), Phase 21 (SaaS Multi-Tenancy), Phase 46 (Observability & XAI), Phase 47 (Unified MCP Gateway) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-25 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's 15-agent multi-agent architecture communicates via the A2A protocol (JSON-RPC 2.0 over mutual TLS). The prior implementation used a minimal Agent Card format that lacked structured capability advertisement, task subscription streaming, and version negotiation. When a new agent joined the cluster or an existing agent gained new skills, the Orchestrator had no standardized way to discover what capabilities were available without hardcoded routing tables. There was no streaming subscription model for long-running inter-agent tasks.
+ICDEV™'s 15-agent multi-agent architecture communicates via the A2A protocol (JSON-RPC 2.0 over mutual TLS). The prior implementation used a minimal Agent Card format that lacked structured capability advertisement, task subscription streaming, and version negotiation. When a new agent joined the cluster or an existing agent gained new skills, the Orchestrator had no standardized way to discover what capabilities were available without hardcoded routing tables. There was no streaming subscription model for long-running inter-agent tasks.
 
 Separately, MCP Streamable HTTP transport (Phase 21) relied solely on API key authentication. Connected environments need OAuth 2.1 support for external identity providers, while air-gapped IL5/IL6 environments need offline token verification without calling an external authorization server. Additionally, MCP tools had no mechanism to request user input mid-execution (elicitation) or to track long-running tool invocations as first-class lifecycle objects (tasks).
 
-Without these capabilities, ICDEV cannot:
+Without these capabilities, ICDEV™ cannot:
 - Dynamically discover agent capabilities at runtime
 - Subscribe to task completion events across agents
 - Negotiate protocol versions for backward compatibility
@@ -94,7 +94,7 @@ Phase 55 closes these gaps with A2A v0.3 protocol compliance, an agent discovery
 
 ### Component 1: A2A v0.3 Agent Card Generator (`tools/agent/a2a_agent_card_generator.py`)
 
-Generates v0.3-compliant Agent Cards from `args/agent_config.yaml` for all 15 ICDEV agents.
+Generates v0.3-compliant Agent Cards from `args/agent_config.yaml` for all 15 ICDEV™ agents.
 
 **Agent Card v0.3 Schema:**
 | Field | Type | Description |
@@ -109,7 +109,7 @@ Generates v0.3-compliant Agent Cards from `args/agent_config.yaml` for all 15 IC
 | `authentication` | object | Supported auth schemes (`mutual_tls`, `api_key`) |
 | `skills` | array | Skill definitions with input/output modes |
 | `tasks` | object | Task subscription endpoints (`sendSubscribe`) |
-| `metadata` | object | Tier, classification, ICDEV version |
+| `metadata` | object | Tier, classification, ICDEV™ version |
 
 **Default Capabilities (all agents):**
 | Capability | Default | Description |
@@ -144,7 +144,7 @@ Centralized agent discovery with health-aware routing and capability-based filte
 Three-mode token verification for MCP Streamable HTTP transport.
 
 **Verification Chain (priority order):**
-1. **API Key** (`icdev_*` prefix) — SHA-256 hash lookup against `platform.db` API keys table. Most common in ICDEV deployments.
+1. **API Key** (`icdev_*` prefix) — SHA-256 hash lookup against `platform.db` API keys table. Most common in ICDEV™ deployments.
 2. **Offline HMAC** (`hmac_*` prefix) — HMAC-SHA256 signed payload with expiry. Air-gap safe, no database or network required.
 3. **JWT** (3-part dot-separated) — Payload decode with expiry check. Full JWKS verification delegated to API gateway.
 

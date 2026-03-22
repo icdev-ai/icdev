@@ -1,4 +1,4 @@
-"""ICDEV Pulse web research engine.
+"""ICDEV™ Pulse web research engine.
 
 Scrapes DuckDuckGo HTML search results to find developer pain points
 across Reddit, StackOverflow, HackerNews, LinkedIn, DEV.to, and Medium.

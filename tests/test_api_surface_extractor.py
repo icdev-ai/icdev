@@ -593,7 +593,7 @@ class TestModulePath:
 # ---------------------------------------------------------------------------
 
 class TestRealModules:
-    """Verify the extractor produces correct output against actual ICDEV modules."""
+    """Verify the extractor produces correct output against actual ICDEV™ modules."""
 
     def test_rag_retriever(self):
         """Verify RAGRetriever class and standalone functions are correctly extracted."""

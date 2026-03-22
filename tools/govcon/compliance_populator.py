@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Compliance Populator — Phase 59 (D365)
+# ICDEV™ GovCon Compliance Populator — Phase 59 (D365)
 # Auto-populate L/M/N compliance matrix from capability coverage scores.
 
 """
@@ -226,7 +226,7 @@ def export_matrix(opportunity_id):
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Compliance Populator (D365)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Compliance Populator (D365)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--populate", action="store_true", help="Auto-populate compliance matrix")
     group.add_argument("--summary", action="store_true", help="Compliance summary with bid recommendation")

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — Portfolio Manager (Phase 60, D-CPMP-8, D-CPMP-9)
+# ICDEV™ GovProposal — Portfolio Manager (Phase 60, D-CPMP-8, D-CPMP-9)
 # Portfolio dashboard, contract health scoring, proposal-to-contract transition bridge.
 
 """
@@ -475,7 +475,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
 # ── CLI ──────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal Portfolio Manager (Phase 60)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal Portfolio Manager (Phase 60)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--portfolio", action="store_true", help="Get portfolio summary")
     group.add_argument("--health", action="store_true", help="Compute contract health score")

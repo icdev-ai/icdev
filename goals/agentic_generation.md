@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Generate mini-ICDEV clone applications that include the full GOTCHA framework, ATLAS workflow, own agents, memory system, and CI/CD — everything except the ability to generate new applications. These child applications are fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads.
+Generate mini-ICDEV™ clone applications that include the full GOTCHA framework, ATLAS workflow, own agents, memory system, and CI/CD — everything except the ability to generate new applications. These child applications are fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads.
 
 **Why this matters:** Organizations need multiple independent agentic systems — one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Automated generation produces a consistent, compliant, tested child application in minutes, with all GOTCHA layers pre-wired and ready for mission-specific customization.
 
@@ -15,14 +15,14 @@ Generate mini-ICDEV clone applications that include the full GOTCHA framework, A
 - User requests a new cloud-native application with agentic capabilities
 - `/icdev-agentic` slash command is invoked
 - Scaffolder is called with `--agentic` flag
-- A new program office needs its own ICDEV-like system
+- A new program office needs its own ICDEV™-like system
 - Standing up a child system in a new enclave or classification level
 
 ---
 
 ## Prerequisites
 
-- [ ] ICDEV system initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ system initialized (`python tools/db/init_icdev_db.py`)
 - [ ] Fitness scorer available (`tools/builder/agentic_fitness.py`)
 - [ ] Blueprint engine available (`tools/builder/app_blueprint.py`)
 - [ ] Scaffolder supports `--agentic` flag (`tools/builder/scaffolder.py`)
@@ -99,8 +99,8 @@ Present the fitness scorecard and confirm decisions with the user before proceed
 2. **MBSE enabled?** Digital thread traceability (SysML/DOORS integration)
 3. **ATO required?** Triggers compliance agents, CUI markings, NIST control mapping
 4. **Cloud provider and region?** Confirm from Step 1 or change
-5. **Parent callback URL?** For A2A communication back to ICDEV (optional)
-6. **Port offset?** Agent ports = ICDEV base ports + offset (default: +1000)
+5. **Parent callback URL?** For A2A communication back to ICDEV™ (optional)
+6. **Port offset?** Agent ports = ICDEV™ base ports + offset (default: +1000)
 7. **Agent roster override?** Accept blueprint defaults or add/remove agents
 
 **Output:** User decisions JSON stored in `.tmp/agentic_decisions.json`
@@ -127,7 +127,7 @@ The blueprint is the single source of truth for all generation steps. No hardcod
 |---------|----------|
 | capability_map | What to include: memory, compliance, security, mbse, monitoring, self-healing |
 | agent_roster | 5 core agents (always) + conditional domain/support agents |
-| file_manifest | What to copy from ICDEV and adapt (port remap, db rename, path fixup) |
+| file_manifest | What to copy from ICDEV™ and adapt (port remap, db rename, path fixup) |
 | csp_mcp_servers | Cloud provider MCP server selection based on capabilities + provider |
 | db_schema | Core tables first, capability tables via `migrate_add_capability()` |
 | memory_config | Memory system settings: dual storage (markdown + SQLite), embedding model |
@@ -165,7 +165,7 @@ This is the main generation step. It runs two phases:
 | Step | What It Generates |
 |------|-------------------|
 | 1 | GOTCHA directory structure: `goals/`, `tools/`, `args/`, `context/`, `hardprompts/` |
-| 2 | Tool scripts: copy from ICDEV with path/port/db adaptations |
+| 2 | Tool scripts: copy from ICDEV™ with path/port/db adaptations |
 | 3 | Agent definitions: `tools/agent/` with agent cards at `tools/agent/cards/*.json` |
 | 4 | Memory system: `memory/MEMORY.md`, `tools/memory/`, SQLite schema |
 | 5 | Goal files: `goals/manifest.md` + relevant goal workflows |
@@ -180,7 +180,7 @@ This is the main generation step. It runs two phases:
 **Output:** Fully scaffolded child application at `<project-path>/<name>/`
 
 **Error handling:**
-- Source tool file missing in ICDEV -> warn and skip (graceful degradation), log missing file
+- Source tool file missing in ICDEV™ -> warn and skip (graceful degradation), log missing file
 - Target directory already exists -> overlay new files, do NOT delete existing files
 - Sister modules unavailable (e.g., MBSE tools when MBSE not installed) -> use inline fallbacks
 - File copy fails (permissions) -> report error, continue with remaining files
@@ -204,12 +204,12 @@ ls <project-path>/<name>/hardprompts/
 ```
 
 **Content checks:**
-- CLAUDE.md exists and does NOT reference ICDEV generation tools (`agentic_fitness.py`, `app_blueprint.py`)
+- CLAUDE.md exists and does NOT reference ICDEV™ generation tools (`agentic_fitness.py`, `app_blueprint.py`)
 - CLAUDE.md contains "CANNOT generate child applications" grandchild prevention statement
 - Agent cards present in `tools/agent/cards/` for all agents in the roster
 - Goals manifest (`goals/manifest.md`) only lists goals that exist as files
 - CUI markings present on all Python files and markdown files
-- No hardcoded ICDEV paths or ports in generated files
+- No hardcoded ICDEV™ paths or ports in generated files
 
 **Functional checks:**
 ```bash
@@ -238,7 +238,7 @@ python -c "import json; [json.load(open(f)) for f in glob.glob('<path>/tools/age
 
 **Store generation summary in child app:**
 Write `data/generation_summary.json` in the child application directory containing:
-- Parent ICDEV version
+- Parent ICDEV™ version
 - Blueprint hash (SHA-256)
 - Fitness scorecard summary
 - User decisions summary
@@ -247,7 +247,7 @@ Write `data/generation_summary.json` in the child application directory containi
 - Agent roster
 - Grandchild prevention: active
 
-**Record in ICDEV memory:**
+**Record in ICDEV™ memory:**
 
 **Tool:** `python tools/memory/memory_write.py --content "Generated agentic child app '<name>' at <path>. Architecture: <arch>. Agents: <count>. Compliance: <level>." --type event --importance 8`
 
@@ -260,11 +260,11 @@ Write `data/generation_summary.json` in the child application directory containi
 | ID | Decision | Rationale |
 |----|----------|-----------|
 | D20 | Flag-based (`--agentic`) activation | Backward compatible — existing scaffolding unchanged without flag |
-| D21 | Copy-and-adapt over template library | ICDEV's own tools are the source of truth; no template drift |
+| D21 | Copy-and-adapt over template library | ICDEV™'s own tools are the source of truth; no template drift |
 | D22 | Weighted rule-based fitness + optional LLM override | Deterministic scoring with human escape hatch |
 | D23 | Blueprint-driven generation | Single JSON drives all generators; no hardcoded decisions |
 | D28 | 3-layer grandchild prevention | Config flag + scaffolder stripping + CLAUDE.md documentation |
-| D29 | Port offset for child agents | Avoids port conflicts when ICDEV and child run on same host |
+| D29 | Port offset for child agents | Avoids port conflicts when ICDEV™ and child run on same host |
 
 ---
 
@@ -272,14 +272,14 @@ Write `data/generation_summary.json` in the child application directory containi
 
 1. **Fitness score < 4.0 with `--agentic` flag:** Warn user that traditional architecture is recommended. Proceed only if user explicitly confirms. Log the override decision.
 2. **Source tool files missing:** Warn and skip missing tools (graceful degradation). The child app will have reduced capabilities but will still function.
-3. **Sister modules unavailable:** If MBSE or modernization tools are not installed in ICDEV, use inline fallbacks in the child app rather than broken imports.
+3. **Sister modules unavailable:** If MBSE or modernization tools are not installed in ICDEV™, use inline fallbacks in the child app rather than broken imports.
 4. **Child app directory already exists:** Overlay new files on top of existing directory. Never delete existing files — the user may have customized them.
 5. **Port conflict with running services:** Detect conflicts before generation. Suggest the next available port offset.
 6. **IL6 classification:** Ensure all generated files use SECRET markings. Verify SIPR-only network constraints in generated infrastructure.
 7. **No internet access (air-gapped):** Ensure all dependencies are available in the local PyPI mirror. Do not generate code that requires public internet.
-8. **Multiple child apps from same ICDEV:** Each gets a unique port offset and database name. Registry tracks all children.
+8. **Multiple child apps from same ICDEV™:** Each gets a unique port offset and database name. Registry tracks all children.
 9. **Blueprint hash mismatch during verification:** Regenerate the mismatched component. Do not ship a child app with integrity violations.
-10. **User requests capabilities not in ICDEV:** Log as a feature request. Do not generate stub capabilities that do nothing.
+10. **User requests capabilities not in ICDEV™:** Log as a feature request. Do not generate stub capabilities that do nothing.
 
 ---
 
@@ -289,7 +289,7 @@ Write `data/generation_summary.json` in the child application directory containi
 2. **Hardcoding decisions in generators** — Blueprint is the single source of truth. Generators that make their own decisions drift from the specification.
 3. **Allowing grandchild generation** — Uncontrolled proliferation of agentic systems. Enforce the 3-layer prevention.
 4. **Skipping verification** — A child app that fails to initialize its database or load its memory system is useless.
-5. **Copying tools without adaptation** — ICDEV-specific paths, ports, and database names must be remapped for the child context.
+5. **Copying tools without adaptation** — ICDEV™-specific paths, ports, and database names must be remapped for the child context.
 
 ---
 
@@ -302,11 +302,11 @@ Write `data/generation_summary.json` in the child application directory containi
 - [ ] All agents in roster have valid agent cards
 - [ ] Database initializes successfully
 - [ ] Memory system reads and writes correctly
-- [ ] CLAUDE.md is accurate and does not reference ICDEV generation tools
+- [ ] CLAUDE.md is accurate and does not reference ICDEV™ generation tools
 - [ ] Grandchild prevention active (3-layer check passes)
 - [ ] CUI markings present on all generated files
 - [ ] Generation summary stored in child's `data/generation_summary.json`
-- [ ] Audit trail entry logged in parent ICDEV
+- [ ] Audit trail entry logged in parent ICDEV™
 
 ---
 

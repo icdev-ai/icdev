@@ -60,7 +60,7 @@ Many frameworks here including NIST and FedRAMP.
 
 Python, Java, Go, Rust, C#, TypeScript.
 
-## ICDEV Commands
+## ICDEV™ Commands
 
 Various commands.
 """

@@ -1,4 +1,4 @@
-"""ICDEV Studio — Database Initialization.
+"""ICDEV™ Studio — Database Initialization.
 
 Creates studio_* tables in icdev.db.  Idempotent — safe to run repeatedly.
 Separated from tools/db/init_icdev_db.py to avoid merge conflicts during
@@ -200,7 +200,7 @@ def init_studio_tables(*, verbose: bool = False) -> dict:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Initialize ICDEV Studio tables")
+    parser = argparse.ArgumentParser(description="Initialize ICDEV™ Studio tables")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--verbose", "-v", action="store_true")
     args = parser.parse_args()

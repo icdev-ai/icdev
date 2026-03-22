@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Bidirectional Jira integration connector.
 
 Syncs SAFe decomposition items to/from Jira. SAFe levels map to Jira types:
@@ -101,7 +101,7 @@ def configure(project_id, instance_url, project_key, auth_secret_ref,
     """Store a Jira integration configuration.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         instance_url: Jira Cloud/DC instance URL.
         project_key: Jira project key (e.g. "PROJ").
         auth_secret_ref: AWS Secrets Manager ARN — never store credentials.
@@ -163,7 +163,7 @@ def push_to_jira(project_id, session_id=None, dry_run=False, db_path=None):
     """Push SAFe decomposition items to Jira.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         session_id: Intake session to push (latest if None).
         dry_run: If True, only report what would be created.
         db_path: Override database path.
@@ -338,7 +338,7 @@ def pull_from_jira(project_id, db_path=None):
     """Simulate pulling status updates from Jira.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         db_path: Override database path.
 
     Returns:
@@ -426,7 +426,7 @@ def get_sync_status(project_id, db_path=None):
     """Return last sync info and mapping count.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         db_path: Override database path.
 
     Returns:
@@ -495,10 +495,10 @@ def get_sync_status(project_id, db_path=None):
 # ---------------------------------------------------------------------------
 
 def list_mappings(project_id, db_path=None):
-    """Return all ICDEV <-> Jira ID mappings.
+    """Return all ICDEV™ <-> Jira ID mappings.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         db_path: Override database path.
 
     Returns:
@@ -635,7 +635,7 @@ def analyze_attachments(project_id, attachment_paths=None, db_path=None):
     """Analyze image attachments from Jira issues using vision LLM.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         attachment_paths: List of image file paths to analyze.
         db_path: Override database path.
 
@@ -694,9 +694,9 @@ def analyze_attachments(project_id, attachment_paths=None, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Jira integration connector for ICDEV RICOAS"
+        description="Jira integration connector for ICDEV™ RICOAS"
     )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Actions

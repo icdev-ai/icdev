@@ -1,6 +1,6 @@
 # CI/CD Integration
 
-ICDEV integrates with both GitHub Actions and GitLab CI/CD. The pipeline auto-attaches based on your `icdev.yaml` configuration and runs compliance, security, and testing checks on every push.
+ICDEV™ integrates with both GitHub Actions and GitLab CI/CD. The pipeline auto-attaches based on your `icdev.yaml` configuration and runs compliance, security, and testing checks on every push.
 
 ---
 
@@ -44,7 +44,7 @@ Add this workflow file to your repository:
 
 ```yaml
 # .github/workflows/icdev.yml
-name: ICDEV Compliance Pipeline
+name: ICDEV™ Compliance Pipeline
 
 on:
   pull_request:
@@ -66,10 +66,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ICDEV dependencies
+      - name: Install ICDEV™ dependencies
         run: pip install -r requirements.txt
 
-      - name: Initialize ICDEV database
+      - name: Initialize ICDEV™ database
         run: python tools/db/init_icdev_db.py
 
       - name: SAST Scan
@@ -116,10 +116,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ICDEV dependencies
+      - name: Install ICDEV™ dependencies
         run: pip install -r requirements.txt
 
-      - name: Initialize ICDEV
+      - name: Initialize ICDEV™
         run: python tools/db/init_icdev_db.py
 
       - name: Generate SSP
@@ -145,7 +145,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install ICDEV dependencies
+      - name: Install ICDEV™ dependencies
         run: pip install -r requirements.txt
 
       - name: CVE Triage
@@ -157,7 +157,7 @@ jobs:
 
 ### Webhook Integration (Advanced)
 
-For real-time issue-driven workflows, configure the ICDEV webhook server:
+For real-time issue-driven workflows, configure the ICDEV™ webhook server:
 
 1. Deploy the webhook server:
    ```bash
@@ -306,7 +306,7 @@ deploy_staging:
 
 ### GitLab Task Board Integration
 
-ICDEV can monitor GitLab issues for workflow commands:
+ICDEV™ can monitor GitLab issues for workflow commands:
 
 ```bash
 # Start the GitLab task monitor (polls every 20s)
@@ -355,7 +355,7 @@ pipeline:
 
 ## Platform Auto-Detection
 
-ICDEV auto-detects whether you're using GitHub or GitLab by inspecting `git remote get-url origin`:
+ICDEV™ auto-detects whether you're using GitHub or GitLab by inspecting `git remote get-url origin`:
 
 | Remote URL Pattern | Detected Platform |
 |-------------------|-------------------|
@@ -372,7 +372,7 @@ pipeline:
 
 ## Security Considerations
 
-- **Secrets**: Never store ICDEV API keys in pipeline YAML. Use GitHub Secrets or GitLab CI/CD Variables.
+- **Secrets**: Never store ICDEV™ API keys in pipeline YAML. Use GitHub Secrets or GitLab CI/CD Variables.
 - **CUI markings**: The pipeline validates CUI markings are present but doesn't generate them. CUI generation happens at code-write time.
-- **Air-gapped environments**: For IL5/IL6, use GitLab CI runners within the classified network. ICDEV tools work offline (all stdlib dependencies).
-- **Audit trail**: All pipeline actions are logged to the ICDEV audit trail (append-only, NIST AU compliant).
+- **Air-gapped environments**: For IL5/IL6, use GitLab CI runners within the classified network. ICDEV™ tools work offline (all stdlib dependencies).
+- **Audit trail**: All pipeline actions are logged to the ICDEV™ audit trail (append-only, NIST AU compliant).

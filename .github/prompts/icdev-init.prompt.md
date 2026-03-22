@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: "Initialize a new ICDEV project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline"
+description: "Initialize a new ICDEV™ project with compliance scaffolding, CUI markings, and NIST 800-53 control baseline"
 tools:
   - terminal
   - file_search
@@ -8,7 +8,7 @@ tools:
 
 # icdev-init
 
-1. Creates a new project with UUID in the ICDEV database
+1. Creates a new project with UUID in the ICDEV™ database
 2. Scaffolds directory structure with CUI markings on all files
 3. Sets up compliance directory (SSP, POAM, STIG templates)
 4. Initializes test scaffolding (pytest + behave/Gherkin BDD)

@@ -3,7 +3,7 @@
 """Scout Pillar 2: Trending Open Source — discover relevant repos, papers, discussions.
 
 Delegates to existing web_scanner for GitHub/HackerNews, adds Reddit and arXiv
-scanning with ICDEV relevance scoring.
+scanning with ICDEV™ relevance scoring.
 
 Usage:
     python tools/scout/pillars/trending.py --scan --json
@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-# ICDEV relevance keywords for scoring
+# ICDEV™ relevance keywords for scoring
 RELEVANCE_KEYWORDS = [
     "agent", "autonomous", "llm", "multi-agent", "mcp", "compliance",
     "devsecops", "code generation", "self-healing", "local model", "ollama",
@@ -60,7 +60,7 @@ def _finding(category: str, title: str, description: str,
 
 
 def _score_relevance(text: str) -> float:
-    """Score 0-1 relevance to ICDEV's domain based on keyword matches."""
+    """Score 0-1 relevance to ICDEV™'s domain based on keyword matches."""
     if not text:
         return 0.0
     text_lower = text.lower()
@@ -70,7 +70,7 @@ def _score_relevance(text: str) -> float:
 
 def _fetch_json(url: str, headers: dict = None, timeout: int = 15) -> dict:
     """Fetch JSON from URL with timeout and user-agent."""
-    hdrs = {"User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"}
+    hdrs = {"User-Agent": "ICDEV™-Scout/1.0 (autonomous research scanner)"}
     if headers:
         hdrs.update(headers)
     req = urllib.request.Request(url, headers=hdrs)
@@ -104,7 +104,7 @@ def _scan_github_trending(config: dict) -> List[dict]:
                         url=url,
                         score=score,
                         severity="high" if score >= 0.8 else "medium" if score >= 0.5 else "low",
-                        action="Evaluate for ICDEV integration" if score >= 0.6 else "",
+                        action="Evaluate for ICDEV™ integration" if score >= 0.6 else "",
                         meta={"stars": stars, "source_type": "github"},
                     ))
     except Exception as exc:
@@ -139,7 +139,7 @@ def _scan_hackernews(config: dict) -> List[dict]:
                         url=url,
                         score=score,
                         severity="medium" if score >= 0.5 else "low",
-                        action="Read and evaluate for ICDEV relevance" if score >= 0.6 else "",
+                        action="Read and evaluate for ICDEV™ relevance" if score >= 0.6 else "",
                         meta={"hn_score": hn_score, "source_type": "hackernews"},
                     ))
     except Exception as exc:
@@ -191,7 +191,7 @@ def _scan_reddit(config: dict) -> List[dict]:
                 url=f"https://reddit.com{permalink}" if permalink else "",
                 score=score,
                 severity="medium" if score >= 0.6 else "low",
-                action="Review discussion for ICDEV feature ideas" if score >= 0.6 else "",
+                action="Review discussion for ICDEV™ feature ideas" if score >= 0.6 else "",
                 meta={"subreddit": sub, "upvotes": ups, "source_type": "reddit"},
             ))
 
@@ -227,7 +227,7 @@ def _scan_arxiv(config: dict) -> List[dict]:
 
     try:
         req = urllib.request.Request(url, headers={
-            "User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"
+            "User-Agent": "ICDEV™-Scout/1.0 (autonomous research scanner)"
         })
         with urllib.request.urlopen(req, timeout=20) as resp:  # nosec B310 — arXiv API
             xml_text = resp.read().decode("utf-8")

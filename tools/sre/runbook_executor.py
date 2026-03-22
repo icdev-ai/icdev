@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Automated runbook execution for ICDEV SRE module.
+"""Automated runbook execution for ICDEV™ SRE module.
 
 Manages runbooks with regex-based alert matching, risk-tiered execution,
 and full audit trail of all executions.
@@ -454,7 +454,7 @@ def check_runbook_health() -> dict:
 
 def main():
     """CLI entry point for runbook executor."""
-    parser = argparse.ArgumentParser(description="ICDEV SRE Runbook Executor")
+    parser = argparse.ArgumentParser(description="ICDEV™ SRE Runbook Executor")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--gate", action="store_true", help="Run gate check (exit 1 if recent failures)")
 

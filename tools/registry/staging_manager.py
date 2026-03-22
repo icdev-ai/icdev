@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Staging Manager -- isolated staging environments for capability testing.
 
 ADR D211: Staging uses git worktrees (D32) for isolation. Reuses existing
@@ -812,7 +812,7 @@ class StagingManager:
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Staging Manager -- isolated capability testing environments (D211)"
+        description="ICDEV™ Staging Manager -- isolated capability testing environments (D211)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

@@ -1,6 +1,6 @@
 # Claude Code Guide
 
-Claude Code is the primary interface for developers working with ICDEV. You talk in natural language, and Claude orchestrates the right tools, applies your dev profile, and handles compliance automatically.
+Claude Code is the primary interface for developers working with ICDEV™. You talk in natural language, and Claude orchestrates the right tools, applies your dev profile, and handles compliance automatically.
 
 ---
 
@@ -11,7 +11,7 @@ Claude Code is the primary interface for developers working with ICDEV. You talk
    npm install -g @anthropic-ai/claude-code
    ```
 
-2. Open your project (must have `icdev.yaml` or be an initialized ICDEV project):
+2. Open your project (must have `icdev.yaml` or be an initialized ICDEV™ project):
    ```bash
    cd my-project
    claude
@@ -19,7 +19,7 @@ Claude Code is the primary interface for developers working with ICDEV. You talk
 
 3. Claude automatically reads:
    - `icdev.yaml` — project configuration
-   - `CLAUDE.md` — orchestration instructions (ICDEV provides this)
+   - `CLAUDE.md` — orchestration instructions (ICDEV™ provides this)
    - Dev profile — your tenant/project coding standards (via cascade resolution)
    - Memory — previous session context
 
@@ -191,7 +191,7 @@ Claude considers your project's impact level, compliance frameworks, and dev pro
 ## Troubleshooting
 
 ### Claude doesn't know about my project's settings
-Make sure `icdev.yaml` exists in your project root and the ICDEV database has been initialized:
+Make sure `icdev.yaml` exists in your project root and the ICDEV™ database has been initialized:
 ```bash
 python tools/db/init_icdev_db.py
 ```
@@ -204,10 +204,10 @@ If no profile exists, create one:
 > Create a dev profile for this project using the DoD baseline template
 
 ### Claude can't find the right tool
-ICDEV tools are registered as MCP servers. Verify they're configured in `.mcp.json`:
+ICDEV™ tools are registered as MCP servers. Verify they're configured in `.mcp.json`:
 ```bash
 cat .mcp.json
 ```
 
-### Claude gives generic answers instead of ICDEV-specific ones
-Make sure you're in an ICDEV project directory with `CLAUDE.md` present. The `CLAUDE.md` file contains all orchestration instructions.
+### Claude gives generic answers instead of ICDEV™-specific ones
+Make sure you're in an ICDEV™ project directory with `CLAUDE.md` present. The `CLAUDE.md` file contains all orchestration instructions.

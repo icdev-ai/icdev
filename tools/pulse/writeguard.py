@@ -1,9 +1,9 @@
-"""WriteGuard integration bridge for ICDEV Pulse.
+"""WriteGuard integration bridge for ICDEV™ Pulse.
 
 GOTCHA-compliant: All checks are deterministic (no LLM). Rewriting is
 handled by Claude Code (the orchestration layer), not by this module.
 
-Connects to ICDEV's WriteGuard tools via direct Python imports for:
+Connects to ICDEV™'s WriteGuard tools via direct Python imports for:
 - Grammar checking (regex-based, deterministic)
 - Readability scoring (Flesch-Kincaid, deterministic)
 - Tone profiling (thought-leadership + educational)
@@ -17,11 +17,11 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Path to ICDEV WriteGuard tools
+# Path to ICDEV™ WriteGuard tools
 ICDEV_ROOT = Path(__file__).resolve().parent.parent.parent  # Up to ICDev/
 WRITEGUARD_DIR = ICDEV_ROOT / "tools" / "writing"
 
-# Ensure ICDEV root is on sys.path for imports
+# Ensure ICDEV™ root is on sys.path for imports
 if str(ICDEV_ROOT) not in sys.path:
     sys.path.insert(0, str(ICDEV_ROOT))
 

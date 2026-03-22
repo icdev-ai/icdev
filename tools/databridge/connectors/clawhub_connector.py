@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """ClawHub DataBridge Connector — live skill discovery from clawhub.ai.
 
 Read-only connector for the ClawHub skill registry API. Enables:
@@ -59,7 +59,7 @@ from tools.databridge.registry import register_connector  # noqa: E402
 # ---------------------------------------------------------------------------
 DEFAULT_API_BASE = "https://wry-manatee-359.convex.site/api/v1"
 REQUEST_TIMEOUT = 30  # seconds
-USER_AGENT = "ICDEV-DataBridge/1.0 (ClawHub Connector)"
+USER_AGENT = "ICDEV™-DataBridge/1.0 (ClawHub Connector)"
 
 
 # ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 
 ## Overview
 
-ICDEV manages multiple SQLite databases (operational, memory, platform, per-tenant) and supports PostgreSQL for SaaS deployments. This runbook covers backup procedures, restore operations, integrity verification, encryption, migration management, and disaster recovery.
+ICDEV™ manages multiple SQLite databases (operational, memory, platform, per-tenant) and supports PostgreSQL for SaaS deployments. This runbook covers backup procedures, restore operations, integrity verification, encryption, migration management, and disaster recovery.
 
 ---
 
@@ -187,7 +187,7 @@ migration:
 
 ## Database Migrations
 
-ICDEV uses a lightweight migration runner (D150, stdlib only, no Alembic dependency).
+ICDEV™ uses a lightweight migration runner (D150, stdlib only, no Alembic dependency).
 
 ### Check Migration Status
 
@@ -409,4 +409,4 @@ python tools/audit/audit_logger.py \
 
 ### Kubernetes CronJob
 
-For K8s deployments, add a CronJob resource that runs the backup tool inside the ICDEV container with the data volume mounted.
+For K8s deployments, add a CronJob resource that runs the backup tool inside the ICDEV™ container with the data volume mounted.

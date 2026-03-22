@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-# ICDEV GovCon Capability Mapper — Phase 59 (D363)
-# Maps ICDEV capabilities to RFP requirement patterns via keyword overlap.
+# ICDEV™ GovCon Capability Mapper — Phase 59 (D363)
+# Maps ICDEV™ capabilities to RFP requirement patterns via keyword overlap.
 
 """
-Capability Mapper — match requirement patterns against ICDEV capability catalog.
+Capability Mapper — match requirement patterns against ICDEV™ capability catalog.
 
 Reads from:
     - context/govcon/icdev_capability_catalog.json (capability definitions)
@@ -78,7 +78,7 @@ def _load_config():
 # ── catalog loading ───────────────────────────────────────────────────
 
 def load_capability_catalog():
-    """Load ICDEV capability catalog from JSON."""
+    """Load ICDEV™ capability catalog from JSON."""
     if not _CATALOG_PATH.exists():
         return []
     with open(_CATALOG_PATH) as f:
@@ -207,7 +207,7 @@ def map_pattern_to_capabilities(pattern, capabilities):
 
 
 def map_all_patterns(store=True):
-    """Map all requirement patterns to ICDEV capabilities.
+    """Map all requirement patterns to ICDEV™ capabilities.
 
     Returns mapping results and optionally stores in icdev_capability_map.
     """
@@ -501,7 +501,7 @@ def get_compliance_matrix(opportunity_id):
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Capability Mapper (D363)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Capability Mapper (D363)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--map-all", action="store_true", help="Map all patterns to capabilities")
     group.add_argument("--map-pattern", action="store_true", help="Map single pattern")
@@ -560,7 +560,7 @@ def _print_human(result, args):
     """Human-readable output."""
     status = result.get("status", "unknown")
     print(f"\n{'=' * 60}")
-    print(f"  ICDEV Capability Mapper — {status.upper()}")
+    print(f"  ICDEV™ Capability Mapper — {status.upper()}")
     print(f"{'=' * 60}")
 
     if "mappings" in result:

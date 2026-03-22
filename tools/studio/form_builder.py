@@ -1,4 +1,4 @@
-"""ICDEV Studio — Form Builder Backend.
+"""ICDEV™ Studio — Form Builder Backend.
 
 Drag-and-drop form designer for intake questionnaires, proposal templates,
 compliance checklists, and custom data collection.  Forms serialize to
@@ -320,7 +320,7 @@ def list_submissions(form_id: str) -> list[dict]:
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Studio Form Builder")
+    parser = argparse.ArgumentParser(description="ICDEV™ Studio Form Builder")
     parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

@@ -1,6 +1,6 @@
 """Backward-compatibility shim: tools.* -> icdev.tools.*
 
-The ICDEV tools package has moved to icdev.tools. This shim provides
+The ICDEV™ tools package has moved to icdev.tools. This shim provides
 backward compatibility for existing scripts and child applications.
 
 Update your imports:

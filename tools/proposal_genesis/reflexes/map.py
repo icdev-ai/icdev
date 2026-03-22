@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""R6: Map Reflex — expanded capability matching (ICDEV + consulting + partners).
+"""R6: Map Reflex — expanded capability matching (ICDEV™ + consulting + partners).
 
 Wraps tools/govcon/capability_mapper.py with expanded catalog (D-PG-6).
 GraphRAG/KARL enrichment for compliance-neighborhood discovery (§3.4, D-KARL-1/3).
@@ -290,7 +290,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Map Reflex (R6).
 
     Triggered after R5 Extract. Maps extracted requirements to expanded
-    capability catalog (ICDEV + consulting services + domain expertise +
+    capability catalog (ICDEV™ + consulting services + domain expertise +
     partner/teaming capabilities).
     """
     conn = get_connection()

@@ -1,4 +1,4 @@
-# Start — Launch ICDEV Dashboard, SaaS Portal, and Poll Trigger
+# Start — Launch ICDEV™ Dashboard, SaaS Portal, and Poll Trigger
 
 ## Variables
 
@@ -52,7 +52,7 @@ PORTAL_PORT: 8443
    python -m webbrowser "http://localhost:8443/portal/"
    ```
 
-7. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV-BOT automation):
+7. Start the CI/CD poll trigger (polls GitHub/GitLab issues every 20s for ICDEV™-BOT automation):
    ```bash
    nohup python tools/ci/triggers/poll_trigger.py > .tmp/poll_trigger.log 2>&1 &
    ```

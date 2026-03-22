@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)
+# ICDEV™ GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)
 # FY2026 NDAA event-based CPARS negative reporting with auto-detection.
 
 """
@@ -839,7 +839,7 @@ def check_ndaa_thresholds(contract_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)")
+        description="ICDEV™ GovProposal — Negative Event Tracker (Phase 60, D-CPMP-7)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--record", action="store_true",
                        help="Record a negative event")

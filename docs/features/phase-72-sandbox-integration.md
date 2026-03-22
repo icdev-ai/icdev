@@ -11,7 +11,7 @@
 
 The LLM Sandbox (D-SEC-10, Phase 71) provided container-isolated code execution
 via `sandbox_executor.py`, but was only wired into Connector Forge testing and
-capability evaluation scoring. Untrusted code entering ICDEV through the CodeLens
+capability evaluation scoring. Untrusted code entering ICDEV™ through the CodeLens
 testing pipeline, CI/CD contributor PRs, marketplace skill installations, OpenClaw
 bridge imports, and Genesis Evolve mutations was executing without container isolation.
 

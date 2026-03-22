@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Cross-Session Trend Detection for ICDEV Research Engine (D-RES-11).
+# POC: ICDEV™ System Administrator
+"""Cross-Session Trend Detection for ICDEV™ Research Engine (D-RES-11).
 
 Analyzes research_challenges entries across sessions and verticals to identify
 emerging, active, declining, and stale trends by clustering challenges with
@@ -1080,7 +1080,7 @@ def _print_human(args, result):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Trend Detector -- cross-session trend detection (D-RES-11)"
+        description="ICDEV™ Research Trend Detector -- cross-session trend detection (D-RES-11)"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

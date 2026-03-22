@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Automated RAG-to-FT Pipeline — detect new chunks, generate pairs, trigger retrain (D-KARL-5).
 
 Orchestrates the automated flow:

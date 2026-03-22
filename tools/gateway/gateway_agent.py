@@ -3,7 +3,7 @@
 """Remote Command Gateway Agent — Flask app on port 8458.
 
 Receives commands from messaging channels via webhooks, validates
-through 8-gate security chain, executes ICDEV tools, and returns
+through 8-gate security chain, executes ICDEV™ tools, and returns
 classification-filtered responses.
 
 Usage:
@@ -124,7 +124,7 @@ def create_app() -> Flask:
     def agent_card():
         card = config.get("gateway", {}).get("agent_card", {})
         return jsonify({
-            "name": card.get("name", "ICDEV Remote Command Gateway"),
+            "name": card.get("name", "ICDEV™ Remote Command Gateway"),
             "description": card.get("description", ""),
             "version": card.get("version", "1.0.0"),
             "url": f"http://localhost:{config.get('gateway', {}).get('port', 8458)}",
@@ -158,7 +158,7 @@ def create_app() -> Flask:
             return jsonify({
                 "challenge_code": code,
                 "ttl_minutes": ttl,
-                "message": f"Enter this code in the ICDEV dashboard or provide your API key to complete binding.",
+                "message": f"Enter this code in the ICDEV™ dashboard or provide your API key to complete binding.",
             })
 
         elif action == "verify":
@@ -241,7 +241,7 @@ def _register_webhook_route(app: Flask, path: str, channel_name: str,
             adapter.send_message(
                 envelope.channel_user_id,
                 f"Your binding code: `{code}`\n"
-                f"Enter this code in the ICDEV dashboard within {ttl} minutes.",
+                f"Enter this code in the ICDEV™ dashboard within {ttl} minutes.",
                 envelope.channel_thread_id,
             )
             return jsonify({"status": "binding_initiated"}), 200
@@ -317,7 +317,7 @@ def main():
     app = create_app()
 
     print(f"CUI // SP-CTI")
-    print(f"ICDEV Remote Command Gateway starting on {host}:{port}")
+    print(f"ICDEV™ Remote Command Gateway starting on {host}:{port}")
     print(f"Environment: {config.get('environment', {}).get('mode', 'connected')}")
     print(f"Active channels: {list(app.config.get('ADAPTERS', {}).keys())}")
 

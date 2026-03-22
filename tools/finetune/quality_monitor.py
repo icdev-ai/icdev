@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Quality Monitor — RAG evaluation feedback loop with retrain triggers (D-KARL-8).
 
 Monitors RAG evaluation metrics (NDCG, MRR, faithfulness) and triggers

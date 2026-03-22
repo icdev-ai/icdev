@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV testing pipeline BDD scenarios."""
+"""Step definitions for ICDEV™ testing pipeline BDD scenarios."""
 
 import os
 import subprocess

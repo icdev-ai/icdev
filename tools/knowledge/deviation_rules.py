@@ -2,11 +2,11 @@
 # CUI // SP-CTI
 """Category-Based Deviation Rules Engine (GSD-adapted).
 
-Layers category-based deviation rules ON TOP of ICDEV's existing
+Layers category-based deviation rules ON TOP of ICDEV™'s existing
 confidence-based self-healing system. When a failure matches a
 known category, the category rule overrides the confidence threshold.
 
-GSD's 4 rules + ICDEV's compliance addition:
+GSD's 4 rules + ICDEV™'s compliance addition:
   Rule 1: Security vulns    → auto-fix (lower threshold)
   Rule 2: Critical function  → auto-fix (moderate threshold)
   Rule 3: Blocking issues    → auto-fix (lower threshold)

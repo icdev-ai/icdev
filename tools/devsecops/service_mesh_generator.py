@@ -3,12 +3,12 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Service Mesh Configuration Generator for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Service Mesh Configuration Generator for ICDEV™.
 
 Generates Istio and Linkerd service mesh configurations based on a project's
 ZTA profile. Both mesh types are supported (ADR D121); customer selects in
-the ZTA profile. PDP is modeled as an external reference — ICDEV generates
+the ZTA profile. PDP is modeled as an external reference — ICDEV™ generates
 PEP (Policy Enforcement Point) configs, not PDP itself (ADR D124).
 
 Each generator returns a dict containing individual K8s-style manifests plus
@@ -34,7 +34,7 @@ Usage:
     python tools/devsecops/service_mesh_generator.py --project-id proj-123 --mesh istio --output ./k8s/mesh/
 
 ADR D121: Both Istio and Linkerd supported; customer selects in profile.
-ADR D124: PDP modeled as external reference; ICDEV generates PEP configs only.
+ADR D124: PDP modeled as external reference; ICDEV™ generates PEP configs only.
 """
 
 import argparse
@@ -109,7 +109,7 @@ def _load_config() -> dict:
 
 
 def _get_db():
-    """Get an ICDEV database connection with WAL mode and Row factory."""
+    """Get an ICDEV™ database connection with WAL mode and Row factory."""
     conn = get_connection()
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -178,7 +178,7 @@ def _get_project_info(project_id: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def _mesh_labels(project_id: str, component: str, classification: str = "CUI") -> dict:
-    """Return standard ICDEV service mesh labels for a K8s resource."""
+    """Return standard ICDEV™ service mesh labels for a K8s resource."""
     return {
         "icdev.mil/project": project_id,
         "icdev.mil/component": component,
@@ -778,7 +778,7 @@ def generate_istio_config(project_id: str, profile: dict = None) -> dict:
     PDP references are surfaced as annotations only (ADR D124).
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         profile:    Optional pre-loaded ZTA/DevSecOps profile dict. If None,
                     the profile is loaded from the database.
 
@@ -855,7 +855,7 @@ def generate_linkerd_config(project_id: str, profile: dict = None) -> dict:
     PDP references are surfaced as annotations only (ADR D124).
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         profile:    Optional pre-loaded ZTA/DevSecOps profile dict. If None,
                     the profile is loaded from the database.
 
@@ -924,7 +924,7 @@ def _human_output(result: dict) -> None:
     generated_at = result.get("generated_at", "")
 
     print(f"\n{'='*60}")
-    print(f"  ICDEV Service Mesh Generator — {mesh}")
+    print(f"  ICDEV™ Service Mesh Generator — {mesh}")
     print(f"{'='*60}")
     print(f"  Project:        {project_id}")
     print(f"  Namespace:      {namespace}")
@@ -970,7 +970,7 @@ def _human_output(result: dict) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate Istio or Linkerd service mesh configurations for an ICDEV project.",
+        description="Generate Istio or Linkerd service mesh configurations for an ICDEV™ project.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -984,14 +984,14 @@ Examples:
   python tools/devsecops/service_mesh_generator.py --project-id proj-123 --mesh istio --output ./k8s/mesh/
 
 ADR D121: Both Istio and Linkerd supported; customer selects in profile.
-ADR D124: PDP modeled as external reference; ICDEV generates PEP configs only.
+ADR D124: PDP modeled as external reference; ICDEV™ generates PEP configs only.
 """,
     )
     parser.add_argument(
         "--project-id",
         required=True,
         metavar="PROJECT_ID",
-        help="ICDEV project identifier",
+        help="ICDEV™ project identifier",
     )
     parser.add_argument(
         "--mesh",

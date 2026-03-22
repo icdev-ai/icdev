@@ -275,7 +275,7 @@ def history(project_id: str = None, limit: int = 20, db_path=None) -> list:
 def main():
     """CLI for session purpose management."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Session Purpose — intent tracking for NIST AU-3 traceability"
+        description="ICDEV™ Session Purpose — intent tracking for NIST AU-3 traceability"
     )
     parser.add_argument("--json", action="store_true", dest="json_output",
                         help="JSON output")

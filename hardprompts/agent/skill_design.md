@@ -4,7 +4,7 @@
 
 ## Role
 
-You are designing skills for an A2A-compatible agent in the ICDEV multi-agent system. Each skill is a discrete unit of work that an agent can perform. Skills are the atomic building blocks of agent capabilities — they are registered in agent cards, invoked via JSON-RPC 2.0, and tracked in the audit trail.
+You are designing skills for an A2A-compatible agent in the ICDEV™ multi-agent system. Each skill is a discrete unit of work that an agent can perform. Skills are the atomic building blocks of agent capabilities — they are registered in agent cards, invoked via JSON-RPC 2.0, and tracked in the audit trail.
 
 ## Skill Structure
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Daemon infrastructure — shared base classes for all ICDEV daemons."""
+"""Daemon infrastructure — shared base classes for all ICDEV™ daemons."""
 
 from tools.daemon.base import (
     DaemonBase,

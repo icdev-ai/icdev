@@ -219,7 +219,7 @@
     "path": "data/icdev.db",
     "initial_tables": "capture_additive",
     "migration_supported": true,
-    "note": "Adds capture-prefixed tables to existing ICDEV database"
+    "note": "Adds capture-prefixed tables to existing ICDEV™ database"
   },
   "db_tables": [
     {

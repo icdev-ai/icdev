@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Comply — Compliance artifact generation workflow
+# ICDEV™ Comply — Compliance artifact generation workflow
 # Runs SSP, POAM, STIG, SBOM, CUI marker and evaluates compliance gate
 
 """
-ICDEV Comply — Generate ATO compliance artifacts.
+ICDEV™ Comply — Generate ATO compliance artifacts.
 
 Usage:
     python tools/ci/workflows/icdev_comply.py <issue-number> <run-id>
@@ -229,7 +229,7 @@ def main():
     run_id = sys.argv[2]
 
     print("CUI // SP-CTI")
-    print(f"ICDEV Comply — run_id: {run_id}, issue: #{issue_number}")
+    print(f"ICDEV™ Comply — run_id: {run_id}, issue: #{issue_number}")
 
     # Set up
     logger = setup_logger(run_id, "icdev_comply")

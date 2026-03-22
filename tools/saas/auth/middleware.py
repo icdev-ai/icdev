@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — Authentication & Authorization Middleware.
+"""ICDEV™ SaaS — Authentication & Authorization Middleware.
 CUI // SP-CTI
 
 Flask before_request middleware that:

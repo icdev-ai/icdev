@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Event Envelope — unified event format for all CI/CD triggers (D132)
+# ICDEV™ Event Envelope — unified event format for all CI/CD triggers (D132)
 
 """
 Unified event envelope for all CI/CD trigger sources.
@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 
-BOT_IDENTIFIER = "[ICDEV-BOT]"
+BOT_IDENTIFIER = "[ICDEV™-BOT]"
 
 
 @dataclass

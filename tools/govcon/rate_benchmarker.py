@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Rate Benchmarker -- wrap rate calculation, CALC+ benchmarking, Price-to-Win analysis.
 
 Calculates fully-loaded labor rates, benchmarks against stored GSA CALC+ data and

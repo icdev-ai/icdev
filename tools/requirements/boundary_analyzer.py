@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """ATO Boundary Impact Analyzer — 4-tier (GREEN/YELLOW/ORANGE/RED) scoring.
 
 Registers ATO system boundaries, assesses how new requirements affect an
@@ -212,7 +212,7 @@ def register_system(
     """Register an existing ATO system boundary in ato_system_registry.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         system_name: Human-readable system name.
         ato_status: One of active, provisional, expired, pending.
         boundary_definition: JSON-serializable dict describing the boundary.
@@ -354,7 +354,7 @@ def list_systems(project_id: str, db_path=None) -> dict:
     """List all registered ATO systems for a project.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         db_path: Optional database path override.
 
     Returns:
@@ -606,7 +606,7 @@ def assess_boundary_impact(
     """Assess a single requirement's impact on an existing ATO boundary.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         system_id: Registered ATO system ID.
         requirement_id: Intake requirement ID to assess.
         db_path: Optional database path override.
@@ -787,7 +787,7 @@ def generate_alternatives(
     the existing ATO or with minimal boundary disruption.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         assessment_id: Boundary impact assessment ID (must be RED tier).
         db_path: Optional database path override.
 
@@ -1008,7 +1008,7 @@ def list_assessments(
     """List all boundary assessments, optionally filtered by system or tier.
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         system_id: Optional filter by ATO system.
         tier: Optional filter by tier (GREEN, YELLOW, ORANGE, RED).
         db_path: Optional database path override.
@@ -1078,9 +1078,9 @@ def list_assessments(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV ATO Boundary Impact Analyzer (4-tier GREEN/YELLOW/ORANGE/RED)"
+        description="ICDEV™ ATO Boundary Impact Analyzer (4-tier GREEN/YELLOW/ORANGE/RED)"
     )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
 
     # System registration
     parser.add_argument("--register-system", action="store_true",

@@ -1,5 +1,5 @@
 /**
- * ICDEV Studio — Automation Builder
+ * ICDEV™ Studio — Automation Builder
  * Visual trigger → condition → action rule engine.
  */
 const AutoBuilder = (() => {

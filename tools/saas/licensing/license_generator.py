@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — License Generator.
+"""ICDEV™ SaaS — License Generator.
 CUI // SP-CTI
 
 Admin tool for generating RSA-SHA256 signed license keys.
@@ -146,7 +146,7 @@ def generate_license(
     expires_days: int = 365,
     private_key_path: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Generate a signed ICDEV license.
+    """Generate a signed ICDEV™ license.
 
     Args:
         customer:         Customer / organisation name.
@@ -204,7 +204,7 @@ def generate_license(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="ICDEV License Generator — CUI // SP-CTI"
+        description="ICDEV™ License Generator — CUI // SP-CTI"
     )
     sub = parser.add_subparsers(dest="command")
 

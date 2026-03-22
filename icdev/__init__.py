@@ -1,4 +1,4 @@
-"""ICDEV -- Intelligent Certified Development Platform.
+"""ICDEV™ -- Intelligent Certified Development Platform.
 
 A system that builds systems. AI-powered meta-builder for generating
 complete, autonomous, ATO-ready applications with 42 compliance framework

@@ -107,7 +107,7 @@ def _generate_svg_hero(
         .replace('"', "&quot;")
     )
     category_display = (
-        category[:30].upper().replace("&", "&amp;") if category else "ICDEV PULSE"
+        category[:30].upper().replace("&", "&amp;") if category else "ICDEV™ PULSE"
     )
 
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -138,7 +138,7 @@ def _generate_svg_hero(
   <text x="{width//2}" y="{height - 30}" text-anchor="middle"
         font-family="system-ui, -apple-system, sans-serif" font-size="12"
         fill="rgba(255,255,255,0.5)">
-    ICDEV Intelligent Certified Development
+    ICDEV™ Intelligent Certified Development
   </text>
 </svg>"""
     return svg

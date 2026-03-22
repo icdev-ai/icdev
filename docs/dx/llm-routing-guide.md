@@ -1,6 +1,6 @@
-# ICDEV LLM Routing Guide
+# ICDEV™ LLM Routing Guide
 
-ICDEV is **LLM-vendor agnostic**. A single YAML config file controls which model handles each task — Claude for orchestration, GPT-4o for coding, Gemini for cost-effective compliance checks, Ollama for air-gapped environments. Change the routing without touching any code.
+ICDEV™ is **LLM-vendor agnostic**. A single YAML config file controls which model handles each task — Claude for orchestration, GPT-4o for coding, Gemini for cost-effective compliance checks, Ollama for air-gapped environments. Change the routing without touching any code.
 
 ---
 
@@ -131,7 +131,7 @@ models:
 
 ## 3. Routing — Assigning Models to Tasks
 
-The `routing` section maps each ICDEV function to a **fallback chain** of models. The router tries each model in order and uses the first one that responds:
+The `routing` section maps each ICDEV™ function to a **fallback chain** of models. The router tries each model in order and uses the first one that responds:
 
 ```yaml
 routing:

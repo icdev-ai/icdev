@@ -2,7 +2,7 @@
 
 # Changelog
 
-All notable changes to ICDEV are documented in this file.
+All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
@@ -10,7 +10,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Comprehensive test suite expansion (324+ new tests across 21 test files)
-- CI/CD pipeline for ICDEV itself (GitHub Actions + GitLab CI)
+- CI/CD pipeline for ICDEV™ itself (GitHub Actions + GitLab CI)
 - REST API endpoints for Phases 22-28 capabilities
 - Helm chart completion for all 15 agents
 - Project documentation (README, CONTRIBUTING, CHANGELOG)
@@ -79,7 +79,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Phase 19-22] - 2026-01-XX
 
 ### Added
-- Agentic application generation producing mini-ICDEV clone child applications (D44-D53)
+- Agentic application generation producing mini-ICDEV™ clone child applications (D44-D53)
 - 6-dimension fitness scoring for agentic suitability assessment (D46)
 - Blueprint-driven generation with 12-step pipeline (D47)
 - Grandchild prevention mechanism (D52)
@@ -153,7 +153,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Phase 1-6] - 2025-XX-XX
 
 ### Added
-- Initial ICDEV platform with GOTCHA 6-layer agentic framework
+- Initial ICDEV™ platform with GOTCHA 6-layer agentic framework
 - ATLAS and M-ATLAS build workflows (Architect, Trace, Link, Assemble, Stress-test)
 - 15 multi-agent architecture across 3 tiers (Core, Domain, Support)
 - A2A protocol (JSON-RPC 2.0 over mutual TLS) for inter-agent communication

@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-# ICDEV Industry Research Dossier: Government Contracting Proposal & Capture Management Roles
+# ICDEV™ Industry Research Dossier: Government Contracting Proposal & Capture Management Roles
 # Classification: CUI // SP-CTI
 # Date: 2026-03-19
 # Research Session: Deep Vertical — GovCon Proposal Lifecycle Roles
-# Purpose: Drive ICDEV Proposal Genesis product strategy
+# Purpose: Drive ICDEV™ Proposal Genesis product strategy
 
 ---
 
@@ -645,15 +645,15 @@ These are critical knowledge assets that typically reside only in experienced pr
 
 ---
 
-## 7. Recommendations for ICDEV Proposal Genesis
+## 7. Recommendations for ICDEV™ Proposal Genesis
 
 ### 7.1 Critical Capability Gaps to Address
 
-Based on this research, ICDEV Proposal Genesis has strong foundations but is missing several capabilities that real proposal professionals consider essential:
+Based on this research, ICDEV™ Proposal Genesis has strong foundations but is missing several capabilities that real proposal professionals consider essential:
 
 #### Gap 1: Compliance Matrix Automation (HIGH PRIORITY)
 - **Finding**: RFP parsing and compliance matrix creation takes 2-5 days manually. Tools like VisibleThread, GovDash, and Unanet ProposalAI have made this a table-stakes feature.
-- **Current State**: ICDEV has `requirement_extractor.py` for shall statement mining but no automated compliance matrix builder that maps Section L instructions -> Section M evaluation criteria -> Section C SOW -> proposal outline.
+- **Current State**: ICDEV™ has `requirement_extractor.py` for shall statement mining but no automated compliance matrix builder that maps Section L instructions -> Section M evaluation criteria -> Section C SOW -> proposal outline.
 - **Recommendation**: Build a `compliance_matrix_builder.py` tool that:
   - Parses RFP text to extract L/M/C requirements automatically
   - Maps requirements to proposal outline sections
@@ -663,7 +663,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 2: Color Team Review Management (HIGH PRIORITY)
 - **Finding**: Color team reviews (Blue, Pink, Red, Green, Gold, White Hat) are the backbone of the Shipley process. Every serious proposal operation runs them.
-- **Current State**: ICDEV has no color team review tracking, scheduling, or structured review capture mechanism.
+- **Current State**: ICDEV™ has no color team review tracking, scheduling, or structured review capture mechanism.
 - **Recommendation**: Build a `color_review_manager.py` tool that:
   - Defines review types (Blue, Pink, Red, Green, Gold, White Hat)
   - Assigns reviewers with balanced perspectives (customer, technical, cost, management)
@@ -674,7 +674,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
   - Supports virtual/distributed reviews
 
 #### Gap 3: Win Theme & Discriminator Tracking (MEDIUM-HIGH)
-- **Finding**: Win themes and discriminators are established during capture but frequently lost/diluted during proposal writing. No existing ICDEV tool tracks win theme implementation across volumes.
+- **Finding**: Win themes and discriminators are established during capture but frequently lost/diluted during proposal writing. No existing ICDEV™ tool tracks win theme implementation across volumes.
 - **Current State**: Response drafter uses capability mapping but doesn't track win themes as first-class objects.
 - **Recommendation**: Extend the proposal data model to include:
   - Win theme registry with supporting proof points
@@ -684,8 +684,8 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
   - "Ghost" competitor strategy templates
 
 #### Gap 4: Pwin (Probability of Win) Scoring Engine (MEDIUM-HIGH)
-- **Finding**: PWin is a structured, weighted scoring methodology used by virtually all mid-to-large contractors. Scores drive bid/no-bid decisions. ICDEV has `decide` reflex with basic scoring but it's not a comprehensive Pwin model.
-- **Current State**: ICDEV decide reflex does basic scoring. Missing: configurable weighted factors, historical calibration, pipeline-wide Pwin tracking.
+- **Finding**: PWin is a structured, weighted scoring methodology used by virtually all mid-to-large contractors. Scores drive bid/no-bid decisions. ICDEV™ has `decide` reflex with basic scoring but it's not a comprehensive Pwin model.
+- **Current State**: ICDEV™ decide reflex does basic scoring. Missing: configurable weighted factors, historical calibration, pipeline-wide Pwin tracking.
 - **Recommendation**: Build a `pwin_scorer.py` tool that:
   - Implements configurable weighted scoring (customer fit, competitive position, past performance, pricing, solution strength, team)
   - Supports Pgo (pursue) and Pwin (win) as separate assessments
@@ -695,7 +695,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 5: Price-to-Win (PTW) Analysis Tool (MEDIUM)
 - **Finding**: PTW is standard practice for competitive proposals. Requires analyzing incumbent pricing, competitor bid patterns, and government budget constraints.
-- **Current State**: ICDEV has pricing support through CPMP but no dedicated PTW analysis tool.
+- **Current State**: ICDEV™ has pricing support through CPMP but no dedicated PTW analysis tool.
 - **Recommendation**: Build a `ptw_analyzer.py` that:
   - Analyzes FPDS award data for comparable contracts
   - Estimates competitor pricing ranges based on historical data
@@ -705,7 +705,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 6: Content Library with Effectiveness Tracking (MEDIUM)
 - **Finding**: Content libraries (past performance, technical boilerplate, management approaches) are critical infrastructure. Current tools surface content by keyword; best tools surface content by RFP requirement match.
-- **Current State**: ICDEV has `knowledge_base.py` with RAG integration. Missing: win/loss tracking per content block, effectiveness scoring, staleness detection.
+- **Current State**: ICDEV™ has `knowledge_base.py` with RAG integration. Missing: win/loss tracking per content block, effectiveness scoring, staleness detection.
 - **Recommendation**: Enhance knowledge base to:
   - Track which content blocks contributed to winning vs. losing proposals
   - Score content effectiveness by use frequency and win correlation
@@ -715,7 +715,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 7: Capture-to-Proposal Handoff (MEDIUM)
 - **Finding**: One of the most common knowledge losses occurs when a pursuit transitions from capture manager to proposal manager. Win strategy, customer intelligence, and competitive analysis get lost in transition.
-- **Current State**: ICDEV has separate capture (scout, shape) and proposal (extract, map, draft) reflexes but no formal handoff mechanism.
+- **Current State**: ICDEV™ has separate capture (scout, shape) and proposal (extract, map, draft) reflexes but no formal handoff mechanism.
 - **Recommendation**: Build a structured capture-to-proposal handoff document that automatically assembles:
   - Customer relationship summary and key contacts
   - Competitive landscape analysis
@@ -727,7 +727,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 8: Teaming Partner Management (MEDIUM)
 - **Finding**: Teaming is critical to government contracting. Current partner selection is largely relationship-driven, not data-driven.
-- **Current State**: ICDEV has `subcontractor_tracker.py` for post-award tracking but minimal capture-phase teaming support.
+- **Current State**: ICDEV™ has `subcontractor_tracker.py` for post-award tracking but minimal capture-phase teaming support.
 - **Recommendation**: Build a `teaming_manager.py` that:
   - Maintains partner capability profiles with past performance evidence
   - Tracks OCI risks per partner per opportunity
@@ -738,7 +738,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 9: IDIQ Task Order Proposal Factory (MEDIUM)
 - **Finding**: Large contractors handle dozens of task order proposals per month with 10-15 day turnarounds. This requires a factory model with compressed processes.
-- **Current State**: ICDEV pipeline handles individual proposals but doesn't support the high-volume, rapid-turnaround factory model.
+- **Current State**: ICDEV™ pipeline handles individual proposals but doesn't support the high-volume, rapid-turnaround factory model.
 - **Recommendation**: Build a `to_factory.py` module that:
   - Supports 10/15/30-day compressed proposal schedules
   - Pre-assigns standing team roles per IDIQ vehicle
@@ -749,7 +749,7 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 
 #### Gap 10: Post-Award Intelligence Loop (LOW-MEDIUM)
 - **Finding**: Win/loss debriefs contain valuable intelligence but are rarely analyzed across proposals to identify patterns.
-- **Current State**: ICDEV `analyze` reflex does basic win/loss analysis.
+- **Current State**: ICDEV™ `analyze` reflex does basic win/loss analysis.
 - **Recommendation**: Enhance with:
   - Structured debrief capture templates aligned to evaluation criteria
   - Cross-proposal pattern analysis (what themes win at which agencies, common failure modes)
@@ -765,27 +765,27 @@ Based on this research, ICDEV Proposal Genesis has strong foundations but is mis
 5. **Add teaming partner profiling** to competitive intelligence
 6. **Add IDIQ vehicle tracking** with associated rate cards and templates
 
-### 7.3 Strategic Differentiators for ICDEV
+### 7.3 Strategic Differentiators for ICDEV™
 
-Based on analyzing the competitive landscape (GovDash, GovSignals, Unanet, Thalamus, CaptureExec, OneTeam), ICDEV has unique strengths that no competitor offers:
+Based on analyzing the competitive landscape (GovDash, GovSignals, Unanet, Thalamus, CaptureExec, OneTeam), ICDEV™ has unique strengths that no competitor offers:
 
-1. **Compliance-Native Proposal Generation**: ICDEV's 30+ compliance frameworks (FedRAMP, CMMC, NIST, CJIS, HIPAA) enable proposals that automatically demonstrate compliance posture, not just claim it. No competitor has this depth.
+1. **Compliance-Native Proposal Generation**: ICDEV™'s 30+ compliance frameworks (FedRAMP, CMMC, NIST, CJIS, HIPAA) enable proposals that automatically demonstrate compliance posture, not just claim it. No competitor has this depth.
 
-2. **cATO/ATO Evidence Integration**: For technical proposals, ICDEV can generate real-time compliance evidence as proposal proof points. This is a massive differentiator for IT/cybersecurity proposals.
+2. **cATO/ATO Evidence Integration**: For technical proposals, ICDEV™ can generate real-time compliance evidence as proposal proof points. This is a massive differentiator for IT/cybersecurity proposals.
 
-3. **OSCAL + FedRAMP 20x**: ICDEV's OSCAL ecosystem tools can generate machine-readable compliance artifacts that directly support authorization packages -- unique in proposal tools.
+3. **OSCAL + FedRAMP 20x**: ICDEV™'s OSCAL ecosystem tools can generate machine-readable compliance artifacts that directly support authorization packages -- unique in proposal tools.
 
-4. **Air-Gapped Operation**: Many GovCon proposal tools require cloud connectivity. ICDEV's air-gapped mode (Ollama + local LLM) enables classified proposal work that GovDash/GovSignals cannot support.
+4. **Air-Gapped Operation**: Many GovCon proposal tools require cloud connectivity. ICDEV™'s air-gapped mode (Ollama + local LLM) enables classified proposal work that GovDash/GovSignals cannot support.
 
-5. **Full DevSecOps Pipeline Integration**: For IT/software proposals, ICDEV can generate real CI/CD pipeline configurations, security scanning results, and deployment architectures that serve as proposal proof points.
+5. **Full DevSecOps Pipeline Integration**: For IT/software proposals, ICDEV™ can generate real CI/CD pipeline configurations, security scanning results, and deployment architectures that serve as proposal proof points.
 
-6. **Digital Thread Traceability**: ICDEV's MBSE digital thread provides proposal-to-delivery traceability that supports transition plans and management approaches.
+6. **Digital Thread Traceability**: ICDEV™'s MBSE digital thread provides proposal-to-delivery traceability that supports transition plans and management approaches.
 
 ### 7.4 Architecture Recommendations
 
 1. **Role-Based Views**: Add role-based filtering to the proposal dashboard (Capture Manager, Proposal Manager, Pricing Analyst, Compliance, Executive) -- different personas need different data
-2. **Shipley Phase Tracking**: Map ICDEV's proposal lifecycle to Shipley phases so teams familiar with Shipley can adopt ICDEV without relearning
-3. **APMP Body of Knowledge Alignment**: Document ICDEV capabilities using APMP terminology to appeal to certified professionals
+2. **Shipley Phase Tracking**: Map ICDEV™'s proposal lifecycle to Shipley phases so teams familiar with Shipley can adopt ICDEV™ without relearning
+3. **APMP Body of Knowledge Alignment**: Document ICDEV™ capabilities using APMP terminology to appeal to certified professionals
 4. **Integration Priorities**: Prioritize integrations with Deltek CostPoint/ProPricer (pricing), Microsoft 365/SharePoint (collaboration), and GovWin IQ (market intelligence) -- these are the most common tools in GovCon
 5. **Content Library Architecture**: Redesign knowledge_base.py to support:
    - Structured past performance records (CPARS-aligned)
@@ -795,9 +795,9 @@ Based on analyzing the competitive landscape (GovDash, GovSignals, Unanet, Thala
 
 ---
 
-## 8. Tool Landscape Gap Analysis (ICDEV vs. Market)
+## 8. Tool Landscape Gap Analysis (ICDEV™ vs. Market)
 
-| Capability | GovDash | GovSignals | Unanet | CaptureExec | OneTeam | ICDEV Current | ICDEV Gap |
+| Capability | GovDash | GovSignals | Unanet | CaptureExec | OneTeam | ICDEV™ Current | ICDEV™ Gap |
 |-----------|---------|------------|--------|-------------|---------|---------------|-----------|
 | SAM.gov scanning | Yes | Yes | No | No | Yes | Yes (sam_scanner) | None |
 | RFP shredding/parsing | Yes | Yes | Yes | No | No | Partial (requirement_extractor) | Section L/M/C mapping |
@@ -856,5 +856,5 @@ Based on analyzing the competitive landscape (GovDash, GovSignals, Unanet, Thala
 
 ---
 
-*Research conducted 2026-03-19 by ICDEV Industry Research Engine*
+*Research conducted 2026-03-19 by ICDEV™ Industry Research Engine*
 *Classification: CUI // SP-CTI*

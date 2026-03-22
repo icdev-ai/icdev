@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Universal RAG Subsystem — Phase 64.
 
-Provides vector-indexed retrieval-augmented generation across all ICDEV data.
+Provides vector-indexed retrieval-augmented generation across all ICDEV™ data.
 Indexes Innovation, Creative, Research engine outputs plus compliance artifacts,
 memory entries, and audit data for context-aware LLM invocations.
 

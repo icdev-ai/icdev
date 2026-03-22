@@ -1,17 +1,17 @@
 # CUI // SP-CTI
 # Bayesian Autoresearch — Autonomous Experiment Engine
 
-> Phase 67 — Karpathy's Autoresearch pattern fused with ICDEV Bayesian Teaching Intelligence for self-improving experiments.
+> Phase 67 — Karpathy's Autoresearch pattern fused with ICDEV™ Bayesian Teaching Intelligence for self-improving experiments.
 
 ---
 
 ## Overview
 
-ICDEV continuously improves itself through autonomous, time-boxed experiments guided by Bayesian information-gain scoring. The system picks the most informative experiment to run next, executes it within a strict time budget, measures the metric delta, and keeps or discards the change via git commit/reset. Inspired by Karpathy's Autoresearch (630-line autonomous ML experiment loop, March 2026) and adapted for ICDEV's compliance, code quality, security, RAG, Pulse, and skill domains.
+ICDEV™ continuously improves itself through autonomous, time-boxed experiments guided by Bayesian information-gain scoring. The system picks the most informative experiment to run next, executes it within a strict time budget, measures the metric delta, and keeps or discards the change via git commit/reset. Inspired by Karpathy's Autoresearch (630-line autonomous ML experiment loop, March 2026) and adapted for ICDEV™'s compliance, code quality, security, RAG, Pulse, and skill domains.
 
 **Key insight (Karpathy):** "The bottleneck isn't model capability — it's evaluation." Binary success criteria + time-boxed execution + one-change isolation = autonomous improvement overnight.
 
-**Key insight (ICDEV adaptation):** Autoresearch's LLM functions as an implicit, uncalibrated acquisition function. ICDEV's Bayesian Teaching provides the explicit, calibrated acquisition function — information gain scoring, teaching dimension, and Thompson Sampling replace LLM intuition for experiment selection.
+**Key insight (ICDEV™ adaptation):** Autoresearch's LLM functions as an implicit, uncalibrated acquisition function. ICDEV™'s Bayesian Teaching provides the explicit, calibrated acquisition function — information gain scoring, teaching dimension, and Thompson Sampling replace LLM intuition for experiment selection.
 
 ## Architecture Decisions
 
@@ -21,7 +21,7 @@ ICDEV continuously improves itself through autonomous, time-boxed experiments gu
 - **D-AR-4:** `experiment_results` and `bayesian_experiment_scores` are append-only (D6, NIST AU-2). `experiment_candidates` allows UPDATE for status transitions.
 - **D-AR-5:** pgvector embedding dedup (cosine > 0.85 rejection) for candidates. Python cosine fallback for SQLite. Reuses `pg_vector_store.py` patterns.
 - **D-AR-6:** Thompson Sampling from `trust_engine.py` for explore/exploit across experiment categories. New `run_experiment` category with cautious Beta(2, 8) prior.
-- **D-AR-7:** Fitness evaluators wrap existing ICDEV tools via subprocess (D191 SDK pattern). Read-only, advisory-only (D110).
+- **D-AR-7:** Fitness evaluators wrap existing ICDEV™ tools via subprocess (D191 SDK pattern). Read-only, advisory-only (D110).
 - **D-AR-8:** Experiment programs are declarative YAML per domain (D26 pattern). Add new domains without code changes.
 - **D-AR-9:** Genesis integration as 14th reflex `experiment` at ORANGE tier (code mutation with test gate).
 - **D-AR-10:** Circuit breaker: 3 consecutive failures disables the experiment loop (consistent with Genesis D-GEN-8).
@@ -48,7 +48,7 @@ SELECT (Thompson Sampling explore/exploit from Beta posteriors)
     ↓
 EXECUTE (time-boxed: 5-min default, configurable per domain)
     ↓
-EVALUATE (fitness evaluator wraps existing ICDEV tools → single [0,1] metric)
+EVALUATE (fitness evaluator wraps existing ICDEV™ tools → single [0,1] metric)
     ↓
 DECIDE (metric improved ≥ threshold → keep; else → discard)
     ↓
@@ -61,7 +61,7 @@ REPEAT (no human intervention until circuit breaker trips)
 
 **File:** `tools/autoresearch/experiment_engine.py`
 
-The core Karpathy Loop adapted for ICDEV.
+The core Karpathy Loop adapted for ICDEV™.
 
 ### CLI
 ```bash
@@ -102,7 +102,7 @@ python tools/autoresearch/bayesian_selector.py --health --json
 
 **File:** `tools/autoresearch/fitness_evaluator.py`
 
-Wraps 6 ICDEV tools into single-metric [0,1] scorers.
+Wraps 6 ICDEV™ tools into single-metric [0,1] scorers.
 
 | Domain | Metric | Tool Wrapped |
 |--------|--------|-------------|

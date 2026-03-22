@@ -1858,7 +1858,7 @@ def _format_human(report: AuditReport) -> str:
     lines = []
     lines.append("")
     lines.append("=" * 60)
-    lines.append("  ICDEV Production Readiness Audit")
+    lines.append("  ICDEV™ Production Readiness Audit")
     lines.append("=" * 60)
     lines.append("")
 
@@ -1900,7 +1900,7 @@ def _format_human(report: AuditReport) -> str:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Production Readiness Audit")
+    parser = argparse.ArgumentParser(description="ICDEV™ Production Readiness Audit")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
     parser.add_argument("--stream", action="store_true", help="Stream results as they complete")

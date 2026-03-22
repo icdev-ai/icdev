@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Review — Code review workflow
+# ICDEV™ Review — Code review workflow
 # Adapted from ADW adw_review.py with dual platform support
 
 """
-ICDEV Review — Automated code review against spec with security checks.
+ICDEV™ Review — Automated code review against spec with security checks.
 
 Usage:
     python tools/ci/workflows/icdev_review.py <issue-number> <run-id>
@@ -68,7 +68,7 @@ def main():
 
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_review")
-    logger.info(f"ICDEV Review starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Review starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()

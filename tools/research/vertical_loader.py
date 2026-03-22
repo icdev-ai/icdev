@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 Vertical Loader — load and validate industry vertical configs from JSON files.
 
@@ -282,7 +282,7 @@ def get_vertical_config(slug, db_path=None):
 
 def _print_human(args, result):
     print("=" * 70)
-    print("  ICDEV Research Engine — Vertical Loader — CUI // SP-CTI")
+    print("  ICDEV™ Research Engine — Vertical Loader — CUI // SP-CTI")
     print("=" * 70)
 
     if isinstance(result, dict) and "error" in result:

@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""FedRAMP Moderate/High assessment engine for ICDEV.
+# POC: ICDEV™ System Administrator
+"""FedRAMP Moderate/High assessment engine for ICDEV™.
 
 Loads FedRAMP baseline controls from fedramp_moderate_baseline.json or
 fedramp_high_baseline.json, performs automated checks per control family,
@@ -1500,7 +1500,7 @@ def run_fedramp_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessor:** ICDEV Compliance Engine (automated)",
+            "**Assessor:** ICDEV™ Compliance Engine (automated)",
             f"**Baseline:** FedRAMP {baseline.title()}",
             "**Classification:** CUI // SP-CTI",
             "",

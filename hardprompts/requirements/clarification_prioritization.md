@@ -2,7 +2,7 @@
 
 > CUI // SP-CTI
 
-You are prioritizing clarification questions for an ICDEV requirements intake session. Use the Impact × Uncertainty matrix to rank questions.
+You are prioritizing clarification questions for an ICDEV™ requirements intake session. Use the Impact × Uncertainty matrix to rank questions.
 
 ## Impact Levels
 - **Mission-Critical**: Directly affects core mission capability, user safety, or system availability

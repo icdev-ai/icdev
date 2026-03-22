@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Solution Spec Generator — auto-generate solution specs from triaged innovation signals.
 
 Takes triaged+approved signals and generates structured solution specifications that
-feed into ICDEV's existing ATLAS build pipeline. Specs are deterministic (template-based,
+feed into ICDEV™'s existing ATLAS build pipeline. Specs are deterministic (template-based,
 not LLM) with GOTCHA layer mapping, BDD acceptance criteria, compliance impact, test
 plans, and marketplace asset type classification.
 
@@ -647,7 +647,7 @@ def _print_human(args, result):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Solution Spec Generator -- generate specs from triaged innovation signals")
+        description="ICDEV™ Solution Spec Generator -- generate specs from triaged innovation signals")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 

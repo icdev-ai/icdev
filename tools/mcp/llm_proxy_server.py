@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""LLM Proxy MCP Server — exposes ICDEV's LLMRouter as an MCP tool for Goose.
+"""LLM Proxy MCP Server — exposes ICDEV™'s LLMRouter as an MCP tool for Goose.
 
 Goose (or any MCP client) calls `llm_invoke` with a function name, messages,
-and optional parameters.  This server routes through ICDEV's three-tier
+and optional parameters.  This server routes through ICDEV™'s three-tier
 LLMRouter (Planner/Worker/Scanner), preserving fallback chains, two-tier
 draft+review, RAG injection, redaction, prompt injection scanning, telemetry,
 and token budget enforcement.
@@ -21,8 +21,8 @@ Goose config.yaml entry:
       env:
         ICDEV_PROJECT_ROOT: C:/Users/schuo/Downloads/ICDev
         PYTHONPATH: C:/Users/schuo/Downloads/ICDev
-      description: ICDEV LLM Router proxy — three-tier routing with fallback chains
-      display_name: ICDEV LLM Router
+      description: ICDEV™ LLM Router proxy — three-tier routing with fallback chains
+      display_name: ICDEV™ LLM Router
       timeout: 120
 """
 
@@ -55,10 +55,10 @@ def _get_router():
 
 
 def handle_llm_invoke(args: dict) -> dict:
-    """Route an LLM request through ICDEV's three-tier router.
+    """Route an LLM request through ICDEV™'s three-tier router.
 
     Args (MCP tool input):
-        function: ICDEV function name (e.g. 'code_generation', 'compliance_export')
+        function: ICDEV™ function name (e.g. 'code_generation', 'compliance_export')
         messages: List of {role, content} dicts
         system_prompt: Optional system prompt string
         max_tokens: Optional max tokens (default 4096)
@@ -197,7 +197,7 @@ def create_server() -> MCPServer:
     server.register_tool(
         name="llm_invoke",
         description=(
-            "Invoke ICDEV's LLM Router with three-tier routing "
+            "Invoke ICDEV™'s LLM Router with three-tier routing "
             "(Planner/Worker/Scanner), fallback chains, two-tier draft+review, "
             "RAG injection, PII redaction, and prompt injection scanning. "
             "Supports 11 providers: Ollama, Anthropic, OpenAI, Bedrock, "
@@ -209,7 +209,7 @@ def create_server() -> MCPServer:
                 "function": {
                     "type": "string",
                     "description": (
-                        "ICDEV function name that determines routing tier and model chain. "
+                        "ICDEV™ function name that determines routing tier and model chain. "
                         "Examples: 'code_generation', 'compliance_export', 'narrative_generation', "
                         "'intake_persona_response', 'memory_consolidation', 'default'"
                     ),
@@ -278,14 +278,14 @@ def create_server() -> MCPServer:
         name="llm_resolve",
         description=(
             "Dry-run: resolve which provider and model would handle a given "
-            "ICDEV function without actually invoking it."
+            "ICDEV™ function without actually invoking it."
         ),
         input_schema={
             "type": "object",
             "properties": {
                 "function": {
                     "type": "string",
-                    "description": "ICDEV function name to resolve",
+                    "description": "ICDEV™ function name to resolve",
                 },
             },
             "required": ["function"],

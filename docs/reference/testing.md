@@ -1,4 +1,4 @@
-# ICDEV Testing Reference
+# ICDEV™ Testing Reference
 
 Testing framework, test commands, and validation pipeline. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
@@ -6,7 +6,7 @@ Testing framework, test commands, and validation pipeline. See [CLAUDE.md](../..
 
 ### Testing Framework (Adapted from ADW)
 ```bash
-# ICDEV platform tests (D155 — 21 test files, ~330+ tests)
+# ICDEV™ platform tests (D155 — 21 test files, ~330+ tests)
 pytest tests/ -v --tb=short                          # Run all platform tests
 pytest tests/test_circuit_breaker.py -v              # Circuit breaker tests
 pytest tests/test_retry.py -v                        # Retry utility tests

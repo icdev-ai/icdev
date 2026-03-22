@@ -71,7 +71,7 @@ _DEFAULT_CUI_CODE_HEADER = """\
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 
 _DEFAULT_CUI_BANNER_MD = """\
@@ -149,7 +149,7 @@ tmp/
 
 def _readme_content(name: str, project_type: str, description: str = "") -> str:
     """Generate a README with CUI banners."""
-    desc = description or f"A {project_type} project scaffolded by ICDEV Builder."
+    desc = description or f"A {project_type} project scaffolded by ICDEV™ Builder."
     return f"""{CUI_BANNER}
 
 # {name}
@@ -437,7 +437,7 @@ def scaffold_javascript_frontend(project_path: str, name: str) -> List[str]:
 // Controlled by: Department of Defense
 // CUI Category: CTI
 // Distribution: D
-// POC: ICDEV System Administrator
+// POC: ICDEV™ System Administrator
 
 /**
  * Main entry point for {name}.
@@ -1491,7 +1491,7 @@ def main():
     agentic_group = parser.add_argument_group("agentic generation (Phase 19)")
     agentic_group.add_argument(
         "--agentic", action="store_true",
-        help="Generate mini-ICDEV clone with GOTCHA framework, agents, memory, CI/CD")
+        help="Generate mini-ICDEV™ clone with GOTCHA framework, agents, memory, CI/CD")
     agentic_group.add_argument(
         "--fitness-scorecard", type=str, default=None,
         help="Path to fitness scorecard JSON (from agentic_fitness.py)")
@@ -1500,10 +1500,10 @@ def main():
         help="User decisions JSON string or path to JSON file")
     agentic_group.add_argument(
         "--port-offset", type=int, default=1000,
-        help="Port offset from ICDEV base ports (default: 1000)")
+        help="Port offset from ICDEV™ base ports (default: 1000)")
     agentic_group.add_argument(
         "--parent-callback-url", type=str, default=None,
-        help="URL for parent ICDEV A2A callback")
+        help="URL for parent ICDEV™ A2A callback")
     agentic_group.add_argument(
         "--cloud-provider", type=str, default="aws",
         choices=["aws", "gcp", "azure", "oracle", "ibm"],

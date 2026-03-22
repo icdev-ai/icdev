@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV LLM Gateway Configuration
+# ICDEV™ LLM Gateway Configuration
 # Controls pre/post-invoke guardrails, rate limits, and audit settings.
 # All detection is regex/local — no external API calls (air-gap safe).
 

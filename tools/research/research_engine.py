@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
 Industry Research Engine — orchestrates 8-stage deep research pipeline.
 
@@ -172,7 +172,7 @@ def stage_landscape(session_id, db_path=None):
 
 
 def stage_regulate(session_id, db_path=None):
-    """Stage 3: REGULATE — Scan regulatory bodies and map to ICDEV frameworks."""
+    """Stage 3: REGULATE — Scan regulatory bodies and map to ICDEV™ frameworks."""
     result = {"stage": "REGULATE", "started_at": _now()}
 
     run_scan = _try_import("tools.research.source_scanner", "run_scan")
@@ -571,7 +571,7 @@ def run_daemon(db_path=None):
 
 def _print_human(args, result):
     print("=" * 70)
-    print("  ICDEV Industry Research Engine — CUI // SP-CTI")
+    print("  ICDEV™ Industry Research Engine — CUI // SP-CTI")
     print("=" * 70)
 
     if isinstance(result, dict) and "error" in result:
@@ -626,7 +626,7 @@ def _print_human(args, result):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Industry Research Engine — CUI // SP-CTI",
+        description="ICDEV™ Industry Research Engine — CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """IDIQ Task Order Factory — standing teams, TO templates, compressed timelines.
 
 Manages standing teams registered against contract vehicles (OASIS+, Polaris,

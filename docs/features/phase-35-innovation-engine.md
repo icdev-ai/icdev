@@ -9,25 +9,25 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 22 (Marketplace), Phase 23 (Universal Compliance), Phase 29 (Proactive Monitoring) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV builds and maintains Gov/DoD applications in a rapidly evolving threat landscape. New CVEs are published daily, compliance frameworks are updated quarterly, competitor tools release new capabilities monthly, and developer communities continuously discover better patterns and practices. Currently, ICDEV discovers these changes only when a human operator manually investigates -- after a gate fails, a vulnerability is exploited, or a customer reports a gap. This reactive posture means ICDEV is always behind the curve, patching yesterday's problems instead of anticipating tomorrow's.
+ICDEV™ builds and maintains Gov/DoD applications in a rapidly evolving threat landscape. New CVEs are published daily, compliance frameworks are updated quarterly, competitor tools release new capabilities monthly, and developer communities continuously discover better patterns and practices. Currently, ICDEV™ discovers these changes only when a human operator manually investigates -- after a gate fails, a vulnerability is exploited, or a customer reports a gap. This reactive posture means ICDEV™ is always behind the curve, patching yesterday's problems instead of anticipating tomorrow's.
 
 The cost of this lag is compounded in the Gov/DoD context. A compliance framework update that goes unnoticed for 90 days can invalidate an ATO. A critical CVE that is not triaged within SLA can trigger a CSSP incident. A competitor capability gap that is not addressed can lose a contract re-compete. An internal optimization that works in one child application but is never propagated wastes engineering effort across the fleet.
 
-The Innovation Engine transforms ICDEV from a reactive tool that waits for instructions into a proactive system that continuously discovers, evaluates, and integrates improvements. It scans external sources (GitHub trending, NVD, Stack Overflow, Hacker News, package registries, compliance feeds), mines internal telemetry (failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps), monitors competitors and standards bodies, and feeds all discoveries through a 5-stage compliance triage pipeline before generating solution specifications. The entire pipeline operates within strict guardrails: budget caps (max 10 auto-solutions per PI), license scanning (no GPL/AGPL/SSPL), boundary impact assessment, and mandatory compliance preservation.
+The Innovation Engine transforms ICDEV™ from a reactive tool that waits for instructions into a proactive system that continuously discovers, evaluates, and integrates improvements. It scans external sources (GitHub trending, NVD, Stack Overflow, Hacker News, package registries, compliance feeds), mines internal telemetry (failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps), monitors competitors and standards bodies, and feeds all discoveries through a 5-stage compliance triage pipeline before generating solution specifications. The entire pipeline operates within strict guardrails: budget caps (max 10 auto-solutions per PI), license scanning (no GPL/AGPL/SSPL), boundary impact assessment, and mandatory compliance preservation.
 
 ---
 
 ## 2. Goals
 
 1. Implement web intelligence scanning across 6 external source categories (GitHub, NVD, Stack Overflow, Hacker News, package registries, compliance feeds) with per-source configurable scan frequency
-2. Enable introspective analysis that mines internal ICDEV telemetry for improvement opportunities: failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps, and knowledge gaps -- fully air-gap safe (D203)
+2. Enable introspective analysis that mines internal ICDEV™ telemetry for improvement opportunities: failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps, and knowledge gaps -- fully air-gap safe (D203)
 3. Score all discovered signals across 5 weighted dimensions: community demand (0.30), impact breadth (0.25), feasibility (0.20), compliance alignment (0.15), and novelty (0.10)
 4. Triage signals through a 5-stage compliance gate: classify signal, GOTCHA fit check, boundary impact assessment, compliance pre-check, and duplicate/license check
 5. Generate template-based solution specifications (not LLM-generated) with problem statement, GOTCHA layer mapping, acceptance criteria, compliance impact, and test plan (D208)
@@ -114,10 +114,10 @@ The Innovation Engine transforms ICDEV from a reactive tool that waits for instr
 The system SHALL scan 6 external source categories (GitHub, NVD, Stack Overflow, Hacker News, package registries, compliance feeds) for innovation signals, with per-source configurable scan frequency defined in `args/innovation_config.yaml`.
 
 #### REQ-35-002: Introspective Analysis (D203)
-The system SHALL perform introspective analysis that mines internal ICDEV telemetry (failed self-heals, gate failures, unused tools, slow pipelines, NLQ gaps, knowledge gaps) for improvement opportunities. This analysis SHALL be fully air-gap safe with no external network dependency.
+The system SHALL perform introspective analysis that mines internal ICDEV™ telemetry (failed self-heals, gate failures, unused tools, slow pipelines, NLQ gaps, knowledge gaps) for improvement opportunities. This analysis SHALL be fully air-gap safe with no external network dependency.
 
 #### REQ-35-003: Competitive Intelligence (D205)
-The system SHALL monitor GitHub-based competitor repositories (backstage, snyk, trivy, checkov) for feature releases and generate gap analysis reports comparing competitor capabilities to ICDEV features.
+The system SHALL monitor GitHub-based competitor repositories (backstage, snyk, trivy, checkov) for feature releases and generate gap analysis reports comparing competitor capabilities to ICDEV™ features.
 
 #### REQ-35-004: Standards Monitoring (D204)
 The system SHALL monitor standards body publications (NIST CSRC, CISA, DoD CIO, FedRAMP) and degrade gracefully when offline, skipping HTTP requests and logging warnings without failing the pipeline.

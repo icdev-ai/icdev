@@ -1,13 +1,13 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""Legacy Code Static Analysis Engine for ICDEV DoD Modernization.
+"""Legacy Code Static Analysis Engine for ICDEV™ DoD Modernization.
 
 Performs comprehensive static analysis of legacy applications written in Python,
 Java, and C#. Extracts components (classes, modules, functions), dependencies
 (imports, inheritance, injection), API endpoints, and computes software quality
 metrics (cyclomatic complexity, tech debt, maintainability index).
 
-Results are stored in the ICDEV operational database for downstream migration
+Results are stored in the ICDEV™ operational database for downstream migration
 assessment by the 7Rs strategy scorer.
 
 Usage:
@@ -102,14 +102,14 @@ PRODUCTIVITY_RATE = 20.0
 # ---------------------------------------------------------------------------
 
 def _get_db():
-    """Return a sqlite3 connection to the ICDEV operational database.
+    """Return a sqlite3 connection to the ICDEV™ operational database.
 
     The database file must already exist (created by tools/db/init_icdev_db.py).
     Uses row_factory = sqlite3.Row for dict-like access.
     """
     if not DB_PATH.exists():
         raise FileNotFoundError(
-            f"ICDEV database not found at {DB_PATH}. "
+            f"ICDEV™ database not found at {DB_PATH}. "
             "Run 'python tools/db/init_icdev_db.py' first."
         )
     conn = get_connection()
@@ -195,14 +195,14 @@ def _count_lines(file_path):
 # ---------------------------------------------------------------------------
 
 def register_application(project_id, name, source_path, description=None):
-    """Register a legacy application in the ICDEV database.
+    """Register a legacy application in the ICDEV™ database.
 
     Walks the source_path directory tree, counts files by extension, computes
     aggregate LOC metrics, detects the primary language, and generates a
     source hash (SHA-256 of all file paths + sizes for change detection).
 
     Args:
-        project_id: Parent ICDEV project ID (must exist in projects table).
+        project_id: Parent ICDEV™ project ID (must exist in projects table).
         name: Human-readable name for the legacy application.
         source_path: Absolute path to the application source root.
         description: Optional description text.
@@ -1672,7 +1672,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
       5. Update DB with results
 
     Args:
-        project_id: ICDEV project ID.
+        project_id: ICDEV™ project ID.
         app_id: Legacy application ID.
         source_path_override: Optional override for the source path.
 
@@ -1891,7 +1891,7 @@ Classification: CUI // SP-CTI
         help="Run full static analysis on a registered application",
     )
 
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--name", help="Application name (required for --register)")
     parser.add_argument("--app-id", help="Legacy application ID (required for --analyze)")
     parser.add_argument("--source-path", help="Path to source code root")

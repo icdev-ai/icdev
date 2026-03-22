@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — CAC/PIV Client Certificate Authentication.
+"""ICDEV™ SaaS — CAC/PIV Client Certificate Authentication.
 CUI // SP-CTI
 
 In production, nginx or ALB terminates mutual TLS and passes:

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Spec quality checker -- 'unit tests for English'.
 
 Validates spec markdown files against quality criteria: required sections,
@@ -968,7 +968,7 @@ def _format_human(result: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Spec Quality Checker -- 'unit tests for English'"
+        description="ICDEV™ Spec Quality Checker -- 'unit tests for English'"
     )
     parser.add_argument("--spec-file", type=str, help="Check a single spec markdown file")
     parser.add_argument("--spec-dir", type=str, help="Check all .md files in directory (recursive)")

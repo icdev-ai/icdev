@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Fairness & Bias Assessor — OMB M-26-04 compliance evidence.
 
 Focuses on compliance documentation evidence: are policies, processes,

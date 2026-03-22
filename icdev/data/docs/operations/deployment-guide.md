@@ -2,7 +2,7 @@
 
 ## Overview
 
-ICDEV supports deployment across six cloud service providers, on-premises infrastructure, and air-gapped environments. All containers are STIG-hardened. Infrastructure is generated via Terraform, Ansible, and Helm with cloud-mode-aware configuration.
+ICDEV™ supports deployment across six cloud service providers, on-premises infrastructure, and air-gapped environments. All containers are STIG-hardened. Infrastructure is generated via Terraform, Ansible, and Helm with cloud-mode-aware configuration.
 
 **Supported deployment targets:**
 - AWS GovCloud (default)
@@ -466,7 +466,7 @@ helm history icdev
 ### Initialization
 
 ```bash
-# Initialize the main ICDEV database (193 tables)
+# Initialize the main ICDEV™ database (193 tables)
 python tools/db/init_icdev_db.py
 ```
 

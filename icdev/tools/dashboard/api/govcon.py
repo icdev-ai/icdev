@@ -268,7 +268,7 @@ def list_patterns():
 def map_capabilities(opp_id):
     """POST /api/govcon/opportunities/<id>/map-capabilities
 
-    Map ICDEV capabilities against extracted requirements for this opportunity.
+    Map ICDEV™ capabilities against extracted requirements for this opportunity.
     Computes coverage scores and L/M/N grades.
     """
     try:

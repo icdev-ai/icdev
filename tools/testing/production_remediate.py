@@ -110,7 +110,7 @@ def _detect_project_id() -> str:
             "INSERT OR IGNORE INTO projects "
             "(id, name, type, classification, status, directory_path, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (pid, "ICDEV Platform", "webapp", "CUI", "active", str(PROJECT_ROOT), now, now),
+            (pid, "ICDEV™ Platform", "webapp", "CUI", "active", str(PROJECT_ROOT), now, now),
         )
         conn.commit()
         conn.close()
@@ -507,7 +507,7 @@ def run_remediation(
     # Step 1: Get or run audit
     if stream:
         print("\n" + "=" * 60, file=sys.stderr)
-        print("  ICDEV Production Remediation", file=sys.stderr)
+        print("  ICDEV™ Production Remediation", file=sys.stderr)
         print("=" * 60, file=sys.stderr)
 
     audit_report = None
@@ -731,7 +731,7 @@ def _format_human(report: RemediationReport) -> str:
     lines = []
     lines.append("")
     lines.append("=" * 60)
-    lines.append("  ICDEV Production Remediation Report")
+    lines.append("  ICDEV™ Production Remediation Report")
     lines.append("=" * 60)
     lines.append("")
 
@@ -800,7 +800,7 @@ def _format_human(report: RemediationReport) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Production Remediation — auto-fix audit blockers"
+        description="ICDEV™ Production Remediation — auto-fix audit blockers"
     )
     parser.add_argument("--auto", action="store_true", help="Execute auto-fix commands without prompting")
     parser.add_argument("--dry-run", action="store_true", help="Preview what would be fixed without executing")

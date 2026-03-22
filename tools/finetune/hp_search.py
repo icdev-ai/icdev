@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Hyperparameter search orchestrator for ICDEV fine-tuning (D-FT-13).
+"""Hyperparameter search orchestrator for ICDEV™ fine-tuning (D-FT-13).
 
 Grid or random search over LoRA/training hyperparameters.  Each trial
 creates a training job via training_engine; results are recorded after

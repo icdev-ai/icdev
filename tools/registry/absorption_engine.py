@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Absorption Engine -- validates learned capabilities over a stability window before genome absorption.
 
 72-hour stability window (D212): capabilities must demonstrate consistent performance
@@ -805,7 +805,7 @@ class AbsorptionEngine:
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "ICDEV Absorption Engine -- 72-hour stability window (D212) "
+            "ICDEV™ Absorption Engine -- 72-hour stability window (D212) "
             "before genome absorption"
         )
     )

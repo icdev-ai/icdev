@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """GraphRAG retrieval module — scoring profiles, context compression.
 
-Retrieves relevant nodes/edges from the ICDEV Knowledge Graph using
+Retrieves relevant nodes/edges from the ICDEV™ Knowledge Graph using
 configurable scoring profiles (D-KARL-1) and optional scanner-tier
 LLM compression (D-KARL-2, zero Claude tokens).
 

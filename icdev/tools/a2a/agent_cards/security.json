@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Security",
+  "name": "ICDEV™ Security",
   "description": "Vulnerability scanning, SAST/DAST, dependency auditing, secret detection, and container scanning. Enforces security gates to block vulnerable code from deployment.",
   "url": "https://localhost:8447",
   "version": "1.0.0",

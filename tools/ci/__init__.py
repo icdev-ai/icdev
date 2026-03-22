@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV CI/CD Integration — GitHub + GitLab dual support
+# ICDEV™ CI/CD Integration — GitHub + GitLab dual support

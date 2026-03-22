@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ICDEV Dashboard{% endblock %}</title>
+    <title>{% block title %}ICDEV™ Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
@@ -22,7 +22,7 @@
 
     <!-- Navigation -->
     <nav class="navbar" role="navigation" aria-label="Main navigation">
-        <a class="navbar-brand" href="/">ICDEV</a>
+        <a class="navbar-brand" href="/">ICDEV™</a>
         <ul class="navbar-nav">
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
             <li><a href="/chat" class="{% if '/chat' in request.path %}active{% endif %}">Chat</a></li>
@@ -128,7 +128,7 @@
             </a>
             <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
             {% endif %}
-            <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
+            <button onclick="if(ICDEV™.startTour)ICDEV™.startTour()" title="Restart onboarding tour"
                     style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
             <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
             <select id="role-select" aria-label="Select dashboard view role"

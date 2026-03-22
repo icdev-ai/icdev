@@ -1133,7 +1133,7 @@ class TeamOrchestrator:
 def main():
     """CLI for workflow decomposition and execution."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Team Orchestrator -- DAG-based multi-agent workflow engine"
+        description="ICDEV™ Team Orchestrator -- DAG-based multi-agent workflow engine"
     )
     parser.add_argument(
         "--decompose",

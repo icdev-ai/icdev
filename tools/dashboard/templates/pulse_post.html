@@ -169,8 +169,8 @@
 <!-- Capabilities Referenced -->
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">
-        <h3 style="margin: 0; font-size: 14px;">ICDEV Capabilities Referenced</h3>
-        <button class="btn btn-sm" onclick="enrichThisPost('{{ post.id }}')" id="btn-enrich" title="Rewrite with ICDEV capability context (Claude Sonnet)">Enrich with Capabilities</button>
+        <h3 style="margin: 0; font-size: 14px;">ICDEV™ Capabilities Referenced</h3>
+        <button class="btn btn-sm" onclick="enrichThisPost('{{ post.id }}')" id="btn-enrich" title="Rewrite with ICDEV™ capability context (Claude Sonnet)">Enrich with Capabilities</button>
     </div>
     <div id="post-capabilities" style="padding: 8px 0;">
         <div class="cap-cell" data-caps="{{ post.capabilities_referenced or '' | e }}">
@@ -395,7 +395,7 @@ document.querySelectorAll('.cap-cell').forEach(cell => {
 // ── Enrich single post ──────────────────────────────────────────
 async function enrichThisPost(postId) {
     const btn = document.getElementById('btn-enrich');
-    if (!confirm('Rewrite this post with ICDEV capability references via Claude Sonnet?')) return;
+    if (!confirm('Rewrite this post with ICDEV™ capability references via Claude Sonnet?')) return;
     btn.disabled = true;
     btn.textContent = 'Enriching...';
     try {

@@ -104,7 +104,7 @@ AGENT_SKILLS = {
         {"id": "policy_generate", "name": "Policy Generation", "description": "Policy-as-code generation"},
     ],
     "gateway": [
-        {"id": "bind_user", "name": "User Binding", "description": "Bind remote user to ICDEV identity"},
+        {"id": "bind_user", "name": "User Binding", "description": "Bind remote user to ICDEV™ identity"},
         {"id": "send_command", "name": "Send Command", "description": "Execute remote command"},
     ],
 }
@@ -135,7 +135,7 @@ def generate_agent_card(agent_id: str, agent_config: dict = None) -> dict:
     port = agent_config.get("port", 8443)
     host = agent_config.get("host", "localhost")
     name = agent_config.get("id", f"{agent_id}-agent")
-    description = agent_config.get("description", f"ICDEV {agent_id} agent")
+    description = agent_config.get("description", f"ICDEV™ {agent_id} agent")
 
     # Build skills list
     skills = []
@@ -250,7 +250,7 @@ def main():
         if args.json_output:
             print(json.dumps({"agents": agents, "count": len(agents)}, indent=2))
         else:
-            print(f"\n=== ICDEV Agents ({len(agents)}) ===")
+            print(f"\n=== ICDEV™ Agents ({len(agents)}) ===")
             for a in agents:
                 print(f"  {a['agent_id']:25s} {a['url']:30s} {a['skill_count']:2d} skills  [{a['tier']}]")
         return

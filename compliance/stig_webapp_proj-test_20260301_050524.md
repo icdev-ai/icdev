@@ -10,7 +10,7 @@ Distribution: Distribution D — Authorized DoD Personnel Only
 **STIG Version:** 2.0
 **Target Type:** app
 **Assessment Date:** 2026-03-01 05:05 UTC
-**Assessed By:** ICDEV STIG Checker (automated)
+**Assessed By:** ICDEV™ STIG Checker (automated)
 **Classification:** CUI // SP-CTI
 
 ---

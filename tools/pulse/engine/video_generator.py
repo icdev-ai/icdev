@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse video generator — local GPU-accelerated blog video generation.
+"""ICDEV™ Pulse video generator — local GPU-accelerated blog video generation.
 
 Uses LTX-Video 2B (Lightricks ltxv-2b-0.9.8-distilled) for text-to-video
 generation on consumer GPUs (RTX 4060 8 GB VRAM via int8 quantization).
@@ -165,7 +165,7 @@ def generate_svg_video(
         .replace('"', "&quot;")
     )
     category_display = (
-        category[:30].upper().replace("&", "&amp;") if category else "ICDEV PULSE"
+        category[:30].upper().replace("&", "&amp;") if category else "ICDEV™ PULSE"
     )
 
     svg = f"""<?xml version="1.0" encoding="UTF-8"?>

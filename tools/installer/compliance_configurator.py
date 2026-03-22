@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV Compliance Configurator — maps compliance objectives to modules.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ Compliance Configurator — maps compliance objectives to modules.
 
 Given a set of compliance framework identifiers (e.g., fedramp_high, cmmc,
-hipaa), this tool determines which ICDEV modules are required, which DB
+hipaa), this tool determines which ICDEV™ modules are required, which DB
 table groups need to be initialized, and which security gate overrides apply.
 
 It also detects applicable frameworks from data categories (CUI, PHI, PCI,
@@ -256,7 +256,7 @@ _FRAMEWORK_GATE_OVERRIDES: Dict[str, Dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 class ComplianceConfigurator:
-    """Maps compliance objectives to ICDEV module requirements.
+    """Maps compliance objectives to ICDEV™ module requirements.
 
     Args:
         manifest_path: Path to installation manifest YAML.
@@ -468,7 +468,7 @@ def _format_human_postures(postures: List[Dict[str, str]]) -> str:
     """Render posture list as human-readable text."""
     lines = [
         "=" * 70,
-        "  ICDEV Compliance Configurator — Available Postures",
+        "  ICDEV™ Compliance Configurator — Available Postures",
         "=" * 70,
         "",
     ]
@@ -486,7 +486,7 @@ def _format_human_configure(result: Dict[str, Any]) -> str:
     """Render configuration result as human-readable text."""
     lines = [
         "=" * 70,
-        "  ICDEV Compliance Configuration",
+        "  ICDEV™ Compliance Configuration",
         "=" * 70,
         "",
         f"  Frameworks:   {', '.join(result['frameworks'])}",
@@ -517,7 +517,7 @@ def _format_human_validate(result: Dict[str, Any]) -> str:
     """Render validation result as human-readable text."""
     lines = [
         "=" * 70,
-        "  ICDEV Compliance Posture Validation",
+        "  ICDEV™ Compliance Posture Validation",
         "=" * 70,
         "",
         f"  Satisfied:  {'YES' if result['satisfied'] else 'NO'}",
@@ -540,7 +540,7 @@ def _format_human_validate(result: Dict[str, Any]) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="ICDEV Compliance Configurator — map compliance objectives to modules"
+        description="ICDEV™ Compliance Configurator — map compliance objectives to modules"
     )
     parser.add_argument(
         "--list-postures", action="store_true",

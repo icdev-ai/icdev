@@ -3,7 +3,7 @@
 """Implementation Coherence Checker — internal consistency validator (D-WF-8).
 
 Deterministic, LLM-agnostic tool that verifies internal consistency across
-the ICDEV codebase. Catches mismatches that cause test failures and wasted
+the ICDEV™ codebase. Catches mismatches that cause test failures and wasted
 fix-rerun cycles BEFORE pytest/ruff runs.
 
 Checks:

@@ -1,6 +1,6 @@
 # CUI // SP-CTI
 # Red Team Plugin Registry Configuration (Phase 65)
-# Pattern: promptfoo 134-plugin architecture + ICDEV declarative YAML (D26)
+# Pattern: promptfoo 134-plugin architecture + ICDEV™ declarative YAML (D26)
 classification: "CUI // SP-CTI"
 
 enabled: true

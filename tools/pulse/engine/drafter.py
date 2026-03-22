@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse template-aware content drafter.
+"""ICDEV™ Pulse template-aware content drafter.
 
 Updated 2026-03-12: Added LLM router integration for qwen3.5 drafting
 and Claude Sonnet rewriting. Templates loaded from args/pulse_templates.yaml.
@@ -52,7 +52,7 @@ Rules:
 - Write in Markdown.
 - Target {word_min}-{word_max} words.
 - Use real-world examples and concrete scenarios.
-- When referencing ICDEV, do so naturally in context of solving real \
+- When referencing ICDEV™, do so naturally in context of solving real \
   problems. Always link to {github_url} on first mention.
 - Do NOT include [HERO_IMAGE] — the hero image is added automatically.
 - Include [VIDEO_EMBED:topic] where a video walkthrough adds value. \
@@ -85,12 +85,12 @@ Write a comprehensive blog post using the **Challenge-Solution** template.
 {source_urls}
 
 ## Required Structure
-1. **TL;DR / Executive Summary** — dense summary of challenges and ICDEV solutions.
+1. **TL;DR / Executive Summary** — dense summary of challenges and ICDEV™ solutions.
 2. **Introduction** — hook with core pain point. No fluff.
 3. **The Challenge** — one subsection per pain point. \
    Concrete examples, statistics, real-world impact.
-4. **How ICDEV Addresses These Challenges** — for each challenge, explain \
-   how ICDEV's toolchain solves it (compliance automation, agentic AI, \
+4. **How ICDEV™ Addresses These Challenges** — for each challenge, explain \
+   how ICDEV™'s toolchain solves it (compliance automation, agentic AI, \
    DevSecOps, zero trust, SBOM, cATO). Educate, don't pitch. \
    Include [VIDEO_EMBED:topic] where a walkthrough adds value.
 5. **Practical Steps You Can Take This Week** — numbered, specific actions.
@@ -102,7 +102,7 @@ Write the complete post now.
 
 _FEATURE_SPOTLIGHT_PROMPT = """\
 You are a senior technical writer producing an educational deep-dive \
-article about a specific ICDEV feature for the developer and GovTech \
+article about a specific ICDEV™ feature for the developer and GovTech \
 audience. Your posts explain complex concepts clearly, use concrete \
 examples, and provide actionable guidance. Professional yet approachable.
 
@@ -111,7 +111,7 @@ Rules:
 - Target {word_min}-{word_max} words.
 - Explain concepts before showing implementation.
 - Include CLI examples and configuration snippets where helpful.
-- When referencing ICDEV, link to {github_url} on first mention.
+- When referencing ICDEV™, link to {github_url} on first mention.
 - Include placeholder markers: [HERO_IMAGE] at top, [SOURCE_REF:url] for citations.
 - Do NOT include [VIDEO_EMBED] placeholders — this template uses NO embedded videos.
 - Do NOT use filler phrases. Be direct and educational.
@@ -308,9 +308,9 @@ _SEO_STOP_WORDS = {
     "—", "-", "–", "", "vs", "via",
 }
 
-# High-value SEO phrases from ICDEV capabilities
+# High-value SEO phrases from ICDEV™ capabilities
 _ICDEV_SEO_PHRASES = [
-    "ICDEV", "FedRAMP", "CMMC", "NIST 800-53", "ATO", "cATO",
+    "ICDEV™", "FedRAMP", "CMMC", "NIST 800-53", "ATO", "cATO",
     "zero trust", "DevSecOps", "SBOM", "compliance automation",
     "agentic AI", "secure by design", "supply chain security",
     "OSCAL", "digital thread", "MBSE", "threat modeling",
@@ -322,14 +322,14 @@ _ICDEV_SEO_PHRASES = [
 def _generate_seo_metadata(title: str, tldr: str, topic: str = "") -> dict[str, str]:
     """Generate SEO metadata using deterministic keyword extraction.
 
-    Combines keywords from title, topic, and ICDEV domain phrases.
+    Combines keywords from title, topic, and ICDEV™ domain phrases.
     """
     # Extract words from title + topic
     combined_text = f"{title} {topic}"
     words = [w.lower().strip(".,;:!?\"'()") for w in combined_text.split()]
     base_keywords = [w for w in words if w and w not in _SEO_STOP_WORDS]
 
-    # Check for ICDEV-specific multi-word phrases in the combined text
+    # Check for ICDEV™-specific multi-word phrases in the combined text
     text_lower = combined_text.lower()
     phrase_hits = [p for p in _ICDEV_SEO_PHRASES if p.lower() in text_lower]
 
@@ -386,7 +386,7 @@ def build_draft_context(
         cluster: Dict with keys: topic/name, pain_points, source_urls.
         template_type: 'challenge_solution' or 'feature_spotlight'.
         research_context: Ollama synthesis text for context injection.
-        capability_context: ICDEV capability reference (from capability_scanner).
+        capability_context: ICDEV™ capability reference (from capability_scanner).
 
     Returns:
         Dict with system_prompt, user_prompt, topic, pain_points, template_type.
@@ -453,11 +453,11 @@ def build_draft_context(
     chosen_angle = random.choice(angles)
     user += f"\n\n## Writing Angle\n{chosen_angle}\n"
 
-    # Inject ICDEV capability context (D-PULSE-CAP-1)
+    # Inject ICDEV™ capability context (D-PULSE-CAP-1)
     if capability_context:
         user += (
-            "\n\n## ICDEV Capabilities (Reference these naturally)\n"
-            "The following ICDEV capabilities are relevant to this topic. "
+            "\n\n## ICDEV™ Capabilities (Reference these naturally)\n"
+            "The following ICDEV™ capabilities are relevant to this topic. "
             "Reference them naturally in the article — explain how they solve "
             "real problems. Include CLI examples where they add value. "
             "Do NOT list all capabilities — weave the most relevant ones into "
@@ -485,7 +485,7 @@ def build_rewrite_context(
     Args:
         text: Original markdown content.
         findings: List of WriteGuard findings with category, message, suggestion.
-        capability_context: Optional ICDEV capability reference text to weave in.
+        capability_context: Optional ICDEV™ capability reference text to weave in.
 
     Returns:
         Dict with 'instructions' and 'prompt' for the LLM router.
@@ -497,8 +497,8 @@ def build_rewrite_context(
 
     if capability_context:
         instructions += (
-            "\n\n## ICDEV Capabilities (Weave these into the article naturally)\n"
-            "Reference these ICDEV capabilities where they fit the narrative. "
+            "\n\n## ICDEV™ Capabilities (Weave these into the article naturally)\n"
+            "Reference these ICDEV™ capabilities where they fit the narrative. "
             "Explain how they solve the problems discussed. Include CLI examples "
             "where they add value. Do NOT list all capabilities — integrate the "
             "most relevant ones naturally into existing sections.\n\n"
@@ -546,7 +546,7 @@ def draft_article_via_llm(
         cluster: Topic cluster dict.
         template_type: Article template to use.
         research_context: Synthesis text from research phase.
-        capability_context: Formatted ICDEV capability reference text.
+        capability_context: Formatted ICDEV™ capability reference text.
 
     Returns:
         Dict with 'body_markdown', 'model_used', 'tokens', 'status'.
@@ -611,7 +611,7 @@ def rewrite_article_via_llm(
     Args:
         text: Original markdown content.
         findings: WriteGuard findings to address.
-        capability_context: Optional ICDEV capability reference text to weave in.
+        capability_context: Optional ICDEV™ capability reference text to weave in.
 
     Returns:
         Dict with 'body_markdown', 'model_used', 'tokens', 'status'.

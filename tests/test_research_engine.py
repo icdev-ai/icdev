@@ -841,7 +841,7 @@ class TestRegulatoryMapper:
         assert "nist_800_171" in frameworks
 
     def test_determine_icdev_frameworks_all(self):
-        """'all' marker should return all ICDEV frameworks."""
+        """'all' marker should return all ICDEV™ frameworks."""
         frameworks = _determine_icdev_frameworks(["all"])
         assert set(frameworks) == set(ICDEV_FRAMEWORKS)
 

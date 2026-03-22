@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Tests for the ICDEV SaaS API Gateway (tools/saas/api_gateway.py).
+"""Tests for the ICDEV™ SaaS API Gateway (tools/saas/api_gateway.py).
 
 Validates health endpoint, auth middleware, rate limiting, CORS configuration,
 metrics endpoint, error handling, Swagger/OpenAPI, CUI security headers,

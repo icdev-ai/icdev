@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Database Migration Planning Tool for ICDEV DoD Modernization.
+"""Database Migration Planning Tool for ICDEV™ DoD Modernization.
 
 Generates DDL scripts, data migration SQL, stored procedure translations, and
 validation queries for migrating legacy databases to modern targets (PostgreSQL,

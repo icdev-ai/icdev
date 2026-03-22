@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Build/Buy/Partner Decision Matrix Analyzer for ICDEV Research Engine.
+# POC: ICDEV™ System Administrator
+"""Build/Buy/Partner Decision Matrix Analyzer for ICDEV™ Research Engine.
 
 Computes deterministic build, buy, and partner scores for each research
 challenge, then recommends a strategy (build, buy, partner, or hybrid).
@@ -438,7 +438,7 @@ def _determine_recommendation(build_score, buy_score, partner_score, config):
 # EFFORT / COST / RISK ESTIMATORS
 # =========================================================================
 def _estimate_effort(challenge, cap_coverage):
-    """Estimate effort (S/M/L/XL) based on ICDEV capability coverage.
+    """Estimate effort (S/M/L/XL) based on ICDEV™ capability coverage.
 
     Args:
         challenge: Dict of challenge row from DB.
@@ -593,7 +593,7 @@ def analyze_challenge(challenge_id, session_id, db_path=None):
 
         # Build rationale strings
         build_rationale = (
-            f"ICDEV capability coverage: {cap_coverage:.0%}. "
+            f"ICDEV™ capability coverage: {cap_coverage:.0%}. "
             f"Customization need: {build_breakdown['customization_need']:.2f}. "
             f"Compliance control: {build_breakdown['compliance_control']:.2f}."
         )
@@ -883,7 +883,7 @@ def get_decision_matrix(session_id, db_path=None):
 def _print_human(args, result):
     """Print human-readable output for each command."""
     print("=" * 78)
-    print("  ICDEV Research Engine -- Build/Buy/Partner Analyzer -- CUI // SP-CTI")
+    print("  ICDEV™ Research Engine -- Build/Buy/Partner Analyzer -- CUI // SP-CTI")
     print("=" * 78)
 
     if isinstance(result, dict) and "error" in result:
@@ -900,7 +900,7 @@ def _print_human(args, result):
         print(f"  Build Score:     {result.get('build_score', 0):.4f}")
         print(f"  Buy Score:       {result.get('buy_score', 0):.4f}")
         print(f"  Partner Score:   {result.get('partner_score', 0):.4f}")
-        print(f"  ICDEV Coverage:  {result.get('icdev_capability_coverage', 0):.0%}")
+        print(f"  ICDEV™ Coverage:  {result.get('icdev_capability_coverage', 0):.0%}")
         print(f"  Effort:          {result.get('estimated_effort', '')}")
         print(f"  Cost Tier:       {result.get('estimated_cost_tier', '')}")
         print(f"  Risk Level:      {result.get('risk_level', '')}")
@@ -990,7 +990,7 @@ def _print_human(args, result):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Engine Build/Buy/Partner Analyzer -- CUI // SP-CTI",
+        description="ICDEV™ Research Engine Build/Buy/Partner Analyzer -- CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

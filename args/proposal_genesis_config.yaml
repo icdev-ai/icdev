@@ -132,7 +132,7 @@ reflexes:
     enabled: true
     risk_tier: green
     schedule: "on_demand"
-    description: "Expanded capability matching (ICDEV + consulting + partners)"
+    description: "Expanded capability matching (ICDEV™ + consulting + partners)"
     phase: propose
     trigger: "after_extract"
     success_metric:

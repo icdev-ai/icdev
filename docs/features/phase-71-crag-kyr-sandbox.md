@@ -5,7 +5,7 @@
 
 ## Summary
 
-Integrates three external resources into ICDEV's RAG evaluation, fine-tuning, and security subsystems:
+Integrates three external resources into ICDEV™'s RAG evaluation, fine-tuning, and security subsystems:
 
 1. **CRAG Benchmark** (arxiv 2406.04744) — 8 question type taxonomy, hallucination-penalizing scoring (-1/0/0.5/1), entity popularity tiers
 2. **Know Your RAG** (arxiv 2411.19710) — 4-label query taxonomy, statement extraction for grounded pair generation, per-label adaptive hybrid search weights

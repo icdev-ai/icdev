@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Goal Adapter - copies and adapts ICDEV goals for child applications.
+# POC: ICDEV™ System Administrator
+"""Goal Adapter - copies and adapts ICDEV™ goals for child applications.
 
-Adapts the ICDEV goal library for use by child apps generated via the blueprint
+Adapts the ICDEV™ goal library for use by child apps generated via the blueprint
 engine. This involves:
   1. Copying essential goal markdown files (filtered by blueprint capabilities)
   2. Stripping the "Step 0: Agentic Fitness Assessment" from build_app.md
-     (child apps don't assess fitness -- that was done by ICDEV at generation time)
+     (child apps don't assess fitness -- that was done by ICDEV™ at generation time)
   3. Generating a goals manifest.md for the child app
   4. Copying relevant hardprompt templates (excluding generation-only prompts)
 
@@ -176,13 +176,13 @@ def copy_essential_goals(
     dest_dir: Path,
     goals_config: List[str],
 ) -> List[str]:
-    """Copy goal markdown files from ICDEV goals/ to child app goals/.
+    """Copy goal markdown files from ICDEV™ goals/ to child app goals/.
 
     Only copies goals listed in the blueprint's goals_config. Each file is
     copied verbatim except build_app.md which gets the fitness step stripped.
 
     Args:
-        source_dir: Path to ICDEV goals/ directory.
+        source_dir: Path to ICDEV™ goals/ directory.
         dest_dir: Path to child app goals/ directory.
         goals_config: List of goal keys to copy (e.g. ["build_app", "tdd_workflow"]).
 
@@ -301,7 +301,7 @@ def copy_hardprompts(
     dest_dir: Path,
     capabilities: Dict[str, bool],
 ) -> List[str]:
-    """Copy hardprompt templates from ICDEV to child app.
+    """Copy hardprompt templates from ICDEV™ to child app.
 
     Always copies:
       - hardprompts/agent/*.md (minus excluded files like fitness_evaluation.md)
@@ -318,13 +318,13 @@ def copy_hardprompts(
 
     Never copies:
       - Files in EXCLUDED_FILES list
-      - hardprompts/modernization/  (ICDEV-only, not for child apps)
-      - hardprompts/requirements/   (ICDEV-only, RICOAS)
-      - hardprompts/simulation/     (ICDEV-only, RICOAS)
-      - hardprompts/integration/    (ICDEV-only, RICOAS)
+      - hardprompts/modernization/  (ICDEV™-only, not for child apps)
+      - hardprompts/requirements/   (ICDEV™-only, RICOAS)
+      - hardprompts/simulation/     (ICDEV™-only, RICOAS)
+      - hardprompts/integration/    (ICDEV™-only, RICOAS)
 
     Args:
-        source_dir: Path to ICDEV hardprompts/ directory.
+        source_dir: Path to ICDEV™ hardprompts/ directory.
         dest_dir: Path to child app hardprompts/ directory.
         capabilities: Resolved capability map from blueprint.
 
@@ -388,7 +388,7 @@ def adapt_goals(
     child_root: Path,
     dry_run: bool = False,
 ) -> Dict[str, Any]:
-    """Adapt and copy goals from ICDEV to child app.
+    """Adapt and copy goals from ICDEV™ to child app.
 
     Reads the blueprint's goals_config and capabilities to determine which
     goals and hardprompts to copy. Strips the fitness assessment step from
@@ -396,7 +396,7 @@ def adapt_goals(
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
-        icdev_root: Path to ICDEV project root.
+        icdev_root: Path to ICDEV™ project root.
         child_root: Path to child app root.
         dry_run: If True, don't actually copy files — just report what would
                  be done.
@@ -510,7 +510,7 @@ def adapt_goals(
 def main() -> None:
     """CLI entry point for goal adaptation."""
     parser = argparse.ArgumentParser(
-        description="Adapt ICDEV goals for child applications",
+        description="Adapt ICDEV™ goals for child applications",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -531,7 +531,7 @@ def main() -> None:
     parser.add_argument(
         "--icdev-root",
         default=None,
-        help="Path to ICDEV project root (defaults to auto-detect from script location)",
+        help="Path to ICDEV™ project root (defaults to auto-detect from script location)",
     )
     parser.add_argument(
         "--child-root",
@@ -571,10 +571,10 @@ def main() -> None:
         logger.error("Failed to read blueprint: %s", exc)
         sys.exit(1)
 
-    # Resolve ICDEV root
+    # Resolve ICDEV™ root
     icdev_root = Path(args.icdev_root) if args.icdev_root else BASE_DIR
     if not (icdev_root / "goals").is_dir():
-        logger.error("ICDEV root does not contain goals/ directory: %s", icdev_root)
+        logger.error("ICDEV™ root does not contain goals/ directory: %s", icdev_root)
         sys.exit(1)
 
     child_root = Path(args.child_root)

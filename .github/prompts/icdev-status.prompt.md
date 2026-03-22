@@ -32,7 +32,7 @@ If project-id given:
 3. **Display Project Overview**
 ```
 ╔══════════════════════════════════════╗
-║  ICDEV Project Status                ║
+║  ICDEV™ Project Status                ║
 ║  CUI // SP-CTI                       ║
 ╠══════════════════════════════════════╣
 ║  Project:  <name>                    ║

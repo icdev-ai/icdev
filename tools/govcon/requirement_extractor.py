@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """RFP Requirement Extractor — mine "shall" statements and cluster patterns.
 
 Extracts obligation statements (shall, must, will) from SAM.gov opportunity
@@ -697,7 +697,7 @@ def _print_human(result, args):
             print(f"    {d['domain_category']:15s} {bar} ({d['total_freq']})")
         gaps = result.get("high_frequency_gaps", [])
         if gaps:
-            print(f"\n  High-Frequency Gaps (no ICDEV capability):")
+            print(f"\n  High-Frequency Gaps (no ICDEV™ capability):")
             for g in gaps[:10]:
                 print(f"    [{g.get('domain_category','')}] {g.get('pattern_name','')[:40]} (freq={g.get('frequency',0)})")
     print()

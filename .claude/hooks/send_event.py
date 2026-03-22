@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Shared event utility for ICDEV hooks — stores events + optional SIEM forwarding."""
+"""Shared event utility for ICDEV™ hooks — stores events + optional SIEM forwarding."""
 
 import hashlib
 import hmac

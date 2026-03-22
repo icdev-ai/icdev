@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Redaction & Anonymization Module.
+"""ICDEV™ Redaction & Anonymization Module.
 
 Provides PII detection and anonymization for sensitive government proposal data.
 Uses Microsoft Presidio (NLP-based) + custom GovCon recognizers (regex/deny-list).

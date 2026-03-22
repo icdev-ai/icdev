@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Recovery Engine — self-recovery from test/lint failures (D134)
+# ICDEV™ Recovery Engine — self-recovery from test/lint failures (D134)
 
 """
 Self-recovery pipeline for CI/CD phase failures.

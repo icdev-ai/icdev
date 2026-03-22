@@ -2,66 +2,71 @@
 
 ## Open-Source License
 
-ICDEV is free software licensed under the **GNU Affero General Public License
-v3.0 or later** (AGPL-3.0-or-later). See [LICENSE](LICENSE) for the full text.
+ICDEV is open source under the **Apache License, Version 2.0**. See [LICENSE](LICENSE)
+for the full text.
 
-Under the AGPL-3.0, you may freely use, modify, and distribute ICDEV provided
-that:
+Under the Apache 2.0 license, you may freely use, modify, and distribute ICDEV
+with patent protection. Key rights:
 
-- Any modified version you distribute or make available over a network must
-  also be released under the AGPL-3.0.
-- Users interacting with your modified version over a network must be offered
-  access to the corresponding source code.
+- Use for any purpose, including commercial
+- Modify and create derivative works
+- Distribute original or modified versions
+- Patent grant from all contributors
+
+Requirements:
+
+- Include a copy of the license and NOTICE file
+- State changes you made to modified files
+- Retain all copyright, patent, and attribution notices
 
 This means the open-source license is suitable for:
 
-- Internal use (no distribution or network service obligations)
+- Internal enterprise use
 - Academic and research purposes
-- Open-source projects that are also AGPL-3.0 compatible
+- Integration into open-source or proprietary projects
 - Personal use and evaluation
-- Government agencies using it internally
+- Government agencies and defense contractors
+- SaaS and hosted services
 
 ## When You Need a Commercial License
 
-A commercial license removes the AGPL-3.0 copyleft obligations. You need one if:
+A commercial license provides additional benefits beyond Apache 2.0. You may want
+one if:
 
-- You want to offer ICDEV (or a modified version) as a **hosted SaaS product**
-  without releasing your source code
-- You want to **embed ICDEV** in a proprietary product or platform
-- You want to **redistribute ICDEV** as part of a closed-source offering
-- Your organization's legal policy **prohibits AGPL-3.0** dependencies
+- You need **dedicated enterprise support** with guaranteed SLAs
+- You need **priority access** to security patches and migration guides
+- You need **on-site deployment assistance** for air-gapped environments
+- You need **custom compliance consulting** for your specific ATO requirements
+- You need **indemnification** against intellectual property claims
 
 ## Commercial License Tiers
 
 | Tier | Team Size | Annual Price | Includes |
 |------|-----------|-------------|----------|
-| Solo / Startup | < 50 employees | $2,000/year | Non-AGPL use, email support |
-| Enterprise | 50-500 employees | $10,000/year | Non-AGPL use, priority support, 1 hr/month consulting |
-| Defense / SI | 500+ employees | Negotiated | Non-AGPL use, dedicated support, custom SLA, on-site option |
+| Solo / Startup | < 50 employees | $2,000/year | Priority email support, private release notes |
+| Enterprise | 50-500 employees | $10,000/year | Priority support, 1 hr/month consulting, migration guides |
+| Defense / SI | 500+ employees | Negotiated | Dedicated support, custom SLA, on-site option, indemnification |
 
 All tiers include:
 
 - Perpetual use rights for versions released during the license period
-- Freedom to modify and deploy without AGPL source-sharing obligations
 - Access to private release notes and migration guides
+- Priority security patch notifications
 
 ## What the Commercial License Does NOT Change
 
 - You still receive the same source code as the open-source version
-- Contributions you make back to the project are welcome (under CLA)
+- Contributions you make back to the project are welcome (under DCO)
 - ICDEV's compliance catalogs and crosswalk mappings remain available to all users
 - Security updates are published to both open-source and commercial users
 
-## Contributor License Agreement (CLA)
+## Contributor License
 
-If you contribute code to ICDEV, you will be asked to sign a Contributor
-License Agreement. The CLA grants the project maintainer the right to
-distribute your contributions under both the AGPL-3.0 and commercial licenses.
-This is standard practice for dual-licensed open-source projects (used by
-MongoDB, GitLab, Qt, and many others).
+If you contribute code to ICDEV, you certify under the Developer Certificate of
+Origin (DCO) that you have the right to submit it under the Apache 2.0 license.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-The CLA does **not** transfer your copyright. You retain full ownership of your
-contributions.
+You retain full ownership of your contributions.
 
 ## Contact
 
@@ -72,20 +77,22 @@ For commercial licensing inquiries:
 
 ## FAQ
 
-**Q: Can I use ICDEV internally at my company under the AGPL-3.0?**
-A: Yes. Internal use does not trigger AGPL-3.0 obligations. You only need a
-commercial license if you distribute ICDEV or make it available as a network
-service to third parties.
+**Q: Can I use ICDEV in my proprietary product?**
+A: Yes. The Apache 2.0 license permits use in proprietary products. You must
+include the LICENSE and NOTICE files and note any modifications to source files.
 
 **Q: I'm a government contractor. Do I need a commercial license?**
-A: If you use ICDEV internally or for a single government customer, the AGPL-3.0
-is fine. If you build a product or SaaS that incorporates ICDEV and sell it to
-multiple customers, you need a commercial license.
+A: The Apache 2.0 license is suitable for most government use cases, including
+building and deploying proprietary solutions. A commercial license provides
+dedicated support and custom SLAs for mission-critical deployments.
 
-**Q: Can I evaluate ICDEV before purchasing?**
-A: Absolutely. The full source code is available under AGPL-3.0. Use it, test it,
-evaluate it. Only purchase a commercial license when you need to remove the
-copyleft obligations.
+**Q: Can I offer ICDEV as a hosted SaaS product?**
+A: Yes. Unlike AGPL, the Apache 2.0 license does not require source disclosure
+for network/SaaS use. You may host ICDEV or derivatives as a service.
+
+**Q: Can I evaluate ICDEV before purchasing a commercial license?**
+A: Absolutely. The full source code is available under Apache 2.0. Use it, test it,
+evaluate it. Purchase a commercial license when you need enterprise support.
 
 **Q: What if I contribute a significant feature? Do I still need to pay?**
 A: Major contributors may be eligible for a complimentary commercial license.

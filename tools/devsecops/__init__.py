@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV DevSecOps & Zero Trust Architecture tools."""
+"""ICDEV™ DevSecOps & Zero Trust Architecture tools."""

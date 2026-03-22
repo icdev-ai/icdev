@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Agentic Fitness Assessor - evaluates component fitness for agentic architecture.
 
 Scores components across 6 dimensions to determine whether they should use:

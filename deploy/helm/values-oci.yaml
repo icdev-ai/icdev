@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Helm Values — Oracle OCI Government Override
+# ICDEV™ Helm Values — Oracle OCI Government Override
 # Usage: helm install icdev ./helm -f values.yaml -f values-oci.yaml
 
 global:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — Role-Based Access Control (RBAC).
+"""ICDEV™ SaaS — Role-Based Access Control (RBAC).
 CUI // SP-CTI
 """
 import logging

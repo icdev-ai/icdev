@@ -31,7 +31,7 @@
             return '<div class="msg-code-block">'
                 + '<div class="msg-code-block__header">'
                 + '<span>' + escapeHtml(codeLang || 'code') + '</span>'
-                + '<button class="msg-code-block__copy" onclick="ICDEV.copyCodeBlock(this)" title="Copy">Copy</button>'
+                + '<button class="msg-code-block__copy" onclick="ICDEV™.copyCodeBlock(this)" title="Copy">Copy</button>'
                 + '</div>'
                 + '<pre><code class="hljs">' + highlighted + '</code></pre>'
                 + '</div>';
@@ -73,7 +73,7 @@
         return '<div class="msg-code-block">'
             + '<div class="msg-code-block__header">'
             + '<span>' + escapeHtml(language || 'code') + '</span>'
-            + '<button class="msg-code-block__copy" onclick="ICDEV.copyCodeBlock(this)" title="Copy">Copy</button>'
+            + '<button class="msg-code-block__copy" onclick="ICDEV™.copyCodeBlock(this)" title="Copy">Copy</button>'
             + '</div>'
             + '<pre><code class="hljs">' + highlighted + '</code></pre>'
             + '</div>';
@@ -195,7 +195,7 @@
     // Exports
     // ===================================================================
 
-    var ns = window.ICDEV || {};
+    var ns = window.ICDEV™ || {};
     ns.renderMarkdown = renderMarkdown;
     ns.renderCodeBlock = renderCodeBlock;
     ns.renderPhaseTransition = renderPhaseTransition;
@@ -205,5 +205,5 @@
     ns.renderCollapsible = renderCollapsible;
     ns.renderMessageContent = renderMessageContent;
     ns.copyCodeBlock = copyCodeBlock;
-    window.ICDEV = ns;
+    window.ICDEV™ = ns;
 })();

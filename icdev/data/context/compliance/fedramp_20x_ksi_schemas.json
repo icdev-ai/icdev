@@ -5,7 +5,7 @@
     "classification": "CUI // SP-CTI",
     "version": "1.0",
     "last_updated": "2026-02-24",
-    "description": "Machine-readable KSI definitions for FedRAMP 20x continuous authorization. Each KSI maps to NIST 800-53 control families and defines evidence sources that ICDEV can generate automatically.",
+    "description": "Machine-readable KSI definitions for FedRAMP 20x continuous authorization. Each KSI maps to NIST 800-53 control families and defines evidence sources that ICDEV™ can generate automatically.",
     "total_ksis": 43,
     "phases": {
       "phase_1": "Foundational policies and procedures",

@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Shipley Process Adaptation + ICDEV-to-Shipley mapping.
+# POC: ICDEV™ System Administrator
+"""Shipley Process Adaptation + ICDEV™-to-Shipley mapping.
 
-Maps ICDEV Proposal Genesis reflexes to Shipley process phases,
+Maps ICDEV™ Proposal Genesis reflexes to Shipley process phases,
 recommends ceremony levels based on team size, generates process
 guides, aligns to APMP Body of Knowledge, and assesses proposal
 process maturity.  Deterministic, air-gap safe.
@@ -374,7 +374,7 @@ def _safe_count(conn, query, params=()):
 
 
 def get_shipley_mapping():
-    """Return the complete ICDEV-to-Shipley process mapping."""
+    """Return the complete ICDEV™-to-Shipley process mapping."""
     return {
         "status": "ok",
         "phases": SHIPLEY_PHASES,
@@ -556,7 +556,7 @@ def generate_process_guide(level, opportunity_title=None):
 
 
 def get_apmp_alignment():
-    """Map ICDEV features to APMP Body of Knowledge competencies."""
+    """Map ICDEV™ features to APMP Body of Knowledge competencies."""
     total_competencies = (
         len(APMP_ALIGNMENT["foundation"])
         + len(APMP_ALIGNMENT["practitioner"])
@@ -605,7 +605,7 @@ def assess_maturity(project_id=None):
             "level_name": "Ad Hoc",
             "evidence": ["Could not connect to database"],
             "recommendations": [
-                "Initialize ICDEV database",
+                "Initialize ICDEV™ database",
                 "Start tracking proposals in the system",
             ],
         }
@@ -689,7 +689,7 @@ def assess_maturity(project_id=None):
     # Generate recommendations based on level
     recommendations = []
     if maturity_level < 2:
-        recommendations.append("Start tracking opportunities in ICDEV (R1 discover)")
+        recommendations.append("Start tracking opportunities in ICDEV™ (R1 discover)")
         recommendations.append("Use proposal_quality_evaluator.py for consistent reviews")
     if maturity_level < 3:
         recommendations.append("Define standard proposal workflow using workflow loops")
@@ -728,12 +728,12 @@ def assess_maturity(project_id=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Shipley Process Adaptation + ICDEV-to-Shipley mapping"
+        description="Shipley Process Adaptation + ICDEV™-to-Shipley mapping"
     )
 
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--shipley-mapping", action="store_true",
-                       help="Show ICDEV-to-Shipley phase mapping")
+                       help="Show ICDEV™-to-Shipley phase mapping")
     group.add_argument("--recommend", action="store_true",
                        help="Recommend ceremony level")
     group.add_argument("--process-guide", action="store_true",

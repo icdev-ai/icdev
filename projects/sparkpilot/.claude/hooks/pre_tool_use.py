@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Pre-Tool-Use Hook — Safety validation before tool execution
+# ICDEV™ Pre-Tool-Use Hook — Safety validation before tool execution
 # Adapted from ADW pre_tool_use.py
 
 """

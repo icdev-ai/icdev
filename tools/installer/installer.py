@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""ICDEV Modular Installer — central CLI for configuring and installing ICDEV.
+"""ICDEV™ Modular Installer — central CLI for configuring and installing ICDEV™.
 
 Supports three modes of operation:
 
@@ -70,7 +70,7 @@ CUI_MARKINGS_PATH = BASE_DIR / "args" / "cui_markings.yaml"
 REGISTRY_PATH = DATA_DIR / "installation.json"
 
 # Ensure BASE_DIR is on sys.path so that ``from tools.xxx import ...`` works
-# when invoked directly (consistent with other ICDEV CLI tools).
+# when invoked directly (consistent with other ICDEV™ CLI tools).
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
@@ -820,7 +820,7 @@ def run_interactive(dry_run: bool = False) -> Dict[str, Any]:
 
     print()
     print("=" * 60)
-    print("  ICDEV Modular Installer — Interactive Wizard")
+    print("  ICDEV™ Modular Installer — Interactive Wizard")
     print("=" * 60)
 
     # ------------------------------------------------------------------
@@ -1382,7 +1382,7 @@ def _format_install_result_human(result: Dict[str, Any]) -> str:
     lines = [
         "",
         "=" * 60,
-        "  ICDEV Installation Summary",
+        "  ICDEV™ Installation Summary",
         "=" * 60,
         "",
     ]
@@ -1449,7 +1449,7 @@ def _format_status_human(result: Dict[str, Any]) -> str:
     lines = [
         "",
         "=" * 60,
-        "  ICDEV Installation Status",
+        "  ICDEV™ Installation Status",
         "=" * 60,
         "",
         f"  Profile:       {result.get('profile', 'default')}",
@@ -1507,7 +1507,7 @@ def _format_upgrade_human(result: Dict[str, Any]) -> str:
     lines = [
         "",
         "=" * 60,
-        "  ICDEV — Available Upgrades",
+        "  ICDEV™ — Available Upgrades",
         "=" * 60,
         "",
         f"  Currently installed: {result.get('installed_count', 0)} modules",
@@ -1547,7 +1547,7 @@ def _format_upgrade_human(result: Dict[str, Any]) -> str:
 def main() -> None:
     """Parse CLI arguments and dispatch to the appropriate mode."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Modular Installer — configure and install ICDEV components",
+        description="ICDEV™ Modular Installer — configure and install ICDEV™ components",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
@@ -1637,7 +1637,7 @@ Examples:
             # Fallback: try to use output_formatter if available
             try:
                 from tools.cli.output_formatter import auto_format
-                print(auto_format(result, title="ICDEV Installer"))
+                print(auto_format(result, title="ICDEV™ Installer"))
             except ImportError:
                 print(json.dumps(result, indent=2, default=str))
 

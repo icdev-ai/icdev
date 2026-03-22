@@ -7,7 +7,7 @@ calibration_examples:
     score: 5
     shall_ref: "The contractor shall implement continuous monitoring of all system components."
     text: |
-      We implement continuous monitoring via ICDEV's cATO Live Evidence Engine
+      We implement continuous monitoring via ICDEV™'s cATO Live Evidence Engine
       (D-INV-1), which streams OSCAL assessment-results per control at configurable
       intervals (default: 24h for critical, 72h for moderate). Evidence freshness
       thresholds: current <=30d, stale <=90d, expired >90d. Our Prometheus/Grafana
@@ -35,7 +35,7 @@ calibration_examples:
     score: 4
     shall_ref: "The contractor shall implement role-based access control."
     text: |
-      ICDEV implements RBAC through 6 defined roles (admin, pm, developer, isso,
+      ICDEV™ implements RBAC through 6 defined roles (admin, pm, developer, isso,
       co, cor) with per-tool authorization via the MCP Tool Authorizer. Each role
       has a deny-first permission matrix covering all 251 MCP tools. Access
       decisions are logged in the append-only audit trail (NIST AU-2 compliant).
@@ -115,7 +115,7 @@ calibration_examples:
     score: 5
     shall_ref: "The contractor shall generate SBOM for all delivered software."
     text: |
-      ICDEV generates CycloneDX 1.5 SBOMs automatically on every build via
+      ICDEV™ generates CycloneDX 1.5 SBOMs automatically on every build via
       `python tools/compliance/sbom_generator.py --project-dir /path`. The SBOM
       includes all direct and transitive dependencies with license classification
       (GPL/AGPL/SSPL blocked per D202). For firmware deliverables, we additionally
@@ -154,7 +154,7 @@ calibration_examples:
     score: 4
     shall_ref: "The contractor shall implement zero trust architecture."
     text: |
-      ICDEV implements ZTA across 7 pillars per the DoD ZTA Strategy: user identity,
+      ICDEV™ implements ZTA across 7 pillars per the DoD ZTA Strategy: user identity,
       device, network, application workload, data, visibility/analytics, and
       automation/orchestration. Maturity scoring tracks each pillar from Traditional
       through Advanced to Optimal. Service mesh (Istio or Linkerd) enforces mTLS
@@ -174,7 +174,7 @@ calibration_examples:
     score: 5
     shall_ref: "The contractor shall provide AI model governance."
     text: |
-      ICDEV's AI governance framework covers 6 pillars: inventory (OMB M-25-21
+      ICDEV™'s AI governance framework covers 6 pillars: inventory (OMB M-25-21
       schema), model cards (Google format), system cards, fairness assessment,
       confabulation detection (deterministic, air-gap safe), and GAO-21-519SP
       evidence collection. The framework auto-activates when AI components are
@@ -203,7 +203,7 @@ calibration_examples:
     score: 4
     shall_ref: "The contractor shall provide automated compliance evidence collection."
     text: |
-      ICDEV's evidence collector auto-gathers compliance evidence across 14
+      ICDEV™'s evidence collector auto-gathers compliance evidence across 14
       frameworks (FedRAMP, CMMC, CJIS, HIPAA, etc.) with freshness checking.
       Evidence staleness triggers heartbeat daemon alerts. Collection runs via
       `python tools/compliance/evidence_collector.py --project-id sparkpilot --json`.

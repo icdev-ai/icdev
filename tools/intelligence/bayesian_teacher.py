@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Bayesian Teaching Engine — information-gain scoring for ICDEV (D-BT-1).
+"""Bayesian Teaching Engine — information-gain scoring for ICDEV™ (D-BT-1).
 
 Adapts Bayesian Teaching (Shafto/Goodman/Griffiths 2014, Zhu 2015, Qiu 2025)
 to optimise example selection, compliance check ordering, and training pair
-ranking across ICDEV subsystems.
+ranking across ICDEV™ subsystems.
 
 Core algorithms (all deterministic, stdlib-only, air-gap safe):
   1. Information Gain Scorer   — rank candidates by expected posterior shift
@@ -50,7 +50,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "bayesian_teaching_config.yaml"
 
 # ---------------------------------------------------------------------------
-# Helpers (ICDEV standard pattern)
+# Helpers (ICDEV™ standard pattern)
 # ---------------------------------------------------------------------------
 
 _HAS_YAML = False
@@ -929,7 +929,7 @@ def health_check(db_path: Optional[Path] = None) -> Dict[str, Any]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="ICDEV Bayesian Teaching Engine — information-gain scoring"
+        description="ICDEV™ Bayesian Teaching Engine — information-gain scoring"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="DB path override")

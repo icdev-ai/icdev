@@ -92,7 +92,7 @@ def build_session_context(directory: str = None, db_path: str = None) -> dict:
             _enrich_from_db(context, detection["db_record"]["id"], str(db))
         else:
             context["warnings"].append(
-                "Project found in icdev.yaml but not registered in ICDEV database. "
+                "Project found in icdev.yaml but not registered in ICDEV™ database. "
                 "Run `/icdev-init` or `python tools/project/session_context_builder.py --init` "
                 "to register."
             )
@@ -119,7 +119,7 @@ def build_session_context(directory: str = None, db_path: str = None) -> dict:
         # Neither yaml nor DB
         context["setup_needed"] = True
         context["warnings"].append(
-            "No icdev.yaml found and current directory is not a registered ICDEV project."
+            "No icdev.yaml found and current directory is not a registered ICDEV™ project."
         )
 
     # Suggest workflows based on context
@@ -129,7 +129,7 @@ def build_session_context(directory: str = None, db_path: str = None) -> dict:
 
 
 def _detect_project(directory: str, db_path: str) -> dict:
-    """Detect whether this directory is an ICDEV project.
+    """Detect whether this directory is an ICDEV™ project.
 
     Returns:
         dict with source ('yaml', 'db', 'none'), config, db_record,
@@ -390,7 +390,7 @@ def _suggest_workflows(context: dict) -> list:
     if context.get("setup_needed"):
         suggestions.append({
             "command": "/icdev-init",
-            "reason": "No project detected — initialize a new ICDEV project",
+            "reason": "No project detected — initialize a new ICDEV™ project",
         })
         return suggestions
 
@@ -451,9 +451,9 @@ def _format_markdown(context: dict) -> str:
     lines = []
 
     if context.get("setup_needed"):
-        lines.append("## ICDEV Project Context")
+        lines.append("## ICDEV™ Project Context")
         lines.append("")
-        lines.append("**No ICDEV project detected in this directory.**")
+        lines.append("**No ICDEV™ project detected in this directory.**")
         lines.append("")
         lines.append("To get started:")
         lines.append("1. Create an `icdev.yaml` manifest (see `docs/dx/icdev-yaml-spec.md`)")
@@ -474,7 +474,7 @@ def _format_markdown(context: dict) -> str:
 
     # Header
     name = project.get("name", "Unknown")
-    lines.append(f"## ICDEV Project Context")
+    lines.append(f"## ICDEV™ Project Context")
     lines.append("")
 
     # Project info

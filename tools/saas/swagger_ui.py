@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- Swagger UI Blueprint.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- Swagger UI Blueprint.
 
 Flask Blueprint that serves the OpenAPI specification as JSON and a
 Swagger UI documentation page.  Loads the spec from
@@ -56,7 +56,7 @@ def swagger_docs():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ICDEV SaaS API &mdash; Documentation</title>
+  <title>ICDEV™ SaaS API &mdash; Documentation</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
   <style>
     body { margin: 0; padding: 0; }

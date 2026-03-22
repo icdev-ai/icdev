@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Agent Topology & Dependency Graph — maps relationships between agents,
-models, providers, functions, and skills across the ICDEV platform.
+models, providers, functions, and skills across the ICDEV™ platform.
 
 Reads YAML configs and SQLite data (zero network calls, fully air-gapped).
 

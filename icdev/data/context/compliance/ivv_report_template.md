@@ -98,7 +98,7 @@ Validation ("Are we building the right product?") evaluates outcome correctness.
 
 ## 9. Assessment Methodology
 
-This assessment was conducted using the ICDEV IV&V Assessor tool against the IEEE 1012 requirements catalog (30 requirements across 9 process areas).
+This assessment was conducted using the ICDEV™ IV&V Assessor tool against the IEEE 1012 requirements catalog (30 requirements across 9 process areas).
 
 **Scoring Formula:**
 - Verification Score = average of process area pass rates

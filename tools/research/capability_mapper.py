@@ -3,18 +3,18 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
-Capability Mapper — maps research challenges to ICDEV capability catalog (D-RES-7).
+Capability Mapper — maps research challenges to ICDEV™ capability catalog (D-RES-7).
 
 Uses a keyword-overlap algorithm (adapted from govcon/capability_mapper.py) to match
-research challenges against the ICDEV capability catalog. For each challenge, extracts
+research challenges against the ICDEV™ capability catalog. For each challenge, extracts
 keywords from title + description, computes overlap against each capability's keyword
 set, and stores mappings in research_capability_map (append-only, D6/D-RES-5).
 
 Architecture:
     - Reads from research_challenges table (populated by challenge_scorer)
-    - Loads ICDEV capability catalog from context/agentic/icdev_capability_catalog.json
+    - Loads ICDEV™ capability catalog from context/agentic/icdev_capability_catalog.json
       with a built-in DEFAULT_CATALOG fallback (D-RES-7)
     - Keyword overlap: overlap = len(challenge_kw & cap_kw) / max(1, len(cap_kw))
     - Mapping threshold: min_overlap_score (default 0.3 from research_config.yaml)
@@ -161,7 +161,7 @@ def _get_mapping_config(config=None):
 # CATALOG LOADING
 # =========================================================================
 def load_capability_catalog():
-    """Load the ICDEV capability catalog from JSON file.
+    """Load the ICDEV™ capability catalog from JSON file.
 
     Falls back to DEFAULT_CATALOG if the file does not exist or is invalid.
 
@@ -240,7 +240,7 @@ def compute_coverage_score(challenge_keywords, capability_keywords):
 
 
 def map_challenge_capabilities(challenge_id, session_id, db_path=None):
-    """Map a single challenge to ICDEV capabilities via keyword overlap.
+    """Map a single challenge to ICDEV™ capabilities via keyword overlap.
 
     Loads the challenge from DB, extracts keywords from title + description,
     computes overlap against each catalog capability, and INSERTs matches
@@ -360,7 +360,7 @@ def map_challenge_capabilities(challenge_id, session_id, db_path=None):
 
 
 def map_all_challenges(session_id, db_path=None):
-    """Map all challenges in a session to ICDEV capabilities.
+    """Map all challenges in a session to ICDEV™ capabilities.
 
     Iterates over all challenges in the given session and calls
     map_challenge_capabilities for each.
@@ -581,7 +581,7 @@ def _print_human(result, action):
     """Human-readable output."""
     status = result.get("status", "unknown")
     print(f"\n{'=' * 70}")
-    print(f"  ICDEV Research Capability Mapper -- {status.upper()} -- CUI // SP-CTI")
+    print(f"  ICDEV™ Research Capability Mapper -- {status.upper()} -- CUI // SP-CTI")
     print(f"{'=' * 70}")
 
     if status == "error":
@@ -662,7 +662,7 @@ def _print_human(result, action):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Capability Mapper (D-RES-7) -- CUI // SP-CTI",
+        description="ICDEV™ Research Capability Mapper (D-RES-7) -- CUI // SP-CTI",
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

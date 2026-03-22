@@ -150,7 +150,7 @@ scan:
 
   max_file_size_kb: 500
 
-# Framework allowlist — patterns that are legitimate in ICDEV's own tools/
+# Framework allowlist — patterns that are legitimate in ICDEV™'s own tools/
 # directory but should still be flagged in marketplace assets, child apps,
 # and user-submitted code. The scanner uses this to classify findings as
 # "allowed" (framework-inherent) vs "unallowed" (potential real issues).

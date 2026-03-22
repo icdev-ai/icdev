@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS - PostgreSQL Connection Pool.
+"""ICDEV™ SaaS - PostgreSQL Connection Pool.
 CUI // SP-CTI
 
 Manages per-tenant PostgreSQL connection pools. Each tenant gets its own pool

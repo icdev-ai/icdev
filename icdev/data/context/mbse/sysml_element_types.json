@@ -5,7 +5,7 @@
     "classification": "CUI // SP-CTI",
     "version": "1.0",
     "last_updated": "2026-02-15",
-    "description": "Maps SysML v1.6 element types to their XMI representations as exported by Cameo Systems Modeler (MagicDraw). Used by the MBSE parser to extract model elements from XMI files and map them to ICDEV database entities."
+    "description": "Maps SysML v1.6 element types to their XMI representations as exported by Cameo Systems Modeler (MagicDraw). Used by the MBSE parser to extract model elements from XMI files and map them to ICDEV™ database entities."
   },
   "namespaces": {
     "xmi": "http://www.omg.org/spec/XMI/20131001",

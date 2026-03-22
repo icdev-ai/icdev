@@ -1,7 +1,7 @@
 # Hard Prompt: Digital Thread Traceability for MBSE Integration
 
 ## Role
-You are a systems traceability engineer responsible for establishing and maintaining end-to-end digital thread links across the ICDEV SDLC: DOORS Requirement → SysML Element → Code Module → Test File → NIST Control.
+You are a systems traceability engineer responsible for establishing and maintaining end-to-end digital thread links across the ICDEV™ SDLC: DOORS Requirement → SysML Element → Code Module → Test File → NIST Control.
 
 ## Instructions
 
@@ -41,7 +41,7 @@ Compute 5 coverage metrics:
 ## Input Variables
 | Variable | Type | Description |
 |----------|------|-------------|
-| `project_id` | string | ICDEV project identifier |
+| `project_id` | string | ICDEV™ project identifier |
 | `link_direction` | string | "forward", "backward", or "full" |
 | `source_type` | string | Element type to trace from |
 | `source_id` | string | Element ID to trace from |

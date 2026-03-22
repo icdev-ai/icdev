@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Capability Enricher -- GraphRAG-enhanced capability mapping and draft enrichment.
 
 Replaces simple keyword matching in R6 (Map) and R7 (Draft) with profile-aware

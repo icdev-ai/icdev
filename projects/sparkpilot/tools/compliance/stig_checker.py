@@ -552,7 +552,7 @@ def run_stig_check(
             f"**STIG Version:** {stig_data.get('metadata', {}).get('version', 'N/A')}",
             f"**Target Type:** {target_type}",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessed By:** ICDEV STIG Checker (automated)",
+            "**Assessed By:** ICDEV™ STIG Checker (automated)",
             "**Classification:** CUI // SP-CTI",
             "",
             "---",

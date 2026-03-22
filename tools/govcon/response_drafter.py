@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Response Drafter — Phase 59 (D365)
+# ICDEV™ GovCon Response Drafter — Phase 59 (D365)
 # Two-tier LLM drafting: qwen3 worker drafts → Claude reviews.
 
 """
@@ -100,8 +100,8 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
         product_context = ""
         if product_key == "icdev_platform":
             product_context = (
-                "\nPRODUCT CONTEXT: This response should describe ICDEV as a complete "
-                "integrated platform — a system that builds systems. Emphasize that ICDEV is "
+                "\nPRODUCT CONTEXT: This response should describe ICDEV™ as a complete "
+                "integrated platform — a system that builds systems. Emphasize that ICDEV™ is "
                 "delivered on-premises to the customer as a unified platform with 15 agents, "
                 "42 compliance frameworks, 500+ tools, and 6-language support. It is NOT a "
                 "collection of point tools — it is an integrated autonomous development system.\n"
@@ -166,7 +166,7 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
 _RESPONSE_TEMPLATES = {
     "devsecops": (
         "The Contractor implements a comprehensive DevSecOps pipeline leveraging "
-        "the ICDEV platform's 9-step automated testing and security validation framework. "
+        "the ICDEV™ platform's 9-step automated testing and security validation framework. "
         "Our approach integrates {tools} to deliver continuous integration, continuous delivery, "
         "and continuous security monitoring.\n\n"
         "Key Implementation:\n"
@@ -179,7 +179,7 @@ _RESPONSE_TEMPLATES = {
     ),
     "ato_rmf": (
         "The Contractor provides fully automated ATO artifact generation and continuous "
-        "authorization monitoring through the ICDEV compliance automation platform. "
+        "authorization monitoring through the ICDEV™ compliance automation platform. "
         "Our approach covers the complete RMF lifecycle from categorization through "
         "continuous monitoring.\n\n"
         "Key Implementation:\n"
@@ -192,7 +192,7 @@ _RESPONSE_TEMPLATES = {
         "Evidence: {evidence}"
     ),
     "ai_ml": (
-        "The Contractor delivers comprehensive AI/ML governance through the ICDEV "
+        "The Contractor delivers comprehensive AI/ML governance through the ICDEV™ "
         "platform's responsible AI framework. Our approach addresses the full lifecycle "
         "of AI systems from development through deployment and monitoring.\n\n"
         "Key Implementation:\n"
@@ -206,7 +206,7 @@ _RESPONSE_TEMPLATES = {
     ),
     "cloud": (
         "The Contractor provides multi-cloud migration and modernization capabilities "
-        "through ICDEV's cloud-agnostic architecture supporting 6 cloud service providers. "
+        "through ICDEV™'s cloud-agnostic architecture supporting 6 cloud service providers. "
         "Our approach follows the 7R methodology for systematic modernization.\n\n"
         "Key Implementation:\n"
         "- Multi-cloud IaC generation (Terraform) for AWS GovCloud, Azure Gov, GCP Assured, OCI Gov, IBM IC4G\n"
@@ -217,7 +217,7 @@ _RESPONSE_TEMPLATES = {
         "Evidence: {evidence}"
     ),
     "security": (
-        "The Contractor implements defense-in-depth security through ICDEV's comprehensive "
+        "The Contractor implements defense-in-depth security through ICDEV™'s comprehensive "
         "security scanning and zero trust architecture capabilities.\n\n"
         "Key Implementation:\n"
         "- SAST, dependency audit, secret detection, container scanning\n"
@@ -229,7 +229,7 @@ _RESPONSE_TEMPLATES = {
         "Evidence: {evidence}"
     ),
     "compliance": (
-        "The Contractor provides automated multi-framework compliance through ICDEV's "
+        "The Contractor provides automated multi-framework compliance through ICDEV™'s "
         "42-framework compliance engine with dual-hub crosswalk.\n\n"
         "Key Implementation:\n"
         "- Dual-hub crosswalk: NIST 800-53 (US) + ISO 27001 (international)\n"
@@ -241,7 +241,7 @@ _RESPONSE_TEMPLATES = {
     ),
     "agile": (
         "The Contractor follows SAFe-based agile practices with AI-assisted requirements "
-        "intake and automated decomposition through the ICDEV RICOAS system.\n\n"
+        "intake and automated decomposition through the ICDEV™ RICOAS system.\n\n"
         "Key Implementation:\n"
         "- AI-driven conversational requirements intake\n"
         "- SAFe decomposition: Epic → Capability → Feature → Story → Enabler\n"
@@ -253,7 +253,7 @@ _RESPONSE_TEMPLATES = {
 }
 
 _DEFAULT_TEMPLATE = (
-    "The Contractor addresses this requirement through the ICDEV platform's "
+    "The Contractor addresses this requirement through the ICDEV™ platform's "
     "automated {domain} capabilities.\n\n"
     "Key Implementation:\n"
     "- {tools}\n"
@@ -267,9 +267,9 @@ _DEFAULT_TEMPLATE = (
 
 _PRODUCT_TEMPLATES = {
     "icdev_platform": (
-        "The Contractor delivers the ICDEV (Intelligent Certified Development) platform — "
+        "The Contractor delivers the ICDEV™ (Intelligent Certified Development) platform — "
         "a complete autonomous software development system that generates ATO-ready "
-        "government applications from natural language requirements. ICDEV orchestrates "
+        "government applications from natural language requirements. ICDEV™ orchestrates "
         "15 specialized AI agents across its 6-layer GOTCHA framework to handle the full "
         "SDLC with TDD/BDD, multi-framework compliance automation, and continuous "
         "authorization monitoring.\n\n"
@@ -397,7 +397,7 @@ def _template_draft(shall_text, capabilities, knowledge_blocks, domain):
 
     controls_str = ", ".join(sorted(set(controls_list)))[:100] or "SA-11, CA-2"
     tools_str = ", ".join(sorted(set(tools_list)))[:200] or domain
-    evidence_str = "; ".join(e for e in evidence_list if e)[:300] or "ICDEV platform automation"
+    evidence_str = "; ".join(e for e in evidence_list if e)[:300] or "ICDEV™ platform automation"
 
     draft = template.format(
         tools=tools_str,
@@ -470,7 +470,7 @@ def draft_response(shall_id):
     # Also search for product-level blocks if requirement is cross-domain
     product_key = _detect_product_template(shall_text, domain)
     if product_key:
-        product_search = "ICDEV platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
+        product_search = "ICDEV™ platform" if product_key == "icdev_platform" else "contract management portal CDRL CPARS"
         product_kb = search_blocks(product_search, top_k=2)
         # Prepend product blocks (higher priority)
         product_results = product_kb.get("results", [])
@@ -646,7 +646,7 @@ def approve_draft(draft_id, reviewer="human", notes=""):
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Response Drafter (D365)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Response Drafter (D365)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--draft", action="store_true", help="Draft response for single shall statement")
     group.add_argument("--draft-all", action="store_true", help="Draft responses for all shall statements")

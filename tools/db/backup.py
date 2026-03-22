@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""CLI wrapper for ICDEV backup/restore operations.
+"""CLI wrapper for ICDEV™ backup/restore operations.
 
 Usage:
     python tools/db/backup.py --backup [--db icdev] [--encrypt --passphrase "..."] [--json]
@@ -229,7 +229,7 @@ def cmd_prune(args, manager: BackupManager) -> None:
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV database backup/restore tool (CUI // SP-CTI)"
+        description="ICDEV™ database backup/restore tool (CUI // SP-CTI)"
     )
 
     # Operation modes (mutually exclusive)

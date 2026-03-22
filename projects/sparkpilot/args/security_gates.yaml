@@ -1,4 +1,4 @@
-# ICDEV Security Gate Configuration
+# ICDEV™ Security Gate Configuration
 # Defines what blocks merges and deployments
 
 code_review:

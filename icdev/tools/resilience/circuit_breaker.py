@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience — Circuit Breaker.
+"""ICDEV™ Resilience — Circuit Breaker.
 
 D146: Application-level circuit breaker using ABC + in-memory state (stdlib only).
 Three-state machine: CLOSED -> OPEN -> HALF_OPEN.

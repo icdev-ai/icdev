@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — OAuth 2.0 / OIDC Authentication.
+"""ICDEV™ SaaS — OAuth 2.0 / OIDC Authentication.
 CUI // SP-CTI
 """
 import json

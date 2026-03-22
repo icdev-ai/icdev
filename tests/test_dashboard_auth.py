@@ -29,7 +29,7 @@ from icdev.tools.db.init_icdev_db import DASHBOARD_AUTH_ALTER_SQL, SCHEMA_SQL
 
 @pytest.fixture()
 def tmp_db(tmp_path, monkeypatch):
-    """Create a temporary ICDEV database and monkeypatch DB_PATH."""
+    """Create a temporary ICDEV™ database and monkeypatch DB_PATH."""
     db_file = tmp_path / "icdev_test.db"
     conn = sqlite3.connect(str(db_file))
     conn.executescript(SCHEMA_SQL)

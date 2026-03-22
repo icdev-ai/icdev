@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Accountability Audit — cross-framework accountability assessment.
 
 Checks all accountability evidence across OMB M-25-21, M-26-04, GAO-21-519SP,

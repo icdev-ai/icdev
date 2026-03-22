@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS Tenant Admin Portal -- Flask Blueprint.
+"""ICDEV™ SaaS Tenant Admin Portal -- Flask Blueprint.
 
 CUI // SP-CTI
 
-Web-based administration portal for ICDEV SaaS tenants. Provides dashboard,
+Web-based administration portal for ICDEV™ SaaS tenants. Provides dashboard,
 project management, compliance overview, team management, API key management,
 usage metrics, audit trail viewer, and tenant settings.
 
@@ -850,7 +850,7 @@ def audit():
 @portal_bp.route("/phases")
 @_portal_auth_required
 def phases():
-    """Phase roadmap — ICDEV phases filtered by tenant tier and impact level."""
+    """Phase roadmap — ICDEV™ phases filtered by tenant tier and impact level."""
     tenant_id = g.tenant_id
     tenant = _get_tenant_info(tenant_id)
     tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"

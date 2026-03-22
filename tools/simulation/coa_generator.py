@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""COA (Course of Action) Generator for the ICDEV RICOAS Digital Program Twin.
+# POC: ICDEV™ System Administrator
+"""COA (Course of Action) Generator for the ICDEV™ RICOAS Digital Program Twin.
 
 Generates 3 standard Courses of Action (Speed / Balanced / Comprehensive) plus
 RED-tier alternative COAs.  Each COA includes architecture summary, PI roadmap,

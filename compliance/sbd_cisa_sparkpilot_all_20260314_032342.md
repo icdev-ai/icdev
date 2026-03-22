@@ -7,7 +7,7 @@ Distribution: Distribution D — Authorized DoD Personnel Only
 
 **Project:** SparkPilot (sparkpilot)
 **Assessment Date:** 2026-03-14 03:23 UTC
-**Assessor:** ICDEV Compliance Engine (automated)
+**Assessor:** ICDEV™ Compliance Engine (automated)
 **Domain Scope:** all
 **CISA SbD Revision:** N/A
 **Classification:** CUI // SP-CTI

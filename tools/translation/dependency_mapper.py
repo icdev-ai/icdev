@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
-"""Dependency Mapper — ICDEV Cross-Language Translation (Phase 43, D246)
+# POC: ICDEV™ System Administrator
+"""Dependency Mapper — ICDEV™ Cross-Language Translation (Phase 43, D246)
 
 Maps cross-language package equivalents from a declarative JSON table.
 When a mapping is unknown, optionally queries LLM for an advisory suggestion.
@@ -198,7 +198,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             f"{CUI_BANNER}\n"
-            "ICDEV Dependency Mapper — Cross-Language Package Equivalents (D246)"
+            "ICDEV™ Dependency Mapper — Cross-Language Package Equivalents (D246)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\

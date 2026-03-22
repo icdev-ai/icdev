@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Namespace Provisioner.
+"""ICDEV™ SaaS -- Namespace Provisioner.
 
 CUI // SP-CTI
 
@@ -552,7 +552,7 @@ def _print_result(data, as_json=False):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV SaaS Namespace Provisioner",
+        description="CUI // SP-CTI -- ICDEV™ SaaS Namespace Provisioner",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     action = parser.add_mutually_exclusive_group(required=True)

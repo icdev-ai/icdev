@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for OpenClaw-to-ICDEV compatibility checker and translator."""
+"""Tests for OpenClaw-to-ICDEV™ compatibility checker and translator."""
 
 import sys
 import textwrap
@@ -202,7 +202,7 @@ class TestCompatibilityCheck:
         assert any(w["code"] == "NODE_001" for w in report.warnings)
 
     def test_tool_mapping(self, oc_skill_with_node):
-        """OpenClaw tools are mapped to ICDEV equivalents."""
+        """OpenClaw tools are mapped to ICDEV™ equivalents."""
         report = check_compatibility(oc_skill_with_node)
         assert "run_command" in report.tool_mapping
         assert report.tool_mapping["run_command"] == "Bash"
@@ -283,7 +283,7 @@ class TestTranslation:
         assert "OpenClaw Community" in content
 
     def test_translate_maps_tools(self, oc_skill_with_node, tmp_path):
-        """Translation maps OpenClaw tools to ICDEV equivalents."""
+        """Translation maps OpenClaw tools to ICDEV™ equivalents."""
         out = tmp_path / "output"
         result = translate_to_icdev(oc_skill_with_node, out)
         assert result["success"] is True
@@ -302,7 +302,7 @@ class TestTranslation:
         assert "print" in content  # console.log → print
 
     def test_translate_claw_syntax(self, oc_skill_with_claw_syntax, tmp_path):
-        """OpenClaw syntax is replaced with ICDEV equivalents in instructions."""
+        """OpenClaw syntax is replaced with ICDEV™ equivalents in instructions."""
         out = tmp_path / "output"
         result = translate_to_icdev(oc_skill_with_claw_syntax, out)
         assert result["success"] is True

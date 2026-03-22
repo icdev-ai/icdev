@@ -302,7 +302,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "scenario_name": {"type": "string", "description": "Human-readable scenario name"},
                 "scenario_type": {
                     "type": "string",
@@ -377,7 +377,7 @@ def create_server() -> MCPServer:
             "type": "object",
             "properties": {
                 "session_id": {"type": "string", "description": "RICOAS session ID"},
-                "project_id": {"type": "string", "description": "ICDEV project ID (optional)"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID (optional)"},
                 "simulate": {
                     "type": "boolean",
                     "default": False,
@@ -397,7 +397,7 @@ def create_server() -> MCPServer:
             "properties": {
                 "session_id": {"type": "string", "description": "RICOAS session ID"},
                 "requirement_id": {"type": "string", "description": "ID of the RED requirement"},
-                "project_id": {"type": "string", "description": "ICDEV project ID (optional)"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID (optional)"},
             },
             "required": ["session_id", "requirement_id"],
         },
@@ -438,7 +438,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID (for list action)"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID (for list action)"},
                 "scenario_id": {"type": "string", "description": "Scenario ID (for fork/archive/export/summary)"},
                 "action": {
                     "type": "string",

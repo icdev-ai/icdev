@@ -75,7 +75,7 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
     """Export control implementations in OSCAL System Security Plan format.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         output_dir: Output directory (optional)
         db_path: Database path (optional)
 
@@ -100,7 +100,7 @@ def export_controls_oscal(project_id, output_dir=None, db_path=None):
                     "oscal-version": "1.1.2",
                     "props": [
                         {"name": "classification", "value": "CUI // SP-CTI"},
-                        {"name": "source", "value": "ICDEV Compliance Engine"},
+                        {"name": "source", "value": "ICDEV™ Compliance Engine"},
                     ],
                 },
                 "system-characteristics": {
@@ -160,7 +160,7 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
     """Export CSSP assessment results in OSCAL Assessment Results format.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         output_dir: Output directory (optional)
         db_path: Database path (optional)
 
@@ -187,7 +187,7 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
                         {"name": "classification", "value": "CUI // SP-CTI"},
                         {"name": "assessment-type", "value": "CSSP"},
                         {"name": "framework", "value": "DoD Instruction 8530.01"},
-                        {"name": "source", "value": "ICDEV Compliance Engine"},
+                        {"name": "source", "value": "ICDEV™ Compliance Engine"},
                     ],
                 },
                 "results": [{
@@ -231,7 +231,7 @@ def export_assessment_oscal(project_id, output_dir=None, db_path=None):
 
 
 def _map_status_to_oscal(status):
-    """Map ICDEV status to OSCAL finding status."""
+    """Map ICDEV™ status to OSCAL finding status."""
     mapping = {
         "satisfied": "satisfied",
         "partially_satisfied": "partially-satisfied",
@@ -251,7 +251,7 @@ def export_findings_csv(project_id, output_dir=None, db_path=None):
     """Export STIG + security findings as CSV for Xacta import.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         output_dir: Output directory (optional)
         db_path: Database path (optional)
 
@@ -304,7 +304,7 @@ def export_poam_csv(project_id, output_dir=None, db_path=None):
     """Export POA&M items as CSV for Xacta import.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         output_dir: Output directory (optional)
         db_path: Database path (optional)
 
@@ -359,7 +359,7 @@ def export_cssp_assessment_csv(project_id, output_dir=None, db_path=None):
     """Export CSSP assessment results as CSV for Xacta import.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         output_dir: Output directory (optional)
         db_path: Database path (optional)
 
@@ -415,7 +415,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
     """Create ZIP evidence package for Xacta import.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         evidence_manifest_path: Path to evidence manifest JSON (optional)
         output_dir: Output directory (optional)
         db_path: Database path (optional)
@@ -468,7 +468,7 @@ def export_evidence_package(project_id, evidence_manifest_path=None, output_dir=
                 "project_id": project_id,
                 "export_date": datetime.now(timezone.utc).isoformat(),
                 "classification": "CUI // SP-CTI",
-                "source": "ICDEV Compliance Engine",
+                "source": "ICDEV™ Compliance Engine",
                 "format": "Xacta 360 Evidence Package",
             }
             zf.writestr("metadata.json", json.dumps(metadata, indent=2))
@@ -489,7 +489,7 @@ def export_all(project_id, export_format="all", output_dir=None, db_path=None):
     """Export all compliance data for Xacta import.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         export_format: "oscal", "csv", or "all"
         output_dir: Output directory (optional)
         db_path: Database path (optional)
@@ -537,7 +537,7 @@ def export_all(project_id, export_format="all", output_dir=None, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Export compliance data for Xacta 360 import")
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--format", default="all", choices=["oscal", "csv", "all"],
                         help="Export format (default: all)")
     parser.add_argument("--output-dir", type=Path, help="Output directory")

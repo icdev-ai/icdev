@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """CaptureAI Child App Blueprint Generator — Architecture specification for
 AI-powered Capture Management (Shipley Phases 0-2).
 
@@ -70,7 +70,7 @@ SUPPORTED_FRAMEWORKS = (
     "itar",
 )
 
-# Parent ICDEV agent port range — child must NOT conflict
+# Parent ICDEV™ agent port range — child must NOT conflict
 PARENT_PORT_RANGE = range(8443, 8459)
 
 # Child agent port offset (D53)
@@ -588,7 +588,7 @@ def generate_blueprint(
     Args:
         deployment_mode: One of ``standalone``, ``integrated``, ``embedded``.
             - standalone: Full independent deployment with own DB and agents.
-            - integrated: Shares ICDEV parent DB, adds capture-specific tables.
+            - integrated: Shares ICDEV™ parent DB, adds capture-specific tables.
             - embedded: Runs within Proposal Genesis daemon (no separate agents).
         team_size: Expected capture team size (affects process formality).
         compliance_frameworks: Optional list of compliance frameworks to enable.
@@ -703,7 +703,7 @@ def generate_blueprint(
             "path": "data/icdev.db",
             "initial_tables": "capture_additive",
             "migration_supported": True,
-            "note": "Adds capture-prefixed tables to existing ICDEV database",
+            "note": "Adds capture-prefixed tables to existing ICDEV™ database",
         }
     else:  # embedded
         db_config = {
@@ -953,7 +953,7 @@ def estimate_resources(
         "estimated_cost_monthly_usd": round(monthly_cost, 2),
         "notes": {
             "standalone": "Full independent deployment: dedicated compute, DB, and agents",
-            "integrated": "Shared ICDEV infrastructure: incremental compute for capture agents",
+            "integrated": "Shared ICDEV™ infrastructure: incremental compute for capture agents",
             "embedded": "Zero additional resources: runs within Proposal Genesis daemon process",
         }.get(deployment_mode, ""),
     }
@@ -962,7 +962,7 @@ def estimate_resources(
 def validate_blueprint(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     """Validate a CaptureAI blueprint dict for correctness.
 
-    Checks required fields, agent port conflicts with ICDEV parent,
+    Checks required fields, agent port conflicts with ICDEV™ parent,
     module dependency integrity, and structural completeness.
 
     Args:
@@ -1010,7 +1010,7 @@ def validate_blueprint(blueprint: Dict[str, Any]) -> Dict[str, Any]:
         port = agent.get("port", 0)
         if port in PARENT_PORT_RANGE:
             issues.append(
-                f"Agent '{agent.get('name')}' port {port} conflicts with ICDEV parent range "
+                f"Agent '{agent.get('name')}' port {port} conflicts with ICDEV™ parent range "
                 f"({PARENT_PORT_RANGE.start}-{PARENT_PORT_RANGE.stop - 1})"
             )
         if port in used_ports:

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Creative Engine — customer-centric feature opportunity discovery orchestrator.
 
 Coordinates the full creative pipeline:
@@ -800,7 +800,7 @@ def run_daemon(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Creative Engine — customer-centric feature opportunity discovery"
+        description="ICDEV™ Creative Engine — customer-centric feature opportunity discovery"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

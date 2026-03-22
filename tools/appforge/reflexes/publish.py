@@ -33,11 +33,11 @@ def _generate_article(challenge: dict) -> str:
         pain_section += "Manual processes consume analyst time, errors compound across teams, "
         pain_section += "and leadership lacks the visibility needed for informed decisions.\n"
 
-    return f"""# {title}: Built in Under an Hour with ICDEV
+    return f"""# {title}: Built in Under an Hour with ICDEV™
 
 ## TL;DR
 
-The {vertical} industry faces critical challenges that traditionally require months of custom development to address. Using ICDEV's autonomous AppForge engine, we built a complete {title.lower()} — with real-time dashboards, geospatial mapping, knowledge graph correlation, and pattern analysis — in under an hour. No development team. No vendor contract. No six-month timeline.
+The {vertical} industry faces critical challenges that traditionally require months of custom development to address. Using ICDEV™'s autonomous AppForge engine, we built a complete {title.lower()} — with real-time dashboards, geospatial mapping, knowledge graph correlation, and pattern analysis — in under an hour. No development team. No vendor contract. No six-month timeline.
 
 ---
 
@@ -53,9 +53,9 @@ The traditional response? A 12-month development project, a $500K+ budget, and a
 
 ---
 
-## How ICDEV's AppForge Solved It
+## How ICDEV™'s AppForge Solved It
 
-ICDEV's AppForge Daemon is an autonomous engine that continuously scans across industries for high-value challenges, designs application architectures, and builds working prototypes — all without human intervention.
+ICDEV™'s AppForge Daemon is an autonomous engine that continuously scans across industries for high-value challenges, designs application architectures, and builds working prototypes — all without human intervention.
 
 Here's what AppForge did for {vertical}:
 
@@ -108,7 +108,7 @@ AppForge doesn't wait for a requirements document. It scans for challenges, eval
 
 ## Get Started
 
-The ICDEV ecosystem — including AppForge, Workflow Studio (217 tools across 16 categories), and the full GOTCHA framework — is available at [https://github.com/icdev-ai](https://github.com/icdev-ai) and [https://icdev.ai](https://icdev.ai).
+The ICDEV™ ecosystem — including AppForge, Workflow Studio (217 tools across 16 categories), and the full GOTCHA framework — is available at [https://github.com/icdev-ai](https://github.com/icdev-ai) and [https://icdev.ai](https://icdev.ai).
 
 Whether you're in {vertical.lower()} or any other industry, the pattern is the same: describe your challenge, let the system build, review your working application.
 

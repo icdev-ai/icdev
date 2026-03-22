@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Context Pressure Monitor & Stuck Detection Guard (GSD-adapted).
 
-Two GSD patterns adapted for ICDEV's GOTCHA framework:
+Two GSD patterns adapted for ICDEV™'s GOTCHA framework:
 
 1. **Context Pressure Monitor** — Tracks context window consumption and
    signals when agents should finalize durable outputs (commits, summaries)

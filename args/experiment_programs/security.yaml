@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # Autoresearch Experiment Program — Security Domain
 #
-# Minimizes vulnerability density across the ICDEV codebase.
+# Minimizes vulnerability density across the ICDEV™ codebase.
 # Modifies code to fix SAST findings, harden dependency usage, remove secrets.
 
 domain: security

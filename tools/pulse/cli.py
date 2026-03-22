@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV Pulse CLI — Blog engine command-line interface.
+"""ICDEV™ Pulse CLI — Blog engine command-line interface.
 
 Usage:
     python cli.py research              # Run web research for all topics
@@ -30,7 +30,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.markdown import Markdown
 
-# Add ICDEV root to path for imports
+# Add ICDEV™ root to path for imports
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent.parent))
 
 from tools.pulse.db import init_db, get_connection, get_row, insert_row, query_rows, update_row
@@ -44,7 +44,7 @@ logging.basicConfig(
 
 @click.group()
 def cli():
-    """ICDEV Pulse — AI-powered blog engine for thought leadership."""
+    """ICDEV™ Pulse — AI-powered blog engine for thought leadership."""
     pass
 
 
@@ -59,12 +59,12 @@ def init():
     if not authors:
         insert_row("authors", {
             "id": f"author-{uuid4().hex[:8]}",
-            "name": "ICDEV Team",
+            "name": "ICDEV™ Team",
             "email": "team@icdev.ai",
-            "bio": "The ICDEV team builds intelligent certified development tools.",
+            "bio": "The ICDEV™ team builds intelligent certified development tools.",
             "role": "admin",
         })
-        console.print("[green]Default author 'ICDEV Team' created[/green]")
+        console.print("[green]Default author 'ICDEV™ Team' created[/green]")
 
 
 @cli.command()
@@ -433,7 +433,7 @@ def schedule():
     init_db()
     from tools.pulse.engine.scheduler import run_scheduled
 
-    console.print(f"[bold]Starting ICDEV Pulse scheduler...[/bold]")
+    console.print(f"[bold]Starting ICDEV™ Pulse scheduler...[/bold]")
     run_scheduled()
 
 
@@ -498,7 +498,7 @@ def stats():
         f"Research cache: {research} entries\n"
         f"Topic clusters: {clusters}\n"
         f"Pipeline runs: {runs}",
-        title="ICDEV Pulse Stats",
+        title="ICDEV™ Pulse Stats",
         border_style="cyan",
     ))
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Core MCP server exposing project management tools for the ICDEV system.
+"""Core MCP server exposing project management tools for the ICDEV™ system.
 
 Tools:
     project_create  - Create a new project (UUID, directory, DB record, audit)
@@ -48,7 +48,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 def _get_db() -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     conn = get_connection()
     return conn
 
@@ -533,7 +533,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="project_create",
-        description="Create a new ICDEV project with UUID, directory scaffolding, database record, and audit trail entry.",
+        description="Create a new ICDEV™ project with UUID, directory scaffolding, database record, and audit trail entry.",
         input_schema={
             "type": "object",
             "properties": {
@@ -574,7 +574,7 @@ def create_server() -> MCPServer:
 
     server.register_tool(
         name="project_list",
-        description="List all ICDEV projects from the database, optionally filtered by status.",
+        description="List all ICDEV™ projects from the database, optionally filtered by status.",
         input_schema={
             "type": "object",
             "properties": {
@@ -659,7 +659,7 @@ def create_server() -> MCPServer:
     server.register_resource(
         uri="projects://list",
         name="Project List",
-        description="List of all ICDEV projects",
+        description="List of all ICDEV™ projects",
         handler=handle_resource_projects_list,
     )
 

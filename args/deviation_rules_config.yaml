@@ -1,7 +1,7 @@
-# ICDEV Category-Based Deviation Rules (GSD-adapted)
+# ICDEV™ Category-Based Deviation Rules (GSD-adapted)
 # Layered ON TOP of existing confidence-based self-healing (D-GSD-7)
 #
-# GSD's 4 deviation rules adapted for ICDEV:
+# GSD's 4 deviation rules adapted for ICDEV™:
 #   Rule 1: Auto-fix bugs (security vulns, logic errors)
 #   Rule 2: Auto-add critical functionality (error handling, validation)
 #   Rule 3: Auto-fix blocking issues (missing deps, broken imports)
@@ -92,7 +92,7 @@ categories:
     decision: "escalate"             # Always escalate to human
     priority: 4
 
-  # Rule 5 (ICDEV addition): Compliance violations — always escalate
+  # Rule 5 (ICDEV™ addition): Compliance violations — always escalate
   compliance_violation:
     description: "CUI markings, NIST controls, ATO boundary changes"
     keywords:

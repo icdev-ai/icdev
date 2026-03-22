@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """DoD MOSA (10 U.S.C. section 4401) Assessment Engine.
 
 Assesses projects against MOSA modular open systems approach requirements.

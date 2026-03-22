@@ -71,7 +71,7 @@ def _scan_existing_competitors() -> List[dict]:
                         description=feat_str[:300],
                         severity="medium",
                         score=0.6,
-                        action=f"Evaluate if ICDEV should match this {comp_name} feature",
+                        action=f"Evaluate if ICDEV™ should match this {comp_name} feature",
                         meta={
                             "competitor": comp_name,
                             "releases": releases,

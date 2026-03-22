@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Review Board Compliance Bridge — ties findings into ICDEV audit, evidence, and NIST controls.
+"""Review Board Compliance Bridge — ties findings into ICDEV™ audit, evidence, and NIST controls.
 
 Integration points:
     1. Audit trail (tools/audit/audit_logger.py) — log_event() for all review board actions
@@ -85,7 +85,7 @@ def _now():
 
 
 def log_to_audit_trail(event_type: str, action: str, details: Dict = None) -> int:
-    """Write review board event to main ICDEV audit trail (NIST AU-2)."""
+    """Write review board event to main ICDEV™ audit trail (NIST AU-2)."""
     try:
         from tools.audit.audit_logger import log_event
         return log_event(

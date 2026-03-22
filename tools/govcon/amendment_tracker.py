@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """RFP Amendment Tracker — version tracking, diff engine, Q&A response capture.
 
 Tracks RFP amendments/revisions with auto-diff between versions using

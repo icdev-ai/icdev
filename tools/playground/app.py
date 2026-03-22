@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Playground — Read-only demo application.
+"""ICDEV™ Playground — Read-only demo application.
 
 Standalone Flask app on port 5001 with no authentication.
 Pre-loaded with sample projects, compliance data, and assessments
@@ -144,7 +144,7 @@ def main():
 
     app = create_app()
     port = int(os.environ.get("PLAYGROUND_PORT", 5001))
-    logger.info("Starting ICDEV Playground on port %d", port)
+    logger.info("Starting ICDEV™ Playground on port %d", port)
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
 
 

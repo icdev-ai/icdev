@@ -4,7 +4,7 @@
 
 ## Overview
 
-The ICDEV Federated GOTCHA Marketplace (Phase 22) enables customer developer communities to share reusable assets across tenant organizations with mandatory security scanning, compliance validation, and governance enforcement. The marketplace operates entirely within air-gapped environments and integrates with the Phase 21 SaaS multi-tenancy infrastructure.
+The ICDEV™ Federated GOTCHA Marketplace (Phase 22) enables customer developer communities to share reusable assets across tenant organizations with mandatory security scanning, compliance validation, and governance enforcement. The marketplace operates entirely within air-gapped environments and integrates with the Phase 21 SaaS multi-tenancy infrastructure.
 
 ### Supported Asset Types
 

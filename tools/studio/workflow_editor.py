@@ -1,4 +1,4 @@
-"""ICDEV Studio — Workflow Editor Backend.
+"""ICDEV™ Studio — Workflow Editor Backend.
 
 CRUD operations for user-created workflows.  Visual DAG editor frontend
 serialises to the same YAML format as args/workflow_templates/*.yaml so
@@ -295,7 +295,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
              "description": "Deployment blueprint from fitness scorecard"},
             {"id": "child_app_generator", "name": "Child App Gen",
              "tool": "tools/builder/child_app_generator.py",
-             "description": "Generate mini-ICDEV child applications"},
+             "description": "Generate mini-ICDEV™ child applications"},
             {"id": "gotcha_validator", "name": "GOTCHA Validate",
              "tool": "tools/builder/gotcha_validator.py",
              "description": "GOTCHA framework compliance validation"},
@@ -763,7 +763,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
              "description": "Extract shall/must statements from RFPs"},
             {"id": "capability_mapper_govcon", "name": "Capability Map",
              "tool": "tools/govcon/capability_mapper.py",
-             "description": "Map requirements to ICDEV capabilities"},
+             "description": "Map requirements to ICDEV™ capabilities"},
             {"id": "gap_analyzer", "name": "Gap Analyze",
              "tool": "tools/govcon/gap_analyzer.py",
              "description": "Identify unmet requirements + recommendations"},
@@ -802,7 +802,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
              "description": "Deterministic CPARS prediction"},
             {"id": "cdrl_generator", "name": "CDRL Generate",
              "tool": "tools/govcon/cdrl_generator.py",
-             "description": "Auto-generate CDRLs via ICDEV tools"},
+             "description": "Auto-generate CDRLs via ICDEV™ tools"},
         ],
     },
 }
@@ -994,7 +994,7 @@ def list_builtin_templates() -> list[dict]:
 # ── CLI ────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Studio Workflow Editor")
+    parser = argparse.ArgumentParser(description="ICDEV™ Studio Workflow Editor")
     parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

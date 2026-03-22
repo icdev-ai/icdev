@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Proposal-to-Program Knowledge Bridge -- auto-generate transition packages (Phase 4).
 
 When an opportunity transitions from bid to award, this tool generates a

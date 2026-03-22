@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Bayesian Bid Scorer -- information-gain weighted bid/no-bid scoring.
 
 Applies Bayesian information-gain analysis to historical bid decisions to identify

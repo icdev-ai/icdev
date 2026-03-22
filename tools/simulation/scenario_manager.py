@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Scenario Manager for the ICDEV RICOAS Digital Program Twin.
+# POC: ICDEV™ System Administrator
+"""Scenario Manager for the ICDEV™ RICOAS Digital Program Twin.
 
 Save, load, fork, compare, and archive simulation scenarios.  Supports
 exporting/importing scenarios as JSON files for sharing between environments.

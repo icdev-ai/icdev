@@ -7,8 +7,8 @@ templates:
   challenge_solution:
     name: "Challenge-Solution"
     description: >
-      Research challenges that ICDEV can address, write about those challenges,
-      then show the audience how ICDEV handles or resolves them.
+      Research challenges that ICDEV™ can address, write about those challenges,
+      then show the audience how ICDEV™ handles or resolves them.
     word_count_min: 5000
     word_count_max: 6000
     tone: "educational-professional"
@@ -19,7 +19,7 @@ templates:
         word_target: 200
         instructions: >
           Dense summary of key takeaways. What challenges exist, why they
-          matter, and how ICDEV addresses them. No fluff.
+          matter, and how ICDEV™ addresses them. No fluff.
           Do NOT include [HERO_IMAGE] — WordPress theme renders the featured image automatically.
         required: true
 
@@ -42,12 +42,12 @@ templates:
         repeatable: true
 
       - id: solutions
-        heading: "How ICDEV Addresses These Challenges"
+        heading: "How ICDEV™ Addresses These Challenges"
         word_target: 1500
         instructions: >
           For each challenge above, explain how modern teams solve it and
-          how ICDEV's open-source toolchain provides a concrete solution.
-          Reference specific ICDEV capabilities (compliance automation,
+          how ICDEV™'s open-source toolchain provides a concrete solution.
+          Reference specific ICDEV™ capabilities (compliance automation,
           agentic AI, DevSecOps, zero trust, SBOM, cATO). Keep it natural
           — educate, don't pitch. Include [VIDEO_EMBED:topic] where a
           walkthrough would add value.
@@ -73,7 +73,7 @@ templates:
         heading: "Get Started"
         word_target: 150
         instructions: >
-          Call to action. Link to ICDEV GitHub repository.
+          Call to action. Link to ICDEV™ GitHub repository.
           Invite readers to explore and contribute.
         required: true
 
@@ -81,8 +81,8 @@ templates:
       title_format: "{primary_keyword}: {pain_point} — How to Solve It"
       meta_description_format: >
         Learn how to overcome {pain_point} with practical solutions.
-        Discover how ICDEV's open-source platform automates {capability}.
-      keyword_strategy: "pain-point + solution + ICDEV capability"
+        Discover how ICDEV™'s open-source platform automates {capability}.
+      keyword_strategy: "pain-point + solution + ICDEV™ capability"
       schema_type: "Article"
       og_type: "article"
       focus_keyphrase: true
@@ -131,7 +131,7 @@ templates:
   feature_spotlight:
     name: "Feature Spotlight"
     description: >
-      Write about ICDEV features, functionalities, and capabilities in an
+      Write about ICDEV™ features, functionalities, and capabilities in an
       educational yet professional format.
     word_count_min: 5000
     word_count_max: 6000
@@ -169,7 +169,7 @@ templates:
         heading: "How It Works"
         word_target: 1500
         instructions: >
-          Detailed walkthrough of the ICDEV feature. Include architecture
+          Detailed walkthrough of the ICDEV™ feature. Include architecture
           overview, key capabilities, configuration options, and
           integration points. Use code snippets, CLI examples, or
           configuration excerpts where they add clarity.
@@ -212,14 +212,14 @@ templates:
         heading: "Try It Today"
         word_target: 150
         instructions: >
-          Call to action. Link to ICDEV GitHub repository.
+          Call to action. Link to ICDEV™ GitHub repository.
           Invite readers to explore and contribute.
         required: true
 
     seo:
       title_format: "{feature_name}: {value_proposition}"
       meta_description_format: >
-        Discover how ICDEV's {feature_name} helps teams {benefit}.
+        Discover how ICDEV™'s {feature_name} helps teams {benefit}.
         Learn setup, best practices, and real-world use cases.
       keyword_strategy: "feature name + capability + compliance framework"
       schema_type: "TechArticle"
@@ -347,7 +347,7 @@ defaults:
   github_url: "https://github.com/icdev-ai"
   site_url: "https://icdev.ai"
   site_domain: "icdev.ai"
-  author: "ICDEV Team"
+  author: "ICDEV™ Team"
   cta_links:
     github: "https://github.com/icdev-ai"
 
@@ -445,7 +445,7 @@ sam_bridge:
     agencies: []
     notice_types: "o,p,r,s"
 
-# Capability Catalog — injects ICDEV capability context into articles
+# Capability Catalog — injects ICDEV™ capability context into articles
 # D-PULSE-CAP-1: YAML files in context/capabilities/ (GOTCHA context layer)
 # D-PULSE-CAP-4: Deterministic keyword matching (zero LLM)
 capability_catalog:

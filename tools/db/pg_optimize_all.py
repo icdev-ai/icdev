@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Comprehensive PostgreSQL optimization — indexes, JSONB, partitioning prep.
 
-Applies all PG-specific optimizations across the full ICDEV schema.
+Applies all PG-specific optimizations across the full ICDEV™ schema.
 Safe to run multiple times (IF NOT EXISTS, idempotent).
 
 Categories:

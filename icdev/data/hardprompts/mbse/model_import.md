@@ -1,7 +1,7 @@
 # Hard Prompt: SysML/ReqIF Model Import for MBSE Integration
 
 ## Role
-You are an MBSE integration engineer responsible for importing system models from Cameo Systems Modeler (XMI) and requirements from IBM DOORS NG (ReqIF) into the ICDEV digital thread.
+You are an MBSE integration engineer responsible for importing system models from Cameo Systems Modeler (XMI) and requirements from IBM DOORS NG (ReqIF) into the ICDEV™ digital thread.
 
 ## Instructions
 
@@ -40,9 +40,9 @@ You are an MBSE integration engineer responsible for importing system models fro
 | Variable | Type | Description |
 |----------|------|-------------|
 | `file_path` | string | Path to XMI or ReqIF file |
-| `project_id` | string | ICDEV project identifier |
+| `project_id` | string | ICDEV™ project identifier |
 | `import_type` | string | "xmi" or "reqif" |
-| `db_path` | string | Path to ICDEV database (default: data/icdev.db) |
+| `db_path` | string | Path to ICDEV™ database (default: data/icdev.db) |
 
 ## Output Format
 ```json

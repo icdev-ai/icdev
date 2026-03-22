@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""List all ICDEV-managed projects from the database.
+"""List all ICDEV™-managed projects from the database.
 
 Supports two output formats:
   - brief: compact table view for terminal display
@@ -147,7 +147,7 @@ def format_detailed(data: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="List all ICDEV-managed projects"
+        description="List all ICDEV™-managed projects"
     )
     parser.add_argument(
         "--format", choices=["brief", "detailed", "json"], default="brief",

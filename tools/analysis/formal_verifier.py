@@ -572,7 +572,7 @@ def main():
     parser = argparse.ArgumentParser(description="Formal Verification Gate (LeanStral-adapted)")
     parser.add_argument("--file", help="Single file to verify")
     parser.add_argument("--project-dir", help="Project directory to verify")
-    parser.add_argument("--project-id", default="", help="ICDEV project ID")
+    parser.add_argument("--project-id", default="", help="ICDEV™ project ID")
     parser.add_argument("--generate-properties", action="store_true",
                         help="Generate hypothesis property-based test suggestions")
     parser.add_argument("--gate", action="store_true", help="Gate evaluation (exit 0=pass, 1=fail)")

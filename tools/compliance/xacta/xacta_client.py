@@ -120,7 +120,7 @@ class XactaClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-Classification": "CUI",
-            "User-Agent": "ICDEV-Compliance-Engine/1.0",
+            "User-Agent": "ICDEV™-Compliance-Engine/1.0",
         })
 
         # PKI/certificate-based auth
@@ -197,7 +197,7 @@ class XactaClient:
             "status": "operational",
             "authorization_boundary": project_data.get("directory_path", ""),
             "impact_level": "Moderate",
-            "source": "ICDEV",
+            "source": "ICDEV™",
         }
         result = self._request("POST", "/systems", data=payload)
 
@@ -216,7 +216,7 @@ class XactaClient:
         """Push control implementations to Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
             control_mappings: List of control mapping dicts from project_controls table
 
         Returns:
@@ -235,7 +235,7 @@ class XactaClient:
                 }
                 for m in control_mappings
             ],
-            "source": "ICDEV",
+            "source": "ICDEV™",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/controls", data=payload)
@@ -255,7 +255,7 @@ class XactaClient:
         """Push CSSP assessment results to Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
             assessment_results: List of cssp_assessments dicts
 
         Returns:
@@ -278,7 +278,7 @@ class XactaClient:
                 }
                 for r in assessment_results
             ],
-            "source": "ICDEV",
+            "source": "ICDEV™",
         }
         result = self._request("POST", f"/systems/{project_id}/assessments", data=payload)
 
@@ -297,7 +297,7 @@ class XactaClient:
         """Push STIG/security findings to Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
             findings: List of stig_findings dicts
 
         Returns:
@@ -318,7 +318,7 @@ class XactaClient:
                 }
                 for f in findings
             ],
-            "source": "ICDEV",
+            "source": "ICDEV™",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/findings", data=payload)
@@ -338,7 +338,7 @@ class XactaClient:
         """Push POA&M items to Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
             poam_items: List of poam_items dicts
 
         Returns:
@@ -359,7 +359,7 @@ class XactaClient:
                 }
                 for p in poam_items
             ],
-            "source": "ICDEV",
+            "source": "ICDEV™",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/poam", data=payload)
@@ -379,7 +379,7 @@ class XactaClient:
         """Upload evidence artifacts manifest to Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
             evidence_manifest: Evidence manifest dict from cssp_evidence_collector
 
         Returns:
@@ -388,7 +388,7 @@ class XactaClient:
         payload = {
             "system_id": project_id,
             "evidence": evidence_manifest,
-            "source": "ICDEV",
+            "source": "ICDEV™",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         result = self._request("POST", f"/systems/{project_id}/evidence", data=payload)
@@ -408,7 +408,7 @@ class XactaClient:
         """Pull current ATO status from Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
 
         Returns:
             Dict with system status from Xacta.
@@ -419,7 +419,7 @@ class XactaClient:
         """Pull CSSP certification status from Xacta.
 
         Args:
-            project_id: ICDEV project ID
+            project_id: ICDEV™ project ID
 
         Returns:
             Dict with certification details.

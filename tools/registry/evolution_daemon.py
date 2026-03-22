@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Evolution Daemon — autonomous capability evolution lifecycle (D-EVO-1).
 
 Extends DaemonBase to orchestrate the Phase 36 Evolutionary Intelligence

@@ -168,7 +168,7 @@ class TestFormatMetrics:
         assert "# TYPE" in result
 
     def test_format_contains_metric_names(self):
-        """Output must reference known ICDEV metric names."""
+        """Output must reference known ICDEV™ metric names."""
         result = self.collector.format_metrics()
         assert "icdev_http_requests_total" in result
         assert "icdev_gateway_uptime_seconds" in result

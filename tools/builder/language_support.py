@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Language Support Module — unified language detection and registry for ICDEV.
+"""Language Support Module — unified language detection and registry for ICDEV™.
 
 Provides:
 - load_registry()        -> Load language profiles from language_registry.json
@@ -33,7 +33,7 @@ _CUI_LINES = [
     "Controlled by: Department of Defense",
     "CUI Category: CTI",
     "Distribution: D",
-    "POC: ICDEV System Administrator",
+    "POC: ICDEV™ System Administrator",
 ]
 
 
@@ -332,7 +332,7 @@ def get_supported_languages() -> List[str]:
 def main():
     """CLI entry point for language support operations."""
     parser = argparse.ArgumentParser(
-        description="Language detection and registry for ICDEV projects"
+        description="Language detection and registry for ICDEV™ projects"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

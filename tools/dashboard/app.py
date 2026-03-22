@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 """
-ICDEV Web Dashboard - Flask Application
+ICDEV™ Web Dashboard - Flask Application
 ========================================
 Provides a web interface for monitoring projects, agents, compliance,
-and system health within the ICDEV framework.
+and system health within the ICDEV™ framework.
 
 Usage:
     python tools/dashboard/app.py [--port 5000] [--debug]
@@ -1560,7 +1560,7 @@ def create_app() -> Flask:
 
     @app.route("/phases")
     def phases_page():
-        """Phase roadmap — all ICDEV phases with status, categories, and progress."""
+        """Phase roadmap — all ICDEV™ phases with status, categories, and progress."""
         from tools.dashboard.phase_loader import (
             load_phases, load_categories, load_statuses, get_phase_summary,
         )
@@ -2193,7 +2193,7 @@ def create_app() -> Flask:
 
     @app.route("/knowledge-search")
     def knowledge_search_page():
-        """RAG Knowledge Search — natural language search across all ICDEV knowledge (Phase 64, D-RAG-1)."""
+        """RAG Knowledge Search — natural language search across all ICDEV™ knowledge (Phase 64, D-RAG-1)."""
         status = None
         recent_searches = []
         source_types = []
@@ -2613,13 +2613,13 @@ def create_app() -> Flask:
             pass
         return render_template("finetune/evaluate.html", evaluations=evaluations)
 
-    # ── ICDEV Pulse — Blog Engine ─────────────────────────────────────
+    # ── ICDEV™ Pulse — Blog Engine ─────────────────────────────────────
 
 
     @app.route("/pulse")
     @require_installed("pulse")
     def pulse():
-        """ICDEV Pulse — AI-powered blog engine dashboard."""
+        """ICDEV™ Pulse — AI-powered blog engine dashboard."""
         try:
             from tools.pulse.db import init_db, query_rows
             init_db()
@@ -2666,7 +2666,7 @@ def create_app() -> Flask:
     @app.route("/pulse/post/<post_id>")
     @require_installed("pulse")
     def pulse_post_detail(post_id):
-        """ICDEV Pulse — Single post detail view."""
+        """ICDEV™ Pulse — Single post detail view."""
         try:
             from tools.pulse.db import get_row
             post = get_row("posts", post_id)
@@ -3183,7 +3183,7 @@ def create_app() -> Flask:
     @app.route("/api/pulse/posts/<post_id>/enrich-capabilities", methods=["POST"])
     @require_installed("pulse")
     def api_pulse_enrich_capabilities(post_id):
-        """Rewrite a post with ICDEV capability context injected.
+        """Rewrite a post with ICDEV™ capability context injected.
 
         Matches capabilities based on title/topic, injects into rewrite prompt,
         triggers Claude Sonnet rewrite with capability references.
@@ -3199,7 +3199,7 @@ def create_app() -> Flask:
     @app.route("/api/pulse/posts/enrich-all", methods=["POST"])
     @require_installed("pulse")
     def api_pulse_enrich_all():
-        """Enrich all published posts with ICDEV capabilities (batch)."""
+        """Enrich all published posts with ICDEV™ capabilities (batch)."""
         import threading
         try:
             from tools.pulse.db import init_db
@@ -3630,7 +3630,7 @@ def create_app() -> Flask:
     @app.route("/api/pulse/capabilities")
     @require_installed("pulse")
     def api_pulse_capabilities():
-        """List all ICDEV capabilities from the capability catalog."""
+        """List all ICDEV™ capabilities from the capability catalog."""
         try:
             from tools.pulse.engine.capability_scanner import load_domains
             domains = load_domains(include_capabilities=True)
@@ -4139,7 +4139,7 @@ def create_app() -> Flask:
     # Registry of all Genesis-enabled apps (app_key → config)
     GENESIS_APPS = {
         "icdev": {
-            "name": "ICDEV",
+            "name": "ICDEV™",
             "root": str(BASE_DIR),
             "daemon": "tools/genesis/daemon.py",
             "promoter": "tools/genesis/promoter.py",
@@ -4894,7 +4894,7 @@ def create_app() -> Flask:
             return jsonify({"suggestions": get_suggestions(page_path)})
         except Exception:
             return jsonify({"suggestions": [
-                "How is the ICDEV codebase structured?",
+                "How is the ICDEV™ codebase structured?",
                 "What does the LLM router do?",
                 "How does the RAG retriever work?",
             ]})
@@ -5231,7 +5231,7 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    # ── ICDEV Studio (Phase 72) ─────────────────────────────────────
+    # ── ICDEV™ Studio (Phase 72) ─────────────────────────────────────
 
     @app.route("/studio/workflows")
     def studio_workflows():
@@ -5272,21 +5272,21 @@ def create_app() -> Flask:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="ICDEV Dashboard")
+    parser = argparse.ArgumentParser(description="ICDEV™ Dashboard")
     parser.add_argument("--port", type=int, default=PORT, help="Port to run on (default: 5000)")
     parser.add_argument("--debug", action="store_true", default=DEBUG, help="Enable debug mode")
     args = parser.parse_args()
 
     app = create_app()
-    print(f"[ICDEV Dashboard] Starting on http://127.0.0.1:{args.port}")
-    print(f"[ICDEV Dashboard] Database: {DB_PATH}")
-    print(f"[ICDEV Dashboard] CUI Marking: {CUI_BANNER_TOP or '(none)'}")
+    print(f"[ICDEV™ Dashboard] Starting on http://127.0.0.1:{args.port}")
+    print(f"[ICDEV™ Dashboard] Database: {DB_PATH}")
+    print(f"[ICDEV™ Dashboard] CUI Marking: {CUI_BANNER_TOP or '(none)'}")
 
     # Use SocketIO runner if available (D170), otherwise plain Flask
     socketio = get_socketio()
     if socketio:
-        print("[ICDEV Dashboard] WebSocket enabled (Flask-SocketIO)")
+        print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
         socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)
     else:
-        print("[ICDEV Dashboard] WebSocket not available — using HTTP polling")
+        print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
         app.run(host="0.0.0.0", port=args.port, debug=args.debug)

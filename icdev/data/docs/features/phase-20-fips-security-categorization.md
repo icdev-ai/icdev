@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 17 (Multi-Framework Compliance) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---

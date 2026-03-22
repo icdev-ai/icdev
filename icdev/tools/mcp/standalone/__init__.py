@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV Standalone MCP Server wrappers."""
+"""ICDEV™ Standalone MCP Server wrappers."""

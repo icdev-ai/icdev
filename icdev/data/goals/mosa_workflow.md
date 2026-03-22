@@ -8,14 +8,14 @@
 
 Enforce Modular Open Systems Approach (MOSA) principles across all DoD/IC software projects. This workflow auto-detects MOSA applicability during requirements intake, assesses modularity and interface openness, generates Interface Control Documents (ICDs) and Technical Standard Profiles (TSPs), enforces MOSA-compliant code structure, and feeds architecture evidence into the cATO pipeline.
 
-**Why this matters:** 10 U.S.C. Section 4401 mandates MOSA for all major defense acquisition programs. DoDI 5000.87 reinforces this for software-intensive systems. Systems that fail to demonstrate modular design, open interfaces, and published standards risk acquisition milestone disapproval, vendor lock-in, and inability to integrate with future DoD enterprise services. ICDEV auto-enforces MOSA so compliance is continuous, not a last-minute documentation exercise.
+**Why this matters:** 10 U.S.C. Section 4401 mandates MOSA for all major defense acquisition programs. DoDI 5000.87 reinforces this for software-intensive systems. Systems that fail to demonstrate modular design, open interfaces, and published standards risk acquisition milestone disapproval, vendor lock-in, and inability to integrate with future DoD enterprise services. ICDEV™ auto-enforces MOSA so compliance is continuous, not a last-minute documentation exercise.
 
 ---
 
 ## Prerequisites
 
 - [ ] Project initialized (`goals/init_project.md` completed)
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] `args/mosa_config.yaml` present (modularity thresholds, ICD templates, TSP standard catalogs, gate criteria)
 - [ ] MOSA requirements catalog loaded (`context/compliance/mosa_requirements.json`)
 - [ ] FIPS 199 categorization completed (`goals/security_categorization.md`) — baseline drives rigor
@@ -264,7 +264,7 @@ Output: projects/<id>/docs/mosa/enforcement_report.json
 
 **Tool:** `python tools/compliance/mosa_assessor.py --project-id <id> --gate`
 
-Evaluate MOSA gate criteria. This gate integrates with the existing ICDEV security gate framework (`args/security_gates.yaml`).
+Evaluate MOSA gate criteria. This gate integrates with the existing ICDEV™ security gate framework (`args/security_gates.yaml`).
 
 **MOSA Gate Criteria:**
 

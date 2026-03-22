@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse Demand Signal Detector — identifies unmet capability gaps
+"""ICDEV™ Pulse Demand Signal Detector — identifies unmet capability gaps
 from SAM.gov pain points and builds the capability graph.
 
 Design decisions:
@@ -414,7 +414,7 @@ def get_capability_graph(capability_slug: str | None = None) -> dict:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Pulse Demand Signal Detector (CUI // SP-CTI)"
+        description="ICDEV™ Pulse Demand Signal Detector (CUI // SP-CTI)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--detect", action="store_true",

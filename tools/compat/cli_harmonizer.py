@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""CLI Harmonization Fixer — bulk-apply ICDEV CLI standards.
+"""CLI Harmonization Fixer — bulk-apply ICDEV™ CLI standards.
 
 Applies two mechanical transformations to tools with argparse:
 
@@ -191,7 +191,7 @@ def fix_json_flag(py_file: Path, dry_run: bool = True) -> Optional[str]:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Bulk-apply ICDEV CLI harmonization standards"
+        description="Bulk-apply ICDEV™ CLI harmonization standards"
     )
     parser.add_argument(
         "--fix", required=True,

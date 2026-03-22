@@ -1,15 +1,15 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV System Health Check
+# ICDEV™ System Health Check
 # Adapted from ADW health_check.py for Gov/DoD environment validation
 
 """
-ICDEV Health Check — validates the entire ICDEV system is operational.
+ICDEV™ Health Check — validates the entire ICDEV™ system is operational.
 
 Usage:
     python tools/testing/health_check.py [--json] [--project-id <id>]
 
 Checks performed:
-1. Environment variables (ICDEV, AWS, optional keys)
+1. Environment variables (ICDEV™, AWS, optional keys)
 2. Database connectivity (icdev.db — 28 tables)
 3. Python dependencies (stdlib + optional packages)
 4. Tool availability (audit, compliance, security, builder, etc.)
@@ -58,7 +58,7 @@ except ImportError:
 def check_env_vars() -> CheckResult:
     """Check required and optional environment variables."""
     required_vars = {
-        "ICDEV_DB_PATH": "Path to ICDEV database (default: data/icdev.db)",
+        "ICDEV_DB_PATH": "Path to ICDEV™ database (default: data/icdev.db)",
     }
 
     optional_vars = {
@@ -100,7 +100,7 @@ def check_env_vars() -> CheckResult:
 
 
 def check_database() -> CheckResult:
-    """Check ICDEV database connectivity and table structure."""
+    """Check ICDEV™ database connectivity and table structure."""
     db_path = os.getenv("ICDEV_DB_PATH", str(PROJECT_ROOT / "data" / "icdev.db"))
 
     if not Path(db_path).exists():
@@ -191,7 +191,7 @@ def check_python_deps() -> CheckResult:
 
 
 def check_tools() -> CheckResult:
-    """Check that core ICDEV tool modules are importable."""
+    """Check that core ICDEV™ tool modules are importable."""
     tool_modules = {
         "tools.db.init_icdev_db": "Database initialization",
         "tools.audit.audit_logger": "Audit trail",
@@ -421,7 +421,7 @@ def run_health_check() -> HealthCheckResult:
 
 def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV System Health Check")
+    parser = argparse.ArgumentParser(description="ICDEV™ System Health Check")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--project-id", help="Optional project ID for scoped checks")
     args = parser.parse_args()

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV Proposal Genesis — Win Theme & Discriminator Registry (§3.17)
+# ICDEV™ Proposal Genesis — Win Theme & Discriminator Registry (§3.17)
 # Manages win themes, discriminators, and ghost competitor strategies as first-class objects.
 
 """
@@ -602,7 +602,7 @@ def get_density_scores(opportunity_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Proposal Genesis — Win Theme & Discriminator Registry (§3.17)"
+        description="ICDEV™ Proposal Genesis — Win Theme & Discriminator Registry (§3.17)"
     )
 
     # Actions

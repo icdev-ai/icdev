@@ -1,8 +1,8 @@
 # CUI // SP-CTI
 # Classification: CUI — Controlled Unclassified Information
-# Distribution: Authorized ICDEV personnel only
+# Distribution: Authorized ICDEV™ personnel only
 # Codebase Indexer — Phase 69, D-CA-1, D-CA-2
-"""Codebase indexer for the ICDEV project.
+"""Codebase indexer for the ICDEV™ project.
 
 Indexes Python source files using AST parsing and other files using
 text chunking.  Stores indexed records in the ``codebase_index`` table
@@ -638,7 +638,7 @@ def run_background(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codebase_indexer",
-        description="Index ICDEV codebase for RAG retrieval.",
+        description="Index ICDEV™ codebase for RAG retrieval.",
     )
     parser.add_argument(
         "--scan",

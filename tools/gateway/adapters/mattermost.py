@@ -83,7 +83,7 @@ class MattermostAdapter(BaseChannelAdapter):
         if not text:
             return None
 
-        # Only process ICDEV commands
+        # Only process ICDEV™ commands
         if not (text.startswith("/icdev") or text.startswith("/bind")
                 or text.startswith("icdev-")):
             return None

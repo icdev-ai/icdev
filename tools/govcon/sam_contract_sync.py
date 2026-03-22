@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — SAM.gov Contract Awards Sync (Phase 60, D-CPMP-6)
+# ICDEV™ GovProposal — SAM.gov Contract Awards Sync (Phase 60, D-CPMP-6)
 # SAM.gov Contract Awards API v1 adapter, rate-limited with content hash dedup.
 
 """
@@ -243,7 +243,7 @@ def link_award_to_contract(sam_award_id, contract_id):
 # ── CLI ──────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal SAM.gov Contract Awards Sync (Phase 60)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal SAM.gov Contract Awards Sync (Phase 60)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--sync", action="store_true", help="Sync awards from SAM.gov")
     group.add_argument("--list", action="store_true", help="List cached awards")

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ app_name }} — Pulse{% endblock %}
 {% block content %}
-<h1>ICDEV Pulse — Content Engine</h1>
+<h1>ICDEV™ Pulse — Content Engine</h1>
 
 <div class="intro-panel" style="display: flex; justify-content: space-between; align-items: center;">
     <div>
@@ -165,7 +165,7 @@
     <div class="card-header">
         <h2>Posts</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
-            <button class="btn btn-sm" onclick="enrichAllPosts()" id="btn-enrich-all" title="Rewrite all published posts with ICDEV capability context (Claude Sonnet)">Enrich All</button>
+            <button class="btn btn-sm" onclick="enrichAllPosts()" id="btn-enrich-all" title="Rewrite all published posts with ICDEV™ capability context (Claude Sonnet)">Enrich All</button>
             <select id="filter-status" aria-label="Filter by status" onchange="filterPosts()" style="padding: 6px 10px; border-radius: 6px;
                 border: 1px solid #1e2d45; background: #131c2e; color: #e2e8f0; font-size: 13px;">
                 <option value="">All Statuses</option>
@@ -670,7 +670,7 @@ async function showTab(tab) {
 // ── Enrich All Posts with Capabilities ──────────────────────────
 async function enrichAllPosts() {
     const btn = document.getElementById('btn-enrich-all');
-    if (!confirm('This will rewrite all published posts with ICDEV capability references via Claude Sonnet. Continue?')) return;
+    if (!confirm('This will rewrite all published posts with ICDEV™ capability references via Claude Sonnet. Continue?')) return;
     btn.disabled = true;
     btn.textContent = 'Enriching...';
     try {

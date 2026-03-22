@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Federation Sync — Synchronize tenant-local and central catalogs.
 
 Handles the federated model where each tenant manages their own catalog
@@ -293,7 +293,7 @@ def get_sync_status(db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Federation Sync")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Federation Sync")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

@@ -2,8 +2,8 @@
 
 # /icdev-agentic — Generate Agentic Application
 
-Generate a mini-ICDEV clone application with full GOTCHA framework, ATLAS workflow,
-own agents, memory system, and CI/CD. The child app has everything ICDEV has except
+Generate a mini-ICDEV™ clone application with full GOTCHA framework, ATLAS workflow,
+own agents, memory system, and CI/CD. The child app has everything ICDEV™ has except
 the ability to generate new applications.
 
 ## Workflow

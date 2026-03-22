@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 """Collaboration patterns for multi-agent orchestration.
 
-Implements five structured collaboration patterns used by the ICDEV
+Implements five structured collaboration patterns used by the ICDEV™
 multi-agent system: reviewer, debate, consensus, veto, and escalation.
 Each pattern orchestrates agent interactions using BedrockClient and logs
 collaboration events to agent_collaboration_history and the audit trail.
@@ -775,7 +775,7 @@ def escalation_pattern(task_context: dict, escalation_reason: str,
 def main():
     """CLI for testing collaboration patterns."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Collaboration Patterns — multi-agent interaction orchestration"
+        description="ICDEV™ Collaboration Patterns — multi-agent interaction orchestration"
     )
     sub = parser.add_subparsers(dest="pattern", help="Collaboration pattern to execute")
 

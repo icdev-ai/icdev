@@ -6,7 +6,7 @@
 
 ## Summary
 
-Closed the integration seams between ICDEV's three AI/ML subsystems so they feed each other automatically: RAG content flows to fine-tuning, knowledge graph structures generate training pairs, and evaluation metrics trigger retraining.
+Closed the integration seams between ICDEV™'s three AI/ML subsystems so they feed each other automatically: RAG content flows to fine-tuning, knowledge graph structures generate training pairs, and evaluation metrics trigger retraining.
 
 ## What Was Built
 

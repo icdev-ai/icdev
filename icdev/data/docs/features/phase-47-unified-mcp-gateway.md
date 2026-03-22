@@ -4,7 +4,7 @@ CUI // SP-CTI
 
 ## Overview
 
-ICDEV previously operated 18 separate MCP servers, each spawning as its own stdio child process. This meant that AI coding tools had to manage 18 simultaneous subprocesses, and 55 CLI tools (43% of the total) had no MCP exposure at all — making them invisible to 9 of the 10 supported AI coding tools.
+ICDEV™ previously operated 18 separate MCP servers, each spawning as its own stdio child process. This meant that AI coding tools had to manage 18 simultaneous subprocesses, and 55 CLI tools (43% of the total) had no MCP exposure at all — making them invisible to 9 of the 10 supported AI coding tools.
 
 The Unified MCP Gateway consolidates all 225 tools and 6 resources into a **single MCP server process** with lazy module loading. Startup is fast (no handler imports until first call), and the existing 18 individual servers remain independently runnable for backward compatibility.
 

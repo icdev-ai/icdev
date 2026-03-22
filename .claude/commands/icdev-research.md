@@ -3,7 +3,7 @@
 
 [TEMPLATE: CUI // SP-CTI]
 
-Run the ICDEV Industry Research Engine to perform deep, structured research into a target industry vertical. Produces a scored, ranked dossier of industry challenges, regulatory landscape, community pain points, competitive analysis, and build-vs-buy recommendations — feeding directly into the agentic child app generation pipeline.
+Run the ICDEV™ Industry Research Engine to perform deep, structured research into a target industry vertical. Produces a scored, ranked dossier of industry challenges, regulatory landscape, community pain points, competitive analysis, and build-vs-buy recommendations — feeding directly into the agentic child app generation pipeline.
 
 This is a session-based process. Sessions persist across runs and can be resumed at any stage.
 
@@ -17,7 +17,7 @@ STAGE: Run a specific pipeline stage. Options: `scope`, `landscape`, `regulate`,
 
 ### Step 1: Verify Database
 
-1. **Check ICDEV database is initialized** and research tables exist:
+1. **Check ICDEV™ database is initialized** and research tables exist:
 
    ```bash
    python tools/research/research_manager.py --status --json
@@ -84,7 +84,7 @@ STAGE: Run a specific pipeline stage. Options: `scope`, `landscape`, `regulate`,
    ```bash
    python tools/research/regulatory_scanner.py --session-id $SESSION_ID --json
    ```
-   Review: primary regulations, ICDEV crosswalk coverage, enforcement actions, upcoming changes, compliance gaps.
+   Review: primary regulations, ICDEV™ crosswalk coverage, enforcement actions, upcoming changes, compliance gaps.
 
    **Stage 4 — COMMUNITY** (forums + review sites + pain points):
    ```bash
@@ -96,13 +96,13 @@ STAGE: Run a specific pipeline stage. Options: `scope`, `landscape`, `regulate`,
    ```bash
    python tools/research/academic_scanner.py --session-id $SESSION_ID --json
    ```
-   Review: relevant papers (Semantic Scholar, arXiv), patent filings (USPTO), emerging tech trends, ICDEV applicability. If air-gapped, skip and note.
+   Review: relevant papers (Semantic Scholar, arXiv), patent filings (USPTO), emerging tech trends, ICDEV™ applicability. If air-gapped, skip and note.
 
    **Stage 6 — BUILD_BUY** (open-source + SaaS + gap analysis):
    ```bash
    python tools/research/build_buy_analyzer.py --session-id $SESSION_ID --json
    ```
-   Review: per-challenge build-vs-buy matrix (compliance_control 0.30, integration_effort 0.25, cost 0.20, time_to_market 0.15, competitive_advantage 0.10), license checks, ICDEV capability gaps.
+   Review: per-challenge build-vs-buy matrix (compliance_control 0.30, integration_effort 0.25, cost 0.20, time_to_market 0.15, competitive_advantage 0.10), license checks, ICDEV™ capability gaps.
 
    **Stage 7 — SYNTHESIZE** (challenge scoring + ranking):
    ```bash
@@ -114,7 +114,7 @@ STAGE: Run a specific pipeline stage. Options: `scope`, `landscape`, `regulate`,
    ```bash
    python tools/research/dossier_generator.py --session-id $SESSION_ID --json
    ```
-   Review: 11-section dossier (executive summary, market landscape, regulatory environment, community pain points, academic landscape, build-vs-buy analysis, challenge ranking, ICDEV capability map, recommended child app scope, risk assessment, appendix).
+   Review: 11-section dossier (executive summary, market landscape, regulatory environment, community pain points, academic landscape, build-vs-buy analysis, challenge ranking, ICDEV™ capability map, recommended child app scope, risk assessment, appendix).
 
 ### Step 5: Review Dossier
 
@@ -130,13 +130,13 @@ STAGE: Run a specific pipeline stage. Options: `scope`, `landscape`, `regulate`,
 
    b. **Top Challenges** — List top 10 challenges by composite score with: title, source streams, 6-dimension breakdown, build-vs-buy recommendation.
 
-   c. **Regulatory Landscape** — Key regulations, ICDEV coverage percentage, gaps requiring new framework catalogs.
+   c. **Regulatory Landscape** — Key regulations, ICDEV™ coverage percentage, gaps requiring new framework catalogs.
 
    d. **Community Voice** — Most frequent pain points, representative quotes/descriptions, severity distribution.
 
-   e. **Competitive Position** — How ICDEV compares to existing solutions, differentiation opportunities.
+   e. **Competitive Position** — How ICDEV™ compares to existing solutions, differentiation opportunities.
 
-   f. **Build-vs-Buy Summary** — Challenges where ICDEV should build (compliance control + competitive advantage) vs. integrate (commodity features).
+   f. **Build-vs-Buy Summary** — Challenges where ICDEV™ should build (compliance control + competitive advantage) vs. integrate (commodity features).
 
    g. **Recommended Child App Scope** — Suggested feature set, compliance frameworks, agent configuration, estimated effort.
 
@@ -205,7 +205,7 @@ python tools/research/research_manager.py --archive --session-id $SESSION_ID --j
 
 ## Notes
 
-- **Air-gapped mode:** Stages 2-5 (landscape, regulate, community, academic) require network for full coverage. If unavailable, skip web sources gracefully and note reduced coverage in dossier. Build-vs-buy (stage 6) can still analyze ICDEV internal capabilities.
+- **Air-gapped mode:** Stages 2-5 (landscape, regulate, community, academic) require network for full coverage. If unavailable, skip web sources gracefully and note reduced coverage in dossier. Build-vs-buy (stage 6) can still analyze ICDEV™ internal capabilities.
 - **First run:** If no previous research sessions exist, the pipeline will create a fresh session. All 8 stages run sequentially.
 - **Resumability:** Sessions persist across runs. Re-running a stage overwrites that stage's output without corrupting other stages (D-RES-4). Use `--stage` to run individual stages.
 - **Database:** All findings stored in `research_*` tables (append-only except `research_sessions.state`). State transitions audited in `research_session_log`.

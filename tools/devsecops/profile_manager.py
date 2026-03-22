@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """DevSecOps Profile Manager — per-project DevSecOps maturity profiling.
 
-Creates, reads, updates, and assesses DevSecOps profiles for ICDEV projects.
+Creates, reads, updates, and assesses DevSecOps profiles for ICDEV™ projects.
 Profiles control which pipeline security stages are active and track maturity level.
 
 ADR D119: DevSecOps profile is a per-project config declaring active pipeline

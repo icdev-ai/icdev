@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Every new ICDEV phase adds DB tables, dashboard routes, hooks, and commands. Without explicit governance, the `.claude` directory drifts from the codebase — leaving append-only tables unprotected, routes undocumented, and hooks broken. This goal defines the mandatory checklist that must be completed before any phase is declared done.
+Every new ICDEV™ phase adds DB tables, dashboard routes, hooks, and commands. Without explicit governance, the `.claude` directory drifts from the codebase — leaving append-only tables unprotected, routes undocumented, and hooks broken. This goal defines the mandatory checklist that must be completed before any phase is declared done.
 
 ---
 

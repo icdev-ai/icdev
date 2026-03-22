@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 12 (Build App / ATLAS Workflow), Phase 11 (Compliance Workflow) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Organizations need multiple independent agentic systems -- one per program, per 
 
 Without automated generation, teams either copy-paste from existing systems (creating drift and inconsistency) or build from scratch (wasting weeks of effort and introducing configuration errors). The result is a proliferation of inconsistent agentic systems that cannot be audited, updated, or governed centrally.
 
-ICDEV needs the ability to generate mini-ICDEV clone child applications that inherit the full GOTCHA framework, ATLAS workflow, own agents, memory system, and CI/CD -- everything except the ability to generate further children (grandchild prevention). These child applications must be fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads, produced in minutes rather than weeks.
+ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications that inherit the full GOTCHA framework, ATLAS workflow, own agents, memory system, and CI/CD -- everything except the ability to generate further children (grandchild prevention). These child applications must be fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads, produced in minutes rather than weeks.
 
 ---
 
@@ -98,7 +98,7 @@ The blueprint SHALL include cloud provider MCP server selections based on target
 ### 4.3 Child Application Generation
 
 #### REQ-19-005: GOTCHA Framework
-The child application SHALL include the complete GOTCHA directory structure: goals/, tools/, args/, context/, hardprompts/ with content adapted from ICDEV.
+The child application SHALL include the complete GOTCHA directory structure: goals/, tools/, args/, context/, hardprompts/ with content adapted from ICDEV™.
 
 #### REQ-19-006: Agent Roster
 The child application SHALL include 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) with configurable port offsets (default +1000). Up to 2 additional ATO agents (Compliance, Security) SHALL be included when compliance is required.
@@ -141,7 +141,7 @@ The system SHALL record all generation events in the append-only audit trail and
 | `tools/builder/app_blueprint.py` | Blueprint generation from scorecard + user decisions |
 | `tools/builder/child_app_generator.py` | 12-step child application generation |
 | `tools/builder/claude_md_generator.py` | Dynamic CLAUDE.md via Jinja2 template rendering |
-| `tools/builder/goal_adapter.py` | Copy and adapt goals from ICDEV for child app context |
+| `tools/builder/goal_adapter.py` | Copy and adapt goals from ICDEV™ for child app context |
 | `tools/builder/db_init_generator.py` | Generate standalone DB init scripts with core + capability tables |
 | `tools/builder/scaffolder.py` | Base language scaffold with `--agentic` flag for full generation |
 
@@ -152,14 +152,14 @@ The system SHALL record all generation events in the append-only audit trail and
 | ID | Decision | Rationale |
 |----|----------|-----------|
 | D44 | Flag-based (`--agentic`) for backward compatibility | Omitting flag produces identical output; existing scaffolding unchanged |
-| D45 | Copy-and-adapt over template library | ICDEV tools are the source of truth; no template drift |
+| D45 | Copy-and-adapt over template library | ICDEV™ tools are the source of truth; no template drift |
 | D46 | Weighted rule-based fitness + optional LLM override | Deterministic scoring with human escape hatch |
 | D47 | Blueprint-driven generation | Single JSON config drives all generators; no hardcoded decisions |
-| D48 | ICDEV callback uses A2A protocol for child-to-parent communication | Standard protocol for all agent communication |
+| D48 | ICDEV™ callback uses A2A protocol for child-to-parent communication | Standard protocol for all agent communication |
 | D50 | Dynamic CLAUDE.md via Jinja2 | Documents only what is present; no stale references |
 | D51 | Minimal DB + migration | Core tables first, expand as capabilities activate |
 | D52 | 3-layer grandchild prevention (config + scaffolder + CLAUDE.md) | Prevents uncontrolled proliferation of agentic systems |
-| D53 | Port offset for child agents (default +1000) | Avoids port conflicts when ICDEV and child run on same host |
+| D53 | Port offset for child agents (default +1000) | Avoids port conflicts when ICDEV™ and child run on same host |
 
 ---
 
@@ -172,7 +172,7 @@ The system SHALL record all generation events in the append-only audit trail and
 - Grandchild prevention verified: config flag set, generation tools excluded, CLAUDE.md contains prevention statement
 - CUI markings present on all generated files
 - Child database initializes successfully
-- No hardcoded ICDEV paths or ports in generated files
+- No hardcoded ICDEV™ paths or ports in generated files
 
 ---
 

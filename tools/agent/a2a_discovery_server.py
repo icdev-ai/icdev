@@ -3,7 +3,7 @@
 """A2A v0.3 Agent Discovery Server.
 
 Provides a centralized agent discovery endpoint that returns v0.3 Agent Cards
-for all registered ICDEV agents. Supports capability-based filtering and
+for all registered ICDEV™ agents. Supports capability-based filtering and
 health-aware routing.
 
 Architecture Decisions:

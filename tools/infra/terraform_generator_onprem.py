@@ -159,7 +159,7 @@ resource "kubernetes_network_policy" "default_deny" {
   }
 }
 
-# PostgreSQL database for ICDEV
+# PostgreSQL database for ICDEV™
 resource "postgresql_database" "icdev" {
   name  = "$${var.project_name}_$${var.environment}"
   owner = var.db_admin_user

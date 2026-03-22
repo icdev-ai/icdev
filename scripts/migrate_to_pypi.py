@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Migrate ICDEV to PyPI-ready package structure.
+"""Migrate ICDEV™ to PyPI-ready package structure.
 
 Moves tools/ subdirectories into icdev/tools/, copies data directories
 into icdev/data/, and updates import statements across all Python files.
@@ -79,7 +79,7 @@ def move_tools(dry_run: bool) -> list[str]:
         # Create a minimal __init__.py
         actions.append(f"CREATE {init_dst}")
         if not dry_run:
-            init_dst.write_text('"""ICDEV Tools -- the T in GOTCHA."""\n')
+            init_dst.write_text('"""ICDEV™ Tools -- the T in GOTCHA."""\n')
 
     for item in sorted(src_tools.iterdir()):
         if item.name.startswith("__"):
@@ -115,7 +115,7 @@ def copy_data_dirs(dry_run: bool) -> list[str]:
     data_init = dst_data / "__init__.py"
     actions.append(f"CREATE {data_init}")
     if not dry_run:
-        data_init.write_text('"""ICDEV data -- GOTCHA layers (Goals, Context, Hardprompts, Args)."""\n')
+        data_init.write_text('"""ICDEV™ data -- GOTCHA layers (Goals, Context, Hardprompts, Args)."""\n')
 
     for dirname in DATA_DIRS:
         src = PROJECT_ROOT / dirname
@@ -283,7 +283,7 @@ def create_tools_shim(dry_run: bool) -> list[str]:
     shim_content = '''\
 """Backward-compatibility shim: tools.* -> icdev.tools.*
 
-The ICDEV tools package has moved to icdev.tools. This shim provides
+The ICDEV™ tools package has moved to icdev.tools. This shim provides
 backward compatibility for existing scripts and child applications.
 
 Update your imports:
@@ -344,7 +344,7 @@ def verify_syntax(dry_run: bool) -> list[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Migrate ICDEV to PyPI structure")
+    parser = argparse.ArgumentParser(description="Migrate ICDEV™ to PyPI structure")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--dry-run", action="store_true", help="Preview changes")
     group.add_argument("--execute", action="store_true", help="Execute migration")
@@ -353,7 +353,7 @@ def main():
     dry_run = args.dry_run
     mode = "DRY RUN" if dry_run else "EXECUTING"
     print(f"\n{'='*60}")
-    print(f"  ICDEV PyPI Migration — {mode}")
+    print(f"  ICDEV™ PyPI Migration — {mode}")
     print(f"{'='*60}\n")
 
     all_actions = []

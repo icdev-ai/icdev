@@ -3,13 +3,13 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Regulatory Mapper — map regulations discovered during research to ICDEV crosswalk frameworks.
+# POC: ICDEV™ System Administrator
+"""Regulatory Mapper — map regulations discovered during research to ICDEV™ crosswalk frameworks.
 
-Maps regulatory signals from the research_signals table to ICDEV compliance
+Maps regulatory signals from the research_signals table to ICDEV™ compliance
 frameworks via the regulatory_registry.json registry. Produces crosswalk
 coverage scores, enforcement action counts, and deadline detection for each
-regulation-to-ICDEV mapping.
+regulation-to-ICDEV™ mapping.
 
 Architecture:
     D-RES-6:  Regulatory-to-crosswalk mapping via registry + keyword matching
@@ -71,7 +71,7 @@ except ImportError:
         return -1
 
 # =========================================================================
-# ICDEV FRAMEWORK DEFINITIONS
+# ICDEV™ FRAMEWORK DEFINITIONS
 # =========================================================================
 ICDEV_FRAMEWORKS = [
     "nist_800_53", "fedramp_moderate", "fedramp_high", "cmmc",
@@ -168,7 +168,7 @@ def load_registry():
 
 
 def _get_icdev_frameworks():
-    """Return list of ICDEV compliance frameworks that exist.
+    """Return list of ICDEV™ compliance frameworks that exist.
 
     Returns:
         List of framework identifier strings.
@@ -267,7 +267,7 @@ def _detect_deadline(text):
 
 
 def _compute_crosswalk_coverage(nist_controls, icdev_frameworks):
-    """Compute crosswalk coverage between NIST controls and ICDEV frameworks.
+    """Compute crosswalk coverage between NIST controls and ICDEV™ frameworks.
 
     Coverage is computed as:
     - full_match (1.0): framework exists in ICDEV_FRAMEWORKS
@@ -276,7 +276,7 @@ def _compute_crosswalk_coverage(nist_controls, icdev_frameworks):
 
     Args:
         nist_controls: List of NIST control IDs (e.g. ["AC-2", "AU-2"]).
-        icdev_frameworks: List of matched ICDEV framework names.
+        icdev_frameworks: List of matched ICDEV™ framework names.
 
     Returns:
         Float coverage score in [0.0, 1.0].
@@ -302,7 +302,7 @@ def _compute_crosswalk_coverage(nist_controls, icdev_frameworks):
 
 
 def _determine_icdev_frameworks(nist_controls):
-    """Determine which ICDEV frameworks are relevant based on NIST control mappings.
+    """Determine which ICDEV™ frameworks are relevant based on NIST control mappings.
 
     Uses control family prefix matching to determine framework relevance.
 
@@ -310,7 +310,7 @@ def _determine_icdev_frameworks(nist_controls):
         nist_controls: List of NIST control IDs.
 
     Returns:
-        List of matching ICDEV framework identifiers.
+        List of matching ICDEV™ framework identifiers.
     """
     if not nist_controls:
         return []
@@ -379,11 +379,11 @@ def _determine_icdev_frameworks(nist_controls):
 # CORE FUNCTIONS
 # =========================================================================
 def map_regulatory_signals(session_id, db_path=None):
-    """Map regulatory signals for a session to ICDEV crosswalk frameworks.
+    """Map regulatory signals for a session to ICDEV™ crosswalk frameworks.
 
     Loads the regulatory registry, finds all signals with source='regulatory_body'
     for the given session, matches each to a registry body via keyword matching,
-    extracts NIST control mappings, determines ICDEV framework coverage,
+    extracts NIST control mappings, determines ICDEV™ framework coverage,
     counts enforcement actions, detects deadlines, and INSERTs results into
     research_regulatory_map (append-only).
 
@@ -455,7 +455,7 @@ def map_regulatory_signals(session_id, db_path=None):
             # Extract NIST control mappings from registry
             nist_controls = best_body_def.get("nist_control_mapping", [])
 
-            # Determine ICDEV framework coverage
+            # Determine ICDEV™ framework coverage
             icdev_frameworks = _determine_icdev_frameworks(nist_controls)
 
             # Compute crosswalk coverage
@@ -909,7 +909,7 @@ def _print_human(args, result):
                     print(f"       NIST: {', '.join(nist[:8])}")
                 frameworks = reg.get("icdev_frameworks", [])
                 if frameworks:
-                    print(f"       ICDEV: {', '.join(frameworks[:6])}")
+                    print(f"       ICDEV™: {', '.join(frameworks[:6])}")
                 print()
         else:
             print("\n  No regulations linked to this challenge.")
@@ -923,7 +923,7 @@ def _print_human(args, result):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Engine Regulatory Mapper -- CUI // SP-CTI",
+        description="ICDEV™ Research Engine Regulatory Mapper -- CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -942,7 +942,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--map", action="store_true",
-        help="Map regulatory signals to ICDEV crosswalk frameworks",
+        help="Map regulatory signals to ICDEV™ crosswalk frameworks",
     )
     group.add_argument(
         "--landscape", action="store_true",

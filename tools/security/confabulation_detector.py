@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Confabulation Detector — NIST AI 600-1 GAI.1 risk mitigation.
 
 Deterministic confabulation (hallucination) detection for GenAI outputs.

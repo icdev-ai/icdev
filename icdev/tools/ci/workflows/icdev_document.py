@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Document — Documentation generation workflow
+# ICDEV™ Document — Documentation generation workflow
 # Adapted from ADW adw_document.py with dual platform support
 
 """
-ICDEV Document — Generate documentation for implemented features.
+ICDEV™ Document — Generate documentation for implemented features.
 
 Usage:
     python tools/ci/workflows/icdev_document.py <issue-number> <run-id>
@@ -69,7 +69,7 @@ def main():
 
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_document")
-    logger.info(f"ICDEV Document starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Document starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()

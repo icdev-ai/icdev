@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""User Binder — Identity binding between messaging channel users and ICDEV users.
+"""User Binder — Identity binding between messaging channel users and ICDEV™ users.
 
 Implements the binding ceremony:
   Connected: User sends /bind in channel -> challenge code -> user verifies in dashboard/API key
@@ -91,11 +91,11 @@ def verify_challenge(code: str, icdev_user_id: str,
     """Verify a challenge code and create the binding.
 
     Called from dashboard or API when user enters the challenge code
-    along with their ICDEV identity.
+    along with their ICDEV™ identity.
 
     Args:
         code: Challenge code from create_challenge()
-        icdev_user_id: ICDEV user ID to bind to
+        icdev_user_id: ICDEV™ user ID to bind to
         tenant_id: SaaS tenant ID
         db_path: Optional database path
 
@@ -173,7 +173,7 @@ def verify_challenge(code: str, icdev_user_id: str,
             audit_log_event(
                 event_type="remote_binding_created",
                 actor=icdev_user_id,
-                action=f"Bound {channel}:{channel_user_id} to ICDEV user {icdev_user_id}",
+                action=f"Bound {channel}:{channel_user_id} to ICDEV™ user {icdev_user_id}",
             )
         except Exception:
             pass
@@ -254,7 +254,7 @@ def provision_binding(channel: str, channel_user_id: str,
 
 def resolve_binding(channel: str, channel_user_id: str,
                     db_path: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Resolve a channel user to their ICDEV binding.
+    """Resolve a channel user to their ICDEV™ binding.
 
     Returns:
         Binding dict if active, None otherwise.
@@ -356,7 +356,7 @@ def main():
     import argparse
     import json
 
-    parser = argparse.ArgumentParser(description="ICDEV Remote User Binding Manager")
+    parser = argparse.ArgumentParser(description="ICDEV™ Remote User Binding Manager")
     parser.add_argument("--provision", action="store_true",
                         help="Pre-provision a binding (air-gapped)")
     parser.add_argument("--revoke", type=str, help="Revoke binding by ID")

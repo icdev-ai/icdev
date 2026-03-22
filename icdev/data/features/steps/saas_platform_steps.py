@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV SaaS Multi-Tenancy Platform BDD scenarios.
+"""Step definitions for ICDEV™ SaaS Multi-Tenancy Platform BDD scenarios.
 
 Covers: platform DB init, tenant CRUD, provisioning, API key auth,
 rate limiting by tier, and IL5 ISSO approval workflow.

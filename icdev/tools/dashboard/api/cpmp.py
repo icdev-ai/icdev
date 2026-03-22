@@ -12,7 +12,7 @@ Integration points:
     cpars_predictor.py       → Deterministic weighted CPARS scoring
     subcontractor_tracker.py → FAR 52.219-9, ISR/SSR
     negative_event_tracker.py → NDAA event-based tracking
-    cdrl_generator.py        → CDRL auto-generation via ICDEV tools
+    cdrl_generator.py        → CDRL auto-generation via ICDEV™ tools
     sam_contract_sync.py     → SAM.gov Contract Awards API
 """
 

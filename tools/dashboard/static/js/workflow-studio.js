@@ -1,5 +1,5 @@
 /**
- * ICDEV Studio — Workflow Studio (DAG Editor)
+ * ICDEV™ Studio — Workflow Studio (DAG Editor)
  * Vanilla JS + SVG canvas for drag-and-drop workflow design.
  */
 

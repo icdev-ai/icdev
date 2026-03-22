@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Cross-Phase Workflow Composer.
 
-Declarative workflow engine that composes ICDEV tools into reusable DAG-based
+Declarative workflow engine that composes ICDEV™ tools into reusable DAG-based
 workflows. Templates define tool sequences with dependencies; the engine
 resolves execution order via topological sort and runs tools via subprocess.
 

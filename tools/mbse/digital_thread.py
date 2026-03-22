@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""ICDEV Digital Thread Engine — end-to-end traceability across the MBSE lifecycle.
+"""ICDEV™ Digital Thread Engine — end-to-end traceability across the MBSE lifecycle.
 
 Manages N:M links between: DOORS requirements -> SysML elements -> code modules
 -> test files -> NIST controls -> STIG rules -> compliance artifacts.
@@ -1385,7 +1385,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Digital Thread Engine -- end-to-end traceability"
+        description="ICDEV™ Digital Thread Engine -- end-to-end traceability"
     )
     parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument("--json", action="store_true", help="Output as JSON")

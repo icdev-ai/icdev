@@ -4,7 +4,7 @@
 
 ## Goal
 
-Integrate MBSE into the ICDEV SDLC using the M-ATLAS workflow variant (Model → Architect → Trace → Link → Assemble → Stress-test). Provides end-to-end digital thread from DOORS requirements through SysML models to generated code, tests, and NIST controls. Supports DoDI 5000.87 Digital Engineering Strategy (DES) compliance and SAFe Program Increment (PI) model snapshots.
+Integrate MBSE into the ICDEV™ SDLC using the M-ATLAS workflow variant (Model → Architect → Trace → Link → Assemble → Stress-test). Provides end-to-end digital thread from DOORS requirements through SysML models to generated code, tests, and NIST controls. Supports DoDI 5000.87 Digital Engineering Strategy (DES) compliance and SAFe Program Increment (PI) model snapshots.
 
 **Why this matters:** DoDI 5000.87 mandates digital engineering for all DoD acquisition programs. Without model-code traceability, programs fail audits and cannot demonstrate that delivered code implements the authoritative design. The digital thread closes the loop from requirement to deployment.
 
@@ -15,7 +15,7 @@ Integrate MBSE into the ICDEV SDLC using the M-ATLAS workflow variant (Model →
 - [ ] Project initialized with `mbse_enabled=1` (via `/icdev-init --mbse`)
 - [ ] SysML model exported as XMI 2.5.1 from Cameo Systems Modeler (v19.0+)
 - [ ] Requirements exported as ReqIF 1.2 from IBM DOORS NG
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] `memory/MEMORY.md` loaded (session context)
 - [ ] NIST 800-53 control catalog available (`context/compliance/nist_800_53.json`)
 
@@ -38,7 +38,7 @@ Extension of ATLAS adding a Model pre-phase. If no model exists, falls back to s
 
 ## Step 1: Import SysML Model (XMI)
 
-**Purpose:** Ingest Cameo SysML v1.6 model into ICDEV database for downstream traceability and code generation.
+**Purpose:** Ingest Cameo SysML v1.6 model into ICDEV™ database for downstream traceability and code generation.
 
 **Tool:** `tools/mbse/xmi_parser.py`
 
@@ -87,7 +87,7 @@ XMI import complete: /path/to/model.xmi
 
 ## Step 2: Import Requirements (ReqIF)
 
-**Purpose:** Ingest DOORS NG requirements into ICDEV database for bidirectional traceability.
+**Purpose:** Ingest DOORS NG requirements into ICDEV™ database for bidirectional traceability.
 
 **Tool:** `tools/mbse/reqif_parser.py`
 
@@ -478,7 +478,7 @@ python tools/mbse/report_generator.py --project-id PROJECT_ID --type pi-delta \
 
 ## Security Gates
 
-MBSE artifacts are subject to the same security gates as all ICDEV outputs:
+MBSE artifacts are subject to the same security gates as all ICDEV™ outputs:
 
 - **Model Import Gate:** XMI/ReqIF files must pass schema validation before import
 - **Code Generation Gate:** Generated code inherits all TDD requirements — must have tests before merge

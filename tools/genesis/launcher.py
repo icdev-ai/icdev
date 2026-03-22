@@ -1,4 +1,4 @@
-"""ICDEV Services Launcher — starts Dashboard + Genesis Daemon.
+"""ICDEV™ Services Launcher — starts Dashboard + Genesis Daemon.
 
 Spawned by Task Scheduler via start_daemon.bat.
 Dashboard runs as a subprocess; daemon runs in the main process.
@@ -128,7 +128,7 @@ def _start_proposal_genesis():
 
 def main():
     _log("=" * 60)
-    _log("ICDEV Services Launcher starting")
+    _log("ICDEV™ Services Launcher starting")
     _log(f"  Root: {ROOT}")
     _log(f"  Python: {sys.executable}")
 
@@ -185,7 +185,7 @@ def main():
         dash_log_f.close()
         daemon_log_f.close()
         pg_log_f.close()
-        _log("ICDEV Services stopped")
+        _log("ICDEV™ Services stopped")
 
 
 if __name__ == "__main__":

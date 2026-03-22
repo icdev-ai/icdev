@@ -4,7 +4,7 @@
 
 Reads documents (text, markdown) or DB table rows, extracts entities and
 relationships via text_network, merges and deduplicates across chunks,
-and stores the resulting graph in the ICDEV knowledge graph tables.
+and stores the resulting graph in the ICDEV™ knowledge graph tables.
 
 Usage:
     python tools/knowledge_graph/ingester.py --file /path/to/doc --project-id "sparkpilot" --json
@@ -431,7 +431,7 @@ def ingest_from_table(
     content_column: str = "content",
     limit: int = 100,
 ) -> Dict[str, Any]:
-    """Read rows from an ICDEV DB table and extract entities from content."""
+    """Read rows from an ICDEV™ DB table and extract entities from content."""
     conn = _get_db()
     try:
         _ensure_tables(conn)
@@ -547,7 +547,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--source-table", type=str, default=None,
-        help="Name of ICDEV DB table to ingest from",
+        help="Name of ICDEV™ DB table to ingest from",
     )
     parser.add_argument(
         "--content-column", type=str, default="content",

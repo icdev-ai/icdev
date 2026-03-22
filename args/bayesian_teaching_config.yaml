@@ -2,7 +2,7 @@
 # Bayesian Teaching Configuration (D-BT-1)
 #
 # Adapts Bayesian Teaching (Shafto/Goodman/Griffiths 2014, Zhu 2015, Qiu 2025)
-# and DeepFlow SmartEncoding (ACM SIGCOMM 2023) for ICDEV intelligence layer.
+# and DeepFlow SmartEncoding (ACM SIGCOMM 2023) for ICDEV™ intelligence layer.
 #
 # References:
 #   - Shafto, Goodman & Griffiths 2014 — Cognitive Psychology 71:55-89
@@ -59,7 +59,7 @@ smart_encoding:
     - status_code
     - name
     - classification
-  # Estimated compression: 3-10x for typical ICDEV observability data
+  # Estimated compression: 3-10x for typical ICDEV™ observability data
   target_compression_ratio: 5.0
 
 # RAG reranker teaching-dimension boost (D-BT-6)

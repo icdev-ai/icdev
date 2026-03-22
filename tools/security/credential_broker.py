@@ -410,7 +410,7 @@ def main():
     parser.add_argument("--status", action="store_true", help="Show broker status")
     parser.add_argument("--gate", action="store_true", help="Evaluate credential isolation gate")
     parser.add_argument("--agent-id", type=str, default="", help="Agent identifier")
-    parser.add_argument("--function", type=str, default="", help="ICDEV function name")
+    parser.add_argument("--function", type=str, default="", help="ICDEV™ function name")
     parser.add_argument("--project-id", type=str, default="", help="Project identifier")
     parser.add_argument("--ttl", type=int, help="Token TTL in seconds")
     parser.add_argument("--reason", type=str, default="manual", help="Revocation reason")

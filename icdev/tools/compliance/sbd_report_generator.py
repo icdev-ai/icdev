@@ -126,7 +126,7 @@ def _builtin_template():
         "## 9. NIST 800-53 Control Mapping\n\n"
         "{{nist_control_mapping}}\n\n"
         "## 10. Assessment Methodology\n\n"
-        "This assessment was conducted using the ICDEV SbD Assessor tool against the "
+        "This assessment was conducted using the ICDEV™ SbD Assessor tool against the "
         "CISA Secure by Design requirements catalog (35 requirements across 14 domains). "
         "Automated checks were performed where possible; requirements marked as \"semi\" "
         "or \"manual\" are flagged for human review.\n\n"

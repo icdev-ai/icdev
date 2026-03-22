@@ -1,4 +1,4 @@
-"""ICDEV Studio — Citizen Automation Builder.
+"""ICDEV™ Studio — Citizen Automation Builder.
 
 Visual trigger/condition/action rule engine for non-technical users.
 Event-sourced execution with full replay for compliance audit (D365).
@@ -96,7 +96,7 @@ ACTION_TYPES: list[dict[str, Any]] = [
      "icon": "N", "color": "#3b82f6", "category": "notify",
      "params": ["channel", "recipient", "message_template"]},
     {"id": "run_tool", "label": "Run Tool",
-     "description": "Execute an ICDEV tool",
+     "description": "Execute an ICDEV™ tool",
      "icon": "R", "color": "#22c55e", "category": "execute",
      "params": ["tool_path", "args"]},
     {"id": "run_workflow", "label": "Run Workflow",
@@ -419,7 +419,7 @@ def _evaluate_condition(actual: Any, operator: str, expected: str) -> bool:
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Studio Automation Builder")
+    parser = argparse.ArgumentParser(description="ICDEV™ Studio Automation Builder")
     parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

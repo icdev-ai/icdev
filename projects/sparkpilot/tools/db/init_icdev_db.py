@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Initialize the ICDEV operational database with full schema."""
+"""Initialize the ICDEV™ operational database with full schema."""
 
 import sqlite3
 import argparse
@@ -2829,7 +2829,7 @@ CREATE INDEX IF NOT EXISTS idx_turns_session ON ci_conversation_turns(session_id
 -- REMOTE COMMAND GATEWAY (Phase 28)
 -- ============================================================
 
--- Bound identities: channel user <-> ICDEV user
+-- Bound identities: channel user <-> ICDEV™ user
 CREATE TABLE IF NOT EXISTS remote_user_bindings (
     id TEXT PRIMARY KEY,
     channel TEXT NOT NULL,
@@ -4127,7 +4127,7 @@ CREATE TABLE IF NOT EXISTS model_cards (
 CREATE INDEX IF NOT EXISTS idx_model_cards_project ON model_cards(project_id);
 CREATE INDEX IF NOT EXISTS idx_model_cards_model ON model_cards(model_name);
 
--- ── System Cards (ICDEV system-level AI documentation) ──
+-- ── System Cards (ICDEV™ system-level AI documentation) ──
 CREATE TABLE IF NOT EXISTS system_cards (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     project_id TEXT NOT NULL,
@@ -4642,7 +4642,7 @@ CREATE INDEX IF NOT EXISTS idx_rchal_score ON research_challenges(composite_scor
 CREATE INDEX IF NOT EXISTS idx_rchal_category ON research_challenges(category);
 CREATE INDEX IF NOT EXISTS idx_rchal_fingerprint ON research_challenges(keyword_fingerprint);
 
--- Research regulatory map — regulation-to-ICDEV crosswalk mappings (append-only, D6/D-RES-5)
+-- Research regulatory map — regulation-to-ICDEV™ crosswalk mappings (append-only, D6/D-RES-5)
 CREATE TABLE IF NOT EXISTS research_regulatory_map (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES research_sessions(id),
@@ -4745,7 +4745,7 @@ CREATE INDEX IF NOT EXISTS idx_rtrend_status ON research_trends(status);
 CREATE INDEX IF NOT EXISTS idx_rtrend_velocity ON research_trends(velocity);
 CREATE INDEX IF NOT EXISTS idx_rtrend_fingerprint ON research_trends(keyword_fingerprint);
 
--- Research capability map — challenge-to-ICDEV capability mappings (append-only, D6/D-RES-5)
+-- Research capability map — challenge-to-ICDEV™ capability mappings (append-only, D6/D-RES-5)
 CREATE TABLE IF NOT EXISTS research_capability_map (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES research_sessions(id),
@@ -5093,7 +5093,7 @@ CREATE INDEX IF NOT EXISTS idx_rfp_pattern_coverage ON rfp_requirement_patterns(
 CREATE INDEX IF NOT EXISTS idx_rfp_pattern_fingerprint ON rfp_requirement_patterns(keyword_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_rfp_pattern_status ON rfp_requirement_patterns(status);
 
--- ICDEV capability-to-requirement bridge (append-only, D6/D363)
+-- ICDEV™ capability-to-requirement bridge (append-only, D6/D363)
 CREATE TABLE IF NOT EXISTS icdev_capability_map (
     id TEXT PRIMARY KEY,
     pattern_id TEXT NOT NULL REFERENCES rfp_requirement_patterns(id),
@@ -5200,7 +5200,7 @@ CREATE INDEX IF NOT EXISTS idx_award_hash ON govcon_awards(content_hash);
 CREATE INDEX IF NOT EXISTS idx_award_sam ON govcon_awards(sam_opportunity_id);
 
 -- ── Customer Delivery Tracking (D374) ────────────────────────────────
--- Tracks which ICDEV components a winning customer receives on-prem.
+-- Tracks which ICDEV™ components a winning customer receives on-prem.
 -- Append-only: once a delivery is created, it cannot be modified.
 -- delivery_tier maps to deployment_profiles.yaml customer_* profiles.
 
@@ -6350,7 +6350,7 @@ def _has_migration_system(path):
 
 
 def init_db(db_path=None):
-    """Initialize the ICDEV database with full schema.
+    """Initialize the ICDEV™ database with full schema.
 
     If the migration system (schema_migrations table) is detected, redirects
     to the migration runner instead of re-running the monolithic init script.
@@ -6505,7 +6505,7 @@ def init_db(db_path=None):
             pass
     conn.commit()
     conn.close()
-    print(f"ICDEV database initialized at {path}")
+    print(f"ICDEV™ database initialized at {path}")
 
     # Verify tables
     conn = sqlite3.connect(str(path))
@@ -6518,7 +6518,7 @@ def init_db(db_path=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Initialize ICDEV database")
+    parser = argparse.ArgumentParser(description="Initialize ICDEV™ database")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database file path")
     parser.add_argument("--reset", action="store_true", help="Drop and recreate all tables")
     args = parser.parse_args()

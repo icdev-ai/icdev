@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """OWASP Top 10 Agentic AI Systems (ASI01-ASI10) Assessor.
 
 Assesses compliance with the OWASP Top 10 Risks for Agentic AI
-Applications. Maps 10 ASI risks to existing ICDEV controls via
+Applications. Maps 10 ASI risks to existing ICDEV™ controls via
 automated checks against DB tables and configuration files.
 
 Pattern: tools/compliance/base_assessor.py (BaseAssessor ABC).
@@ -41,7 +41,7 @@ class OWASPASIAssessor(BaseAssessor):
     ) -> Dict[str, str]:
         """OWASP ASI01-ASI10 automated checks.
 
-        Maps each ASI risk to existing ICDEV controls:
+        Maps each ASI risk to existing ICDEV™ controls:
         - ASI-01 (Goal Hijacking) <- prompt_injection_detector
         - ASI-02 (Tool Abuse) <- mcp_tool_authorizer + tool_chain_validator
         - ASI-03 (Identity Abuse) <- RBAC + agent_trust_scorer
@@ -153,7 +153,7 @@ class OWASPASIAssessor(BaseAssessor):
             if conn:
                 conn.close()
 
-        # File-based checks (config files in project dir or ICDEV base)
+        # File-based checks (config files in project dir or ICDEV™ base)
         check_dirs = [Path(project_dir)] if project_dir else []
         check_dirs.append(BASE_DIR)
 

@@ -106,7 +106,7 @@ def _builtin_template():
         "{{gate_evaluation}}\n\n"
         "---\n\n"
         "## 6. Appendix: Assessment Methodology\n\n"
-        "This assessment was conducted using the ICDEV DES Assessment Engine against the "
+        "This assessment was conducted using the ICDEV™ DES Assessment Engine against the "
         "DoDI 5000.87 Digital Engineering Strategy requirements catalog. Requirements span "
         "six categories: model_authority, data_management, infrastructure, workforce, policy, "
         "and lifecycle.\n\n"

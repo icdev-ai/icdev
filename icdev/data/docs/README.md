@@ -1,6 +1,6 @@
-# ICDEV Documentation
+# ICDEV™ Documentation
 
-ICDEV is a meta-builder that autonomously builds Gov/DoD applications with full SDLC compliance. This documentation covers everything from getting started to production operations.
+ICDEV™ is a meta-builder that autonomously builds Gov/DoD applications with full SDLC compliance. This documentation covers everything from getting started to production operations.
 
 ---
 
@@ -9,19 +9,19 @@ ICDEV is a meta-builder that autonomously builds Gov/DoD applications with full 
 | Guide | Description |
 |-------|-------------|
 | [Quickstart](dx/quickstart.md) | Get running in 5 minutes |
-| [Integration Tiers](dx/integration-tiers.md) | Three ways to use ICDEV: Invisible, Conversational, Programmatic |
+| [Integration Tiers](dx/integration-tiers.md) | Three ways to use ICDEV™: Invisible, Conversational, Programmatic |
 | [icdev.yaml Specification](dx/icdev-yaml-spec.md) | Project manifest reference — one file configures everything |
 
 ---
 
 ## Developer Experience (DX)
 
-Guides for day-to-day development with ICDEV.
+Guides for day-to-day development with ICDEV™.
 
 | Guide | Description |
 |-------|-------------|
 | [DX Overview](dx/README.md) | Developer experience index and integration tier comparison |
-| [Claude Code Guide](dx/claude-code-guide.md) | Using natural language to drive ICDEV workflows |
+| [Claude Code Guide](dx/claude-code-guide.md) | Using natural language to drive ICDEV™ workflows |
 | [AI Companion Guide](dx/companion-guide.md) | Multi-tool setup — Claude Code, Codex, Gemini, Copilot, Cursor, and 5 more |
 | [LLM Routing Guide](dx/llm-routing-guide.md) | Per-task LLM provider selection — assign Claude, GPT, Gemini, or local models to specific functions |
 | [CI/CD Integration](dx/ci-cd-integration.md) | Pipeline auto-attach for GitHub Actions and GitLab CI |
@@ -33,7 +33,7 @@ Guides for day-to-day development with ICDEV.
 
 ## Architecture
 
-Deep-dive reference guides for ICDEV's internal architecture.
+Deep-dive reference guides for ICDEV™'s internal architecture.
 
 | Guide | Description |
 |-------|-------------|
@@ -46,7 +46,7 @@ Deep-dive reference guides for ICDEV's internal architecture.
 
 ## Operations
 
-Guides for running ICDEV in production.
+Guides for running ICDEV™ in production.
 
 | Guide | Description |
 |-------|-------------|
@@ -59,7 +59,7 @@ Guides for running ICDEV in production.
 
 ## Administration
 
-Guides for managing ICDEV subsystems.
+Guides for managing ICDEV™ subsystems.
 
 | Guide | Description |
 |-------|-------------|
@@ -82,7 +82,7 @@ Step-by-step operational procedures.
 
 ## Feature Documentation
 
-Detailed documentation for each ICDEV capability phase.
+Detailed documentation for each ICDEV™ capability phase.
 
 ### Core Platform (Phases 1-9)
 
@@ -147,7 +147,7 @@ Detailed documentation for each ICDEV capability phase.
 
 | Phase | Guide | Description |
 |-------|-------|-------------|
-| 19 | [Agentic Generation](features/phase-19-agentic-generation.md) | Mini-ICDEV clone child app generation |
+| 19 | [Agentic Generation](features/phase-19-agentic-generation.md) | Mini-ICDEV™ clone child app generation |
 | 21 | [SaaS Multi-Tenancy](features/phase-21-saas-multi-tenancy.md) | Multi-tenant platform, API gateway, tenant isolation |
 | 22 | [Federated Marketplace](features/phase-22-federated-gotcha-marketplace.md) | GOTCHA asset sharing with 9-gate security |
 | 27 | [CLI Capabilities](features/phase-27-cli-capabilities.md) | Optional CLI toggles for headless/scripted execution |
@@ -179,7 +179,7 @@ Detailed documentation for each ICDEV capability phase.
 
 ## Quick Links
 
-- **New to ICDEV?** Start with the [Quickstart](dx/quickstart.md)
+- **New to ICDEV™?** Start with the [Quickstart](dx/quickstart.md)
 - **Setting up your AI tool?** See the [AI Companion Guide](dx/companion-guide.md)
 - **Deploying to production?** See the [Deployment Guide](operations/deployment-guide.md)
 - **Managing tenants?** See the [SaaS Administration](operations/saas-admin-guide.md)

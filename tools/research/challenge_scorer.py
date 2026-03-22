@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""6-Dimension Composite Challenge Scorer for ICDEV Research Engine.
+# POC: ICDEV™ System Administrator
+"""6-Dimension Composite Challenge Scorer for ICDEV™ Research Engine.
 
 Scores research challenges using a 6-dimension weighted average
 (D21 deterministic scoring pattern, D-RES-4):
@@ -13,8 +13,8 @@ Scores research challenges using a 6-dimension weighted average
   2. regulatory_pressure    (0.20) -- regulation count, enforcement actions
   3. technical_complexity   (0.15) -- academic paper density, patent activity
   4. competitive_saturation (0.15) -- inverse: fewer solutions = bigger opportunity
-  5. icdev_readiness        (0.15) -- ICDEV capability coverage score
-  6. compliance_alignment   (0.10) -- maps to existing ICDEV framework = 1.0
+  5. icdev_readiness        (0.15) -- ICDEV™ capability coverage score
+  6. compliance_alignment   (0.10) -- maps to existing ICDEV™ framework = 1.0
 
 Architecture:
     - Weights loaded from args/research_config.yaml under scoring.weights (D26 pattern)
@@ -527,7 +527,7 @@ def _score_competitive_saturation(challenge_data, signals, conn, config):
 
 
 def _score_icdev_readiness(challenge_data, signals, conn, config):
-    """Score ICDEV readiness dimension.
+    """Score ICDEV™ readiness dimension.
 
     Queries research_capability_map for the challenge and uses coverage_score.
     If no mapping yet, returns 0.5 (neutral).
@@ -564,7 +564,7 @@ def _score_icdev_readiness(challenge_data, signals, conn, config):
 def _score_compliance_alignment(challenge_data, signals, conn, config):
     """Score compliance alignment dimension.
 
-    Checks if challenge maps to existing ICDEV compliance frameworks.
+    Checks if challenge maps to existing ICDEV™ compliance frameworks.
     Full match = 1.0, crosswalk-able = 0.5, no match = 0.0.
 
     Uses research_regulatory_map crosswalk_coverage for the challenge.
@@ -609,7 +609,7 @@ def _score_compliance_alignment(challenge_data, signals, conn, config):
     for rr in reg_rows:
         cov = float(rr["crosswalk_coverage"] or 0.0)
         total_coverage += cov
-        # Check if any mapping has ICDEV frameworks
+        # Check if any mapping has ICDEV™ frameworks
         try:
             frameworks = json.loads(rr["icdev_frameworks"] or "[]")
             if isinstance(frameworks, list) and len(frameworks) > 0:
@@ -1256,7 +1256,7 @@ def _print_human(args, result):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Research Engine Challenge Scorer -- CUI // SP-CTI",
+        description="ICDEV™ Research Engine Challenge Scorer -- CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Search Engine — Hybrid keyword + semantic search over marketplace assets.
 
 Combines BM25 keyword scoring with semantic vector search for relevance-ranked
@@ -781,7 +781,7 @@ def search_assets(query, asset_type=None, impact_level=None, catalog_tier=None,
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Marketplace Search Engine — Hybrid BM25 + Semantic Search"
+        description="ICDEV™ Marketplace Search Engine — Hybrid BM25 + Semantic Search"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", type=Path, default=None,

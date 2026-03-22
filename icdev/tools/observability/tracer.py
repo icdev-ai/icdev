@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Tracer ABCs — Pluggable tracing abstraction (D280).
+"""ICDEV™ Tracer ABCs — Pluggable tracing abstraction (D280).
 
 Follows the Haystack ProxyTracer pattern:
   - Span ABC: represents a single operation with attributes, events, status

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Platform Compatibility Checker.
+"""ICDEV™ Platform Compatibility Checker.
 
-Validates that the current OS environment can run ICDEV tools.
+Validates that the current OS environment can run ICDEV™ tools.
 Run on first setup to catch compatibility issues early.
 
 Usage:
@@ -150,7 +150,7 @@ def run_all_checks() -> list:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="ICDEV platform compatibility check")
+    parser = argparse.ArgumentParser(description="ICDEV™ platform compatibility check")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -166,7 +166,7 @@ def main():
     else:
         from tools.compat.platform_utils import PLATFORM_NAME
 
-        print(f"ICDEV Platform Check -- {PLATFORM_NAME}")
+        print(f"ICDEV™ Platform Check -- {PLATFORM_NAME}")
         print("=" * 50)
         for r in results:
             status = "PASS" if r["ok"] else "FAIL"

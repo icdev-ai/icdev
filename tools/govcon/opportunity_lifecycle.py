@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Opportunity Lifecycle Manager — Workflow Discipline Engine integration for Proposal Genesis (D-WF-1, SS3.3).
 
 Provides structured PLAN-APPLY-UNIFY lifecycle management per opportunity,

@@ -3,24 +3,24 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""OpenClaw-to-ICDEV Compatibility Checker & Translator.
+# POC: ICDEV™ System Administrator
+"""OpenClaw-to-ICDEV™ Compatibility Checker & Translator.
 
-OpenClaw and ICDEV have fundamentally different architectures:
+OpenClaw and ICDEV™ have fundamentally different architectures:
 - OpenClaw: Node.js AI assistant, npm skills, flat markdown, shell/browser tools
-- ICDEV: GOTCHA 6-layer framework, Python tools, CUI compliance, MCP gateway
+- ICDEV™: GOTCHA 6-layer framework, Python tools, CUI compliance, MCP gateway
 
 This module:
-1. Validates an OpenClaw skill for ICDEV compatibility
+1. Validates an OpenClaw skill for ICDEV™ compatibility
 2. Identifies blocking incompatibilities vs. adaptable differences
-3. Translates the skill into ICDEV SKILL.md format
+3. Translates the skill into ICDEV™ SKILL.md format
 4. Generates a compatibility report
 
 Usage:
     # Check compatibility
     python tools/marketplace/openclaw_compat.py --check /path/to/openclaw-skill --json
 
-    # Translate to ICDEV format
+    # Translate to ICDEV™ format
     python tools/marketplace/openclaw_compat.py --translate /path/to/openclaw-skill \\
         --output /path/to/output --json
 
@@ -44,11 +44,11 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 # ---------------------------------------------------------------------------
-# Constants — OpenClaw ↔ ICDEV mapping
+# Constants — OpenClaw ↔ ICDEV™ mapping
 # ---------------------------------------------------------------------------
 
-# OpenClaw tool names → ICDEV allowed-tools mapping
-# OpenClaw exposes raw system capabilities; ICDEV exposes sandboxed MCP tools
+# OpenClaw tool names → ICDEV™ allowed-tools mapping
+# OpenClaw exposes raw system capabilities; ICDEV™ exposes sandboxed MCP tools
 TOOL_MAP = {
     # File system
     "read_file": "Read",
@@ -87,26 +87,26 @@ TOOL_MAP = {
     "tasks": "TodoWrite",
 }
 
-# ICDEV allowed tools (valid values for allowed-tools frontmatter)
+# ICDEV™ allowed tools (valid values for allowed-tools frontmatter)
 ICDEV_TOOLS = {
     "Bash", "Read", "Write", "Edit", "Glob", "Grep",
     "WebFetch", "WebSearch", "Agent", "TodoWrite",
 }
 
-# OpenClaw capabilities that have NO ICDEV equivalent (incompatible)
+# OpenClaw capabilities that have NO ICDEV™ equivalent (incompatible)
 INCOMPATIBLE_CAPABILITIES = {
-    "browser_control": "OpenClaw browser automation (click, type, navigate) has no ICDEV equivalent",
+    "browser_control": "OpenClaw browser automation (click, type, navigate) has no ICDEV™ equivalent",
     "screen_capture": "OpenClaw screen capture requires desktop access",
     "mouse_control": "OpenClaw mouse/keyboard simulation not supported",
-    "whatsapp": "OpenClaw messaging integration not available in ICDEV",
-    "telegram": "OpenClaw messaging integration not available in ICDEV",
-    "discord": "OpenClaw messaging integration not available in ICDEV",
-    "slack_send": "ICDEV doesn't send Slack messages (read-only via MCP)",
-    "imessage": "OpenClaw iMessage integration not available in ICDEV",
-    "email_send": "ICDEV doesn't send emails autonomously",
+    "whatsapp": "OpenClaw messaging integration not available in ICDEV™",
+    "telegram": "OpenClaw messaging integration not available in ICDEV™",
+    "discord": "OpenClaw messaging integration not available in ICDEV™",
+    "slack_send": "ICDEV™ doesn't send Slack messages (read-only via MCP)",
+    "imessage": "OpenClaw iMessage integration not available in ICDEV™",
+    "email_send": "ICDEV™ doesn't send emails autonomously",
     "cron": "OpenClaw cron/heartbeat not available (use Genesis reflexes instead)",
     "docker": "OpenClaw Docker control not directly exposed",
-    "gui": "OpenClaw GUI interactions not supported in ICDEV CLI",
+    "gui": "OpenClaw GUI interactions not supported in ICDEV™ CLI",
 }
 
 # OpenClaw Node.js patterns that need Python translation
@@ -136,7 +136,7 @@ COPYLEFT_LICENSES = {
 # IL5/IL6 blocked (copyleft + gov distribution = legal risk)
 IL5_IL6_BLOCKED_LICENSES = COPYLEFT_LICENSES
 
-# Name validation (ICDEV requirement)
+# Name validation (ICDEV™ requirement)
 NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
 
 
@@ -144,7 +144,7 @@ NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
 # Compatibility Checker
 # ---------------------------------------------------------------------------
 class CompatibilityReport:
-    """Structured compatibility analysis between OpenClaw skill and ICDEV."""
+    """Structured compatibility analysis between OpenClaw skill and ICDEV™."""
 
     def __init__(self, skill_path):
         self.skill_path = str(skill_path)
@@ -152,8 +152,8 @@ class CompatibilityReport:
         self.warnings = []       # Can import but degraded
         self.adaptations = []    # Auto-fixable differences
         self.info = []           # Informational notes
-        self.tool_mapping = {}   # OpenClaw tool → ICDEV tool
-        self.unmapped_tools = [] # Tools with no ICDEV equivalent
+        self.tool_mapping = {}   # OpenClaw tool → ICDEV™ tool
+        self.unmapped_tools = [] # Tools with no ICDEV™ equivalent
         self.node_patterns = []  # Node.js patterns found
         self.score = 100         # Compatibility score (0-100)
 
@@ -260,11 +260,11 @@ def check_compatibility(skill_path):
         report.add_adaptation(
             "NAME_001",
             f"Name normalized: '{name}' → '{icdev_name}'",
-            "ICDEV requires lowercase alphanumeric + hyphens, 3-64 chars",
+            "ICDEV™ requires lowercase alphanumeric + hyphens, 3-64 chars",
         )
 
     if not NAME_PATTERN.match(icdev_name):
-        report.add_warning("NAME_002", f"Name '{icdev_name}' still doesn't match ICDEV pattern after normalization")
+        report.add_warning("NAME_002", f"Name '{icdev_name}' still doesn't match ICDEV™ pattern after normalization")
 
     # ── 4. Description check ────────────────────────────────────────────
     description = frontmatter.get("description", "")
@@ -286,7 +286,7 @@ def check_compatibility(skill_path):
     for tool in oc_tools:
         tool_lower = tool.lower().strip()
         if tool in ICDEV_TOOLS:
-            # Direct match (already ICDEV format)
+            # Direct match (already ICDEV™ format)
             mapped_tools.add(tool)
             report.tool_mapping[tool] = tool
         elif tool_lower in TOOL_MAP:
@@ -309,7 +309,7 @@ def check_compatibility(skill_path):
                 report.unmapped_tools.append(tool)
                 report.add_warning(
                     "TOOL_003",
-                    f"Unknown tool '{tool}' — will be stripped (no ICDEV equivalent)",
+                    f"Unknown tool '{tool}' — will be stripped (no ICDEV™ equivalent)",
                 )
 
     if not mapped_tools and not oc_tools:
@@ -329,7 +329,7 @@ def check_compatibility(skill_path):
             report.add_warning(
                 "NODE_001",
                 f"Node.js pattern found: {pattern.pattern} ({len(matches)}x)",
-                f"ICDEV uses Python — equivalent: {replacement}",
+                f"ICDEV™ uses Python — equivalent: {replacement}",
             )
 
     # Also check scripts for Node.js
@@ -339,13 +339,13 @@ def check_compatibility(skill_path):
             report.add_blocker(
                 "NODE_002",
                 f"JavaScript file found: {js_file.name}",
-                "ICDEV only supports Python scripts — manual translation required",
+                "ICDEV™ only supports Python scripts — manual translation required",
             )
         for ts_file in scripts_dir.rglob("*.ts"):
             report.add_blocker(
                 "NODE_003",
                 f"TypeScript file found: {ts_file.name}",
-                "ICDEV only supports Python scripts — manual translation required",
+                "ICDEV™ only supports Python scripts — manual translation required",
             )
         for sh_file in scripts_dir.rglob("*.sh"):
             report.add_warning(
@@ -359,7 +359,7 @@ def check_compatibility(skill_path):
         report.add_blocker(
             "NODE_004",
             "package.json found — skill depends on npm ecosystem",
-            "ICDEV uses Python + pip; npm dependencies cannot be installed",
+            "ICDEV™ uses Python + pip; npm dependencies cannot be installed",
         )
 
     # ── 7. Dependency check ─────────────────────────────────────────────
@@ -374,7 +374,7 @@ def check_compatibility(skill_path):
                 report.add_blocker(
                     "DEP_001",
                     f"npm-style dependency: '{dep}'",
-                    "ICDEV marketplace uses pip packages, not npm",
+                    "ICDEV™ marketplace uses pip packages, not npm",
                 )
             else:
                 report.add_info(f"Dependency declared: '{dep}' — will check marketplace availability")
@@ -394,7 +394,7 @@ def check_compatibility(skill_path):
         if matches:
             report.add_warning(
                 code, f"OpenClaw-specific syntax found: {desc} ({len(matches)}x)",
-                "These references will not work in ICDEV and will be commented out",
+                "These references will not work in ICDEV™ and will be commented out",
             )
 
     # ── 9. Content quality ──────────────────────────────────────────────
@@ -444,7 +444,7 @@ def check_compatibility(skill_path):
             report.add_warning(
                 "HOOK_001",
                 f"OpenClaw JS hook found: {js_hook.relative_to(skill_path)}",
-                "OpenClaw hooks use Node.js — will be stripped (ICDEV uses Python hooks)",
+                "OpenClaw hooks use Node.js — will be stripped (ICDEV™ uses Python hooks)",
             )
         for ts_hook in hooks_dir.rglob("*.ts"):
             report.add_warning(
@@ -460,7 +460,7 @@ def check_compatibility(skill_path):
             report.add_adaptation(
                 "STATE_001",
                 f"OpenClaw state directory '{state_dir}/' found — will be excluded from import",
-                "ICDEV uses its own memory/state system (data/memory.db)",
+                "ICDEV™ uses its own memory/state system (data/memory.db)",
             )
 
     return report
@@ -470,7 +470,7 @@ def check_compatibility(skill_path):
 # Translator
 # ---------------------------------------------------------------------------
 def translate_to_icdev(skill_path, output_path=None):
-    """Translate an OpenClaw skill into ICDEV SKILL.md format.
+    """Translate an OpenClaw skill into ICDEV™ SKILL.md format.
 
     Args:
         skill_path: Path to OpenClaw skill directory.
@@ -509,7 +509,7 @@ def translate_to_icdev(skill_path, output_path=None):
         frontmatter = yaml.safe_load(fm_match.group(1)) or {}
         body = fm_match.group(2)
 
-    # ── Build ICDEV frontmatter ─────────────────────────────────────────
+    # ── Build ICDEV™ frontmatter ─────────────────────────────────────────
     name = frontmatter.get("name", skill_path.name)
     icdev_name = re.sub(r"[^a-z0-9-]", "-", str(name).lower()).strip("-")[:63]
     if not icdev_name or len(icdev_name) < 3:
@@ -551,7 +551,7 @@ def translate_to_icdev(skill_path, output_path=None):
     if tags:
         icdev_frontmatter["tags"] = tags if isinstance(tags, list) else [tags]
 
-    # ── Build ICDEV body ────────────────────────────────────────────────
+    # ── Build ICDEV™ body ────────────────────────────────────────────────
     # Add title
     display_name = frontmatter.get("name", icdev_name)
     icdev_body_parts = [f"# {display_name}", "", "CUI // SP-CTI", ""]
@@ -579,7 +579,7 @@ def translate_to_icdev(skill_path, output_path=None):
 
     icdev_body_parts.append("## Provenance")
     icdev_body_parts.append("")
-    icdev_body_parts.append("- **Enhanced by:** ICDEV (Innovation + Creative + Research engines)")
+    icdev_body_parts.append("- **Enhanced by:** ICDEV™ (Innovation + Creative + Research engines)")
     icdev_body_parts.append(f"- **Original Author:** {author}")
     icdev_body_parts.append("- **Source:** OpenClaw Community (ClawHub)")
     icdev_body_parts.append(f"- **Author:** {author}")
@@ -595,7 +595,7 @@ def translate_to_icdev(skill_path, output_path=None):
     # Comment out OpenClaw-specific syntax
     translated_body = body
     oc_syntax_patterns = [
-        (re.compile(r"\{\{skill\.\w+\}\}"), "<!-- ICDEV: OpenClaw template variable removed -->"),
+        (re.compile(r"\{\{skill\.\w+\}\}"), "<!-- ICDEV™: OpenClaw template variable removed -->"),
         (re.compile(r"@claw\b"), "Claude"),
         (re.compile(r"claw\.memory\b"), "memory system"),
         (re.compile(r"claw\.run\b"), "execute"),
@@ -752,13 +752,13 @@ def scan_content_intent(text):
 
 
 def validate_translated_skill(skill_path):
-    """Validate a translated ICDEV SKILL.md for functional correctness.
+    """Validate a translated ICDEV™ SKILL.md for functional correctness.
 
     Deterministic checks (no LLM needed):
     1. SKILL.md exists and parses correctly
     2. Frontmatter has all required fields
     3. Body has at least one ## section
-    4. Allowed-tools are all valid ICDEV tools
+    4. Allowed-tools are all valid ICDEV™ tools
     5. No broken markdown (unclosed code blocks, orphaned links)
     6. Instructions are non-trivial (>100 chars of actual content)
     7. No OpenClaw-specific syntax survived translation
@@ -826,7 +826,7 @@ def validate_translated_skill(skill_path):
         tools = [t.strip() for t in tools.split(",")]
     invalid_tools = [t for t in tools if t not in ICDEV_TOOLS]
     if not invalid_tools:
-        findings.append({"check": "tools_valid", "pass": True, "detail": f"All {len(tools)} tools are valid ICDEV tools"})
+        findings.append({"check": "tools_valid", "pass": True, "detail": f"All {len(tools)} tools are valid ICDEV™ tools"})
         checks_passed += 1
     else:
         findings.append({"check": "tools_valid", "pass": False, "detail": f"Invalid tools: {invalid_tools}"})
@@ -888,13 +888,13 @@ def validate_translated_skill(skill_path):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="OpenClaw-to-ICDEV compatibility checker and translator",
+        description="OpenClaw-to-ICDEV™ compatibility checker and translator",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--check", metavar="PATH",
                        help="Check compatibility of an OpenClaw skill")
     group.add_argument("--translate", metavar="PATH",
-                       help="Translate an OpenClaw skill to ICDEV format")
+                       help="Translate an OpenClaw skill to ICDEV™ format")
     group.add_argument("--full", metavar="PATH",
                        help="Full pipeline: check + translate")
 

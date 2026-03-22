@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""LLM Gateway/Proxy Layer for ICDEV.
+"""LLM Gateway/Proxy Layer for ICDEV™.
 
 Provides pre-invoke and post-invoke guardrails around every LLM call:
     - Prompt injection detection (regex, air-gap safe)
@@ -797,7 +797,7 @@ def check_text(text: str) -> Dict:
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="ICDEV LLM Gateway — pre/post-invoke guardrails and audit"
+        description="ICDEV™ LLM Gateway — pre/post-invoke guardrails and audit"
     )
     parser.add_argument("--stats", action="store_true", help="Show gateway statistics")
     parser.add_argument("--audit", action="store_true", help="Show recent audit log")

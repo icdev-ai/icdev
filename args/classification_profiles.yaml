@@ -1,4 +1,4 @@
-# ICDEV Classification Profiles
+# ICDEV™ Classification Profiles
 # Defines what each classification level enables/disables across the platform.
 # Projects declare their classification in icdev.yaml or at init time.
 # Default: public (opt-in to CUI, not opt-out)

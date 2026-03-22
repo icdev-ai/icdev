@@ -11,7 +11,7 @@ Perform system security categorization per FIPS 199 using NIST SP 800-60 informa
 ## Prerequisites
 
 - Project initialized (`goals/init_project.md` completed)
-- ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - NIST SP 800-60 catalog exists (`context/compliance/nist_sp_800_60_types.json`)
 
 ## Process

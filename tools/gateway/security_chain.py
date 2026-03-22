@@ -8,8 +8,8 @@ Any gate failure = reject + audit log entry.
 Gate order:
     1. Signature Verification — HMAC-SHA256 on webhook payload
     2. Bot/Replay Check       — reject bot-originated, reject stale timestamps
-    3. Identity Resolution    — map channel user → bound ICDEV user
-    4. Authentication         — validate ICDEV user is active
+    3. Identity Resolution    — map channel user → bound ICDEV™ user
+    4. Authentication         — validate ICDEV™ user is active
     5. Classification Guard   — reject commands above channel's max_il
     6. RBAC                   — check user role has permission
     7. Rate Limiting          — per-user, per-channel limits
@@ -141,7 +141,7 @@ def gate_2_bot_replay(envelope: CommandEnvelope, config: Dict) -> GateResult:
 
 
 def gate_3_identity(envelope: CommandEnvelope, config: Dict) -> GateResult:
-    """Gate 3: Resolve channel user → bound ICDEV user.
+    """Gate 3: Resolve channel user → bound ICDEV™ user.
 
     Looks up the binding in remote_user_bindings table.
     """
@@ -157,20 +157,20 @@ def gate_3_identity(envelope: CommandEnvelope, config: Dict) -> GateResult:
     envelope.tenant_id = binding.get("tenant_id")
 
     if not envelope.icdev_user_id:
-        return GateResult("identity", False, "binding exists but no ICDEV user linked")
+        return GateResult("identity", False, "binding exists but no ICDEV™ user linked")
 
     return GateResult("identity", True,
                       f"resolved to {envelope.icdev_user_id}")
 
 
 def gate_4_authentication(envelope: CommandEnvelope, config: Dict) -> GateResult:
-    """Gate 4: Validate ICDEV user is active and authorized.
+    """Gate 4: Validate ICDEV™ user is active and authorized.
 
     Checks that the resolved icdev_user_id exists and is active.
     In SaaS mode, also verifies the tenant is active.
     """
     if not envelope.icdev_user_id:
-        return GateResult("authentication", False, "no ICDEV user ID resolved")
+        return GateResult("authentication", False, "no ICDEV™ user ID resolved")
 
     # For non-SaaS (standalone) deployments, binding existence is sufficient
     if not envelope.tenant_id:

@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
-"""Type Checker — ICDEV Cross-Language Translation (Phase 43, D253)
+# POC: ICDEV™ System Administrator
+"""Type Checker — ICDEV™ Cross-Language Translation (Phase 43, D253)
 
 Phase 2 of the 5-phase hybrid translation pipeline.
 Validates type-compatibility of function signatures between source/target
@@ -303,7 +303,7 @@ def main():
     parser = argparse.ArgumentParser(
         description=(
             f"{CUI_BANNER}\n"
-            "ICDEV Type Checker — Phase 2: Type-Compatibility Pre-Check (D253)"
+            "ICDEV™ Type Checker — Phase 2: Type-Compatibility Pre-Check (D253)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(f"""\

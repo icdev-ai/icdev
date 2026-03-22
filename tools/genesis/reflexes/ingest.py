@@ -3,7 +3,7 @@
 """Genesis Ingest Reflex — feed data into knowledge graph.
 
 Watches NIST NVD, CISA KEV, FedRAMP updates and ingests new entries
-into the ICDEV knowledge graph via the knowledge_graph ingester.
+into the ICDEV™ knowledge graph via the knowledge_graph ingester.
 
 Distinct from Research Reflex: Research exports GKP signals, Ingest
 writes directly into the knowledge graph for RAG retrieval.
@@ -52,7 +52,7 @@ def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
     """Fetch URL content."""
     try:
         headers = {
-            "User-Agent": "ICDEV-Genesis/2.0 (Ingest Reflex)",
+            "User-Agent": "ICDEV™-Genesis/2.0 (Ingest Reflex)",
             "Accept": "application/xml, application/json, text/xml, */*",
         }
         req = Request(url, headers=headers)

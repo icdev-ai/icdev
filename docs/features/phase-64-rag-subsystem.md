@@ -9,14 +9,14 @@ CUI // SP-CTI
 | Status | Complete |
 | Priority | High |
 | Dependencies | Phase 29 (Memory), Phase 35 (Innovation), Phase 44 (Extensions), Phase 46 (Observability) |
-| Author | ICDEV System |
+| Author | ICDEV™ System |
 | Date | 2026-03-03 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's Intelligence engines (Innovation, Creative, Research) produce ~300 MB/year of structured intelligence across 20+ database tables. Compliance artifacts add ~10 MB per ATO system. Key problems:
+ICDEV™'s Intelligence engines (Innovation, Creative, Research) produce ~300 MB/year of structured intelligence across 20+ database tables. Compliance artifacts add ~10 MB per ATO system. Key problems:
 
 1. **No context reuse** — Each LLM call starts from scratch with no pre-retrieved prior knowledge
 2. **Token waste** — qwen3 drafts without relevant context, producing less accurate output that Claude must correct
@@ -25,7 +25,7 @@ ICDEV's Intelligence engines (Innovation, Creative, Research) produce ~300 MB/ye
 
 ## 2. Goals
 
-- Index all ICDEV data into a unified vector store with adaptive chunking
+- Index all ICDEV™ data into a unified vector store with adaptive chunking
 - Auto-retrieve relevant context before every two-tier LLM call (qwen3 draft phase)
 - Enable natural language search across all knowledge via dashboard and MCP
 - Provide child apps with federated knowledge access via A2A callback

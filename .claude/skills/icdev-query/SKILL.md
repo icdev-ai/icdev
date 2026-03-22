@@ -3,7 +3,7 @@
 # Natural Language Compliance Query
 
 ## Description
-Query the ICDEV compliance database using natural language. Converts questions
+Query the ICDEV™ compliance database using natural language. Converts questions
 to safe SQL queries and returns formatted results.
 
 ## Usage
@@ -17,7 +17,7 @@ to safe SQL queries and returns formatted results.
 - /icdev-query How many hook events were logged today?
 
 ## Workflow
-1. Extract ICDEV database schema
+1. Extract ICDEV™ database schema
 2. Generate SQL via Bedrock (or pattern fallback)
 3. Validate SQL is read-only (security gate)
 4. Execute with row limit and timeout

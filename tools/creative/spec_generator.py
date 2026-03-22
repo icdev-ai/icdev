@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Feature Spec Generator for ICDEV Creative Engine -- template-based spec generation from ranked gaps.
+# POC: ICDEV™ System Administrator
+"""Feature Spec Generator for ICDEV™ Creative Engine -- template-based spec generation from ranked gaps.
 
 Transforms scored feature gaps and their associated pain points into structured,
 template-based feature specifications with competitive analysis, acceptance criteria,

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for ICDEV Observability — Tracer ABCs, SQLiteTracer, ProxyTracer (D280).
+"""Tests for ICDEV™ Observability — Tracer ABCs, SQLiteTracer, ProxyTracer (D280).
 
 Covers:
   - NullTracer/NullSpan (zero overhead)

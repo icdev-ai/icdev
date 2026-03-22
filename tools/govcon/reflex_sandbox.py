@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Reflex Sandbox -- NemoClaw sandboxing integration for Proposal Genesis reflexes (Phase 4).
 
 Per-reflex credential isolation and egress policy enforcement for Proposal

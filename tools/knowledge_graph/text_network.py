@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Knowledge Graph — Entity/Relationship extraction from text via regex patterns.
 
 Extracts entities (organizations, systems, controls, requirements, components,
@@ -427,7 +427,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
 
     Args:
         text:        Free text to analyse.
-        project_id:  ICDEV project identifier.
+        project_id:  ICDEV™ project identifier.
         graph_name:  Optional human-readable graph name.
 
     Returns:
@@ -632,7 +632,7 @@ def main():
     parser.add_argument("--text", type=str, help="Input text to analyse.")
     parser.add_argument("--file", type=str, help="Path to a text file to read.")
     parser.add_argument("--project-id", type=str, default="default",
-                        help="ICDEV project identifier.")
+                        help="ICDEV™ project identifier.")
     parser.add_argument("--graph-name", type=str, default=None,
                         help="Optional human-readable graph name.")
     parser.add_argument("--graph-id", type=str, default=None,

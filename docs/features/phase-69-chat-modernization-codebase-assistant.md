@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 44 (Multi-stream Chat), Phase 51 (Unified Chat), Phase 64 (RAG Subsystem) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-03-19 |
 | Inspiration | OpenMAIC (THU-MAIC/OpenMAIC) — UX patterns only, zero code (AGPL-3.0) |
 
@@ -17,7 +17,7 @@
 
 ## 1. Problem Statement
 
-ICDEV's multi-stream chat (`/chat`) was functional but visually dated — 100% inline styles, plain text bubbles with CSS `::before` emoji hacks, no streaming indicators, no markdown/code rendering. Meanwhile, the codebase has grown to 500+ Python tools, 400+ templates, 60+ goal files, and a sprawling docs/args ecosystem. Contributors need a fast way to ask "how does X work?" without digging through files.
+ICDEV™'s multi-stream chat (`/chat`) was functional but visually dated — 100% inline styles, plain text bubbles with CSS `::before` emoji hacks, no streaming indicators, no markdown/code rendering. Meanwhile, the codebase has grown to 500+ Python tools, 400+ templates, 60+ goal files, and a sprawling docs/args ecosystem. Contributors need a fast way to ask "how does X work?" without digging through files.
 
 ---
 

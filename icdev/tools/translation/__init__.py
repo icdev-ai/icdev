@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Cross-Language Translation Module (Phase 43).
+"""ICDEV™ Cross-Language Translation Module (Phase 43).
 
 Provides LLM-assisted cross-language code translation across all 30
 directional pairs of the 6 first-class languages (Python, Java,

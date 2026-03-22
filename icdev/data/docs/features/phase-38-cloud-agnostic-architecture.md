@@ -9,14 +9,14 @@
 | Status | Requirements |
 | Priority | P1 |
 | Dependencies | Phase 21 (SaaS Multi-Tenancy), Phase 23 (Universal Compliance), Phase 24 (DevSecOps), Phase 25 (ZTA) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-21 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV is currently hardcoded to AWS GovCloud throughout its codebase, configuration, documentation, and architecture. References to "AWS GovCloud", "Bedrock", "AWS Secrets Manager", "EKS", "S3", "RDS", and other AWS-specific services appear in:
+ICDEV™ is currently hardcoded to AWS GovCloud throughout its codebase, configuration, documentation, and architecture. References to "AWS GovCloud", "Bedrock", "AWS Secrets Manager", "EKS", "S3", "RDS", and other AWS-specific services appear in:
 
 - `args/agent_config.yaml` — Bedrock model references
 - `tools/agent/bedrock_client.py` — AWS-specific LLM client
@@ -27,7 +27,7 @@ ICDEV is currently hardcoded to AWS GovCloud throughout its codebase, configurat
 - `CLAUDE.md` — Multiple AWS GovCloud references
 - `args/` configuration files — AWS service references
 
-ICDEV's customer base spans **government, commercial, and international markets**. Customers deploy across all five major CSPs in both government and commercial regions, as well as on-premises air-gapped environments. A platform locked to AWS GovCloud cannot serve:
+ICDEV™'s customer base spans **government, commercial, and international markets**. Customers deploy across all five major CSPs in both government and commercial regions, as well as on-premises air-gapped environments. A platform locked to AWS GovCloud cannot serve:
 
 - **Government customers** on Azure Government, Oracle Cloud Infrastructure Government, IBM Cloud for Government, or Google Cloud for Government
 - **Commercial SaaS vendors** building FedRAMP or SOC 2 compliant products on commercial cloud regions
@@ -36,7 +36,7 @@ ICDEV's customer base spans **government, commercial, and international markets*
 - **International organizations** requiring ISO 27001, BSI C5, IRAP, or regional frameworks
 - **On-premises customers** with air-gapped, no-internet deployments (SIPR, classified, or policy-driven)
 
-ICDEV already supports **20+ compliance frameworks** (Phase 23) across sectors, **10 deployment profiles** (Phase 33) from ISV startups to GovCloud Full, and **6 programming languages**. The cloud abstraction must match the breadth of the compliance and deployment architecture.
+ICDEV™ already supports **20+ compliance frameworks** (Phase 23) across sectors, **10 deployment profiles** (Phase 33) from ISV startups to GovCloud Full, and **6 programming languages**. The cloud abstraction must match the breadth of the compliance and deployment architecture.
 
 ---
 
@@ -106,9 +106,9 @@ Each CSP offers commercial regions with compliance certifications applicable to 
 
 ## 3. Compliance Landscape
 
-### 3.1 ICDEV-Supported Compliance Frameworks (Phase 23)
+### 3.1 ICDEV™-Supported Compliance Frameworks (Phase 23)
 
-ICDEV already supports **20+ compliance frameworks** through the Universal Compliance Platform (Phase 23). The cloud abstraction layer must ensure each framework operates identically regardless of CSP or deployment mode.
+ICDEV™ already supports **20+ compliance frameworks** through the Universal Compliance Platform (Phase 23). The cloud abstraction layer must ensure each framework operates identically regardless of CSP or deployment mode.
 
 #### Active Frameworks (18)
 
@@ -152,7 +152,7 @@ ICDEV already supports **20+ compliance frameworks** through the Universal Compl
 
 ### 3.2 CSP Compliance Program Coverage
 
-Each CSP maintains its own compliance certifications. ICDEV must validate that the selected CSP region holds the required certifications for the tenant's compliance posture.
+Each CSP maintains its own compliance certifications. ICDEV™ must validate that the selected CSP region holds the required certifications for the tenant's compliance posture.
 
 | Compliance Program | AWS | Azure | GCP | OCI | IBM | On-Prem |
 |-------------------|-----|-------|-----|-----|-----|---------|
@@ -177,7 +177,7 @@ Each CSP maintains its own compliance certifications. ICDEV must validate that t
 
 ### 3.3 Deployment Profile → Cloud Mapping
 
-Each ICDEV deployment profile (Phase 33) maps to supported cloud modes:
+Each ICDEV™ deployment profile (Phase 33) maps to supported cloud modes:
 
 | Profile | Gov Cloud | Commercial Cloud | On-Prem | Air-Gap | Typical CSPs |
 |---------|-----------|-----------------|---------|---------|-------------|
@@ -202,7 +202,7 @@ Each ICDEV deployment profile (Phase 33) maps to supported cloud modes:
 5. Generate **CSP-specific IaC** (Terraform modules per CSP) from a single abstract specification
 6. Maintain **air-gap compatibility** across all deployment modes
 7. Ensure **compliance equivalence** — same security posture regardless of CSP or deployment mode
-8. Support **all 20+ ICDEV compliance frameworks** (Phase 23) across every deployment mode — not limited to FedRAMP/DoD
+8. Support **all 20+ ICDEV™ compliance frameworks** (Phase 23) across every deployment mode — not limited to FedRAMP/DoD
 9. Enable **compliance-driven CSP region validation** — system validates that the selected CSP region holds required certifications for the tenant's compliance posture
 10. Support **commercial SaaS deployments** for ISV, healthcare, financial, and international customers without requiring government cloud regions
 
@@ -214,7 +214,7 @@ Each ICDEV deployment profile (Phase 33) maps to supported cloud modes:
 
 ```
 +--------------------------------------------------------------------+
-|                        ICDEV Platform                               |
+|                        ICDEV™ Platform                               |
 |               (cloud-agnostic application logic)                    |
 +--------------------------------------------------------------------+
 |                    CSP Abstraction Layer                            |
@@ -676,7 +676,7 @@ The system SHALL use `args/cloud_config.yaml` as the single source of truth for 
 All AWS-specific references in CLAUDE.md SHALL be replaced with cloud-agnostic language, with CSP-specific details moved to `args/cloud_config.yaml`.
 
 #### REQ-38-092: CSP MCP Registry
-The existing `context/agentic/csp_mcp_registry.yaml` (which already supports multi-cloud for child apps) SHALL be extended to cover ICDEV's own MCP server configuration per CSP.
+The existing `context/agentic/csp_mcp_registry.yaml` (which already supports multi-cloud for child apps) SHALL be extended to cover ICDEV™'s own MCP server configuration per CSP.
 
 #### REQ-38-093: Deployment Profile Updates
 The deployment profiles in `args/deployment_profiles.yaml` SHALL be updated to include cloud mode recommendations per profile (commercial, government, on-prem).
@@ -768,7 +768,7 @@ The deployment profiles in `args/deployment_profiles.yaml` SHALL be updated to i
 | D235 | On-premises deployment uses same provider ABCs with local implementations | No special-case code for on-prem; local provider is a first-class CSP alongside AWS/Azure/GCP/OCI |
 | D236 | Commercial cloud is the default; government cloud requires explicit opt-in | Most customers are commercial; GovCloud is a specialized configuration, not the baseline |
 | D237 | IBM Cloud supported as 5th CSP with IKS/OpenShift for K8s and watsonx for AI | IBM has FedRAMP High (IC4G), strong federal civilian presence, and OpenShift is common in DoD/IC |
-| D238 | IBM watsonx on AWS GovCloud treated as IBM LLM provider (not AWS) | IBM manages the watsonx layer; underlying AWS infra is transparent to ICDEV |
+| D238 | IBM watsonx on AWS GovCloud treated as IBM LLM provider (not AWS) | IBM manages the watsonx layer; underlying AWS infra is transparent to ICDEV™ |
 | D239 | CSP monitoring integrated as Innovation Engine source (Phase 35) | Reuses existing signal scoring, triage, and solution generation pipeline; CSP changes treated as innovation signals with category mapping and government/compliance boosts |
 | D240 | Declarative CSP service registry as JSON catalog (extends D26 pattern) | Baseline of all CSP services, compliance programs, regions, and FIPS status; monitor diffs live data against registry to detect changes; human review required before registry updates |
 | D241 | CSP changelog generates actionable recommendations per change type | Each change type (deprecation, compliance scope change, breaking API change, etc.) maps to specific files and actions; enables ISSO and architects to respond systematically |
@@ -869,7 +869,7 @@ All SDKs are optional. The system SHALL function with only the SDK for the confi
 
 ### 12.1 Problem
 CSPs continuously release new services, deprecate old ones, add compliance certifications, expand to new regions, and make breaking API changes. Without automated monitoring:
-- ICDEV's service registry becomes stale
+- ICDEV™'s service registry becomes stale
 - New services are not evaluated for provider integration
 - Compliance scope changes go undetected (services added/removed from FedRAMP, HIPAA, PCI, etc.)
 - Breaking API changes cause provider failures in production
@@ -921,13 +921,13 @@ CSP Feeds (RSS/API/HTML)                    Innovation Engine (Phase 35)
 
 ### 12.5 CSP Service Registry
 
-The registry (`context/cloud/csp_service_registry.json`) is the baseline catalog of all CSP services tracked by ICDEV. It records:
+The registry (`context/cloud/csp_service_registry.json`) is the baseline catalog of all CSP services tracked by ICDEV™. It records:
 - Service name, category, and description
 - Government and commercial availability
 - Compliance programs in scope (FedRAMP, HIPAA, PCI DSS, etc.)
 - FIPS 140-2 validation status and level
 - Available regions (government + commercial)
-- ICDEV provider mapping (secrets, storage, kms, monitoring, iam, registry, ai_ml)
+- ICDEV™ provider mapping (secrets, storage, kms, monitoring, iam, registry, ai_ml)
 
 Registry updates require human review by default (`require_review: true` in config). Backups are created before every update.
 

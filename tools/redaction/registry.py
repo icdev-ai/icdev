@@ -326,7 +326,7 @@ class RedactionRegistry:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Redaction Registry")
+    parser = argparse.ArgumentParser(description="ICDEV™ Redaction Registry")
     parser.add_argument("--session", type=str, default=None, help="Session ID")
     parser.add_argument("--list", action="store_true", help="List session mappings")
     parser.add_argument("--cleanup", action="store_true", help="Remove expired entries")

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICDEV Portal - {% block title %}{{ tenant_name }}{% endblock %}</title>
+    <title>ICDEV™ Portal - {% block title %}{{ tenant_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('portal.static', filename='portal.css') }}">
     {% if session.get('portal_session_token') %}
     <meta name="api-key" content="{{ session.get('portal_session_token', '') }}">
@@ -30,7 +30,7 @@
                     </svg>
                 </div>
                 <div class="sidebar-title">
-                    <span class="sidebar-brand">ICDEV</span>
+                    <span class="sidebar-brand">ICDEV™</span>
                     <span class="sidebar-tenant">{{ tenant_name }}</span>
                 </div>
             </div>

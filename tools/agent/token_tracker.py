@@ -488,7 +488,7 @@ class BudgetExceededError(Exception):
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Token usage, cost tracking, and budget enforcement for ICDEV agents"
+        description="Token usage, cost tracking, and budget enforcement for ICDEV™ agents"
     )
     parser.add_argument(
         "--action",

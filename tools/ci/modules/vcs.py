@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV VCS Abstraction — Unified GitHub + GitLab interface
+# ICDEV™ VCS Abstraction — Unified GitHub + GitLab interface
 # Adapted from ADW github.py with GitLab support added
 
 """

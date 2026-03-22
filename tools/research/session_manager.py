@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Research Engine Session Manager — lifecycle management for research sessions.
 
 Manages the full session lifecycle from creation through archival:
@@ -536,7 +536,7 @@ def get_session_status(session_id, db_path=None):
 def _print_human(args, result):
     """Format output for human-readable terminal display."""
     print("=" * 70)
-    print("  ICDEV Research Engine — Session Manager — CUI // SP-CTI")
+    print("  ICDEV™ Research Engine — Session Manager — CUI // SP-CTI")
     print("=" * 70)
 
     if isinstance(result, dict) and "error" in result:

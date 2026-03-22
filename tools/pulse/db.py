@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse database layer — uses ICDEV's storage abstraction (D-DB-20)."""
+"""ICDEV™ Pulse database layer — uses ICDEV™'s storage abstraction (D-DB-20)."""
 
 import json
 from datetime import datetime, timezone

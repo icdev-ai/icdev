@@ -131,7 +131,7 @@ goals:
           - stub_detector
 
   marketplace_publish:
-    description: "Publish an asset to the ICDEV Marketplace"
+    description: "Publish an asset to the ICDEV™ Marketplace"
     phases:
       scan:
         description: "Scan and validate the asset"

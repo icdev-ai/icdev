@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Catalog Manager — CRUD for assets and versions.
 
 Manages the lifecycle of marketplace assets (skills, goals, hardprompts,
@@ -473,7 +473,7 @@ def list_versions(asset_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Catalog Manager")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Catalog Manager")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", type=Path, default=None)
 

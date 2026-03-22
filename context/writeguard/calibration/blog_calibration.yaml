@@ -7,7 +7,7 @@ calibration_examples:
   - id: cal-blog-01
     score: 5
     text: |
-      When a federal agency deployed ICDEV's crosswalk engine, implementing AC-2
+      When a federal agency deployed ICDEV™'s crosswalk engine, implementing AC-2
       automatically populated FedRAMP, CMMC, and 800-171 status — cutting their
       multi-framework assessment from 6 months to 3 weeks. The cATO live evidence
       engine streams OSCAL assessment-results per control, maintaining evidence
@@ -21,7 +21,7 @@ calibration_examples:
       The compound error problem is not theoretical. If an AI model produces
       correct output 90% of the time, the probability of a correct outcome
       across a five-step workflow drops to roughly 59%. Across ten steps, it
-      falls below 35%. ICDEV's GOTCHA framework breaks this chain by separating
+      falls below 35%. ICDEV™'s GOTCHA framework breaks this chain by separating
       probabilistic AI orchestration from deterministic Python tool execution.
     reasoning: "Original insight (compound error math), concrete numbers, connects theory to architecture solution."
 
@@ -30,7 +30,7 @@ calibration_examples:
     score: 4
     text: |
       Zero trust architecture requires identity verification at every access
-      point. ICDEV implements this through the ZTA maturity scorer, which
+      point. ICDEV™ implements this through the ZTA maturity scorer, which
       evaluates 7 pillars based on the DoD ZTA Strategy. Teams can track their
       maturity progression from Traditional through Advanced to Optimal.
     reasoning: "Specific tool, named framework (DoD ZTA), 3 maturity levels, but lacks CLI example or concrete metric."
@@ -38,7 +38,7 @@ calibration_examples:
   - id: cal-blog-04
     score: 4
     text: |
-      Supply chain security is no longer optional. ICDEV's dependency graph
+      Supply chain security is no longer optional. ICDEV™'s dependency graph
       builder creates an adjacency-list representation of all project
       dependencies, enabling impact propagation analysis when a CVE is
       discovered. The SCRM assessor evaluates vendors against NIST 800-161.
@@ -120,7 +120,7 @@ calibration_examples:
       Hollow tests are one of the most dangerous failure modes of AI-generated
       code. A hollow test executes code without meaningfully verifying behavior —
       it might call a function, capture the return value, and assert nothing.
-      ICDEV's Anti-Sycophancy Gate (L18) detects 6 categories of hollow patterns:
+      ICDEV™'s Anti-Sycophancy Gate (L18) detects 6 categories of hollow patterns:
       assertion-free, tautological, happy-path-only, mirror tests, shallow mocks,
       and hardcoded oracles.
     reasoning: "Original concept (hollow tests), specific tool (L18), 6 named categories, but no metric or CLI example."
@@ -129,7 +129,7 @@ calibration_examples:
     score: 5
     text: |
       During our FedRAMP Moderate assessment, the 3PAO flagged 47 controls where
-      implementation statements lacked specificity. ICDEV's DocHub engine
+      implementation statements lacked specificity. ICDEV™'s DocHub engine
       regenerated all 47 narratives in under 4 minutes using the '3pao' audience
       profile, which emphasizes tool names, evidence locations, and assessment
       procedures. Run: `python tools/dochub/doc_generator.py --project-id
@@ -142,8 +142,8 @@ calibration_examples:
       Container security is an important aspect of modern application deployment.
       Teams should scan their Docker images for vulnerabilities and ensure they
       follow best practices like running as non-root and using minimal base images.
-      ICDEV provides container scanning capabilities.
-    reasoning: "Mentions ICDEV but vaguely. Good advice but generic. No specific tool name or command."
+      ICDEV™ provides container scanning capabilities.
+    reasoning: "Mentions ICDEV™ but vaguely. Good advice but generic. No specific tool name or command."
 
   - id: cal-blog-16
     score: 4
@@ -167,7 +167,7 @@ calibration_examples:
     text: |
       When vibe coding collapsed the quality gates at Amazon in early 2026, the
       root cause wasn't bad AI — it was compound errors across 5 probabilistic
-      steps with no independent verification. ICDEV's Verification Iron Law
+      steps with no independent verification. ICDEV™'s Verification Iron Law
       prevents this: no completion claim without fresh verification evidence.
       The AI must run the verification command, read the output, and confirm
       the output matches the claim. 'Should work' is explicitly rejected.
@@ -177,7 +177,7 @@ calibration_examples:
     score: 3
     text: |
       Requirements management is a critical phase in software development.
-      Poor requirements lead to project failures. ICDEV's RICOAS system helps
+      Poor requirements lead to project failures. ICDEV™'s RICOAS system helps
       organizations capture and manage requirements through an AI-driven
       conversational intake process with gap detection and readiness scoring.
     reasoning: "Names RICOAS with features, but generic framing ('critical phase'). Needs concrete example."

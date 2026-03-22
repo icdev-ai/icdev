@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Monolith Decomposition Planning Tool for ICDEV DoD Modernization System.
+"""Monolith Decomposition Planning Tool for ICDEV™ DoD Modernization System.
 
 Analyzes legacy monolithic applications, detects bounded contexts via greedy
 modularity optimization, suggests microservice boundaries, generates ordered
 extraction plans, anti-corruption layers, API facades, effort estimates, and
-persists migration plans/tasks to the ICDEV database.
+persists migration plans/tasks to the ICDEV™ database.
 
 Classification: CUI // SP-CTI
-System: ICDEV Intelligent Certified Development Framework
+System: ICDEV™ Intelligent Certified Development Framework
 NIST: SC-7 (Boundary Protection), SA-8 (Security Engineering Principles)
 """
 
@@ -1085,7 +1085,7 @@ def create_migration_plan(
     approach="strangler_fig",
     db_path=None,
 ):
-    """Create a migration plan with tasks in the ICDEV database.
+    """Create a migration plan with tasks in the ICDEV™ database.
 
     Generates appropriate tasks based on strategy:
         rehost      — containerize, deploy
@@ -1308,7 +1308,7 @@ def _pretty_print(data, indent=0):
 def main():
     """CLI entry point for monolith decomposition planning."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI — ICDEV Monolith Decomposition Planner",
+        description="CUI // SP-CTI — ICDEV™ Monolith Decomposition Planner",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

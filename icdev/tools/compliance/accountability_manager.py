@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Accountability Manager â Phase 49 central coordinator.
 
 Manages human oversight plans, CAIO designation, appeals, ethics reviews,

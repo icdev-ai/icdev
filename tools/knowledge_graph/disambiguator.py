@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Knowledge Graph Entity Disambiguator — deduplication, merging, aliasing.
 
-Detects and resolves entity ambiguity in the ICDEV Knowledge Graph.
+Detects and resolves entity ambiguity in the ICDEV™ Knowledge Graph.
 Homonyms like "AC-2" (NIST control vs abbreviation) or "Python"
 (language vs project name) are identified via label matching, normalized
 comparison, and embedding cosine similarity.  All operations are

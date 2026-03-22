@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Python SDK client — thin wrapper around CLI tools (D191).
+"""ICDEV™ Python SDK client — thin wrapper around CLI tools (D191).
 
-Wraps existing ICDEV CLI tools via subprocess.run() with --json flag.
+Wraps existing ICDEV™ CLI tools via subprocess.run() with --json flag.
 Works offline, air-gap safe, no server dependency.  Project-scoped —
 set project_id once, use everywhere.
 
 Usage:
-    from tools.sdk.icdev_client import ICDEVClient
+    from tools.sdk.icdev_client import ICDEV™Client
 
-    client = ICDEVClient(project_id="proj-123", project_dir="/path/to/project")
+    client = ICDEV™Client(project_id="proj-123", project_dir="/path/to/project")
     status = client.project_status()
     ssp = client.generate_ssp()
     stig = client.check_stig()
@@ -24,18 +24,18 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
-class ICDEVError(Exception):
-    """Raised when an ICDEV CLI tool returns a non-zero exit code."""
+class ICDEV™Error(Exception):
+    """Raised when an ICDEV™ CLI tool returns a non-zero exit code."""
 
     def __init__(self, tool: str, returncode: int, stderr: str):
         self.tool = tool
         self.returncode = returncode
         self.stderr = stderr
-        super().__init__(f"ICDEV tool '{tool}' failed (exit {returncode}): {stderr}")
+        super().__init__(f"ICDEV™ tool '{tool}' failed (exit {returncode}): {stderr}")
 
 
-class ICDEVClient:
-    """Thin Python SDK wrapping ICDEV CLI tools.
+class ICDEV™Client:
+    """Thin Python SDK wrapping ICDEV™ CLI tools.
 
     Args:
         project_id: Project UUID (used for compliance/security tools).
@@ -68,7 +68,7 @@ class ICDEVClient:
             Parsed JSON dict from tool stdout.
 
         Raises:
-            ICDEVError: If tool exits with non-zero code.
+            ICDEV™Error: If tool exits with non-zero code.
         """
         full_path = str(BASE_DIR / tool_path)
         cmd = [self._python, full_path] + (args or []) + ["--json"]
@@ -83,7 +83,7 @@ class ICDEVClient:
         )
 
         if result.returncode != 0:
-            raise ICDEVError(tool_path, result.returncode, result.stderr.strip())
+            raise ICDEV™Error(tool_path, result.returncode, result.stderr.strip())
 
         try:
             return json.loads(result.stdout)

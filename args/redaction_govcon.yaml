@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon-Specific Redaction Configuration
+# ICDEV™ GovCon-Specific Redaction Configuration
 # Domain-specific recognizers for government proposal sensitive data.
 # Loaded as custom Presidio recognizers by tools/redaction/govcon_recognizers.py
 

@@ -2,9 +2,9 @@
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
-"""A2A Callback Client — calls parent ICDEV for capabilities not included locally.
+"""A2A Callback Client — calls parent ICDEV™ for capabilities not included locally.
 
-This child application (sparkpilot) can request services from its parent ICDEV
+This child application (sparkpilot) can request services from its parent ICDEV™
 instance using the A2A protocol (JSON-RPC 2.0).
 
 Excluded capabilities (must call parent for):
@@ -28,7 +28,7 @@ logger = logging.getLogger("sparkpilot.a2a_callback")
 
 
 def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:
-    """Send JSON-RPC 2.0 request to parent ICDEV.
+    """Send JSON-RPC 2.0 request to parent ICDEV™.
 
     Args:
         method: The RPC method name (e.g. "modernization.analyze_legacy").
@@ -83,7 +83,7 @@ def call_parent(method: str, params: dict = None, timeout: int = 30) -> dict:
 
 
 def check_health() -> bool:
-    """Check if parent ICDEV is reachable."""
+    """Check if parent ICDEV™ is reachable."""
     if not PARENT_URL:
         return False
     try:

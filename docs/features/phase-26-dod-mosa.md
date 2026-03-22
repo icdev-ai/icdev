@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 20 (Security Categorization), Phase 23 (Universal Compliance Platform) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -18,7 +18,7 @@
 
 10 U.S.C. Section 4401 mandates the Modular Open Systems Approach (MOSA) for all major defense acquisition programs, and DoDI 5000.87 reinforces this requirement for software-intensive systems on the Software Acquisition Pathway. Systems that fail to demonstrate modular design, open interfaces, and published standards risk acquisition milestone disapproval, vendor lock-in, and inability to integrate with future DoD enterprise services. Despite this mandate, most development teams treat MOSA as a last-minute documentation exercise rather than a continuous engineering practice, producing Interface Control Documents and Technical Standard Profiles that do not reflect the actual codebase.
 
-Prior to this phase, ICDEV had no mechanism to assess MOSA compliance, analyze modularity metrics (coupling, cohesion, circular dependencies), auto-generate ICDs from discovered interfaces, produce TSPs from detected technology standards, or enforce modular code structure through static analysis. MOSA-relevant requirements detected during intake had no workflow to follow, and there was no way to feed architecture evidence into the cATO pipeline for continuous authorization. DoD/IC customers were manually creating MOSA artifacts disconnected from the code they described.
+Prior to this phase, ICDEV™ had no mechanism to assess MOSA compliance, analyze modularity metrics (coupling, cohesion, circular dependencies), auto-generate ICDs from discovered interfaces, produce TSPs from detected technology standards, or enforce modular code structure through static analysis. MOSA-relevant requirements detected during intake had no workflow to follow, and there was no way to feed architecture evidence into the cATO pipeline for continuous authorization. DoD/IC customers were manually creating MOSA artifacts disconnected from the code they described.
 
 Phase 26 implements MOSA as a full compliance framework using the BaseAssessor pattern (D116), with 25 requirements across 6 families (Modularity, Open Interfaces, Standards Compliance, Interoperability, Reusability, Maintainability). It auto-detects MOSA applicability during RICOAS intake for all DoD/IC customers at IL4+, performs static analysis for coupling/cohesion/circular dependency metrics, auto-generates ICDs from OpenAPI/gRPC/REST endpoints, produces TSPs from the detected technology stack, enforces MOSA-compliant code structure, and optionally feeds architecture evidence into the cATO pipeline.
 

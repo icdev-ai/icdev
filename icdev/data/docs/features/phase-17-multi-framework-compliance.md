@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 11 (Compliance Workflow), Phase 16 (ATO Acceleration) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Government and defense applications must comply with multiple overlapping compli
 
 The international dimension compounds this challenge. Organizations operating globally must also satisfy ISO/IEC 27001:2022, which uses an entirely different control structure than the NIST-based US frameworks. Manually mapping between US and international frameworks is error-prone and rarely maintained as frameworks evolve independently.
 
-ICDEV needs a dual-hub crosswalk engine that uses NIST 800-53 Rev 5 as the US hub and ISO/IEC 27001:2022 as the international hub, connected by a bidirectional bridge. Implementing a control at either hub should automatically cascade satisfaction to all mapped frameworks, eliminating redundant work and ensuring consistent compliance posture across all regimes.
+ICDEV™ needs a dual-hub crosswalk engine that uses NIST 800-53 Rev 5 as the US hub and ISO/IEC 27001:2022 as the international hub, connected by a bidirectional bridge. Implementing a control at either hub should automatically cascade satisfaction to all mapped frameworks, eliminating redundant work and ensuring consistent compliance posture across all regimes.
 
 ---
 

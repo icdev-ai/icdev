@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 38 (Cloud-Agnostic Architecture), Phase 19 (App Modernization), Phase 17 (ATO Acceleration) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -18,7 +18,7 @@
 
 DoD and government organizations face a persistent challenge in legacy software modernization: migrating codebases from one programming language to another while preserving functionality, compliance posture, and ATO status. The FY25-26 DoD software modernization plan emphasizes cATO, DevSecOps, and presumptive reciprocity — all of which require maintaining compliance continuity through language migrations. Manual translation is error-prone, expensive, and does not scale.
 
-ICDEV already supports 6 first-class languages (Python, Java, Go, Rust, C#, TypeScript) with full toolchain coverage (scaffold, lint, format, SAST, dep audit, BDD, code gen). However, translating between these 30 directional language pairs requires more than simple LLM prompting. LLMs excel at translating small code snippets but struggle with project-level translation: maintaining consistent naming, resolving cross-file dependencies, mapping language-specific idioms, preserving type safety, and ensuring the translated output compiles and passes tests.
+ICDEV™ already supports 6 first-class languages (Python, Java, Go, Rust, C#, TypeScript) with full toolchain coverage (scaffold, lint, format, SAST, dep audit, BDD, code gen). However, translating between these 30 directional language pairs requires more than simple LLM prompting. LLMs excel at translating small code snippets but struggle with project-level translation: maintaining consistent naming, resolving cross-file dependencies, mapping language-specific idioms, preserving type safety, and ensuring the translated output compiles and passes tests.
 
 The GOTCHA principle — that LLMs are probabilistic while business logic must be deterministic — dictates a hybrid approach. Deterministic extraction parses source code into a language-agnostic Intermediate Representation (IR). Deterministic type-checking validates signature compatibility before translation. LLM-assisted translation handles the creative mapping between language idioms. Deterministic assembly scaffolds the target project. A validate-and-repair loop uses compiler feedback to fix translation errors. This 5-phase pipeline maximizes translation quality while maintaining auditability and compliance traceability.
 
@@ -26,7 +26,7 @@ The GOTCHA principle — that LLMs are probabilistic while business logic must b
 
 ## 2. Goals
 
-1. Translate entire codebases between ICDEV's 6 supported languages (30 directional pairs) using a 5-phase hybrid pipeline
+1. Translate entire codebases between ICDEV™'s 6 supported languages (30 directional pairs) using a 5-phase hybrid pipeline
 2. Preserve ATO compliance through the translation with 95% NIST 800-53 control coverage via the compliance bridge
 3. Generate multiple translation candidates per unit (pass@k) and select the best, improving translation quality
 4. Handle persistent translation failures gracefully via mock-and-continue, generating type-compatible stubs that allow dependent code to translate

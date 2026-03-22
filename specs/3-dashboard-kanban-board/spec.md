@@ -89,7 +89,7 @@ IMPORTANT: Execute every step in order, top to bottom.
 - Create `tools/dashboard/static/js/kanban.js`
 - On DOMContentLoaded, if `.kanban-board` exists, set up a 30-second auto-refresh
 - Refresh fetches `/api/projects`, re-renders cards into correct columns
-- Uses ICDEV.escapeHTML for safe HTML rendering
+- Uses ICDEV™.escapeHTML for safe HTML rendering
 - Register in `base.html` script includes
 
 ### Step 6: Update tour steps in app.py

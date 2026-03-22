@@ -11,7 +11,7 @@
         },
         "tools_only": {
             "directories": ["tools/", "args/", "context/", "hardprompts/"],
-            "description": "ICDEV framework files only"
+            "description": "ICDEV™ framework files only"
         },
         "app_only": {
             "directories": ["src/", "tests/", "features/"],

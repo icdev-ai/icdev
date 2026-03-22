@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Redaction Detector — production-grade PII detection for ICDEV.
+"""Redaction Detector — production-grade PII detection for ICDEV™.
 
 Three detection layers (no external NLP dependencies required):
     1. Regex patterns — SSN, email, phone, credit card, contract#, pricing
@@ -469,7 +469,7 @@ class RedactionDetector:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Redaction Detector")
+    parser = argparse.ArgumentParser(description="ICDEV™ Redaction Detector")
     parser.add_argument("--detect", type=str, help="Detect PII in text")
     parser.add_argument("--detect-file", type=str, help="Detect PII in file")
     parser.add_argument("--list-entities", action="store_true", help="List supported entities")

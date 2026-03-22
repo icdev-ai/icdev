@@ -155,7 +155,7 @@ def create_worktree(task_id: str, target_dir: str, classification: str = "CUI",
 
 
 def list_worktrees() -> List[WorktreeInfo]:
-    """List all ICDEV git worktrees."""
+    """List all ICDEV™ git worktrees."""
     result = _run_git(["worktree", "list", "--porcelain"])
     worktrees = []
 
@@ -276,7 +276,7 @@ def get_worktree_status(worktree_name: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Git Worktree Manager")
+    parser = argparse.ArgumentParser(description="ICDEV™ Git Worktree Manager")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--create", action="store_true", help="Create a new worktree")
     group.add_argument("--list", action="store_true", help="List all worktrees")

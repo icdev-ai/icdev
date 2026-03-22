@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 35 (Innovation Engine), Phase 58 (Creative Engine) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-03-01 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV generates child applications for government and defense customers, but lacks systematic industry research capabilities to inform product strategy, competitive positioning, and regulatory awareness. Three gaps exist:
+ICDEV™ generates child applications for government and defense customers, but lacks systematic industry research capabilities to inform product strategy, competitive positioning, and regulatory awareness. Three gaps exist:
 
 1. **No structured research pipeline** — Understanding a new vertical (healthcare, defense, fintech) requires manual research across scattered sources. There is no repeatable process for signal discovery, challenge extraction, or opportunity scoring.
 
@@ -52,7 +52,7 @@ Phase 63 addresses these gaps with a 9-stage research pipeline, YouTube as a 9th
 | EXTRACT | Extract challenges, pain points, opportunities | `challenge_scorer.py` |
 | CLUSTER | Group related challenges by keyword fingerprint | `challenge_scorer.py` |
 | SCORE | Score challenges (frequency × severity × opportunity) | `challenge_scorer.py` |
-| MAP | Map to regulatory bodies and ICDEV capabilities | `regulatory_mapper.py`, `capability_mapper.py` |
+| MAP | Map to regulatory bodies and ICDEV™ capabilities | `regulatory_mapper.py`, `capability_mapper.py` |
 | SYNTHESIZE | Build/buy analysis, trend detection | `build_buy_analyzer.py`, `trend_detector.py` |
 | FORECAST | Generate predictions with surprise scoring | `forecast_generator.py` |
 | DOSSIER | Compile final research dossier | `dossier_generator.py` |
@@ -122,7 +122,7 @@ Top 5 predictions ranked by composite rank are included in the dossier.
 | `research_signals` | Discovered signals from all 9 source types |
 | `research_challenges` | Extracted and scored challenges |
 | `research_regulatory_map` | Challenge-to-regulatory-body mappings |
-| `research_capability_map` | Challenge-to-ICDEV-capability mappings |
+| `research_capability_map` | Challenge-to-ICDEV™-capability mappings |
 | `research_build_buy` | Build vs. buy analysis per challenge |
 | `research_dossiers` | Generated research dossiers |
 | `research_trends` | Detected industry trends |
@@ -274,7 +274,7 @@ New MCP tools registered in `tools/mcp/research_server.py` and `tools/mcp/tool_r
 | D-RES-4 | Challenge scoring uses deterministic 3-dimension weighted average (D21 pattern) |
 | D-RES-5 | All research tables append-only except research_sessions (status updates) |
 | D-RES-6 | Regulatory body mapping uses `context/research/regulatory_registry.json` with crosswalk hooks |
-| D-RES-7 | Capability mapping is advisory-only — suggests ICDEV capabilities that address challenges |
+| D-RES-7 | Capability mapping is advisory-only — suggests ICDEV™ capabilities that address challenges |
 | D-RES-8 | Build/buy analysis uses deterministic scoring (complexity, time-to-market, compliance-alignment) |
 | D-RES-9 | Trend detection reuses Innovation Engine pattern (keyword co-occurrence, velocity tracking) |
 | D-RES-10 | Dossier is a structured JSON document with optional markdown rendering |

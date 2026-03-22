@@ -1,4 +1,4 @@
-"""ICDEV Pulse video search engine.
+"""ICDEV™ Pulse video search engine.
 
 Searches YouTube and Vimeo for relevant videos to embed in blog posts.
 No API keys required -- uses web scraping (YouTube), oEmbed (Vimeo),

@@ -1,4 +1,4 @@
-# ICDEV Goal Workflows
+# ICDEV™ Goal Workflows
 
 All existing goal workflows. Check `goals/manifest.md` for the canonical index.
 
@@ -33,7 +33,7 @@ All existing goal workflows. Check `goals/manifest.md` for the canonical index.
 | Parallel CI/CD | `goals/parallel_cicd.md` | Git worktree task isolation, GitLab `{{icdev: workflow}}` tag routing, parallel workflow execution (Phase 41) |
 | Framework Planning | `goals/framework_planning.md` | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (Phase 42) |
 | Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Opus 4.6 multi-agent: Bedrock client, DAG workflows, parallel execution, collaboration patterns, domain authority vetoes, agent mailbox, agent memory |
-| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV clone apps with GOTCHA/ATLAS |
+| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV™ clone apps with GOTCHA/ATLAS |
 | Security Categorization | `goals/security_categorization.md` | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
 | SaaS Multi-Tenancy | `goals/saas_multi_tenancy.md` | Multi-tenant SaaS platform: API gateway (REST+MCP Streamable HTTP), per-tenant DB isolation, 3 auth methods, subscription tiers, artifact delivery, tenant portal, Helm on-prem |
 | Marketplace | `goals/marketplace.md` | Federated GOTCHA asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline |

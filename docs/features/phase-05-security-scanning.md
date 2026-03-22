@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 3 (TDD/BDD Testing Framework) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ A single undetected vulnerability in a government system can be a national secur
 
 Traditional security scanning is performed as a late-stage gate, often as a checkbox exercise before deployment. By this point, the cost of remediation is high, schedules are compressed, and pressure mounts to accept risk rather than fix findings. In government environments, this pattern leads to POAMs full of overdue items and eventual ATO revocation.
 
-ICDEV integrates a comprehensive 4-scanner security pipeline that runs early and often: SAST (static application security testing) via Bandit, dependency auditing via pip-audit, secret detection via detect-secrets, and container scanning via Trivy. Quality gates enforce zero tolerance for critical/high findings and detected secrets. Findings feed directly into POAM generation (Phase 4). The pipeline blocks deployment until all gates pass -- no exceptions without Authorizing Official written approval.
+ICDEV™ integrates a comprehensive 4-scanner security pipeline that runs early and often: SAST (static application security testing) via Bandit, dependency auditing via pip-audit, secret detection via detect-secrets, and container scanning via Trivy. Quality gates enforce zero tolerance for critical/high findings and detected secrets. Findings feed directly into POAM generation (Phase 4). The pipeline blocks deployment until all gates pass -- no exceptions without Authorizing Official written approval.
 
 ---
 

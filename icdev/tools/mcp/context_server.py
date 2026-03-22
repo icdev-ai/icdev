@@ -93,7 +93,7 @@ def handle_list_sections(args: dict) -> dict:
 
 
 def handle_get_icdev_metadata(args: dict) -> dict:
-    """Get live ICDEV system metadata.
+    """Get live ICDEV™ system metadata.
 
     Returns project count, agent health, recent events, compliance posture,
     migration version, and system statistics.

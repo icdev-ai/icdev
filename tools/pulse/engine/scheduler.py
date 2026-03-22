@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse scheduler — multi-stage pipeline with LLM router integration.
+"""ICDEV™ Pulse scheduler — multi-stage pipeline with LLM router integration.
 
 Updated 2026-03-12: Added qwen3.5 drafting, Claude Sonnet rewriting,
 multi-step wizard support, and per-article quality stats.
@@ -180,7 +180,7 @@ def draft_phase(
         cluster: Topic cluster from research phase.
         template_type: 'challenge_solution' or 'feature_spotlight'.
         research_context: Synthesis text from research.
-        capability_context: ICDEV capability reference for prompt injection.
+        capability_context: ICDEV™ capability reference for prompt injection.
 
     Returns:
         dict with 'body_markdown', 'model_used', 'status', 'stage'.
@@ -1074,7 +1074,7 @@ def rewrite_post_via_llm(post_id: str) -> dict:
 
 
 def enrich_post_with_capabilities(post_id: str) -> dict:
-    """Rewrite a post with ICDEV capability context injected.
+    """Rewrite a post with ICDEV™ capability context injected.
 
     Matches capabilities based on post title/topic, injects capability context
     into the rewrite prompt, and triggers a Claude Sonnet rewrite.
@@ -1124,8 +1124,8 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
     # Build capability-enrichment findings (synthetic finding to trigger rewrite)
     findings = [{
         "category": "capability_enrichment",
-        "message": "Article should reference ICDEV capabilities naturally",
-        "suggestion": "Weave relevant ICDEV tool references, CLI examples, and capability descriptions into the narrative",
+        "message": "Article should reference ICDEV™ capabilities naturally",
+        "suggestion": "Weave relevant ICDEV™ tool references, CLI examples, and capability descriptions into the narrative",
     }]
 
     # Rewrite with capability context
@@ -1203,7 +1203,7 @@ def run_scheduled():
     import time
 
     init_db()
-    logger.info("Starting ICDEV Pulse scheduler (%s)...", SCHEDULE_INTERVAL)
+    logger.info("Starting ICDEV™ Pulse scheduler (%s)...", SCHEDULE_INTERVAL)
     logger.info(
         "NOTE: Scheduled mode runs research + cluster only. "
         "Claude Code must write the article."

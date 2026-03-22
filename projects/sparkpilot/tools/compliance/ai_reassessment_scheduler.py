@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Reassessment Scheduler — Phase 49.
 
 Tracks periodic reassessment schedules for AI systems as required by

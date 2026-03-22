@@ -52,7 +52,7 @@ def _github_api(endpoint: str, timeout: int = 15) -> Optional[Dict]:
     """Call GitHub public API.  Returns None on failure."""
     url = f"https://api.github.com{endpoint}"
     headers = {
-        "User-Agent": "ICDEV-Genesis/2.0",
+        "User-Agent": "ICDEV™-Genesis/2.0",
         "Accept": "application/vnd.github.v3+json",
     }
     # Use token if available (higher rate limit)

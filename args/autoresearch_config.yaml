@@ -2,7 +2,7 @@
 # Bayesian Autoresearch Configuration (Phase 67)
 #
 # Adapts Karpathy's Autoresearch loop (autonomous experiment cycle:
-# hypothesize → execute → evaluate → keep/discard) with ICDEV's Bayesian
+# hypothesize → execute → evaluate → keep/discard) with ICDEV™'s Bayesian
 # Teaching Intelligence (information-gain scoring, Thompson Sampling,
 # teaching dimension) for self-improving experiments.
 #

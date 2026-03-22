@@ -218,7 +218,7 @@ def detect_gaps(session_id: str, checks: dict = None, db_path=None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Gap Detector")
+    parser = argparse.ArgumentParser(description="ICDEV™ Gap Detector")
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument("--check-security", action="store_true")
     parser.add_argument("--check-compliance", action="store_true")

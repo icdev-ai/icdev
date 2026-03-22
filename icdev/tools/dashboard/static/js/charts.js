@@ -1,18 +1,18 @@
 // CUI // SP-CTI
-// ICDEV Dashboard — SVG Chart Library (Zero Dependencies)
+// ICDEV™ Dashboard — SVG Chart Library (Zero Dependencies)
 // Classification: CUI // SP-CTI
 (function () {
   'use strict';
 
-  var NS = window.ICDEV || (window.ICDEV = {});
+  var NS = window.ICDEV™ || (window.ICDEV™ = {});
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────────
 
   var _tooltipEl = null;
 
-  /** Delegate to shared ICDEV.escapeHTML (api.js). */
+  /** Delegate to shared ICDEV™.escapeHTML (api.js). */
   function escapeHTML(str) {
-    return ICDEV.escapeHTML ? ICDEV.escapeHTML(str) : String(str || '');
+    return ICDEV™.escapeHTML ? ICDEV™.escapeHTML(str) : String(str || '');
   }
 
   function cssVar(name, fallback) {

@@ -2,7 +2,7 @@
 description: "Sync requirements with Jira, ServiceNow, GitLab, and DOORS NG"
 ---
 
-# ICDEV External Integration
+# ICDEV™ External Integration
 
 Bidirectional sync with Jira, ServiceNow, and GitLab. Export to DOORS NG via ReqIF. Manage approval workflows and build full traceability.
 

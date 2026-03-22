@@ -1,11 +1,11 @@
 // CUI // SP-CTI
-// ICDEV Playwright Configuration
+// ICDEV™ Playwright Configuration
 // Native browser test runner for E2E testing
 
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * ICDEV Playwright Test Configuration
+ * ICDEV™ Playwright Test Configuration
  *
  * Aligns with existing playwright-mcp-config.json settings:
  * - Chromium headless, 1920x1080 viewport, video recording

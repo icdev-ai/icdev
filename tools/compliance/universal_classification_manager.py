@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Universal Data Classification and Marking Manager for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Universal Data Classification and Marking Manager for ICDEV™.
 
 Extends classification_manager.py to support multi-regime data categories
 (CUI, PHI, PCI, CJIS, PII, FTI, ITAR, SECRET) with composable markings.
@@ -387,7 +387,7 @@ def get_composite_code_header(
             header_lines.append(f"{cat} Framework: {fw}")
 
     header_lines.append("Distribution: Restricted -- See applicable framework policies")
-    header_lines.append("POC: ICDEV System Administrator")
+    header_lines.append("POC: ICDEV™ System Administrator")
 
     # Apply comment style
     lang_lower = language.lower()

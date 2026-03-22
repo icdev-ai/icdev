@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | None |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Large Language Models are probabilistic systems. When used directly for business
 
 The fundamental challenge is separating what LLMs are good at (orchestration, decision-making, natural language understanding) from what must be deterministic (business logic, compliance checks, security scanning, infrastructure generation). Without a structured framework, AI-assisted development devolves into "vibe coding" -- producing demos that cannot survive production scrutiny, compliance audits, or operational stress.
 
-ICDEV requires a foundational architecture that enforces this separation of concerns while providing a complete operational model: persistent memory across sessions, manifest-driven tool discovery, goal-driven workflows, configurable behavior, reusable context, and templated prompts. This is the GOTCHA framework.
+ICDEV™ requires a foundational architecture that enforces this separation of concerns while providing a complete operational model: persistent memory across sessions, manifest-driven tool discovery, goal-driven workflows, configurable behavior, reusable context, and templated prompts. This is the GOTCHA framework.
 
 ---
 
@@ -189,7 +189,7 @@ When a workflow fails mid-execution, the system SHALL preserve intermediate outp
 | `tools/memory/hybrid_search.py` | Combined keyword + semantic search (best results) |
 | `tools/memory/embed_memory.py` | Generate embeddings for all memory entries |
 | `tools/memory/time_decay.py` | Time-decay scoring for memory ranking |
-| `tools/db/init_icdev_db.py` | Initialize the ICDEV database |
+| `tools/db/init_icdev_db.py` | Initialize the ICDEV™ database |
 | `tools/project/project_create.py` | Create new project records |
 | `tools/project/project_list.py` | List all projects |
 | `tools/project/project_status.py` | Get project status |
@@ -200,7 +200,7 @@ When a workflow fails mid-execution, the system SHALL preserve intermediate outp
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D1 | SQLite for ICDEV internals; PostgreSQL for apps ICDEV builds | Zero-config portability for the framework itself; production-grade DB for generated applications |
+| D1 | SQLite for ICDEV™ internals; PostgreSQL for apps ICDEV™ builds | Zero-config portability for the framework itself; production-grade DB for generated applications |
 | D6 | Audit trail is append-only/immutable (no UPDATE/DELETE) | Satisfies NIST 800-53 AU controls; ensures tamper-evident audit records |
 | D168 | Time-decay uses exponential formula with per-type half-lives | Memory relevance degrades naturally; events decay fast (7d), facts slowly (90d), preferences slowest (180d) |
 
@@ -236,7 +236,7 @@ python tools/memory/embed_memory.py --all                            # Generate 
 python tools/memory/time_decay.py --rank --query "keyword" --top-k 10 --json  # Time-decay ranked search
 
 # Database initialization
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database
+python tools/db/init_icdev_db.py                    # Initialize ICDEV™ database
 
 # Project management
 python tools/project/project_create.py --name "my-app" --type microservice

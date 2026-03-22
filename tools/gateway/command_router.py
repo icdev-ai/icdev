@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Command Router — Parse, validate, and dispatch ICDEV commands.
+"""Command Router — Parse, validate, and dispatch ICDEV™ commands.
 
 Receives a security-chain-validated CommandEnvelope, checks the
 command against the allowlist, and dispatches to the appropriate
-ICDEV tool via subprocess execution.
+ICDEV™ tool via subprocess execution.
 
 Decision D137: Command allowlist is YAML-driven with per-channel overrides.
 Decision D138: Deploy commands disabled by default on all remote channels.
@@ -45,7 +45,7 @@ except ImportError:
 # Command → Tool Mapping
 # ---------------------------------------------------------------------------
 
-# Maps ICDEV command names to the Python tool script that implements them
+# Maps ICDEV™ command names to the Python tool script that implements them
 COMMAND_TOOL_MAP = {
     "icdev-status": {
         "script": "tools/project/project_status.py",
@@ -100,7 +100,7 @@ def is_command_allowed(command: str, channel: str,
     """Check if a command is allowed on a given channel.
 
     Args:
-        command: ICDEV command name (e.g., "icdev-status")
+        command: ICDEV™ command name (e.g., "icdev-status")
         channel: Channel name (e.g., "telegram")
         allowlist: Command allowlist from config
 
@@ -131,7 +131,7 @@ def requires_confirmation(command: str, allowlist: List[Dict]) -> bool:
 def execute_command(envelope: CommandEnvelope,
                     channel_config: Dict,
                     gateway_config: Dict) -> Dict[str, Any]:
-    """Execute an ICDEV command and return the result.
+    """Execute an ICDEV™ command and return the result.
 
     Args:
         envelope: Validated CommandEnvelope

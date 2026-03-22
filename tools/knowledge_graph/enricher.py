@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Knowledge Graph Enricher — centrality calculation + entity embeddings (D-KARL-7).
 
 Computes and persists:

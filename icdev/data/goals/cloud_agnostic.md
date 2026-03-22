@@ -4,15 +4,15 @@
 
 ## Purpose
 
-Enable ICDEV to deploy on any supported Cloud Service Provider (CSP) — or on-premises — using a single, unified abstraction layer. Cloud-specific details (endpoints, SDKs, regions, compliance certifications) are encapsulated behind provider ABCs so that the GOTCHA framework, compliance engine, and all tools operate identically regardless of the underlying infrastructure.
+Enable ICDEV™ to deploy on any supported Cloud Service Provider (CSP) — or on-premises — using a single, unified abstraction layer. Cloud-specific details (endpoints, SDKs, regions, compliance certifications) are encapsulated behind provider ABCs so that the GOTCHA framework, compliance engine, and all tools operate identically regardless of the underlying infrastructure.
 
-**Why this matters:** Government and DoD customers deploy on different cloud environments — AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government Cloud, IBM Cloud for Government (IC4G), or fully air-gapped on-premises enclaves. ICDEV must support all of these without duplicating business logic. A single `cloud_config.yaml` setting switches the entire stack.
+**Why this matters:** Government and DoD customers deploy on different cloud environments — AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government Cloud, IBM Cloud for Government (IC4G), or fully air-gapped on-premises enclaves. ICDEV™ must support all of these without duplicating business logic. A single `cloud_config.yaml` setting switches the entire stack.
 
 ---
 
 ## When to Use
 
-- When deploying ICDEV to a new cloud environment
+- When deploying ICDEV™ to a new cloud environment
 - When generating Terraform, Helm, or K8s manifests for a specific CSP
 - When configuring LLM routing for multi-cloud AI providers
 - When validating region compliance certifications before deployment
@@ -27,7 +27,7 @@ Enable ICDEV to deploy on any supported Cloud Service Provider (CSP) — or on-p
 - [ ] Cloud configuration: `args/cloud_config.yaml` (CSP selection, cloud mode, region, per-service overrides)
 - [ ] CSP certifications registry: `context/compliance/csp_certifications.json`
 - [ ] LLM configuration: `args/llm_config.yaml` (multi-cloud LLM providers)
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] CSP-specific SDK installed for target cloud (optional — graceful degradation per D231)
 
 ---

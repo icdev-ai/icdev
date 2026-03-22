@@ -1,8 +1,8 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Mattermost Connector — built-in Mattermost integration (D136, D137)
+# ICDEV™ Mattermost Connector — built-in Mattermost integration (D136, D137)
 
 """
-Built-in Mattermost connector for ICDEV CI/CD.
+Built-in Mattermost connector for ICDEV™ CI/CD.
 
 Mattermost is common in DoD environments (self-hosted, IL4/IL5 compatible).
 
@@ -11,7 +11,7 @@ Handles:
 - Outbound: POST /api/v4/posts with threading (D137)
 - Signature: HMAC-SHA256 webhook token verification
 
-Uses only `requests` (existing ICDEV dependency) + stdlib `hmac`/`hashlib`.
+Uses only `requests` (existing ICDEV™ dependency) + stdlib `hmac`/`hashlib`.
 
 Architecture Decisions:
     D136: Mattermost is a built-in connector with enable/disable toggle

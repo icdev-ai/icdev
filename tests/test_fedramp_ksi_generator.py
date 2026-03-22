@@ -36,7 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 @pytest.fixture
 def icdev_db(tmp_path):
-    """Create a minimal ICDEV database for KSI evidence checks."""
+    """Create a minimal ICDEV™ database for KSI evidence checks."""
     db_path = tmp_path / "icdev.db"
     conn = sqlite3.connect(str(db_path))
     conn.executescript("""

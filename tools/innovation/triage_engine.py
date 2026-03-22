@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals.
 
 Every innovation signal discovered by the web scanner passes through this
@@ -14,7 +14,7 @@ entering the build pipeline.
 Pipeline Stages:
     1. Classify Signal     — Map to signal_categories from innovation_config.yaml
     2. GOTCHA Fit Check    — Signal must map to at least one GOTCHA layer
-    2.5 Module Impact      — Map to specific ICDEV tools/files (Phase 71 enhancement)
+    2.5 Module Impact      — Map to specific ICDEV™ tools/files (Phase 71 enhancement)
     3. Boundary Impact     — Estimate ATO boundary impact (GREEN/YELLOW/ORANGE/RED)
     4. Compliance Pre-Check — Detect compliance-weakening anti-patterns
     5. Duplicate/License   — Content-hash dedup + blocked license detection
@@ -362,7 +362,7 @@ def _stage_gotcha_fit(signal, config):
 # STAGE 2.5: MODULE-LEVEL IMPACT MAPPING (Phase 71 enhancement)
 # =========================================================================
 def _map_module_impact(signal, conn, config):
-    """Map signal to specific ICDEV modules that would be enhanced (Phase 71 lesson).
+    """Map signal to specific ICDEV™ modules that would be enhanced (Phase 71 lesson).
 
     Goes beyond GOTCHA layer matching to identify exact tools/files that
     would benefit from this signal's integration.
@@ -1186,7 +1186,7 @@ def get_triage_summary(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
+        description="ICDEV™ Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

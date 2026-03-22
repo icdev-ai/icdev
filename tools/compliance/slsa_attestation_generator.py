@@ -4,7 +4,7 @@
 
 Generates SLSA (Supply-chain Levels for Software Artifacts) v1.0 provenance
 statements and VEX (Vulnerability Exploitability eXchange) documents from
-ICDEV build pipeline evidence. Extends existing attestation_manager.py (D341).
+ICDEV™ build pipeline evidence. Extends existing attestation_manager.py (D341).
 
 Architecture Decisions:
   D341: SLSA attestation generator extends existing attestation_manager.py.
@@ -86,7 +86,7 @@ def _get_connection(db_path=None):
 
 
 def _collect_build_evidence(project_id: str, conn) -> dict:
-    """Collect build evidence from ICDEV databases."""
+    """Collect build evidence from ICDEV™ databases."""
     evidence = {
         "build_process_documented": False,
         "version_controlled_source": False,
@@ -277,7 +277,7 @@ def generate_vex_document(
 ) -> dict:
     """Generate VEX (Vulnerability Exploitability eXchange) document.
 
-    Collects vulnerability data from ICDEV databases and produces a
+    Collects vulnerability data from ICDEV™ databases and produces a
     CycloneDX VEX document mapping vulnerabilities to exploitability status.
 
     Args:
@@ -310,7 +310,7 @@ def generate_vex_document(
                     justification = row["justification"] if row["justification"] else ""
                     vuln = {
                         "id": row["id"],
-                        "source": {"name": "ICDEV Vulnerability Scanner"},
+                        "source": {"name": "ICDEV™ Vulnerability Scanner"},
                         "ratings": [{"severity": severity}],
                         "analysis": {
                             "state": status,
@@ -339,7 +339,7 @@ def generate_vex_document(
                     triage_decision = row["triage_decision"] if row["triage_decision"] else "under_investigation"
                     vuln = {
                         "id": cve_id,
-                        "source": {"name": "ICDEV CVE Triager"},
+                        "source": {"name": "ICDEV™ CVE Triager"},
                         "ratings": [{"score": cvss_score, "method": "CVSSv3"}],
                         "analysis": {
                             "state": triage_decision,
@@ -357,7 +357,7 @@ def generate_vex_document(
             "serialNumber": f"urn:uuid:{uuid.uuid4()}",
             "metadata": {
                 "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "tools": [{"vendor": "ICDEV", "name": "slsa_attestation_generator", "version": "1.0"}],
+                "tools": [{"vendor": "ICDEV™", "name": "slsa_attestation_generator", "version": "1.0"}],
                 "component": {"name": project_id, "type": "application"},
             },
             "vulnerabilities": vulnerabilities,

@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Knowledge Graph Insight Generator — scanner-tier, zero Claude tokens.
 
 Analyzes a knowledge graph to find bridge gaps (disconnected clusters),

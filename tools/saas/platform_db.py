@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS Platform -- Platform Database Schema & Connection.
+"""ICDEV™ SaaS Platform -- Platform Database Schema & Connection.
 
 CUI // SP-CTI
 
@@ -49,7 +49,7 @@ SQLITE_PATH = DATA_DIR / "platform.db"
 # PostgreSQL Schema
 # ---------------------------------------------------------------------------
 PG_SCHEMA_SQL = """
--- ICDEV SaaS Platform -- PostgreSQL Schema (CUI // SP-CTI)
+-- ICDEV™ SaaS Platform -- PostgreSQL Schema (CUI // SP-CTI)
 
 CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -165,7 +165,7 @@ CREATE INDEX IF NOT EXISTS idx_tenant_llm_keys_provider ON tenant_llm_keys(tenan
 # SQLite Schema (translated from PG)
 # ---------------------------------------------------------------------------
 SQLITE_SCHEMA_SQL = """
--- ICDEV SaaS Platform -- SQLite Schema (CUI // SP-CTI)
+-- ICDEV™ SaaS Platform -- SQLite Schema (CUI // SP-CTI)
 
 CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
@@ -632,7 +632,7 @@ def seed_demo_data():
         cursor.execute(
             "INSERT INTO tenants (id, name, slug, status, tier, impact_level) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (tenant_id, "ICDEV Demo", "icdev-demo", "active", "starter", "IL4"),
+            (tenant_id, "ICDEV™ Demo", "icdev-demo", "active", "starter", "IL4"),
         )
 
         # 2. Create admin user
@@ -663,7 +663,7 @@ def seed_demo_data():
                 "INSERT INTO audit_platform (tenant_id, user_id, event_type, "
                 "action, details) VALUES (?, ?, ?, ?, ?)",
                 (tenant_id, user_id, "tenant.seed", "seed_demo_data",
-                 json.dumps({"tenant": "ICDEV Demo", "user": "admin@icdev.local"})),
+                 json.dumps({"tenant": "ICDEV™ Demo", "user": "admin@icdev.local"})),
             )
         except Exception:
             pass  # Audit logging should not block seed
@@ -693,7 +693,7 @@ def seed_demo_data():
 def main():
     """CLI entry point for platform database management."""
     parser = argparse.ArgumentParser(
-        description="ICDEV SaaS Platform Database Manager (CUI // SP-CTI)",
+        description="ICDEV™ SaaS Platform Database Manager (CUI // SP-CTI)",
     )
     parser.add_argument("--init", action="store_true",
                         help="Initialize the platform database schema")
@@ -772,7 +772,7 @@ def main():
                 print(f"[INFO] {result['message']}")
             elif result["status"] == "ok":
                 print(f"[OK] {result['message']}")
-                print(f"  Tenant: ICDEV Demo (IL4 / Starter)")
+                print(f"  Tenant: ICDEV™ Demo (IL4 / Starter)")
                 print(f"  Admin:  admin@icdev.local")
                 print(f"  API Key (copy this to log in — shown only once):")
                 print(f"    {result['raw_api_key']}")

@@ -1,5 +1,5 @@
 /**
- * ICDEV Studio — Dashboard Builder
+ * ICDEV™ Studio — Dashboard Builder
  * Custom widget layouts with role-based defaults.
  */
 const DashBuilder = (() => {

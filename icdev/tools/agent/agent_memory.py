@@ -429,7 +429,7 @@ def get_collaboration_history(project_id: str = None, agent_id: str = None,
 def main():
     """CLI for agent memory operations."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Agent Memory — scoped knowledge storage per agent and project"
+        description="ICDEV™ Agent Memory — scoped knowledge storage per agent and project"
     )
     sub = parser.add_subparsers(dest="command", help="Memory command")
 

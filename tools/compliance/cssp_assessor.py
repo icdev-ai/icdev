@@ -819,7 +819,7 @@ def run_cssp_assessment(
             "",
             f"**Project:** {project.get('name', project_id)} ({project_id})",
             f"**Assessment Date:** {now.strftime('%Y-%m-%d %H:%M UTC')}",
-            "**Assessor:** ICDEV Compliance Engine (automated)",
+            "**Assessor:** ICDEV™ Compliance Engine (automated)",
             f"**Functional Area Scope:** {functional_area}",
             f"**DoDI 8530.01 Revision:** {metadata.get('revision', 'N/A')}",
             "**Classification:** CUI // SP-CTI",

@@ -41,7 +41,7 @@ Produce an architecture document in Markdown with the following sections:
 ### 1. System Context Diagram
 - External actors (users, external systems, cloud services)
 - The child application as the central system
-- Parent ICDEV callback (if configured)
+- Parent ICDEV™ callback (if configured)
 - Data flows between actors and the system (labeled with protocol and classification)
 
 ### 2. Agent Interaction Patterns
@@ -83,8 +83,8 @@ Produce an architecture document in Markdown with the following sections:
 ## Constraints
 
 - Do NOT design capabilities that are not in the blueprint. If MBSE is disabled, do not include SysML elements.
-- Do NOT reference ICDEV generation tools (`agentic_fitness.py`, `app_blueprint.py`). Those are parent-only.
-- All port numbers must use the blueprint's port offset, not hardcoded ICDEV ports.
+- Do NOT reference ICDEV™ generation tools (`agentic_fitness.py`, `app_blueprint.py`). Those are parent-only.
+- All port numbers must use the blueprint's port offset, not hardcoded ICDEV™ ports.
 - Database must be named `data/<app-name>.db`, not `data/icdev.db`.
 - Classification markings must be appropriate for the specified impact level.
 
@@ -94,7 +94,7 @@ Before submitting the architecture document, verify:
 - [ ] Every agent in the roster has a defined responsibility
 - [ ] Every data flow is labeled with protocol and classification
 - [ ] Every security gate has a PASS/FAIL condition
-- [ ] No references to ICDEV-specific paths or ports
+- [ ] No references to ICDEV™-specific paths or ports
 - [ ] NIST control families map to specific architectural components
 - [ ] Error handling is explicit for every integration point
 - [ ] Grandchild prevention is documented in the architecture

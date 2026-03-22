@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""3-Dimension Composite Gap Scorer for ICDEV Creative Engine.
+# POC: ICDEV™ System Administrator
+"""3-Dimension Composite Gap Scorer for ICDEV™ Creative Engine.
 
 Scores creative pain points using a 3-dimension weighted average
 (D21 deterministic scoring pattern, D355):
@@ -930,7 +930,7 @@ def _print_human(args, result):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Creative Engine Gap Scorer -- CUI // SP-CTI",
+        description="ICDEV™ Creative Engine Gap Scorer -- CUI // SP-CTI",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"

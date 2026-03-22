@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- AWS Account Provisioner.
+"""ICDEV™ SaaS -- AWS Account Provisioner.
 
 CUI // SP-CTI
 
@@ -144,7 +144,7 @@ def _generate_plan(tenant_slug, impact_level, email):
         "properties": {
             "AccountName": "icdev-tenant-{}".format(tenant_slug),
             "Email": email,
-            "RoleName": "ICDEVOrganizationRole",
+            "RoleName": "ICDEV™OrganizationRole",
             "IamUserAccessToBilling": "DENY",
         },
     })
@@ -154,7 +154,7 @@ def _generate_plan(tenant_slug, impact_level, email):
         "type": "kms:Key",
         "action": "CreateKey",
         "properties": {
-            "Description": "ICDEV tenant encryption key: {}".format(tenant_slug),
+            "Description": "ICDEV™ tenant encryption key: {}".format(tenant_slug),
             "KeySpec": "SYMMETRIC_DEFAULT",
             "KeyUsage": "ENCRYPT_DECRYPT",
             "MultiRegion": False,
@@ -207,7 +207,7 @@ def _generate_plan(tenant_slug, impact_level, email):
         "properties": {
             "DBSubnetGroupName": "icdev-tenant-{}-db-subnet".format(tenant_slug),
             "DBSubnetGroupDescription": (
-                "Private subnets for ICDEV tenant {} RDS".format(tenant_slug)),
+                "Private subnets for ICDEV™ tenant {} RDS".format(tenant_slug)),
             "SubnetIds": ["<subnet-a>", "<subnet-b>"],
         },
     })
@@ -311,7 +311,7 @@ def _plan_to_yaml(plan):
     """
     lines = [
         "# CUI // SP-CTI",
-        "# ICDEV SaaS — AWS Account Provisioning Plan",
+        "# ICDEV™ SaaS — AWS Account Provisioning Plan",
         "# Plan ID: {}".format(plan["plan_id"]),
         "# Tenant: {}".format(plan["tenant_slug"]),
         "# Impact Level: {}".format(plan["impact_level"]),
@@ -396,7 +396,7 @@ def _create_sub_account(tenant_slug, email):
         response = org_client.create_account(
             Email=email,
             AccountName="icdev-tenant-{}".format(tenant_slug),
-            RoleName="ICDEVOrganizationRole",
+            RoleName="ICDEV™OrganizationRole",
             IamUserAccessToBilling="DENY",
             Tags=[
                 {"Key": "icdev/tenant", "Value": tenant_slug},
@@ -465,7 +465,7 @@ def _create_kms_key(tenant_slug):
     kms_client = _get_kms_client()
     try:
         response = kms_client.create_key(
-            Description="ICDEV tenant encryption key: {}".format(tenant_slug),
+            Description="ICDEV™ tenant encryption key: {}".format(tenant_slug),
             KeySpec="SYMMETRIC_DEFAULT",
             KeyUsage="ENCRYPT_DECRYPT",
             Tags=[
@@ -781,7 +781,7 @@ def _print_result(data, as_json=False):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV SaaS AWS Account Provisioner",
+        description="CUI // SP-CTI -- ICDEV™ SaaS AWS Account Provisioner",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     action = parser.add_mutually_exclusive_group(required=True)

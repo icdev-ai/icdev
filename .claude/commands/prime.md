@@ -1,6 +1,6 @@
-# Prime — ICDEV Codebase Orientation
+# Prime — ICDEV™ Codebase Orientation
 
-> Execute the following sections to understand the ICDEV codebase, then summarize your understanding.
+> Execute the following sections to understand the ICDEV™ codebase, then summarize your understanding.
 
 ## Run
 

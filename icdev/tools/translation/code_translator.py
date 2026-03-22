@@ -31,13 +31,13 @@ CUI_HEADERS = {
 }
 
 PROVENANCE_TEMPLATES = {
-    "python": "# Translated from {source_lang} by ICDEV Phase 43",
-    "java": "// Translated from {source_lang} by ICDEV Phase 43",
-    "go": "// Translated from {source_lang} by ICDEV Phase 43",
-    "rust": "// Translated from {source_lang} by ICDEV Phase 43",
-    "csharp": "// Translated from {source_lang} by ICDEV Phase 43",
-    "typescript": "// Translated from {source_lang} by ICDEV Phase 43",
-    "javascript": "// Translated from {source_lang} by ICDEV Phase 43",
+    "python": "# Translated from {source_lang} by ICDEV™ Phase 43",
+    "java": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "go": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "rust": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "csharp": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "typescript": "// Translated from {source_lang} by ICDEV™ Phase 43",
+    "javascript": "// Translated from {source_lang} by ICDEV™ Phase 43",
 }
 
 NAMING_CONVENTIONS = {
@@ -90,7 +90,7 @@ def _build_prompt(unit, ir_data, source_language, target_language,
         template = "Translate the following {source_language} code to {target_language}:\n\n{source_code}"
 
     cui_header = CUI_HEADERS.get(target_language, "// CUI // SP-CTI")
-    provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV").format(
+    provenance = PROVENANCE_TEMPLATES.get(target_language, "// Translated by ICDEV™").format(
         source_lang=source_language
     )
 
@@ -178,7 +178,7 @@ def _generate_mock(unit, target_language):
             f"# MOCK — Translation failed after max repair attempts\n"
             f"def {name}({param_str}):\n"
             f"    \"\"\"MOCK: Requires manual translation.\"\"\"\n"
-            f"    raise NotImplementedError(\"ICDEV translation mock — manual translation required\")\n"
+            f"    raise NotImplementedError(\"ICDEV™ translation mock — manual translation required\")\n"
         )
     elif target_language == "java":
         param_str = ", ".join(
@@ -190,7 +190,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"public {ret} {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new UnsupportedOperationException(\"ICDEV translation mock\");\n"
+            f"    throw new UnsupportedOperationException(\"ICDEV™ translation mock\");\n"
             f"}}\n"
         )
     elif target_language == "go":
@@ -202,7 +202,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"func {name}({param_str}) interface{{}} {{\n"
             f"\t// MOCK: Requires manual translation\n"
-            f"\tpanic(\"ICDEV translation mock — manual translation required\")\n"
+            f"\tpanic(\"ICDEV™ translation mock — manual translation required\")\n"
             f"}}\n"
         )
     elif target_language == "rust":
@@ -214,7 +214,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"pub fn {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    unimplemented!(\"ICDEV translation mock\");\n"
+            f"    unimplemented!(\"ICDEV™ translation mock\");\n"
             f"}}\n"
         )
     elif target_language == "csharp":
@@ -228,7 +228,7 @@ def _generate_mock(unit, target_language):
             f"public {ret} {name}({param_str})\n"
             f"{{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new NotImplementedException(\"ICDEV translation mock\");\n"
+            f"    throw new NotImplementedException(\"ICDEV™ translation mock\");\n"
             f"}}\n"
         )
     elif target_language in ("typescript", "javascript"):
@@ -238,7 +238,7 @@ def _generate_mock(unit, target_language):
             f"// MOCK — Translation failed after max repair attempts\n"
             f"export function {name}({param_str}) {{\n"
             f"    // MOCK: Requires manual translation\n"
-            f"    throw new Error(\"ICDEV translation mock — manual translation required\");\n"
+            f"    throw new Error(\"ICDEV™ translation mock — manual translation required\");\n"
             f"}}\n"
         )
     else:
@@ -424,7 +424,7 @@ def _record_unit(db_path, job_id, unit, status, translated_code, candidate):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 3 — LLM-assisted code translation",
+        description="ICDEV™ Phase 3 — LLM-assisted code translation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--ir-file", required=True, help="Path to IR JSON file from source_extractor")

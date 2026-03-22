@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Creative Engine Source Scanner -- discover customer pain points from review sites and forums.
 
 Scans configurable sources (G2, Capterra, TrustRadius, Reddit, GitHub Issues,
@@ -322,7 +322,7 @@ def scan_g2(config, competitors=None):
         return signals
 
     headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -428,7 +428,7 @@ def scan_capterra(config, competitors=None):
         return signals
 
     headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -529,7 +529,7 @@ def scan_trustradius(config, competitors=None):
         return signals
 
     headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -635,7 +635,7 @@ def scan_reddit(config, competitors=None):
     delay = _rate_delay(config, "community_forums")
 
     headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research; CUI // SP-CTI)",
+        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research; CUI // SP-CTI)",
     }
 
     for subreddit in subreddits:
@@ -826,7 +826,7 @@ def scan_producthunt(config, competitors=None):
     max_results = ph_config.get("max_results", 20)
 
     headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -929,7 +929,7 @@ def scan_govcon_blogs(config, competitors=None):
     delay = _rate_delay(config, "community_forums")
 
     headers = {
-        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
         "Accept": "text/html, application/json",
     }
 
@@ -1366,7 +1366,7 @@ def get_scan_history(days=7, db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Creative Engine Source Scanner -- discover customer pain points and competitive signals"
+        description="ICDEV™ Creative Engine Source Scanner -- discover customer pain points and competitive signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

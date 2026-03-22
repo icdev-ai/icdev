@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Rate Limiter.
+"""ICDEV™ SaaS -- Rate Limiter.
 
 CUI // SP-CTI
 

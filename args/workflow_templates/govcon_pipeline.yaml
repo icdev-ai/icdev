@@ -24,7 +24,7 @@ steps:
     name: "Capability Mapping"
     tool: "tools/govcon/capability_mapper.py"
     depends_on: [extract]
-    description: "Map requirements to ICDEV capabilities"
+    description: "Map requirements to ICDEV™ capabilities"
 
   - id: gaps
     name: "Gap Analysis"

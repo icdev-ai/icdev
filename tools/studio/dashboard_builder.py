@@ -1,4 +1,4 @@
-"""ICDEV Studio — Dashboard Builder.
+"""ICDEV™ Studio — Dashboard Builder.
 
 Custom widget layouts with role-based defaults.  Users pin widgets,
 arrange in a responsive grid, bind data sources, and save/share.
@@ -305,7 +305,7 @@ def create_from_role_default(role: str, *, created_by: str = "studio") -> dict:
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Studio Dashboard Builder")
+    parser = argparse.ArgumentParser(description="ICDEV™ Studio Dashboard Builder")
     parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

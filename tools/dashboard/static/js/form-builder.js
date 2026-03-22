@@ -1,5 +1,5 @@
 /**
- * ICDEV Studio — Form Builder
+ * ICDEV™ Studio — Form Builder
  * Drag-and-drop form designer with JSON Schema output.
  */
 const FormBuilder = (() => {

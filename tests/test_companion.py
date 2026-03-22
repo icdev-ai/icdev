@@ -14,7 +14,7 @@ from icdev.tools.dx.companion import setup_companion
 
 
 def _setup_project(tmp_path):
-    """Create a minimal ICDEV project structure for testing."""
+    """Create a minimal ICDEV™ project structure for testing."""
     # icdev.yaml
     icdev_yaml = tmp_path / "icdev.yaml"
     icdev_yaml.write_text(json.dumps({

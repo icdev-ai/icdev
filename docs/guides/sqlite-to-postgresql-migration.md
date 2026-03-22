@@ -3,13 +3,13 @@
 
 ## Overview
 
-ICDEV supports both SQLite (zero-config fallback) and PostgreSQL (production primary) via a transparent storage abstraction layer. This guide covers migrating from SQLite to PostgreSQL.
+ICDEV™ supports both SQLite (zero-config fallback) and PostgreSQL (production primary) via a transparent storage abstraction layer. This guide covers migrating from SQLite to PostgreSQL.
 
 ## Prerequisites
 
 - Docker (for PostgreSQL container) OR native PostgreSQL 14+
 - Python 3.10+ with `psycopg2-binary` installed
-- Existing ICDEV installation with SQLite data
+- Existing ICDEV™ installation with SQLite data
 
 ## Step 1: Start PostgreSQL
 
@@ -82,7 +82,7 @@ python tools/db/storage.py --health --json
 
 ### Storage Abstraction Layer
 
-All ICDEV tools use `get_connection()` from `tools/db/storage.py`. This returns a `StorageConnection` wrapper that:
+All ICDEV™ tools use `get_connection()` from `tools/db/storage.py`. This returns a `StorageConnection` wrapper that:
 
 1. **Selects backend** from `ICDEV_STORAGE_BACKEND` env var (default: `sqlite`)
 2. **Translates SQL** automatically:

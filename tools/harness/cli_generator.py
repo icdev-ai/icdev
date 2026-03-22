@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """CLI Generator — produces argparse CLI wrappers from spec files.
 
-Generates standalone CLI entry-points for ICDEV tools so they can be
+Generates standalone CLI entry-points for ICDEV™ tools so they can be
 invoked from shell scripts, CI/CD pipelines, and the dashboard
 CLI-generator panel.
 

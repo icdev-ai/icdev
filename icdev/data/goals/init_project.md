@@ -1,8 +1,8 @@
-# Goal: Initialize New ICDEV Project
+# Goal: Initialize New ICDEV™ Project
 
 ## Description
 
-Initialize a new project within the ICDEV framework with full compliance scaffolding, database records, CUI markings, and audit trail. This is the entry point for every new project — nothing gets built without this step completing first.
+Initialize a new project within the ICDEV™ framework with full compliance scaffolding, database records, CUI markings, and audit trail. This is the entry point for every new project — nothing gets built without this step completing first.
 
 **Why this matters:** Government and DoD projects require traceability from day one. Retroactively applying compliance is 10x harder than starting with it. This workflow ensures every project is born compliant.
 
@@ -10,7 +10,7 @@ Initialize a new project within the ICDEV framework with full compliance scaffol
 
 ## Prerequisites
 
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] `.env` file exists with required configuration
 - [ ] User has provided: project name, project type, classification level
 - [ ] `memory/MEMORY.md` loaded (session context)

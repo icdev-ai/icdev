@@ -597,7 +597,7 @@ def repair_translation(unit, source_code, translated_code, errors,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Phase 5 — Translation validation + repair loop",
+        description="ICDEV™ Phase 5 — Translation validation + repair loop",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--ir-file", required=True, help="Source IR JSON file")

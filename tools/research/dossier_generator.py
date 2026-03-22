@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Template-based Dossier Generator for ICDEV Research Engine (D-RES-9).
+# POC: ICDEV™ System Administrator
+"""Template-based Dossier Generator for ICDEV™ Research Engine (D-RES-9).
 
 Transforms scored research challenges, regulatory mappings, build/buy analyses,
 and capability coverage into structured, template-based industry research
@@ -124,7 +124,7 @@ CUI // SP-CTI
 
 {build_buy_section}
 
-## ICDEV Capability Coverage
+## ICDEV™ Capability Coverage
 
 **Average Coverage:** {avg_coverage:.1%}
 **Enhancements Needed:** {enhancement_count}
@@ -270,7 +270,7 @@ def _build_executive_summary(challenges, regulatory_maps, build_buy, capability_
         )
     if coverage_scores:
         parts.append(
-            f"ICDEV capability coverage averages {avg_coverage:.0%} across mapped challenges."
+            f"ICDEV™ capability coverage averages {avg_coverage:.0%} across mapped challenges."
         )
 
     return " ".join(parts)
@@ -469,7 +469,7 @@ def _build_build_buy_section(build_buy_records):
 
 
 def _build_capability_section(cap_maps):
-    """Build ICDEV capability coverage section with visual bars.
+    """Build ICDEV™ capability coverage section with visual bars.
 
     Args:
         cap_maps: list of capability mapping dicts.
@@ -525,7 +525,7 @@ def _build_opportunity_section(overall_score, challenges, build_buy):
     if overall_score >= 0.80:
         parts.append(
             f"**High Opportunity ({overall_score:.2f}).** This vertical presents strong market opportunity "
-            f"with {len(critical)} critical challenges that ICDEV is well-positioned to address."
+            f"with {len(critical)} critical challenges that ICDEV™ is well-positioned to address."
         )
     elif overall_score >= 0.60:
         parts.append(
@@ -545,7 +545,7 @@ def _build_opportunity_section(overall_score, challenges, build_buy):
 
     if build_count > 0:
         parts.append(f"{build_count} challenge{'s' if build_count != 1 else ''} "
-                     f"recommended for in-house build using ICDEV capabilities.")
+                     f"recommended for in-house build using ICDEV™ capabilities.")
 
     return " ".join(parts)
 
@@ -584,7 +584,7 @@ def _build_recommendations_section(challenges, build_buy, capability_maps):
     build_items = [bb for bb in build_buy if bb.get("recommendation") == "build"]
     if build_items:
         recommendations.append(
-            f"- **Build {len(build_items)} capabilities in-house** -- leverage existing ICDEV "
+            f"- **Build {len(build_items)} capabilities in-house** -- leverage existing ICDEV™ "
             f"tools and frameworks to address these challenges directly."
         )
 
@@ -606,7 +606,7 @@ def _build_recommendations_section(challenges, build_buy, capability_maps):
     enhancements_needed = [cm for cm in capability_maps if cm.get("enhancement_needed", 0) > 0]
     if enhancements_needed:
         recommendations.append(
-            f"- **Enhance {len(enhancements_needed)} ICDEV capabilities** -- existing tooling "
+            f"- **Enhance {len(enhancements_needed)} ICDEV™ capabilities** -- existing tooling "
             f"partially covers these areas but requires targeted improvements."
         )
 

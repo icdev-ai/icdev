@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ICDEV Pulse Capability Scanner — loads capability YAML files and matches
+"""ICDEV™ Pulse Capability Scanner — loads capability YAML files and matches
 capabilities to article topics via deterministic keyword scoring.
 
 Design decisions:
@@ -252,7 +252,7 @@ def format_capability_context(capabilities: list[dict]) -> str:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Pulse Capability Scanner (CUI // SP-CTI)"
+        description="ICDEV™ Pulse Capability Scanner (CUI // SP-CTI)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list", action="store_true", help="List all capabilities")

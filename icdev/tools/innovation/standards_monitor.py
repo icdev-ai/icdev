@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Standards Body Change Tracker for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Standards Body Change Tracker for ICDEV™.
 
-Monitors NIST, CISA, DoD CIO, FedRAMP, and ISO for updates affecting ICDEV's
+Monitors NIST, CISA, DoD CIO, FedRAMP, and ISO for updates affecting ICDEV™'s
 compliance framework.  RSS/Atom via stdlib ElementTree (D7), append-only
 storage (D6), deterministic keyword impact assessment (dual-hub D111).
 
@@ -300,7 +300,7 @@ def check_all_bodies(db_path=None):
 
 # ── IMPACT ASSESSMENT (deterministic keyword matching) ──────────────────
 def assess_impact(update_id, db_path=None):
-    """Assess impact of a standards update on ICDEV compliance framework."""
+    """Assess impact of a standards update on ICDEV™ compliance framework."""
     _ensure_table(db_path)
     conn = _get_db(db_path)
     try:
@@ -335,7 +335,7 @@ def assess_impact(update_id, db_path=None):
                             "description": f"Mandatory {body} publication — ISSO review required"})
         if not actions:
             actions.append({"action": "monitor", "urgency": "low",
-                            "description": "No immediate ICDEV impact; continue monitoring"})
+                            "description": "No immediate ICDEV™ impact; continue monitoring"})
         assessment = {"affected_frameworks": affected, "catalog_update_needed": catalog_needed,
                       "crosswalk_impact": crosswalk_hit, "priority": priority,
                       "recommended_actions": actions, "assessed_at": _now()}
@@ -392,7 +392,7 @@ def get_standards_report(days=30, db_path=None):
 
 # ── CLI ─────────────────────────────────────────────────────────────────
 def main():
-    p = argparse.ArgumentParser(description="ICDEV Standards Body Change Tracker")
+    p = argparse.ArgumentParser(description="ICDEV™ Standards Body Change Tracker")
     p.add_argument("--json", action="store_true", help="JSON output")
     p.add_argument("--db-path", type=Path, default=None)
     g = p.add_mutually_exclusive_group(required=True)

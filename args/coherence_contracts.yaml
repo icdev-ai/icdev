@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # Coherence Contracts Configuration (Phase 66, D-WF-8)
 #
-# Declarative rules for verifying internal consistency across ICDEV.
+# Declarative rules for verifying internal consistency across ICDEV™.
 # Each contract defines what must stay aligned when changes are made.
 # The coherence checker validates these contracts deterministically.
 

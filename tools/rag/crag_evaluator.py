@@ -491,7 +491,7 @@ class CRAGBenchmarkRunner:
     """Run CRAG-style benchmark campaigns against a test set (D-RAG-23).
 
     Loads a JSON test set, scores each case using CRAGScorer, aggregates
-    results, and persists to the ICDEV database.
+    results, and persists to the ICDEV™ database.
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -738,7 +738,7 @@ class CRAGBenchmarkRunner:
         results: List[Dict[str, Any]],
         summary: Dict[str, Any],
     ) -> None:
-        """Persist campaign and individual results to ICDEV DB."""
+        """Persist campaign and individual results to ICDEV™ DB."""
         from tools.db.storage import get_connection
 
         db_path = BASE_DIR / "data" / "icdev.db"

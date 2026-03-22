@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — License Validator.
+"""ICDEV™ SaaS — License Validator.
 CUI // SP-CTI
 
 Validates offline license keys for on-premises deployments.
@@ -144,7 +144,7 @@ def _check_expiry(license_data: Dict[str, Any]) -> List[str]:
 
 def validate_license(license_path: Optional[str] = None,
                      public_key_path: Optional[str] = None) -> Dict[str, Any]:
-    """Validate an ICDEV on-premises license.
+    """Validate an ICDEV™ on-premises license.
 
     Args:
         license_path:     Path to the license JSON file.
@@ -240,7 +240,7 @@ def get_license_info() -> Dict[str, Any]:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="ICDEV License Validator — CUI // SP-CTI"
+        description="ICDEV™ License Validator — CUI // SP-CTI"
     )
     parser.add_argument(
         "--validate", action="store_true",

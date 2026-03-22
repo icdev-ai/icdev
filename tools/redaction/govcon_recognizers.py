@@ -184,7 +184,7 @@ def list_recognizers(govcon_config: Dict[str, Any]) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Recognizers")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Recognizers")
     parser.add_argument("--list", action="store_true", help="List recognizer definitions")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()

@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 44 (Innovation Adaptation), Phase 46 (Observability & XAI) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-03-01 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV's multi-agent architecture (15 agents, 3 tiers) handles task decomposition, parallel execution, and domain authority — but several orchestration gaps remain:
+ICDEV™'s multi-agent architecture (15 agents, 3 tiers) handles task decomposition, parallel execution, and domain authority — but several orchestration gaps remain:
 
 1. **Orchestrator boundary violation** — Nothing prevents the Orchestrator agent from directly executing tools like `scaffold` or `code_generation`, violating the GOTCHA principle that orchestration and execution must be separated. When the Orchestrator bypasses delegation, it introduces probabilistic behavior where deterministic tool execution is required.
 

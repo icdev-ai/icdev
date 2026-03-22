@@ -1,9 +1,9 @@
 # CUI // SP-CTI
-# ICDEV GovCon Gap Analyzer — Phase 59 (D363)
+# ICDEV™ GovCon Gap Analyzer — Phase 59 (D363)
 # Identifies unmet requirements and generates enhancement recommendations.
 
 """
-Gap Analyzer — find requirement patterns where ICDEV coverage is insufficient.
+Gap Analyzer — find requirement patterns where ICDEV™ coverage is insufficient.
 
 Reads from:
     - icdev_capability_map (coverage scores)
@@ -255,7 +255,7 @@ def _generate_action(gap, template):
 
     if coverage == 0:
         return (
-            f"NEW CAPABILITY NEEDED: '{name}' appears in {freq} RFPs with zero ICDEV coverage. "
+            f"NEW CAPABILITY NEEDED: '{name}' appears in {freq} RFPs with zero ICDEV™ coverage. "
             f"Create new tool in tools/ targeting {domain} domain. "
             f"Follow BaseAssessor pattern (D116) if compliance-related."
         )
@@ -386,7 +386,7 @@ def register_gaps_as_innovation_signals():
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Gap Analyzer (D363)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Gap Analyzer (D363)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--analyze", action="store_true", help="Full gap analysis")
     group.add_argument("--recommendations", action="store_true", help="Enhancement recommendations")
@@ -418,7 +418,7 @@ def main():
 def _print_human(result, args):
     """Human-readable output."""
     print(f"\n{'=' * 60}")
-    print(f"  ICDEV Gap Analyzer — {result.get('status', 'unknown').upper()}")
+    print(f"  ICDEV™ Gap Analyzer — {result.get('status', 'unknown').upper()}")
     print(f"{'=' * 60}")
 
     if "summary" in result:

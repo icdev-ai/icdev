@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Unit tests for the ICDEV Innovation Engine (Phase 35).
+"""Unit tests for the ICDEV™ Innovation Engine (Phase 35).
 
 Tests cover: web scanner, signal ranker, trend detector, triage engine,
 solution generator, innovation manager, introspective analyzer.

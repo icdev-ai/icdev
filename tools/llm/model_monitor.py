@@ -691,7 +691,7 @@ def run_gate() -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Model Drift & Performance Monitor for ICDEV",
+        description="Model Drift & Performance Monitor for ICDEV™",
     )
     parser.add_argument("--record", action="store_true",
                         help="Record a quality score")

@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
-"""ATO-Aware Compliance Bridge for ICDEV DoD Modernization.
+"""ATO-Aware Compliance Bridge for ICDEV™ DoD Modernization.
 
 Maintains NIST 800-53 control coverage during monolith-to-microservice migration.
 Provides control inheritance, distribution across extracted services, gap analysis,
@@ -133,14 +133,14 @@ REMEDIATION_WEEKS = {
 # ---------------------------------------------------------------------------
 
 def _get_db():
-    """Return a sqlite3 connection to the ICDEV operational database.
+    """Return a sqlite3 connection to the ICDEV™ operational database.
 
     The database file must already exist (created by tools/db/init_icdev_db.py).
     Uses row_factory = sqlite3.Row for dict-like access.
     """
     if not DB_PATH.exists():
         raise FileNotFoundError(
-            f"ICDEV database not found at {DB_PATH}. "
+            f"ICDEV™ database not found at {DB_PATH}. "
             "Run 'python tools/db/init_icdev_db.py' first."
         )
     conn = get_connection()

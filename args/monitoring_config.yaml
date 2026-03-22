@@ -1,4 +1,4 @@
-# ICDEV Monitoring Configuration
+# ICDEV™ Monitoring Configuration
 
 elk:
   url: "https://elk.internal:9200"

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — CPARS Predictor (Phase 60, D-CPMP-3)
+# ICDEV™ GovProposal — CPARS Predictor (Phase 60, D-CPMP-3)
 # Deterministic weighted CPARS scoring with NDAA negative-event penalties.
 
 """
@@ -611,7 +611,7 @@ def get_cpars_trend(contract_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV GovProposal CPARS Predictor (Phase 60, D-CPMP-3)"
+        description="ICDEV™ GovProposal CPARS Predictor (Phase 60, D-CPMP-3)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--predict", action="store_true",

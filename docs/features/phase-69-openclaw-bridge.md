@@ -4,17 +4,17 @@ CUI // SP-CTI
 
 ## Summary
 
-Zero-trust import/export bridge between the ClawHub (clawhub.ai) open skill ecosystem and the ICDEV Marketplace, with full compatibility checking, translation, and security scanning.
+Zero-trust import/export bridge between the ClawHub (clawhub.ai) open skill ecosystem and the ICDEV™ Marketplace, with full compatibility checking, translation, and security scanning.
 
 ## Problem
 
-ICDEV's marketplace is tenant-federated but internal. The OpenClaw/ClawHub ecosystem has 2,857+ community-authored AI skills that could accelerate capability development. However, OpenClaw and ICDEV have fundamentally different architectures (Node.js vs Python, flat markdown vs GOTCHA 6-layer, no compliance vs CUI/NIST).
+ICDEV™'s marketplace is tenant-federated but internal. The OpenClaw/ClawHub ecosystem has 2,857+ community-authored AI skills that could accelerate capability development. However, OpenClaw and ICDEV™ have fundamentally different architectures (Node.js vs Python, flat markdown vs GOTCHA 6-layer, no compliance vs CUI/NIST).
 
 ## Solution
 
 A quarantine-first import pipeline with:
-- **Compatibility checker** — 13-point analysis scoring OpenClaw skills for ICDEV compatibility
-- **Translator** — Automatic conversion of OpenClaw skill.md → ICDEV SKILL.md format
+- **Compatibility checker** — 13-point analysis scoring OpenClaw skills for ICDEV™ compatibility
+- **Translator** — Automatic conversion of OpenClaw skill.md → ICDEV™ SKILL.md format
 - **10-gate security scanning** — SAST, secrets, deps, CUI, SBOM, provenance, signature, prompt injection, behavioral sandbox, code pattern
 - **AST-based script safety** — Deterministic analysis of Python scripts for blocked imports/calls
 - **Functional validation** — 8-point dry-run check on translated skills
@@ -27,7 +27,7 @@ A quarantine-first import pipeline with:
 - **Feature-flagged** — `ICDEV_OPENCLAW_ENABLED` (disabled by default, air-gap safe)
 - **Safe scripts auto-promote** — AST analysis passes → no human review needed
 - **Unsafe scripts require review** — eval/exec/subprocess/network → mandatory ISSO review
-- **JS/TS scripts block import** — ICDEV is Python-only; manual translation required
+- **JS/TS scripts block import** — ICDEV™ is Python-only; manual translation required
 - **Copyleft licenses blocked for IL5/IL6** — legal risk in Gov/DoD distribution
 
 ## Files

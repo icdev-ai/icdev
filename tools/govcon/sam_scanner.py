@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """SAM.gov Opportunity Scanner — discover federal contracting opportunities.
 
 Polls the SAM.gov Opportunities API v2 for solicitations, pre-solicitations,

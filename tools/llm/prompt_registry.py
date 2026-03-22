@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Prompt Version Control for ICDEV.
+"""Prompt Version Control for ICDEV™.
 
 Tracks prompt templates with full versioning, A/B testing, rollback,
 and audit trail.  100% local SQLite — no cloud dependencies.
@@ -559,7 +559,7 @@ def gate_check() -> Dict[str, Any]:
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="ICDEV Prompt Version Control",
+        description="ICDEV™ Prompt Version Control",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--json", action="store_true", help="JSON output")
@@ -579,7 +579,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--name", help="Prompt name")
     p.add_argument("--template-file", help="Path to template file")
     p.add_argument("--template-text", help="Inline template text")
-    p.add_argument("--function", dest="function_name", help="ICDEV function name")
+    p.add_argument("--function", dest="function_name", help="ICDEV™ function name")
     p.add_argument("--version", type=int, help="Prompt version number")
     p.add_argument("--to-version", type=int, help="Target version for rollback")
     p.add_argument("--v1", type=int, help="First version for diff")

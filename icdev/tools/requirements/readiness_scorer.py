@@ -138,7 +138,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     if selected_frameworks:
         # Selecting frameworks IS the compliance declaration — full credit.
-        # ICDEV enforces the selected frameworks during build/deploy gates,
+        # ICDEV™ enforces the selected frameworks during build/deploy gates,
         # so the customer's intent is captured and will be validated.
         compliance = 1.0
     else:
@@ -279,7 +279,7 @@ def get_score_trend(session_id: str, db_path=None) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Readiness Scorer")
+    parser = argparse.ArgumentParser(description="ICDEV™ Readiness Scorer")
     parser.add_argument("--session-id", required=True, help="Intake session ID")
     parser.add_argument("--trend", action="store_true", help="Show score trend")
     parser.add_argument("--threshold", type=float, default=0.7, help="Minimum readiness")

@@ -1,4 +1,4 @@
-# ICDEV Database Reference
+# ICDEV™ Database Reference
 
 Database tables, schemas, and memory system architecture. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 

@@ -1,14 +1,14 @@
 # [TEMPLATE: CUI // SP-CTI]
 # Goal: Continuous Harmonization — CLI Consistency & Code Quality
 
-> Ensure all ICDEV tools follow consistent CLI patterns, naming conventions,
+> Ensure all ICDEV™ tools follow consistent CLI patterns, naming conventions,
 > and output formats so developers can trust every tool behaves predictably.
 
 ---
 
 ## Why
 
-ICDEV has 200+ tools built across 45 phases. Without continuous enforcement,
+ICDEV™ has 200+ tools built across 45 phases. Without continuous enforcement,
 conventions drift: some tools use `--project`, others `--project-id`; some
 support `--json`, others don't; some hardcode DB paths, others use env vars.
 Every inconsistency is a papercut that slows adoption and erodes trust.

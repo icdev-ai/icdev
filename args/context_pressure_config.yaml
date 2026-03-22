@@ -1,4 +1,4 @@
-# ICDEV Context Pressure & Stuck Detection Configuration (GSD-adapted)
+# ICDEV™ Context Pressure & Stuck Detection Configuration (GSD-adapted)
 # Monitors agent context window consumption and detects stuck patterns.
 #
 # D-GSD-4: Context pressure thresholds (percentage of window remaining)

@@ -87,7 +87,7 @@ class PulseSanitizer:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Pulse Sanitizer")
+    parser = argparse.ArgumentParser(description="ICDEV™ Pulse Sanitizer")
     parser.add_argument("--sanitize-article", action="store_true",
                         help="Sanitize a case study article")
     parser.add_argument("--title", type=str, default="", help="Article title")

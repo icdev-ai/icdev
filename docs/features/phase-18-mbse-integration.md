@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 11 (Compliance Workflow), Phase 12 (Build App / ATLAS Workflow) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,13 +20,13 @@ DoDI 5000.87 mandates digital engineering for all DoD acquisition programs. With
 
 Currently, SysML models authored in tools like Cameo Systems Modeler and requirements managed in IBM DOORS NG exist in isolation from the code that implements them. There is no automated mechanism to import model elements into the development environment, generate code scaffolding from model definitions, map model elements to NIST 800-53 security controls, detect drift between model and code, or capture point-in-time snapshots for SAFe PI boundaries.
 
-ICDEV needs an MBSE integration layer that extends the ATLAS workflow with a Model pre-phase (M-ATLAS), establishing bidirectional traceability from DOORS requirements through SysML models to generated code, test cases, and NIST compliance controls, with continuous drift detection and DES compliance assessment.
+ICDEV™ needs an MBSE integration layer that extends the ATLAS workflow with a Model pre-phase (M-ATLAS), establishing bidirectional traceability from DOORS requirements through SysML models to generated code, test cases, and NIST compliance controls, with continuous drift detection and DES compliance assessment.
 
 ---
 
 ## 2. Goals
 
-1. Import SysML v1.6 models from Cameo Systems Modeler via XMI 2.5.1 format into the ICDEV database for downstream traceability and code generation
+1. Import SysML v1.6 models from Cameo Systems Modeler via XMI 2.5.1 format into the ICDEV™ database for downstream traceability and code generation
 2. Import requirements from IBM DOORS NG via ReqIF 1.2 format with diff-against-previous capability
 3. Build an end-to-end digital thread: Requirement -> Model Element -> Code Module -> Test Case -> NIST Control
 4. Generate code scaffolding from SysML block definitions, activities, state machines, and interfaces with traceability comments and CUI markings

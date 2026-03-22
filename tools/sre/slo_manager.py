@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""SLO (Service Level Objective) management for ICDEV SRE module.
+"""SLO (Service Level Objective) management for ICDEV™ SRE module.
 
 Tracks service-level objectives, records measurements, calculates error budget
 burn rates, and provides dashboard/gate outputs.
@@ -404,7 +404,7 @@ def check_slo_health() -> dict:
 
 def main():
     """CLI entry point for SLO manager."""
-    parser = argparse.ArgumentParser(description="ICDEV SRE SLO Manager")
+    parser = argparse.ArgumentParser(description="ICDEV™ SRE SLO Manager")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--gate", action="store_true", help="Run gate check (exit 1 if critical/exhausted)")
 

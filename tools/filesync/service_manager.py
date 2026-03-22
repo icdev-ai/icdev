@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-TASK_NAME = "ICDEVFileSyncDaemon"
+TASK_NAME = "ICDEV™FileSyncDaemon"
 SYSTEMD_UNIT = "icdev-filesync.service"
 
 
@@ -40,7 +40,7 @@ def _get_startup_folder() -> Path:
     return Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 
 
-SHORTCUT_NAME = "ICDEVFileSyncDaemon.vbs"
+SHORTCUT_NAME = "ICDEV™FileSyncDaemon.vbs"
 
 
 # =========================================================================
@@ -154,7 +154,7 @@ def _install_linux() -> Dict:
     unit_path = unit_dir / SYSTEMD_UNIT
 
     unit_content = f"""[Unit]
-Description=ICDEV FileSync Daemon
+Description=ICDEV™ FileSync Daemon
 After=default.target
 
 [Service]

@@ -2,7 +2,7 @@
 # NLQ Compliance Query Goal — Natural Language Database Queries
 
 ## Purpose
-Enable natural language queries against the ICDEV compliance database through the
+Enable natural language queries against the ICDEV™ compliance database through the
 web dashboard, with read-only enforcement and full audit trail.
 
 ## Trigger

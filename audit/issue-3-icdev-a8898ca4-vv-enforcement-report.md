@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Validation Report: V&V Enforcement in ICDEV SDLC Pipeline
+# Validation Report: V&V Enforcement in ICDEV™ SDLC Pipeline
 
 ## Metadata
 - **Issue**: #3 (continuation — V&V enforcement for Dashboard Kanban)

@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 59 (GovCon Intelligence), Phase 62 (GovProposal RFX), Genesis v2.0 (Daemon Pattern) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-03-14 |
 
 ---
@@ -159,7 +159,7 @@ Proposal Genesis reuses the Genesis v2.0 daemon pattern with domain-specific mod
 **R11 Fulfill** auto-generates CDRLs for deliverables approaching due date. Steps:
 1. Find deliverables due within 14 days with no prior generation
 2. Resolve CDRL type from deliverable metadata (keyword matching on cdrl_number, title, deliverable_type)
-3. Dispatch to mapped ICDEV generation tool via subprocess (D-CPMP-5):
+3. Dispatch to mapped ICDEV™ generation tool via subprocess (D-CPMP-5):
    - `ssp` → `tools/compliance/ssp_generator.py`
    - `sbom` → `tools/compliance/sbom_generator.py`
    - `poam` → `tools/compliance/poam_generator.py`
@@ -185,7 +185,7 @@ Proposal Genesis reuses the Genesis v2.0 daemon pattern with domain-specific mod
 **R9 Decide** performs deterministic bid/no-bid scoring. Steps:
 1. Find tracked opportunities with status `active`/`tracking` and no existing bid decision
 2. Score each opportunity across 6 dimensions (deterministic weighted average, D21):
-   - Capability fit (0.25): keyword overlap between opportunity description and ICDEV capability catalog
+   - Capability fit (0.25): keyword overlap between opportunity description and ICDEV™ capability catalog
    - Past performance (0.20): win rate for same agency/NAICS from `pg_win_loss_records`
    - Competitive position (0.15): inverse competitor count from `govcon_awards` for same NAICS
    - Compliance readiness (0.15): IL + set-aside + security clearance match scoring
@@ -416,7 +416,7 @@ python tools/proposal_genesis/daemon.py --reset polish --json
 | D-PG-3 | Toggle via `ICDEV_PROPOSAL_GENESIS_ENABLED` env var (default: false) |
 | D-PG-4 | Knowledge Base is never stale — historical data / past performance is permanent |
 | D-PG-5 | Bidirectional Pulse integration (articles → proposals AND capabilities → articles) |
-| D-PG-6 | Expanded capability catalog beyond ICDEV (consulting, domain expertise, partners) |
+| D-PG-6 | Expanded capability catalog beyond ICDEV™ (consulting, domain expertise, partners) |
 | D-PG-7 | Scanner-tier LLM for most reflexes; two-tier for R7 Draft only |
 | D-PG-8 | No ORANGE risk tier — human review at pipeline end only (not per-reflex) |
 | D-PG-9 | Win/loss calibration feeds back into scoring (Phase F) |
@@ -441,7 +441,7 @@ python tools/proposal_genesis/daemon.py --reset polish --json
 | D-PG-28 | R10 Monitor uses deterministic CPARS prediction (D-CPMP-3 weighted average) — EVM 0.35, schedule 0.25, risk 0.20, small_biz 0.10, trend 0.10 |
 | D-PG-29 | R10 Monitor EVM health uses threshold-based scoring with CPI/SPI < 0.80 as critical, < 0.90 as warning, < 0.95 as info |
 | D-PG-30 | R10 Monitor contract health uses D-CPMP-8 formula — green >= 0.80, yellow 0.60-0.79, red < 0.60 |
-| D-PG-31 | R11 Fulfill dispatches to existing ICDEV tools via subprocess (D-CPMP-5) — 9 CDRL types mapped to generation scripts |
+| D-PG-31 | R11 Fulfill dispatches to existing ICDEV™ tools via subprocess (D-CPMP-5) — 9 CDRL types mapped to generation scripts |
 | D-PG-32 | R11 Fulfill flags stale compliance docs (> 90 days) for refresh — configurable via `stale_threshold_days` |
 | D-PG-33 | R10 Monitor and R11 Fulfill run on independent schedules (every 4h / daily 09:00), not part of pipeline chain |
 | D-PG-34 | R11 Fulfill uses `stdin=subprocess.DEVNULL` and 300s timeout for safe subprocess execution |

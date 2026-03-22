@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}ClawHub Skills — ICDEV Dashboard{% endblock %}
+{% block title %}ClawHub Skills — ICDEV™ Dashboard{% endblock %}
 {% block content %}
 
 <h1>ClawHub Skill Browser</h1>
@@ -287,7 +287,7 @@
                 html += '</table>';
 
                 html += '<div style="margin-top:16px; display:flex; gap:10px;">';
-                html += '<button class="btn btn-primary" onclick="importSkill(\'' + slug + '\')">Import to ICDEV</button>';
+                html += '<button class="btn btn-primary" onclick="importSkill(\'' + slug + '\')">Import to ICDEV™</button>';
                 html += '<a href="https://clawhub.ai/' + (owner.handle || '') + '/' + slug + '" target="_blank" class="btn btn-secondary">View on ClawHub</a>';
                 html += '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
                 html += '</div>';
@@ -306,7 +306,7 @@
     var IMPORT_STAGES = [
         {id: 'download',   name: 'Download from ClawHub',     icon: '1'},
         {id: 'compat',     name: 'Compatibility Check',       icon: '2'},
-        {id: 'translate',  name: 'Translate to ICDEV Format', icon: '3'},
+        {id: 'translate',  name: 'Translate to ICDEV™ Format', icon: '3'},
         {id: 'quarantine', name: 'Copy to Quarantine',        icon: '4'},
         {id: 'scan_pi',    name: 'Prompt Injection Scan',     icon: '5'},
         {id: 'scan_code',  name: 'Code Pattern Analysis',     icon: '6'},
@@ -416,7 +416,7 @@
             }, 300);
 
             setTimeout(function() {
-                stageDetails['translate'] = data.translation_applied ? 'ICDEV SKILL.md generated' : 'Skipped (no translator)';
+                stageDetails['translate'] = data.translation_applied ? 'ICDEV™ SKILL.md generated' : 'Skipped (no translator)';
                 renderStages(3, stageDetails);
             }, 600);
 
@@ -640,7 +640,7 @@
     var PROMOTE_STAGES = [
         {id: 'review',    name: 'ISSO Review Approval',        icon: '1'},
         {id: 'verify',    name: 'Verify Security Gates Passed', icon: '2'},
-        {id: 'convert',   name: 'Convert to ICDEV SKILL.md',   icon: '3'},
+        {id: 'convert',   name: 'Convert to ICDEV™ SKILL.md',   icon: '3'},
         {id: 'register',  name: 'Register in Marketplace',     icon: '4'},
         {id: 'catalog',   name: 'Add to Asset Catalog',        icon: '5'},
         {id: 'audit',     name: 'Record Audit Trail',          icon: '6'},
@@ -794,7 +794,7 @@
                     return;
                 }
                 var html = '<h2>Enhanced Skill: ' + (data.skill_name || importId) + '</h2>';
-                html += '<p style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">Final SKILL.md after enrichment. Sections tagged <span style="background:rgba(96,165,250,0.15); padding:1px 6px; border-radius:3px; font-size:11px; color:#60a5fa;">ICDEV Enhanced</span> were added by the enrichment pipeline.</p>';
+                html += '<p style="color:var(--text-muted); font-size:12px; margin-bottom:8px;">Final SKILL.md after enrichment. Sections tagged <span style="background:rgba(96,165,250,0.15); padding:1px 6px; border-radius:3px; font-size:11px; color:#60a5fa;">ICDEV™ Enhanced</span> were added by the enrichment pipeline.</p>';
 
                 // Diff toggle if pre-enrichment available
                 if (data.pre_enrichment) {
@@ -811,8 +811,8 @@
                 // Render the markdown content in a scrollable pre block
                 var skillContent = data.content || '';
                 // Basic markdown rendering: headers, bold, lists, code blocks
-                // Highlight ICDEV-enhanced sections with colored backgrounds
-                var enhancedSections = ['Enrichment (ICDEV Intelligence)', 'Industry Context', 'Alternative Approaches', 'Proven Patterns', 'Related Skills on ClawHub', 'Companion Script (LLM-Agnostic)', 'Provenance', 'Compatibility Notes'];
+                // Highlight ICDEV™-enhanced sections with colored backgrounds
+                var enhancedSections = ['Enrichment (ICDEV™ Intelligence)', 'Industry Context', 'Alternative Approaches', 'Proven Patterns', 'Related Skills on ClawHub', 'Companion Script (LLM-Agnostic)', 'Provenance', 'Compatibility Notes'];
 
                 var rendered = skillContent
                     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -821,7 +821,7 @@
                 for (var hs = 0; hs < enhancedSections.length; hs++) {
                     var secName = enhancedSections[hs].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                     var secRegex = new RegExp('^(##+ ' + secName + ')$', 'gm');
-                    rendered = rendered.replace(secRegex, '<div style="background:rgba(96,165,250,0.1); border-left:3px solid #60a5fa; padding:2px 8px; margin:12px -8px 4px; border-radius:0 4px 4px 0;"><span style="font-size:10px; color:#60a5fa; text-transform:uppercase; letter-spacing:0.5px;">ICDEV Enhanced</span><br>$1</div>');
+                    rendered = rendered.replace(secRegex, '<div style="background:rgba(96,165,250,0.1); border-left:3px solid #60a5fa; padding:2px 8px; margin:12px -8px 4px; border-radius:0 4px 4px 0;"><span style="font-size:10px; color:#60a5fa; text-transform:uppercase; letter-spacing:0.5px;">ICDEV™ Enhanced</span><br>$1</div>');
                 }
 
                 rendered = rendered
@@ -838,8 +838,8 @@
 
                     // Highlight "Adapted from @" attributions
                     .replace(/Adapted from @(\S+)/g, '<span style="background:rgba(250,204,21,0.15); padding:1px 4px; border-radius:3px; font-size:11px; color:#facc15;">Adapted from @$1</span>')
-                    // Highlight "Enhanced by: ICDEV"
-                    .replace(/Enhanced by:.+ICDEV/g, '<span style="background:rgba(74,222,128,0.15); padding:1px 4px; border-radius:3px; color:#4ade80;">$&</span>')
+                    // Highlight "Enhanced by: ICDEV™"
+                    .replace(/Enhanced by:.+ICDEV™/g, '<span style="background:rgba(74,222,128,0.15); padding:1px 4px; border-radius:3px; color:#4ade80;">$&</span>')
                     // Highlight "Original Author:"
                     .replace(/Original Author:.+/g, '<span style="background:rgba(96,165,250,0.1); padding:1px 4px; border-radius:3px;">$&</span>');
 
@@ -1023,7 +1023,7 @@
         modal.style.display = 'block';
 
         var html = '<h2>Using "' + skillName + '"</h2>';
-        html += '<p style="color:var(--text-muted); margin-bottom:16px;">This skill has been promoted to your ICDEV Marketplace. Here\'s how to use it:</p>';
+        html += '<p style="color:var(--text-muted); margin-bottom:16px;">This skill has been promoted to your ICDEV™ Marketplace. Here\'s how to use it:</p>';
 
         html += '<div style="margin-bottom:16px;">';
         html += '<h3 style="font-size:14px; margin:0 0 8px;">1. In Claude Code (VS Code / CLI)</h3>';
@@ -1045,7 +1045,7 @@
 
         html += '<div style="margin-bottom:16px;">';
         html += '<h3 style="font-size:14px; margin:0 0 8px;">3. View the Translated Skill</h3>';
-        html += '<p style="font-size:13px; color:var(--text-muted);">The ICDEV-formatted SKILL.md is in the quarantine directory. To install it as a local skill:</p>';
+        html += '<p style="font-size:13px; color:var(--text-muted);">The ICDEV™-formatted SKILL.md is in the quarantine directory. To install it as a local skill:</p>';
         html += '<pre style="background:rgba(0,0,0,0.3); padding:10px; border-radius:6px; font-size:12px; margin:8px 0;"><code>cp -r .tmp/openclaw_quarantine/' + skillName + '-*/  .claude/skills/' + skillName + '/</code></pre>';
         html += '</div>';
 

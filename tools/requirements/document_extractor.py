@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Document upload and requirements extraction tool.
 
 Uploads DoD documents (SOW, CDD, CONOPS, SRD, SRS, etc.) and images
@@ -901,7 +901,7 @@ def list_documents(session_id, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Document Requirements Extractor"
+        description="ICDEV™ Document Requirements Extractor"
     )
     parser.add_argument("--session-id", help="Intake session ID")
     parser.add_argument("--document-id", help="Document ID (for extraction)")

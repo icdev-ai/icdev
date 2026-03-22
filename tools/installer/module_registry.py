@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV Module Registry — tracks installed modules in data/installation.json.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ Module Registry — tracks installed modules in data/installation.json.
 
-Manages the installation state of ICDEV modules, validates dependencies,
+Manages the installation state of ICDEV™ modules, validates dependencies,
 and provides upgrade path information.  Uses the installation manifest
 (args/installation_manifest.yaml) as the source of truth for available
 modules and their dependency graphs.
@@ -111,7 +111,7 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
 
 DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
     "core": {
-        "name": "ICDEV Core",
+        "name": "ICDEV™ Core",
         "version": "1.0.0",
         "description": "Core GOTCHA framework, project management, audit trail, memory system",
         "dependencies": [],
@@ -342,7 +342,7 @@ DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 class ModuleRegistry:
-    """Tracks installed ICDEV modules in a JSON registry file.
+    """Tracks installed ICDEV™ modules in a JSON registry file.
 
     Args:
         manifest_path: Path to the installation manifest YAML.
@@ -608,7 +608,7 @@ def _format_human_status(registry: ModuleRegistry) -> str:
     installed = registry.get_installed()
     lines = [
         "=" * 65,
-        "  ICDEV Module Registry — Installed Modules",
+        "  ICDEV™ Module Registry — Installed Modules",
         "=" * 65,
         "",
     ]
@@ -638,7 +638,7 @@ def _format_human_available(registry: ModuleRegistry) -> str:
     available = registry.get_available()
     lines = [
         "=" * 65,
-        "  ICDEV Module Registry — Available Modules",
+        "  ICDEV™ Module Registry — Available Modules",
         "=" * 65,
         "",
     ]
@@ -658,7 +658,7 @@ def _format_human_validate(result: Dict) -> str:
     """Render validation result as human-readable text."""
     lines = [
         "=" * 65,
-        "  ICDEV Module Registry — Validation",
+        "  ICDEV™ Module Registry — Validation",
         "=" * 65,
         "",
         f"  Status:     {'VALID' if result['valid'] else 'ISSUES FOUND'}",
@@ -677,7 +677,7 @@ def _format_human_validate(result: Dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="ICDEV Module Registry — track and manage installed modules"
+        description="ICDEV™ Module Registry — track and manage installed modules"
     )
     parser.add_argument(
         "--status", action="store_true",
@@ -765,7 +765,7 @@ def main() -> None:
                 print(json.dumps(path, indent=2, default=str))
             else:
                 print("=" * 65)
-                print("  ICDEV Module Registry — Upgrade Path")
+                print("  ICDEV™ Module Registry — Upgrade Path")
                 print("=" * 65)
                 print()
                 for mod in path:

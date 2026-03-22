@@ -1,6 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 """
-ICDEV SaaS Prometheus Metrics Collector (ADR D154).
+ICDEV™ SaaS Prometheus Metrics Collector (ADR D154).
 
 Dual-backend metrics: uses prometheus_client when available,
 falls back to stdlib text formatter for air-gapped environments.
@@ -250,7 +250,7 @@ class _FallbackHistogram(HistogramBase):
 
 
 class MetricsCollector:
-    """Collects ICDEV SaaS platform metrics.
+    """Collects ICDEV™ SaaS platform metrics.
 
     Uses prometheus_client library when available; otherwise falls back
     to stdlib-only text formatting (air-gap safe).

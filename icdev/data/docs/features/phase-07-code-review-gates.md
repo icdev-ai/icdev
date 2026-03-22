@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 3 (TDD/BDD Testing Framework), Phase 4 (NIST 800-53 Compliance), Phase 5 (Security Scanning) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Code review in government software development is not optional -- it is a compli
 
 Traditional code review focuses on readability and logic correctness. In government environments, review must also verify security posture (no SAST findings, no secrets, no vulnerable dependencies), compliance posture (CUI markings present, STIG checks passing, SBOM current), and quality posture (all tests passing, coverage adequate, linting clean). These checks cannot rely on human diligence alone -- they must be automated, gated, and logged to an immutable audit trail.
 
-ICDEV implements an 8-step automated code review gate that evaluates every merge request across all three dimensions: security, compliance, and quality. All gates must pass for merge approval. Any failure blocks the merge with specific remediation guidance. Every gate decision is recorded in the append-only audit trail, satisfying NIST AU controls and providing assessors with evidence of configuration change control.
+ICDEV™ implements an 8-step automated code review gate that evaluates every merge request across all three dimensions: security, compliance, and quality. All gates must pass for merge approval. Any failure blocks the merge with specific remediation guidance. Every gate decision is recorded in the append-only audit trail, satisfying NIST AU controls and providing assessors with evidence of configuration change control.
 
 ---
 

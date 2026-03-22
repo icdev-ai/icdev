@@ -32,13 +32,13 @@ class CommandEnvelope:
 
     # Command content
     raw_text: str = ""             # original message text
-    command: str = ""              # parsed ICDEV command (e.g. "icdev-status")
+    command: str = ""              # parsed ICDEV™ command (e.g. "icdev-status")
     args: Dict[str, Any] = field(default_factory=dict)  # parsed arguments
     project_id: str = ""           # target project (if specified)
 
     # Security context (populated by security chain gates)
     binding_id: Optional[str] = None      # remote_user_bindings.id
-    icdev_user_id: Optional[str] = None   # resolved ICDEV user
+    icdev_user_id: Optional[str] = None   # resolved ICDEV™ user
     tenant_id: Optional[str] = None       # resolved SaaS tenant
     user_role: Optional[str] = None       # RBAC role
 

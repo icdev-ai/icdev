@@ -43,7 +43,7 @@ BASE_DIR = get_project_root()
 # ---------------------------------------------------------------------------
 
 class ExtensionPoint(str, Enum):
-    """Available hook points in the ICDEV lifecycle."""
+    """Available hook points in the ICDEV™ lifecycle."""
 
     TOOL_EXECUTE_BEFORE = "tool_execute_before"
     TOOL_EXECUTE_AFTER = "tool_execute_after"

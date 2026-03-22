@@ -63,7 +63,7 @@ def key_prefix(raw_key: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _get_db():
-    """Get a connection to the ICDEV database."""
+    """Get a connection to the ICDEV™ database."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -481,19 +481,19 @@ def _auto_provision_env_key():
             content = env_path.read_text(encoding="utf-8")
             if "ICDEV_DASHBOARD_API_KEY" not in content:
                 with open(env_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n# ICDEV Dashboard API Key (auto-generated, change to rotate)\n")
+                    f.write(f"\n# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
                     f.write(f"ICDEV_DASHBOARD_API_KEY={raw_key}\n")
         else:
             with open(env_path, "w", encoding="utf-8") as f:
-                f.write(f"# ICDEV Dashboard API Key (auto-generated, change to rotate)\n")
+                f.write(f"# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
                 f.write(f"ICDEV_DASHBOARD_API_KEY={raw_key}\n")
     except OSError:
         pass  # Can't write .env — print to console instead
 
     os.environ["ICDEV_DASHBOARD_API_KEY"] = raw_key
-    print(f"[ICDEV Dashboard] Auto-generated API key: {raw_key}")
-    print(f"[ICDEV Dashboard] Saved to {env_path}")
-    print(f"[ICDEV Dashboard] To rotate: change ICDEV_DASHBOARD_API_KEY in .env and restart")
+    print(f"[ICDEV™ Dashboard] Auto-generated API key: {raw_key}")
+    print(f"[ICDEV™ Dashboard] Saved to {env_path}")
+    print(f"[ICDEV™ Dashboard] To rotate: change ICDEV_DASHBOARD_API_KEY in .env and restart")
 
 
 def register_dashboard_auth(app: Flask):

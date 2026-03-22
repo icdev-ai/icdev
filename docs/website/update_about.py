@@ -15,7 +15,7 @@ with open('docs/website/about.html', 'r', encoding='utf-8') as f:
     html = f.read()
 
 wp.wp.editPost(*auth, 1228, {
-    'post_title': 'About ICDEV',
+    'post_title': 'About ICDEV™',
     'post_content': html,
 })
 print('About page updated')

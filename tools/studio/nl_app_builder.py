@@ -1,4 +1,4 @@
-"""ICDEV Studio — Natural Language App Builder.
+"""ICDEV™ Studio — Natural Language App Builder.
 
 "Describe what you want → get a working app" (Base44-style UX).
 
@@ -435,7 +435,7 @@ def execute_build(session_id: str, *, output_dir: str | None = None) -> dict:
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Studio NL App Builder")
+    parser = argparse.ArgumentParser(description="ICDEV™ Studio NL App Builder")
     parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

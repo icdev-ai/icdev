@@ -1,4 +1,4 @@
-# ICDEV.ai Homepage Draft
+# ICDEV™.ai Homepage Draft
 
 ---
 
@@ -8,7 +8,7 @@
 **Ship Secure Software. Get Your ATO in Weeks.**
 
 ### Subheadline
-ICDEV automates the 560 hours of manual compliance work that stands between your code and Authority to Operate. Build once, certify across 30+ frameworks.
+ICDEV™ automates the 560 hours of manual compliance work that stands between your code and Authority to Operate. Build once, certify across 30+ frameworks.
 
 ### CTA Buttons
 - [Request a Demo] (primary)
@@ -39,11 +39,11 @@ There's a better way.
 
 ---
 
-## Section 2: What ICDEV Does
+## Section 2: What ICDEV™ Does
 
 ### Intelligent Certified Development
 
-ICDEV is an autonomous development platform that builds, tests, secures, and certifies government software — continuously. Not a tool. Not a plugin. A complete AI-powered SDLC that treats compliance as code.
+ICDEV™ is an autonomous development platform that builds, tests, secures, and certifies government software — continuously. Not a tool. Not a plugin. A complete AI-powered SDLC that treats compliance as code.
 
 **Three cards:**
 
@@ -62,7 +62,7 @@ Multi-cloud from day one. AWS GovCloud, Azure Government, GCP Assured Workloads,
 
 ### One Control. Every Framework.
 
-Implement AC-2 once. ICDEV's crosswalk engine automatically satisfies FedRAMP AC-2, NIST 800-171 3.1.1, CMMC AC.L2-3.1.1, and cascades to CJIS, HIPAA, SOC 2, PCI DSS, and ISO 27001 — bidirectionally across US and international hubs.
+Implement AC-2 once. ICDEV™'s crosswalk engine automatically satisfies FedRAMP AC-2, NIST 800-171 3.1.1, CMMC AC.L2-3.1.1, and cascades to CJIS, HIPAA, SOC 2, PCI DSS, and ISO 27001 — bidirectionally across US and international hubs.
 
 **Framework Grid (logos + status badges):**
 
@@ -97,7 +97,7 @@ Implement AC-2 once. ICDEV's crosswalk engine automatically satisfies FedRAMP AC
 **Visual: 5-step horizontal pipeline**
 
 #### 1. Intake
-AI-driven conversational requirements gathering. Upload your SOW, CDD, or CONOPS — ICDEV extracts shall-statements, detects gaps, scores readiness, and decomposes into SAFe work items. ATO boundary impact assessed automatically.
+AI-driven conversational requirements gathering. Upload your SOW, CDD, or CONOPS — ICDEV™ extracts shall-statements, detects gaps, scores readiness, and decomposes into SAFe work items. ATO boundary impact assessed automatically.
 
 #### 2. Build
 True TDD: write failing tests first, generate code to pass them, refactor. 15 agents collaborate — Architect designs, Builder codes, Security scans, Compliance maps controls, MBSE traces digital threads. All in parallel.
@@ -137,7 +137,7 @@ Full dependency graphs with SBOM generation. SCRM assessment per NIST 800-161. C
 
 ### 15 Agents. One Mission.
 
-ICDEV isn't a monolith — it's a multi-agent system where specialized AI agents collaborate via A2A protocol.
+ICDEV™ isn't a monolith — it's a multi-agent system where specialized AI agents collaborate via A2A protocol.
 
 | Agent | Role |
 |---|---|
@@ -195,7 +195,7 @@ Our autonomous research engine scans SAM.gov opportunities, NIST advisories, CIS
 
 ### Built in the Open
 
-ICDEV is open source under AGPL-3.0. Inspect the code. Run it locally. Contribute.
+ICDEV™ is open source under the Apache License 2.0. Free for use, modification, and distribution with patent protection.
 
 **GitHub stats bar:**
 - 65+ phases of development
@@ -211,7 +211,7 @@ ICDEV is open source under AGPL-3.0. Inspect the code. Run it locally. Contribut
 
 ### Your ATO Doesn't Have to Take 18 Months
 
-See how ICDEV automates compliance for your next project. Schedule a 30-minute demo — we'll show you your framework coverage in real time.
+See how ICDEV™ automates compliance for your next project. Schedule a 30-minute demo — we'll show you your framework coverage in real time.
 
 [Request a Demo] (primary)
 [Read the Docs] (secondary)
@@ -220,7 +220,7 @@ See how ICDEV automates compliance for your next project. Schedule a 30-minute d
 
 ## Footer
 
-**ICDEV — Intelligent Certified Development**
+**ICDEV™ — Intelligent Certified Development**
 Built by Sovanna Chuon
 
 - Platform

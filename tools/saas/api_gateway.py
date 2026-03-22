@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- API Gateway.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- API Gateway.
 
 Main Flask application that assembles the SaaS API gateway.  Registers
 authentication middleware, rate limiter, request logger, REST API blueprint,
@@ -202,7 +202,7 @@ def _register_cui_headers(app):
             "font-src 'self'; "
             "frame-ancestors 'none'"
         )
-        # ICDEV gateway identification
+        # ICDEV™ gateway identification
         response.headers["X-Powered-By"] = GATEWAY_NAME
         response.headers["X-Gateway-Version"] = GATEWAY_VERSION
         return response
@@ -305,7 +305,7 @@ def _format_uptime(seconds):
 # App factory
 # ---------------------------------------------------------------------------
 def create_app(config=None):
-    """Flask application factory for the ICDEV SaaS API Gateway.
+    """Flask application factory for the ICDEV™ SaaS API Gateway.
 
     Creates and configures the Flask app with all middleware, blueprints,
     error handlers, and health checks.
@@ -450,7 +450,7 @@ def create_app(config=None):
 
     # ---- Startup banner ----
     logger.info(
-        "ICDEV SaaS API Gateway v%s initialized "
+        "ICDEV™ SaaS API Gateway v%s initialized "
         "(CUI // SP-CTI)",
         GATEWAY_VERSION,
     )
@@ -462,11 +462,11 @@ def create_app(config=None):
 # CLI entry point
 # ---------------------------------------------------------------------------
 def main():
-    """CLI entry point for running the ICDEV SaaS API Gateway."""
+    """CLI entry point for running the ICDEV™ SaaS API Gateway."""
     parser = argparse.ArgumentParser(
         description=(
-            "CUI // SP-CTI -- ICDEV SaaS API Gateway\n\n"
-            "Multi-tenant REST + MCP Streamable HTTP gateway for the ICDEV platform."
+            "CUI // SP-CTI -- ICDEV™ SaaS API Gateway\n\n"
+            "Multi-tenant REST + MCP Streamable HTTP gateway for the ICDEV™ platform."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -524,7 +524,7 @@ def main():
     # Print startup info
     scheme = "https" if ssl_context else "http"
     logger.info(
-        "Starting ICDEV SaaS API Gateway on %s://%s:%d (debug=%s)",
+        "Starting ICDEV™ SaaS API Gateway on %s://%s:%d (debug=%s)",
         scheme, args.host, args.port, args.debug,
     )
     logger.info("Health check: %s://%s:%d/health", scheme, args.host, args.port)

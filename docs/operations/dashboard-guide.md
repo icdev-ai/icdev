@@ -2,7 +2,7 @@
 
 ## Overview
 
-The ICDEV Dashboard is a Flask-based web UI providing project status, compliance posture, security metrics, agent monitoring, and administrative controls. It is designed with a "GI-proof" UX philosophy: accessible, self-documenting, and operable without prior training.
+The ICDEV™ Dashboard is a Flask-based web UI providing project status, compliance posture, security metrics, agent monitoring, and administrative controls. It is designed with a "GI-proof" UX philosophy: accessible, self-documenting, and operable without prior training.
 
 **Key characteristics:**
 - Server-side rendered (Flask SSR) with zero-dependency SVG charts

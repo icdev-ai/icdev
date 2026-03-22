@@ -1,12 +1,12 @@
-# ICDEV Architecture Decision Records
+# ICDEV™ Architecture Decision Records
 
-All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixed D-XXX-N.
+All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and prefixed D-XXX-N.
 
 ---
 
 ## 1. Core Platform (D1-D100)
 
-- **D1:** SQLite for ICDEV internals (zero-config portability); PostgreSQL for apps ICDEV builds
+- **D1:** SQLite for ICDEV™ internals (zero-config portability); PostgreSQL for apps ICDEV™ builds
 - **D2:** Stdio for MCP (Claude Code); HTTPS+mTLS for A2A (K8s inter-agent)
 - **D3:** Flask over FastAPI (simpler, fewer deps, auditable SSR, smaller STIG surface)
 - **D4:** Statistical methods for pattern detection; Bedrock LLM for root cause analysis
@@ -50,10 +50,10 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D42:** Domain authority defined in YAML matrix, vetoes recorded append-only — configurable without code changes, auditable
 - **D43:** Agent memory scoped by `(agent_id, project_id)` with team-shared via `agent_id='_team'` — prevents cross-project contamination
 - **D44:** Flag-based (`--agentic`) for backward compatibility — omitting flag produces identical output
-- **D45:** Copy-and-adapt over template library — ICDEV tools are the source of truth
+- **D45:** Copy-and-adapt over template library — ICDEV™ tools are the source of truth
 - **D46:** Fitness scoring: weighted rule-based + optional LLM override
 - **D47:** Blueprint-driven generation — single config drives all generators
-- **D48:** ICDEV callback uses A2A protocol for child→parent communication
+- **D48:** ICDEV™ callback uses A2A protocol for child→parent communication
 - **D49:** Agentic tests as Step 8 (conditional) in test pipeline
 - **D50:** Dynamic CLAUDE.md via Jinja2 — documents only what's present
 - **D51:** Minimal DB + migration — core tables first, expand as capabilities activate
@@ -128,7 +128,7 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D121:** Service mesh and policy engine are profile-selectable (Istio/Linkerd, Kyverno/OPA) — both generated, customer picks in profile
 - **D122:** DevSecOps/ZTA profile inherited by child apps generated via `/icdev-agentic` (extends D44 flag pattern)
 - **D123:** ZTA posture score feeds into cATO monitor as additional evidence dimension (extends `cato_evidence` table)
-- **D124:** PDP modeled as external reference in ZTA profile (Zscaler, Palo Alto, DISA ICAM) — ICDEV generates PEP configs but does not implement PDP itself
+- **D124:** PDP modeled as external reference in ZTA profile (Zscaler, Palo Alto, DISA ICAM) — ICDEV™ generates PEP configs but does not implement PDP itself
 - **D125:** MOSA auto-triggers for all DoD/IC customers during intake (not just MDAPs) — IL4+ also triggers MOSA consideration
 - **D126:** MOSA focuses on software development principles only (no FACE/VICTORY/SOSA/HOST domain-specific profiles)
 - **D127:** MOSA implemented as full compliance framework via BaseAssessor pattern (D116) with gate, crosswalk, multi-regime
@@ -290,16 +290,16 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D301:** Unified MCP gateway (`unified_server.py`) uses declarative tool registry (`tool_registry.py`) with lazy module loading. Existing 19 servers remain independently runnable (backward compat). Registry maps tool name → (module, handler, schema). Handlers imported via `importlib.import_module()` on first call, cached thereafter. 55 new tools for CLI gaps use direct Python import with subprocess fallback (`gap_handlers.py`). All 248 tools inherit D284 auto-instrumentation from `base_server.py`. Reduces `.mcp.json` from 19 entries to 1.
 - **D302:** oscal-cli invoked via subprocess (`_run_cli()` pattern). Java detected at load time, cached. Degrades to built-in validation when absent. Config: `args/oscal_tools_config.yaml`
 - **D303:** oscal-pydantic is a post-generation validation layer. Does NOT replace dict construction. Skipped via `ImportError` when not installed. MIT license.
-- **D304:** Official NIST OSCAL catalog stored in `context/oscal/` (downloaded, not committed — 14MB). ICDEV custom catalog (`context/compliance/nist_800_53.json`) preserved as fallback. `OscalCatalogAdapter` normalizes both formats. Priority: official → ICDEV.
+- **D304:** Official NIST OSCAL catalog stored in `context/oscal/` (downloaded, not committed — 14MB). ICDEV™ custom catalog (`context/compliance/nist_800_53.json`) preserved as fallback. `OscalCatalogAdapter` normalizes both formats. Priority: official → ICDEV™.
 - **D305:** Single orchestrator module (`oscal_tools.py`) composes all three integrations. Each independently optional. 3-layer validation pipeline: structural → pydantic → Metaschema.
 - **D306:** `oscal_validation_log` append-only table records every validation attempt (D6 pattern). Validator name, pass/fail, error count, duration tracked per layer.
 - **D307:** All 4 AI transparency assessors use BaseAssessor ABC (D116) — ~150-200 LOC each, automatic gate/CLI/crosswalk
 - **D308:** Model cards follow Google Model Cards format (open standard, widely adopted in Gov AI community)
-- **D309:** System cards are ICDEV-specific (broader than model cards — cover full agentic system, not just individual models)
+- **D309:** System cards are ICDEV™-specific (broader than model cards — cover full agentic system, not just individual models)
 - **D310:** Confabulation detector uses deterministic methods only (consistency checks, citation verification) — no LLM-based detection (air-gap safe)
-- **D311:** Fairness assessor focuses on compliance documentation evidence, not statistical bias testing (ICDEV doesn't train models — it uses them)
+- **D311:** Fairness assessor focuses on compliance documentation evidence, not statistical bias testing (ICDEV™ doesn't train models — it uses them)
 - **D312:** AI inventory follows OMB M-25-21 schema for direct government reporting compatibility
-- **D313:** GAO evidence builder reuses existing ICDEV data (audit_trail, ai_telemetry, XAI, SHAP, provenance) — no new data collection needed
+- **D313:** GAO evidence builder reuses existing ICDEV™ data (audit_trail, ai_telemetry, XAI, SHAP, provenance) — no new data collection needed
 - **D314:** New `AI` data category trigger auto-activates all 4 frameworks + existing NIST AI RMF + ISO 42001 when AI components detected
 - **D315:** COSAiS overlay mapping deferred until NIST publishes final specification (anticipated late 2026) — catalog stub in framework_registry.yaml with status: planned
 - **D316:** Accountability tables are append-only (D6) except `ai_caio_registry` and `ai_reassessment_schedule` which allow UPDATE (officials change, schedules shift)
@@ -324,7 +324,7 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D335:** Code quality signals feed into existing Innovation Engine pipeline (D199-D208). No new pipeline. No autonomous modification.
 - **D336:** Pattern learning uses existing +0.1/-0.2 model from `pattern_detector.py`.
 - **D337:** Maintainability score = deterministic weighted average: complexity(0.30) + smell_density(0.20) + test_health(0.20) + coupling(0.15) + coverage(0.15).
-- **D338:** KSI generator maps ICDEV evidence to FedRAMP 20x KSI schemas. Not a BaseAssessor — KSIs are evidence artifacts, not assessment checks. Follows `cssp_evidence_collector.py` pattern.
+- **D338:** KSI generator maps ICDEV™ evidence to FedRAMP 20x KSI schemas. Not a BaseAssessor — KSIs are evidence artifacts, not assessment checks. Follows `cssp_evidence_collector.py` pattern.
 - **D339:** OWASP ASI assessor uses BaseAssessor ABC (D116). 10 ASI risks map to NIST 800-53 via crosswalk.
 - **D340:** FedRAMP authorization packager bundles OSCAL SSP + KSI evidence. Extends `oscal_generator.py`.
 - **D341:** SLSA attestation generator extends existing `attestation_manager.py`. Produces SLSA v1.0 provenance from build pipeline evidence.
@@ -476,7 +476,7 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-CPMP-2:** EVM uses deterministic formulas, Monte Carlo via stdlib `random` (D22) — air-gap safe, no numpy/scipy
 - **D-CPMP-3:** CPARS prediction uses deterministic weighted average (D21) — reproducible, not probabilistic; ML upgrade path later
 - **D-CPMP-4:** COR portal is read-only routes on same Flask app — reuses existing auth; role-based access sufficient
-- **D-CPMP-5:** CDRL generator dispatches to existing ICDEV tools — reuse ssp_generator, sbom_generator, stig_checker, etc.
+- **D-CPMP-5:** CDRL generator dispatches to existing ICDEV™ tools — reuse ssp_generator, sbom_generator, stig_checker, etc.
 - **D-CPMP-6:** SAM.gov Contract Awards follows sam_scanner.py pattern (D366) — consistent rate limiting, content hash dedup
 - **D-CPMP-7:** Negative events append-only (D6) — NIST AU-2; corrective action status tracked on record
 - **D-CPMP-8:** Contract health is deterministic weighted average (D21) — configurable weights in YAML (D26)
@@ -501,11 +501,11 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 
 ### D-CHILD — Child App Generation
 
-- **D-CHILD-1:** Enterprise-grade child apps with 10-12 agents, 21 goals — children inherit all core ICDEV components (TDD, BDD, MBSE, DevSecOps/ZTA, AI Security, Observability, RICOAS, Code Intelligence)
+- **D-CHILD-1:** Enterprise-grade child apps with 10-12 agents, 21 goals — children inherit all core ICDEV™ components (TDD, BDD, MBSE, DevSecOps/ZTA, AI Security, Observability, RICOAS, Code Intelligence)
 - **D-CHILD-2:** `.claude/` directory is a first-class generation artifact — hooks, commands, skills, E2E specs copied from parent with parent-only exclusions
 - **D-CHILD-3:** `PARENT_ONLY_DIRS/COMMANDS/SKILLS` exclusion lists prevent internal tools from leaking to child apps (SaaS, GovProposal, Creative Engine, Innovation Engine, Marketplace, Translation, Gateway)
 - **D-CHILD-4:** Full 40+ page dashboard replaces minimal stub in child apps — GovProposal/CPMP/GovCon routes stripped via `_strip_govcon_from_dashboard()`
-- **D-CHILD-5:** AGPL-3.0 default license for government deliveries — dual licensing (AGPL-3.0 for open-source obligations, commercial license available)
+- **D-CHILD-5:** Apache-2.0 default license for government deliveries — dual licensing (Apache 2.0 for open-source, commercial license available for enterprise support)
 - **D-CHILD-6:** GovProposal/CPMP/GovCon routes feature-flag isolated via `ICDEV_GOVCON_ENABLED` env var — child apps and non-govcon deployments exclude these modules cleanly
 
 ### D-RES — Industry Research Engine
@@ -516,7 +516,7 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-RES-4:** 6-dimension challenge scoring (D21 deterministic weighted average)
 - **D-RES-5:** All `research_*` tables append-only (D6) except `research_sessions` and `research_verticals` (allow UPDATE for status)
 - **D-RES-6:** Regulatory body mapping uses `context/research/regulatory_registry.json` with crosswalk hooks
-- **D-RES-7:** ICDEV capability mapping reuses `icdev_capability_catalog.json` with keyword-overlap algorithm
+- **D-RES-7:** ICDEV™ capability mapping reuses `icdev_capability_catalog.json` with keyword-overlap algorithm
 - **D-RES-8:** Build/buy/partner is a separate pipeline stage producing scored decision matrix per challenge
 - **D-RES-9:** Dossier is template-based Markdown (D356, no LLM, air-gap safe)
 - **D-RES-10:** Dossier feeds into child app fitness via `research_session_id` field. HITL approval required
@@ -552,9 +552,9 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 
 ### D-FS-TIER — Forge Studio Blueprint Tiering
 
-- **D-FS-TIER-1:** Deterministic 12-signal tier classifier (regex, no LLM) — threshold >= 3 routes to parent ICDEV handoff
+- **D-FS-TIER-1:** Deterministic 12-signal tier classifier (regex, no LLM) — threshold >= 3 routes to parent ICDEV™ handoff
 - **D-FS-TIER-2:** ForgeBlueprint manifest with 31-column DB table — portable JSON spec for app design, requirements, and handoff tracking
-- **D-FS-TIER-3:** Parent ICDEV HTTP client uses stdlib urllib (air-gap safe) with queued retry when parent unreachable
+- **D-FS-TIER-3:** Parent ICDEV™ HTTP client uses stdlib urllib (air-gap safe) with queued retry when parent unreachable
 - **D-FS-TIER-4:** Build tracker orchestrates full pipeline: classify → route → build (local eject) or submit (parent handoff) → track
 
 ### D-DH — DocHub
@@ -646,7 +646,7 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 
 ### D-MKT-S — Marketplace SaaS
 
-- **D-MKT-S1:** Marketplace extracted to standalone SaaS (marketplace.icdev.ai) -- ICDEV uses thin client (4 files, ~400 LOC)
+- **D-MKT-S1:** Marketplace extracted to standalone SaaS (marketplace.icdev.ai) -- ICDEV™ uses thin client (4 files, ~400 LOC)
 - **D-MKT-S2:** Two modes: oss (all unlocked, default), saas (token verification)
 - **D-MKT-S3:** Token verification is 100% offline via RSA-SHA256 public key -- 30-day grace period for air-gap
 - **D-MKT-S4:** Thin client: module_runtime.py (gating), license_client.py (sync/verify/renew/feedback), token_store.py (local JSON cache)
@@ -722,7 +722,7 @@ All architecture decisions for the ICDEV platform. Numbered D1-D360+ and prefixe
 - **D-RDT-11:** Performance: singleton sanitizer (30min TTL), module-level Ollama cache (60s TTL), pre-compiled regex, cached YAML configs
 - **D-RDT-12:** Child apps inherit redaction automatically (tools/redaction/ not in PARENT_ONLY_DIRS)
 
-### Phase 72 — ICDEV Studio (Low-Code/No-Code Platform)
+### Phase 72 — ICDEV™ Studio (Low-Code/No-Code Platform)
 - **D361:** Build own visual workflow engine — no n8n embedding (fair-code license incompatible with gov redistribution)
 - **D362:** Canvas rendering via vanilla JS + SVG — no React/npm deps, air-gap safe, consistent with existing dashboard
 - **D363:** Forms serialize to JSON Schema (draft-07) — industry standard, portable, auto-generates DB + API + UI

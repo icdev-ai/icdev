@@ -1,6 +1,6 @@
 // CUI // SP-CTI
 // E2E Test: Usage Tracking
-// Verifies the ICDEV dashboard usage page loads with cost breakdown and period selector.
+// Verifies the ICDEV™ dashboard usage page loads with cost breakdown and period selector.
 
 import { test, expect } from '@playwright/test';
 

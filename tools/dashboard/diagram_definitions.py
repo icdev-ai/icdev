@@ -3,9 +3,9 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """
-ICDEV Mermaid Diagram Definitions
+ICDEV™ Mermaid Diagram Definitions
 ==================================
 Centralized store of all Mermaid diagram strings used in the dashboard.
 Organized by category for the /diagrams catalog page and embedded views.

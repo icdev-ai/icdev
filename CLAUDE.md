@@ -40,9 +40,9 @@ python tools/workflow/coherence_checker.py --all --fix --gate
 ```
 
 ### Python Dependencies
-See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV).
+See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic, python-dotenv (optional); pyyaml, jinja2, flask, pytest (ICDEV™).
 
-> **Full command reference:** See [docs/reference/commands.md](docs/reference/commands.md) for all CLI commands across every ICDEV module.
+> **Full command reference:** See [docs/reference/commands.md](docs/reference/commands.md) for all CLI commands across every ICDEV™ module.
 
 ---
 
@@ -121,7 +121,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 
 ---
 
-## ICDEV System — Intelligent Certified Development
+## ICDEV™ System — Intelligent Certified Development
 
 Meta-builder that autonomously builds Gov/DoD applications using GOTCHA + ATLAS workflow. Full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing.
 
@@ -161,7 +161,7 @@ Audit trail is **append-only/immutable** (NIST AU). Full schema: [docs/reference
 
 ---
 
-## ICDEV Guardrails
+## ICDEV™ Guardrails
 
 - All artifacts MUST include classification markings (CUI for IL4/IL5, SECRET for IL6)
 - Use `classification_manager.py` for markings — don't hard-code CUI banners
@@ -192,7 +192,7 @@ Detailed reference material (read on-demand, not loaded automatically):
 
 | File | Contents |
 |------|----------|
-| [commands.md](docs/reference/commands.md) | All CLI commands for every ICDEV module |
+| [commands.md](docs/reference/commands.md) | All CLI commands for every ICDEV™ module |
 | [architecture.md](docs/reference/architecture.md) | Agents, MCP servers, languages, skills, deployment, scaling, installation |
 | [adrs.md](docs/reference/adrs.md) | All architecture decision records (D1–D360+) |
 | [compliance-security.md](docs/reference/compliance-security.md) | Compliance frameworks, crosswalk, security gates, args config |

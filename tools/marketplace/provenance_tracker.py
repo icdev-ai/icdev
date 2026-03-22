@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Provenance Tracker — Supply chain provenance for published assets.
 
 Tracks the full provenance chain of marketplace assets: who published what,
@@ -350,7 +350,7 @@ def generate_report(asset_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Provenance Tracker")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Provenance Tracker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

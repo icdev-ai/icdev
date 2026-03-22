@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Artifact Delivery Engine.
+"""ICDEV™ SaaS Phase 5 -- Artifact Delivery Engine.
 
 CUI // SP-CTI
 
@@ -246,7 +246,7 @@ def _deliver_git(config: dict, artifact_path: str,
 
     branch = config.get("branch", "main")
     path_prefix = config.get("path_prefix", "artifacts").strip("/")
-    commit_user = config.get("commit_user", "ICDEV Bot")
+    commit_user = config.get("commit_user", "ICDEV™ Bot")
     commit_email = config.get("commit_email", "icdev-bot@icdev.local")
 
     filename = Path(artifact_path).name
@@ -285,7 +285,7 @@ def _deliver_git(config: dict, artifact_path: str,
             check=True, capture_output=True, text=True,
         )
 
-        commit_msg = "[ICDEV] Deliver {} artifact: {}".format(
+        commit_msg = "[ICDEV™] Deliver {} artifact: {}".format(
             artifact_type, filename)
         subprocess.run(
             ["git", "-C", tmpdir, "commit", "-m", commit_msg],
@@ -587,7 +587,7 @@ def get_delivery_history(tenant_id: str, limit: int = 50) -> list:
 def main():
     """CLI entry point for artifact delivery."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Artifact Delivery Engine",
+        description="CUI // SP-CTI -- ICDEV™ Artifact Delivery Engine",
     )
     parser.add_argument("--tenant-id", required=True,
                         help="Target tenant ID")

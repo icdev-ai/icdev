@@ -1,7 +1,7 @@
 """AppForge Build Reflex — create standalone child app from blueprint.
 
 GREEN tier. Auto-builds Flask app with DB, seed data, professional UI.
-Uses ICDEV child_app_generator patterns where possible.
+Uses ICDEV™ child_app_generator patterns where possible.
 """
 
 from __future__ import annotations

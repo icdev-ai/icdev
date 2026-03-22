@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — Contract Manager (Phase 60, D-CPMP-1)
+# ICDEV™ GovProposal — Contract Manager (Phase 60, D-CPMP-1)
 # CRUD for contracts, CLINs, WBS, deliverables with status transition enforcement.
 
 """
@@ -611,7 +611,7 @@ def compute_overdue_deliverables(contract_id=None):
 # ── CLI ──────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovProposal Contract Manager (Phase 60)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovProposal Contract Manager (Phase 60)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list-contracts", action="store_true")
     group.add_argument("--get-contract", action="store_true")

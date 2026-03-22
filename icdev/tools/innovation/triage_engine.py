@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals.
 
 Every innovation signal discovered by the web scanner passes through this
@@ -986,7 +986,7 @@ def get_triage_summary(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
+        description="ICDEV™ Compliance-First Triage Pipeline — 5-stage safety gate for innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

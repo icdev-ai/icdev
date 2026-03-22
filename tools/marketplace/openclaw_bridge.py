@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""OpenClaw Skill Bridge — Import/export skills between ClawHub and ICDEV Marketplace.
+# POC: ICDEV™ System Administrator
+"""OpenClaw Skill Bridge — Import/export skills between ClawHub and ICDEV™ Marketplace.
 
 Enforces zero-trust security: quarantine-first, full 10-gate scanning,
 mandatory human review for executable content, provenance tracking,
@@ -28,7 +28,7 @@ Usage:
         --import-id "oci-abc123" --rejected-by "isso@dod.mil" \\
         --reason "Contains eval() calls" --json
 
-    # Export an ICDEV skill to OpenClaw format
+    # Export an ICDEV™ skill to OpenClaw format
     python tools/marketplace/openclaw_bridge.py --export \\
         --asset-id "asset-abc" --version-id "ver-abc" \\
         --output-path /path/to/output \\
@@ -208,7 +208,7 @@ SAFE_IMPORTS = {
     "pprint", "difflib", "unicodedata",
 }
 
-# Allowed ICDEV tools for imported skills
+# Allowed ICDEV™ tools for imported skills
 ALLOWED_TOOLS = {
     "Bash", "Read", "Write", "Edit", "Glob", "Grep",
     "WebFetch", "WebSearch", "Agent", "TodoWrite",
@@ -623,7 +623,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     # Copy to quarantine
     shutil.copytree(source, quarantine_path, dirs_exist_ok=True)
 
-    # Translate OpenClaw → ICDEV format in quarantine
+    # Translate OpenClaw → ICDEV™ format in quarantine
     translation_result = None
     functional_validation = None
     if _HAS_COMPAT:
@@ -662,7 +662,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     has_scripts = scripts_dir.is_dir() and any(scripts_dir.rglob("*.py"))
 
     # Generate companion Python script for actionable steps (LLM-agnostic)
-    # This creates scripts/companion.py but it's ICDEV-generated, not imported
+    # This creates scripts/companion.py but it's ICDEV™-generated, not imported
     scriptgen_result = None
     try:
         from tools.marketplace.openclaw_scriptgen import generate_companion_script
@@ -1019,7 +1019,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
 # Promote functions
 # ---------------------------------------------------------------------------
 def promote_import(import_id, promoted_by):
-    """Promote a quarantined import to the ICDEV marketplace.
+    """Promote a quarantined import to the ICDEV™ marketplace.
 
     Args:
         import_id: The import record ID.
@@ -1063,11 +1063,11 @@ def promote_import(import_id, promoted_by):
         if rec.get("status") == "rejected":
             return {"error": "Cannot promote: import was rejected"}
 
-        # Convert OpenClaw skill.md -> ICDEV SKILL.md
+        # Convert OpenClaw skill.md -> ICDEV™ SKILL.md
         quarantine_path = Path(rec["quarantine_path"])
         metadata = json.loads(rec.get("metadata", "{}")) if isinstance(rec.get("metadata"), str) else {}
 
-        # Build ICDEV SKILL.md content
+        # Build ICDEV™ SKILL.md content
         icdev_name = re.sub(r"[^a-z0-9-]", "-", (metadata.get("name", rec["openclaw_slug"]) or "imported-skill").lower())[:63]
         oc_tools = metadata.get("tools", [])
         icdev_tools = sorted(ALLOWED_TOOLS.intersection(set(oc_tools))) if oc_tools else ["Read", "Grep", "Glob"]
@@ -1112,7 +1112,7 @@ CUI // SP-CTI
             _, original_body = _parse_skill_md(skill_md_path)
             icdev_body += original_body
 
-        # Write ICDEV SKILL.md
+        # Write ICDEV™ SKILL.md
         fm_yaml = yaml.dump(icdev_frontmatter, default_flow_style=False, allow_unicode=True)
         icdev_content = f"---\n{fm_yaml}---\n{icdev_body}"
 
@@ -1436,7 +1436,7 @@ def revoke_import(import_id, revoked_by, reason):
 # Export functions
 # ---------------------------------------------------------------------------
 def export_skill(asset_id, version_id, output_path, exported_by):
-    """Export an ICDEV skill to OpenClaw format.
+    """Export an ICDEV™ skill to OpenClaw format.
 
     Strips CUI markings and internal metadata. Requires human approval.
 
@@ -1514,8 +1514,8 @@ def export_skill(asset_id, version_id, output_path, exported_by):
                 "name": fm_data.get("name", asset_d.get("slug", "exported-skill")),
                 "description": fm_data.get("description", asset_d.get("description", "")),
                 "version": version_d.get("version", "1.0.0"),
-                "author": "ICDEV",
-                "origin": "ICDEV",
+                "author": "ICDEV™",
+                "origin": "ICDEV™",
                 "exported_at": _utcnow(),
             }
             if fm_data.get("tags"):
@@ -1794,7 +1794,7 @@ def main():
     group.add_argument("--revoke", action="store_true",
                        help="Revoke a promoted import (rollback)")
     group.add_argument("--export", action="store_true",
-                       help="Export an ICDEV skill to OpenClaw format")
+                       help="Export an ICDEV™ skill to OpenClaw format")
     group.add_argument("--list-quarantine", action="store_true",
                        help="List quarantined imports")
     group.add_argument("--list-exports", action="store_true",

@@ -1,6 +1,6 @@
-# ICDEV Application Validation Test Suite
+# ICDEV™ Application Validation Test Suite
 
-Execute comprehensive validation tests for ICDEV-built projects, returning results in standardized JSON format for automated processing.
+Execute comprehensive validation tests for ICDEV™-built projects, returning results in standardized JSON format for automated processing.
 
 ## Purpose
 

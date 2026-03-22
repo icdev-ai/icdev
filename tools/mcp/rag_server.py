@@ -15,7 +15,7 @@ ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_db():
-    """Get connection to ICDEV DB."""
+    """Get connection to ICDEV™ DB."""
     conn = get_connection()
     return conn
 

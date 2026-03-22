@@ -1,4 +1,4 @@
-# Windsurf MCP Setup for ICDEV
+# Windsurf MCP Setup for ICDEV™
 
 ## Steps
 1. Open Windsurf Settings > Cascade > MCP

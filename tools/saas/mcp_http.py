@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- MCP Streamable HTTP Transport.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- MCP Streamable HTTP Transport.
 
 Implements the MCP Streamable HTTP transport (spec revision 2025-03-26),
 replacing the deprecated HTTP+SSE transport.  All MCP communication flows
@@ -229,7 +229,7 @@ def _broadcast_to_tenant(tenant_id: str, event_type: str, data: dict) -> None:
 TOOL_REGISTRY = [
     {
         "name": "project_create",
-        "description": "Create a new ICDEV-managed project",
+        "description": "Create a new ICDEV™-managed project",
         "module": "tools.project.project_create",
         "function": "create_project",
         "inputSchema": {

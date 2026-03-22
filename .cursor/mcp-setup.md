@@ -1,4 +1,4 @@
-# Cursor MCP Setup for ICDEV
+# Cursor MCP Setup for ICDEV™
 
 ## Steps
 1. Open Cursor Settings (Cmd/Ctrl + ,)

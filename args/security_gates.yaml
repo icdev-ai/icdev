@@ -1,4 +1,4 @@
-# ICDEV Security Gate Configuration
+# ICDEV™ Security Gate Configuration
 # Defines what blocks merges and deployments
 
 code_review:
@@ -1137,7 +1137,7 @@ synthesize_goal_review:
     - llm_polish_failed
 
 openclaw_export:
-  description: "Gate for exporting ICDEV skills to OpenClaw format — prevents data leakage"
+  description: "Gate for exporting ICDEV™ skills to OpenClaw format — prevents data leakage"
   blocking:
     - cui_markings_present_after_strip
     - internal_metadata_leak
@@ -1168,7 +1168,7 @@ redaction_data_protection:
     require_local_only_for_proposals: true
     audit_all_detections: true
 
-# Phase 72 — ICDEV Studio (D361-D366)
+# Phase 72 — ICDEV™ Studio (D361-D366)
 studio_workflow:
   description: "Gate for Studio user-created workflows — validates before execution"
   blocking:

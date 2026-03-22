@@ -1,4 +1,4 @@
-# ICDEV Subsystems Reference
+# ICDEV™ Subsystems Reference
 
 Major subsystem details for Innovation, Creative, Research engines; RICOAS; SaaS; Marketplace; CI/CD. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
@@ -7,7 +7,7 @@ Major subsystem details for Innovation, Creative, Research engines; RICOAS; SaaS
 ## Innovation Engine — Autonomous Self-Improvement (Phase 35)
 
 ### Overview
-ICDEV continuously improves itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps from the web and internal telemetry — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
+ICDEV™ continuously improves itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps from the web and internal telemetry — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
 
 ### Pipeline
 ```
@@ -230,7 +230,7 @@ python tools/research/research_engine.py --daemon --json
 - **D-RES-4:** 6-dimension challenge scoring (D21 deterministic weighted average)
 - **D-RES-5:** All `research_*` tables append-only (D6) except `research_sessions` and `research_verticals` (allow UPDATE for status)
 - **D-RES-6:** Regulatory body mapping uses `context/research/regulatory_registry.json` with crosswalk hooks
-- **D-RES-7:** ICDEV capability mapping reuses `icdev_capability_catalog.json` with keyword-overlap algorithm
+- **D-RES-7:** ICDEV™ capability mapping reuses `icdev_capability_catalog.json` with keyword-overlap algorithm
 - **D-RES-8:** Build/buy/partner is a separate pipeline stage producing scored decision matrix per challenge
 - **D-RES-9:** Dossier is template-based Markdown (D356, no LLM, air-gap safe)
 - **D-RES-10:** Dossier feeds into child app fitness via `research_session_id` field. HITL approval required
@@ -252,8 +252,8 @@ market_demand:          0.25  (signal frequency, upvotes, citations)
 regulatory_pressure:    0.20  (regulation count, enforcement 1.5x, deadlines 1.3x)
 technical_complexity:   0.15  (academic paper density, patent activity)
 competitive_saturation: 0.15  (inverse: fewer solutions = bigger opportunity)
-icdev_readiness:        0.15  (ICDEV capability coverage score)
-compliance_alignment:   0.10  (maps to existing ICDEV framework = 1.0)
+icdev_readiness:        0.15  (ICDEV™ capability coverage score)
+compliance_alignment:   0.10  (maps to existing ICDEV™ framework = 1.0)
 ```
 
 ### Available Verticals
@@ -308,7 +308,7 @@ RICOAS transforms vague customer requirements into structured, decomposed, MBSE-
 ## SaaS Multi-Tenancy Architecture (Phase 21)
 
 ### Overview
-ICDEV is exposed as a multi-tenant SaaS platform. The SaaS layer **wraps** existing tools (D58) — it does NOT rewrite them. Each REST/MCP endpoint resolves the tenant, routes to their isolated database, calls the existing Python tool, and returns the result.
+ICDEV™ is exposed as a multi-tenant SaaS platform. The SaaS layer **wraps** existing tools (D58) — it does NOT rewrite them. Each REST/MCP endpoint resolves the tenant, routes to their isolated database, calls the existing Python tool, and returns the result.
 
 ### Tenant Isolation by Impact Level
 | IL | Compute | Database | Network |
@@ -350,7 +350,7 @@ ICDEV is exposed as a multi-tenant SaaS platform. The SaaS layer **wraps** exist
 | Tenant DB Adapter | `tools/saas/tenant_db_adapter.py` | Route tool DB calls to tenant's database |
 | Rate Limiter | `tools/saas/rate_limiter.py` | Per-tenant rate limiting by tier |
 | DB Compat | `tools/saas/db/db_compat.py` | SQLite ↔ PostgreSQL compatibility layer |
-| PG Schema | `tools/saas/db/pg_schema.py` | Full ICDEV schema ported to PostgreSQL DDL |
+| PG Schema | `tools/saas/db/pg_schema.py` | Full ICDEV™ schema ported to PostgreSQL DDL |
 | Artifact Delivery | `tools/saas/artifacts/delivery_engine.py` | Push artifacts to tenant S3/Git/SFTP |
 | Bedrock Proxy | `tools/saas/bedrock/bedrock_proxy.py` | Route LLM calls to BYOK or shared pool |
 | License Validator | `tools/saas/licensing/license_validator.py` | RSA-SHA256 offline license validation |
@@ -420,7 +420,7 @@ python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" -
 | Command | Purpose |
 |---------|---------|
 | `/classify_issue` | Classify issue as /chore, /bug, /feature, /patch |
-| `/classify_workflow` | Extract ICDEV workflow command from text |
+| `/classify_workflow` | Extract ICDEV™ workflow command from text |
 | `/generate_branch_name` | Generate branch: `<type>-issue-<num>-icdev-<id>-<name>` |
 | `/implement` | Implement a plan with CUI markings |
 | `/commit` | Generate commit: `<agent>: <type>: <message>` |
@@ -430,4 +430,4 @@ python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" -
 VCS detects GitHub vs GitLab from `git remote get-url origin`. Uses `gh` CLI for GitHub, `glab` CLI for GitLab.
 
 ### Bot Loop Prevention
-All bot comments include `[ICDEV-BOT]`. Webhooks ignore comments with this identifier.
+All bot comments include `[ICDEV™-BOT]`. Webhooks ignore comments with this identifier.

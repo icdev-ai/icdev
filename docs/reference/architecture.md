@@ -1,6 +1,6 @@
-# ICDEV System Architecture Reference
+# ICDEV™ System Architecture Reference
 
-System architecture details for ICDEV. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
+System architecture details for ICDEV™. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
 ---
 
@@ -102,7 +102,7 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/plan_rust` | Rust build plan — Actix-web, cucumber-rs, clippy, cargo-audit, rustfmt (Phase 42) |
 | `/plan_csharp` | C# build plan — ASP.NET Core, SpecFlow, SecurityCodeScan, dotnet analyzers (Phase 42) |
 | `/plan_typescript` | TypeScript build plan — Express, cucumber-js, eslint-security, npm audit (Phase 42) |
-| `/icdev-agentic` | Generate agentic child application (mini-ICDEV clone with GOTCHA/ATLAS) |
+| `/icdev-agentic` | Generate agentic child application (mini-ICDEV™ clone with GOTCHA/ATLAS) |
 | `/icdev-market` | Federated GOTCHA marketplace — publish, install, search, review, sync assets across tenant orgs |
 | `/icdev-devsecops` | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), attestation |
 | `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
@@ -185,7 +185,7 @@ helm install icdev deploy/helm/ --set autoscaling.enabled=true
 
 ## Modular Installation (Phase 33)
 
-ICDEV supports modular deployment configured by compliance posture, platform, organizational role, and team size. Not all modules are required — pick what fits your mission.
+ICDEV™ supports modular deployment configured by compliance posture, platform, organizational role, and team size. Not all modules are required — pick what fits your mission.
 
 ```bash
 # Interactive wizard — guided setup
@@ -258,7 +258,7 @@ These are the 12 dimensions you can tune to improve agent behavior.
 
 ## Agentic Application Generation (Phase 19)
 
-ICDEV generates mini-ICDEV clone child applications. Each child app includes:
+ICDEV™ generates mini-ICDEV™ clone child applications. Each child app includes:
 - Full GOTCHA framework (6 layers) and ATLAS workflow (without fitness step)
 - 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor)
 - Up to 2 ATO agents (Compliance, Security) when compliance/security required

@@ -3,7 +3,7 @@
 """Compiler-in-the-Loop Verification — iterative verify→repair→re-verify pipeline.
 
 Adapted from Mistral AI's LeanStral closed-loop verification pattern (2026-03-16).
-Generalizes D255 compiler-feedback repair loop across all 6 ICDEV languages.
+Generalizes D255 compiler-feedback repair loop across all 6 ICDEV™ languages.
 
 The core insight: use compilers/linters/SAST as *perfect verifiers* in an agentic
 feedback loop. When a gate fails, feed errors back to LLM for targeted repair
@@ -405,7 +405,7 @@ def verify_file(
         repair: Whether to attempt LLM-based repair on failure.
         dry_run: If True, only report what would be verified (no execution).
         project_dir: Project root directory.
-        project_id: ICDEV project ID for audit trail.
+        project_id: ICDEV™ project ID for audit trail.
         config: Pre-loaded config (loaded from YAML if None).
 
     Returns:
@@ -647,7 +647,7 @@ def main():
     parser.add_argument("--language", default="", help="Language (auto-detected if omitted)")
     parser.add_argument("--repair", action="store_true", help="Enable LLM-based repair loop")
     parser.add_argument("--dry-run", action="store_true", help="Show what would run without executing")
-    parser.add_argument("--project-id", default="", help="ICDEV project ID for audit trail")
+    parser.add_argument("--project-id", default="", help="ICDEV™ project ID for audit trail")
     parser.add_argument("--gate", action="store_true", help="Evaluate gate (exit 0=pass, 1=fail)")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

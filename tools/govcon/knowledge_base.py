@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Knowledge Base — Phase 59 (D368)
+# ICDEV™ GovCon Knowledge Base — Phase 59 (D368)
 # Reusable content blocks for proposal response drafting.
 
 """
@@ -217,7 +217,7 @@ def increment_usage(block_id):
 # ── seeding from capability catalog ──────────────────────────────────
 
 def seed_from_catalog():
-    """Seed knowledge base from ICDEV capability catalog.
+    """Seed knowledge base from ICDEV™ capability catalog.
 
     Creates:
     - Product-level blocks: product_overview, customer_value, integrated_solution per product
@@ -354,7 +354,7 @@ def seed_from_catalog():
             f"Key Evidence: {evidence}\n\n"
             f"NIST 800-53 Controls: {', '.join(controls)}\n\n"
             f"This capability is implemented through {len(tools)} dedicated tools "
-            f"in the ICDEV platform, providing automated, repeatable, and auditable "
+            f"in the ICDEV™ platform, providing automated, repeatable, and auditable "
             f"execution of {category} operations."
         )
         conn.execute(
@@ -376,7 +376,7 @@ def seed_from_catalog():
         # Tools block
         if tools:
             tools_content = (
-                f"ICDEV implements {name} through the following automated tools:\n\n"
+                f"ICDEV™ implements {name} through the following automated tools:\n\n"
                 + "\n".join(f"- {t}" for t in tools) + "\n\n"
                 f"All tools are deterministic Python scripts following the GOTCHA framework. "
                 f"They produce reproducible, auditable output with CUI markings and audit trail logging."
@@ -407,7 +407,7 @@ def seed_from_catalog():
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Knowledge Base (D368)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Knowledge Base (D368)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list", action="store_true", help="List knowledge blocks")
     group.add_argument("--search", action="store_true", help="Search knowledge blocks")

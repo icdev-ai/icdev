@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovProposal — EVM Engine (Phase 60, D-CPMP-2)
+# ICDEV™ GovProposal — EVM Engine (Phase 60, D-CPMP-2)
 # Earned Value Management calculations per ANSI/EIA-748.
 
 """
@@ -708,7 +708,7 @@ def generate_ipmdar_data(contract_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV GovProposal EVM Engine — ANSI/EIA-748 (Phase 60, D-CPMP-2)"
+        description="ICDEV™ GovProposal EVM Engine — ANSI/EIA-748 (Phase 60, D-CPMP-2)"
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--record", action="store_true", help="Record a monthly EVM period snapshot")

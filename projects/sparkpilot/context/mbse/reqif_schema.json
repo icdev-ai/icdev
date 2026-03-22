@@ -5,7 +5,7 @@
     "classification": "CUI // SP-CTI",
     "version": "1.0",
     "last_updated": "2026-02-15",
-    "description": "Maps ReqIF 1.2 XML elements and attributes to ICDEV database fields for parsing DOORS NG requirement exports. Used by the MBSE integration layer to import requirements into the digital thread."
+    "description": "Maps ReqIF 1.2 XML elements and attributes to ICDEV™ database fields for parsing DOORS NG requirement exports. Used by the MBSE integration layer to import requirements into the digital thread."
   },
   "namespaces": {
     "reqif": "http://www.omg.org/spec/ReqIF/20110401/reqif.xsd",

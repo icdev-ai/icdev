@@ -1,5 +1,5 @@
 /**
- * ICDEV Studio — Case Manager
+ * ICDEV™ Studio — Case Manager
  * Kanban board + lifecycle state machine for tracking cases.
  */
 const CaseManager = (() => {

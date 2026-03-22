@@ -330,7 +330,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "name": {"type": "string", "description": "Application name"},
                 "source_path": {"type": "string", "description": "Path to legacy source code"},
                 "description": {"type": "string", "description": "Application description"},
@@ -346,7 +346,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
             },
             "required": ["project_id", "app_id"],
@@ -387,7 +387,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
                 "weights_path": {"type": "string", "description": "Optional path to custom scoring weights JSON"},
             },
@@ -402,7 +402,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "app_id": {"type": "string", "description": "Legacy application ID"},
                 "strategy": {"type": "string", "enum": ["rehost", "replatform", "refactor", "rearchitect", "repurchase", "retire", "retain"]},
                 "target_language": {"type": "string", "description": "Target programming language"},

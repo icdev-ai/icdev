@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """App Blueprint Engine - generates deployment blueprint from fitness scorecard.
 
 Consumes an agentic fitness scorecard (JSON output from tools/builder/agentic_fitness.py)
@@ -470,7 +470,7 @@ ESSENTIAL_GOALS: List[str] = [
 
 CAPABILITY_SOURCES: Dict[str, List[str]] = {
     "core": ["tools/audit"],  # Audit trail always included
-    "multi_agent": ["tools/agent", "tools/a2a"],  # ICDEV A2A infra (only when needed)
+    "multi_agent": ["tools/agent", "tools/a2a"],  # ICDEV™ A2A infra (only when needed)
     "memory": ["tools/memory"],
     "knowledge": ["tools/knowledge", "tools/monitor"],
     "compliance": ["tools/compliance"],
@@ -771,7 +771,7 @@ def build_agent_roster(
 
     Args:
         capabilities: Resolved capability map from resolve_capabilities().
-        port_offset: Port offset from ICDEV base ports (default 1000).
+        port_offset: Port offset from ICDEV™ base ports (default 1000).
 
     Returns:
         List of agent specification dicts.
@@ -822,7 +822,7 @@ def build_file_manifest(blueprint: Dict[str, Any]) -> List[Dict[str, Any]]:
     rules for the child_app_generator (Phase 3) to handle actual file copying.
 
     Each manifest entry contains:
-        - source: Relative source directory or file pattern in ICDEV
+        - source: Relative source directory or file pattern in ICDEV™
         - dest: Relative destination in child app
         - adaptations: List of adaptation types to apply
 
@@ -1091,11 +1091,11 @@ def generate_blueprint(
         scorecard: Fitness scorecard from agentic_fitness.py (JSON dict).
         user_decisions: User-provided decisions and overrides.
         app_name: Name for the child application.
-        port_offset: Port offset from ICDEV base ports (default 1000).
+        port_offset: Port offset from ICDEV™ base ports (default 1000).
         cloud_provider: Target cloud provider (aws, gcp, azure, oracle, ibm).
         cloud_region: Target deployment region.
         govcloud: Whether to use GovCloud partition.
-        parent_callback_url: Optional URL for parent ICDEV callback.
+        parent_callback_url: Optional URL for parent ICDEV™ callback.
         impact_level: DoD Impact Level (IL2, IL4, IL5, IL6).
 
     Returns:
@@ -1292,7 +1292,7 @@ def _log_blueprint_audit(blueprint: Dict[str, Any]) -> None:
 
 
 def _persist_blueprint(blueprint: Dict[str, Any]) -> bool:
-    """Persist blueprint to the ICDEV database.
+    """Persist blueprint to the ICDEV™ database.
 
     Args:
         blueprint: Generated blueprint dict.
@@ -1431,7 +1431,7 @@ def main():
         "--port-offset",
         type=int,
         default=1000,
-        help="Port offset from ICDEV base ports (default: 1000)",
+        help="Port offset from ICDEV™ base ports (default: 1000)",
     )
     parser.add_argument(
         "--cloud-provider",
@@ -1452,7 +1452,7 @@ def main():
     parser.add_argument(
         "--parent-callback-url",
         default=None,
-        help="URL for parent ICDEV callback (optional)",
+        help="URL for parent ICDEV™ callback (optional)",
     )
     parser.add_argument(
         "--impact-level",
@@ -1474,7 +1474,7 @@ def main():
     parser.add_argument(
         "--persist",
         action="store_true",
-        help="Persist blueprint to ICDEV database",
+        help="Persist blueprint to ICDEV™ database",
     )
     parser.add_argument(
         "--verbose", "-v",

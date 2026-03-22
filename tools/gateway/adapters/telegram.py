@@ -79,13 +79,13 @@ class TelegramAdapter(BaseChannelAdapter):
         if chat_type in ("group", "supergroup") and not text.startswith("/"):
             return None
 
-        # Strip bot mention in group chats (e.g., /icdev-status@ICDEVBot)
+        # Strip bot mention in group chats (e.g., /icdev-status@ICDEV™Bot)
         if "@" in text.split()[0]:
             first_word = text.split()[0]
             text = first_word.split("@")[0] + " " + " ".join(text.split()[1:])
             text = text.strip()
 
-        # Only process ICDEV commands
+        # Only process ICDEV™ commands
         if not (text.startswith("/icdev") or text.startswith("/bind")
                 or text.startswith("icdev-")):
             return None

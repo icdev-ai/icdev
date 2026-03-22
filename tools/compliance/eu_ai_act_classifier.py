@@ -43,9 +43,9 @@ class EUAIActClassifier(BaseAssessor):
     def get_automated_checks(
         self, project: Dict, project_dir: Optional[str] = None
     ) -> Dict[str, str]:
-        """Check EU AI Act requirements against existing ICDEV evidence.
+        """Check EU AI Act requirements against existing ICDEV™ evidence.
 
-        Maps 12 requirements to existing ICDEV controls and data:
+        Maps 12 requirements to existing ICDEV™ controls and data:
         - EUAI-01: Risk classification → AI inventory with risk_level
         - EUAI-02: Data governance → model cards with training data docs
         - EUAI-03: Technical documentation → model cards + system cards

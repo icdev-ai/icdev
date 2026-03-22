@@ -1,12 +1,12 @@
 # CUI // SP-CTI
-# ICDEV Proposal Genesis — GSA "American AI" Clause Compliance Engine (§3.15)
-# Generates required AI compliance artifacts by wrapping existing ICDEV Phase 48/49 tools.
+# ICDEV™ Proposal Genesis — GSA "American AI" Clause Compliance Engine (§3.15)
+# Generates required AI compliance artifacts by wrapping existing ICDEV™ Phase 48/49 tools.
 
 """
 AI Clause Compliance Engine — detect AI compliance requirements in RFPs and generate
 required artifacts (model cards, bias evaluations, source disclosure, American AI checklist).
 
-Wraps existing ICDEV Phase 48/49 tools:
+Wraps existing ICDEV™ Phase 48/49 tools:
     - tools.compliance.model_card_generator (model cards)
     - tools.compliance.fairness_assessor (bias/fairness evaluation)
     - tools.compliance.ai_inventory_manager (AI component inventory)
@@ -45,7 +45,7 @@ if str(_ROOT) not in sys.path:
 from tools.db.storage import get_connection  # noqa: E402
 _DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(_ROOT / "data" / "icdev.db")))
 
-# ── Wrapped ICDEV tools (graceful ImportError) ───────────────────────
+# ── Wrapped ICDEV™ tools (graceful ImportError) ───────────────────────
 
 try:
     from tools.compliance.model_card_generator import generate_model_card
@@ -268,7 +268,7 @@ def detect_ai_clauses(opportunity_id):
 # ── Artifact Generation ──────────────────────────────────────────────
 
 def _generate_model_cards_artifact(opportunity_id):
-    """Generate model cards by wrapping existing ICDEV tool or producing stub."""
+    """Generate model cards by wrapping existing ICDEV™ tool or producing stub."""
     if generate_model_card is not None:
         try:
             result = generate_model_card(project_id=opportunity_id)
@@ -294,7 +294,7 @@ def _generate_model_cards_artifact(opportunity_id):
 
 
 def _stub_model_card(opportunity_id):
-    """Deterministic stub model card when ICDEV tool is unavailable."""
+    """Deterministic stub model card when ICDEV™ tool is unavailable."""
     return {
         "model_card": {
             "project_id": opportunity_id,
@@ -326,7 +326,7 @@ def _stub_model_card(opportunity_id):
 
 
 def _generate_bias_evaluation_artifact(opportunity_id):
-    """Generate bias evaluation by wrapping existing ICDEV fairness assessor."""
+    """Generate bias evaluation by wrapping existing ICDEV™ fairness assessor."""
     if assess_fairness is not None:
         try:
             result = assess_fairness(project_id=opportunity_id)
@@ -787,7 +787,7 @@ def gate_evaluate(opportunity_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Proposal Genesis — GSA American AI Clause Compliance Engine (§3.15)"
+        description="ICDEV™ Proposal Genesis — GSA American AI Clause Compliance Engine (§3.15)"
     )
 
     # Actions

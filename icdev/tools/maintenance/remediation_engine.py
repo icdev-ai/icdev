@@ -869,7 +869,7 @@ def _print_summary(result):
 
     dry_tag = " [DRY RUN]" if result.get("dry_run") else ""
     print(f"\n{'=' * 60}")
-    print(f"  ICDEV REMEDIATION ENGINE{dry_tag}")
+    print(f"  ICDEV™ REMEDIATION ENGINE{dry_tag}")
     print(f"{'=' * 60}")
     print(f"  Project: {result.get('project_name', result['project_id'])}")
     print(f"  Vulnerabilities found: {result['total_vulnerabilities']}")

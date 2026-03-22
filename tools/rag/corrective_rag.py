@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Corrective RAG — parallel multi-strategy retrieval (D-KARL-3).
 
 Fires three retrieval strategies concurrently via ThreadPoolExecutor:

@@ -341,7 +341,7 @@ class NERRecognizer:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV NER Recognizer (Ollama + regex)")
+    parser = argparse.ArgumentParser(description="ICDEV™ NER Recognizer (Ollama + regex)")
     parser.add_argument("--extract", type=str, help="Extract entities from text")
     parser.add_argument("--no-ollama", action="store_true", help="Regex only (skip Ollama)")
     parser.add_argument("--health", action="store_true")

@@ -50,7 +50,7 @@ def _load_config() -> Dict[str, Any]:
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a connection to the ICDEV database."""
+    """Open a connection to the ICDEV™ database."""
     conn = get_connection(db_path=str(db_path))
     return conn
 
@@ -566,7 +566,7 @@ def _format_table(history: List[dict]) -> str:
 
 def main() -> None:
     """CLI entry point."""
-    parser = argparse.ArgumentParser(description="ICDEV Auto-Resolution Pipeline (D143-D145)")
+    parser = argparse.ArgumentParser(description="ICDEV™ Auto-Resolution Pipeline (D143-D145)")
     parser.add_argument("--analyze", action="store_true", help="Analyze alert without acting")
     parser.add_argument("--resolve", action="store_true", help="Full resolution pipeline")
     parser.add_argument("--history", action="store_true", help="Show resolution history")

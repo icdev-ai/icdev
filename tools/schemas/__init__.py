@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Shared schema models for ICDEV tool outputs (Phase 44 — D275).
+"""Shared schema models for ICDEV™ tool outputs (Phase 44 — D275).
 
 Provides stdlib dataclass models shared across MCP servers, dashboard API,
 SaaS gateway, and CLI tools. Backward compatible — existing dict returns

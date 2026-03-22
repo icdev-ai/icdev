@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Bayesian Autoresearch Engine — autonomous experiment loop (D-AR-1).
 
-Adapts Karpathy's Autoresearch pattern with ICDEV's Bayesian Teaching
+Adapts Karpathy's Autoresearch pattern with ICDEV™'s Bayesian Teaching
 Intelligence for self-improving experiments across compliance, code quality,
 security, RAG, Pulse, and skill domains.
 

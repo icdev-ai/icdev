@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""SSE (Server-Sent Events) connection manager for ICDEV dashboard.
+"""SSE (Server-Sent Events) connection manager for ICDEV™ dashboard.
 
 Manages client connections, event broadcasting, and heartbeat.
 Decision D29: SSE over WebSocket — Flask-native, simpler, unidirectional sufficient.

@@ -38,7 +38,7 @@ class MCPOAuthVerifier:
 
     Supports three verification modes:
     1. JWT verification (connected environments)
-    2. API key verification (standard ICDEV auth)
+    2. API key verification (standard ICDEV™ auth)
     3. Offline HMAC verification (air-gapped environments)
     """
 
@@ -83,7 +83,7 @@ class MCPOAuthVerifier:
         if cached and cached["expires_at"] > time.time():
             return cached["result"]
 
-        # Try API key verification first (most common in ICDEV)
+        # Try API key verification first (most common in ICDEV™)
         result = self._verify_api_key(token)
         if result["verified"]:
             self._cache_result(cache_key, result)
@@ -104,9 +104,9 @@ class MCPOAuthVerifier:
         return {"verified": False, "error": "Token verification failed"}
 
     def _verify_api_key(self, token: str) -> dict:
-        """Verify against ICDEV API key database."""
+        """Verify against ICDEV™ API key database."""
         if not token.startswith("icdev_"):
-            return {"verified": False, "error": "Not an ICDEV API key"}
+            return {"verified": False, "error": "Not an ICDEV™ API key"}
 
         key_hash = hashlib.sha256(token.encode()).hexdigest()
 

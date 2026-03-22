@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Compatibility Checker — IL and version compatibility.
 
 Validates that a marketplace asset is compatible with a target tenant's
-impact level and ICDEV platform version before installation.
+impact level and ICDEV™ platform version before installation.
 
 Rules:
     - Impact Level: consumer IL rank must be >= asset IL rank
@@ -315,7 +315,7 @@ def full_compatibility_check(asset_id, consumer_il=None, tenant_id=None,
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Compatibility Checker")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Compatibility Checker")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 
@@ -323,7 +323,7 @@ def main():
     parser.add_argument("--tenant-id", help="Consumer tenant ID")
     parser.add_argument("--consumer-il", choices=sorted(IL_HIERARCHY.keys()),
                         help="Consumer impact level")
-    parser.add_argument("--platform-version", help="ICDEV platform version")
+    parser.add_argument("--platform-version", help="ICDEV™ platform version")
     parser.add_argument("--check-deps", action="store_true", help="Check dependencies only")
     parser.add_argument("--check-il", action="store_true", help="Check IL only")
     parser.add_argument("--check-version", action="store_true", help="Check version only")

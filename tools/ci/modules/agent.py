@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Agent Executor — Claude Code CLI subprocess invocation
+# ICDEV™ Agent Executor — Claude Code CLI subprocess invocation
 # Wrapper around tools/agent/agent_executor.py for retry, audit, Bedrock fallback
 
 """
@@ -75,7 +75,7 @@ SLASH_COMMAND_MODEL_MAP = {
 }
 
 # Bot identifier for preventing infinite loops
-BOT_IDENTIFIER = "[ICDEV-BOT]"
+BOT_IDENTIFIER = "[ICDEV™-BOT]"
 
 
 def _get_timeout(slash_command: str = "") -> int:

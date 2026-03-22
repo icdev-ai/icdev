@@ -367,7 +367,7 @@ SparkPilot makes embedded RTOS development accessible to anyone — from a begin
 | **Tier 0** | Browser Simulator (WASM/JS) | FreeRTOS POSIX port in browser, virtual peripherals, no install needed |
 | **Tier 1** | FreeRTOS MCU (Cortex-M, ESP32, RISC-V) | TinyML inference, MQTT telemetry, OTA updates, SparkPilot Device SDK (~8KB) |
 | **Tier 2** | Edge Gateway (RPi, Jetson) | Local LLM (llama.cpp), multi-agent coordination, edge inference |
-| **Tier 3** | Cloud/ICDEV (Bedrock, SageMaker) | Full LLM orchestration, compliance monitoring, self-healing |
+| **Tier 3** | Cloud/ICDEV™ (Bedrock, SageMaker) | Full LLM orchestration, compliance monitoring, self-healing |
 
 ### Key Capabilities
 
@@ -543,7 +543,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 - RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs
 - Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed
 - Code Quality gates block on: average cyclomatic complexity > 25
-- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
+- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 
 ### Cloud Service Provider Integration
 

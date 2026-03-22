@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Documentation Generator for ICDEV Legacy Code Modernization.
+"""Documentation Generator for ICDEV™ Legacy Code Modernization.
 
 Generates structured documentation from legacy code analysis data stored in
 icdev.db. Produces Markdown documents with CUI markings for API docs, data

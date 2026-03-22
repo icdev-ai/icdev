@@ -3,18 +3,18 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Innovation Scoring Engine — score and rank innovation signals using weighted multi-dimension analysis.
 
 Scores innovation signals discovered by web_scanner.py using a 6-dimension weighted
 average (D21 deterministic scoring pattern):
 
   1. community_demand  (0.25) — GitHub stars, SO votes, upvotes, issue frequency
-  2. impact_breadth    (0.20) — Potential number of ICDEV projects/tenants affected
-  3. feasibility       (0.15) — Can ICDEV build this with existing tools/layers?
+  2. impact_breadth    (0.20) — Potential number of ICDEV™ projects/tenants affected
+  3. feasibility       (0.15) — Can ICDEV™ build this with existing tools/layers?
   4. compliance_alignment (0.15) — Does it strengthen compliance posture?
-  5. novelty           (0.10) — Not already addressed by existing ICDEV capabilities
-  6. technical_depth   (0.15) — How concretely does it map to ICDEV modules?
+  5. novelty           (0.10) — Not already addressed by existing ICDEV™ capabilities
+  6. technical_depth   (0.15) — How concretely does it map to ICDEV™ modules?
 
 Architecture:
     - Weights loaded from args/innovation_config.yaml under scoring.weights (D26 pattern)
@@ -233,7 +233,7 @@ def _score_community_demand(signal):
 def _score_impact_breadth(signal, conn):
     """Score impact breadth dimension.
 
-    Estimates how many ICDEV projects/tenants could benefit from addressing
+    Estimates how many ICDEV™ projects/tenants could benefit from addressing
     this signal. Uses signal category to match against project types in DB.
 
     Args:
@@ -316,7 +316,7 @@ def _score_feasibility(signal, config=None):
     """Score feasibility dimension.
 
     Checks if the signal category maps to an existing GOTCHA layer,
-    indicating ICDEV has the architecture to address it.
+    indicating ICDEV™ has the architecture to address it.
 
     Args:
         signal: Dict of signal row from DB.
@@ -423,7 +423,7 @@ def _score_novelty(signal, conn):
     """Score novelty dimension.
 
     Checks whether the signal addresses something not already covered by
-    existing ICDEV capabilities. Searches knowledge_patterns and tool manifest
+    existing ICDEV™ capabilities. Searches knowledge_patterns and tool manifest
     for similar patterns via keyword matching.
 
     Args:
@@ -514,7 +514,7 @@ HIGH_VALUE_SUBSYSTEMS = {
 
 
 def _score_technical_depth(signal, config=None):
-    """Score technical depth — how concretely the signal maps to ICDEV modules.
+    """Score technical depth — how concretely the signal maps to ICDEV™ modules.
 
     Phase 71 lesson: surface-level scoring misses the key question —
     which specific tools/modules would this enhance?
@@ -553,7 +553,7 @@ def _score_technical_depth(signal, config=None):
 
     # Attempt to load and parse tools/manifest.md
     if not manifest_path.exists():
-        # Fallback: keyword heuristic against known ICDEV subsystem names
+        # Fallback: keyword heuristic against known ICDEV™ subsystem names
         subsystem_hits = sum(
             1 for sub in HIGH_VALUE_SUBSYSTEMS if sub in signal_text
         )
@@ -1049,7 +1049,7 @@ def calibrate_weights(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Innovation Scoring Engine — score and rank innovation signals"
+        description="ICDEV™ Innovation Scoring Engine — score and rank innovation signals"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument(

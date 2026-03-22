@@ -1,6 +1,6 @@
 ---
 name: icdev-market
-description: "Manage the ICDEV Federated GOTCHA Asset Marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations."
+description: "Manage the ICDEV™ Federated GOTCHA Asset Marketplace — publish, install, search, review, and sync skills, goals, hardprompts, context, args, and compliance extensions across tenant organizations."
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "Task", "TodoWrite"]
 ---
 

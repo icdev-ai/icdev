@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-"""Tests for the ICDEV SaaS Rate Limiter (tools/saas/rate_limiter.py).
+"""Tests for the ICDEV™ SaaS Rate Limiter (tools/saas/rate_limiter.py).
 
 Validates tier-based rate limiting (starter/professional/enterprise),
 InMemoryBackend sliding-window tracking, cleanup of expired entries,

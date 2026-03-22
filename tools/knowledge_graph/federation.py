@@ -3,11 +3,11 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Cross-project Knowledge Graph Federation.
 
 Enables querying, comparing, and merging knowledge graphs across multiple
-ICDEV projects.  Solves the single-project KG scope limitation by providing
+ICDEV™ projects.  Solves the single-project KG scope limitation by providing
 federated search, shared-entity discovery, virtual federated views, and
 cross-project compliance coverage analysis.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS Tenant Manager - Core tenant lifecycle management.
+"""ICDEV™ SaaS Tenant Manager - Core tenant lifecycle management.
 
 CUI // SP-CTI
 
@@ -880,7 +880,7 @@ def _print_result(data, as_json=False):
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV SaaS Tenant Manager",
+        description="CUI // SP-CTI -- ICDEV™ SaaS Tenant Manager",
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     action = parser.add_mutually_exclusive_group(required=True)

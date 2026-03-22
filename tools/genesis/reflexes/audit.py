@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Genesis Audit Reflex — self-scan: code quality, security, compliance.
 
-Runs existing ICDEV analysis tools against the codebase and aggregates
+Runs existing ICDEV™ analysis tools against the codebase and aggregates
 findings into an audit report.  Non-destructive, read-only (GREEN tier).
 
 Scanner-tier only (zero Claude tokens).  Air-gap safe.

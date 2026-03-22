@@ -61,5 +61,5 @@ few_shot_examples:
     excerpt: "The organization manages user accounts in accordance with organizational policy."
     reasoning: "Pure boilerplate. No tools, no process, no evidence, no specifics. Assessor learns nothing."
   - score: 5
-    excerpt: "AC-2: ICDEV manages user accounts via the SaaS API gateway (D61). Account creation requires ISSO approval via the approval_manager.py workflow. Accounts are reviewed quarterly (Jan/Apr/Jul/Oct) by the tenant admin. Evidence: dashboard_auth_log table (append-only, D169). Disabled accounts purged after 90 days via automated cron task."
+    excerpt: "AC-2: ICDEV™ manages user accounts via the SaaS API gateway (D61). Account creation requires ISSO approval via the approval_manager.py workflow. Accounts are reviewed quarterly (Jan/Apr/Jul/Oct) by the tenant admin. Evidence: dashboard_auth_log table (append-only, D169). Disabled accounts purged after 90 days via automated cron task."
     reasoning: "Named tool, approval workflow, defined frequency with months, evidence location, automated enforcement, architecture decision reference."

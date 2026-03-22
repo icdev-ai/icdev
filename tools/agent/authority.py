@@ -343,7 +343,7 @@ def get_veto_history(project_id: str = None, agent_id: str = None,
 def main():
     """CLI for domain authority management."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Domain Authority — enforce agent veto rights per topic"
+        description="ICDEV™ Domain Authority — enforce agent veto rights per topic"
     )
     sub = parser.add_subparsers(dest="command", help="Command to execute")
 

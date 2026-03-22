@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Install Manager — Install, update, and uninstall marketplace assets.
 
 Manages the lifecycle of installed marketplace assets within tenant projects.
@@ -725,7 +725,7 @@ def _table_exists(conn, table_name):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Marketplace Install Manager"
+        description="ICDEV™ Marketplace Install Manager"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
     parser.add_argument("--db-path", type=Path, default=None,

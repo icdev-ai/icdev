@@ -249,7 +249,7 @@ If `memory/MEMORY.md` does not exist, this is a fresh environment. Run `/initial
 
 ## Memory System Architecture
 
-ICDEV uses dual storage for memory: markdown files (human-readable) and SQLite databases (searchable).
+ICDEV™ uses dual storage for memory: markdown files (human-readable) and SQLite databases (searchable).
 
 ```
 +------------------+          +------------------+
@@ -485,7 +485,7 @@ Step 9: Security gates      CUI markings, STIG, secrets
 
 | Decision | Rationale |
 |----------|-----------|
-| D1: SQLite for ICDEV internals | Zero-config portability; PostgreSQL for apps ICDEV builds |
+| D1: SQLite for ICDEV™ internals | Zero-config portability; PostgreSQL for apps ICDEV™ builds |
 | D2: Stdio for MCP, HTTPS+mTLS for A2A | Claude Code compatibility; K8s inter-agent security |
 | D3: Flask over FastAPI | Simpler, fewer deps, auditable SSR, smaller STIG surface |
 | D6: Append-only audit trail | No UPDATE/DELETE -- NIST 800-53 AU compliance |

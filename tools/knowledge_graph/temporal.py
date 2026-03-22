@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Knowledge Graph Temporal Reasoning — date-range queries, evolution, staleness.
 
 Provides temporal analysis over kg_nodes and kg_edges tables:

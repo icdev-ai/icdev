@@ -4,9 +4,9 @@
 
 ## Purpose
 
-Manage the lifecycle of ICDEV's capability genome and bidirectional learning system with child applications. This goal orchestrates the discovery, evaluation, staging, deployment, and absorption of new capabilities across the ICDEV parent-child ecosystem.
+Manage the lifecycle of ICDEV™'s capability genome and bidirectional learning system with child applications. This goal orchestrates the discovery, evaluation, staging, deployment, and absorption of new capabilities across the ICDEV™ parent-child ecosystem.
 
-**Why this matters:** Child applications operate in diverse mission environments. They encounter edge cases, develop workarounds, and learn patterns that the parent ICDEV has never seen. Evolutionary Intelligence provides a governed pipeline for harvesting those learnings, validating them for safety and compliance, and propagating proven capabilities across the entire fleet — turning every child deployment into a force multiplier for the ecosystem.
+**Why this matters:** Child applications operate in diverse mission environments. They encounter edge cases, develop workarounds, and learn patterns that the parent ICDEV™ has never seen. Evolutionary Intelligence provides a governed pipeline for harvesting those learnings, validating them for safety and compliance, and propagating proven capabilities across the entire fleet — turning every child deployment into a force multiplier for the ecosystem.
 
 ---
 
@@ -26,7 +26,7 @@ Manage the lifecycle of ICDEV's capability genome and bidirectional learning sys
 - [ ] Phase 22 (Marketplace) — for asset sharing infrastructure
 - [ ] Phase 35 (Innovation Engine) — for capability discovery
 - [ ] Phase 37 (MITRE ATLAS) — for AI security scanning of learned behaviors
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] Memory system operational (`memory/MEMORY.md` exists)
 
 ---

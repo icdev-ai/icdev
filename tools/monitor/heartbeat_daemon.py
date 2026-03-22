@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Proactive Heartbeat Daemon — periodically checks for actionable items (D141-D142).
 
-Polls on a configurable interval and runs 7 check functions against the ICDEV
+Polls on a configurable interval and runs 7 check functions against the ICDEV™
 database.  Each check detects a specific class of overdue / stale / failing
 items and fans notifications to the audit trail, SSE dashboard, and (optionally)
 the remote-command gateway.
@@ -827,7 +827,7 @@ def _format_status_human(statuses: List[dict]) -> str:
 def main() -> None:
     """CLI entry point for the heartbeat daemon."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Heartbeat Daemon (D141) — proactive check loop"
+        description="ICDEV™ Heartbeat Daemon (D141) — proactive check loop"
     )
     parser.add_argument("--once", action="store_true", help="Single pass, then exit")
     parser.add_argument("--check", type=str, help="Run a specific check only")

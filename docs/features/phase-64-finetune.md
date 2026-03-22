@@ -17,11 +17,11 @@
 
 ## Problem Statement
 
-ICDEV's two-tier LLM architecture uses provider-managed models only. The worker tier (qwen3) is general-purpose and produces generic drafts for compliance exports, code generation, and proposal writing. Domain-specific tasks (e.g., GovProposal drafting past volumes, compliance artifact generation) would benefit from models fine-tuned on customer data. There is no mechanism to train, evaluate, serve, or manage custom models within the ICDEV ecosystem.
+ICDEV™'s two-tier LLM architecture uses provider-managed models only. The worker tier (qwen3) is general-purpose and produces generic drafts for compliance exports, code generation, and proposal writing. Domain-specific tasks (e.g., GovProposal drafting past volumes, compliance artifact generation) would benefit from models fine-tuned on customer data. There is no mechanism to train, evaluate, serve, or manage custom models within the ICDEV™ ecosystem.
 
 ## Goals
 
-1. Enable any ICDEV project or child app to train QLoRA fine-tuned models on domain data
+1. Enable any ICDEV™ project or child app to train QLoRA fine-tuned models on domain data
 2. Automatically slot fine-tuned models into the two-tier architecture as worker-tier replacements
 3. Provide pure-Python evaluation (BLEU, ROUGE-L, perplexity) for air-gap environments
 4. Support 4 training backends: Unsloth (local), OpenAI, Bedrock, Azure OpenAI

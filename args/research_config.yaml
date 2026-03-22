@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Industry Research Engine Configuration (Phase 63, D-RES-1 through D-RES-13)
+# ICDEV™ Industry Research Engine Configuration (Phase 63, D-RES-1 through D-RES-13)
 # Deep industry vertical research — produces scored dossiers for child app generation
 
 # =========================================================================
@@ -209,8 +209,8 @@ scoring:
     regulatory_pressure: 0.20         # regulation count, enforcement actions
     technical_complexity: 0.15        # academic paper density, patent activity
     competitive_saturation: 0.15      # inverse: fewer solutions = bigger opportunity
-    icdev_readiness: 0.15             # ICDEV capability coverage score
-    compliance_alignment: 0.10        # maps to existing ICDEV framework = 1.0
+    icdev_readiness: 0.15             # ICDEV™ capability coverage score
+    compliance_alignment: 0.10        # maps to existing ICDEV™ framework = 1.0
   enforcement_boost: 1.5             # multiplier for enforcement actions
   deadline_boost: 1.3                # multiplier for regulatory deadlines
   thresholds:
@@ -224,11 +224,11 @@ scoring:
 # =========================================================================
 regulatory_mapping:
   registry_path: context/research/regulatory_registry.json
-  crosswalk_integration: true         # map to ICDEV crosswalk frameworks
+  crosswalk_integration: true         # map to ICDEV™ crosswalk frameworks
   coverage_scoring:
-    full_match: 1.0                   # maps to existing ICDEV framework
-    crosswalk_match: 0.5              # crosswalk-able to ICDEV
-    no_match: 0.0                     # no ICDEV coverage
+    full_match: 1.0                   # maps to existing ICDEV™ framework
+    crosswalk_match: 0.5              # crosswalk-able to ICDEV™
+    no_match: 0.0                     # no ICDEV™ coverage
 
 # =========================================================================
 # Capability Mapping (D-RES-7)
@@ -245,7 +245,7 @@ capability_mapping:
 build_buy:
   scoring:
     build_factors:
-      icdev_coverage: 0.30            # existing ICDEV capability coverage
+      icdev_coverage: 0.30            # existing ICDEV™ capability coverage
       customization_need: 0.25        # how much customization is needed
       compliance_control: 0.25        # compliance is under our control
       long_term_cost: 0.20            # lower long-term cost than licensing
@@ -253,7 +253,7 @@ build_buy:
       time_to_market: 0.30            # faster with existing solution
       maturity: 0.25                  # mature, battle-tested solution
       support_ecosystem: 0.25         # vendor support, documentation
-      integration_ease: 0.20          # easy to integrate with ICDEV
+      integration_ease: 0.20          # easy to integrate with ICDEV™
     partner_factors:
       domain_expertise: 0.30          # partner has domain expertise
       shared_risk: 0.25               # risk shared across parties

@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""ICDEV SaaS -- REST API v1 Blueprint.
+# POC: ICDEV™ System Administrator
+"""ICDEV™ SaaS -- REST API v1 Blueprint.
 
-Flask Blueprint providing multi-tenant REST API endpoints for the ICDEV
+Flask Blueprint providing multi-tenant REST API endpoints for the ICDEV™
 SaaS platform.  All endpoints require authentication (handled by the auth
 middleware which sets g.tenant_id, g.user_id, g.user_role).
 
@@ -83,7 +83,7 @@ def _utcnow():
 
 
 # ---------------------------------------------------------------------------
-# Lazy imports for ICDEV tools (avoids import-time side effects)
+# Lazy imports for ICDEV™ tools (avoids import-time side effects)
 # ---------------------------------------------------------------------------
 def _import_tenant_db():
     from tools.saas.tenant_db_adapter import (

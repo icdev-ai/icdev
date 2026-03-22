@@ -1,4 +1,4 @@
-"""ICDEV Pulse content exporter.
+"""ICDEV™ Pulse content exporter.
 
 Exports blog posts as:
 - MDX with frontmatter (Hugo/Jekyll/Next.js compatible)
@@ -160,7 +160,7 @@ def _build_html_page(title: str, seo_desc: str, seo_keywords: str,
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} | ICDEV Blog</title>
+    <title>{title} | ICDEV™ Blog</title>
     <meta name="description" content="{seo_desc}">
     <meta name="keywords" content="{seo_keywords}">
     <link rel="canonical" href="{canonical}">
@@ -170,7 +170,7 @@ def _build_html_page(title: str, seo_desc: str, seo_keywords: str,
     <meta property="og:title" content="{title}">
     <meta property="og:description" content="{seo_desc}">
     <meta property="og:url" content="{canonical}">
-    <meta property="og:site_name" content="ICDEV Blog">
+    <meta property="og:site_name" content="ICDEV™ Blog">
     {f'<meta property="og:image" content="{og_image}">' if og_image else ''}
 
     <!-- Twitter Card -->
@@ -416,7 +416,7 @@ slug: "{post.get('slug', '')}"
 date: "{published}"
 lastmod: "{now}"
 draft: {str(post.get('status', 'draft') != 'published').lower()}
-author: "ICDEV Team"
+author: "ICDEV™ Team"
 description: "{post.get('seo_description', '')}"
 seo_title: "{post.get('seo_title', post.get('title', ''))}"
 keywords: "{', '.join(tags[:8]) if tags else keywords}"

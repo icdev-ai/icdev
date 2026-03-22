@@ -3,7 +3,7 @@
 
 ## Overview
 
-Sensitive data protection system for ALL ICDEV modules and child apps.
+Sensitive data protection system for ALL ICDEV™ modules and child apps.
 Protects PII, program names, past performance, pricing, and personnel
 across every LLM invocation — not just GovCon/Proposal Genesis.
 
@@ -174,7 +174,7 @@ agency_surrogates:
 
 ## Dependencies
 
-### Required (already in ICDEV)
+### Required (already in ICDEV™)
 - pyyaml, pathlib, sqlite3, hashlib, json, re (stdlib)
 - requests (for Ollama NER API calls)
 - faker (for realistic surrogate generation)

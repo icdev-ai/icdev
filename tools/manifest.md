@@ -18,7 +18,7 @@
 ## Database
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Init ICDEV DB | tools/db/init_icdev_db.py | Initialize ICDEV operational database (176 tables) — detects migration system (D150) | --db-path, --reset | Confirmation + table list |
+| Init ICDEV™ DB | tools/db/init_icdev_db.py | Initialize ICDEV™ operational database (176 tables) — detects migration system (D150) | --db-path, --reset | Confirmation + table list |
 | Migration Runner | tools/db/migration_runner.py | Lightweight DB migration framework (D150) — schema versioning, checksums, dual-engine | (library) | MigrationRunner class |
 | Migrate CLI | tools/db/migrate.py | CLI wrapper for migration runner | --status, --up, --down, --create, --validate, --mark-applied, --all-tenants | Status / results |
 | Backup Manager | tools/db/backup_manager.py | Database backup/restore with WAL-safe sqlite3.backup() API (D152) | (library) | BackupManager class |
@@ -73,7 +73,7 @@
 | Solution Generator | tools/innovation/solution_generator.py | Auto-generate solution specs from approved signals (D208) | --generate, --generate-all, --list, --status, --json | Solution specs |
 | Innovation Manager | tools/innovation/innovation_manager.py | Main orchestrator + daemon mode for full pipeline | --run, --discover, --score, --triage, --generate, --daemon, --status, --json | Pipeline results |
 | Introspective Analyzer | tools/innovation/introspective_analyzer.py | Internal telemetry mining (D203) — gate failures, unused tools, slow pipelines, knowledge gaps | --analyze, --type, --all, --json | Analysis findings |
-| Competitive Intel | tools/innovation/competitive_intel.py | Competitor feature monitoring (D205) — gap analysis against ICDEV capabilities | --scan, --gap-analysis, --report, --json | Competitive gaps |
+| Competitive Intel | tools/innovation/competitive_intel.py | Competitor feature monitoring (D205) — gap analysis against ICDEV™ capabilities | --scan, --gap-analysis, --report, --json | Competitive gaps |
 | Standards Monitor | tools/innovation/standards_monitor.py | Standards body change tracking (D204) — NIST, CISA, DoD, FedRAMP, ISO | --check, --body, --report, --assess, --json | Standards updates |
 | Innovation Config | args/innovation_config.yaml | Configuration: sources, scoring weights, triage rules, scheduling, competitive intel, standards monitoring | (data) | YAML config |
 
@@ -109,7 +109,7 @@
 ## SDK
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| ICDEV Client | tools/sdk/icdev_client.py | Thin Python SDK wrapping CLI tools via subprocess (D191) | (library) | ICDEVClient class |
+| ICDEV™ Client | tools/sdk/icdev_client.py | Thin Python SDK wrapping CLI tools via subprocess (D191) | (library) | ICDEV™Client class |
 
 ## CI/CD Pipeline
 | Tool | File | Description | Input | Output |
@@ -190,7 +190,7 @@
 | CMMC Report Generator | tools/compliance/cmmc_report_generator.py | CMMC report with domain scores and 800-171 cross-ref | --project-id, --level | Report path |
 | OSCAL Generator | tools/compliance/oscal_generator.py | NIST OSCAL 1.1.2 artifact generator (SSP, POA&M, AR, CD) | --project-id, --artifact, --format, --deep-validate | OSCAL JSON/XML path |
 | OSCAL Tools | tools/compliance/oscal_tools.py | OSCAL ecosystem orchestrator: deep validation, format conversion, profile resolution, catalog operations (D302-D305) | --detect, --validate, --convert, --resolve-profile, --catalog-lookup | Detection/validation/conversion results |
-| OSCAL Catalog Adapter | tools/compliance/oscal_catalog_adapter.py | Unified NIST OSCAL + ICDEV catalog reader with fallback chain (D304) | --lookup, --list, --stats, --family | Control data, catalog stats |
+| OSCAL Catalog Adapter | tools/compliance/oscal_catalog_adapter.py | Unified NIST OSCAL + ICDEV™ catalog reader with fallback chain (D304) | --lookup, --list, --stats, --family | Control data, catalog stats |
 | cATO Monitor | tools/compliance/cato_monitor.py | Continuous ATO evidence freshness and readiness monitoring | --project-id, --check-freshness, --readiness | Evidence status |
 | cATO Scheduler | tools/compliance/cato_scheduler.py | Schedule-based evidence collection manager | --project-id, --run-due, --upcoming | Collection schedule |
 | PI Compliance Tracker | tools/compliance/pi_compliance_tracker.py | SAFe PI-cadenced compliance tracking and velocity | --project-id, --pi, --velocity, --burndown | PI metrics |
@@ -214,9 +214,9 @@
 | Formatter | tools/builder/formatter.py | Multi-language formatting (black, prettier, gofmt, rustfmt, dotnet-format) | --project | Formatted files |
 | Agentic Fitness | tools/builder/agentic_fitness.py | Assess component fitness for agentic architecture (6-dimension scoring) | --spec, --project-id, --json | Fitness scorecard |
 | App Blueprint | tools/builder/app_blueprint.py | Generate deployment blueprint from fitness scorecard | --fitness-scorecard, --user-decisions, --app-name, --json | Blueprint JSON |
-| Child App Generator | tools/builder/child_app_generator.py | Generate mini-ICDEV clone child applications (16-step pipeline) | --blueprint, --output, --json | Generated app path |
+| Child App Generator | tools/builder/child_app_generator.py | Generate mini-ICDEV™ clone child applications (16-step pipeline) | --blueprint, --output, --json | Generated app path |
 | Claude MD Generator | tools/builder/claude_md_generator.py | Generate dynamic CLAUDE.md for child apps (Jinja2) | --blueprint, --output, --json | CLAUDE.md path |
-| Goal Adapter | tools/builder/goal_adapter.py | Copy and adapt ICDEV goals for child applications | --source-goals, --output, --app-name, --json | Adapted goal paths |
+| Goal Adapter | tools/builder/goal_adapter.py | Copy and adapt ICDEV™ goals for child applications | --source-goals, --output, --app-name, --json | Adapted goal paths |
 | DB Init Generator | tools/builder/db_init_generator.py | Generate standalone DB init scripts for child apps | --blueprint, --output, --app-name, --json | DB init script path |
 | Dev Profile Manager | tools/builder/dev_profile_manager.py | 5-layer cascade dev profiles (Platform→Tenant→Program→Project→User) with version immutability, role-based locks, LLM injection (D183-D188) | --scope, --scope-id, --create, --get, --update, --resolve, --lock, --inject, --diff, --rollback, --json | Profile + cascade |
 | Profile Detector | tools/builder/profile_detector.py | Auto-detect dev profile from repo analysis or natural language text (D185 advisory-only) | --repo-path, --text, --json | Detected dimensions |
@@ -273,16 +273,16 @@
 |------|------|-------------|-------|--------|
 | Web Dashboard | tools/dashboard/app.py | Flask web dashboard with role-based views, wizard, quick paths | --port, --debug | Web UI on port 5000 |
 | UX Helpers | tools/dashboard/ux_helpers.py | Jinja2 filters (friendly_time, glossary), error recovery dict, quick paths, wizard steps | register_ux_filters(app) | Template filters + globals |
-| UX JavaScript | tools/dashboard/static/js/ux.js | Client-side glossary tooltips, timestamp formatting, accessibility, notifications, progress pipeline | Auto-init on DOMContentLoaded | ICDEV namespace |
+| UX JavaScript | tools/dashboard/static/js/ux.js | Client-side glossary tooltips, timestamp formatting, accessibility, notifications, progress pipeline | Auto-init on DOMContentLoaded | ICDEV™ namespace |
 | UX Stylesheet | tools/dashboard/static/css/ux.css | Tooltip, pipeline, wizard, quick path, breadcrumb, notification, accessibility styles | — | CSS |
-| Charts Library | tools/dashboard/static/js/charts.js | Zero-dependency SVG chart library: sparkline, line, bar, donut, gauge with tooltips and animation | ICDEV.lineChart(), ICDEV.barChart(), ICDEV.donutChart(), ICDEV.gaugeChart() | SVG charts |
+| Charts Library | tools/dashboard/static/js/charts.js | Zero-dependency SVG chart library: sparkline, line, bar, donut, gauge with tooltips and animation | ICDEV™.lineChart(), ICDEV™.barChart(), ICDEV™.donutChart(), ICDEV™.gaugeChart() | SVG charts |
 | Table Interactivity | tools/dashboard/static/js/tables.js | Table search, column sort, column filter, CSV export, row counter | Auto-init on DOMContentLoaded | Enhanced tables |
-| Onboarding Tour | tools/dashboard/static/js/tour.js | Interactive overlay walkthrough for first-visit users, 6-step spotlight tour | ICDEV.startTour(), ICDEV.resetTour() | Tour overlay |
-| Live Dashboard | tools/dashboard/static/js/live.js | Real-time SSE auto-refresh: connection status, smart debounced updates, event toasts | ICDEV.connectSSE(), ICDEV.disconnectSSE() | Live updates |
-| Batch Operations JS | tools/dashboard/static/js/batch.js | Batch workflow UI: catalog display, execution progress, step status polling | ICDEV.batchStartBatch(id, projectId) | Batch progress UI |
+| Onboarding Tour | tools/dashboard/static/js/tour.js | Interactive overlay walkthrough for first-visit users, 6-step spotlight tour | ICDEV™.startTour(), ICDEV™.resetTour() | Tour overlay |
+| Live Dashboard | tools/dashboard/static/js/live.js | Real-time SSE auto-refresh: connection status, smart debounced updates, event toasts | ICDEV™.connectSSE(), ICDEV™.disconnectSSE() | Live updates |
+| Batch Operations JS | tools/dashboard/static/js/batch.js | Batch workflow UI: catalog display, execution progress, step status polling | ICDEV™.batchStartBatch(id, projectId) | Batch progress UI |
 | Batch Operations API | tools/dashboard/api/batch.py | Flask blueprint: batch execute/status/catalog endpoints, background subprocess runner | POST /api/batch/execute, GET /api/batch/status | JSON batch status |
-| Keyboard Shortcuts | tools/dashboard/static/js/shortcuts.js | Chord-based navigation (g+key), direct shortcuts, help modal overlay | ICDEV.showShortcutsHelp() | Navigation + help modal |
-| Mermaid Integration | tools/dashboard/static/js/mermaid-icdev.js | ICDEV Mermaid module: dark theme, click handlers, editor, SVG export, auto-init | ICDEV.renderMermaid(), ICDEV.initMermaidEditor(), ICDEV.exportMermaidSVG() | Rendered diagrams |
+| Keyboard Shortcuts | tools/dashboard/static/js/shortcuts.js | Chord-based navigation (g+key), direct shortcuts, help modal overlay | ICDEV™.showShortcutsHelp() | Navigation + help modal |
+| Mermaid Integration | tools/dashboard/static/js/mermaid-icdev.js | ICDEV™ Mermaid module: dark theme, click handlers, editor, SVG export, auto-init | ICDEV™.renderMermaid(), ICDEV™.initMermaidEditor(), ICDEV™.exportMermaidSVG() | Rendered diagrams |
 | Diagram Definitions | tools/dashboard/diagram_definitions.py | Centralized Mermaid diagram catalog: 18 diagrams across 4 categories with role filtering | get_catalog_for_role(), get_diagram() | Diagram data |
 | Diagrams API | tools/dashboard/api/diagrams.py | Blueprint: list/get diagram definitions, role-filtered catalog | GET /api/diagrams/, GET /api/diagrams/<id> | JSON diagram data |
 
@@ -325,13 +325,13 @@
 | Workflow Ops | tools/ci/modules/workflow_ops.py | Issue classification, branch gen, commit, PR helpers | issue_json, run_id | Results |
 | Webhook Server | tools/ci/triggers/webhook_server.py | Flask server for GitHub + GitLab webhooks | POST /gh-webhook, /gl-webhook | Workflow launch |
 | Poll Trigger | tools/ci/triggers/poll_trigger.py | Cron-based issue polling (20s interval) | Auto-detects platform | Workflow launch |
-| ICDEV Plan | tools/ci/workflows/icdev_plan.py | Planning phase: classify, branch, plan | issue-number, run-id | Plan file |
-| ICDEV Build | tools/ci/workflows/icdev_build.py | Implementation phase: implement plan | issue-number, run-id | Committed code |
-| ICDEV Test | tools/ci/workflows/icdev_test.py | Testing phase: pytest, ruff, bandit, gates | issue-number, run-id | Test results |
-| ICDEV Review | tools/ci/workflows/icdev_review.py | Code review against spec | issue-number, run-id | Review results |
-| ICDEV Document | tools/ci/workflows/icdev_document.py | Documentation generation from changes | issue-number, run-id | Doc file |
-| ICDEV Patch | tools/ci/workflows/icdev_patch.py | Quick fix workflow from issue content | issue-number, run-id | Patched code |
-| ICDEV SDLC | tools/ci/workflows/icdev_sdlc.py | Complete lifecycle: plan+build+test+review | issue-number, run-id | All artifacts |
+| ICDEV™ Plan | tools/ci/workflows/icdev_plan.py | Planning phase: classify, branch, plan | issue-number, run-id | Plan file |
+| ICDEV™ Build | tools/ci/workflows/icdev_build.py | Implementation phase: implement plan | issue-number, run-id | Committed code |
+| ICDEV™ Test | tools/ci/workflows/icdev_test.py | Testing phase: pytest, ruff, bandit, gates | issue-number, run-id | Test results |
+| ICDEV™ Review | tools/ci/workflows/icdev_review.py | Code review against spec | issue-number, run-id | Review results |
+| ICDEV™ Document | tools/ci/workflows/icdev_document.py | Documentation generation from changes | issue-number, run-id | Doc file |
+| ICDEV™ Patch | tools/ci/workflows/icdev_patch.py | Quick fix workflow from issue content | issue-number, run-id | Patched code |
+| ICDEV™ SDLC | tools/ci/workflows/icdev_sdlc.py | Complete lifecycle: plan+build+test+review | issue-number, run-id | All artifacts |
 | Agent Model Test | tools/testing/test_agent_models.py | Verify opus/sonnet/haiku model availability | — | Pass/fail per model |
 | Base Connector | tools/ci/connectors/base_connector.py | ABC for CI/CD platform connectors (GitHub, GitLab, Mattermost, Slack) | (library) | BaseConnector ABC |
 | Connector Registry | tools/ci/connectors/connector_registry.py | Registry for CI/CD platform connectors — auto-discover and load | (library) | ConnectorRegistry |
@@ -343,11 +343,11 @@
 | Event Router | tools/ci/core/event_router.py | Route webhook/poll events to appropriate workflow handlers | (library) | RoutedEvent |
 | Failure Parser | tools/ci/core/failure_parser.py | Parse CI/CD failure logs and extract actionable error context | (library) | ParsedFailure |
 | Recovery Engine | tools/ci/core/recovery_engine.py | Auto-recover from CI/CD pipeline failures (retry, workaround, escalate) | (library) | RecoveryAction |
-| ICDEV Comply | tools/ci/workflows/icdev_comply.py | Compliance artifact generation workflow for CI/CD | issue-number, run-id | Compliance artifacts |
-| ICDEV E2E | tools/ci/workflows/icdev_e2e.py | E2E test execution workflow for CI/CD | issue-number, run-id | E2E results |
-| ICDEV Plan+Build | tools/ci/workflows/icdev_plan_build.py | Combined plan + build workflow | issue-number | Plan + committed code |
-| ICDEV Plan+Build+Test | tools/ci/workflows/icdev_plan_build_test.py | Combined plan + build + test workflow | issue-number | Plan + code + test results |
-| ICDEV Plan+Build+Test+Review | tools/ci/workflows/icdev_plan_build_test_review.py | Full SDLC pipeline (explicit variant) | issue-number | All artifacts |
+| ICDEV™ Comply | tools/ci/workflows/icdev_comply.py | Compliance artifact generation workflow for CI/CD | issue-number, run-id | Compliance artifacts |
+| ICDEV™ E2E | tools/ci/workflows/icdev_e2e.py | E2E test execution workflow for CI/CD | issue-number, run-id | E2E results |
+| ICDEV™ Plan+Build | tools/ci/workflows/icdev_plan_build.py | Combined plan + build workflow | issue-number | Plan + committed code |
+| ICDEV™ Plan+Build+Test | tools/ci/workflows/icdev_plan_build_test.py | Combined plan + build + test workflow | issue-number | Plan + code + test results |
+| ICDEV™ Plan+Build+Test+Review | tools/ci/workflows/icdev_plan_build_test_review.py | Full SDLC pipeline (explicit variant) | issue-number | All artifacts |
 
 ## Maintenance Audit
 | Tool | File | Description | Input | Output |
@@ -540,12 +540,12 @@
 | Rate Limiter | tools/saas/rate_limiter.py | Per-tenant rate limiting by subscription tier (in-memory, thread-safe) | tenant_id, tier | Allow/deny + headers |
 | Request Logger | tools/saas/request_logger.py | Audit logging: every API call → usage_records + audit_platform | Flask hooks | Log entries |
 | Tenant DB Adapter | tools/saas/tenant_db_adapter.py | Route existing tool DB calls to tenant's isolated database | tenant_id | DB path/connection |
-| PG Schema | tools/saas/db/pg_schema.py | Full ICDEV schema (100+ tables) ported from SQLite to PostgreSQL DDL | --init | PG schema |
+| PG Schema | tools/saas/db/pg_schema.py | Full ICDEV™ schema (100+ tables) ported from SQLite to PostgreSQL DDL | --init | PG schema |
 | DB Compat | tools/saas/db/db_compat.py | SQLite ↔ PostgreSQL compatibility: placeholder translation, row factory | engine type | DB connection |
 | Connection Pool | tools/saas/db/connection_pool.py | Per-tenant PostgreSQL connection pooling (psycopg2 ThreadedConnectionPool) | tenant_id | Pooled connection |
 | Delivery Engine | tools/saas/artifacts/delivery_engine.py | Push artifacts to tenant S3/Git/SFTP with audit trail | tenant_id, artifact_path | Delivery status |
 | Artifact Signer | tools/saas/artifacts/signer.py | SHA-256 hash + RSA digital signature for compliance artifacts | file_path | Hash + signature |
-| Bedrock Proxy | tools/saas/bedrock/bedrock_proxy.py | Route Bedrock LLM calls: BYOK (tenant's AWS) or ICDEV shared pool | tenant_id, prompt | LLM response |
+| Bedrock Proxy | tools/saas/bedrock/bedrock_proxy.py | Route Bedrock LLM calls: BYOK (tenant's AWS) or ICDEV™ shared pool | tenant_id, prompt | LLM response |
 | Token Metering | tools/saas/bedrock/token_metering.py | Track Bedrock token usage per tenant for billing/rate enforcement | tenant_id, tokens | Usage record |
 | Tenant Portal | tools/saas/portal/app.py | Flask Blueprint: tenant admin web dashboard (login, dashboard, team, settings, keys) | /portal/* | Web UI |
 | NS Provisioner | tools/saas/infra/namespace_provisioner.py | Create K8s namespace, network policies, resource quotas per tenant | --create, --slug, --il | Namespace YAML |
@@ -572,7 +572,7 @@
 | ClawHub Connector | tools/databridge/connectors/clawhub_connector.py | DataBridge connector for ClawHub API — vector search, skill detail, zip download | --search/--get/--download/--list/--health | Skill data JSON |
 | OpenClaw ScriptGen | tools/marketplace/openclaw_scriptgen.py | Generate Python companion scripts for actionable skill steps (LLM-agnostic) | --generate/--analyze | Script + analysis JSON |
 | OpenClaw Enricher | tools/marketplace/openclaw_enricher.py | 3-engine skill enrichment (Innovation + Creative + Research) with merge discovery | --enrich/--discover-similar | Enrichment result JSON |
-| OpenClaw Compat | tools/marketplace/openclaw_compat.py | Compatibility checker & translator for OpenClaw → ICDEV skills | --check/--translate/--full, --output | Compat report / translated SKILL.md |
+| OpenClaw Compat | tools/marketplace/openclaw_compat.py | Compatibility checker & translator for OpenClaw → ICDEV™ skills | --check/--translate/--full, --output | Compat report / translated SKILL.md |
 | OpenClaw Bridge | tools/marketplace/openclaw_bridge.py | Zero-trust import/export for ClawHub (clawhub.ai) skills with 10-gate scanning, quarantine, provenance | --import/--export/--promote/--reject/--list-quarantine/--list-exports/--health/--gate | Import/export/scan JSON |
 | Marketplace MCP | tools/mcp/marketplace_server.py | MCP server (17 tools, 2 resources) for marketplace | stdio | JSON-RPC 2.0 |
 
@@ -798,12 +798,12 @@
 ## FedRAMP 20x KSI + OWASP ASI (Phase 53)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| FedRAMP 20x KSI Generator | tools/compliance/fedramp_ksi_generator.py | Generate Key Security Indicators (KSIs) for FedRAMP 20x authorization. Maps ICDEV evidence to 61 KSI schemas. | --project-id, --ksi-id, --all, --json | KSI evidence manifest |
+| FedRAMP 20x KSI Generator | tools/compliance/fedramp_ksi_generator.py | Generate Key Security Indicators (KSIs) for FedRAMP 20x authorization. Maps ICDEV™ evidence to 61 KSI schemas. | --project-id, --ksi-id, --all, --json | KSI evidence manifest |
 | FedRAMP Auth Packager | tools/compliance/fedramp_authorization_packager.py | Bundle OSCAL SSP + KSI evidence into FedRAMP 20x authorization package | --project-id, --output-dir, --json | Authorization bundle |
 | FedRAMP 20x API | tools/dashboard/api/fedramp_20x.py | Blueprint: stats, KSI list, generate, package | /api/fedramp-20x/* | REST endpoints |
 | FedRAMP 20x Page | tools/dashboard/templates/fedramp_20x.html | Dashboard: stat-grid + KSI table + package status | (template) | HTML page |
 | KSI Schemas | context/compliance/fedramp_20x_ksi_schemas.json | 61 KSI definitions (id, title, family, evidence_sources, nist_crosswalk) | (catalog) | JSON catalog |
-| OWASP ASI Assessor | tools/compliance/owasp_asi_assessor.py | BaseAssessor for OWASP ASI01-ASI10 agentic AI risks. Maps 10 ASI risks to ICDEV controls via NIST 800-53 crosswalk. | --project-id, --json, --gate | Assessment JSON |
+| OWASP ASI Assessor | tools/compliance/owasp_asi_assessor.py | BaseAssessor for OWASP ASI01-ASI10 agentic AI risks. Maps 10 ASI risks to ICDEV™ controls via NIST 800-53 crosswalk. | --project-id, --json, --gate | Assessment JSON |
 | OWASP ASI Catalog | context/compliance/owasp_agentic_asi.json | 10 ASI risk definitions with NIST crosswalk | (catalog) | JSON catalog |
 
 ## SWFT/SLSA + Cross-Phase Orchestration (Phase 54)
@@ -845,7 +845,7 @@
 |------|------|-------------|-------|--------|
 | SAM.gov Scanner | tools/govcon/sam_scanner.py | Poll SAM.gov Opportunities API v2. Extracts opportunities by NAICS, notice type. Stores in sam_gov_opportunities. | --scan, --naics, --list-cached, --json | Opportunity JSON |
 | Requirement Extractor | tools/govcon/requirement_extractor.py | Extract shall/must/will statements from RFP descriptions. Domain-classify (9 domains). Cluster by keyword fingerprint (D364). | --extract-all, --patterns, --domain, --json | Requirements + patterns JSON |
-| Capability Mapper | tools/govcon/capability_mapper.py | Map requirement patterns to ICDEV capability catalog. Compute coverage scores (L/M/N). | --map-all, --coverage, --gaps, --json | Compliance matrix JSON |
+| Capability Mapper | tools/govcon/capability_mapper.py | Map requirement patterns to ICDEV™ capability catalog. Compute coverage scores (L/M/N). | --map-all, --coverage, --gaps, --json | Compliance matrix JSON |
 | Gap Analyzer | tools/govcon/gap_analyzer.py | Identify unmet requirements (coverage < 0.40). Generate enhancement recommendations. Cross-register to Innovation Engine. | --analyze, --recommendations, --json | Gap analysis JSON |
 | Response Drafter | tools/govcon/response_drafter.py | Two-tier LLM drafting (D365). qwen3 drafts compact response, Claude reviews. Stores in proposal_section_drafts. | --draft, --opp-id, --json | Draft response JSON |
 | Compliance Populator | tools/govcon/compliance_populator.py | Auto-populate L/M/N compliance matrix from capability coverage scores. Bid/no-bid recommendation. | --populate, --summary, --export-matrix, --opp-id, --json | Compliance matrix JSON |
@@ -863,7 +863,7 @@
 | CPARS Predictor | tools/govcon/cpars_predictor.py | Deterministic weighted CPARS prediction (5 dimensions), NDAA penalty table, corrective action discount, rating thresholds. | --predict, --create, --update, --trend, --json | CPARS prediction JSON |
 | Subcontractor Tracker | tools/govcon/subcontractor_tracker.py | FAR 52.219-9 small business compliance, flow-down/cybersecurity checks, ISR/SSR generation, noncompliance detection. | --create, --list, --sb-compliance, --detect-noncompliance, --json | Subcontractor/SB JSON |
 | Negative Event Tracker | tools/govcon/negative_event_tracker.py | FY2026 NDAA negative-event recording, 4 auto-detection rules, CPARS impact calculation, corrective action tracking. | --record, --auto-detect, --impact, --ndaa-thresholds, --json | Event/impact JSON |
-| CDRL Generator | tools/govcon/cdrl_generator.py | CDRL auto-generation by dispatching to ICDEV tools (SSP, SBOM, POAM, STIG, EVM, ICD, TSP). Append-only generation audit. | --generate, --generate-due, --list-generations, --tool-mapping, --json | Generation result JSON |
+| CDRL Generator | tools/govcon/cdrl_generator.py | CDRL auto-generation by dispatching to ICDEV™ tools (SSP, SBOM, POAM, STIG, EVM, ICD, TSP). Append-only generation audit. | --generate, --generate-due, --list-generations, --tool-mapping, --json | Generation result JSON |
 | SAM Contract Sync | tools/govcon/sam_contract_sync.py | SAM.gov Contract Awards API v1 adapter. Rate-limited, content hash dedup, search, link to CPMP contracts. | --sync, --list, --search, --link, --json | Award sync JSON |
 | CPMP API | tools/dashboard/api/cpmp.py | Flask Blueprint with ~40 REST endpoints for CPMP. Contracts, CLINs, WBS, deliverables, EVM, CPARS, subcontractors, COR portal. | (REST API) | JSON responses |
 
@@ -875,8 +875,8 @@
 | Vertical Loader | tools/research/vertical_loader.py | Load/validate vertical configs from JSON, store in DB | --load, --list, --get, --validate, --json | Vertical config JSON |
 | Source Scanner | tools/research/source_scanner.py | 8-stream scanning: forums, reviews, academic, regulatory, OSS, SaaS, news, patents | --scan, --list-sources, --status, --json | Signal data JSON |
 | Challenge Scorer | tools/research/challenge_scorer.py | 6-dimension weighted scoring: market, regulatory, technical, competition, readiness, compliance | --cluster, --score, --score-one, --top, --json | Challenge scores JSON |
-| Regulatory Mapper | tools/research/regulatory_mapper.py | Map regulations to ICDEV crosswalk frameworks | --map, --landscape, --json | Regulatory mapping JSON |
-| Capability Mapper | tools/research/capability_mapper.py | Map challenges to ICDEV capability catalog via keyword overlap | --map, --map-one, --coverage, --json | Capability mapping JSON |
+| Regulatory Mapper | tools/research/regulatory_mapper.py | Map regulations to ICDEV™ crosswalk frameworks | --map, --landscape, --json | Regulatory mapping JSON |
+| Capability Mapper | tools/research/capability_mapper.py | Map challenges to ICDEV™ capability catalog via keyword overlap | --map, --map-one, --coverage, --json | Capability mapping JSON |
 | Build/Buy Analyzer | tools/research/build_buy_analyzer.py | Build/buy/partner decision matrix per challenge | --analyze, --analyze-one, --matrix, --json | Decision matrix JSON |
 | Trend Detector | tools/research/trend_detector.py | Cross-session trend analysis with velocity/acceleration | --detect, --trends, --report, --json | Trend data JSON |
 | Dossier Generator | tools/research/dossier_generator.py | Template-based Markdown dossier generation (no LLM, air-gap safe) | --generate, --list, --get, --review, --json | Dossier Markdown |
@@ -935,7 +935,7 @@
 
 | Tool | Path | Purpose |
 |------|------|---------|
-| DaemonBase | `tools/daemon/base.py` | ABC for all ICDEV daemons: signal handling, config loading, main loop, schedule parsing, circuit breaker, audit logging, CLI (--once, --status, --reflex, --enable, --disable, --reset, --json) |
+| DaemonBase | `tools/daemon/base.py` | ABC for all ICDEV™ daemons: signal handling, config loading, main loop, schedule parsing, circuit breaker, audit logging, CLI (--once, --status, --reflex, --enable, --disable, --reset, --json) |
 | ReflexStateBase | `tools/daemon/base.py` | Thread-safe DB-backed reflex state management parameterized by `state_table` class attribute |
 | TrustKernelBase | `tools/daemon/base.py` | Risk tier enforcement (GREEN=auto, YELLOW=sandbox, ORANGE=human review) |
 
@@ -986,7 +986,7 @@
 | shape | CAPTURE | GREEN | Win strategy, discriminators, partner fit assessment |
 | engage | CAPTURE | GREEN | CRM account/contact/engagement tracking |
 | extract | PROPOSE | GREEN | Extract requirements from opportunity documents |
-| map | PROPOSE | GREEN | Map requirements to ICDEV capabilities |
+| map | PROPOSE | GREEN | Map requirements to ICDEV™ capabilities |
 | draft | PROPOSE | GREEN | Generate proposal section drafts |
 | polish | PROPOSE | GREEN | Grammar, readability, tone, AI detection quality checks |
 | decide | PROPOSE | YELLOW | Bid/no-bid decision with scoring |
@@ -1031,7 +1031,7 @@
 | Compliance Exporter | tools/compliance/compliance_exporter.py | Multi-format compliance artifact export | --project-id, --format, --json | Exported artifacts |
 | Fairness Assessor | tools/compliance/fairness_assessor.py | AI fairness compliance assessment (D311) | --project-id, --gate, --json | Fairness assessment |
 | GAO AI Assessor | tools/compliance/gao_ai_assessor.py | GAO-21-519SP AI accountability assessment | --project-id, --json | Assessment results |
-| GAO Evidence Builder | tools/compliance/gao_evidence_builder.py | GAO evidence collection from ICDEV data (D313) | --project-id, --json | Evidence bundle |
+| GAO Evidence Builder | tools/compliance/gao_evidence_builder.py | GAO evidence collection from ICDEV™ data (D313) | --project-id, --json | Evidence bundle |
 | Model Card Generator | tools/compliance/model_card_generator.py | Google-format model cards (D308) | --project-id, --model-name, --json | Model card |
 | Narrative Generator | tools/compliance/narrative_generator.py | Compliance narrative workflow (F4) | --project-id, --batch, --pending, --json | Narrative drafts |
 
@@ -1041,7 +1041,7 @@
 | NIST AI 600-1 Assessor | tools/compliance/nist_ai_600_1_assessor.py | NIST AI 600-1 GenAI Profile assessment | --project-id, --json | Assessment results |
 | OMB M-25-21 Assessor | tools/compliance/omb_m25_21_assessor.py | OMB M-25-21 High-Impact AI assessment | --project-id, --json | Assessment results |
 | OMB M-26-04 Assessor | tools/compliance/omb_m26_04_assessor.py | OMB M-26-04 Unbiased AI assessment | --project-id, --json | Assessment results |
-| System Card Generator | tools/compliance/system_card_generator.py | ICDEV-specific system cards (D309) | --project-id, --json | System card |
+| System Card Generator | tools/compliance/system_card_generator.py | ICDEV™-specific system cards (D309) | --project-id, --json | System card |
 
 ## Creative Engine (Phase 58)
 | Tool | File | Description | Input | Output |
@@ -1104,7 +1104,7 @@
 ## Remote Command Gateway (Phase 28)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Command Router | tools/gateway/command_router.py | Route remote commands to ICDEV tools | (library) | Routed results |
+| Command Router | tools/gateway/command_router.py | Route remote commands to ICDEV™ tools | (library) | Routed results |
 | Event Envelope | tools/gateway/event_envelope.py | HMAC-signed event envelope (D31) | (library) | Signed events |
 | Response Filter | tools/gateway/response_filter.py | IL-aware response classification filter (D135) | (library) | Filtered responses |
 | Security Chain | tools/gateway/security_chain.py | 8-gate security chain for remote commands | (library) | Chain results |
@@ -1245,14 +1245,14 @@
 | Red Team Registry | tools/security/red_team_registry.py | YAML-driven adversarial testing framework (6 plugins, promptfoo-inspired) | --run-all, --plugin, --category, --gate, --list, --project-id, --json | Plugin results + gate evaluation |
 | Convergence Gates | tools/genesis/convergence.py | Detect phantom improvements and reflex plateau (3 drift vectors + ambiguity, Ouroboros-inspired) | (library — called by daemon post-reflex hook) | Drift scores + recommendation |
 | Stagnation Detector | tools/genesis/stagnation_detector.py | Detect stuck reflexes, break plateaus via 5 lateral thinking personas (Ouroboros-inspired) | (library — called by daemon when convergence flags stagnation) | Pattern detection + alternatives |
-| Agent Benchmark | tools/evaluation/agent_benchmark.py | Scenario-based 2-tier evaluation of ICDEV agents (12 scenarios, 4 agent types, TheAgentCompany-inspired) | --run-all, --agent-type, --scenario, --trend, --gate, --list, --json | Per-agent scores + trend + gate |
+| Agent Benchmark | tools/evaluation/agent_benchmark.py | Scenario-based 2-tier evaluation of ICDEV™ agents (12 scenarios, 4 agent types, TheAgentCompany-inspired) | --run-all, --agent-type, --scenario, --trend, --gate, --list, --json | Per-agent scores + trend + gate |
 
 ## Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Experiment Engine | tools/autoresearch/experiment_engine.py | Core Karpathy Loop — create, run, evaluate, decide, autonomous loop (D-AR-1) | --create, --run, --evaluate, --decide, --loop, --status, --health, --domain, --experiment-id, --max-experiments, --overnight, --json | Experiment results + decisions |
 | Bayesian Selector | tools/autoresearch/bayesian_selector.py | Bayesian info-gain experiment selection + Thompson Sampling + pgvector dedup (D-AR-5, D-AR-6) | --score, --select, --estimate, --category-order, --health, --domain, --json | Scored candidates + selection |
-| Fitness Evaluator | tools/autoresearch/fitness_evaluator.py | Wraps 6 ICDEV tools into single-metric [0,1] scorers (D-AR-7) | --evaluate, --evaluate-all, --list-domains, --health, --project-id, --project-dir, --json | Domain metric values |
+| Fitness Evaluator | tools/autoresearch/fitness_evaluator.py | Wraps 6 ICDEV™ tools into single-metric [0,1] scorers (D-AR-7) | --evaluate, --evaluate-all, --list-domains, --health, --project-id, --project-dir, --json | Domain metric values |
 | Hypothesis Generator | tools/autoresearch/hypothesis_generator.py | Scanner-tier LLM + template fallback hypothesis creation (D-AR-1) | --domain, --max, --from-signals, --health, --json | Hypothesis candidates |
 | Experiment Reflex | tools/genesis/reflexes/experiment.py | 14th Genesis reflex — Bayesian Autoresearch at ORANGE tier (D-AR-9) | config dict, trust kernel | Reflex results + GKP export |
 
@@ -1278,7 +1278,7 @@
 | Redaction Config | args/redaction_config.yaml | Global redaction config: entities, thresholds, operators, IL overrides, scope, audit | (data) | YAML config |
 | GovCon Redaction Config | args/redaction_govcon.yaml | GovCon-specific: program deny-list, contract patterns, pricing patterns, past perf rules, Pulse sanitization | (data) | YAML config |
 
-## ICDEV Studio — Low-Code/No-Code Platform (Phase 72 — D361-D366)
+## ICDEV™ Studio — Low-Code/No-Code Platform (Phase 72 — D361-D366)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Studio DB Init | tools/studio/init_db.py | Initialize 9 studio_* tables (PG + SQLite compatible, idempotent) | --json, --verbose | Table creation summary |
@@ -1436,7 +1436,7 @@
 | Fundamental Analyst | tools/trading/analysts/fundamental.py | Fundamental analysis agent (SMA, valuation, trends) | --json | Analysis results |
 | Sentiment Analyst | tools/trading/analysts/sentiment.py | Keyword-based sentiment analysis agent | --json | Sentiment scores |
 | Market Data | tools/trading/data/market_data.py | Alpaca market data fetch and cache layer | --json | Market data |
-| Perspective Scorer | tools/trading/analysis/perspective_scorer.py | INTaaS bull/bear multiperspectivity scorer | --json | Perspective scores |
+| Perspective Scorer | tools/trading/analysis/perspective_scorer.py | ICDEV™'s INTaaS bull/bear multiperspectivity scorer | --json | Perspective scores |
 | Signal Generator | tools/trading/analysis/signal_generator.py | Weighted composite signal generator | --json | Trading signals |
 | Order Manager | tools/trading/execution/order_manager.py | Alpaca order placement and tracking | --json | Order status |
 | Position Tracker | tools/trading/execution/position_tracker.py | Position synchronization with Alpaca | --json | Position data |

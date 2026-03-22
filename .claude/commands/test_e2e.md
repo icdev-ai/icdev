@@ -1,4 +1,4 @@
-# ICDEV E2E Test Runner
+# ICDEV™ E2E Test Runner
 
 Execute end-to-end (E2E) tests using Playwright browser automation (MCP Server). If any errors occur and assertions fail, mark the test as failed and explain exactly what went wrong.
 
@@ -19,7 +19,7 @@ application_url: $4 if provided, otherwise use http://localhost:5000
 - Capture screenshots as specified
 - IMPORTANT: Return results in the format requested by the `Output Format`
 - Initialize Playwright browser in headless mode (per playwright-mcp-config.json)
-- Use the `application_url` (default: http://localhost:5000 for ICDEV dashboard)
+- Use the `application_url` (default: http://localhost:5000 for ICDEV™ dashboard)
 - Allow time for async operations and element visibility
 - IMPORTANT: After taking each screenshot, save it to `Screenshot Directory` with descriptive names
 - Capture and report any errors encountered
@@ -28,7 +28,7 @@ application_url: $4 if provided, otherwise use http://localhost:5000
 
 ## Setup
 
-Ensure the ICDEV dashboard or target application is running before executing tests.
+Ensure the ICDEV™ dashboard or target application is running before executing tests.
 
 ## Screenshot Directory
 

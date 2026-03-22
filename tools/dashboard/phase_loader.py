@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 """
-ICDEV Phase Registry Loader
+ICDEV™ Phase Registry Loader
 ============================
 Loads phase definitions from args/phase_registry.yaml and provides
 filtering, summary statistics, and category metadata for the Dashboard

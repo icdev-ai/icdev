@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance Matrix Builder -- parse RFP Section L/M/C and build cross-reference matrix.
 
 Parses RFP Section L (instructions), M (evaluation criteria), and C (SOW/PWS) to

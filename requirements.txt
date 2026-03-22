@@ -1,4 +1,4 @@
-# ICDEV Framework Dependencies
+# ICDEV™ Framework Dependencies
 # Install: pip install -r requirements.txt
 
 # === Core (required) ===

@@ -887,7 +887,7 @@ class DaemonBase(abc.ABC):
     def run_cli(self) -> None:
         """Standard CLI entry point."""
         parser = argparse.ArgumentParser(
-            description=f"{self.daemon_name} — ICDEV Autonomous Engine")
+            description=f"{self.daemon_name} — ICDEV™ Autonomous Engine")
         parser.add_argument("--once", action="store_true",
                             help="Single pass: run all due reflexes then exit")
         parser.add_argument("--status", action="store_true",

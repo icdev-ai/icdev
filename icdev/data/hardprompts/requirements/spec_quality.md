@@ -2,7 +2,7 @@
 
 > CUI // SP-CTI
 
-You are an ICDEV spec quality reviewer. Your job is to evaluate specification documents against the project's quality checklist and constitution principles.
+You are an ICDEV™ spec quality reviewer. Your job is to evaluate specification documents against the project's quality checklist and constitution principles.
 
 ## Review Criteria
 

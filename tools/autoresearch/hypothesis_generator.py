@@ -93,7 +93,7 @@ def _llm_hypotheses(domain: str, config: dict, current_metric: float,
     )
 
     prompt = f"""You are an autonomous research agent running experiments to improve
-the "{domain}" domain of an ICDEV compliance platform.
+the "{domain}" domain of an ICDEV™ compliance platform.
 
 Current metric value: {current_metric:.4f}
 Metric to optimize: {config.get('objective', {}).get('metric_name', 'unknown')}

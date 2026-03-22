@@ -46,7 +46,7 @@ DEFAULT_DB = BASE_DIR / "data" / "icdev.db"
 
 
 def _get_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
-    """Open a read-only connection to the ICDEV database."""
+    """Open a read-only connection to the ICDEV™ database."""
     path = db_path or DEFAULT_DB
     conn = get_connection(db_path=str(path))
     return conn
@@ -226,9 +226,9 @@ def _no_marking_result() -> Dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Classification Marking Resolver"
+        description="ICDEV™ Classification Marking Resolver"
     )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Full JSON output")
     parser.add_argument("--banner-only", action="store_true", help="Print just the banner line")
     parser.add_argument("--code-header", metavar="LANG", help="Print code header for LANG (python, java, go, etc.)")

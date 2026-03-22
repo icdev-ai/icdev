@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 # Controlled Unclassified Information // Specified -- Controlled Technical Information
 # Distribution: Distribution D -- Authorized DoD Personnel Only
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """CMMC Level 2/3 assessment report generator.
 
 Loads cmmc_report_template.md, queries cmmc_assessments table, builds domain scores

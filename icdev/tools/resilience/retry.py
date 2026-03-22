@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Resilience — Reusable Retry Utility.
+"""ICDEV™ Resilience — Reusable Retry Utility.
 
 D147: Extracted from tools/agent/bedrock_client.py. Provides a decorator and
 a callable wrapper with exponential backoff + full jitter.

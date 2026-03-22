@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Chat Connector ABC — base class for all chat platform connectors (D66, D136)
+# ICDEV™ Chat Connector ABC — base class for all chat platform connectors (D66, D136)
 
 """
 Abstract base class for chat platform connectors.

@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# Test Translation Prompt — ICDEV Phase 43 (D250)
+# Test Translation Prompt — ICDEV™ Phase 43 (D250)
 
 You are a senior software engineer translating test files from **{{ source_language }}** to **{{ target_language }}**.
 

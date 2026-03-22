@@ -1,7 +1,7 @@
 # CUI // SP-CTI
-# ICDEV Redaction & Anonymization Configuration
+# ICDEV™ Redaction & Anonymization Configuration
 # Controls PII/sensitive data detection and anonymization across all modules.
-# Integrates with Presidio (NLP-based) + custom ICDEV recognizers (regex/deny-list).
+# Integrates with Presidio (NLP-based) + custom ICDEV™ recognizers (regex/deny-list).
 
 # Master toggle — disable to bypass all redaction
 enabled: true
@@ -171,7 +171,7 @@ scope:
     - requirement_extraction # R5 Extract — redact before cloud LLM
     - bid_scoring            # R9 Decide — redact if cloud-routed
     - color_review           # R15 Review — redact if cloud-routed
-    # Core ICDEV
+    # Core ICDEV™
     - code_generation        # May contain customer code with PII
     - narrative_generation   # Compliance narratives may reference people/orgs
     - compliance_export      # SSP/POAM content

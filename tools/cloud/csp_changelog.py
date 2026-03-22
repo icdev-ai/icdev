@@ -3,14 +3,14 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """CSP Changelog Generator — produce human-readable change reports.
 
 Reads innovation_signals from the CSP monitor and generates structured
 changelogs in Markdown or JSON format, grouped by CSP, change type, or date.
 
 Includes actionable recommendations for each change type:
-    - new_service: "Evaluate for ICDEV provider integration"
+    - new_service: "Evaluate for ICDEV™ provider integration"
     - service_deprecation: "Plan migration, update Terraform modules"
     - compliance_scope_change: "Review csp_certifications.json, update region_validator"
     - api_breaking_change: "Update provider implementation, test backward compat"
@@ -43,8 +43,8 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 # ── CONSTANTS ───────────────────────────────────────────────────────────
 RECOMMENDATIONS = {
     "new_service": {
-        "action": "Evaluate for ICDEV provider integration",
-        "details": "Check if the new service maps to an existing ICDEV provider ABC "
+        "action": "Evaluate for ICDEV™ provider integration",
+        "details": "Check if the new service maps to an existing ICDEV™ provider ABC "
                    "(secrets, storage, kms, monitoring, iam, registry, ai_ml). "
                    "If so, add implementation. Update csp_service_registry.json.",
         "urgency": "low",
@@ -55,7 +55,7 @@ RECOMMENDATIONS = {
     },
     "service_deprecation": {
         "action": "Plan migration away from deprecated service",
-        "details": "Identify ICDEV components using this service. Update Terraform "
+        "details": "Identify ICDEV™ components using this service. Update Terraform "
                    "modules, provider implementations, and deployment profiles. "
                    "Generate migration signal for affected tenants.",
         "urgency": "high",
@@ -105,7 +105,7 @@ RECOMMENDATIONS = {
     },
     "security_update": {
         "action": "Review security advisory and apply patches",
-        "details": "CSP security update. Check if ICDEV components are affected. "
+        "details": "CSP security update. Check if ICDEV™ components are affected. "
                    "Update security gates if new vulnerability class detected.",
         "urgency": "high",
         "affected_files": [

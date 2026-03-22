@@ -3,10 +3,10 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Structured clarification engine -- Impact x Uncertainty prioritized questions.
 
-Adapted from GitHub spec-kit's clarification workflow for ICDEV.
+Adapted from GitHub spec-kit's clarification workflow for ICDEV™.
 Uses a 2D matrix (Impact x Uncertainty) to prioritize which unclear
 requirements to clarify first.
 
@@ -576,7 +576,7 @@ def _format_human(result: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Clarification Engine (ADR D159)"
+        description="ICDEV™ Clarification Engine (ADR D159)"
     )
     parser.add_argument("--spec-file", help="Path to spec file to analyze")
     parser.add_argument("--session-id", help="Intake session ID to analyze")

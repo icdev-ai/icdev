@@ -141,7 +141,7 @@ class BGERerankerProvider(RerankerProvider):
 
 
 class LLMRerankerProvider(RerankerProvider):
-    """qwen3 LLM-based re-ranking via ICDEV LLM router (D-RAG-3 original).
+    """qwen3 LLM-based re-ranking via ICDEV™ LLM router (D-RAG-3 original).
 
     Uses structured prompt to ask qwen3 to rank chunks by relevance.
     Slower (2-5s) but works without specialized reranker model.

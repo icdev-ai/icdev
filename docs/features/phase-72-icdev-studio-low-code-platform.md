@@ -1,16 +1,16 @@
-# Phase 72: ICDEV Studio — Low-Code/No-Code Platform
+# Phase 72: ICDEV™ Studio — Low-Code/No-Code Platform
 
 **CUI // SP-CTI**
 
 ## Executive Summary
 
-ICDEV Studio is a visual, AI-first low-code platform that transforms ICDEV from a developer-centric CLI framework into an accessible platform for Program Managers, ISSOs, Contracting Officers, and business analysts. It competes head-to-head with Appian ($APPN, FedRAMP High, IL5, 200+ agencies) while offering three decisive advantages Appian cannot match:
+ICDEV™ Studio is a visual, AI-first low-code platform that transforms ICDEV™ from a developer-centric CLI framework into an accessible platform for Program Managers, ISSOs, Contracting Officers, and business analysts. It competes head-to-head with Appian ($APPN, FedRAMP High, IL5, 200+ agencies) while offering three decisive advantages Appian cannot match:
 
 1. **AI-First Generation** — "Describe what you want" → working app (Base44-style UX, gov-grade compliance)
 2. **Real Code Output** — Generates actual Python/Java/Go/Rust/TS/C#, not proprietary platform apps
 3. **IL6/SECRET + Air-Gap** — Full SIPR capability that Appian stops at IL5
 
-**Target users:** Non-technical government stakeholders who currently need developers to operate ICDEV.
+**Target users:** Non-technical government stakeholders who currently need developers to operate ICDEV™.
 
 ---
 
@@ -18,14 +18,14 @@ ICDEV Studio is a visual, AI-first low-code platform that transforms ICDEV from 
 
 ### Why This Matters Now
 
-| Platform | Users | Revenue | Gov Presence | Weakness ICDEV Exploits |
+| Platform | Users | Revenue | Gov Presence | Weakness ICDEV™ Exploits |
 |----------|-------|---------|--------------|------------------------|
 | **Appian** | Enterprise | ~$600M ARR | FedRAMP High, IL5, 200+ agencies | Proprietary lock-in, no IL6, opaque pricing, no code generation |
 | **Base44** | SMB/Startup | Acquired $80M | None (SOC 2 only) | Zero gov compliance, vendor lock-in, immature security |
 | **n8n** | Technical teams | ~$50M ARR | Air-gap capable, no FedRAMP | No compliance, no gov focus, workflow-only (not full SDLC) |
-| **ICDEV Studio** | Gov + Commercial | — | FedRAMP, CMMC, IL4/IL5/IL6 | NEW — this plan |
+| **ICDEV™ Studio** | Gov + Commercial | — | FedRAMP, CMMC, IL4/IL5/IL6 | NEW — this plan |
 
-### ICDEV Studio Value Proposition
+### ICDEV™ Studio Value Proposition
 
 > "The only platform where a Program Manager can describe a need in plain English, get a compliant application with full ATO artifacts, and deploy to GovCloud — without writing a single line of code."
 
@@ -49,7 +49,7 @@ Wraps the existing child app generator (`tools/builder/child_app_generator.py`) 
 User: "I need an app that tracks CDRL deliverables for my Navy contract,
        sends alerts when due dates approach, and generates CPARS-ready reports."
 
-ICDEV Studio:
+ICDEV™ Studio:
   1. Intake engine extracts requirements (tools/requirements/intake_engine.py)
   2. Blueprint generator creates capability map (tools/builder/app_blueprint.py)
   3. Visual preview shows: 3 pages, 2 workflows, 5 DB tables, IL4 classification
@@ -75,10 +75,10 @@ ICDEV Studio:
 Visual DAG editor that wraps `tools/orchestration/workflow_composer.py`.
 
 **Capabilities:**
-- **Tool palette** — Browse all 200+ ICDEV tools, grouped by category (compliance, security, build, deploy)
+- **Tool palette** — Browse all 200+ ICDEV™ tools, grouped by category (compliance, security, build, deploy)
 - **Canvas editor** — Drag tools onto canvas, draw dependency arrows, configure args via forms
 - **Template library** — Start from existing templates (ATO acceleration, build/deploy, security hardening)
-- **Custom workflows** — Users create their own, ICDEV validates and executes
+- **Custom workflows** — Users create their own, ICDEV™ validates and executes
 - **Compliance workflows** — Pre-built: STIG check → POAM generate → SSP update → OSCAL export
 - **Real-time execution** — Watch steps execute with live status, logs, and output previews
 - **Workflow marketplace** — Share/discover workflows across organizations
@@ -97,7 +97,7 @@ When a user describes a custom workflow in natural language:
 2. Studio generates a draft YAML template
 3. Visual editor shows the DAG for user review/adjustment
 4. User saves → template lands in their workspace's `args/workflow_templates/`
-5. ICDEV validates (no circular deps, tools exist, args valid)
+5. ICDEV™ validates (no circular deps, tools exist, args valid)
 
 ---
 
@@ -272,7 +272,7 @@ Features available to ALL users vs. air-gap-only:
 
 **Deliverables:**
 - Visual DAG editor (JS canvas + YAML serialization)
-- Tool palette with all 200+ ICDEV tools
+- Tool palette with all 200+ ICDEV™ tools
 - Template library browser
 - Real-time workflow execution monitor
 - Marketplace storefront UI (browse, search, preview, install)
@@ -283,7 +283,7 @@ Features available to ALL users vs. air-gap-only:
 ---
 
 ### Phase 72b: Natural Language App Builder
-**Why second:** This is the "wow factor" — the Base44-style experience that differentiates ICDEV from Appian.
+**Why second:** This is the "wow factor" — the Base44-style experience that differentiates ICDEV™ from Appian.
 
 **Deliverables:**
 - Conversational app creation UI
@@ -453,7 +453,7 @@ CREATE TABLE studio_workflows (
 ## Key Technical Decisions
 
 ### D361: Build visual workflow engine, do not embed n8n
-- **Why:** n8n is fair-code (not OSI open-source), cannot redistribute as part of ICDEV. Building our own keeps ICDEV's architecture clean and avoids license complications for gov contracts.
+- **Why:** n8n is fair-code (not OSI open-source), cannot redistribute as part of ICDEV™. Building our own keeps ICDEV™'s architecture clean and avoids license complications for gov contracts.
 - **Trade-off:** More development effort, but full control over UX and compliance integration.
 
 ### D362: Canvas rendering via vanilla JS + SVG, no heavy framework
@@ -476,7 +476,7 @@ CREATE TABLE studio_workflows (
 
 ## Appian Feature Parity Matrix
 
-| Appian Capability | ICDEV Studio Equivalent | Phase |
+| Appian Capability | ICDEV™ Studio Equivalent | Phase |
 |-------------------|------------------------|-------|
 | Visual Process Modeler | Visual Workflow Studio | 72a |
 | Data Fabric | NLQ + SQLite + RAG (existing) | — |
@@ -491,7 +491,7 @@ CREATE TABLE studio_workflows (
 | FedRAMP High | FedRAMP + CMMC + IL4/5/6 (existing) | — |
 | Expression Language | Python tools + NLQ | — |
 
-**ICDEV-only advantages (no Appian equivalent):**
+**ICDEV™-only advantages (no Appian equivalent):**
 - NL → full application generation (Base44-style)
 - Real code output (6 languages, not proprietary)
 - IL6/SECRET/SIPR deployment

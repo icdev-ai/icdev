@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Enhanced Child App Registry for ICDEV Evolution Engine.
+# POC: ICDEV™ System Administrator
+"""Enhanced Child App Registry for ICDEV™ Evolution Engine.
 
 Provides CRUD operations over the child_app_registry and
 child_capabilities tables. Tracks child app lifecycle, capabilities,
@@ -500,7 +500,7 @@ class ChildRegistry:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Child App Registry — manage child apps and capabilities"
+        description="ICDEV™ Child App Registry — manage child apps and capabilities"
     )
 
     # Actions

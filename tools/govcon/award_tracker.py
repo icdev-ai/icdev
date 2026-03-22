@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Award Tracker — Phase 59 (D367)
+# ICDEV™ GovCon Award Tracker — Phase 59 (D367)
 # Tracks award notices from SAM.gov and builds competitor database.
 
 """
@@ -350,7 +350,7 @@ def get_stats():
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Award Tracker (D367)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Award Tracker (D367)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--scan", action="store_true", help="Scan SAM.gov for award notices")
     group.add_argument("--list", action="store_true", help="List tracked awards")

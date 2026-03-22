@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-I'm not a developer. I'm a program manager. Last Tuesday, I had an idea for a geospatial signal analysis platform. By lunch, I had a working enterprise application with a real-time map, pattern detection, a knowledge graph with 6,400+ relationships, and a professional dark-themed dashboard — all running on my laptop. No coding bootcamp. No six-month development contract. No $2M budget. Just a conversation with an AI-powered development framework called ICDEV. Here's exactly how I did it, step by step.
+I'm not a developer. I'm a program manager. Last Tuesday, I had an idea for a geospatial signal analysis platform. By lunch, I had a working enterprise application with a real-time map, pattern detection, a knowledge graph with 6,400+ relationships, and a professional dark-themed dashboard — all running on my laptop. No coding bootcamp. No six-month development contract. No $2M budget. Just a conversation with an AI-powered development framework called ICDEV™. Here's exactly how I did it, step by step.
 
 ---
 
@@ -16,17 +16,17 @@ Meanwhile, the problem you were trying to solve has evolved three times over.
 
 I've watched this cycle repeat for fifteen years across government and enterprise. The gap between "I need this" and "I have this" isn't a technology problem. It's an orchestration problem. The tools exist. The models exist. The frameworks exist. What's missing is a system that can take a non-technical person's intent and translate it into a working application — with enterprise-grade quality, compliance awareness, and professional design.
 
-That system is ICDEV.
+That system is ICDEV™.
 
 ---
 
-## What Is ICDEV? (And Why Should You Care?)
+## What Is ICDEV™? (And Why Should You Care?)
 
-ICDEV — Intelligent Certified Development — is an open-source meta-builder. Think of it as an AI-powered factory that builds other applications. It doesn't just generate code. It orchestrates an entire software development lifecycle: requirements, architecture, development, testing, security scanning, compliance validation, and deployment — all driven by conversation.
+ICDEV™ — Intelligent Certified Development — is an open-source meta-builder. Think of it as an AI-powered factory that builds other applications. It doesn't just generate code. It orchestrates an entire software development lifecycle: requirements, architecture, development, testing, security scanning, compliance validation, and deployment — all driven by conversation.
 
 ### The GOTCHA Framework
 
-Under the hood, ICDEV runs on something called the GOTCHA framework — six layers that separate *what* you want from *how* it gets done:
+Under the hood, ICDEV™ runs on something called the GOTCHA framework — six layers that separate *what* you want from *how* it gets done:
 
 | Layer | What It Does | Why It Matters |
 |-------|-------------|----------------|
@@ -37,11 +37,11 @@ Under the hood, ICDEV runs on something called the GOTCHA framework — six laye
 | **Hard Prompts** | Reusable instruction templates | Consistency across every build |
 | **Args** | Configuration without code changes | Tune behavior by editing YAML, not Python |
 
-The key insight: LLMs are probabilistic. They're brilliant at understanding intent but unreliable at executing business logic. ICDEV solves this by using AI for orchestration and decision-making while delegating execution to deterministic tools. The AI decides *what* to do. The tools *do it* — the same way, every time.
+The key insight: LLMs are probabilistic. They're brilliant at understanding intent but unreliable at executing business logic. ICDEV™ solves this by using AI for orchestration and decision-making while delegating execution to deterministic tools. The AI decides *what* to do. The tools *do it* — the same way, every time.
 
 ### Workflow Studio: Your Visual Command Center
 
-ICDEV includes a Workflow Studio — a visual drag-and-drop interface where you can design, customize, and execute multi-step workflows without touching a terminal. It comes with 217 tools organized across 16 categories and 13 pre-built workflow templates covering everything from ATO acceleration to full SDLC pipelines.
+ICDEV™ includes a Workflow Studio — a visual drag-and-drop interface where you can design, customize, and execute multi-step workflows without touching a terminal. It comes with 217 tools organized across 16 categories and 13 pre-built workflow templates covering everything from ATO acceleration to full SDLC pipelines.
 
 Think of it like a visual pipeline builder. You drag a "Requirements Intake" block onto the canvas, connect it to "Code Generation," wire that to "Security Scan," and hit run. The system handles the rest. For the GeoSIGINT build, I used the **Full SDLC** template — a 12-step pipeline that chains requirements capture through to production readiness.
 
@@ -55,23 +55,23 @@ The 16 tool categories in Workflow Studio span the entire application lifecycle:
 - **Deploy & Infrastructure** (14 tools) — Terraform for 6 cloud providers
 - **And 10 more categories** covering DevSecOps, requirements, MBSE, modernization, monitoring, research, knowledge management, and GovCon
 
-You don't need to know what any of these tools do individually. You describe what you want. ICDEV picks the right tools and runs them in the right order.
+You don't need to know what any of these tools do individually. You describe what you want. ICDEV™ picks the right tools and runs them in the right order.
 
 ---
 
 ## The Build: GeoSIGINT in 8 Steps
 
-Here's the actual conversation I had with ICDEV to build a geospatial signal intelligence platform. No pseudocode. No simplification. This is what happened.
+Here's the actual conversation I had with ICDEV™ to build a geospatial signal intelligence platform. No pseudocode. No simplification. This is what happened.
 
 ### Step 1: Describe What You Want (5 minutes)
 
-I opened ICDEV and typed:
+I opened ICDEV™ and typed:
 
 > *"Build a working prototype for geospatial signal analysis. SIGINT-style spectrum monitoring. Use public domain data. Include a professional web UI with maps. Use a Knowledge Graph to build correlation and pattern analysis. Make it a standalone enterprise app."*
 
 That's it. No user stories. No wireframes. No architecture diagrams. Just a description of what I needed in plain English.
 
-ICDEV came back with clarifying questions — yes/no format, not essay questions:
+ICDEV™ came back with clarifying questions — yes/no format, not essay questions:
 
 - *Signal type?* → SIGINT (RF/electromagnetic)
 - *Data sources?* → Public domain (your choice)
@@ -85,7 +85,7 @@ Six questions. Six one-word answers. Requirements phase complete.
 
 ### Step 2: Architecture Design (2 minutes)
 
-ICDEV designed the architecture automatically:
+ICDEV™ designed the architecture automatically:
 
 - **9 database tables** — signals, emitters, stations, frequency bands, patterns, anomalies, knowledge graph edges, space weather
 - **12 REST API endpoints** — full CRUD for every entity
@@ -97,7 +97,7 @@ I didn't draw a single diagram. The system proposed an architecture based on the
 
 ### Step 3: Database and Data Model (3 minutes)
 
-ICDEV generated a complete SQLite schema with proper indexing, foreign keys, and WAL journaling. Nine tables covering:
+ICDEV™ generated a complete SQLite schema with proper indexing, foreign keys, and WAL journaling. Nine tables covering:
 
 - **frequency_bands** — 12 real ITU/FCC allocations (20m Amateur through S-Band Weather Radar)
 - **stations** — Receiver locations with callsigns and coordinates
@@ -110,7 +110,7 @@ ICDEV generated a complete SQLite schema with proper indexing, foreign keys, and
 
 ### Step 4: Seed Realistic Data (5 minutes)
 
-Here's where it gets interesting. ICDEV didn't just generate random numbers. It created *realistic* SIGINT data using actual public-domain information:
+Here's where it gets interesting. ICDEV™ didn't just generate random numbers. It created *realistic* SIGINT data using actual public-domain information:
 
 - **12 real receiver stations** at public naval facilities (Norfolk, San Diego, Pearl Harbor, Rota, Yokosuka, and more — all publicly known locations)
 - **40 emitters** across 5 realistic archetypes (HF Communications, S-Band Radar, Navigation Beacon, Maritime Comms, Aeronautical)
@@ -125,7 +125,7 @@ The data *looks real* because it follows real physics. Signal power attenuates w
 
 ### Step 5: Build the Application (10 minutes)
 
-ICDEV generated a complete Flask web application:
+ICDEV™ generated a complete Flask web application:
 
 - **Backend**: 12 API endpoints with filtering, pagination, and aggregation
 - **Frontend**: 5 pages with a professional dark theme
@@ -138,7 +138,7 @@ The CSS alone is 300+ lines of carefully crafted dark-theme styling with hover s
 
 ### Step 6: Quality Checks (2 minutes)
 
-ICDEV automatically ran:
+ICDEV™ automatically ran:
 
 - **Python compilation checks** — All files compile cleanly
 - **Ruff linting** — Zero style violations
@@ -148,7 +148,7 @@ No manual testing configuration. No CI/CD setup. The framework knows what checks
 
 ### Step 7: End-to-End Verification (3 minutes)
 
-ICDEV launched a headless Chrome browser via Selenium and ran automated verification across every page:
+ICDEV™ launched a headless Chrome browser via Selenium and ran automated verification across every page:
 
 | Page | Checks | Result |
 |------|--------|--------|
@@ -211,7 +211,7 @@ You no longer need to choose between "wait 18 months for a vendor" and "build a 
 
 ### For Analysts and Domain Experts
 
-Your domain knowledge is the most valuable input in the system. You know what signals matter, what patterns to look for, what anomalies indicate. ICDEV translates that knowledge into running software. You don't need to learn Python. You need to know your domain.
+Your domain knowledge is the most valuable input in the system. You know what signals matter, what patterns to look for, what anomalies indicate. ICDEV™ translates that knowledge into running software. You don't need to learn Python. You need to know your domain.
 
 ### For Organizations
 
@@ -221,7 +221,7 @@ The cost of experimentation just dropped by orders of magnitude. Instead of fund
 
 ## Try It Yourself
 
-GeoSIGINT was built entirely with ICDEV, an open-source framework available today. The Workflow Studio's Full SDLC template — the same one used for this build — is one of 13 pre-built templates covering compliance, security, modernization, MBSE, DevSecOps, and more.
+GeoSIGINT was built entirely with ICDEV™, an open-source framework available today. The Workflow Studio's Full SDLC template — the same one used for this build — is one of 13 pre-built templates covering compliance, security, modernization, MBSE, DevSecOps, and more.
 
 Whether you're monitoring RF spectrum, tracking supply chains, analyzing patient flows, or visualizing any complex domain — the process is the same:
 
@@ -230,6 +230,6 @@ Whether you're monitoring RF spectrum, tracking supply chains, analyzing patient
 3. Let the framework build, test, and verify
 4. Review your working application
 
-The ICDEV ecosystem, Workflow Studio, and all 217 tools are available at [https://github.com/icdev-ai](https://github.com/icdev-ai) and [https://icdev.ai](https://icdev.ai).
+The ICDEV™ ecosystem, Workflow Studio, and all 217 tools are available at [https://github.com/icdev-ai](https://github.com/icdev-ai) and [https://icdev.ai](https://icdev.ai).
 
 The hardest part isn't building the application. It's having the idea. And you already have that.

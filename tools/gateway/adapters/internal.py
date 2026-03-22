@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Internal Chat adapter — bridges ICDEV's existing /chat page to the gateway.
+"""Internal Chat adapter — bridges ICDEV™'s existing /chat page to the gateway.
 
 This adapter is always available in both connected and air-gapped
 environments. It normalizes messages from the internal chat system
@@ -26,7 +26,7 @@ logger = logging.getLogger("icdev.gateway.adapters.internal")
 
 
 class InternalChatAdapter(BaseChannelAdapter):
-    """Adapter for ICDEV's built-in /chat page.
+    """Adapter for ICDEV™'s built-in /chat page.
 
     Since internal chat is within the same application, signature
     verification is implicit (same-process trust). Identity is

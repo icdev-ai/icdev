@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Publish Pipeline — Orchestrate scan, validate, sign, and publish.
 
 Full pipeline for publishing a GOTCHA asset to the marketplace:
@@ -454,7 +454,7 @@ def publish_asset(asset_path, asset_type, tenant_id, publisher_user,
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Publish Pipeline")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Publish Pipeline")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

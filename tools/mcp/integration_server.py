@@ -348,7 +348,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "instance_url": {"type": "string", "description": "Jira instance URL (e.g., https://org.atlassian.net)"},
                 "project_key": {"type": "string", "description": "Jira project key (e.g., PROJ)"},
                 "auth_secret_ref": {"type": "string", "description": "AWS Secrets Manager reference for Jira credentials"},
@@ -364,7 +364,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "direction": {"type": "string", "default": "push", "enum": ["push", "pull"], "description": "Sync direction: push to Jira or pull from Jira"},
                 "session_id": {"type": "string", "description": "RICOAS session ID to scope the sync"},
                 "dry_run": {"type": "boolean", "default": False, "description": "Preview changes without applying"},
@@ -381,7 +381,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "instance_url": {"type": "string", "description": "ServiceNow instance URL (e.g., https://org.service-now.com)"},
                 "table_name": {"type": "string", "default": "rm_story", "description": "ServiceNow table name for requirements"},
                 "auth_secret_ref": {"type": "string", "description": "AWS Secrets Manager reference for ServiceNow credentials"},
@@ -397,7 +397,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "direction": {"type": "string", "default": "push", "enum": ["push", "pull"], "description": "Sync direction: push to ServiceNow or pull from ServiceNow"},
                 "session_id": {"type": "string", "description": "RICOAS session ID to scope the sync"},
                 "dry_run": {"type": "boolean", "default": False, "description": "Preview changes without applying"},
@@ -414,7 +414,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "instance_url": {"type": "string", "description": "GitLab instance URL (e.g., https://gitlab.example.com)"},
                 "gitlab_project_id": {"type": "string", "description": "GitLab project ID (numeric or path)"},
                 "auth_secret_ref": {"type": "string", "description": "AWS Secrets Manager reference for GitLab credentials"},
@@ -430,7 +430,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "direction": {"type": "string", "default": "push", "enum": ["push", "pull"], "description": "Sync direction: push to GitLab or pull from GitLab"},
                 "session_id": {"type": "string", "description": "RICOAS session ID to scope the sync"},
                 "dry_run": {"type": "boolean", "default": False, "description": "Preview changes without applying"},
@@ -504,7 +504,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "session_id": {"type": "string", "description": "Optional RICOAS session ID to scope the RTM"},
             },
             "required": ["project_id"],

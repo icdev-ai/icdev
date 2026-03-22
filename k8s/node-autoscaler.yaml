@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Node Auto-Scaling — Cloud-Agnostic Configuration
+# ICDEV™ Node Auto-Scaling — Cloud-Agnostic Configuration
 # D142 (revised): Cloud-agnostic Cluster Autoscaler as baseline;
 #   provider-specific optimizations in k8s/overlays/
 #
@@ -18,7 +18,7 @@ metadata:
     classification: CUI
 data:
   README: |
-    ICDEV Auto-Scaling Prerequisites
+    ICDEV™ Auto-Scaling Prerequisites
     =================================
 
     1. METRICS SERVER (required for HPA)

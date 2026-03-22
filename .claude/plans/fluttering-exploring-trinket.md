@@ -2,19 +2,19 @@
 
 ## Context
 
-ICDEV has 500+ Python CLI tools, 14 MCP servers, and 44 goal workflows — all platform-agnostic. But the orchestration layer is 100% Claude Code-specific: `CLAUDE.md`, `.claude/skills/`, `.claude/commands/`, `.claude/hooks/`, `.mcp.json`. This means ICDEV is invisible to developers using Codex, Cursor, Copilot, Gemini, or any other AI coding tool.
+ICDEV™ has 500+ Python CLI tools, 14 MCP servers, and 44 goal workflows — all platform-agnostic. But the orchestration layer is 100% Claude Code-specific: `CLAUDE.md`, `.claude/skills/`, `.claude/commands/`, `.claude/hooks/`, `.mcp.json`. This means ICDEV™ is invisible to developers using Codex, Cursor, Copilot, Gemini, or any other AI coding tool.
 
 The AI coding tool landscape has converged on two standards:
 1. **MCP** (Model Context Protocol) — supported by 9/10 major tools (all except Aider)
 2. **Markdown instruction files** — every tool reads its own format (`AGENTS.md`, `GEMINI.md`, `.cursorrules`, etc.)
 
-**Goal:** Generate tool-specific configuration files from a single source of truth (`icdev.yaml` + project state), so ICDEV works as a companion for every major AI coding tool — not just Claude Code.
+**Goal:** Generate tool-specific configuration files from a single source of truth (`icdev.yaml` + project state), so ICDEV™ works as a companion for every major AI coding tool — not just Claude Code.
 
 ## ADRs
 
 - **D194**: Companion registry is declarative YAML — add new AI tools without code changes (D26 pattern)
 - **D195**: Instruction files generated from Jinja2 templates — tool-specific formatting from universal data (D50/D186 pattern)
-- **D196**: MCP is primary integration protocol — tools with MCP get full ICDEV capability; others get instruction files + CLI
+- **D196**: MCP is primary integration protocol — tools with MCP get full ICDEV™ capability; others get instruction files + CLI
 - **D197**: AI tool detection is advisory — auto-detect for convenience, explicit `--platform` override for certainty (D110/D185 pattern)
 - **D198**: Skill translation preserves semantic intent — each tool gets equivalent capability in its native format, not a literal copy
 
@@ -507,7 +507,7 @@ Changes:
 - Add new doc row for "AI Tool Companion Guide"
 
 **Create:** `docs/dx/companion-guide.md` (~150 lines)
-- Overview: ICDEV works with 10 AI coding tools
+- Overview: ICDEV™ works with 10 AI coding tools
 - Quick setup: `python tools/dx/companion.py --setup --write`
 - Per-tool setup instructions (condensed)
 - MCP integration guide

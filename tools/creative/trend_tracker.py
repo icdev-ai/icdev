@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Pain Point Trend Detection for ICDEV Creative Engine — detect trends over time.
+# POC: ICDEV™ System Administrator
+"""Pain Point Trend Detection for ICDEV™ Creative Engine — detect trends over time.
 
 Analyzes creative_pain_points entries to identify emerging, active, declining, and
 stale trends by clustering pain points with keyword co-occurrence. All analysis is
@@ -1000,7 +1000,7 @@ def _print_human(args, result):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Creative Trend Tracker -- detect pain point trends over time"
+        description="ICDEV™ Creative Trend Tracker -- detect pain point trends over time"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")

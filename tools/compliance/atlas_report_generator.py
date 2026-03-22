@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """MITRE ATLAS v5.4.0 compliance report generator.
 
 Loads ATLAS assessment data from atlas_assessments table, builds mitigation

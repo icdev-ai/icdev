@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Dynamic CLAUDE.md Generator - creates adaptive documentation for child apps.
 
 Architecture Decision D26: Jinja2 templates produce CLAUDE.md that documents
@@ -585,12 +585,12 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 - Genesis knowledge flows via GKP JSON artifacts only — code patches require human review
 {% endif %}{% if capabilities.get("knowledge_graph", False) %}- Knowledge Graph retrieval log (kg_retrieval_log) is append-only (NIST AU compliance)
 {% endif %}{% if capabilities.get("rag", False) %}- RAG gates block on: injection without provenance, cross-tenant query detected, content tracing in CUI without approval
-{% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
+{% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 {% if parent_callback.get("enabled", False) %}
 
 ### A2A Parent Callback
 
-When this application needs capabilities not included locally, it calls back to parent ICDEV:
+When this application needs capabilities not included locally, it calls back to parent ICDEV™:
 - **Callback URL:** {{ parent_callback.url }}
 - **Auth method:** {{ parent_callback.auth }}
 - **Excluded capabilities:** app generation, modernization
@@ -1653,7 +1653,7 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
 
     parts.append(
         "- **This application CANNOT generate child applications** -- it is a generated "
-        "child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and "
+        "child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and "
         "child app generator are intentionally excluded."
     )
 
@@ -1662,7 +1662,7 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
     if parent.get("enabled", False):
         parts.append("")
         parts.append("### A2A Parent Callback\n")
-        parts.append("When this application needs capabilities not included locally, it calls back to parent ICDEV:")
+        parts.append("When this application needs capabilities not included locally, it calls back to parent ICDEV™:")
         parts.append(f"- **Callback URL:** {parent.get('url', 'N/A')}")
         parts.append(f"- **Auth method:** {parent.get('auth', 'N/A')}")
         parts.append("- **Excluded capabilities:** app generation, modernization")

@@ -6,7 +6,7 @@ Coordinates architecture, compliance, supply chain, schedule, cost, and risk
 dimensions for scenario-based analysis. Supports what-if, COA comparison, and
 risk analysis scenario types.
 
-Part of the ICDEV RICOAS Phase 20C simulation subsystem.
+Part of the ICDEV™ RICOAS Phase 20C simulation subsystem.
 """
 
 import argparse

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Scout Pillar 1: Self-Introspection — analyze ICDEV's own codebase.
+"""Scout Pillar 1: Self-Introspection — analyze ICDEV™'s own codebase.
 
 Delegates to the existing introspective_analyzer and adds Scout-specific
 checks for test coverage, dead code, and config drift.

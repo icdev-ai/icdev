@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV Proposal Genesis — CMMC Supply Chain Validator (§3.14)
+# ICDEV™ Proposal Genesis — CMMC Supply Chain Validator (§3.14)
 # Verifies CMMC/SPRS status for all proposed team members.
 
 """
@@ -624,7 +624,7 @@ def gate_evaluate(opportunity_id):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Proposal Genesis — CMMC Supply Chain Validator (§3.14)"
+        description="ICDEV™ Proposal Genesis — CMMC Supply Chain Validator (§3.14)"
     )
 
     # Actions

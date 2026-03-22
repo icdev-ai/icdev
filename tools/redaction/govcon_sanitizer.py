@@ -370,7 +370,7 @@ class GovConSanitizer:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Sanitizer")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Sanitizer")
     parser.add_argument("--sanitize", type=str, help="Sanitize text for LLM")
     parser.add_argument("--sanitize-file", type=str, help="Sanitize file")
     parser.add_argument("--function", type=str, default="proposal_drafting",

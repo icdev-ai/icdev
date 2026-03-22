@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Dynamic CLAUDE.md Generator - creates adaptive documentation for child apps.
 
 Architecture Decision D26: Jinja2 templates produce CLAUDE.md that documents
@@ -492,12 +492,12 @@ Build process follows the ATLAS methodology:
 {% endif %}{% if capabilities.get("ricoas", False) %}- RICOAS gates block on: readiness score < 0.7, unresolved critical gaps, RED requirements without alternative COAs
 {% endif %}{% if capabilities.get("observability", False) %}- Observability gates block on: tracing not active, provenance graph empty, XAI assessment not completed
 {% endif %}{% if capabilities.get("code_intelligence", False) %}- Code Quality gates block on: average cyclomatic complexity > 25
-{% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
+{% endif %}- **This application CANNOT generate child applications** -- it is a generated child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and child app generator are intentionally excluded.
 {% if parent_callback.get("enabled", False) %}
 
 ### A2A Parent Callback
 
-When this application needs capabilities not included locally, it calls back to parent ICDEV:
+When this application needs capabilities not included locally, it calls back to parent ICDEV™:
 - **Callback URL:** {{ parent_callback.url }}
 - **Auth method:** {{ parent_callback.auth }}
 - **Excluded capabilities:** app generation, modernization
@@ -1539,7 +1539,7 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
 
     parts.append(
         "- **This application CANNOT generate child applications** -- it is a generated "
-        "child app of ICDEV.  The agentic fitness assessor, app blueprint engine, and "
+        "child app of ICDEV™.  The agentic fitness assessor, app blueprint engine, and "
         "child app generator are intentionally excluded."
     )
 
@@ -1548,7 +1548,7 @@ def _build_guardrails_section(ctx: Dict[str, Any]) -> str:
     if parent.get("enabled", False):
         parts.append("")
         parts.append("### A2A Parent Callback\n")
-        parts.append("When this application needs capabilities not included locally, it calls back to parent ICDEV:")
+        parts.append("When this application needs capabilities not included locally, it calls back to parent ICDEV™:")
         parts.append(f"- **Callback URL:** {parent.get('url', 'N/A')}")
         parts.append(f"- **Auth method:** {parent.get('auth', 'N/A')}")
         parts.append("- **Excluded capabilities:** app generation, modernization")

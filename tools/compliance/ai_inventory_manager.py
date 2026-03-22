@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Use Case Inventory Manager — OMB M-25-21 compliance.
 
 Maintains a public AI use case inventory as required by OMB M-25-21.

@@ -1,7 +1,7 @@
 # [TEMPLATE: CUI // SP-CTI]
 # Compiler-in-the-Loop Verification Config
 # Adapted from LeanStral closed-loop verification pattern (Mistral AI, 2026-03-16).
-# Generalizes D255 compiler-feedback repair loop across all 6 ICDEV languages.
+# Generalizes D255 compiler-feedback repair loop across all 6 ICDEV™ languages.
 
 # ---------------------------------------------------------------------------
 # Per-Language Verifier Commands

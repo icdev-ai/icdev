@@ -1,2 +1,2 @@
 # CUI // SP-CTI
-"""Pulse AI Blog Engine — ICDEV marketplace module."""
+"""Pulse AI Blog Engine — ICDEV™ marketplace module."""

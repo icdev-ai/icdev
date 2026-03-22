@@ -5,7 +5,7 @@
 | Goal | File | Description |
 |------|------|-------------|
 | ATLAS Workflow | goals/build_app.md | 5-step process for building full-stack apps: Architect, Trace, Link, Assemble, Stress-test |
-| Project Init | goals/init_project.md | Initialize new ICDEV project with full compliance scaffolding |
+| Project Init | goals/init_project.md | Initialize new ICDEV™ project with full compliance scaffolding |
 | TDD Workflow | goals/tdd_workflow.md | True TDD: Gherkin feature first, step definitions, then implementation |
 | Compliance Workflow | goals/compliance_workflow.md | Generate all ATO + CSSP artifacts (SSP, POAM, STIG, SBOM, CUI, CSSP assessment, IR plan, SIEM, evidence, Xacta sync) |
 | Security Scanning | goals/security_scan.md | Run comprehensive security scanning pipeline |
@@ -32,7 +32,7 @@
 | Framework Planning | goals/framework_planning.md | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (Phase 42) |
 | Multi-Agent Orchestration | goals/multi_agent_orchestration.md | Opus 4.6 multi-agent: DAG workflow, parallel execution, collaboration patterns, domain authority vetoes, agent memory |
 | Security Categorization | goals/security_categorization.md | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
-| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV clone apps with GOTCHA/ATLAS |
+| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV™ clone apps with GOTCHA/ATLAS |
 | SaaS Multi-Tenancy | goals/saas_multi_tenancy.md | Multi-tenant SaaS: API gateway (REST+MCP SSE), per-tenant DB, 3 auth methods, subscription tiers, artifact delivery, tenant portal, Helm on-prem **(parent-only)** |
 | Marketplace | goals/marketplace.md | Federated GOTCHA asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline (Phase 22) **(parent-only)** |
 | Universal Compliance | goals/universal_compliance.md | Universal Compliance Platform: 10 data categories, dual-hub crosswalk (NIST+ISO), 6 Wave 1 frameworks, auto-detection, multi-regime assessment (Phase 23) |
@@ -50,8 +50,8 @@
 | AI Governance Intake | goals/ai_governance_intake.md | AI governance integration: RICOAS intake detection (6 pillars), 7th readiness dimension, chat extension advisory, governance sidebar, auto-trigger for federal agencies (Phase 50, D322-D330) |
 | Code Intelligence | goals/code_intelligence.md | Code quality self-analysis: AST metrics (cyclomatic/cognitive complexity, nesting, params), 5 smell detectors, maintainability scoring, runtime feedback (test-to-source), production audit (5 CODE checks), Innovation Engine integration, pattern-based TDD learning (Phase 52, D331-D337) |
 | Creative Engine | goals/creative_engine.md | Customer-centric feature opportunity discovery: auto-discover competitors, scan review sites/forums/GitHub, extract pain points, 3-dimension scoring, trend detection, template-based spec generation, Innovation Engine bridge (Phase 58, D351-D360) **(parent-only)** |
-| GovCon Intelligence | goals/govcon_intelligence.md | GovCon capture-to-delivery flywheel: SAM.gov scanning, requirement mining, ICDEV capability mapping, gap analysis, two-tier LLM response drafting, compliance auto-population, competitive intelligence, proposal lifecycle integration (Phase 59, D361-D374) **(parent-only)** |
-| GovCon Product Descriptions | goals/govcon_product_descriptions.md | Product-level proposal content: ICDEV platform and Contract Management Portal (CPMP) as whole products in proposals, product detection logic, knowledge base seeding, Management Volume guidance **(parent-only)** |
+| GovCon Intelligence | goals/govcon_intelligence.md | GovCon capture-to-delivery flywheel: SAM.gov scanning, requirement mining, ICDEV™ capability mapping, gap analysis, two-tier LLM response drafting, compliance auto-population, competitive intelligence, proposal lifecycle integration (Phase 59, D361-D374) **(parent-only)** |
+| GovCon Product Descriptions | goals/govcon_product_descriptions.md | Product-level proposal content: ICDEV™ platform and Contract Management Portal (CPMP) as whole products in proposals, product detection logic, knowledge base seeding, Management Volume guidance **(parent-only)** |
 | CPMP Workflow | goals/cpmp_workflow.md | Contract Performance Management Portal: post-award lifecycle management — EVM (ANSI/EIA-748), CPARS prediction (NDAA), subcontractor FAR 52.219-9, CDRL auto-generation, COR portal, SAM.gov awards, portfolio health scoring (Phase 60, D-CPMP-1 through D-CPMP-10) **(parent-only)** |
 | Orchestration Improvements | goals/multi_agent_orchestration.md | Phase 61: Dispatcher-only orchestrator mode (D-DISP-1), declarative prompt chains (D-PC-1/2/3), ATLAS adversarial critique phase, session purpose declaration (D-ORCH-5), async result injection (D-ORCH-7), tiered file access (D-ORCH-8), real-time orchestration dashboard |
 | Industry Research | goals/industry_research.md | Industry Research Engine: 8-stage pipeline (SCOPE→DOSSIER), 6 verticals, 8 data streams, 6-dimension challenge scoring, build/buy/partner analysis, template-based dossier generation, cross-engine registration, HITL fitness trigger (Phase 63, D-RES-1 through D-RES-13) **(parent-only)** |

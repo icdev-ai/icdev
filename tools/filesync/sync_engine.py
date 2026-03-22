@@ -1004,7 +1004,7 @@ def run_daemon(db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV File Sync Engine — Syncthing-inspired file synchronization"
+        description="ICDEV™ File Sync Engine — Syncthing-inspired file synchronization"
     )
 
     # Command group
@@ -1067,7 +1067,7 @@ def main():
     parser.add_argument("--file-path", help="File path filter for --versions")
     parser.add_argument("--resolution", help="Conflict resolution",
                         choices=["source_wins", "dest_wins", "renamed", "skipped", "manual"])
-    parser.add_argument("--project-id", help="ICDEV project ID")
+    parser.add_argument("--project-id", help="ICDEV™ project ID")
     parser.add_argument("--limit", type=int, default=50, help="Log entry limit")
 
     # Execution flags

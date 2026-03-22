@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-name: ICDEV CI
+name: ICDEV™ CI
 
 on:
   push:

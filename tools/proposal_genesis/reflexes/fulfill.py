@@ -3,7 +3,7 @@
 """R11: Fulfill Reflex — CDRL auto-generation + compliance refresh.
 
 Scans active contracts for deliverables approaching their due date,
-dispatches to the appropriate ICDEV generation tool (SSP, SBOM, STIG,
+dispatches to the appropriate ICDEV™ generation tool (SSP, SBOM, STIG,
 EVM report, etc.), records generation results, and flags stale
 compliance documentation for refresh.
 
@@ -39,7 +39,7 @@ def _generate_id(prefix: str = "pg") -> str:
 
 
 # ---------------------------------------------------------------------------
-# CDRL type → ICDEV tool mapping  (D-CPMP-5)
+# CDRL type → ICDEV™ tool mapping  (D-CPMP-5)
 # ---------------------------------------------------------------------------
 
 TOOL_MAPPING: Dict[str, str] = {
@@ -267,7 +267,7 @@ def _compute_dochub_health(contract_id: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _generate_cdrl(deliverable: Dict, cdrl_type: str) -> Tuple[bool, Dict]:
-    """Generate a CDRL by dispatching to the mapped ICDEV tool.
+    """Generate a CDRL by dispatching to the mapped ICDEV™ tool.
 
     Returns (success, result_dict).
     """
@@ -475,7 +475,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     Steps:
       1. Find deliverables due within 14 days without generation
       2. Resolve CDRL type for each deliverable
-      3. Dispatch to ICDEV generation tool
+      3. Dispatch to ICDEV™ generation tool
       4. Run GovEval quality gate on compliance CDRLs (§3.7)
       5. Record generation results in cpmp_cdrl_generations
       6. Check for stale compliance documentation (>90 days)

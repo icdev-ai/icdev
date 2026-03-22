@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Control Framework Crosswalk Engine for ICDEV.
+# POC: ICDEV™ System Administrator
+"""Control Framework Crosswalk Engine for ICDEV™.
 
 Maps NIST SP 800-53 Rev 5 control implementations across multiple compliance
 frameworks (FedRAMP Moderate/High, NIST 800-171, CMMC Level 2/3, DoD IL4/5/6,

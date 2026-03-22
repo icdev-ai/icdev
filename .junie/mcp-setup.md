@@ -1,4 +1,4 @@
-# JetBrains MCP Setup for ICDEV
+# JetBrains MCP Setup for ICDEV™
 
 ## Steps
 1. Open Settings > Tools > AI Assistant > Model Context Protocol (MCP)

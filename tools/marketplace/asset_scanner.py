@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Marketplace Asset Scanner — 7-gate security scanning pipeline.
 
 Orchestrates security scanning for marketplace assets before publishing.
@@ -651,7 +651,7 @@ def scan_behavioral_sandbox(asset_path, asset_id, version_id, db_path=None):
         (r'(?i)(ICDEV_|AWS_|AZURE_|GCP_).*(KEY|SECRET|TOKEN|PASSWORD)', "config_manipulation", "high",
          "Access to sensitive environment variables"),
         (r'(?i)sqlite3\.connect\s*\([^)]*icdev\.db', "config_manipulation", "critical",
-         "Direct access to ICDEV database"),
+         "Direct access to ICDEV™ database"),
         (r'(?i)(base64\.(b64encode|b64decode)|codecs\.(encode|decode))', "obfuscation", "medium",
          "Encoding/decoding that may hide payloads"),
     ]
@@ -980,7 +980,7 @@ def get_scan_summary(version_id, db_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Marketplace Asset Scanner")
+    parser = argparse.ArgumentParser(description="ICDEV™ Marketplace Asset Scanner")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--db-path", type=Path, default=None)
 

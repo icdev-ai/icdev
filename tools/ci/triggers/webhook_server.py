@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
+# ICDEV™ Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
 # Refactored to use EventEnvelope + EventRouter (D132, D133)
 
 """
-Webhook server for ICDEV CI/CD — receives events from GitHub, GitLab,
+Webhook server for ICDEV™ CI/CD — receives events from GitHub, GitLab,
 Slack, and Mattermost.
 
 All incoming webhooks are normalized into EventEnvelope objects and routed
@@ -96,7 +96,7 @@ def _post_ack_comment(envelope: EventEnvelope, result: dict):
         vcs = VCS(platform=envelope.platform)
         vcs.comment_on_issue(
             int(envelope.session_key) if envelope.session_key.isdigit() else envelope.session_key,
-            f"{BOT_IDENTIFIER} ICDEV Webhook: Detected `{workflow}` workflow\n\n"
+            f"{BOT_IDENTIFIER} ICDEV™ Webhook: Detected `{workflow}` workflow\n\n"
             f"Run ID: `{run_id}`\n"
             f"Source: {envelope.source}\n"
             f"Logs: `agents/{run_id}/{workflow}/`"
@@ -338,7 +338,7 @@ def alert_webhook():
 
 if __name__ == "__main__":
     print("CUI // SP-CTI")
-    print(f"Starting ICDEV Webhook Server on port {PORT}")
+    print(f"Starting ICDEV™ Webhook Server on port {PORT}")
     print("  GitHub endpoint:      POST /gh-webhook")
     print("  GitLab endpoint:      POST /gl-webhook")
     slack_cfg = _CHANNEL_CONFIG.get("slack", {})

@@ -48,7 +48,7 @@ class TestGeneratePipeline:
         assert result["platform"] == "github"
         assert result["errors"] == []
         assert "icdev.yml" in result["output_path"]
-        assert "ICDEV Compliance Pipeline" in result["content"]
+        assert "ICDEV™ Compliance Pipeline" in result["content"]
         assert "actions/checkout@v4" in result["content"]
 
     def test_gitlab_minimal(self, tmp_path):

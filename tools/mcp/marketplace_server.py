@@ -17,7 +17,7 @@ Tools:
     openclaw_import  - Import an OpenClaw skill into quarantine
     openclaw_promote - Promote a quarantined import to marketplace
     openclaw_reject  - Reject a quarantined import
-    openclaw_export  - Export an ICDEV skill to OpenClaw format
+    openclaw_export  - Export an ICDEV™ skill to OpenClaw format
     openclaw_list_quarantine - List quarantined imports
     openclaw_list_exports    - List export records
 
@@ -316,7 +316,7 @@ def handle_openclaw_reject(args: dict) -> dict:
 
 
 def handle_openclaw_export(args: dict) -> dict:
-    """Export an ICDEV skill to OpenClaw format."""
+    """Export an ICDEV™ skill to OpenClaw format."""
     try:
         from tools.marketplace.openclaw_bridge import export_skill
         return export_skill(

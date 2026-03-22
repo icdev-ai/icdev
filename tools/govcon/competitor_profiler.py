@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# ICDEV GovCon Competitor Profiler — Phase 59 (D367)
+# ICDEV™ GovCon Competitor Profiler — Phase 59 (D367)
 # Aggregate competitor intelligence from award data.
 
 """
@@ -167,7 +167,7 @@ def compare_vendors(vendor_names):
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV GovCon Competitor Profiler (D367)")
+    parser = argparse.ArgumentParser(description="ICDEV™ GovCon Competitor Profiler (D367)")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--profile", action="store_true", help="Profile a vendor")
     group.add_argument("--leaderboard", action="store_true", help="Vendor leaderboard")

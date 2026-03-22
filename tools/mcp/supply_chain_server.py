@@ -319,7 +319,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "system_name": {"type": "string", "description": "Name of the ATO system boundary"},
                 "ato_status": {"type": "string", "default": "active", "enum": ["active", "conditional", "expired", "pending"], "description": "Current ATO status"},
                 "boundary_definition": {"type": "string", "description": "JSON string defining the boundary (components, networks, data flows)"},
@@ -338,7 +338,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "system_id": {"type": "string", "description": "ATO system boundary ID"},
                 "requirement_id": {"type": "string", "description": "Requirement ID to assess"},
             },
@@ -353,7 +353,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "assessment_id": {"type": "string", "description": "Boundary impact assessment ID (from assess_boundary_impact)"},
             },
             "required": ["project_id", "assessment_id"],
@@ -367,7 +367,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "vendor_name": {"type": "string", "description": "Vendor or supplier name"},
                 "vendor_type": {"type": "string", "default": "software", "enum": ["software", "hardware", "cloud_service", "integrator", "open_source"], "description": "Type of vendor"},
                 "country_of_origin": {"type": "string", "description": "ISO 3166-1 alpha-2 country code (e.g., US, GB, DE)"},
@@ -385,7 +385,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
             },
             "required": ["project_id"],
         },
@@ -398,7 +398,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "component": {"type": "string", "description": "Affected component name"},
                 "impact_type": {"type": "string", "default": "vulnerability", "enum": ["vulnerability", "supply_disruption", "license_change", "eol_notice", "vendor_breach"], "description": "Type of supply chain impact"},
                 "severity": {"type": "string", "default": "high", "enum": ["critical", "high", "medium", "low"], "description": "Impact severity"},
@@ -414,7 +414,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "action": {"type": "string", "enum": ["list", "create", "expiring", "review_due"], "description": "ISA management action"},
                 "source_system": {"type": "string", "description": "Source system name (required for create)"},
                 "target_system": {"type": "string", "description": "Target system name (required for create)"},
@@ -434,7 +434,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "vendor_id": {"type": "string", "description": "Vendor ID (required when aggregate is false)"},
                 "aggregate": {"type": "boolean", "default": False, "description": "If true, assess all vendors for the project"},
             },
@@ -449,7 +449,7 @@ def create_server() -> MCPServer:
         input_schema={
             "type": "object",
             "properties": {
-                "project_id": {"type": "string", "description": "ICDEV project ID"},
+                "project_id": {"type": "string", "description": "ICDEV™ project ID"},
                 "cve_id": {"type": "string", "description": "CVE identifier (e.g., CVE-2024-12345)"},
                 "component": {"type": "string", "description": "Affected component name"},
                 "cvss_score": {"type": "number", "description": "CVSS v3.1 base score (0.0-10.0)"},

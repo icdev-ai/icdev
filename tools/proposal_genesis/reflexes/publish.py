@@ -244,7 +244,7 @@ def _extract_challenge(text: str, agency: str) -> str:
 def _extract_approach(text: str, capabilities: List[str]) -> str:
     """Extract or generate an approach description."""
     if not text:
-        return "ICDEV delivered a comprehensive solution leveraging proven methodologies."
+        return "ICDEV™ delivered a comprehensive solution leveraging proven methodologies."
 
     # Take middle portion of content as approach
     sentences = re.split(r'(?<=[.!?])\s+', text.strip())

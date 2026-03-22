@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Diagrams API Blueprint — serves Mermaid diagram catalog and definitions.
 
 Endpoints:

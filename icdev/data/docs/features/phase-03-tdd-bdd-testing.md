@@ -9,7 +9,7 @@
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 2 (ATLAS Build Workflow) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
@@ -20,7 +20,7 @@ Code without tests is a liability. In government and DoD environments, untested 
 
 Most AI-assisted development workflows generate code first and tests as an afterthought (if at all). This produces tests that merely confirm the implementation rather than defining the contract. The resulting code is brittle, untestable by design, and fails to meet the coverage requirements mandated by DoD quality standards.
 
-ICDEV enforces strict Test-Driven Development (TDD) with the iron rule: **no code is written until a failing test demands it**. This is implemented through a RED-GREEN-REFACTOR cycle where Gherkin/BDD feature files define behavior in business language, pytest test cases provide technical verification, and implementation code is generated as the minimum needed to satisfy the tests. The cycle is logged to an immutable audit trail for compliance traceability.
+ICDEV™ enforces strict Test-Driven Development (TDD) with the iron rule: **no code is written until a failing test demands it**. This is implemented through a RED-GREEN-REFACTOR cycle where Gherkin/BDD feature files define behavior in business language, pytest test cases provide technical verification, and implementation code is generated as the minimum needed to satisfy the tests. The cycle is logged to an immutable audit trail for compliance traceability.
 
 ---
 

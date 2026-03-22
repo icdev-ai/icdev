@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Approval workflow manager for RICOAS integration.
 
 Manages approval workflows for requirements packages, COA selection,
@@ -478,7 +478,7 @@ def list_approvals(session_id, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Approval workflow manager for ICDEV RICOAS"
+        description="Approval workflow manager for ICDEV™ RICOAS"
     )
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 

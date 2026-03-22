@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Seed the ICDEV Playground database with sample data."""
+"""Seed the ICDEV™ Playground database with sample data."""
 import sqlite3
 from tools.db.storage import get_connection
 

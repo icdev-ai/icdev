@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Classification Resolver — single-source API for classification-aware behavior.
 
-All ICDEV tools that need to know the project's classification level should call
+All ICDEV™ tools that need to know the project's classification level should call
 this module instead of hardcoding CUI assumptions. The resolver reads the profile
 from args/classification_profiles.yaml and answers questions like:
 
@@ -122,7 +122,7 @@ def _load_profiles() -> Dict[str, Any]:
 class ClassificationResolver:
     """Resolves classification-level questions for a given project.
 
-    This is the SINGLE SOURCE OF TRUTH for classification behavior across ICDEV.
+    This is the SINGLE SOURCE OF TRUTH for classification behavior across ICDEV™.
     All tools should use this instead of hardcoding CUI/classification checks.
     """
 
@@ -322,7 +322,7 @@ def resolve_classification(level: Optional[str] = None) -> Dict[str, Any]:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="ICDEV Classification Resolver — resolve classification settings"
+        description="ICDEV™ Classification Resolver — resolve classification settings"
     )
     parser.add_argument(
         "--level", help="Classification level to resolve (e.g., public, cui, secret)"

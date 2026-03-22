@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""Step definitions for ICDEV security scanning BDD scenarios."""
+"""Step definitions for ICDEV™ security scanning BDD scenarios."""
 
 import json
 import subprocess

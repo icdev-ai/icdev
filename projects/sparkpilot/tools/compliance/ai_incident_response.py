@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """AI Incident Response — Phase 49.
 
 Tracks AI-specific incidents requiring corrective action. Provides evidence

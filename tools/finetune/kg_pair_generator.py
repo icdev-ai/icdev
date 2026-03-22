@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """KG-to-FT Pair Generator — structured training pairs from knowledge graph (D-KARL-6).
 
 Uses three strategies to generate high-quality Q&A training pairs:

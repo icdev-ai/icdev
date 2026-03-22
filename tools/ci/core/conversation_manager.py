@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Conversation Manager — conversational CI/CD sessions (D135)
+# ICDEV™ Conversation Manager — conversational CI/CD sessions (D135)
 
 """
 Conversational feedback loop for CI/CD sessions.

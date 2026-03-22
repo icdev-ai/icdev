@@ -1,6 +1,6 @@
-# ICDEV CLI Command Reference
+# ICDEV™ CLI Command Reference
 
-Complete CLI command reference for all ICDEV modules. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
+Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
 ---
 
@@ -535,7 +535,7 @@ python tools/forge_studio/blueprint/build_tracker.py --status --blueprint-id "bp
 # Retry queued parent submissions
 python tools/forge_studio/blueprint/build_tracker.py --retry-queued --json
 
-# Parent ICDEV handoff
+# Parent ICDEV™ handoff
 python tools/forge_studio/blueprint/parent_client.py --submit --blueprint-id "bp-xxx" --json
 python tools/forge_studio/blueprint/parent_client.py --poll --blueprint-id "bp-xxx" --json
 python tools/forge_studio/blueprint/parent_client.py --health --json
@@ -783,7 +783,7 @@ helm install icdev deploy/helm/ --set autoscaling.enabled=true
 
 ## Testing Framework (Adapted from ADW)
 ```bash
-# ICDEV platform tests (D155 — 21 test files, ~330+ tests)
+# ICDEV™ platform tests (D155 — 21 test files, ~330+ tests)
 pytest tests/ -v --tb=short                          # Run all platform tests
 pytest tests/test_circuit_breaker.py -v              # Circuit breaker tests
 pytest tests/test_retry.py -v                        # Retry utility tests
@@ -974,10 +974,10 @@ python tools/installer/platform_setup.py --generate helm-values --modules core,l
 
 ---
 
-## ICDEV Commands
+## ICDEV™ Commands
 ```bash
 # Database
-python tools/db/init_icdev_db.py                    # Initialize ICDEV database (391 tables)
+python tools/db/init_icdev_db.py                    # Initialize ICDEV™ database (391 tables)
 
 # Database Migrations (D150)
 python tools/db/migrate.py --status [--json]                      # Show migration status
@@ -1887,7 +1887,7 @@ python tools/marketplace/openclaw_bridge.py --promote --import-id "oci-abc123" -
 # Reject a quarantined import
 python tools/marketplace/openclaw_bridge.py --reject --import-id "oci-abc123" --rejected-by "isso@dod.mil" --reason "Contains eval() calls" --json
 
-# Export an ICDEV skill to OpenClaw format (strips CUI, requires approval)
+# Export an ICDEV™ skill to OpenClaw format (strips CUI, requires approval)
 python tools/marketplace/openclaw_bridge.py --export --asset-id "asset-abc" --version-id "ver-abc" --output-path /path/to/output --exported-by "user@mil" --json
 
 # List pending exports
@@ -2023,7 +2023,7 @@ python tools/redaction/db_scanner.py --scan --table proposal_knowledge_base --js
 python tools/redaction/db_scanner.py --scan --sample-size 50 --json                    # Custom sample size
 python tools/redaction/db_scanner.py --health --json --gate                            # Gate check
 
-# ── ICDEV Studio (Phase 72) ──────────────────────────────────────────────
+# ── ICDEV™ Studio (Phase 72) ──────────────────────────────────────────────
 
 # Studio DB Init — create studio_* tables
 python tools/studio/init_db.py --json                                                  # Init tables (idempotent)

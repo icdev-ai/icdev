@@ -55,7 +55,7 @@ RECOMMENDATION_STATUSES = ("pending", "accepted", "rejected", "implemented")
 # ---------------------------------------------------------------------------
 
 def _get_conn():
-    """Return a connection to the main ICDEV database."""
+    """Return a connection to the main ICDEV™ database."""
     from tools.db.storage import get_connection  # noqa: E402
     return get_connection()
 

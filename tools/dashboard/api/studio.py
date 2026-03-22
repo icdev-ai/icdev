@@ -1,4 +1,4 @@
-"""ICDEV Studio — API Blueprint.
+"""ICDEV™ Studio — API Blueprint.
 
 Self-contained Flask Blueprint for all Studio endpoints.
 Registration in app.py is a single line:

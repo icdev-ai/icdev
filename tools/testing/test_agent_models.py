@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Agent Model Test — Verify Claude Code models work
+# ICDEV™ Agent Model Test — Verify Claude Code models work
 # Adapted from ADW test_agents.py
 
 """

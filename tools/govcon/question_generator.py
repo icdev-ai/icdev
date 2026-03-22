@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """RFP Question Generator — auto-generate strategic questions from RFP analysis.
 
 Analyzes RFP text for ambiguities, gaps, and strategic opportunities using

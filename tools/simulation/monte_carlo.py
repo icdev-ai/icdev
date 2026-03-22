@@ -6,7 +6,7 @@ Uses Python stdlib `random` with Beta-distribution approximation to PERT.
 NO numpy, NO scipy. Supports schedule, cost, and risk dimensions with
 configurable iterations and confidence levels.
 
-Part of the ICDEV RICOAS Phase 20C simulation subsystem.
+Part of the ICDEV™ RICOAS Phase 20C simulation subsystem.
 """
 
 import argparse

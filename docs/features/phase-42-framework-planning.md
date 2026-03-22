@@ -9,14 +9,14 @@
 | Status | Implemented |
 | Priority | P2 |
 | Dependencies | Phase 11 (CI/CD Integration), Phase 3 (TDD Workflow) |
-| Author | ICDEV Architect Agent |
+| Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
 ---
 
 ## 1. Problem Statement
 
-ICDEV supports 6 first-class programming languages (Python, Java, Go, Rust, C#, TypeScript), each with distinct project structures, testing frameworks, SAST tools, linters, formatters, BDD engines, dependency management systems, and container hardening requirements. When a developer initiates a new project, they must manually determine the correct technology stack, configure CI/CD pipeline stages, set up STIG-hardened Dockerfiles, establish CUI marking injection points, and map NIST 800-53 controls — all of which vary significantly per language.
+ICDEV™ supports 6 first-class programming languages (Python, Java, Go, Rust, C#, TypeScript), each with distinct project structures, testing frameworks, SAST tools, linters, formatters, BDD engines, dependency management systems, and container hardening requirements. When a developer initiates a new project, they must manually determine the correct technology stack, configure CI/CD pipeline stages, set up STIG-hardened Dockerfiles, establish CUI marking injection points, and map NIST 800-53 controls — all of which vary significantly per language.
 
 Prior to Phase 42, the `/icdev-init` and `/icdev-build` commands provided language-agnostic scaffolding that required manual customization for each language's ecosystem. This led to inconsistent project setups, missed security scanning steps (e.g., forgetting `gosec` for Go or `cargo-audit` for Rust), and incomplete CI/CD pipeline configurations. The lack of language-specific planning meant that the 12 Leverage Points of Agentic Development framework — which describes the 12 tunable dimensions of agent behavior — was not being fully utilized during project initialization.
 

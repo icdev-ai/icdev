@@ -1,4 +1,4 @@
-"""ICDEV Studio — Case Management Engine.
+"""ICDEV™ Studio — Case Management Engine.
 
 Visual lifecycle designer with finite-state-machine case tracking,
 SLA monitoring, and append-only audit history.
@@ -367,7 +367,7 @@ def get_case_board(type_id: str) -> dict:
 # ── CLI ───────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Studio Case Manager")
+    parser = argparse.ArgumentParser(description="ICDEV™ Studio Case Manager")
     parser.add_argument("--json", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

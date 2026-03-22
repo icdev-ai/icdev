@@ -283,7 +283,7 @@ class RedactionAnonymizer:
 # ---------------------------------------------------------------------------
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Redaction Anonymizer")
+    parser = argparse.ArgumentParser(description="ICDEV™ Redaction Anonymizer")
     parser.add_argument("--anonymize", type=str, help="Anonymize text")
     parser.add_argument("--anonymize-file", type=str, help="Anonymize file contents")
     parser.add_argument("--il", type=str, default="IL4",

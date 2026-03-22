@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Outcome Verifier — tracks auto-resolution PR merge status and failure recurrence (D-EVO-6).
 
 Dual-check verification:

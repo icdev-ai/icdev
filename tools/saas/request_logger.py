@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS -- Request Logger.
+"""ICDEV™ SaaS -- Request Logger.
 
 CUI // SP-CTI
 

@@ -1,5 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Event Router — central routing with lane-aware session queue (D133)
+# ICDEV™ Event Router — central routing with lane-aware session queue (D133)
 
 """
 Central event router for all CI/CD trigger sources.

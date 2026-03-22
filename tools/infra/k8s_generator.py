@@ -520,7 +520,7 @@ def generate_hpa(project_path: str, config: dict = None) -> list:
 # ---------------------------------------------------------------------------
 # Agent Deployments (Phase 19 — per-agent K8s manifests)
 # ---------------------------------------------------------------------------
-# Default agent definitions matching ICDEV multi-agent architecture
+# Default agent definitions matching ICDEV™ multi-agent architecture
 DEFAULT_AGENTS = [
     {"name": "orchestrator", "port": 8443, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
     {"name": "architect", "port": 8444, "cpu_request": "200m", "cpu_limit": "1000m", "mem_request": "256Mi", "mem_limit": "1Gi"},
@@ -539,7 +539,7 @@ DEFAULT_AGENTS = [
 def generate_agent_deployments(project_path: str, blueprint: dict = None) -> list:
     """Generate K8s deployments for each agent (non-root, read-only rootfs).
 
-    Creates a Deployment and Service for each agent in the ICDEV multi-agent
+    Creates a Deployment and Service for each agent in the ICDEV™ multi-agent
     architecture. All containers run as non-root with read-only root filesystem,
     drop ALL capabilities, and enforce security context constraints per STIG.
 

@@ -38,7 +38,7 @@ issue_number: `3`
 run_id: `abc12345`
 
 ## Feature Description
-Add a Kanban board to the ICDEV dashboard for visual task management.
+Add a Kanban board to the ICDEV™ dashboard for visual task management.
 The board displays project tasks organized by status columns.
 
 ## User Story

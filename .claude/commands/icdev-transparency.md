@@ -79,6 +79,6 @@ The final transparency audit produces:
 - D310: Confabulation detector uses deterministic methods only (air-gap safe)
 - D311: Fairness assessor focuses on compliance documentation evidence
 - D312: AI inventory follows OMB M-25-21 schema
-- D313: GAO evidence builder reuses existing ICDEV data
+- D313: GAO evidence builder reuses existing ICDEV™ data
 - D314: AI data category trigger auto-activates all 4 frameworks
 - D315: COSAiS overlay mapping deferred until NIST publishes final spec

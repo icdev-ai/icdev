@@ -1,11 +1,11 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Comment Handler — cross-platform comment/message posting (D132, D136)
+# ICDEV™ Comment Handler — cross-platform comment/message posting (D132, D136)
 
 """
 Unified comment/message posting across GitHub, GitLab, Slack, and Mattermost.
 
 Routes response messages to the correct platform based on the EventEnvelope
-that triggered the workflow. All responses include [ICDEV-BOT] identifier
+that triggered the workflow. All responses include [ICDEV™-BOT] identifier
 for loop prevention.
 
 Architecture Decisions:

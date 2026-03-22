@@ -3,8 +3,8 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Pain Point Extraction for ICDEV Creative Engine — extract pain points from creative signals.
+# POC: ICDEV™ System Administrator
+"""Pain Point Extraction for ICDEV™ Creative Engine — extract pain points from creative signals.
 
 Analyzes creative_signals entries using deterministic keyword matching and sentiment
 analysis to identify, classify, and cluster customer pain points. No LLM required.
@@ -1070,7 +1070,7 @@ def list_pain_points(category=None, severity=None, limit=50, db_path=None):
 # =========================================================================
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Pain Point Extractor — extract pain points "
+        description="ICDEV™ Pain Point Extractor — extract pain points "
         "from creative signals using deterministic keyword/sentiment analysis"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")

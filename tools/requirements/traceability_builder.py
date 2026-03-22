@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Full RTM (Requirements Traceability Matrix) builder.
 
 Builds complete traceability chains:
@@ -181,7 +181,7 @@ def build_rtm(project_id, session_id=None, db_path=None):
     Results are stored in review_traceability table.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         session_id: Optional session filter.
         db_path: Override database path.
 
@@ -436,7 +436,7 @@ def gap_analysis(project_id, db_path=None):
     and identifies all gaps with their severity.
 
     Args:
-        project_id: ICDEV project identifier.
+        project_id: ICDEV™ project identifier.
         db_path: Override database path.
 
     Returns:
@@ -529,9 +529,9 @@ def gap_analysis(project_id, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Requirements Traceability Matrix builder for ICDEV RICOAS"
+        description="Requirements Traceability Matrix builder for ICDEV™ RICOAS"
     )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
 
     # Actions

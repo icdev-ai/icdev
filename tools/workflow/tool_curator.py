@@ -156,7 +156,7 @@ def list_goals(config: Dict[str, Any] = None) -> List[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Tool Curation Enforcement — phase-level tool restriction"
+        description="ICDEV™ Tool Curation Enforcement — phase-level tool restriction"
     )
     parser.add_argument("--goal", help="Goal name")
     parser.add_argument("--phase", help="Phase/step within the goal")

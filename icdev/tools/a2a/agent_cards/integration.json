@@ -1,5 +1,5 @@
 {
-  "name": "ICDEV Integration",
+  "name": "ICDEV™ Integration",
   "description": "Bidirectional Jira/ServiceNow/GitLab sync, DOORS NG ReqIF export, approval workflows, RTM traceability.",
   "url": "https://localhost:8456",
   "version": "1.0.0",

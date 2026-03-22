@@ -35,7 +35,7 @@ Modernize legacy DoD applications using the 7 Rs of Cloud Migration Strategy. Pr
 
 ## Prerequisites
 
-- [ ] ICDEV project initialized (`/icdev-init` or `goals/init_project.md` completed)
+- [ ] ICDEV™ project initialized (`/icdev-init` or `goals/init_project.md` completed)
 - [ ] Legacy source code accessible at a known path on the filesystem
 - [ ] Project defaults configured (`args/project_defaults.yaml`)
 - [ ] `memory/MEMORY.md` loaded (session context)

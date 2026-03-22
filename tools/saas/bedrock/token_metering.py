@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Bedrock Token Metering.
+"""ICDEV™ SaaS Phase 5 -- Bedrock Token Metering.
 
 CUI // SP-CTI
 
@@ -280,7 +280,7 @@ def check_token_budget(tenant_id: str) -> dict:
 def main():
     """CLI entry point for token metering queries."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Bedrock Token Metering",
+        description="CUI // SP-CTI -- ICDEV™ Bedrock Token Metering",
     )
     parser.add_argument("--tenant-id", required=True,
                         help="Target tenant ID")

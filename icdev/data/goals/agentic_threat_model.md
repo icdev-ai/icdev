@@ -6,9 +6,9 @@
 
 ## Purpose
 
-Formal threat model mapping OWASP Agentic AI threats (T1-T17) and Microsoft STRIDE categories to ICDEV's 15 agents, 14 MCP servers, and A2A protocol. This document identifies existing mitigations already implemented across ICDEV's 43+ phases, quantifies residual risk per threat, and specifies gaps to be addressed in Phase 45 (Agentic Security Hardening).
+Formal threat model mapping OWASP Agentic AI threats (T1-T17) and Microsoft STRIDE categories to ICDEV™'s 15 agents, 14 MCP servers, and A2A protocol. This document identifies existing mitigations already implemented across ICDEV™'s 43+ phases, quantifies residual risk per threat, and specifies gaps to be addressed in Phase 45 (Agentic Security Hardening).
 
-**Why this matters:** ICDEV is a 15-agent, multi-tier agentic system where autonomous agents route tasks, generate code, execute compliance workflows, and self-heal. Traditional application threat models do not account for agent-specific attack surfaces: memory poisoning, tool chain manipulation, cascading hallucination amplification, inter-agent trust exploitation, and human-in-the-loop fatigue attacks. OWASP's Agentic AI threat taxonomy (T1-T17) provides the definitive enumeration; this goal operationalizes it against ICDEV's concrete architecture.
+**Why this matters:** ICDEV™ is a 15-agent, multi-tier agentic system where autonomous agents route tasks, generate code, execute compliance workflows, and self-heal. Traditional application threat models do not account for agent-specific attack surfaces: memory poisoning, tool chain manipulation, cascading hallucination amplification, inter-agent trust exploitation, and human-in-the-loop fatigue attacks. OWASP's Agentic AI threat taxonomy (T1-T17) provides the definitive enumeration; this goal operationalizes it against ICDEV™'s concrete architecture.
 
 ---
 
@@ -26,7 +26,7 @@ Formal threat model mapping OWASP Agentic AI threats (T1-T17) and Microsoft STRI
 
 ## Prerequisites
 
-- [ ] ICDEV database initialized (`python tools/db/init_icdev_db.py`)
+- [ ] ICDEV™ database initialized (`python tools/db/init_icdev_db.py`)
 - [ ] Agent authority matrix configured: `args/agent_authority.yaml`
 - [ ] Security gates configured: `args/security_gates.yaml` (atlas_ai, prompt_injection, remote_command sections)
 - [ ] Prompt injection detector operational: `tools/security/prompt_injection_detector.py`
@@ -108,7 +108,7 @@ Formal threat model mapping OWASP Agentic AI threats (T1-T17) and Microsoft STRI
 
 ## OWASP Agentic AI Threat Mapping (T1-T17)
 
-| ID | Threat Name | Affected ICDEV Components | Existing Mitigations | Residual Risk | Phase 45 Gap |
+| ID | Threat Name | Affected ICDEV™ Components | Existing Mitigations | Residual Risk | Phase 45 Gap |
 |----|-------------|---------------------------|----------------------|---------------|--------------|
 | T01 | Memory Poisoning | Memory system (`memory/`), Knowledge agent, `memory_write.py`, `memory.db` | HMAC signing (D31); append-only storage (D6); time-decay ranking (D168); hybrid search with BM25 (not purely embedding-based) | **Medium** | Gap 1: No behavioral drift detection on memory entries; no anomaly scoring on write patterns |
 | T02 | Tool Misuse | Builder (code gen), Infrastructure (Terraform), all 14 MCP servers | `pre_tool_use.py` hook with deny patterns; Security agent hard veto (D42); SAST gates; read-only rootfs; drop ALL capabilities | **Low** | Gap 2: No multi-step tool chain validation; individual calls checked but sequences are not |

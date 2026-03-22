@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 # Autoresearch Experiment Program — Code Quality Domain
 #
-# Optimizes maintainability score across the ICDEV codebase.
+# Optimizes maintainability score across the ICDEV™ codebase.
 # Modifies tool implementations to reduce complexity, smells, and coupling.
 
 domain: code_quality

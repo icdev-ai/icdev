@@ -1,9 +1,9 @@
 # [TEMPLATE: CUI // SP-CTI]
-# ICDEV Patch — Quick fix workflow for single-issue patches
+# ICDEV™ Patch — Quick fix workflow for single-issue patches
 # Adapted from ADW adw_patch.py with dual platform support
 
 """
-ICDEV Patch — Create and implement a focused patch from issue content.
+ICDEV™ Patch — Create and implement a focused patch from issue content.
 
 Usage:
     python tools/ci/workflows/icdev_patch.py <issue-number> [run-id]
@@ -77,7 +77,7 @@ def main():
     run_id = ensure_run_id(issue_number, run_id)
     state = ICDevState.load(run_id)
     logger = setup_logger(run_id, "icdev_patch")
-    logger.info(f"ICDEV Patch starting — run_id: {run_id}, issue: #{issue_number}")
+    logger.info(f"ICDEV™ Patch starting — run_id: {run_id}, issue: #{issue_number}")
 
     try:
         vcs = VCS()

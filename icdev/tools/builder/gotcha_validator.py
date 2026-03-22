@@ -3,12 +3,12 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """GOTCHA Framework Compliance Validator.
 
 Validates that a project directory conforms to the 6-layer GOTCHA framework
 and ATLAS workflow structure. Designed to run post-generation on child apps
-or standalone against any ICDEV-compatible project.
+or standalone against any ICDEV™-compatible project.
 
 The 6 GOTCHA layers:
   1. Goals       — goals/ with manifest + workflow files
@@ -606,7 +606,7 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
             status="warn",
             expected="goals/build_app.md with ATLAS workflow definition",
             actual="Not found",
-            fix_suggestion="Copy build_app.md from ICDEV or create ATLAS workflow documentation",
+            fix_suggestion="Copy build_app.md from ICDEV™ or create ATLAS workflow documentation",
             message="ATLAS workflow missing — no goals/build_app.md",
         ))
 

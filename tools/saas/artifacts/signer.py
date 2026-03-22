@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Artifact Signer.
+"""ICDEV™ SaaS Phase 5 -- Artifact Signer.
 
 CUI // SP-CTI
 
@@ -245,7 +245,7 @@ def verify_signature(file_path: str, signature_b64: str,
 def main():
     """CLI entry point for artifact hashing and signing."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Artifact Signer",
+        description="CUI // SP-CTI -- ICDEV™ Artifact Signer",
     )
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--hash", dest="hash_file", type=str,

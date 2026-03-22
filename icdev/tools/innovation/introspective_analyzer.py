@@ -3,16 +3,16 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
-"""Introspective Analyzer — Internal Telemetry Mining for ICDEV self-improvement.
+# POC: ICDEV™ System Administrator
+"""Introspective Analyzer — Internal Telemetry Mining for ICDEV™ self-improvement.
 
-Mines ICDEV's own internal telemetry (audit trail, self-healing history, NLQ queries,
+Mines ICDEV™'s own internal telemetry (audit trail, self-healing history, NLQ queries,
 knowledge base, pipeline events) to discover self-improvement opportunities. Looks
 INWARD rather than outward — produces innovation signals with source='introspective'
 that flow through the same scoring -> triage -> solution pipeline as web signals.
 
 7 Introspective analyses:
-    1. Failed Self-Heals    — Problems ICDEV can't solve yet (confidence < 0.3)
+    1. Failed Self-Heals    — Problems ICDEV™ can't solve yet (confidence < 0.3)
     2. Gate Failure Frequency — Gates that fail >= N times in last 30 days
     3. Unused Tools          — Tools with 0 invocations in last 90 days
     4. Slow Pipeline Stages  — Build/test/deploy stages exceeding time threshold
@@ -680,7 +680,7 @@ def analyze_all(db_path=None, **kw):
 # ---- CLI ----
 def main():
     parser = argparse.ArgumentParser(
-        description="ICDEV Introspective Analyzer — internal telemetry mining for self-improvement")
+        description="ICDEV™ Introspective Analyzer — internal telemetry mining for self-improvement")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--db-path", type=Path, default=None, help="Database path override")
 
@@ -736,7 +736,7 @@ def _print_human(result):
     if "analyses" in result:
         totals = result.get("totals", {})
         print("=" * 60)
-        print("  ICDEV Introspective Analysis")
+        print("  ICDEV™ Introspective Analysis")
         print(f"  Time: {result.get('analysis_time', '')}")
         print(f"  Run: {totals.get('analyses_run', 0)}  Skipped: {totals.get('analyses_skipped', 0)}")
         print(f"  Findings: {totals.get('total_findings', 0)}  Signals: {totals.get('signals_stored', 0)}")

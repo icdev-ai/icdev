@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV SaaS Phase 5 -- Bedrock LLM Proxy.
+"""ICDEV™ SaaS Phase 5 -- Bedrock LLM Proxy.
 
 CUI // SP-CTI
 
 Proxy layer for Amazon Bedrock model invocations.  Routes LLM calls to
 either the tenant's own AWS account (BYOK / Bring Your Own Key) or the
-ICDEV shared Bedrock pool, based on the tenant's ``bedrock_config`` in
+ICDEV™ shared Bedrock pool, based on the tenant's ``bedrock_config`` in
 platform.db.
 
 Credential modes:
   - **BYOK**:   STS assume-role into the tenant's AWS account using the
                  role ARN stored in ``bedrock_config.credentials_secret``.
-  - **Shared**: Uses ICDEV pool credentials from environment variables
+  - **Shared**: Uses ICDEV™ pool credentials from environment variables
                  ``BEDROCK_ACCESS_KEY_ID`` and ``BEDROCK_SECRET_ACCESS_KEY``.
 
 All invocations are metered via ``token_metering.record_token_usage()``
@@ -231,7 +231,7 @@ def _build_byok_client(config: dict, region: str):
 
 
 def _build_shared_client(region: str):
-    """Build Bedrock client using ICDEV shared pool credentials."""
+    """Build Bedrock client using ICDEV™ shared pool credentials."""
     kwargs = {"region_name": region}
     if SHARED_POOL_ACCESS_KEY and SHARED_POOL_SECRET_KEY:
         kwargs["aws_access_key_id"] = SHARED_POOL_ACCESS_KEY
@@ -468,7 +468,7 @@ def invoke_model(tenant_id: str, model_id: str = None,
 def main():
     """CLI entry point for Bedrock proxy."""
     parser = argparse.ArgumentParser(
-        description="CUI // SP-CTI -- ICDEV Bedrock LLM Proxy",
+        description="CUI // SP-CTI -- ICDEV™ Bedrock LLM Proxy",
     )
     parser.add_argument("--tenant-id", required=True,
                         help="Target tenant ID")

@@ -1,5 +1,5 @@
 /**
- * ICDEV Studio — NL App Builder
+ * ICDEV™ Studio — NL App Builder
  * "Describe what you want → get a working app"
  */
 
@@ -254,7 +254,7 @@ const AppBuilder = (() => {
     $('ab-status').textContent = 'Building...';
     $('ab-status').className = 'studio-badge studio-badge--warning';
 
-    addMessage('Starting build process... This will create a full ICDEV child application with all selected capabilities.', 'system');
+    addMessage('Starting build process... This will create a full ICDEV™ child application with all selected capabilities.', 'system');
 
     try {
       const resp = await fetch(`/api/studio/app-builder/sessions/${sessionId}/build`, {

@@ -138,7 +138,7 @@ class TestCatchAllAsICDevError:
         (ConfigurationError, {"message": "config"}),
     ])
     def test_all_catchable_as_icdev_error(self, error_class, kwargs):
-        """All ICDEV errors must be catchable via except ICDevError."""
+        """All ICDEV™ errors must be catchable via except ICDevError."""
         err = error_class(**kwargs)
         with pytest.raises(ICDevError):
             raise err

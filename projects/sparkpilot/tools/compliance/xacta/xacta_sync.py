@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Xacta 360 sync orchestrator — coordinates data flow between ICDEV and Xacta.
+"""Xacta 360 sync orchestrator — coordinates data flow between ICDEV™ and Xacta.
 
 Supports three modes:
     - api: Push data directly via Xacta 360 REST API
@@ -206,10 +206,10 @@ def _sync_via_export(project_id, output_dir=None, db_path=None):
 
 
 def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
-    """Orchestrate full sync between ICDEV and Xacta 360.
+    """Orchestrate full sync between ICDEV™ and Xacta 360.
 
     Args:
-        project_id: ICDEV project ID
+        project_id: ICDEV™ project ID
         mode: Sync mode — "api", "export", or "hybrid"
         output_dir: Output directory for export mode
         db_path: Database path
@@ -307,9 +307,9 @@ def sync_to_xacta(project_id, mode="hybrid", output_dir=None, db_path=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Sync ICDEV compliance data to Xacta 360"
+        description="Sync ICDEV™ compliance data to Xacta 360"
     )
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument(
         "--mode", default="hybrid", choices=["api", "export", "hybrid"],
         help="Sync mode (default: hybrid — try API, fall back to export)"

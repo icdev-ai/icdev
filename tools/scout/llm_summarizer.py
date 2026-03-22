@@ -26,10 +26,10 @@ def _build_prompt(findings: List[dict]) -> str:
         sections[pillar].append(f)
 
     prompt_parts = [
-        "You are an AI DevOps analyst reviewing daily Scout scan results for ICDEV, "
+        "You are an AI DevOps analyst reviewing daily Scout scan results for ICDEV™, "
         "an Intelligent Certified Development platform for Gov/DoD applications.\n\n"
         "Summarize the key findings below in 2-3 paragraphs. Focus on:\n"
-        "1. The most impactful discovery for improving ICDEV\n"
+        "1. The most impactful discovery for improving ICDEV™\n"
         "2. Emerging trends worth watching\n"
         "3. Specific actionable recommendations\n\n"
         "Be concise and direct. No fluff.\n\n"

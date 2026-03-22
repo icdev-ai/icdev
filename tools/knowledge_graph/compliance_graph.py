@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Compliance Framework Crosswalk Knowledge Graph.
 
 Models NIST 800-53 crosswalk data as a knowledge graph with nodes for

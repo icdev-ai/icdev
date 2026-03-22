@@ -259,7 +259,7 @@ def scaffold_python_webapp(project_dir: Path, project_name: str, classification:
     # src/__init__.py
     write_file(
         project_dir / "src" / slug / "__init__.py",
-        f'"""ICDEV Project: {project_name}"""\n\n__version__ = "0.1.0"\n',
+        f'"""ICDEV™ Project: {project_name}"""\n\n__version__ = "0.1.0"\n',
         classification,
     )
     created.append(str(project_dir / "src" / slug / "__init__.py"))
@@ -403,7 +403,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 [project]
 name = "{slug}"
 version = "0.1.0"
-description = "{project_name} - ICDEV managed project"
+description = "{project_name} - ICDEV™ managed project"
 requires-python = ">=3.11"
 dependencies = [
     "flask>=3.0",
@@ -438,7 +438,7 @@ exclude_dirs = ["tests", ".venv"]
     # Dockerfile (STIG-hardened base)
     dockerfile_content = f"""FROM python:3.11-slim AS base
 
-LABEL maintainer="ICDEV System"
+LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"
 
 # STIG: V-222656 - Remove unnecessary packages
@@ -545,7 +545,7 @@ compliance-check:
   stage: compliance
   image: python:3.11-slim
   script:
-    - echo "Compliance checks run by ICDEV compliance engine"
+    - echo "Compliance checks run by ICDEV™ compliance engine"
     - echo "Classification: {classification}"
   allow_failure: true
 
@@ -664,7 +664,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 [project]
 name = "{slug}"
 version = "0.1.0"
-description = "{project_name} microservice - ICDEV managed"
+description = "{project_name} microservice - ICDEV™ managed"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.104",
@@ -717,7 +717,7 @@ async def async_client():
     # Dockerfile
     dockerfile_content = f"""FROM python:3.11-slim AS base
 
-LABEL maintainer="ICDEV System"
+LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"
 
 RUN apt-get update && \\
@@ -875,7 +875,7 @@ import click
 @click.group()
 @click.version_option(version="0.1.0")
 def cli():
-    """{project_name} - ICDEV managed CLI tool."""
+    """{project_name} - ICDEV™ managed CLI tool."""
     pass
 
 
@@ -901,7 +901,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 [project]
 name = "{slug}"
 version = "0.1.0"
-description = "{project_name} CLI tool - ICDEV managed"
+description = "{project_name} CLI tool - ICDEV™ managed"
 requires-python = ">=3.11"
 dependencies = [
     "click>=8.1",
@@ -946,7 +946,7 @@ def runner():
     # Dockerfile
     dockerfile_content = f"""FROM python:3.11-slim
 
-LABEL maintainer="ICDEV System"
+LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"
 
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
@@ -1100,7 +1100,7 @@ build-backend = "setuptools.backends._legacy:_Backend"
 [project]
 name = "{slug}"
 version = "0.1.0"
-description = "{project_name} data pipeline - ICDEV managed"
+description = "{project_name} data pipeline - ICDEV™ managed"
 requires-python = ">=3.11"
 dependencies = [
     "pandas>=2.1",
@@ -1140,7 +1140,7 @@ def pipeline():
     # Dockerfile
     dockerfile_content = f"""FROM python:3.11-slim
 
-LABEL maintainer="ICDEV System"
+LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"
 
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser
@@ -1250,7 +1250,7 @@ provider "aws" {{
       Environment    = var.environment
       Classification = "{classification}"
       ManagedBy      = "terraform"
-      Owner          = "ICDEV"
+      Owner          = "ICDEV™"
     }}
   }}
 }}
@@ -1428,7 +1428,7 @@ def scaffold_js_frontend(project_dir: Path, project_name: str, classification: s
         "name": slug,
         "version": "0.1.0",
         "private": True,
-        "description": f"{project_name} - ICDEV managed frontend",
+        "description": f"{project_name} - ICDEV™ managed frontend",
         "scripts": {
             "dev": "vite",
             "build": "tsc && vite build",
@@ -1529,7 +1529,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     # Dockerfile
     dockerfile_content = f"""FROM node:20-slim AS build
 
-LABEL maintainer="ICDEV System"
+LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"
 
 WORKDIR /app

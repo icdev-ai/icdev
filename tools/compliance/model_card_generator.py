@@ -3,7 +3,7 @@
 # Controlled by: Department of Defense
 # CUI Category: CTI
 # Distribution: D
-# POC: ICDEV System Administrator
+# POC: ICDEV™ System Administrator
 """Model Card Generator — OMB M-26-04 compliant model documentation.
 
 Generates model cards per OMB M-26-04 / Google Model Cards template
@@ -161,11 +161,11 @@ def generate_model_card(
             },
             "training_data": {
                 "description": training_data,
-                "known_limitations": "Model training data is managed by the AI provider. ICDEV does not fine-tune models.",
+                "known_limitations": "Model training data is managed by the AI provider. ICDEV™ does not fine-tune models.",
                 "data_privacy": "No customer data used for training. All interactions are inference-only.",
             },
             "ethical_considerations": {
-                "description": ethical_considerations or "Model is used within ICDEV's compliance framework with human oversight, audit trails, and appeal processes per OMB M-25-21 and M-26-04.",
+                "description": ethical_considerations or "Model is used within ICDEV™'s compliance framework with human oversight, audit trails, and appeal processes per OMB M-25-21 and M-26-04.",
                 "risks": [
                     "Confabulation — mitigated by output validation and human review",
                     "Bias — mitigated by fairness assessments and disparity analysis",
@@ -184,7 +184,7 @@ def generate_model_card(
                 "known_limitations": [
                     "May generate plausible but incorrect information (confabulation)",
                     "Performance varies by domain and prompt quality",
-                    "Third-party model — ICDEV cannot guarantee model behavior changes across versions",
+                    "Third-party model — ICDEV™ cannot guarantee model behavior changes across versions",
                 ],
             },
         }

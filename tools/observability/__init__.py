@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Observability — Pluggable distributed tracing (D280).
+"""ICDEV™ Observability — Pluggable distributed tracing (D280).
 
 Provides a Haystack-style ProxyTracer with three backends:
   - OTelTracer   (production, requires opentelemetry-sdk)

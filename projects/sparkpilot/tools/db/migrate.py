@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ICDEV Database Migration CLI.
+"""ICDEV™ Database Migration CLI.
 
 D150: Lightweight migration runner — apply, rollback, validate, scaffold.
 
@@ -65,7 +65,7 @@ def _get_tenant_db_paths() -> list:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ICDEV Database Migration Tool")
+    parser = argparse.ArgumentParser(description="ICDEV™ Database Migration Tool")
     parser.add_argument("--db-path", type=Path, default=DB_PATH, help="Database file path")
     parser.add_argument("--status", action="store_true", help="Show migration status")
     parser.add_argument("--up", action="store_true", help="Apply pending migrations")

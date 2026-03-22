@@ -11,7 +11,7 @@ Assess applications against **CISA Secure by Design** commitments and **IEEE 101
 - IEEE 1012-2016 (V&V Standard)
 - NIST 800-53 Rev 5 SA-24 (Cyber Resiliency by Design)
 
-**Why this matters:** SbD ensures security is an architectural decision, not an afterthought. IV&V provides independent assurance that systems work correctly and securely. Together they are the 7th and 8th components of the ICDEV compliance scoring system.
+**Why this matters:** SbD ensures security is an architectural decision, not an afterthought. IV&V provides independent assurance that systems work correctly and securely. Together they are the 7th and 8th components of the ICDEV™ compliance scoring system.
 
 ---
 

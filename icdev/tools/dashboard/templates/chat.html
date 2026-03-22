@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Chat — ICDEV Dashboard{% endblock %}
+{% block title %}Chat — ICDEV™ Dashboard{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -129,7 +129,7 @@
                 <h4 style="margin: 8px 0; font-size: 0.85rem;">Elicitation Techniques</h4>
                 <div id="technique-active" class="technique-active-banner" style="display:none;">
                     <span id="technique-active-name"></span>
-                    <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
+                    <button class="technique-deactivate-btn" onclick="ICDEV™.chatDeactivateTechnique()" title="Deactivate">&times;</button>
                 </div>
                 <div id="technique-chips" class="technique-chips"></div>
             </div>
@@ -148,18 +148,18 @@
             </div>
 
             <div id="chat-actions" style="margin-top: 12px;">
-                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none; width:100%; font-size: 0.85rem;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
-                <button class="btn btn-secondary" id="export-btn" style="width:100%; margin-top:8px; display:none; font-size: 0.85rem;" onclick="ICDEV.chatExport()">Export Requirements</button>
+                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none; width:100%; font-size: 0.85rem;" onclick="ICDEV™.chatGeneratePlan()">Generate Plan &#x2192;</button>
+                <button class="btn btn-secondary" id="export-btn" style="width:100%; margin-top:8px; display:none; font-size: 0.85rem;" onclick="ICDEV™.chatExport()">Export Requirements</button>
             </div>
 
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
                 <h4 style="margin: 8px 0; font-size: 0.85rem;">What's next?</h4>
-                <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
-                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
-                <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>
+                <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatTriggerBuild()">Generate Application</button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatViewRequirements()">View Requirements</button>
+                <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
+                <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="ICDEV™.chatValidatePRD()">&#x2714; Validate PRD</button>
             </div>
 
             <!-- Build Pipeline -->
@@ -168,8 +168,8 @@
                 <div id="build-pipeline-phases" class="build-pipeline"></div>
                 <div id="build-pipeline-status" class="build-pipeline-status"></div>
                 <div id="build-done-actions" class="build-done-actions" style="display:none;">
-                    <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatViewProject()">View Project</button>
-                    <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV.chatRunTests()">Run Tests</button>
+                    <button class="btn btn-primary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatViewProject()">View Project</button>
+                    <button class="btn btn-secondary" style="width:100%; margin-bottom:6px; font-size: 0.8rem;" onclick="ICDEV™.chatRunTests()">Run Tests</button>
                     <button class="btn btn-secondary" style="width:100%; font-size: 0.8rem;" onclick="window.open('/events','_blank')">View Events</button>
                 </div>
             </div>

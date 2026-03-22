@@ -4,7 +4,7 @@
 
 Adapted from LeanStral's FLTEval pattern (Mistral AI, 2026-03-16).
 Just as FLTEval measures formal proof quality, GovEval measures compliance
-code generation quality across ICDEV's compliance domains.
+code generation quality across ICDEV™'s compliance domains.
 
 100% deterministic, air-gap safe. No LLM required for evaluation.
 Optional LLM-as-judge mode for subjective quality scoring.
@@ -605,7 +605,7 @@ def compare_models(
 
 def main():
     parser = argparse.ArgumentParser(description="GovEval Benchmark (LeanStral FLTEval-adapted)")
-    parser.add_argument("--project-id", required=True, help="ICDEV project ID")
+    parser.add_argument("--project-id", required=True, help="ICDEV™ project ID")
     parser.add_argument("--dimension", default="", help="Specific dimension to evaluate")
     parser.add_argument("--model-label", default="", help="Model label for comparison tracking")
     parser.add_argument("--trend", action="store_true", help="Show score trend")

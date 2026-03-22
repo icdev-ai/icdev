@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-"""Tests for ICDEV SaaS RBAC (tools/saas/auth/rbac.py).
+"""Tests for ICDEV™ SaaS RBAC (tools/saas/auth/rbac.py).
 
 Validates the 5-role permission matrix, endpoint-to-category mapping,
 OWN permission logic, and the require_permission convenience function.

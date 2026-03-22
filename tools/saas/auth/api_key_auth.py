@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ICDEV SaaS — API Key Authentication.
+"""ICDEV™ SaaS — API Key Authentication.
 CUI // SP-CTI
 """
 import hashlib
