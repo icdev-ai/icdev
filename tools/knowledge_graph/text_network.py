@@ -72,6 +72,8 @@ RELATIONSHIP_TYPES = (
     "SUPPLIES_TO", "CUSTOMER_OF", "COMPETES_WITH",
     "MEMBER_OF_SECTOR", "EXPOSED_TO_COMMODITY", "LED_BY",
     "TRACKS_INDEX", "CORRELATED_WITH", "MACRO_SENSITIVE_TO",
+    # Cascade analysis relationship types
+    "REQUIRES_RESOURCE", "CONSTRAINED_BY", "ENABLES", "DISPLACES",
 )
 
 # Verb phrase -> relationship type mapping
@@ -117,6 +119,19 @@ VERB_MAP = {
     "ceo of":         "LED_BY",
     "tracks":         "TRACKS_INDEX",
     "correlated with": "CORRELATED_WITH",
+    # Cascade verbs
+    "requires":         "REQUIRES_RESOURCE",
+    "needs":            "REQUIRES_RESOURCE",
+    "consumes":         "REQUIRES_RESOURCE",
+    "constrained by":   "CONSTRAINED_BY",
+    "limited by":       "CONSTRAINED_BY",
+    "bottlenecked by":  "CONSTRAINED_BY",
+    "enables":          "ENABLES",
+    "drives demand for": "ENABLES",
+    "creates demand for": "ENABLES",
+    "displaces":        "DISPLACES",
+    "crowds out":       "DISPLACES",
+    "reduces demand for": "DISPLACES",
 }
 
 # =========================================================================
