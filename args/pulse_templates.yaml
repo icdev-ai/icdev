@@ -124,6 +124,9 @@ templates:
         - slug: agentic-engineering
           name: "Agentic Engineering"
           keywords: ["agentic coding", "autonomous development", "systems that build systems", "GOTCHA", "ATLAS", "AI engineering", "self-assembling software", "code generation", "TDD", "architecture"]
+        - slug: market-intelligence
+          name: "Market Intelligence"
+          keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals", "alpha", "bull", "bear", "stocks", "forex", "sentiment"]
 
   feature_spotlight:
     name: "Feature Spotlight"
@@ -260,6 +263,84 @@ templates:
         - slug: engineering
           name: "Engineering"
           keywords: ["architecture", "code quality", "testing", "TDD", "MBSE", "digital thread"]
+        - slug: market-intelligence
+          name: "Market Intelligence"
+          keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals", "alpha", "bull", "bear", "stocks", "forex", "sentiment"]
+
+  market_analysis:
+    name: "Market Analysis Report"
+    description: >
+      AI-generated trading analysis combining fundamental, technical,
+      sentiment, and news analysis with multi-agent bull/bear debate synthesis.
+      Published by AlphaDesk trading intelligence platform.
+    word_count_min: 2000
+    word_count_max: 3000
+    tone: "analytical-professional"
+    youtube_videos: 0
+    sections:
+      - id: executive_summary
+        heading: "Executive Summary"
+        word_target: 200
+        instructions: >
+          Dense summary: ticker, direction, conviction level, key catalysts.
+        required: true
+      - id: market_context
+        heading: "Market Context"
+        word_target: 300
+        instructions: >
+          Current market conditions, sector performance, macro backdrop.
+        required: true
+      - id: analysis_findings
+        heading: "Analysis Findings"
+        word_target: 600
+        instructions: >
+          Fundamental, technical, sentiment, and news analysis results.
+          Include key metrics (P/E, RSI, sentiment score).
+        required: true
+        repeatable: true
+      - id: bull_bear_debate
+        heading: "Bull vs Bear Debate"
+        word_target: 400
+        instructions: >
+          Summarize the multi-agent debate: bull thesis, bear thesis,
+          key counterarguments, and consensus outcome.
+        required: true
+      - id: trade_recommendation
+        heading: "Trade Recommendation"
+        word_target: 200
+        instructions: >
+          Signal direction, entry price, stop loss, target, position sizing.
+        required: true
+      - id: risk_factors
+        heading: "Risk Factors"
+        word_target: 200
+        instructions: >
+          Key risks: earnings, macro events, sector rotation, liquidity.
+        required: true
+      - id: disclaimer
+        heading: "Disclaimer"
+        word_target: 100
+        instructions: >
+          Standard financial disclaimer: not investment advice, paper trading only,
+          past performance does not guarantee future results.
+        required: true
+    seo:
+      title_format: "{ticker} Analysis: {direction} Signal — AlphaDesk"
+      meta_description_format: >
+        Multi-agent AI analysis of {ticker}: fundamental, technical, sentiment
+        analysis with bull/bear debate. Signal: {direction}.
+      keyword_strategy: "ticker + analysis type + signal direction"
+      schema_type: "Article"
+      og_type: "article"
+    categories:
+      primary_rules: >
+        Always assign "Market Intelligence" as primary category.
+      secondary_rules: >
+        Optionally assign "AI & Automation" as secondary.
+      available:
+        - slug: market-intelligence
+          name: "Market Intelligence"
+          keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals"]
 
 # Shared configuration
 defaults:
