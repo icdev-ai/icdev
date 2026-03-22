@@ -106,3 +106,13 @@ data/pgdata/
 marketplace-saas/
 intaas-frontend/
 intaas-saas/
+
+# AlphaDesk — Marketplace module, not part of ICDEV core
+apps/alphadesk/
+tools/trading/
+args/trading_config.yaml
+args/trading_daemon_config.yaml
+args/llm_config_trading.yaml
+data/alphadesk.db
+data/alphadesk.db-shm
+data/alphadesk.db-wal
