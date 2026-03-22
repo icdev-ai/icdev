@@ -216,6 +216,47 @@ def run_smoke_test(quick: bool = False, verbose: bool = False) -> dict:
             if help_result["passed"]:
                 if verbose:
                     print(f"  PASS  --help      {rel}")
+
+                # Output validation: if tool supports --json, verify it produces valid JSON
+                help_text = ""
+                try:
+                    env_h = os.environ.copy()
+                    env_h["PYTHONPATH"] = str(PROJECT_ROOT) + os.pathsep + env_h.get("PYTHONPATH", "")
+                    h_res = subprocess.run(
+                        [sys.executable, str(filepath), "--help"],
+                        capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
+                        stdin=subprocess.DEVNULL, env=env_h,
+                    )
+                    help_text = h_res.stdout
+                except Exception:
+                    pass
+
+                if not quick and "--json" in help_text:
+                    try:
+                        env_j = os.environ.copy()
+                        env_j["PYTHONPATH"] = str(PROJECT_ROOT) + os.pathsep + env_j.get("PYTHONPATH", "")
+                        json_result = subprocess.run(
+                            [sys.executable, str(filepath), "--json"],
+                            capture_output=True, text=True, timeout=10,
+                            stdin=subprocess.DEVNULL, env=env_j,
+                        )
+                        if json_result.returncode == 0 and json_result.stdout.strip():
+                            try:
+                                json.loads(json_result.stdout)
+                            except json.JSONDecodeError:
+                                results.append({
+                                    "check": "json_output",
+                                    "file": str(filepath.relative_to(PROJECT_ROOT)),
+                                    "passed": False,
+                                    "exit_code": 0,
+                                    "stderr": "--json output is not valid JSON",
+                                    "duration_ms": 0,
+                                })
+                                if verbose:
+                                    print(f"  WARN  --json      {rel}: output is not valid JSON")
+                    except (subprocess.TimeoutExpired, Exception):
+                        pass  # Some tools need args — skip gracefully
+
                 total_passed += 1
             else:
                 total_failed += 1

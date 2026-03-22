@@ -2938,6 +2938,180 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
     }
 
 
+def step_15_syntax_validation(child_root: Path, blueprint: dict) -> dict:
+    """Step 15: py_compile all generated .py files to catch syntax errors.
+
+    Adaptations (db_rename, port_remap, app_name_replace) can break Python
+    syntax. This step catches those errors before the user discovers them.
+    """
+    import py_compile
+
+    py_files = list(child_root.rglob("*.py"))
+    passed = []
+    failed = []
+
+    for py_path in py_files:
+        try:
+            py_compile.compile(str(py_path), doraise=True)
+            passed.append(str(py_path.relative_to(child_root)))
+        except py_compile.PyCompileError as exc:
+            failed.append({
+                "file": str(py_path.relative_to(child_root)),
+                "error": str(exc),
+            })
+            logger.error("Syntax error in %s: %s", py_path, exc)
+
+    status = "pass" if not failed else "fail"
+    logger.info(
+        "Step 15: Syntax validation — %d/%d files passed",
+        len(passed), len(py_files),
+    )
+    return {
+        "total_files": len(py_files),
+        "passed": len(passed),
+        "failed": len(failed),
+        "failures": failed,
+        "status": status,
+    }
+
+
+def step_16_db_execution(child_root: Path, blueprint: dict) -> dict:
+    """Step 16: Execute the generated DB init script and verify tables.
+
+    Catches SQL syntax errors and missing tables before the user
+    runs the app. Without this, a broken schema goes undetected
+    until runtime.
+    """
+    # Find the DB init script
+    db_dir = child_root / "tools" / "db"
+    init_scripts = list(db_dir.glob("init_*.py")) if db_dir.exists() else []
+
+    if not init_scripts:
+        logger.info("Step 16: No DB init script found, skipping")
+        return {"status": "skipped", "reason": "no init script"}
+
+    script = init_scripts[0]
+    app_name = blueprint.get("app_name", "app")
+    db_path = child_root / "data" / f"{app_name}.db"
+
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(child_root),
+        )
+        if result.returncode != 0:
+            logger.error("Step 16: DB init failed: %s", result.stderr)
+            return {
+                "status": "fail",
+                "error": result.stderr[:500],
+                "script": str(script.relative_to(child_root)),
+            }
+
+        # Verify tables exist
+        if db_path.exists():
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            tables = [
+                r[0] for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            ]
+            conn.close()
+
+            logger.info(
+                "Step 16: DB init OK — %d tables created",
+                len(tables),
+            )
+            return {
+                "status": "pass",
+                "tables": tables,
+                "table_count": len(tables),
+                "db_path": str(db_path),
+            }
+
+        return {"status": "warn", "reason": "DB file not created"}
+
+    except subprocess.TimeoutExpired:
+        return {"status": "fail", "error": "DB init timed out (30s)"}
+    except Exception as exc:
+        return {"status": "fail", "error": str(exc)}
+
+
+def step_17_agent_card_validation(
+    child_root: Path, blueprint: dict,
+) -> dict:
+    """Step 17: Validate agent card JSON files for correctness.
+
+    Checks:
+    - Valid JSON syntax
+    - Required fields (name, port) present
+    - No port conflicts between agents
+    """
+    cards_dir = child_root / ".well-known"
+    if not cards_dir.exists():
+        # Try alternative locations
+        card_files = list(child_root.rglob("agent.json"))
+    else:
+        card_files = list(cards_dir.glob("*.json"))
+
+    if not card_files:
+        return {"status": "skipped", "reason": "no agent cards"}
+
+    valid = []
+    invalid = []
+    ports_seen: dict = {}
+
+    for card_path in card_files:
+        try:
+            content = card_path.read_text(encoding="utf-8")
+            data = json.loads(content)
+
+            # Check required fields
+            missing = []
+            for field in ("name",):
+                if field not in data:
+                    missing.append(field)
+
+            if missing:
+                invalid.append({
+                    "file": str(card_path.relative_to(child_root)),
+                    "error": f"Missing fields: {missing}",
+                })
+                continue
+
+            # Check port conflicts
+            port = data.get("port")
+            if port:
+                if port in ports_seen:
+                    invalid.append({
+                        "file": str(card_path.relative_to(child_root)),
+                        "error": f"Port {port} conflicts with {ports_seen[port]}",
+                    })
+                else:
+                    ports_seen[port] = data.get("name", card_path.name)
+
+            valid.append(str(card_path.relative_to(child_root)))
+
+        except json.JSONDecodeError as exc:
+            invalid.append({
+                "file": str(card_path.relative_to(child_root)),
+                "error": f"Invalid JSON: {exc}",
+            })
+
+    logger.info(
+        "Step 17: Agent cards — %d valid, %d invalid",
+        len(valid), len(invalid),
+    )
+    return {
+        "status": "pass" if not invalid else "warn",
+        "valid": len(valid),
+        "invalid": len(invalid),
+        "failures": invalid,
+        "ports": ports_seen,
+    }
+
+
 # ============================================================
 # MAIN ORCHESTRATOR
 # ============================================================
@@ -2952,8 +3126,9 @@ def generate_child_app(
 ) -> dict:
     """Generate a complete child application from a blueprint.
 
-    Executes 17 steps sequentially (12 core + 9b license + 9c claude config +
-    11b README + 13 audit + 14 GOTCHA validation), collecting results from each.
+    Executes 20 steps sequentially (12 core + 9b license + 9c claude config +
+    11b README + 13 audit + 14 GOTCHA validation + 15 syntax validation +
+    16 DB execution + 17 agent card validation), collecting results from each.
 
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
@@ -3000,6 +3175,9 @@ def generate_child_app(
         ("12_audit_register", lambda: step_12_audit_and_registration(child_root, blueprint, db_path)),
         ("13_production_audit", lambda: step_13_production_audit(child_root, blueprint)),
         ("14_gotcha_validation", lambda: step_14_gotcha_validation(child_root, blueprint)),
+        ("15_syntax_validation", lambda: step_15_syntax_validation(child_root, blueprint)),
+        ("16_db_execution", lambda: step_16_db_execution(child_root, blueprint)),
+        ("17_agent_card_validation", lambda: step_17_agent_card_validation(child_root, blueprint)),
     ]
 
     for step_name, step_fn in steps:

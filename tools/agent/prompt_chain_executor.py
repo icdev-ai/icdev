@@ -236,7 +236,14 @@ def substitute_variables(
     # Replace $STEP{step_id} references
     def _step_replacer(match):
         step_id = match.group(1)
-        return step_outputs.get(step_id, f"[MISSING: step '{step_id}' not found]")
+        if step_id not in step_outputs:
+            logger.warning(
+                "Prompt chain: $STEP{%s} not found in outputs "
+                "— step may not have executed successfully",
+                step_id,
+            )
+            return f"[MISSING: step '{step_id}' not found]"
+        return step_outputs[step_id]
 
     result = re.sub(r'\$STEP\{([^}]+)\}', _step_replacer, result)
     return result

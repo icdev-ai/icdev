@@ -7794,16 +7794,23 @@ CREATE INDEX IF NOT EXISTS idx_notification_log_event ON notification_log(event_
 CREATE INDEX IF NOT EXISTS idx_notification_log_created ON notification_log(created_at);
 
 -- PII Redaction audit trail (Phase 72, D-RDT-2 — append-only, NIST AU)
+-- Superset schema: router.py uses function/action/entity_types_json,
+-- anonymizer.py uses timestamp/text_length/entity_types/module
 CREATE TABLE IF NOT EXISTS redaction_audit (
     id              TEXT PRIMARY KEY,
     session_id      TEXT NOT NULL,
-    function        TEXT NOT NULL,
+    function        TEXT DEFAULT '',
     detection_count INTEGER NOT NULL DEFAULT 0,
     entity_types_json TEXT,
+    entity_types    TEXT,
     impact_level    TEXT NOT NULL DEFAULT 'IL4',
-    action          TEXT NOT NULL DEFAULT 'redacted'
-        CHECK(action IN ('redacted','skipped','error')),
-    created_at      TEXT NOT NULL
+    action          TEXT DEFAULT 'redacted'
+        CHECK(action IN ('redacted','skipped','error','')),
+    timestamp       TEXT,
+    text_length     INTEGER,
+    module          TEXT DEFAULT 'unknown',
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_redaction_audit_session ON redaction_audit(session_id);
 CREATE INDEX IF NOT EXISTS idx_redaction_audit_created ON redaction_audit(created_at);
@@ -9177,20 +9184,8 @@ CREATE TABLE IF NOT EXISTS redaction_registry (
 CREATE INDEX IF NOT EXISTS idx_redaction_registry_session ON redaction_registry(session_id);
 CREATE INDEX IF NOT EXISTS idx_redaction_registry_expires ON redaction_registry(expires_at);
 
--- Append-only audit trail for all redaction/anonymization events (NIST AU)
-CREATE TABLE IF NOT EXISTS redaction_audit (
-    id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
-    text_length INTEGER NOT NULL,
-    detection_count INTEGER NOT NULL,
-    entity_types TEXT NOT NULL,
-    impact_level TEXT NOT NULL,
-    module TEXT DEFAULT 'unknown',
-    classification TEXT DEFAULT 'CUI'
-);
-CREATE INDEX IF NOT EXISTS idx_redaction_audit_session ON redaction_audit(session_id);
-CREATE INDEX IF NOT EXISTS idx_redaction_audit_ts ON redaction_audit(timestamp);
+-- redaction_audit: duplicate removed — canonical definition is at Phase 72, D-RDT-2 above
+-- (merged superset schema covers both router.py and anonymizer.py column sets)
 """
 
 

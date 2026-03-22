@@ -1292,3 +1292,153 @@
 | Studio CSS | tools/dashboard/static/css/studio.css | Premium design system: glass cards, gradients, animations, 8px grid | (asset) | CSS |
 | Workflow Studio JS | tools/dashboard/static/js/workflow-studio.js | DAG canvas editor: drag-drop nodes, SVG edges, zoom, validate, YAML import/export | (asset) | JS |
 | Marketplace JS | tools/dashboard/static/js/marketplace.js | Asset browser: search, filter, sort, detail modal, one-click install | (asset) | JS |
+
+## A2A Protocol (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Task Lease | tools/a2a/task_lease.py | Task lease management for agent coordination | --json | Lease status |
+
+## Autonomy Engine
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Behavior Learner | tools/autonomy/behavior_learner.py | Behavioral pattern learning from agent actions | --json | Learned patterns |
+| Kill Switch | tools/autonomy/kill_switch.py | Emergency agent termination control | --json | Termination status |
+| Self Evolve | tools/autonomy/self_evolve.py | Self-evolution capability engine | --json | Evolution results |
+| Trust Engine | tools/autonomy/trust_engine.py | Dynamic trust scoring for autonomous actions | --json | Trust scores |
+
+## Autoresearch (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Fitness Proposal Quality | tools/autoresearch/fitness_proposal_quality.py | Proposal quality fitness evaluator | --json | Quality scores |
+| Marketplace Exporter | tools/autoresearch/marketplace_exporter.py | Export autoresearch results to marketplace | --json | Export results |
+
+## Dashboard API (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| CI/CD API | tools/dashboard/api/cicd.py | CI/CD pipeline status API endpoints | REST endpoints | JSON responses |
+| Prod Audit API | tools/dashboard/api/prod_audit.py | Production audit API endpoints | REST endpoints | JSON responses |
+| Proposals API | tools/dashboard/api/proposals.py | Proposal management API endpoints | REST endpoints | JSON responses |
+
+## DataBridge (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Alpaca Connector | tools/databridge/connectors/alpaca_connector.py | Alpaca Markets trading API connector (equities + crypto) | --json | Connection status |
+| SaaS Base Connector | tools/databridge/connectors/saas_base.py | REST/SaaS API base connector class for Connector Forge | (library) | SaaSBaseConnector class |
+| Sandbox Adapter | tools/databridge/forge/sandbox_adapter.py | Sandbox environment adapter for connector testing | --json | Adapter status |
+| Sandbox Manager | tools/databridge/forge/sandbox_manager.py | Sandbox lifecycle manager for generated connectors | --json | Sandbox status |
+
+## Database (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Migrate Add Missing Columns | tools/db/migrate_add_missing_columns.py | Add missing columns migration utility | --json | Migration results |
+| Migrate to Storage | tools/db/migrate_to_storage.py | Migrate to centralized storage module | --json | Migration results |
+| PG Init | tools/db/pg_init.py | PostgreSQL database initialization | --json | Initialization status |
+| PG Optimize All | tools/db/pg_optimize_all.py | PostgreSQL optimization for all tables | --json | Optimization results |
+| PG Optimize DataBridge | tools/db/pg_optimize_databridge.py | PostgreSQL optimization for DataBridge tables | --json | Optimization results |
+
+## Extensions (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Workflow Loop Chat Hook | tools/extensions/builtins/030_workflow_loop_chat.py | Chat hook: workflow loop status advisory | (hook) | Advisory message |
+| Bayesian Learning Chat Hook | tools/extensions/builtins/040_bayesian_learning_chat.py | Chat hook: Bayesian teaching integration | (hook) | Learning context |
+| RAG Context Chat Hook | tools/extensions/builtins/050_rag_context_chat.py | Chat hook: RAG context injection | (hook) | Injected context |
+| Code Quality Chat Hook | tools/extensions/builtins/060_code_quality_chat.py | Chat hook: code quality advisory | (hook) | Quality advisory |
+| Genesis Status Chat Hook | tools/extensions/builtins/070_genesis_status_chat.py | Chat hook: Genesis daemon status | (hook) | Status message |
+| Intake Enrichment Chat Hook | tools/extensions/builtins/080_intake_enrichment_chat.py | Chat hook: intake session enrichment | (hook) | Enrichment context |
+
+## Genesis (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Goal Template Generator | tools/genesis/goal_template_generator.py | Generate goal templates from GKP artifacts | --json | Goal templates |
+| Synthesize Reflex | tools/genesis/reflexes/synthesize.py | Synthesize reflex: tool-chain pattern detection | --json | Pattern results |
+
+## GovCon (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| AI Clause Compliance | tools/govcon/ai_clause_compliance.py | AI-specific FAR/DFARS clause compliance checker | --json, --gate | Compliance results |
+| Bayesian Bid Scorer | tools/govcon/bayesian_bid_scorer.py | Bayesian bid/no-bid scoring engine | --json | Bid scores |
+| Capability Enricher | tools/govcon/capability_enricher.py | Enrich capability mappings with evidence | --json | Enriched mappings |
+| Capture AI Blueprint | tools/govcon/capture_ai_blueprint.py | AI-assisted capture management blueprint | --json | Blueprint data |
+| CMMC Validator | tools/govcon/cmmc_validator.py | CMMC compliance validator for proposals | --json, --gate | Validation results |
+| Color Review Simulator | tools/govcon/color_review_simulator.py | Shipley color team review simulator | --json | Review results |
+| Compliance Matrix Builder | tools/govcon/compliance_matrix_builder.py | L/M/N compliance matrix builder | --json | Compliance matrix |
+| IDIQ Factory | tools/govcon/idiq_factory.py | IDIQ/BPA task order factory | --json | Task orders |
+| LCAT Mapper | tools/govcon/lcat_mapper.py | Labor category (LCAT) mapping engine | --json | LCAT mappings |
+| Opportunity Lifecycle | tools/govcon/opportunity_lifecycle.py | Opportunity lifecycle state machine | --json | Lifecycle state |
+| Program Bridge | tools/govcon/program_bridge.py | Bridge proposals to program execution | --json | Bridge results |
+| Proposal Quality Evaluator | tools/govcon/proposal_quality_evaluator.py | Multi-dimension proposal quality scoring | --json | Quality scores |
+| Rate Benchmarker | tools/govcon/rate_benchmarker.py | Labor rate benchmarking against market data | --json | Benchmark results |
+| Reflex Sandbox | tools/govcon/reflex_sandbox.py | Proposal Genesis reflex testing sandbox | --json | Sandbox results |
+| Shipley Mapper | tools/govcon/shipley_mapper.py | Map proposal phases to Shipley process | --json | Phase mappings |
+| Talent Intelligence | tools/govcon/talent_intelligence.py | Talent pipeline intelligence for proposals | --json | Talent data |
+| Teaming Hub | tools/govcon/teaming_hub.py | Teaming partner discovery and management | --json | Partner data |
+| Win Theme Manager | tools/govcon/win_theme_manager.py | Win theme and discriminator management | --json | Theme data |
+
+## Harness (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| MCP Wrapper Generator | tools/harness/mcp_wrapper_generator.py | Generate MCP wrappers for CLI tools | --json | Generated wrappers |
+
+## MCP Servers (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| LLM Proxy Server | tools/mcp/llm_proxy_server.py | LLM proxy MCP server for multi-provider routing | (server) | MCP endpoints |
+| LSP Server | tools/mcp/lsp_server.py | Language Server Protocol MCP server | (server) | MCP endpoints |
+
+## Notifications
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Email Adapter | tools/notifications/adapters/email_adapter.py | Email notification delivery adapter | --json | Delivery status |
+
+## Proposal Genesis (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Comply CMMC Reflex | tools/proposal_genesis/reflexes/comply_cmmc.py | CMMC compliance reflex | --json | Compliance findings |
+| Price Reflex | tools/proposal_genesis/reflexes/price.py | Pricing strategy reflex | --json | Pricing recommendations |
+| Regulate Reflex | tools/proposal_genesis/reflexes/regulate.py | Regulatory compliance reflex | --json | Regulatory findings |
+| Talent Reflex | tools/proposal_genesis/reflexes/talent.py | Talent/staffing reflex | --json | Staffing recommendations |
+| Vehicle Reflex | tools/proposal_genesis/reflexes/vehicle.py | Contract vehicle selection reflex | --json | Vehicle recommendations |
+
+## RAG (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| PG Vector Store | tools/rag/pg_vector_store.py | PostgreSQL pgvector backend for RAG | (library) | VectorStore class |
+
+## Review Board (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Docs Fixer | tools/review_board/fixers/docs_fixes.py | Auto-fix engine for documentation findings | --json | Fix results |
+| Perf Fixer | tools/review_board/fixers/perf_fixes.py | Auto-fix engine for performance findings | --json | Fix results |
+| QA Fixer | tools/review_board/fixers/qa_fixes.py | Auto-fix engine for QA findings | --json | Fix results |
+| SRE Fixer | tools/review_board/fixers/sre_fixes.py | Auto-fix engine for SRE findings | --json | Fix results |
+| Health Scorer | tools/review_board/health_scorer.py | Aggregate health scoring across reflexes | --json | Health scores |
+| Notifier | tools/review_board/notifier.py | Review board notification dispatcher | --json | Notification status |
+
+## SaaS (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| MCP SSE | tools/saas/mcp_sse.py | MCP Server-Sent Events transport for SaaS | (server) | SSE stream |
+| Tenant LLM Keys | tools/saas/tenant_llm_keys.py | Per-tenant LLM API key management | --json | Key management results |
+
+## Scout
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Updater | tools/scout/config_updater.py | Scout configuration auto-updater | --json | Updated config |
+| Genesis Trigger | tools/scout/genesis_trigger.py | Trigger Genesis from Scout findings | --json | Trigger results |
+| Install Scheduler | tools/scout/install_scheduler.py | Scout installation scheduler | --json | Schedule status |
+| LLM Summarizer | tools/scout/llm_summarizer.py | LLM-powered Scout finding summarizer | --json | Summaries |
+| Trending Pillar | tools/scout/pillars/trending.py | Trending topic detection pillar | --json | Trending topics |
+| Preflight | tools/scout/preflight.py | Scout preflight validation | --json | Preflight results |
+
+## AlphaDesk Trading Engine
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Fundamental Analyst | tools/trading/analysts/fundamental.py | Fundamental analysis agent (SMA, valuation, trends) | --json | Analysis results |
+| Sentiment Analyst | tools/trading/analysts/sentiment.py | Keyword-based sentiment analysis agent | --json | Sentiment scores |
+| Market Data | tools/trading/data/market_data.py | Alpaca market data fetch and cache layer | --json | Market data |
+| Perspective Scorer | tools/trading/analysis/perspective_scorer.py | INTaaS bull/bear multiperspectivity scorer | --json | Perspective scores |
+| Signal Generator | tools/trading/analysis/signal_generator.py | Weighted composite signal generator | --json | Trading signals |
+| Order Manager | tools/trading/execution/order_manager.py | Alpaca order placement and tracking | --json | Order status |
+| Position Tracker | tools/trading/execution/position_tracker.py | Position synchronization with Alpaca | --json | Position data |
+| Risk Checker | tools/trading/execution/risk_checker.py | Pre-trade risk validation (position limits, VaR) | --json | Risk assessment |
+| Pulse Article Generator | tools/trading/pulse/article_generator.py | Pulse article generator from analysis results | --json | Article draft |

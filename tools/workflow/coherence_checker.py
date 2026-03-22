@@ -934,7 +934,7 @@ CHECK_REGISTRY = {
 _FIX_REGISTRY: Dict[str, str] = {
     "import_usage": "auto",      # ruff --fix --select F401,F811,F841
     "append_only": "auto",       # add table name to APPEND_ONLY_TABLES
-    "manifest": "suggest",       # suggest entries (file writes to manifest)
+    "manifest": "auto",           # auto-append missing tools to manifest.md
     "schema_code": "suggest",    # suggest ALTER TABLE DDL
     "config_code": "suggest",    # suggest YAML additions
     "fixture_schema": "suggest", # suggest test fixture DDL
@@ -988,9 +988,49 @@ def _autofix_append_only(check: CoherenceCheck) -> List[str]:
     return fixes
 
 
+def _autofix_manifest(check: CoherenceCheck) -> List[str]:
+    """Auto-append missing tools to tools/manifest.md."""
+    missing = check.missing
+    if not missing:
+        return []
+
+    manifest_path = PROJECT_ROOT / "tools" / "manifest.md"
+    if not manifest_path.exists():
+        return []
+
+    lines = []
+    for tool_path in missing:
+        p = Path(tool_path)
+        name = p.stem.replace("_", " ").title()
+        desc = f"Auto-registered: {p.parent.name}/{p.name}"
+        lines.append(
+            f"| {name} | {tool_path} | {desc} "
+            f"| --json | JSON |"
+        )
+
+    if lines:
+        with open(manifest_path, "a", encoding="utf-8") as f:
+            f.write("\n\n## Auto-Registered (Coherence Fix)\n")
+            f.write(
+                "| Tool | File | Description "
+                "| Input | Output |\n"
+            )
+            f.write(
+                "|------|------|-------------|"
+                "-------|--------|\n"
+            )
+            for line in lines:
+                f.write(line + "\n")
+
+    return [
+        f"Appended {len(lines)} tools to manifest.md"
+    ]
+
+
 _AUTOFIX_HANDLERS: Dict[str, Any] = {
     "import_usage": _autofix_imports,
     "append_only": _autofix_append_only,
+    "manifest": _autofix_manifest,
 }
 
 

@@ -173,6 +173,24 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
             message="GOTCHA Layer 1 (Goals) empty: no workflow definitions found",
         ))
 
+    # GOTCHA-01c: Goal content quality — files must have substance
+    for gf in goal_files:
+        try:
+            content = gf.read_text(encoding="utf-8")
+            if len(content.strip()) < 100:
+                checks.append(GotchaCheck(
+                    check_id="GOTCHA-01c",
+                    check_name="Goal content quality",
+                    layer="goals",
+                    status="warn",
+                    expected="Goal file with >=100 chars of content",
+                    actual=f"{gf.name}: {len(content.strip())} chars (stub)",
+                    fix_suggestion=f"Add workflow steps and acceptance criteria to {gf.name}",
+                    message=f"Goal file {gf.name} appears to be a stub ({len(content.strip())} chars)",
+                ))
+        except Exception:
+            pass
+
     return checks
 
 
