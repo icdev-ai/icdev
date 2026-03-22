@@ -72,6 +72,8 @@ RELATIONSHIP_TYPES = (
     "SUPPLIES_TO", "CUSTOMER_OF", "COMPETES_WITH",
     "MEMBER_OF_SECTOR", "EXPOSED_TO_COMMODITY", "LED_BY",
     "TRACKS_INDEX", "CORRELATED_WITH", "MACRO_SENSITIVE_TO",
+    # Geographic + cascade analysis types
+    "geography", "industry",
     # Cascade analysis relationship types
     "REQUIRES_RESOURCE", "CONSTRAINED_BY", "ENABLES", "DISPLACES",
 )
