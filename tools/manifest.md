@@ -1442,3 +1442,9 @@
 | Position Tracker | tools/trading/execution/position_tracker.py | Position synchronization with Alpaca | --json | Position data |
 | Risk Checker | tools/trading/execution/risk_checker.py | Pre-trade risk validation (position limits, VaR) | --json | Risk assessment |
 | Pulse Article Generator | tools/trading/pulse/article_generator.py | Pulse article generator from analysis results | --json | Article draft |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Macro Data | tools\trading\data\macro_data.py | Auto-registered: data/macro_data.py | --json | JSON |
