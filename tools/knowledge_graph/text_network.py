@@ -25,7 +25,6 @@ import hashlib
 import json
 import os
 import re
-import sqlite3
 import sys
 import textwrap
 import uuid
@@ -60,12 +59,19 @@ except ImportError:
 ENTITY_TYPES = (
     "organization", "system", "control", "requirement",
     "component", "person", "document", "standard",
+    # Financial entity types (AlphaDesk KG extension)
+    "ticker", "sector", "executive", "supplier",
+    "commodity", "etf", "macro_indicator",
 )
 
 RELATIONSHIP_TYPES = (
     "DEPLOYED_ON", "MEMBER_OF", "OPERATES", "RUNS",
     "SATISFIES", "PROTECTS", "REFERENCES", "IMPLEMENTS",
     "DEPENDS_ON",
+    # Financial relationship types (AlphaDesk KG extension)
+    "SUPPLIES_TO", "CUSTOMER_OF", "COMPETES_WITH",
+    "MEMBER_OF_SECTOR", "EXPOSED_TO_COMMODITY", "LED_BY",
+    "TRACKS_INDEX", "CORRELATED_WITH", "MACRO_SENSITIVE_TO",
 )
 
 # Verb phrase -> relationship type mapping
@@ -95,6 +101,22 @@ VERB_MAP = {
     "deploys to":   "DEPLOYED_ON",
     "member of":    "MEMBER_OF",
     "belongs to":   "MEMBER_OF",
+    # Financial relationship verbs (AlphaDesk KG extension)
+    "supplies":       "SUPPLIES_TO",
+    "supplies to":    "SUPPLIES_TO",
+    "supplier of":    "SUPPLIES_TO",
+    "customer of":    "CUSTOMER_OF",
+    "buys from":      "CUSTOMER_OF",
+    "competes with":  "COMPETES_WITH",
+    "competitor of":  "COMPETES_WITH",
+    "in sector":      "MEMBER_OF_SECTOR",
+    "sector of":      "MEMBER_OF_SECTOR",
+    "exposed to":     "EXPOSED_TO_COMMODITY",
+    "sensitive to":   "MACRO_SENSITIVE_TO",
+    "led by":         "LED_BY",
+    "ceo of":         "LED_BY",
+    "tracks":         "TRACKS_INDEX",
+    "correlated with": "CORRELATED_WITH",
 }
 
 # =========================================================================
