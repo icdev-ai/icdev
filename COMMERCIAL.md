@@ -1,11 +1,11 @@
-# Commercial Licensing — ICDEV
+# Commercial Licensing — ICDEV™
 
 ## Open-Source License
 
-ICDEV is open source under the **Apache License, Version 2.0**. See [LICENSE](LICENSE)
+ICDEV™ is open source under the **Apache License, Version 2.0**. See [LICENSE](LICENSE)
 for the full text.
 
-Under the Apache 2.0 license, you may freely use, modify, and distribute ICDEV
+Under the Apache 2.0 license, you may freely use, modify, and distribute ICDEV™
 with patent protection. Key rights:
 
 - Use for any purpose, including commercial
@@ -57,12 +57,12 @@ All tiers include:
 
 - You still receive the same source code as the open-source version
 - Contributions you make back to the project are welcome (under DCO)
-- ICDEV's compliance catalogs and crosswalk mappings remain available to all users
+- ICDEV™'s compliance catalogs and crosswalk mappings remain available to all users
 - Security updates are published to both open-source and commercial users
 
 ## Contributor License
 
-If you contribute code to ICDEV, you certify under the Developer Certificate of
+If you contribute code to ICDEV™, you certify under the Developer Certificate of
 Origin (DCO) that you have the right to submit it under the Apache 2.0 license.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
@@ -77,7 +77,7 @@ For commercial licensing inquiries:
 
 ## FAQ
 
-**Q: Can I use ICDEV in my proprietary product?**
+**Q: Can I use ICDEV™ in my proprietary product?**
 A: Yes. The Apache 2.0 license permits use in proprietary products. You must
 include the LICENSE and NOTICE files and note any modifications to source files.
 
@@ -86,11 +86,11 @@ A: The Apache 2.0 license is suitable for most government use cases, including
 building and deploying proprietary solutions. A commercial license provides
 dedicated support and custom SLAs for mission-critical deployments.
 
-**Q: Can I offer ICDEV as a hosted SaaS product?**
+**Q: Can I offer ICDEV™ as a hosted SaaS product?**
 A: Yes. Unlike AGPL, the Apache 2.0 license does not require source disclosure
-for network/SaaS use. You may host ICDEV or derivatives as a service.
+for network/SaaS use. You may host ICDEV™ or derivatives as a service.
 
-**Q: Can I evaluate ICDEV before purchasing a commercial license?**
+**Q: Can I evaluate ICDEV™ before purchasing a commercial license?**
 A: Absolutely. The full source code is available under Apache 2.0. Use it, test it,
 evaluate it. Purchase a commercial license when you need enterprise support.
 

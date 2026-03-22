@@ -2114,7 +2114,7 @@ def _copy_license_files(
         files_copied.append("data/license.json")
 
     # D-CHILD-5: Apache-2.0 license for government deliveries
-    # Copy the full ICDEV LICENSE file to keep child apps identical
+    # Copy the full ICDEV™ LICENSE file to keep child apps identical
     license_type = blueprint.get("license", "Apache-2.0")
     parent_license = icdev_root / "LICENSE"
     child_license = child_root / "LICENSE"
