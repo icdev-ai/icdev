@@ -816,7 +816,7 @@ ICDEV™ is dual-licensed:
   Free for use, modification, and distribution with patent protection.
 
 - **Commercial** — [Commercial License](COMMERCIAL.md)
-  Available for proprietary deployments with dedicated support and SLAs.
+  Enterprise support, custom SLAs, and dedicated compliance consulting.
 
 ## Contact
 

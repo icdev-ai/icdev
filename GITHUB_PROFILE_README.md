@@ -645,7 +645,7 @@ python tools/installer/installer.py --interactive
 
 Dual-licensed:
 - **Apache License 2.0** — Free for use, modification, and distribution with patent protection
-- **Commercial** — Available for proprietary deployments
+- **Commercial** — Enterprise support, custom SLAs, and dedicated compliance consulting
 
 ---
 
