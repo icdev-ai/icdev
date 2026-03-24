@@ -506,7 +506,7 @@ sam_bridge:
     naics_codes: []
     keywords: []
     agencies: []
-    notice_types: "o,p,r,s"
+    notice_types: "o,p,r,s,k"
 
 # Capability Catalog — injects ICDEV™ capability context into articles
 # D-PULSE-CAP-1: YAML files in context/capabilities/ (GOTCHA context layer)

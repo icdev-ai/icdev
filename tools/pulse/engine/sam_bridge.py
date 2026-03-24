@@ -44,6 +44,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(PROJECT_ROOT / ".env")
+except ImportError:
+    pass
+
 from tools.db.storage import get_connection  # noqa: E402
 from tools.pulse.db import (  # noqa: E402
     get_existing_titles,
@@ -374,11 +380,14 @@ def _check_duplicate(
         except Exception:
             pass  # Table may not exist yet
 
-        # Also check article_topic for very similar topics
+        # Also check article_topic for very similar topics — but ONLY against
+        # entries that actually produced articles (drafted/published).  Comparing
+        # against skipped/pending entries causes cascading false positives since
+        # many share the same generic domain angle.
         try:
             existing_topics = conn.execute(
                 "SELECT article_topic FROM pulse_sam_article_log "
-                "WHERE pipeline_status != 'failed'"
+                "WHERE pipeline_status IN ('drafted', 'published')"
             ).fetchall()
             for et in existing_topics:
                 if et["article_topic"] and _word_overlap(topic, et["article_topic"]) > threshold:
@@ -537,19 +546,20 @@ def run_sam_to_pulse(
                 }]
 
         if not pain_points:
-            # Log as skipped in DB
-            insert_row("sam_article_log", {
-                "id": f"sal-{uuid4().hex[:12]}",
-                "sam_opportunity_id": opp_id,
-                "opportunity_title": opp_title[:200] if opp_title else "",
-                "domain_category": "",
-                "extracted_pain_points": json.dumps([]),
-                "article_topic": "",
-                "pipeline_status": "skipped",
-                "skip_reason": "no_pain_points_extracted",
-                "content_hash": hashlib.sha256(description[:500].encode()).hexdigest()[:16],
-                "created_at": now,
-            })
+            # Only log to DB on real runs — dry-runs must not consume opps
+            if not dry_run:
+                insert_row("sam_article_log", {
+                    "id": f"sal-{uuid4().hex[:12]}",
+                    "sam_opportunity_id": opp_id,
+                    "opportunity_title": opp_title[:200] if opp_title else "",
+                    "domain_category": "",
+                    "extracted_pain_points": json.dumps([]),
+                    "article_topic": "",
+                    "pipeline_status": "skipped",
+                    "skip_reason": "no_pain_points_extracted",
+                    "content_hash": hashlib.sha256(description[:500].encode()).hexdigest()[:16],
+                    "created_at": now,
+                })
             details.append({
                 "opportunity_id": opp_id,
                 "title": opp_title,
@@ -584,18 +594,19 @@ def run_sam_to_pulse(
             # Step 4: Dedup check (3-layer)
             is_dup, dup_reason = _check_duplicate(topic, c_hash, config)
             if is_dup:
-                insert_row("sam_article_log", {
-                    "id": f"sal-{uuid4().hex[:12]}",
-                    "sam_opportunity_id": opp_id,
-                    "opportunity_title": opp_title[:200] if opp_title else "",
-                    "domain_category": domain,
-                    "extracted_pain_points": json.dumps(pp.get("keywords", [])),
-                    "article_topic": topic,
-                    "pipeline_status": "skipped",
-                    "skip_reason": f"duplicate:{dup_reason}",
-                    "content_hash": c_hash,
-                    "created_at": now,
-                })
+                if not dry_run:
+                    insert_row("sam_article_log", {
+                        "id": f"sal-{uuid4().hex[:12]}",
+                        "sam_opportunity_id": opp_id,
+                        "opportunity_title": opp_title[:200] if opp_title else "",
+                        "domain_category": domain,
+                        "extracted_pain_points": json.dumps(pp.get("keywords", [])),
+                        "article_topic": topic,
+                        "pipeline_status": "skipped",
+                        "skip_reason": f"duplicate:{dup_reason}",
+                        "content_hash": c_hash,
+                        "created_at": now,
+                    })
                 details.append({
                     "opportunity_id": opp_id,
                     "title": opp_title,

@@ -51,6 +51,15 @@ DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db
 CONFIG_PATH = BASE_DIR / "args" / "govcon_config.yaml"
 
 # =========================================================================
+# LOAD .env (API keys)
+# =========================================================================
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    pass
+
+# =========================================================================
 # GRACEFUL IMPORTS
 # =========================================================================
 try:
