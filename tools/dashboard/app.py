@@ -2042,14 +2042,14 @@ def create_app() -> Flask:
         scenarios = []
         try:
             conn = _get_db()
-            stats["total_scenarios"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE COALESCE(soft_deleted, 0) = 0").fetchone()[0]
+            stats["total_scenarios"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status != 'archived'").fetchone()[0]
             stats["running"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'running'").fetchone()[0]
             stats["completed"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'completed'").fetchone()[0]
             stats["monte_carlo_runs"] = conn.execute("SELECT COUNT(*) FROM monte_carlo_runs").fetchone()[0]
             stats["coas_generated"] = conn.execute("SELECT COUNT(*) FROM coa_definitions").fetchone()[0]
             scenarios = [dict(r) for r in conn.execute(
                 "SELECT id, project_id, scenario_name, scenario_type, status, created_at, completed_at "
-                "FROM simulation_scenarios WHERE COALESCE(soft_deleted, 0) = 0 ORDER BY created_at DESC LIMIT 100"
+                "FROM simulation_scenarios WHERE status != 'archived' ORDER BY created_at DESC LIMIT 100"
             ).fetchall()]
             conn.close()
         except Exception:
