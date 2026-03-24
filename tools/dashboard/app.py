@@ -2160,6 +2160,76 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/simulation/nlq", methods=["POST"])
+    def api_simulation_nlq():
+        """Parse a natural language query into simulation modifications."""
+        data = flask_request.get_json(silent=True) or {}
+        query = data.get("query", "")
+        if not query:
+            return jsonify({"error": "query is required"}), 400
+        try:
+            from tools.simulation.query_parser import parse_query
+            result = parse_query(query)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/nlq/run", methods=["POST"])
+    def api_simulation_nlq_run():
+        """Parse NLQ, create scenario, and run simulation in one call."""
+        data = flask_request.get_json(silent=True) or {}
+        query = data.get("query", "")
+        project_id = data.get("project_id", "")
+        if not query or not project_id:
+            return jsonify({"error": "query and project_id are required"}), 400
+        try:
+            from tools.simulation.query_parser import parse_query
+            from tools.simulation.simulation_engine import create_scenario, run_simulation
+            parsed = parse_query(query)
+            scenario = create_scenario(
+                project_id=project_id,
+                scenario_name=parsed["scenario_name"],
+                scenario_type=parsed["scenario_type"],
+                modifications=parsed["modifications"],
+            )
+            sim_result = None
+            try:
+                sim_result = run_simulation(scenario["scenario_id"])
+            except Exception:
+                pass  # simulation may fail if no SysML data; return parsed+scenario anyway
+            return jsonify({
+                "parsed": parsed,
+                "scenario": scenario,
+                "simulation": sim_result,
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/cascade", methods=["POST"])
+    def api_simulation_cascade():
+        """Run cascade analysis through the simulation KG."""
+        data = flask_request.get_json(silent=True) or {}
+        project_id = data.get("project_id", "")
+        trigger = data.get("trigger", "")
+        node_id = data.get("node_id")
+        max_depth = data.get("max_depth", 7)
+        max_width = data.get("max_width", 10)
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+        try:
+            from tools.simulation.cascade_bridge import run_cascade
+            start_ids = [node_id] if node_id else None
+            result = run_cascade(
+                project_id=project_id,
+                start_node_ids=start_ids,
+                trigger_text=trigger or None,
+                max_depth=max_depth,
+                max_width=max_width,
+            )
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
     # ---- Phase 63: Industry Research Engine ----
 
     @app.route("/research")
