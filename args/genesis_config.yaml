@@ -17,6 +17,15 @@ classification: "CUI // SP-CTI"
 enabled: true  # D-GEN-9: enabled for persistent daemon
 env_override: ICDEV_GENESIS_ENABLED
 
+# ── Active Hours ───────────────────────────────────────────────────────────
+# Reflexes only run within this window. Outside it, is_due() returns false.
+# Interval/continuous reflexes (research, ingest, heal) are also gated.
+active_hours:
+  enabled: true
+  start_hour: 9    # 9 AM local
+  end_hour: 23     # 11 PM local
+  timezone: "America/New_York"
+
 # ── LLM Configuration ───────────────────────────────────────────────────────
 
 llm:
@@ -145,7 +154,7 @@ reflexes:
   scout:
     enabled: true
     risk_tier: green
-    schedule: "daily 07:00"
+    schedule: "daily 10:30"
     description: "Monitor competitor/adjacent GitHub repos for intel"
     success_metric:
       name: briefs_generated
@@ -156,7 +165,7 @@ reflexes:
   audit:
     enabled: true
     risk_tier: green
-    schedule: "daily 06:00"
+    schedule: "daily 09:15"
     description: "Self-audit: code quality, security, compliance, STIG, SbD"
     success_metric:
       name: audit_completed
@@ -223,7 +232,7 @@ reflexes:
   publish:
     enabled: true
     risk_tier: yellow
-    schedule: "daily 08:00"
+    schedule: "daily 11:00"
     description: "End-to-end Pulse: demand topic → draft → WriteGuard → staging"
     success_metric:
       name: writeguard_score
@@ -237,7 +246,7 @@ reflexes:
   test:
     enabled: true
     risk_tier: yellow
-    schedule: "nightly 03:00"
+    schedule: "daily 22:00"
     description: "Identify under-tested tools, generate tests, run, commit passing"
     success_metric:
       name: coverage_delta
@@ -249,7 +258,7 @@ reflexes:
   learn:
     enabled: true
     risk_tier: yellow
-    schedule: "nightly 04:00"
+    schedule: "daily 22:30"
     description: "Generate training pairs from approved outputs, fine-tune Ollama"
     success_metric:
       name: validation_loss_delta
@@ -287,7 +296,7 @@ reflexes:
   evolve:
     enabled: true
     risk_tier: orange
-    schedule: "nightly 02:00"
+    schedule: "daily 21:30"
     description: "Autoresearch-style: pick worst tool → improve → test → keep/discard"
     success_metric:
       name: test_pass_and_complexity
@@ -316,7 +325,7 @@ reflexes:
   docs:
     enabled: true
     risk_tier: green
-    schedule: "daily 06:00"
+    schedule: "daily 09:30"
     description: "Documentation drift detection — stale refs, missing docs, manifest drift, route drift"
     success_metric:
       name: docs_drift_count
@@ -334,7 +343,7 @@ reflexes:
   experiment:
     enabled: false  # Opt-in (requires ICDEV_AUTORESEARCH_ENABLED=true)
     risk_tier: orange
-    schedule: "nightly 01:00"
+    schedule: "daily 21:00"
     description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments"
     success_metric:
       name: experiments_accepted_pct

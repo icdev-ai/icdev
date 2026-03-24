@@ -86,6 +86,40 @@ def sha256_hex(data: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Active Hours Gate
+# ---------------------------------------------------------------------------
+def in_active_hours(config: Dict[str, Any]) -> bool:
+    """Check if current local time is within the configured active_hours window.
+
+    Returns True if active_hours is disabled or not configured (default: run anytime).
+    Uses the timezone from config (e.g. 'America/New_York') to determine local time.
+    """
+    ah = config.get("active_hours", {})
+    if not ah.get("enabled", False):
+        return True
+
+    start = ah.get("start_hour", 0)
+    end = ah.get("end_hour", 24)
+    tz_name = ah.get("timezone", "")
+
+    # Resolve local hour in the configured timezone
+    if tz_name:
+        try:
+            from zoneinfo import ZoneInfo
+        except ImportError:
+            from backports.zoneinfo import ZoneInfo  # Python < 3.9
+        try:
+            local_hour = datetime.now(ZoneInfo(tz_name)).hour
+        except Exception:
+            # Fallback: system local time if timezone lookup fails
+            local_hour = datetime.now().hour
+    else:
+        local_hour = datetime.now().hour
+
+    return start <= local_hour < end
+
+
+# ---------------------------------------------------------------------------
 # Schedule Parser
 # ---------------------------------------------------------------------------
 def parse_schedule(schedule_str: str) -> Optional[Dict[str, Any]]:
@@ -709,6 +743,10 @@ class DaemonBase(abc.ABC):
         """Run all reflexes that are currently due."""
         results = []
         due_reflexes = []
+
+        # Active hours gate — skip entire cycle if outside window
+        if not in_active_hours(self.config):
+            return results
 
         # First pass: determine which reflexes are due
         for name in self.reflex_names:
