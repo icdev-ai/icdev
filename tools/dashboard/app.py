@@ -1363,6 +1363,22 @@ def create_app() -> Flask:
         """Batch operations — run multi-tool workflows from the dashboard."""
         return render_template("batch.html")
 
+    @app.route("/connector-forge")
+    def connector_forge_page():
+        """Connector Forge — generate API connectors from OpenAPI specs."""
+        return render_template("connector_forge.html")
+
+    @app.route("/api/connector-forge/list")
+    def api_connector_forge_list():
+        """List all generated/registered connectors."""
+        try:
+            from tools.databridge.registry import list_registered
+            registered = list_registered()
+            connectors = [{"name": k, "type": "registered", "status": "active"} for k in registered]
+            return jsonify({"connectors": connectors, "total": len(connectors)})
+        except Exception:
+            return jsonify({"connectors": [], "total": 0})
+
     @app.route("/diagrams")
     def diagrams_page():
         """Interactive Mermaid diagrams — catalog, viewer, and editor."""
@@ -2123,6 +2139,29 @@ def create_app() -> Flask:
     def control_inheritance_page():
         """Control Inheritance Visualizer — CSP vs customer responsibility mapping."""
         return render_template("control_inheritance.html")
+
+    @app.route("/mosa")
+    def mosa_page():
+        """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""
+        return render_template("mosa.html")
+
+    @app.route("/api/mosa/summary")
+    def api_mosa_summary():
+        """MOSA summary — module coupling, cohesion, circular dependency data."""
+        try:
+            from tools.compliance.mosa_assessor import get_latest_assessment
+            data = get_latest_assessment()
+            return jsonify(data)
+        except Exception:
+            return jsonify({
+                "modules": [],
+                "summary": {
+                    "total_modules": 0,
+                    "avg_coupling": 0,
+                    "avg_cohesion": 0,
+                    "circular_deps": 0,
+                },
+            })
 
     @app.route("/migration-cost")
     def migration_cost_page():
