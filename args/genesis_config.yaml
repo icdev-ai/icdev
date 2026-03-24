@@ -400,6 +400,7 @@ promoter:
     # Source-based rules: trusted external sources auto-promote
     - source_contains: CISA
       min_confidence: 0.0  # cisa.gov advisories and KEV
+      hide_from_dashboard: true  # CVE/KEV auto-promoted, no review needed
     - source_contains: OWASP
       min_confidence: 0.0  # owasp.org feeds
       hide_from_dashboard: true  # Auto-promoted, no review needed
