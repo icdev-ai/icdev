@@ -105,14 +105,20 @@
                     </select>
                 </div>
             </div>
-            <div style="margin-bottom:12px;">
-                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Status</label>
-                <select id="task-status" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
-                    <option value="backlog">Backlog</option>
-                    <option value="scheduled">Scheduled</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="done">Done</option>
-                </select>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Status</label>
+                    <select id="task-status" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="backlog">Backlog</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Scheduled For</label>
+                    <input type="datetime-local" id="task-scheduled-at" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
             </div>
         </div>
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
@@ -123,6 +129,28 @@
 </div>
 
 <script>
+function _isoToLocal(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+        + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function _localToIso(localVal) {
+    if (!localVal) return null;
+    return new Date(localVal).toISOString();
+}
+
+function _formatSchedule(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 function openAddTaskModal() {
     document.getElementById('task-modal-title').textContent = 'Add Task';
     document.getElementById('task-edit-id').value = '';
@@ -131,6 +159,7 @@ function openAddTaskModal() {
     document.getElementById('task-type').value = 'build';
     document.getElementById('task-priority').value = 'medium';
     document.getElementById('task-status').value = 'backlog';
+    document.getElementById('task-scheduled-at').value = '';
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -142,6 +171,7 @@ function openEditTaskModal(task) {
     document.getElementById('task-type').value = task.task_type;
     document.getElementById('task-priority').value = task.priority;
     document.getElementById('task-status').value = task.status;
+    document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -156,7 +186,8 @@ function saveTask() {
         description: document.getElementById('task-desc').value,
         task_type: document.getElementById('task-type').value,
         priority: document.getElementById('task-priority').value,
-        status: document.getElementById('task-status').value
+        status: document.getElementById('task-status').value,
+        scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value)
     };
     if (!payload.title.trim()) { alert('Title is required'); return; }
 
@@ -239,12 +270,15 @@ function renderTaskKanban(tasks) {
             if (prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">\u25C0</button>';
             if (nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">\u25B6</button>';
 
+            var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">\u{1F4C5} ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
+
             return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
                 + '<div class="kanban-card-meta">'
                 + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
                 + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
                 + '</div>'
+                + schedLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                 + '<div style="display:flex; gap:4px;">' + arrows + '</div>'
                 + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">\u2715</button>'
