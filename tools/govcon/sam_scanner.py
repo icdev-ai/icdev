@@ -678,6 +678,7 @@ def main():
     parser = argparse.ArgumentParser(description="SAM.gov Opportunity Scanner")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--scan", action="store_true", help="Scan SAM.gov for new opportunities")
+    group.add_argument("--backfill", action="store_true", help="Backfill full descriptions for URL-only entries")
     group.add_argument("--list-cached", action="store_true", help="List cached opportunities")
     group.add_argument("--history", action="store_true", help="Show scan history")
     group.add_argument("--stats", action="store_true", help="Show scanner statistics")
@@ -702,6 +703,14 @@ def main():
                 "innovation_signals": inno.get("registered_count", 0),
                 "creative_signals": creative.get("registered_count", 0),
             }
+        # Auto-backfill URL-only descriptions after scan
+        bf = backfill_descriptions(limit=50, delay=0.3)
+        result["backfill"] = {
+            "updated": bf.get("updated_count", 0),
+            "checked": bf.get("total_checked", 0),
+        }
+    elif args.backfill:
+        result = backfill_descriptions(limit=args.limit, delay=0.3)
     elif args.list_cached:
         result = list_cached(naics_filter=args.naics, notice_type_filter=args.notice_type,
                              limit=args.limit)
