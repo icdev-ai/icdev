@@ -2033,6 +2033,133 @@ def create_app() -> Flask:
         """Real-time multi-agent orchestration dashboard — agent grid, DAG, mailbox (Phase 61)."""
         return render_template("orchestration/dashboard.html")
 
+    # ---- Digital Program Twin — Simulation Dashboard ----
+
+    @app.route("/simulation")
+    def simulation_page():
+        """Digital Program Twin — 6-dimension what-if simulation, Monte Carlo, COA analysis."""
+        stats = {"total_scenarios": 0, "running": 0, "completed": 0, "monte_carlo_runs": 0, "coas_generated": 0}
+        scenarios = []
+        try:
+            conn = _get_db()
+            stats["total_scenarios"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE COALESCE(soft_deleted, 0) = 0").fetchone()[0]
+            stats["running"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'running'").fetchone()[0]
+            stats["completed"] = conn.execute("SELECT COUNT(*) FROM simulation_scenarios WHERE status = 'completed'").fetchone()[0]
+            stats["monte_carlo_runs"] = conn.execute("SELECT COUNT(*) FROM monte_carlo_runs").fetchone()[0]
+            stats["coas_generated"] = conn.execute("SELECT COUNT(*) FROM coa_definitions").fetchone()[0]
+            scenarios = [dict(r) for r in conn.execute(
+                "SELECT id, project_id, scenario_name, scenario_type, status, created_at, completed_at "
+                "FROM simulation_scenarios WHERE COALESCE(soft_deleted, 0) = 0 ORDER BY created_at DESC LIMIT 100"
+            ).fetchall()]
+            conn.close()
+        except Exception:
+            pass
+        return render_template("simulation.html", stats=stats, scenarios=scenarios)
+
+    @app.route("/api/simulation/scenarios", methods=["POST"])
+    def api_simulation_create():
+        """Create a new simulation scenario."""
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            from tools.simulation.simulation_engine import create_scenario
+            result = create_scenario(
+                project_id=data.get("project_id", ""),
+                scenario_name=data.get("scenario_name", ""),
+                scenario_type=data.get("scenario_type", "what_if"),
+                modifications=data.get("modifications", {}),
+            )
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/scenarios/<scenario_id>/run", methods=["POST"])
+    def api_simulation_run(scenario_id):
+        """Run simulation across all 6 dimensions."""
+        try:
+            from tools.simulation.simulation_engine import run_simulation
+            result = run_simulation(scenario_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/scenarios/<scenario_id>/summary")
+    def api_simulation_summary(scenario_id):
+        """Get scenario summary with results and MC runs."""
+        try:
+            from tools.simulation.scenario_manager import get_scenario_summary
+            result = get_scenario_summary(scenario_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/scenarios/<scenario_id>/monte-carlo", methods=["POST"])
+    def api_simulation_monte_carlo(scenario_id):
+        """Run Monte Carlo estimation for a dimension."""
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            from tools.simulation.monte_carlo import run_monte_carlo
+            result = run_monte_carlo(
+                scenario_id=scenario_id,
+                dimension=data.get("dimension", "schedule"),
+                iterations=data.get("iterations", 10000),
+            )
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/scenarios/<scenario_id>/fork", methods=["POST"])
+    def api_simulation_fork(scenario_id):
+        """Fork a scenario with optional modifications."""
+        data = flask_request.get_json(silent=True) or {}
+        try:
+            from tools.simulation.scenario_manager import fork_scenario
+            result = fork_scenario(
+                scenario_id=scenario_id,
+                new_name=data.get("new_name", "Forked scenario"),
+                additional_modifications=data.get("modifications"),
+            )
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/scenarios/<scenario_id>/coas")
+    def api_simulation_coas(scenario_id):
+        """Get COAs linked to a scenario."""
+        try:
+            conn = _get_db()
+            coas = [dict(r) for r in conn.execute(
+                "SELECT * FROM coa_definitions WHERE simulation_scenario_id = ? ORDER BY coa_type",
+                (scenario_id,),
+            ).fetchall()]
+            conn.close()
+            return jsonify({"coas": coas})
+        except Exception as exc:
+            return jsonify({"coas": [], "error": str(exc)})
+
+    @app.route("/api/simulation/coas/<coa_id>/select", methods=["POST"])
+    def api_simulation_coa_select(coa_id):
+        """Select a COA."""
+        try:
+            conn = _get_db()
+            conn.execute("UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = ?", (coa_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "selected", "coa_id": coa_id})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/coas/<coa_id>/reject", methods=["POST"])
+    def api_simulation_coa_reject(coa_id):
+        """Reject a COA."""
+        try:
+            conn = _get_db()
+            conn.execute("UPDATE coa_definitions SET status = 'rejected' WHERE id = ?", (coa_id,))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "rejected", "coa_id": coa_id})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
     # ---- Phase 63: Industry Research Engine ----
 
     @app.route("/research")

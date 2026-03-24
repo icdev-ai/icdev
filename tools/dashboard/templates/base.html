@@ -29,7 +29,7 @@
 
             <!-- Operations -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/projects', '/agents', '/orchestration', '/monitoring', '/activity', '/cicd', '/batch'] %}active{% endif %}">Ops</a>
+                <a href="#" class="{% if request.path in ['/projects', '/agents', '/orchestration', '/monitoring', '/activity', '/cicd', '/batch', '/simulation'] %}active{% endif %}">Ops</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/projects">Projects</a></li>
                     <li><a href="/agents">Agents</a></li>
@@ -38,6 +38,7 @@
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/batch">Batch</a></li>
+                    <li><a href="/simulation">Simulation</a></li>
                 </ul>
             </li>
 
