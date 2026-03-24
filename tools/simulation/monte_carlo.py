@@ -412,11 +412,28 @@ def _run_cost_mc(inputs, iterations):
 
 
 def _run_risk_mc(inputs, iterations):
-    """Run Monte Carlo for risk dimension.
+    """Run Monte Carlo for risk dimension with optional correlation.
 
     Each iteration: for each risk event, sample bernoulli (uniform < prob),
-    if triggered, add impact hours.
+    if triggered, add impact hours. When correlations are provided,
+    uses Cholesky decomposition to generate correlated uniform samples
+    so that related risks fire together more realistically.
+
+    Correlation data is optional — falls back to independent sampling.
     """
+    n = len(inputs)
+    if n == 0:
+        return [0.0] * iterations
+
+    # Check for correlation matrix in inputs
+    corr_matrix = None
+    if n > 1 and inputs[0].get("correlations"):
+        corr_matrix = _build_correlation_matrix(inputs)
+
+    if corr_matrix is not None:
+        return _run_correlated_risk_mc(inputs, iterations, corr_matrix)
+
+    # Independent sampling (original behavior)
     results = []
     for _ in range(iterations):
         total_impact = 0.0
@@ -425,6 +442,111 @@ def _run_risk_mc(inputs, iterations):
                 total_impact += event["impact_hours"]
         results.append(total_impact)
     return results
+
+
+def _build_correlation_matrix(inputs):
+    """Build NxN correlation matrix from risk event correlation data.
+
+    Each input can have a 'correlations' dict mapping other risk
+    indices to correlation coefficients (0.0-1.0).
+    Falls back to identity matrix (independent) for missing pairs.
+    """
+    n = len(inputs)
+    # Start with identity matrix
+    matrix = [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+
+    for i, event in enumerate(inputs):
+        corrs = event.get("correlations", {})
+        for j_str, rho in corrs.items():
+            j = int(j_str)
+            if 0 <= j < n and i != j:
+                rho = max(0.0, min(1.0, float(rho)))
+                matrix[i][j] = rho
+                matrix[j][i] = rho  # symmetric
+
+    return matrix
+
+
+def _cholesky_decompose(matrix):
+    """Cholesky decomposition of a symmetric positive-definite matrix.
+
+    Returns lower triangular L such that L @ L^T = matrix.
+    Pure Python, stdlib only (no numpy).
+    """
+    n = len(matrix)
+    L = [[0.0] * n for _ in range(n)]
+
+    for i in range(n):
+        for j in range(i + 1):
+            s = sum(L[i][k] * L[j][k] for k in range(j))
+            if i == j:
+                val = matrix[i][i] - s
+                # Ensure positive (numerical stability)
+                L[i][j] = val ** 0.5 if val > 1e-10 else 1e-5
+            else:
+                denom = L[j][j] if L[j][j] != 0 else 1e-10
+                L[i][j] = (matrix[i][j] - s) / denom
+
+    return L
+
+
+def _run_correlated_risk_mc(inputs, iterations, corr_matrix):
+    """Monte Carlo with correlated risk events via Cholesky decomposition.
+
+    Steps per iteration:
+    1. Generate N independent standard normal samples
+    2. Multiply by Cholesky lower triangular L to get correlated normals
+    3. Convert to uniform via CDF (Phi function approximation)
+    4. Compare uniform < probability to determine if risk fires
+    """
+    import math
+    n = len(inputs)
+    L = _cholesky_decompose(corr_matrix)
+
+    results = []
+    for _ in range(iterations):
+        # Step 1: independent standard normals (Box-Muller)
+        z = []
+        for i in range(0, n, 2):
+            u1 = max(1e-10, random.random())
+            u2 = random.random()
+            z1 = math.sqrt(-2.0 * math.log(u1)) * math.cos(2 * math.pi * u2)
+            z.append(z1)
+            if i + 1 < n:
+                z2 = math.sqrt(-2.0 * math.log(u1)) * math.sin(
+                    2 * math.pi * u2)
+                z.append(z2)
+
+        # Step 2: correlated normals = L @ z
+        corr_z = [
+            sum(L[i][j] * z[j] for j in range(n))
+            for i in range(n)
+        ]
+
+        # Step 3: normal CDF → uniform [0,1]
+        uniforms = [_phi(x) for x in corr_z]
+
+        # Step 4: fire if uniform < probability
+        total_impact = 0.0
+        for i, event in enumerate(inputs):
+            if uniforms[i] < event["probability"]:
+                total_impact += event["impact_hours"]
+        results.append(total_impact)
+
+    return results
+
+
+def _phi(x):
+    """Standard normal CDF approximation (Abramowitz & Stegun)."""
+    import math
+    a1, a2, a3, a4, a5 = (
+        0.254829592, -0.284496736, 1.421413741, -1.453152027, 1.061405429)
+    p = 0.3275911
+    sign = 1.0 if x >= 0 else -1.0
+    x = abs(x) / math.sqrt(2.0)
+    t = 1.0 / (1.0 + p * x)
+    y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-x * x)
+    return 0.5 * (1.0 + sign * y)
 
 
 # ---------------------------------------------------------------------------

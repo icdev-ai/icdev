@@ -2230,6 +2230,34 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.route("/api/simulation/risk/composite", methods=["POST"])
+    def api_simulation_risk_composite():
+        """Calculate composite program risk score."""
+        data = flask_request.get_json(silent=True) or {}
+        project_id = data.get("project_id", "")
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+        try:
+            from tools.simulation.risk_monitor import calculate_composite_risk
+            result = calculate_composite_risk(project_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @app.route("/api/simulation/risk/cpars", methods=["POST"])
+    def api_simulation_risk_cpars():
+        """Calculate CPARS risk score for a contract."""
+        data = flask_request.get_json(silent=True) or {}
+        contract_id = data.get("contract_id", "")
+        if not contract_id:
+            return jsonify({"error": "contract_id is required"}), 400
+        try:
+            from tools.simulation.risk_monitor import calculate_cpars_risk
+            result = calculate_cpars_risk(contract_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+
     # ---- Phase 63: Industry Research Engine ----
 
     @app.route("/research")

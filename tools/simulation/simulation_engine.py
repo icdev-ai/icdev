@@ -23,7 +23,10 @@ from tools.db.storage import get_connection
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-ALL_DIMENSIONS = ["architecture", "compliance", "supply_chain", "schedule", "cost", "risk"]
+ALL_DIMENSIONS = [
+    "architecture", "compliance", "supply_chain", "schedule",
+    "cost", "risk", "resource_allocation", "quality",
+]
 
 # T-shirt size to hours mapping for cost estimation
 TSHIRT_HOURS = {
@@ -536,6 +539,171 @@ def _simulate_risk(conn, project_id, modifications):
     return baseline, simulated, delta, delta_pct, chart_data
 
 
+def _simulate_resource_allocation(conn, project_id, modifications):
+    """Resource allocation dimension: FTE count, utilization, contention risk."""
+    # Baseline: count team members / resource assignments
+    total_fte = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM project_team_members WHERE project_id = ?",
+        (project_id,),
+    )
+    if total_fte == 0:
+        # Estimate from story count: ~1 FTE per 15 stories/PI
+        story_count = _safe_query_val(
+            conn,
+            "SELECT COUNT(*) FROM safe_decomposition "
+            "WHERE project_id = ? AND level = 'story'",
+            (project_id,),
+        )
+        total_fte = max(1, story_count // 15) if story_count > 0 else 5
+
+    # Estimate utilization from active work
+    active_stories = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM safe_decomposition "
+        "WHERE project_id = ? AND level = 'story' "
+        "AND status IN ('in_progress', 'planned')",
+        (project_id,),
+    )
+    # Each FTE handles ~3 stories at a time; utilization caps at 1.0
+    utilization = min(1.0, (active_stories / (total_fte * 3))
+                      if total_fte > 0 else 0.0)
+
+    # Contention: how many shared/critical resources
+    critical_roles = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM project_team_members "
+        "WHERE project_id = ? AND role IN "
+        "('security_architect', 'isso', 'lead_architect', 'dba')",
+        (project_id,),
+    )
+    contention_risk = min(1.0, critical_roles * 0.15)
+
+    # Apply modifications
+    added_staff = modifications.get("add_staff", 0)
+    added_req = modifications.get("add_requirements", 0)
+    removed_req = modifications.get("remove_requirements", 0)
+    net_work = added_req - removed_req
+
+    sim_fte = max(1, total_fte + added_staff)
+    sim_active = max(0, active_stories + net_work)
+    sim_utilization = min(1.0, (sim_active / (sim_fte * 3))
+                         if sim_fte > 0 else 0.0)
+    sim_contention = min(1.0, contention_risk + (0.1 if net_work > 5 else 0)
+                         - (0.05 * added_staff if added_staff > 0 else 0))
+    sim_contention = max(0.0, sim_contention)
+
+    baseline = {
+        "total_fte": total_fte,
+        "utilization": round(utilization, 4),
+        "contention_risk": round(contention_risk, 4),
+        "active_work_items": active_stories,
+    }
+    simulated = {
+        "total_fte": sim_fte,
+        "utilization": round(sim_utilization, 4),
+        "contention_risk": round(sim_contention, 4),
+        "active_work_items": sim_active,
+    }
+    delta = {k: simulated[k] - baseline[k] for k in baseline}
+    delta_pct = _pct(utilization, sim_utilization)
+
+    chart_data = {
+        "type": "bar",
+        "labels": ["FTE", "Utilization", "Contention", "Work Items"],
+        "baseline": [total_fte, utilization, contention_risk, active_stories],
+        "simulated": [sim_fte, sim_utilization, sim_contention, sim_active],
+    }
+    return baseline, simulated, delta, delta_pct, chart_data
+
+
+def _simulate_quality(conn, project_id, modifications):
+    """Quality dimension: test coverage, defect density, tech debt score."""
+    # Test coverage from test results
+    total_tests = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM test_results WHERE project_id = ?",
+        (project_id,),
+    )
+    passed_tests = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM test_results "
+        "WHERE project_id = ? AND status = 'passed'",
+        (project_id,),
+    )
+    test_coverage = (passed_tests / total_tests
+                     if total_tests > 0 else 0.0)
+
+    # Defect density: open defects per component
+    open_defects = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM code_quality_findings "
+        "WHERE project_id = ? AND severity IN ('high', 'critical') "
+        "AND status = 'open'",
+        (project_id,),
+    )
+    component_count = max(1, _safe_count(conn, "sysml_elements", project_id))
+    defect_density = open_defects / component_count
+
+    # Tech debt score: ratio of findings to total lines
+    total_findings = _safe_query_val(
+        conn,
+        "SELECT COUNT(*) FROM code_quality_findings WHERE project_id = ?",
+        (project_id,),
+    )
+    # Normalize: 0 findings = 100 score, 50+ findings = 0 score
+    tech_debt_score = max(0.0, min(100.0, 100.0 - total_findings * 2.0))
+
+    # Apply modifications
+    added_req = modifications.get("add_requirements", 0)
+    added_components = modifications.get("change_architecture", {}).get(
+        "add_components", 0)
+
+    # New code = more potential defects, lower initial coverage
+    sim_component_count = max(1, component_count + added_components + added_req)
+    # New components start with ~60% test coverage
+    new_units = added_components + added_req
+    if total_tests > 0 and new_units > 0:
+        new_tests = int(new_units * 3 * 0.6)  # 3 tests/unit, 60% pass initially
+        sim_total_tests = total_tests + int(new_units * 3)
+        sim_passed = passed_tests + new_tests
+        sim_coverage = sim_passed / sim_total_tests if sim_total_tests > 0 else 0.0
+    else:
+        sim_total_tests = total_tests
+        sim_passed = passed_tests
+        sim_coverage = test_coverage
+
+    sim_defects = open_defects + max(0, int(new_units * 0.5))
+    sim_defect_density = sim_defects / sim_component_count
+    sim_findings = total_findings + max(0, int(new_units * 1.5))
+    sim_tech_debt = max(0.0, min(100.0, 100.0 - sim_findings * 2.0))
+
+    baseline = {
+        "test_coverage": round(test_coverage, 4),
+        "defect_density": round(defect_density, 4),
+        "tech_debt_score": round(tech_debt_score, 2),
+        "open_defects": open_defects,
+    }
+    simulated = {
+        "test_coverage": round(sim_coverage, 4),
+        "defect_density": round(sim_defect_density, 4),
+        "tech_debt_score": round(sim_tech_debt, 2),
+        "open_defects": sim_defects,
+    }
+    delta = {k: round(simulated[k] - baseline[k], 4) for k in baseline}
+    delta_pct = _pct(tech_debt_score, sim_tech_debt)
+
+    chart_data = {
+        "type": "bar",
+        "labels": ["Coverage", "Defect Density", "Debt Score", "Defects"],
+        "baseline": [test_coverage, defect_density, tech_debt_score,
+                     open_defects],
+        "simulated": [sim_coverage, sim_defect_density, sim_tech_debt,
+                      sim_defects],
+    }
+    return baseline, simulated, delta, delta_pct, chart_data
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------
@@ -554,12 +722,14 @@ def _impact_score(dimension_results):
     if not dimension_results:
         return 0.0
     weights = {
-        "architecture": 0.15,
-        "compliance": 0.25,
-        "supply_chain": 0.10,
+        "architecture": 0.12,
+        "compliance": 0.18,
+        "supply_chain": 0.08,
         "schedule": 0.15,
-        "cost": 0.20,
-        "risk": 0.15,
+        "cost": 0.15,
+        "risk": 0.12,
+        "resource_allocation": 0.10,
+        "quality": 0.10,
     }
     score = 0.0
     for dim, data in dimension_results.items():
@@ -590,6 +760,10 @@ def _generate_recommendations(dimension_results):
             arch_delta = data.get("delta", {})
             if isinstance(arch_delta, dict) and arch_delta.get("coupling_score", 0) > 0.5:
                 recs.append("Coupling score increasing. Review architecture for modularity opportunities.")
+        if dim == "resource_allocation" and pct > 10:
+            recs.append(f"Resource utilization increased by {pct:.1f}%. Risk of contention — consider adding staff or phasing scope.")
+        if dim == "quality" and pct < -5:
+            recs.append(f"Quality metrics decreased by {abs(pct):.1f}%. Plan additional testing and code review sprints.")
     if not recs:
         recs.append("No significant concerns detected. Scenario impact is within acceptable thresholds.")
     return recs
@@ -606,6 +780,8 @@ DIMENSION_SIMULATORS = {
     "schedule": _simulate_schedule,
     "cost": _simulate_cost,
     "risk": _simulate_risk,
+    "resource_allocation": _simulate_resource_allocation,
+    "quality": _simulate_quality,
 }
 
 
