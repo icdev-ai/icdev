@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Production monitoring with log analysis, metric collection, alerting, and self-healing trigger"
+description: "ICDEV™ workflow: Production monitoring with log analysis, metric collection, alerting, and self-healing trigger"
 globs:
   - "**/*.py"
   - "**/*.yaml"

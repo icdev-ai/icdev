@@ -183,6 +183,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_specs",
         "creative_trends",
         # GovCon Intelligence (Phase 59, D361-D373)
+        "sam_gov_quota_events",
         "rfp_shall_statements",
         "rfp_requirement_patterns",
         "icdev_capability_map",

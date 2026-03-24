@@ -261,6 +261,19 @@ _TOPIC_VISUAL_MAP = {
     "research": "research lab with data visualization dashboards, trend analysis charts, scientific publication graphs",
     "proposal": "government proposal review workspace with compliance checklists, document sections, evaluation matrices on screens",
     "govcon": "government contracting office with SAM.gov data on screens, proposal volumes, compliance matrices",
+    # SAM.gov bridge domain topics
+    "cloud migration": "hybrid cloud migration diagram with on-premise servers connecting to cloud, data flowing between environments, security checkpoints",
+    "cloud": "cloud computing infrastructure with virtual servers, load balancers, security groups, multi-region architecture diagram",
+    "data integration": "enterprise data integration hub with ETL pipelines, database connections, API gateways, unified data flowing between systems",
+    "program management": "digital program management dashboard with Gantt charts, milestones, resource allocation, earned value metrics on screens",
+    "airspace": "air traffic control center with radar displays, flight path visualizations, command and control systems, digital airspace map",
+    "healthcare": "healthcare IT system with electronic health records dashboard, patient data integration, HL7 FHIR data streams on medical monitors",
+    "encryption": "cryptographic key exchange diagram with encrypted data streams, cipher blocks, hardware security modules, digital locks",
+    "quantum": "quantum computing processor with qubit visualization, post-quantum cryptography lattice structures, quantum-safe key exchange",
+    "wayfinding": "digital wayfinding system with interactive maps, indoor navigation, beacon network, touchscreen kiosk displays",
+    "network": "enterprise network architecture diagram with routers, firewalls, VPN tunnels, network segmentation, traffic monitoring",
+    "mission critical": "mission operations center with real-time system monitoring, redundant displays, alert dashboards, failover indicators",
+    "logistics": "military logistics command center with supply chain maps, inventory dashboards, distribution network visualization",
 }
 
 

@@ -461,6 +461,13 @@ class LLMRouter:
         if not rdcfg.get("enabled", True):
             return None
 
+        # D-RDT-5: Skip redaction for excluded functions (e.g. Pulse articles
+        # are public blog posts — redacting org names produces [ORGANIZATION]
+        # tokens that leak into published content).
+        excluded = rdcfg.get("excluded_functions", [])
+        if function in excluded:
+            return None
+
         sanitizer = self._get_sanitizer()
         if sanitizer is None:
             return None

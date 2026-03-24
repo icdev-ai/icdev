@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan)"
+description: "ICDEV™ workflow: Run comprehensive security scanning (SAST, dependency audit, secret detection, container scan)"
 globs:
   - "**/*.py"
   - "**/*.yaml"

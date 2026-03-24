@@ -5291,6 +5291,29 @@ CREATE INDEX IF NOT EXISTS idx_sam_deadline ON sam_gov_opportunities(response_de
 CREATE INDEX IF NOT EXISTS idx_sam_hash ON sam_gov_opportunities(content_hash);
 CREATE INDEX IF NOT EXISTS idx_sam_agency ON sam_gov_opportunities(agency);
 
+-- SAM.gov API quota tracking (D370 — daily call counter)
+CREATE TABLE IF NOT EXISTS sam_gov_api_quota (
+    date TEXT PRIMARY KEY,
+    requests_made INTEGER NOT NULL DEFAULT 0,
+    daily_limit INTEGER NOT NULL DEFAULT 10000,
+    buffer_remaining INTEGER NOT NULL DEFAULT 50,
+    last_429_at TEXT,
+    last_429_reset TEXT,
+    last_429_body TEXT,
+    updated_at TEXT NOT NULL
+);
+
+-- SAM.gov quota events audit trail (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS sam_gov_quota_events (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    date TEXT NOT NULL,
+    requests_made INTEGER,
+    daily_limit INTEGER,
+    details TEXT,
+    created_at TEXT NOT NULL
+);
+
 -- Extracted "shall" statements from RFPs (append-only, D6/D362)
 CREATE TABLE IF NOT EXISTS rfp_shall_statements (
     id TEXT PRIMARY KEY,

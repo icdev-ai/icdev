@@ -736,6 +736,99 @@ def get_pending_topics() -> dict:
             return {"status": "ok", "count": 0, "topics": []}
 
 
+def process_pending(max_articles: int | None = None) -> dict:
+    """Process existing pending entries through the Pulse pipeline.
+
+    Unlike run_sam_to_pulse (which discovers NEW opportunities), this
+    function picks up entries already in pulse_sam_article_log with
+    pipeline_status='pending' and pushes them through run_full_pipeline.
+    """
+    config = _load_sam_bridge_config()
+    template_type = config.get("template_type", "challenge_solution")
+    auto_rewrite = config.get("auto_rewrite", True)
+
+    init_db()
+
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, sam_opportunity_id, opportunity_title, "
+            "domain_category, article_topic "
+            "FROM pulse_sam_article_log "
+            "WHERE pipeline_status = 'pending' "
+            "ORDER BY created_at ASC"
+        ).fetchall()
+
+    pending = [dict(r) for r in rows]
+    if max_articles:
+        pending = pending[:max_articles]
+
+    if not pending:
+        return {"status": "ok", "message": "No pending items", "articles_generated": 0}
+
+    details: list[dict] = []
+    generated = 0
+
+    for entry in pending:
+        log_id = entry["id"]
+        topic = entry["article_topic"]
+        domain = entry["domain_category"]
+
+        if not topic:
+            logger.warning("Pending entry %s has no topic — skipping", log_id)
+            continue
+
+        logger.info("Processing pending: %s (domain=%s)", topic, domain)
+        try:
+            from tools.pulse.engine.scheduler import run_full_pipeline
+
+            result = run_full_pipeline(
+                topic_override=topic,
+                template_type=template_type,
+                auto_rewrite=auto_rewrite,
+            )
+
+            post_id = result.get("post_id", "")
+            status = "drafted" if result.get("status") in ("ok", "completed") else "failed"
+
+            update_row("sam_article_log", log_id, {
+                "post_id": post_id,
+                "pipeline_status": status,
+            })
+
+            details.append({
+                "log_id": log_id,
+                "topic": topic,
+                "domain": domain,
+                "status": status,
+                "post_id": post_id,
+                "quality_score": result.get("quality_score"),
+                "writeguard_passed": result.get("writeguard_passed"),
+                "word_count": result.get("word_count"),
+            })
+            generated += 1
+
+        except Exception as exc:
+            logger.error("Pipeline failed for pending '%s': %s", topic, exc)
+            update_row("sam_article_log", log_id, {
+                "pipeline_status": "failed",
+                "skip_reason": f"pipeline_error:{exc}",
+            })
+            details.append({
+                "log_id": log_id,
+                "topic": topic,
+                "status": "failed",
+                "error": str(exc),
+            })
+
+    return {
+        "status": "ok",
+        "articles_generated": generated,
+        "total_pending": len(pending),
+        "details": details,
+        "classification": "CUI",
+    }
+
+
 def get_stats() -> dict:
     """Statistics on SAM-to-Pulse pipeline."""
     with get_connection() as conn:
@@ -781,6 +874,8 @@ def main():
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--run", action="store_true", help="Run pipeline")
+    group.add_argument("--process-pending", action="store_true",
+                       help="Process existing pending entries through pipeline")
     group.add_argument("--dry-run", action="store_true", help="Extract without generating")
     group.add_argument("--list-pending", action="store_true", help="List pending topics")
     group.add_argument("--stats", action="store_true", help="Pipeline statistics")
@@ -798,6 +893,8 @@ def main():
 
     if args.run:
         result = run_sam_to_pulse(max_articles=args.max_articles)
+    elif args.process_pending:
+        result = process_pending(max_articles=args.max_articles)
     elif args.dry_run:
         result = run_sam_to_pulse(dry_run=True, max_articles=args.max_articles)
     elif args.list_pending:

@@ -12,6 +12,7 @@ sam_gov:
   rate_limit:
     requests_per_second: 10
     daily_limit: 10000
+    quota_buffer: 50             # Stop this many calls before hard limit
     delay_between_requests: 0.15
   naics_codes:
     - "541512"    # Computer Systems Design Services

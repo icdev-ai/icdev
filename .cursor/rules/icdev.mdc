@@ -1,5 +1,5 @@
 ---
-description: ICDEV project rules — IL4 CUI compliance-aware development
+description: ICDEV™ project rules — IL4 CUI compliance-aware development
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -8,7 +8,7 @@ globs:
 alwaysApply: true
 ---
 
-# ICDEV Project: ICDEV Project
+# ICDEV™ Project: ICDEV™ Project
 
 **IL4** | **CUI** | **python** webapp
 

@@ -1,5 +1,5 @@
 ---
-description: "ICDEV workflow: Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking"
+description: "ICDEV™ workflow: Build code using true TDD (RED → GREEN → REFACTOR) with automatic test generation and compliance tracking"
 globs:
   - "**/*.py"
   - "**/*.yaml"

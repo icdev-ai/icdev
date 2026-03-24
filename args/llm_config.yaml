@@ -578,6 +578,14 @@ redaction:
   skip_for_local_only: true        # Skip redaction when routing is Ollama-only
   deanonymize_response: true       # Restore originals in LLM response
   audit_enabled: true              # Log redaction events to redaction_audit table
+  # Functions excluded from redaction — Pulse articles are public evergreen
+  # blog posts, not CUI. Redacting org names produces [ORGANIZATION] tokens
+  # that leak into published content.
+  excluded_functions:
+    - pulse_draft
+    - pulse_rewrite
+    - wg_rewrite
+    - narrative_generation
 
 two_tier:
   enabled: true

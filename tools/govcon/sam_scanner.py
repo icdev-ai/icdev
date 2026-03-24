@@ -88,6 +88,14 @@ try:
 except ImportError:
     _HAS_CB = False
 
+try:
+    from tools.govcon.quota_tracker import (
+        check_quota, increment_quota, record_429,
+    )
+    _HAS_QUOTA = True
+except ImportError:
+    _HAS_QUOTA = False
+
 # =========================================================================
 # CONSTANTS
 # =========================================================================
@@ -152,17 +160,41 @@ def _load_config():
 # =========================================================================
 # HTTP HELPER
 # =========================================================================
-def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
-    """HTTP GET with error handling and rate limit awareness.
+def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT,
+              track_quota=True):
+    """HTTP GET with error handling, rate limit awareness, and quota tracking.
+
+    Args:
+        url: Request URL.
+        headers: Optional headers dict.
+        params: Optional query params dict.
+        timeout: Request timeout in seconds.
+        track_quota: If True, check/increment SAM.gov daily quota.
 
     Returns:
         Tuple of (data, error).  On success error is None.
     """
     if not _HAS_REQUESTS:
         return None, "requests library not installed"
+
+    # Proactive quota check — refuse to call if daily limit approached
+    if track_quota and _HAS_QUOTA:
+        quota = check_quota()
+        if not quota.get("allowed", True):
+            reset = quota.get("reset_at", "unknown")
+            return None, f"quota_exhausted:resets_{reset}"
+
     try:
         resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+
+        # Track successful call
+        if track_quota and _HAS_QUOTA:
+            increment_quota(1)
+
         if resp.status_code == 429:
+            # Record 429 with response body for reset time parsing
+            if _HAS_QUOTA:
+                record_429(response_body=resp.text)
             return None, "rate_limited"
         if resp.status_code == 403:
             return None, "forbidden"

@@ -843,7 +843,8 @@
 ## GovCon Intelligence (Phase 59)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| SAM.gov Scanner | tools/govcon/sam_scanner.py | Poll SAM.gov Opportunities API v2. Extracts opportunities by NAICS, notice type. Stores in sam_gov_opportunities. | --scan, --naics, --list-cached, --json | Opportunity JSON |
+| SAM.gov Scanner | tools/govcon/sam_scanner.py | Poll SAM.gov Opportunities API v2. Extracts opportunities by NAICS, notice type. Stores in sam_gov_opportunities. Auto-backfills full descriptions. | --scan, --backfill, --naics, --list-cached, --json | Opportunity JSON |
+| SAM.gov Quota Tracker | tools/govcon/quota_tracker.py | Persistent daily API call counter for SAM.gov. Proactive quota check before each request, 429 response parsing, audit trail. | --status, --check, --reset, --json | Quota status JSON |
 | Requirement Extractor | tools/govcon/requirement_extractor.py | Extract shall/must/will statements from RFP descriptions. Domain-classify (9 domains). Cluster by keyword fingerprint (D364). | --extract-all, --patterns, --domain, --json | Requirements + patterns JSON |
 | Capability Mapper | tools/govcon/capability_mapper.py | Map requirement patterns to ICDEV™ capability catalog. Compute coverage scores (L/M/N). | --map-all, --coverage, --gaps, --json | Compliance matrix JSON |
 | Gap Analyzer | tools/govcon/gap_analyzer.py | Identify unmet requirements (coverage < 0.40). Generate enhancement recommendations. Cross-register to Innovation Engine. | --analyze, --recommendations, --json | Gap analysis JSON |
