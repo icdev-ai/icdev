@@ -402,6 +402,7 @@ promoter:
       min_confidence: 0.0  # cisa.gov advisories and KEV
     - source_contains: OWASP
       min_confidence: 0.0  # owasp.org feeds
+      hide_from_dashboard: true  # Auto-promoted, no review needed
     - source_contains: nist
       min_confidence: 0.0  # NIST NVD and standards
 

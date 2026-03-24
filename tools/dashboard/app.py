@@ -4751,11 +4751,29 @@ def create_app() -> Flask:
             return jsonify({"error": str(exc)}), 500
 
 
+    def _gkp_hidden_sources():
+        """Load source patterns marked hide_from_dashboard in genesis auto_promote rules."""
+        try:
+            cfg_path = BASE_DIR / "args" / "genesis_config.yaml"
+            if cfg_path.exists():
+                import yaml
+                cfg = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+                rules = cfg.get("promoter", {}).get("auto_promote", [])
+                return [
+                    r["source_contains"].lower()
+                    for r in rules
+                    if r.get("hide_from_dashboard") and r.get("source_contains")
+                ]
+        except Exception:
+            pass
+        return []
+
     @app.route("/api/genesis/gkps", methods=["GET"])
     def api_genesis_gkps():
         """List GKPs with optional status filter."""
         app_key = flask_request.args.get("app", "icdev")
         status_filter = flask_request.args.get("status", None)
+        show_hidden = flask_request.args.get("show_hidden", "false") == "true"
         limit = int(flask_request.args.get("limit", "100"))
         try:
             conn = _genesis_db(app_key)
@@ -4771,6 +4789,20 @@ def create_app() -> Flask:
                         (limit,),
                     ).fetchall()
                 gkps = [dict(r) for r in rows]
+
+                # Filter out hidden sources unless explicitly requested
+                if not show_hidden:
+                    hidden = _gkp_hidden_sources()
+                    if hidden:
+                        def _is_hidden(g):
+                            try:
+                                p = json.loads(g["payload"]) if isinstance(g["payload"], str) else (g["payload"] or {})
+                                src = (p.get("source", "") or "").lower()
+                                return any(h in src for h in hidden)
+                            except Exception:
+                                return False
+                        gkps = [g for g in gkps if not _is_hidden(g)]
+
                 return jsonify({"gkps": gkps, "count": len(gkps)})
             finally:
                 conn.close()
