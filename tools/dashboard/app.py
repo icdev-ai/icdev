@@ -668,6 +668,10 @@ def create_app() -> Flask:
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
 
+    # Auto-reload templates on change (no server restart needed)
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
+
     # Register UX filters (glossary, timestamps, error recovery, quick paths)
     register_ux_filters(app)
 
