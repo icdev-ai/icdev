@@ -1075,6 +1075,11 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/kanban")
+    def kanban_page():
+        """Task Board — Kanban view for scheduled and planned work."""
+        return render_template("kanban.html")
+
     @app.route("/projects")
     def projects_list():
         """Project listing page."""
