@@ -281,10 +281,10 @@ def _extract_pain_points(description: str, config: dict) -> list[dict]:
         by_domain[s["domain"]].append(s)
 
     pain_points: list[dict] = []
-    # For short texts (titles), accept 1 match; for full descriptions require 2
-    min_sentences = 1 if len(description) < 300 else 2
+    # Accept 1 matched sentence per domain — the old threshold of 2 was
+    # filtering out too many legitimate opportunities.
     for domain, items in by_domain.items():
-        if len(items) >= min_sentences:
+        if len(items) >= 1:
             pain_points.append({
                 "text": " ".join(i["text"] for i in items[:5]),
                 "domain": domain,
@@ -301,7 +301,8 @@ def _generalize_topic(pain_point: dict, angles: dict) -> str:
     """Convert specific RFP pain point into generic/evergreen article topic.
 
     Strips solicitation numbers, agency names, dates.
-    Uses domain_angles mapping for the article angle.
+    Uses domain_angles mapping as a base, then appends unique keywords so
+    that each topic is distinct enough to survive dedup.
     """
     domain = pain_point.get("domain", "general")
     keywords = pain_point.get("keywords", [])
@@ -309,18 +310,27 @@ def _generalize_topic(pain_point: dict, angles: dict) -> str:
     # Use the configured angle for this domain
     angle = angles.get(domain, "Federal IT Modernization Challenges")
 
-    # Build a descriptive topic from the angle + top keywords
+    # Build a descriptive topic from the angle + top keywords.
+    # IMPORTANT: Always append keywords so topics are unique per opportunity.
+    # Without this, every cloud opp maps to the same generic angle string
+    # and the dedup layer kills them all after the first one.
     if keywords:
         # Pick up to 3 unique keywords that aren't already in the angle
         angle_lower = angle.lower()
+        # Filter out very short keywords (< 3 chars) that add no specificity
         unique_kw = [
             kw for kw in keywords
-            if kw.lower() not in angle_lower
+            if kw.lower() not in angle_lower and len(kw) >= 3
         ][:3]
         if unique_kw:
             return f"{angle}: {', '.join(kw.title() for kw in unique_kw)}"
 
-    return angle
+    # If no unique keywords, append a hash fragment so the topic is still
+    # distinct from the base angle (prevents false dedup).
+    text_hash = hashlib.sha256(
+        pain_point.get("text", "")[:200].encode()
+    ).hexdigest()[:6]
+    return f"{angle} [{text_hash}]"
 
 
 # ── Deduplication (3-layer, matches existing Pulse patterns) ──────────
@@ -435,6 +445,19 @@ def run_sam_to_pulse(
 
     init_db()
 
+    # Backfill URL-only / short descriptions before processing so extraction
+    # has the richest possible text to work with.
+    try:
+        from tools.govcon.sam_scanner import backfill_descriptions
+        bf_result = backfill_descriptions(limit=50, delay=0.3)
+        logger.info(
+            "Description backfill: %d updated, %d checked",
+            bf_result.get("updated_count", 0),
+            bf_result.get("total_checked", 0),
+        )
+    except Exception as exc:
+        logger.warning("Description backfill skipped: %s", exc)
+
     if max_articles is None:
         max_articles = config.get("max_articles_per_run", 5)
 
@@ -499,6 +522,20 @@ def run_sam_to_pulse(
 
         # Step 2: Extract pain points
         pain_points = _extract_pain_points(extraction_text, config)
+
+        # Fallback: if extraction found nothing, try classifying title alone.
+        # Many valid opps (e.g. "Post Quantum Cryptography Support") have
+        # short descriptions but obviously relevant titles.
+        if not pain_points and opp_title:
+            title_domain = _classify_domain(opp_title)
+            if title_domain != "general":
+                pain_points = [{
+                    "text": opp_title,
+                    "domain": title_domain,
+                    "keywords": [opp_title],
+                    "sentence_count": 1,
+                }]
+
         if not pain_points:
             # Log as skipped in DB
             insert_row("sam_article_log", {

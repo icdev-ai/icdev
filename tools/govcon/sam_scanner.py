@@ -765,10 +765,13 @@ def _print_human(result, args):
 
 
 def backfill_descriptions(db_path=None, limit=50, delay=0.5):
-    """Fetch full descriptions for opportunities that only have URL placeholders.
+    """Fetch full descriptions for opportunities with URL placeholders or short text.
 
-    SAM.gov v1 API returns a URL in the description field. This function
-    fetches the actual content from those URLs and updates the DB.
+    SAM.gov v2 search API often returns a URL in the description field pointing
+    to the v1 notice description endpoint.  This function fetches the actual
+    content from those URLs and updates the DB.  It also picks up any entries
+    whose description is suspiciously short (< 200 chars) since the search
+    endpoint frequently truncates.
 
     Args:
         db_path: Optional database path override.
@@ -786,9 +789,14 @@ def backfill_descriptions(db_path=None, limit=50, delay=0.5):
         return {"error": "SAM_GOV_API_KEY not set", "updated_count": 0}
 
     conn = _get_db(db_path)
+
+    # Find opportunities needing backfill: URL descriptions OR very short text
     rows = conn.execute(
         "SELECT id, description FROM sam_gov_opportunities "
-        "WHERE description LIKE 'https://api.sam.gov%noticedesc%' LIMIT ?",
+        "WHERE description LIKE 'https://api.sam.gov%%noticedesc%%' "
+        "   OR LENGTH(COALESCE(description, '')) < 200 "
+        "ORDER BY posted_date DESC "
+        "LIMIT ?",
         (limit,)
     ).fetchall()
 
@@ -798,13 +806,24 @@ def backfill_descriptions(db_path=None, limit=50, delay=0.5):
 
     for row in rows:
         opp_id = row[0]
-        desc_url = row[1]
+        current_desc = row[1] or ""
+
+        # Determine the fetch URL
+        if current_desc.startswith("https://api.sam.gov") and "noticedesc" in current_desc:
+            # Already a URL — use it directly
+            desc_url = current_desc
+        else:
+            # Build the v1 noticedesc URL from the opportunity ID
+            desc_url = (
+                f"https://api.sam.gov/prod/opportunities/v1/noticedesc"
+                f"?noticeid={opp_id}"
+            )
 
         # Add API key
         sep = "&" if "?" in desc_url else "?"
         full_url = f"{desc_url}{sep}api_key={api_key}"
 
-        data, err = _safe_get(full_url, timeout=10)
+        data, err = _safe_get(full_url, timeout=15)
         if err:
             errors.append({"id": opp_id, "error": err})
             if err == "rate_limited":
@@ -814,16 +833,22 @@ def backfill_descriptions(db_path=None, limit=50, delay=0.5):
 
         description = ""
         if isinstance(data, dict):
+            # JSON response — look for description or content field
             fetched = data.get("description", "") or data.get("content", "")
             if isinstance(fetched, str) and len(fetched) > 50:
                 description = fetched
             elif data.get("_raw"):
+                # HTML response — strip tags
                 clean = _re.sub(r"<[^>]+>", " ", data["_raw"])
                 clean = _re.sub(r"\s+", " ", clean).strip()
                 if len(clean) > 50:
                     description = clean
+        elif isinstance(data, str) and len(data) > 50:
+            # Plain text response
+            description = data
 
-        if description:
+        # Only update if we got something meaningfully longer than what we had
+        if description and len(description) > len(current_desc):
             content_hash = _content_hash(f"{opp_id}|{description[:500]}")
             conn.execute(
                 "UPDATE sam_gov_opportunities SET description = ?, content_hash = ?, last_synced = ? WHERE id = ?",

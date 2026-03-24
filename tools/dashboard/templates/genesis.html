@@ -184,8 +184,8 @@
                 <tr>
                     <th>ID</th>
                     <th>Type</th>
-                    <th>Reflex</th>
-                    <th>Confidence</th>
+                    <th class="sortable" data-sort="reflex" onclick="sortGKPs('reflex')">Reflex <span class="sort-arrow" id="sort-arrow-reflex"></span></th>
+                    <th class="sortable" data-sort="confidence" onclick="sortGKPs('confidence')">Confidence <span class="sort-arrow" id="sort-arrow-confidence"></span></th>
                     <th>Status</th>
                     <th>Created</th>
                     <th>Actions</th>
@@ -269,6 +269,9 @@
 .app-dot-green { background: #10b981; }
 .app-dot-yellow { background: #f59e0b; }
 .app-dot-red { background: #ef4444; }
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { color: var(--accent, #3b82f6); }
+.sort-arrow { font-size: 10px; margin-left: 4px; }
 </style>
 
 <script>
@@ -316,6 +319,72 @@ function runReflex(name) {
         });
 }
 
+let gkpSortField = null;
+let gkpSortAsc = true;
+let cachedGKPs = [];
+
+function sortGKPs(field) {
+    if (gkpSortField === field) {
+        gkpSortAsc = !gkpSortAsc;
+    } else {
+        gkpSortField = field;
+        gkpSortAsc = true;
+    }
+    document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
+    const arrow = document.getElementById('sort-arrow-' + field);
+    if (arrow) arrow.textContent = gkpSortAsc ? '\u25B2' : '\u25BC';
+    renderGKPRows(cachedGKPs);
+}
+
+function renderGKPRows(gkps) {
+    const tbody = document.getElementById('g-gkp-tbody');
+    if (gkps.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No GKPs found</td></tr>';
+        return;
+    }
+    let sorted = [...gkps];
+    if (gkpSortField === 'reflex') {
+        sorted.sort((a, b) => {
+            const cmp = (a.genesis_reflex || '').localeCompare(b.genesis_reflex || '');
+            return gkpSortAsc ? cmp : -cmp;
+        });
+    } else if (gkpSortField === 'confidence') {
+        sorted.sort((a, b) => {
+            const cmp = (a.confidence || 0) - (b.confidence || 0);
+            return gkpSortAsc ? cmp : -cmp;
+        });
+    }
+    tbody.innerHTML = '';
+    sorted.forEach(g => {
+        const tr = document.createElement('tr');
+        const statusClass = g.promotion_status.includes('promoted') ? 'gkp-row-promoted' :
+            g.promotion_status === 'pending_review' ? 'gkp-row-pending' :
+            g.promotion_status === 'rejected' ? 'gkp-row-rejected' : '';
+        tr.className = statusClass;
+
+        const statusBadge = g.promotion_status === 'pending_review' ? 'badge-yellow' :
+            g.promotion_status.includes('promoted') ? 'badge-green' :
+            g.promotion_status === 'rejected' ? 'badge-red' : 'badge-gray';
+
+        let actions = `<button class="btn btn-sm" onclick="viewGKP('${g.id}')">View</button> `;
+        if (g.promotion_status === 'pending_review') {
+            actions += `<button class="btn btn-sm btn-success" onclick="promoteGKP('${g.id}')">Promote</button> `;
+            actions += `<button class="btn btn-sm btn-danger" onclick="rejectGKP('${g.id}')">Reject</button>`;
+        }
+
+        tr.innerHTML = `
+            <td style="font-family:monospace;font-size:12px;">${g.id}</td>
+            <td><span class="badge badge-blue">${g.artifact_type}</span></td>
+            <td>${g.genesis_reflex}</td>
+            <td>${(g.confidence || 0).toFixed(2)}</td>
+            <td><span class="badge ${statusBadge}">${g.promotion_status.replace('_', ' ')}</span></td>
+            <td>${(g.created_at || '').substring(0, 16)}</td>
+            <td style="white-space:nowrap;">${actions}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
 function loadGKPs(statusFilter) {
     let url = '/api/genesis/gkps' + APP_PARAM;
     if (statusFilter) url += '&status=' + statusFilter;
@@ -335,40 +404,8 @@ function loadGKPs(statusFilter) {
     fetch(url)
         .then(r => r.json())
         .then(data => {
-            const gkps = data.gkps || [];
-            if (gkps.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No GKPs found</td></tr>';
-                return;
-            }
-            tbody.innerHTML = '';
-            gkps.forEach(g => {
-                const tr = document.createElement('tr');
-                const statusClass = g.promotion_status.includes('promoted') ? 'gkp-row-promoted' :
-                    g.promotion_status === 'pending_review' ? 'gkp-row-pending' :
-                    g.promotion_status === 'rejected' ? 'gkp-row-rejected' : '';
-                tr.className = statusClass;
-
-                const statusBadge = g.promotion_status === 'pending_review' ? 'badge-yellow' :
-                    g.promotion_status.includes('promoted') ? 'badge-green' :
-                    g.promotion_status === 'rejected' ? 'badge-red' : 'badge-gray';
-
-                let actions = `<button class="btn btn-sm" onclick="viewGKP('${g.id}')">View</button> `;
-                if (g.promotion_status === 'pending_review') {
-                    actions += `<button class="btn btn-sm btn-success" onclick="promoteGKP('${g.id}')">Promote</button> `;
-                    actions += `<button class="btn btn-sm btn-danger" onclick="rejectGKP('${g.id}')">Reject</button>`;
-                }
-
-                tr.innerHTML = `
-                    <td style="font-family:monospace;font-size:12px;">${g.id}</td>
-                    <td><span class="badge badge-blue">${g.artifact_type}</span></td>
-                    <td>${g.genesis_reflex}</td>
-                    <td>${(g.confidence || 0).toFixed(2)}</td>
-                    <td><span class="badge ${statusBadge}">${g.promotion_status.replace('_', ' ')}</span></td>
-                    <td>${(g.created_at || '').substring(0, 16)}</td>
-                    <td style="white-space:nowrap;">${actions}</td>
-                `;
-                tbody.appendChild(tr);
-            });
+            cachedGKPs = data.gkps || [];
+            renderGKPRows(cachedGKPs);
         })
         .catch(e => {
             tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#ef4444;">Error: ' + e + '</td></tr>';
