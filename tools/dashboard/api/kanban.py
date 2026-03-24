@@ -1,0 +1,182 @@
+# CUI // SP-CTI
+"""Kanban Task Board API — CRUD for task cards on the dashboard Kanban."""
+
+import uuid
+from datetime import datetime, timezone
+
+from flask import Blueprint, jsonify, request
+
+from tools.db.storage import get_connection
+
+kanban_api = Blueprint("kanban_api", __name__, url_prefix="/api/kanban")
+
+
+def _utcnow():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _gen_id():
+    return f"task-{uuid.uuid4().hex[:10]}"
+
+
+@kanban_api.route("/tasks", methods=["GET"])
+def list_tasks():
+    """Return all kanban tasks, optionally filtered by status."""
+    status_filter = request.args.get("status")
+    conn = get_connection()
+    try:
+        if status_filter:
+            rows = conn.execute(
+                "SELECT * FROM kanban_tasks WHERE status = %s ORDER BY "
+                "CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC",
+                (status_filter,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM kanban_tasks ORDER BY "
+                "CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC"
+            ).fetchall()
+        tasks = [dict(r) for r in rows]
+        # Stringify datetimes for JSON
+        for t in tasks:
+            for k in ("scheduled_at", "completed_at", "created_at", "updated_at"):
+                if t.get(k) and hasattr(t[k], "isoformat"):
+                    t[k] = t[k].isoformat()
+        return jsonify({"tasks": tasks, "total": len(tasks)})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks", methods=["POST"])
+def create_task():
+    """Create a new kanban task."""
+    data = request.get_json(force=True)
+    if not data.get("title"):
+        return jsonify({"error": "title is required"}), 400
+
+    task_id = _gen_id()
+    now = _utcnow()
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO kanban_tasks "
+            "(id, title, description, task_type, priority, "
+            "status, scheduled_at, created_at, updated_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (
+                task_id,
+                data["title"],
+                data.get("description", ""),
+                data.get("task_type", "build"),
+                data.get("priority", "medium"),
+                data.get("status", "backlog"),
+                data.get("scheduled_at"),
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+        return jsonify({"status": "created", "id": task_id}), 201
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>", methods=["PATCH"])
+def update_task(task_id):
+    """Update a kanban task (status, priority, title, etc.)."""
+    data = request.get_json(force=True)
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT * FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Task not found"}), 404
+
+        allowed = (
+            "title", "description", "task_type",
+            "priority", "status", "scheduled_at",
+        )
+        sets = []
+        vals = []
+        for field in allowed:
+            if field in data:
+                sets.append(f"{field} = %s")
+                vals.append(data[field])
+
+        if not sets:
+            return jsonify({"error": "No fields to update"}), 400
+
+        # Auto-set completed_at when moving to done
+        if data.get("status") == "done" and existing["status"] != "done":
+            sets.append("completed_at = %s")
+            vals.append(_utcnow())
+        # Clear completed_at if moving out of done
+        elif (data.get("status") and data["status"] != "done"
+              and existing["status"] == "done"):
+            sets.append("completed_at = NULL")
+
+        sets.append("updated_at = %s")
+        vals.append(_utcnow())
+        vals.append(task_id)
+
+        conn.execute(
+            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = %s",
+            tuple(vals),
+        )
+        conn.commit()
+        return jsonify({"status": "updated", "id": task_id})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>", methods=["DELETE"])
+def delete_task(task_id):
+    """Delete a kanban task."""
+    conn = get_connection()
+    try:
+        result = conn.execute(
+            "DELETE FROM kanban_tasks WHERE id = %s RETURNING id", (task_id,)
+        ).fetchone()
+        conn.commit()
+        if result:
+            return jsonify({"status": "deleted", "id": task_id})
+        return jsonify({"error": "Task not found"}), 404
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/move", methods=["POST"])
+def move_task(task_id):
+    """Move a task to a new status column."""
+    data = request.get_json(force=True)
+    new_status = data.get("status")
+    if new_status not in ("backlog", "scheduled", "in_progress", "done"):
+        return jsonify({"error": "Invalid status"}), 400
+
+    now = _utcnow()
+    conn = get_connection()
+    try:
+        existing = conn.execute(
+            "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Task not found"}), 404
+
+        sql = "UPDATE kanban_tasks SET status = %s, updated_at = %s"
+        vals = [new_status, now]
+        if new_status == "done" and existing["status"] != "done":
+            sql += ", completed_at = %s"
+            vals.append(now)
+        elif new_status != "done" and existing["status"] == "done":
+            sql += ", completed_at = NULL"
+        sql += " WHERE id = %s"
+        vals.append(task_id)
+
+        conn.execute(sql, tuple(vals))
+        conn.commit()
+        return jsonify({"status": "moved", "id": task_id, "new_status": new_status})
+    finally:
+        conn.close()
