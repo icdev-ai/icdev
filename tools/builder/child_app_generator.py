@@ -2,7 +2,7 @@
 """Child App Generator - generates mini-ICDEV™ clone applications from blueprints.
 
 This is the core engine for ICDEV™ Phase 19 agentic app generation. Every child
-app includes the full GOTCHA framework, ATLAS workflow, own agents, memory system,
+app includes the full GOTCHA framework, ANVIL workflow, own agents, memory system,
 and CI/CD — everything except the ability to generate new applications.
 
 Decision D21: Copy-and-adapt over template library.
@@ -613,8 +613,8 @@ def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
             },
             {
                 "id": "atlas-workflow",
-                "name": "ATLAS Workflow",
-                "description": "Execute ATLAS build phases",
+                "name": "ANVIL Workflow",
+                "description": "Execute ANVIL build phases",
             },
         ],
         "builder": [
@@ -1364,7 +1364,7 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
         "- This is a generated child application of ICDEV™\n"
         "- This application CANNOT generate child applications "
         "(grandchild prevention)\n"
-        "- ATLAS workflow does not include fitness assessment step\n"
+        "- ANVIL workflow does not include fitness assessment step\n"
     )
     if parent_cb.get("enabled"):
         memory_content += (
@@ -1577,11 +1577,11 @@ def step_07_args_and_context(child_root: Path, blueprint: dict, icdev_root: Path
     # D-KARL-1: Knowledge Graph config
     if capabilities.get("knowledge_graph"):
         args_files.append(("args/knowledge_graph_config.yaml", []))
-    # Phase 61: Orchestration config (prompt chains, ATLAS critique)
+    # Phase 61: Orchestration config (prompt chains, ANVIL critique)
     args_files.append(("args/prompt_chains.yaml", []))
     atlas_config = blueprint.get("atlas_config", {})
     if atlas_config.get("critique_enabled"):
-        args_files.append(("args/atlas_critique_config.yaml", []))
+        args_files.append(("args/anvil_critique_config.yaml", []))
 
     for rel_path, adaptations in args_files:
         src = icdev_root / rel_path
@@ -1892,19 +1892,19 @@ def query_parent_rag(query: str, top_k: int = 5) -> dict:
 
 
 def send_critique_findings(session_id: str, findings: list) -> dict:
-    """Send ATLAS critique findings to parent for federated history.
+    """Send ANVIL critique findings to parent for federated history.
 
     Enables cross-child critique learning: findings from one child app
     are available to parent and sibling apps via critique history queries.
 
     Args:
-        session_id: Local ATLAS critique session ID.
-        findings: List of critique finding dicts from atlas_critique.py.
+        session_id: Local ANVIL critique session ID.
+        findings: List of critique finding dicts from anvil_critique.py.
 
     Returns:
         Dict with acknowledgment or error.
     """
-    return call_parent("atlas_critique.report_findings", {{
+    return call_parent("anvil_critique.report_findings", {{
         "session_id": session_id,
         "child_id": "{app_name}",
         "findings": findings,
@@ -1912,7 +1912,7 @@ def send_critique_findings(session_id: str, findings: list) -> dict:
 
 
 def query_critique_history(project_type: str = "", limit: int = 20) -> dict:
-    """Query parent for historical ATLAS critique findings.
+    """Query parent for historical ANVIL critique findings.
 
     Retrieves critique patterns and common findings from parent and sibling
     apps to inform local critique sessions.
@@ -1927,7 +1927,7 @@ def query_critique_history(project_type: str = "", limit: int = 20) -> dict:
     params = {{"child_id": "{app_name}", "limit": limit}}
     if project_type:
         params["project_type"] = project_type
-    return call_parent("atlas_critique.get_history", params)
+    return call_parent("anvil_critique.get_history", params)
 
 
 if __name__ == "__main__":
@@ -2507,7 +2507,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
         "Coding Development platform.**\n\n"
         "ICDEV™ is a meta-builder that autonomously constructs Gov/DoD applications "
         "using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
-        "Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
+        "Hard Prompts) and the ANVIL workflow (Architect → Trace → Link → Assemble "
         "→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
         "compliance, and self-healing capabilities.\n"
     )
@@ -2873,7 +2873,7 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
     """Step 14: Validate GOTCHA framework compliance of generated child app.
 
     Runs the gotcha_validator to verify all 6 GOTCHA layers are populated
-    and ATLAS workflow structure is present. This ensures child apps follow
+    and ANVIL workflow structure is present. This ensures child apps follow
     the GOTCHA framework as mandated by build_app.md.
 
     BMAD-adapted: adversarial validation — assumes the build is incomplete

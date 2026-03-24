@@ -49,7 +49,7 @@ agents:
   architect:
     id: "architect-agent"
     name: "ICDEV™ Architect"
-    description: "System design, schema design, technology selection. Runs ATLAS A/T phases."
+    description: "System design, schema design, technology selection. Runs ANVIL A/T phases."
     host: "0.0.0.0"
     port: 8444
     tls:

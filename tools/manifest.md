@@ -813,7 +813,7 @@
 | SWFT Evidence Bundler | tools/compliance/swft_evidence_bundler.py | Bundle DoD SWFT evidence package (SLSA, SBOM, VEX, scan results) | --project-id, --output-dir, --json | SWFT bundle |
 | Workflow Composer | tools/orchestration/workflow_composer.py | Declarative cross-phase workflow engine using YAML templates + TopologicalSorter DAG | --template, --project-id, --dry-run, --list, --json | Workflow execution plan + results |
 | ATO Workflow Template | args/workflow_templates/ato_acceleration.yaml | Workflow: categorize → assess → SSP → POAM → SBOM | (template) | YAML workflow |
-| Security Workflow Template | args/workflow_templates/security_hardening.yaml | Workflow: SAST → deps → secrets → OWASP → ATLAS | (template) | YAML workflow |
+| Security Workflow Template | args/workflow_templates/security_hardening.yaml | Workflow: SAST → deps → secrets → OWASP → ANVIL | (template) | YAML workflow |
 | Compliance Workflow Template | args/workflow_templates/full_compliance.yaml | Workflow: detect → multi-regime assess → crosswalk | (template) | YAML workflow |
 | Build Workflow Template | args/workflow_templates/build_deploy.yaml | Workflow: scaffold → test → build → lint → deploy | (template) | YAML workflow |
 
@@ -884,11 +884,11 @@
 | Research MCP Server | tools/mcp/research_server.py | MCP server handlers for 10 research tools | (MCP stdio) | JSON-RPC responses |
 | Research Config | args/research_config.yaml | Engine configuration: pipeline, sources, scoring, dossier, scheduling | (data) | YAML config |
 
-## ATLAS Critique Phase (Phase 61 — Feature 3)
+## ANVIL Critique Phase (Phase 61 — Feature 3)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| ATLAS Critique | tools/agent/atlas_critique.py | Adversarial multi-agent plan critique: parallel dispatch to security/compliance/knowledge agents, severity classification, GO/NOGO/CONDITIONAL consensus, revision loop (max 3 rounds). Append-only findings (NIST AU). | --project-id, --phase-output, --session-id, --status, --history, --max-rounds, --json | Critique session + findings JSON |
-| ATLAS Critique Config | args/atlas_critique_config.yaml | Critique phase config: critic agent assignments, focus areas, consensus rules, revision prompt, max rounds | (data) | YAML config |
+| ANVIL Critique | tools/agent/anvil_critique.py | Adversarial multi-agent plan critique: parallel dispatch to security/compliance/knowledge agents, severity classification, GO/NOGO/CONDITIONAL consensus, revision loop (max 3 rounds). Append-only findings (NIST AU). | --project-id, --phase-output, --session-id, --status, --history, --max-rounds, --json | Critique session + findings JSON |
+| ANVIL Critique Config | args/anvil_critique_config.yaml | Critique phase config: critic agent assignments, focus areas, consensus rules, revision prompt, max rounds | (data) | YAML config |
 
 ## Universal RAG Subsystem (Phase 64)
 | Tool | File | Description | Input | Output |

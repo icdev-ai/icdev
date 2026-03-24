@@ -188,7 +188,7 @@ class TestCapabilityEvaluatorDimensions:
     def test_capability_evaluator_security_dimension(self):
         """security_assessment dimension exists with weight ~0.10.
 
-        Phase 37 adds this dimension for ATLAS AI security scoring.
+        Phase 37 adds this dimension for ANVIL AI security scoring.
         """
         try:
             from icdev.tools.registry.capability_evaluator import CapabilityEvaluator

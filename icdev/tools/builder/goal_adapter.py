@@ -75,7 +75,7 @@ GOAL_FILE_MAP: Dict[str, str] = {
 # ============================================================
 
 GOAL_PURPOSE_MAP: Dict[str, str] = {
-    "build_app": "5/6-step ATLAS build process",
+    "build_app": "5/6-step ANVIL build process",
     "tdd_workflow": "RED\u2192GREEN\u2192REFACTOR cycle with BDD",
     "compliance_workflow": "Generate ATO artifacts (SSP, POAM, STIG, SBOM)",
     "security_scan": "SAST, dependency audit, secret detection",
@@ -108,7 +108,7 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
 # ============================================================
 
 GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
-    "build_app": "ATLAS/M-ATLAS Workflow",
+    "build_app": "ANVIL/M-ANVIL Workflow",
     "tdd_workflow": "TDD Workflow",
     "compliance_workflow": "Compliance Workflow",
     "security_scan": "Security Scanning",

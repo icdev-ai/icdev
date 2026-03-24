@@ -1347,13 +1347,13 @@ RAG_TABLES: Dict[str, str] = {
 
 
 # ============================================================
-# Phase 61: ORCHESTRATION TABLES (ATLAS critique, prompt chains,
+# Phase 61: ORCHESTRATION TABLES (ANVIL critique, prompt chains,
 # dispatcher mode, session purpose)
 # ============================================================
 
 ORCHESTRATION_TABLES: Dict[str, str] = {
-    "atlas_critique_sessions": textwrap.dedent("""\
-        CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
+    "anvil_critique_sessions": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS anvil_critique_sessions (
             id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL,
             workflow_id TEXT,
@@ -1373,10 +1373,10 @@ ORCHESTRATION_TABLES: Dict[str, str] = {
             created_at TEXT NOT NULL,
             completed_at TEXT
         );"""),
-    "atlas_critique_findings": textwrap.dedent("""\
-        CREATE TABLE IF NOT EXISTS atlas_critique_findings (
+    "anvil_critique_findings": textwrap.dedent("""\
+        CREATE TABLE IF NOT EXISTS anvil_critique_findings (
             id TEXT PRIMARY KEY,
-            session_id TEXT NOT NULL REFERENCES atlas_critique_sessions(id),
+            session_id TEXT NOT NULL REFERENCES anvil_critique_sessions(id),
             critic_agent TEXT NOT NULL,
             round_number INTEGER DEFAULT 1,
             finding_type TEXT NOT NULL CHECK(finding_type IN (

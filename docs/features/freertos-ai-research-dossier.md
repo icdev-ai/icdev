@@ -34,7 +34,7 @@ Tier 3: Cloud/ICDEV™ (Bedrock, SageMaker, ICDEV™ Agents)
 ├── Model training + deployment to Tier 2
 ├── Compliance monitoring + audit trail
 ├── Self-healing firmware crash analysis
-└── ICDEV™ GOTCHA/ATLAS workflow
+└── ICDEV™ GOTCHA/ANVIL workflow
 ```
 
 ---
@@ -177,7 +177,7 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 │  │   machines   │  │ • Shadow     │  │ • Priority inver │   │
 │  └──────────────┘  └──────────────┘  └──────────────────┘   │
 │                                                              │
-│  GOTCHA Framework │ ATLAS Workflow │ 10-12 Agents            │
+│  GOTCHA Framework │ ANVIL Workflow │ 10-12 Agents            │
 │  TDD/BDD for C   │ Memory System  │ ICDEV™ A2A Bridge        │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -255,7 +255,7 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 | Agent | Port | Role |
 |-------|------|------|
 | Orchestrator | 9443 | Task routing, workflow management |
-| Architect | 9444 | ATLAS A/T phases, firmware design |
+| Architect | 9444 | ANVIL A/T phases, firmware design |
 | Embedded Builder | 9445 | TDD C/C++ code gen, CMake, linker scripts |
 | Compliance | 9446 | ATO artifacts, IEC 62443, DO-178C, ISO 26262 |
 | Security | 9447 | SAST (Cppcheck/MISRA), CVE triage, secret detection |

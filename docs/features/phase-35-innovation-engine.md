@@ -84,7 +84,7 @@ The Innovation Engine transforms ICDEV™ from a reactive tool that waits for in
 |                       |                                        |
 |  STAGES 5-7           v                                        |
 |  +---------------------------------------------------+        |
-|  | BUILD (ATLAS/M-ATLAS) -> PUBLISH (marketplace     |        |
+|  | BUILD (ANVIL/M-ANVIL) -> PUBLISH (marketplace     |        |
 |  | 7-gate) -> MEASURE + CALIBRATE (feedback loop)    |        |
 |  +---------------------------------------------------+        |
 +---------------------------------------------------------------+

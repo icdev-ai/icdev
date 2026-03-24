@@ -36,7 +36,7 @@ Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV
 
 ### How ICDEV™ Built GovProposal
 
-ICDEV™ generated GovProposal the same way it generates any application — through the GOTCHA framework and ATLAS workflow. GovProposal inherited:
+ICDEV™ generated GovProposal the same way it generates any application — through the GOTCHA framework and ANVIL workflow. GovProposal inherited:
 
 | What It Got | How It Works |
 |-------------|--------------|
@@ -224,7 +224,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
 │  → 229-table database with append-only audit trail     │
-│  → GOTCHA framework + ATLAS workflow baked in          │
+│  → GOTCHA framework + ANVIL workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
                             ▼
@@ -318,7 +318,7 @@ This is where ICDEV™ does what no other tool does. From the approved blueprint
 | 11. CLAUDE.md | Dynamic documentation (Jinja2) — only documents present capabilities |
 | 12. Audit & Registration | Logged to append-only audit trail, registered in child registry, genome manifest |
 
-The generated application isn't a template. It's a **living system** with its own GOTCHA framework, ATLAS workflow, multi-agent architecture, memory system, compliance automation, and CI/CD pipeline. It inherits ICDEV™'s capabilities but is independently deployable.
+The generated application isn't a template. It's a **living system** with its own GOTCHA framework, ANVIL workflow, multi-agent architecture, memory system, compliance automation, and CI/CD pipeline. It inherits ICDEV™'s capabilities but is independently deployable.
 
 Before generation, ICDEV™ scores **fitness across 6 dimensions** to determine the right architecture:
 
@@ -335,13 +335,13 @@ Score ≥ 6.0 → full agent architecture. 4.0–5.9 → hybrid. < 4.0 → tradi
 
 ### Step 4: Build (TDD + Security)
 
-Every feature is built using the ATLAS workflow with true TDD:
+Every feature is built using the ANVIL workflow with true TDD:
 
 ```
 [Model] → Architect → Trace → Link → Assemble → [Critique] → Stress-test
 ```
 
-The optional **ATLAS Critique** phase runs multi-agent adversarial review between Assemble and Stress-test. Security, Compliance, and Knowledge agents independently critique the plan in parallel, producing GO/NOGO/CONDITIONAL consensus before stress-testing begins.
+The optional **ANVIL Critique** phase runs multi-agent adversarial review between Assemble and Stress-test. Security, Compliance, and Knowledge agents independently critique the plan in parallel, producing GO/NOGO/CONDITIONAL consensus before stress-testing begins.
 
 The 9-step testing pipeline runs automatically:
 
@@ -641,7 +641,7 @@ python tools/dashboard/app.py
 | `/ai-transparency` | AI Transparency: model cards, system cards, AI inventory, fairness, GAO readiness |
 | `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
 | `/code-quality` | Code Quality Intelligence: AST metrics, smell detection, maintainability trend, runtime feedback |
-| `/orchestration` | Real-time orchestration: agent grid, workflow DAG, SSE mailbox feed, prompt chains, ATLAS critiques |
+| `/orchestration` | Real-time orchestration: agent grid, workflow DAG, SSE mailbox feed, prompt chains, ANVIL critiques |
 | `/cpmp` | Contract Performance Management: EVM, CPARS prediction, deliverables, subcontractors, portfolio health |
 | `/cpmp/cor` | COR portal: government read-only contract oversight (deliverables, EVM, CPARS) |
 | `/proposals` | GovProposal lifecycle: opportunities, sections, compliance matrix, timeline, reviews |
@@ -690,7 +690,7 @@ Defense-in-depth by default:
 - **Dispatcher mode** — Orchestrator agent enforced as delegate-only, cannot execute tools directly
 - **Tiered file access control** — zero_access (`.env`, `*.pem`, `*.tfstate`), read_only (lock files, catalogs), no_delete (`CLAUDE.md`, goals, IaC)
 - **Session purpose tracking** — NIST AU-3 compliant session intent declaration with SHA-256 integrity hashing
-- **ATLAS adversarial critique** — multi-agent plan review with GO/NOGO/CONDITIONAL consensus before stress-testing
+- **ANVIL adversarial critique** — multi-agent plan review with GO/NOGO/CONDITIONAL consensus before stress-testing
 - **Self-healing** — confidence-based remediation (≥0.7 auto-fix, 0.3–0.7 suggest, <0.3 escalate)
 
 ---
@@ -743,7 +743,7 @@ icdev/
 │   ├── requirements/     # RICOAS intake, gap detection, SAFe decomposition
 │   ├── simulation/       # Digital Program Twin, Monte Carlo, COA generation
 │   ├── dashboard/        # Flask web UI, auth, RBAC, real-time events, orchestration dashboard
-│   ├── agent/            # Multi-agent orchestration, DAG workflows, prompt chains, ATLAS critique
+│   ├── agent/            # Multi-agent orchestration, DAG workflows, prompt chains, ANVIL critique
 │   ├── cloud/            # 6 CSP abstractions, region validation
 │   ├── saas/             # Multi-tenant platform layer
 │   ├── mcp/              # Unified MCP gateway (250+ tools)

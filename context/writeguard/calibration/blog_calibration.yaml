@@ -148,7 +148,7 @@ calibration_examples:
   - id: cal-blog-16
     score: 4
     text: |
-      The ATLAS red teaming framework tests 6 adversarial techniques against your
+      The ANVIL red teaming framework tests 6 adversarial techniques against your
       AI components: prompt injection, model evasion, data poisoning, membership
       inference, model extraction, and supply chain compromise. Each technique maps
       to NIST 800-53 controls for compliance traceability.

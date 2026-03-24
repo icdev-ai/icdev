@@ -83,7 +83,7 @@ These are "low impact" changes -- they require no new backend logic, no database
 The system SHALL implement a glossary tooltip system using `data-glossary` HTML attributes on domain-specific terms, with client-side JavaScript rendering plain-English definitions on hover.
 
 #### REQ-31-002: Comprehensive Term Coverage
-The glossary SHALL include definitions for all Gov/DoD acronyms (ATO, SSP, POAM, STIG, CUI, SBOM, FedRAMP, CMMC, cATO, IL2-IL6), ICDEV™-specific terms (GOTCHA, ATLAS, RICOAS), and compliance concepts (CAT1/CAT2/CAT3, control families).
+The glossary SHALL include definitions for all Gov/DoD acronyms (ATO, SSP, POAM, STIG, CUI, SBOM, FedRAMP, CMMC, cATO, IL2-IL6), ICDEV™-specific terms (GOTCHA, ANVIL, RICOAS), and compliance concepts (CAT1/CAT2/CAT3, control families).
 
 #### REQ-31-003: No Backend Changes
 The glossary system SHALL be implemented entirely in client-side JavaScript with no backend API calls, database queries, or server-side rendering changes required.

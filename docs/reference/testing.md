@@ -94,7 +94,7 @@ pytest tests/test_code_analyzer.py -v                   # Code analyzer AST self
 pytest tests/test_runtime_feedback.py -v                # Runtime feedback collector tests (22 tests)
 pytest tests/test_dispatcher_mode.py -v                 # Dispatcher-only orchestrator mode tests (47 tests)
 pytest tests/test_prompt_chain_executor.py -v           # Declarative prompt chain executor tests (63 tests)
-pytest tests/test_atlas_critique.py -v                  # ATLAS adversarial critique tests (36 tests)
+pytest tests/test_anvil_critique.py -v                  # ANVIL adversarial critique tests (36 tests)
 pytest tests/test_session_purpose.py -v                 # Session purpose + async result injection + tiered file access tests (27 tests)
 pytest tests/test_research_engine.py -v                 # Industry Research Engine tests (68 tests)
 pytest tests/test_rag_vector_stores.py -v               # RAG vector store backend tests (40 tests)

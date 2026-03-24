@@ -330,7 +330,7 @@ def scenario_sec_false_positive() -> BenchmarkResult:
 
 
 def scenario_sec_atlas_coverage() -> BenchmarkResult:
-    """Verify ATLAS red team covers all 6 techniques."""
+    """Verify ANVIL red team covers all 6 techniques."""
     t0 = time.time()
     outcome = False
     methodology = False

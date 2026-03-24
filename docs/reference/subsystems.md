@@ -7,7 +7,7 @@ Major subsystem details for Innovation, Creative, Research engines; RICOAS; SaaS
 ## Innovation Engine — Autonomous Self-Improvement (Phase 35)
 
 ### Overview
-ICDEV™ continuously improves itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps from the web and internal telemetry — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
+ICDEV™ continuously improves itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps from the web and internal telemetry — then generating solutions through the existing ANVIL build pipeline with full compliance triage.
 
 ### Pipeline
 ```
@@ -15,7 +15,7 @@ DISCOVER (web + introspective + competitive + standards)
     → SCORE (5-dimension weighted average)
         → TRIAGE (5-stage compliance gate)
             → GENERATE (template-based spec)
-                → BUILD (ATLAS/M-ATLAS TDD)
+                → BUILD (ANVIL/M-ANVIL TDD)
                     → PUBLISH (marketplace 7-gate)
                         → MEASURE → CALIBRATE
 ```

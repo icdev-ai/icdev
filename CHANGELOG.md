@@ -154,7 +154,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Initial ICDEV™ platform with GOTCHA 6-layer agentic framework
-- ATLAS and M-ATLAS build workflows (Architect, Trace, Link, Assemble, Stress-test)
+- ANVIL and M-ANVIL build workflows (Architect, Navigate, Verify, Integrate, Launch)
 - 15 multi-agent architecture across 3 tiers (Core, Domain, Support)
 - A2A protocol (JSON-RPC 2.0 over mutual TLS) for inter-agent communication
 - 14 MCP servers for Claude Code integration (stdio transport)

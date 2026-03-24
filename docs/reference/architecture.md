@@ -9,7 +9,7 @@ System architecture details for ICDEV™. See [CLAUDE.md](../../CLAUDE.md) for b
 | Tier | Agent | Port | Role |
 |------|-------|------|------|
 | Core | Orchestrator | 8443 | Task routing, workflow management |
-| Core | Architect | 8444 | ATLAS/M-ATLAS A/T phases, system design |
+| Core | Architect | 8444 | ANVIL/M-ANVIL A/T phases, system design |
 | Domain | Builder | 8445 | TDD code gen (RED→GREEN→REFACTOR) |
 | Domain | Compliance | 8446 | ATO artifacts (SSP, POAM, STIG, SBOM, FedRAMP, CMMC, OSCAL, eMASS, cATO) |
 | Domain | Security | 8447 | SAST, dependency audit, secret detection, container scan |
@@ -78,7 +78,7 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | Skill | Purpose |
 |-------|---------|
 | `/icdev-init` | Initialize new project with compliance scaffolding |
-| `/icdev-build` | Build code using true TDD (RED→GREEN→REFACTOR) via M-ATLAS workflow |
+| `/icdev-build` | Build code using true TDD (RED→GREEN→REFACTOR) via M-ANVIL workflow |
 | `/icdev-test` | Run full test suite (pytest + behave BDD) |
 | `/icdev-comply` | Generate ATO artifacts (SSP, POAM, STIG, SBOM) |
 | `/icdev-deploy` | Generate IaC and deploy via GitLab CI/CD |
@@ -102,7 +102,7 @@ Language profiles stored in `context/languages/language_registry.json`. Detectio
 | `/plan_rust` | Rust build plan — Actix-web, cucumber-rs, clippy, cargo-audit, rustfmt (Phase 42) |
 | `/plan_csharp` | C# build plan — ASP.NET Core, SpecFlow, SecurityCodeScan, dotnet analyzers (Phase 42) |
 | `/plan_typescript` | TypeScript build plan — Express, cucumber-js, eslint-security, npm audit (Phase 42) |
-| `/icdev-agentic` | Generate agentic child application (mini-ICDEV™ clone with GOTCHA/ATLAS) |
+| `/icdev-agentic` | Generate agentic child application (mini-ICDEV™ clone with GOTCHA/ANVIL) |
 | `/icdev-market` | Federated GOTCHA marketplace — publish, install, search, review, sync assets across tenant orgs |
 | `/icdev-devsecops` | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), attestation |
 | `/icdev-zta` | Zero Trust Architecture — 7-pillar maturity scoring, NIST 800-207 assessment, service mesh generation, network segmentation, PDP/PEP config, cATO posture |
@@ -249,7 +249,7 @@ These are the 12 dimensions you can tune to improve agent behavior.
 6. **Types** — Strong typing (dataclasses, Pydantic, DB schemas)
 7. **Docs** — Clear instructions (CLAUDE.md, SKILL.md, goals/)
 8. **Tests** — Validation (pytest + behave + Playwright + security/compliance gates)
-9. **Architecture** — System design (GOTCHA layers, ATLAS/M-ATLAS workflow)
+9. **Architecture** — System design (GOTCHA layers, ANVIL/M-ANVIL workflow)
 10. **Plans** — Implementation blueprints (specs/, plan files, goals/)
 11. **Templates** — Reusable patterns (context/ JSON, hardprompts/, args/ YAML)
 12. **Workflows** — Orchestration logic (goals/, CI/CD pipelines, GitLab task routing)
@@ -259,7 +259,7 @@ These are the 12 dimensions you can tune to improve agent behavior.
 ## Agentic Application Generation (Phase 19)
 
 ICDEV™ generates mini-ICDEV™ clone child applications. Each child app includes:
-- Full GOTCHA framework (6 layers) and ATLAS workflow (without fitness step)
+- Full GOTCHA framework (6 layers) and ANVIL workflow (without fitness step)
 - 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor)
 - Up to 2 ATO agents (Compliance, Security) when compliance/security required
 - Full memory system (MEMORY.md, logs, SQLite, semantic search)

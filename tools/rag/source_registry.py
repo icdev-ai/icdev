@@ -138,15 +138,15 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "description": "Compliance-related audit trail entries",
         "filter": "event_type LIKE 'ssp_%' OR event_type LIKE 'poam_%' OR event_type LIKE 'stig_%' OR event_type LIKE 'sbom_%' OR event_type LIKE 'compliance_%'",
     },
-    "atlas_critique_findings": {
-        "table": "atlas_critique_findings",
+    "anvil_critique_findings": {
+        "table": "anvil_critique_findings",
         "db": "icdev",
         "pk": "id",
         "content_cols": ["title", "description", "evidence", "suggested_fix"],
         "metadata_cols": ["severity", "finding_type", "critic_agent", "nist_controls"],
         "priority": 1,
         "mode": "realtime",
-        "description": "ATLAS-CR adversarial critique findings",
+        "description": "ANVIL-CR adversarial critique findings",
     },
     # --- Memory ---
     "memory_entries": {

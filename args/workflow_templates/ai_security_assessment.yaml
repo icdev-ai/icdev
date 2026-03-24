@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# AI Security Assessment Workflow — ATLAS → OWASP → AI RMF → XAI → Red Team → Transparency
+# AI Security Assessment Workflow — ANVIL → OWASP → AI RMF → XAI → Red Team → Transparency
 description: "AI security assessment: ATLAS, OWASP LLM/Agentic/ASI, NIST AI RMF, XAI, red team, transparency"
 category: ai_security
 steps:

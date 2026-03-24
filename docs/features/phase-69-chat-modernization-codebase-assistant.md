@@ -26,7 +26,7 @@ ICDEV™'s multi-stream chat (`/chat`) was functional but visually dated — 100
 ### Chat UI Modernization (Phases A-D)
 - **Phase A**: Extracted all inline styles to [chat.css](tools/dashboard/static/css/chat.css) (~350 lines). CSS Grid layout, message bubble classes, typing indicator animation, smooth transitions.
 - **Phase B**: Rich content rendering via [chat-renderers.js](tools/dashboard/static/js/chat-renderers.js). Markdown (marked.js MIT), syntax highlighting (highlight.js BSD), code block copy, collapsible cards, phase dividers, citation badges.
-- **Phase C**: Agent persona registry in [args/chat_personas.yaml](args/chat_personas.yaml). 7 personas: ATLAS, Guardian, Scout, Architect, Analyst, Sentinel, Assistant. API at `GET /api/chat/personas`.
+- **Phase C**: Agent persona registry in [args/chat_personas.yaml](args/chat_personas.yaml). 7 personas: ANVIL, Guardian, Scout, Architect, Analyst, Sentinel, Assistant. API at `GET /api/chat/personas`.
 - **Phase D**: Resizable panes (drag handles), tabbed right sidebar (RICOAS | Gov | Intel), focus mode, localStorage persistence of pane widths.
 
 ### Codebase Assistant Widget (Phases E-H)

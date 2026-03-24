@@ -139,6 +139,6 @@ Print final summary:
 
 ## Related Skills
 - `/icdev-init` — Initialize project (set mbse_enabled=1 with --mbse flag)
-- `/icdev-build` — Build code (M-ATLAS: Model→Architect→Trace→Link→Assemble→Stress-test)
+- `/icdev-build` — Build code (M-ANVIL: Model→Architect→Trace→Link→Assemble→Stress-test)
 - `/icdev-comply` — Generate compliance artifacts (uses digital thread for traceability)
 - `/icdev-test` — Run tests (includes model-generated test stubs)

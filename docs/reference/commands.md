@@ -871,7 +871,7 @@ pytest tests/test_code_analyzer.py -v                   # Code analyzer AST self
 pytest tests/test_runtime_feedback.py -v                # Runtime feedback collector tests (22 tests)
 pytest tests/test_dispatcher_mode.py -v                 # Dispatcher-only orchestrator mode tests (47 tests)
 pytest tests/test_prompt_chain_executor.py -v           # Declarative prompt chain executor tests (63 tests)
-pytest tests/test_atlas_critique.py -v                  # ATLAS adversarial critique tests (36 tests)
+pytest tests/test_anvil_critique.py -v                  # ANVIL adversarial critique tests (36 tests)
 pytest tests/test_session_purpose.py -v                 # Session purpose + async result injection + tiered file access tests (27 tests)
 pytest tests/test_research_engine.py -v                 # Industry Research Engine tests (68 tests)
 pytest tests/test_rag_vector_stores.py -v               # RAG vector store backend tests (40 tests)
@@ -1667,9 +1667,9 @@ python tools/agent/prompt_chain_executor.py --list --json                       
 python tools/agent/prompt_chain_executor.py --chain plan_critique_refine --input "text" --project-id "proj-123" --json  # Execute chain
 python tools/agent/prompt_chain_executor.py --chain plan_critique_refine --input "text" --dry-run --json               # Dry run
 python tools/agent/prompt_chain_executor.py --history --project-id "proj-123" --json     # Chain execution history
-python tools/agent/atlas_critique.py --project-id "proj-123" --phase-output "plan text" --json  # Run ATLAS critique
-python tools/agent/atlas_critique.py --session-id "<id>" --status --json                 # Critique session status
-python tools/agent/atlas_critique.py --history --project-id "proj-123" --json            # Critique history
+python tools/agent/anvil_critique.py --project-id "proj-123" --phase-output "plan text" --json  # Run ANVIL critique
+python tools/agent/anvil_critique.py --session-id "<id>" --status --json                 # Critique session status
+python tools/agent/anvil_critique.py --history --project-id "proj-123" --json            # Critique history
 python tools/agent/session_purpose.py --declare "Implement auth module" --project-id "proj-123" --json  # Declare session purpose
 python tools/agent/session_purpose.py --active --project-id "proj-123" --json            # Get active purpose
 python tools/agent/session_purpose.py --complete "<id>" --json                           # Complete purpose

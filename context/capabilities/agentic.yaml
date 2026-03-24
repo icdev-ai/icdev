@@ -49,14 +49,14 @@ capabilities:
     source_catalog_id: "cap-multi-agent"
 
   - slug: atlas-workflow
-    name: "ATLAS Build Methodology"
-    description: "5-phase build workflow: Architect -> Trace -> Link -> Assemble -> Stress_test. M-ATLAS adds Model pre-phase for MBSE integration."
+    name: "ANVIL Build Methodology"
+    description: "5-phase build workflow: Architect -> Trace -> Link -> Assemble -> Stress_test. M-ANVIL adds Model pre-phase for MBSE integration."
     cli_examples:
-      - "python tools/agent/session_purpose.py --declare 'ATLAS build' --project-id sparkpilot --json"
+      - "python tools/agent/session_purpose.py --declare 'ANVIL build' --project-id sparkpilot --json"
     related_controls: ["SA-3", "SA-11", "CM-3"]
     article_hooks:
-      - "ATLAS ensures every build follows a structured methodology -- not ad hoc coding sessions"
-      - "M-ATLAS adds a Model pre-phase that imports SysML/DOORS models before architecture design begins"
+      - "ANVIL ensures every build follows a structured methodology -- not ad hoc coding sessions"
+      - "M-ANVIL adds a Model pre-phase that imports SysML/DOORS models before architecture design begins"
     frameworks: []
-    keywords: ["ATLAS", "M-ATLAS", "build methodology", "architect", "trace", "link", "assemble", "stress test"]
+    keywords: ["ANVIL", "M-ANVIL", "build methodology", "architect", "trace", "link", "assemble", "stress test"]
     source_catalog_id: "cap-multi-agent"

@@ -1674,7 +1674,7 @@ CMD ["python", "orchestrator.py"]
 # CUI // SP-CTI
 \"\"\"Agentic sidecar orchestrator for {app_name} ({language}).
 
-This sidecar provides GOTCHA framework, ATLAS workflow, agent communication,
+This sidecar provides GOTCHA framework, ANVIL workflow, agent communication,
 and memory system alongside the main {language} application.
 \"\"\"
 

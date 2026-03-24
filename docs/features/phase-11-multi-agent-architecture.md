@@ -46,7 +46,7 @@ The A2A (Agent-to-Agent) protocol provides a standardized communication mechanis
 |  +-------------------+  +-------------------+             |
 |  | Orchestrator      |  | Architect         |             |
 |  | Port 8443         |  | Port 8444         |             |
-|  | Task routing,     |  | ATLAS/M-ATLAS,    |             |
+|  | Task routing,     |  | ANVIL/M-ANVIL,    |             |
 |  | workflow mgmt,    |  | system design     |             |
 |  | DAG execution     |  |                   |             |
 |  +--------+----------+  +-------------------+             |

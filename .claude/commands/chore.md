@@ -1,8 +1,8 @@
-# Chore — End-to-End (ATLAS Workflow)
+# Chore — End-to-End (ANVIL Workflow)
 
 Plan, implement, validate through the full ICDEV™ DevSecOps pipeline, and commit a chore in one shot. The user provides only a description — ICDEV™ handles everything else.
 
-Follows the ATLAS workflow: Architect → Trace → Link → Assemble → Stress-test.
+Follows the ANVIL workflow: Architect → Navigate → Verify → Integrate → Launch.
 
 ## Instructions
 

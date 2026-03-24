@@ -259,7 +259,7 @@ All generated artifacts MUST include classification markings appropriate to impa
 | Tier | Agent | Port | Role |
 |------|-------|------|------|
 | Core | Orchestrator | 9443 | Task routing, workflow management |
-| Core | Architect | 9444 | ATLAS A/T phases, system design |
+| Core | Architect | 9444 | ANVIL A/T phases, system design |
 | Domain | Builder | 9445 | TDD code gen (RED->GREEN->REFACTOR) |
 | Support | Knowledge | 9449 | Self-healing patterns, recommendations |
 | Support | Monitor | 9450 | Log analysis, metrics, alerts, health checks |
@@ -449,10 +449,10 @@ AST-based code quality metrics, smell detection, deterministic maintainability s
 - Smell detection: 5 smell types (long function, deep nesting, high complexity, too many params, god class)
 - Runtime feedback: `runtime_feedback.py` (test-to-source mapping)
 
-### ATLAS Workflow
+### ANVIL Workflow
 
-Build process follows the ATLAS methodology:
-1. **Model** -- Import/validate SysML and DOORS models (M-ATLAS pre-phase)
+Build process follows the ANVIL methodology:
+1. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)
 1. **Model** -- model
 2. **Architect** -- System design, component decomposition, interface contracts
 3. **Trace** -- Requirements traceability matrix, compliance mapping
@@ -499,7 +499,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 
 | Goal | File | Purpose |
 |------|------|---------|
-| ATLAS Workflow | `goals/build_app.md` | 5-step build: Architect -> Trace -> Link -> Assemble -> Stress-test |
+| ANVIL Workflow | `goals/build_app.md` | 5-step build: Architect -> Trace -> Link -> Assemble -> Stress-test |
 | TDD Workflow | `goals/tdd_workflow.md` | RED->GREEN->REFACTOR cycle with Cucumber/Gherkin |
 | Compliance Workflow | `goals/compliance_workflow.md` | Generate SSP, POAM, STIG, SBOM, CUI markings |
 | Security Scan | `goals/security_scan.md` | SAST, dependency audit, secret detection, container scan |
@@ -520,7 +520,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 | AI Accountability | `goals/ai_accountability.md` | Oversight plans, CAIO, appeals, incident response, ethics reviews |
 | OWASP Agentic Security | `goals/owasp_agentic_security.md` | Behavioral drift, tool chain validation, trust scoring, RBAC |
 | Code Intelligence | `goals/code_intelligence.md` | AST metrics, smell detection, maintainability scoring |
-| Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Prompt chains, dispatcher mode, session purpose, ATLAS critique |
+| Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Prompt chains, dispatcher mode, session purpose, ANVIL critique |
 
 ---
 
@@ -573,7 +573,7 @@ python tools/agent/session_purpose.py --declare "task description" --project-id 
 - **D4:** Statistical methods for pattern detection; Bedrock LLM for root cause analysis
 - **D7:** Python stdlib xml.etree.ElementTree for XMI/ReqIF parsing (zero deps, air-gap safe)
 - **D8:** Normalized DB tables for model elements (enables SQL joins across digital thread)
-- **D9:** M-ATLAS adds Model pre-phase to ATLAS (backward compatible -- skips if no model)
+- **D9:** M-ANVIL adds Model pre-phase to ANVIL (backward compatible -- skips if no model)
 - **D12:** N:M digital thread links (one block -> many code modules; one control -> many requirements)
 - **D21:** Readiness scoring uses deterministic weighted average (reproducible, not probabilistic)
 - **D22:** Monte Carlo uses Python stdlib random (zero deps, air-gap safe)

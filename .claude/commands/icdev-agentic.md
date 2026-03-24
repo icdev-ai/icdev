@@ -2,7 +2,7 @@
 
 # /icdev-agentic — Generate Agentic Application
 
-Generate a mini-ICDEV™ clone application with full GOTCHA framework, ATLAS workflow,
+Generate a mini-ICDEV™ clone application with full GOTCHA framework, ANVIL workflow,
 own agents, memory system, and CI/CD. The child app has everything ICDEV™ has except
 the ability to generate new applications.
 
@@ -66,7 +66,7 @@ the ability to generate new applications.
    ```
    - If validation PASSES: report score and proceed
    - If validation FAILS: report which GOTCHA layers are missing, provide fix suggestions, and warn the user
-   - The validator checks all 6 GOTCHA layers (Goals, Orchestration, Tools, Args, Context, Hard Prompts) plus CLAUDE.md, Memory, Database, and ATLAS presence
+   - The validator checks all 6 GOTCHA layers (Goals, Orchestration, Tools, Args, Context, Hard Prompts) plus CLAUDE.md, Memory, Database, and ANVIL presence
    - Also consider running BMAD PRD validator on requirements quality:
      ```bash
      python tools/requirements/prd_validator.py --spec-file <requirements_file> --json

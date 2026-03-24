@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""ATLAS Critique Phase — Adversarial Plan Review (Phase 61, Feature 3).
+"""ANVIL Critique Phase — Adversarial Plan Review (Phase 61, Feature 3).
 
 Dispatches the Assemble-phase output to multiple domain agents for
 independent, parallel critique.  Findings are classified by severity
@@ -11,11 +11,11 @@ Decision D6:   All findings and sessions are append-only (NIST AU).
 Decision D26:  Critic configuration is declarative YAML.
 
 CLI:
-    python tools/agent/atlas_critique.py --project-id proj-123 \\
+    python tools/agent/anvil_critique.py --project-id proj-123 \\
         --phase-output "plan text or file path" --json
-    python tools/agent/atlas_critique.py --project-id proj-123 \\
+    python tools/agent/anvil_critique.py --project-id proj-123 \\
         --session-id sess-123 --status --json
-    python tools/agent/atlas_critique.py --project-id proj-123 \\
+    python tools/agent/anvil_critique.py --project-id proj-123 \\
         --history --json
 """
 
@@ -26,22 +26,22 @@ import logging
 import sqlite3
 import sys
 import uuid
-from tools.db.storage import get_connection
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
+from icdev._paths import get_project_root
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = get_project_root()
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.compat.datetime_utils import utc_now_iso
+from icdev.tools.compat.datetime_utils import utc_now_iso
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
-CONFIG_PATH = BASE_DIR / "args" / "atlas_critique_config.yaml"
+CONFIG_PATH = BASE_DIR / "args" / "anvil_critique_config.yaml"
 
-logger = logging.getLogger("icdev.atlas_critique")
+logger = logging.getLogger("icdev.anvil_critique")
 
 # Valid finding types (must match DB CHECK constraint)
 FINDING_TYPES = (
@@ -87,7 +87,7 @@ class Finding:
 
 @dataclass
 class CritiqueSession:
-    """An ATLAS critique session spanning one or more rounds."""
+    """An ANVIL critique session spanning one or more rounds."""
     id: str = ""
     project_id: str = ""
     workflow_id: str = ""
@@ -111,13 +111,13 @@ class CritiqueSession:
 # Configuration loader
 # ---------------------------------------------------------------------------
 def load_config(config_path: Path = None) -> dict:
-    """Load atlas_critique_config.yaml and return the atlas_critique section."""
+    """Load anvil_critique_config.yaml and return the anvil_critique section."""
     path = config_path or CONFIG_PATH
     try:
         import yaml
         with open(path, "r", encoding="utf-8") as fh:
             raw = yaml.safe_load(fh)
-        return raw.get("atlas_critique", {})
+        return raw.get("anvil_critique", {})
     except ImportError:
         logger.warning("PyYAML not available — using default config")
         return _default_config()
@@ -160,16 +160,17 @@ def _default_config() -> dict:
 def _get_db(db_path: Path = None) -> sqlite3.Connection:
     """Open a connection with row_factory."""
     path = db_path or DB_PATH
-    conn = get_connection(db_path=str(path))
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
     return conn
 
 
 def ensure_tables(db_path: Path = None):
-    """Create atlas_critique_sessions and atlas_critique_findings if absent."""
+    """Create anvil_critique_sessions and anvil_critique_findings if absent."""
     conn = _get_db(db_path)
     try:
         conn.executescript(f"""
-            CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
+            CREATE TABLE IF NOT EXISTS anvil_critique_sessions (
                 id TEXT PRIMARY KEY,
                 project_id TEXT NOT NULL,
                 workflow_id TEXT,
@@ -190,10 +191,10 @@ def ensure_tables(db_path: Path = None):
                 completed_at TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS atlas_critique_findings (
+            CREATE TABLE IF NOT EXISTS anvil_critique_findings (
                 id TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL
-                    REFERENCES atlas_critique_sessions(id),
+                    REFERENCES anvil_critique_sessions(id),
                 critic_agent TEXT NOT NULL,
                 round_number INTEGER DEFAULT 1,
                 finding_type TEXT NOT NULL
@@ -210,11 +211,11 @@ def ensure_tables(db_path: Path = None):
             );
 
             CREATE INDEX IF NOT EXISTS idx_critique_session_project
-                ON atlas_critique_sessions(project_id);
+                ON anvil_critique_sessions(project_id);
             CREATE INDEX IF NOT EXISTS idx_critique_finding_session
-                ON atlas_critique_findings(session_id);
+                ON anvil_critique_findings(session_id);
             CREATE INDEX IF NOT EXISTS idx_critique_finding_severity
-                ON atlas_critique_findings(severity);
+                ON anvil_critique_findings(severity);
         """)
         conn.commit()
     finally:
@@ -229,7 +230,7 @@ def _audit(event_type: str, actor: str, action: str,
            db_path: Path = None):
     """Best-effort append-only audit logging."""
     try:
-        from tools.audit.audit_logger import log_event
+        from icdev.tools.audit.audit_logger import log_event
         log_event(
             event_type=event_type,
             actor=actor,
@@ -247,7 +248,7 @@ def _audit(event_type: str, actor: str, action: str,
 # Core logic
 # ---------------------------------------------------------------------------
 class AtlasCritique:
-    """Orchestrates the adversarial critique phase of ATLAS.
+    """Orchestrates the adversarial critique phase of ANVIL.
 
     Usage::
 
@@ -269,7 +270,7 @@ class AtlasCritique:
         """Return cached LLMRouter, creating if needed."""
         if self._llm_router is None:
             try:
-                from tools.llm.router import LLMRouter
+                from icdev.tools.llm.router import LLMRouter
                 self._llm_router = LLMRouter()
             except Exception:
                 self._llm_router = None
@@ -299,7 +300,7 @@ class AtlasCritique:
         if not self._config.get("enabled", True):
             return {
                 "status": "skipped",
-                "reason": "atlas_critique.enabled is false in config",
+                "reason": "anvil_critique.enabled is false in config",
             }
 
         effective_max = max_rounds or self._config.get("max_rounds", 3)
@@ -345,7 +346,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_completed", "atlas-critique",
-                    f"ATLAS critique GO after round {round_num}",
+                    f"ANVIL critique GO after round {round_num}",
                     project_id=project_id,
                     details={"session_id": session.id, "consensus": "go",
                              "rounds": round_num},
@@ -359,7 +360,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_completed", "atlas-critique",
-                    f"ATLAS critique NOGO — {counts['critical']} critical findings",
+                    f"ANVIL critique NOGO — {counts['critical']} critical findings",
                     project_id=project_id,
                     details={"session_id": session.id, "consensus": "nogo",
                              "critical_count": counts["critical"]},
@@ -377,7 +378,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_revision_requested", "atlas-critique",
-                    f"ATLAS critique revision round {round_num}",
+                    f"ANVIL critique revision round {round_num}",
                     project_id=project_id,
                     details={"session_id": session.id, "round": round_num},
                     db_path=self._db_path,
@@ -389,7 +390,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_completed", "atlas-critique",
-                    f"ATLAS critique CONDITIONAL — max rounds ({effective_max}) exhausted",
+                    f"ANVIL critique CONDITIONAL — max rounds ({effective_max}) exhausted",
                     project_id=project_id,
                     details={"session_id": session.id, "consensus": "conditional",
                              "high_count": session.high_count},
@@ -417,7 +418,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             row = conn.execute(
-                "SELECT * FROM atlas_critique_sessions WHERE id = ?",
+                "SELECT * FROM anvil_critique_sessions WHERE id = ?",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -425,7 +426,7 @@ class AtlasCritique:
             result = dict(row)
             # Fetch associated findings
             findings = conn.execute(
-                "SELECT * FROM atlas_critique_findings WHERE session_id = ? "
+                "SELECT * FROM anvil_critique_findings WHERE session_id = ? "
                 "ORDER BY round_number, severity",
                 (session_id,),
             ).fetchall()
@@ -439,7 +440,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             rows = conn.execute(
-                "SELECT * FROM atlas_critique_sessions "
+                "SELECT * FROM anvil_critique_sessions "
                 "WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
                 (project_id, limit),
             ).fetchall()
@@ -482,7 +483,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             conn.execute(
-                """INSERT INTO atlas_critique_sessions
+                """INSERT INTO anvil_critique_sessions
                    (id, project_id, workflow_id, phase_input_hash, status,
                     round_number, max_rounds, critics_assigned, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -510,7 +511,7 @@ class AtlasCritique:
         conn = _get_db(self._db_path)
         try:
             conn.execute(
-                """UPDATE atlas_critique_sessions
+                """UPDATE anvil_critique_sessions
                    SET status = ?, round_number = ?, consensus = ?,
                        total_findings = ?, critical_count = ?,
                        high_count = ?, medium_count = ?, low_count = ?,
@@ -677,7 +678,7 @@ class AtlasCritique:
         try:
             for f in findings:
                 conn.execute(
-                    """INSERT INTO atlas_critique_findings
+                    """INSERT INTO anvil_critique_findings
                        (id, session_id, critic_agent, round_number,
                         finding_type, severity, title, description,
                         evidence, suggested_fix, nist_controls,
@@ -818,7 +819,7 @@ def _try_parse_json(text: str):
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="ATLAS Critique Phase — adversarial plan review",
+        description="ANVIL Critique Phase — adversarial plan review",
     )
     parser.add_argument("--project-id", required=True, help="Project identifier")
     parser.add_argument(
@@ -870,11 +871,11 @@ def main():
     else:
         # Human-readable output
         try:
-            from tools.cli.output_formatter import format_banner, format_table
-            print(format_banner("ATLAS Critique Phase"))
+            from icdev.tools.cli.output_formatter import format_banner, format_table
+            print(format_banner("ANVIL Critique Phase"))
         except ImportError:
             print("=" * 60)
-            print("  ATLAS Critique Phase")
+            print("  ANVIL Critique Phase")
             print("=" * 60)
 
         if "error" in result:

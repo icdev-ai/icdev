@@ -129,7 +129,7 @@ services:
           memory: 512M
     command: ["tools/a2a/agent_server.py", "--agent-id", "orchestrator-agent", "--port", "8443"]
 
-  # Architect Agent — ATLAS/M-ATLAS A/T phases, system design
+  # Architect Agent — ANVIL/M-ANVIL A/T phases, system design
   icdev-architect:
     build:
       context: .

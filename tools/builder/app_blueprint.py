@@ -375,7 +375,7 @@ CORE_AGENTS: List[Dict[str, Any]] = [
     {
         "name": "architect",
         "base_port": 8444,
-        "role": "ATLAS A/T phases, system design",
+        "role": "ANVIL A/T phases, system design",
     },
     {
         "name": "builder",
@@ -982,7 +982,7 @@ def _resolve_goals_for_capabilities(
         "code_intelligence": "code_intelligence",
         # Phase 64: RAG subsystem
         "rag_subsystem": "rag",
-        # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ATLAS critique)
+        # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ANVIL critique)
         "multi_agent_orchestration": None,  # Always include when available
     }
 
@@ -1184,7 +1184,7 @@ def generate_blueprint(
         "fitness_step": False,
         "model_phase": capabilities.get("mbse", False),
         "phases": ["architect", "trace", "link", "assemble", "stress_test"],
-        # ATLAS-CR: auto-enable adversarial critique for IL5+ child apps
+        # ANVIL-CR: auto-enable adversarial critique for IL5+ child apps
         "critique_enabled": impact_level in ("IL5", "IL6"),
         "critique_rag_augmented": (
             impact_level in ("IL5", "IL6")

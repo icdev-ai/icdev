@@ -6,7 +6,7 @@ All existing goal workflows. Check `goals/manifest.md` for the canonical index.
 
 | Goal | File | Purpose |
 |------|------|---------|
-| ATLAS/M-ATLAS Workflow | `goals/build_app.md` | 5/6-step build: [Model →] Architect → Trace → Link → Assemble → Stress-test |
+| ANVIL/M-ANVIL Workflow | `goals/build_app.md` | 5/6-step build: [Model →] Architect → Navigate → Verify → Integrate → Launch |
 | Init Project | `goals/init_project.md` | Project initialization with compliance scaffolding |
 | TDD Workflow | `goals/tdd_workflow.md` | RED→GREEN→REFACTOR cycle with Cucumber/Gherkin |
 | Compliance Workflow | `goals/compliance_workflow.md` | Generate SSP, POAM, STIG, SBOM, CUI markings |
@@ -33,7 +33,7 @@ All existing goal workflows. Check `goals/manifest.md` for the canonical index.
 | Parallel CI/CD | `goals/parallel_cicd.md` | Git worktree task isolation, GitLab `{{icdev: workflow}}` tag routing, parallel workflow execution (Phase 41) |
 | Framework Planning | `goals/framework_planning.md` | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (Phase 42) |
 | Multi-Agent Orchestration | `goals/multi_agent_orchestration.md` | Opus 4.6 multi-agent: Bedrock client, DAG workflows, parallel execution, collaboration patterns, domain authority vetoes, agent mailbox, agent memory |
-| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV™ clone apps with GOTCHA/ATLAS |
+| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV™ clone apps with GOTCHA/ANVIL |
 | Security Categorization | `goals/security_categorization.md` | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
 | SaaS Multi-Tenancy | `goals/saas_multi_tenancy.md` | Multi-tenant SaaS platform: API gateway (REST+MCP Streamable HTTP), per-tenant DB isolation, 3 auth methods, subscription tiers, artifact delivery, tenant portal, Helm on-prem |
 | Marketplace | `goals/marketplace.md` | Federated GOTCHA asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline |
@@ -68,7 +68,7 @@ All existing goal workflows. Check `goals/manifest.md` for the canonical index.
 | EU AI Act | `goals/eu_ai_act.md` | EU AI Act (Regulation 2024/1689) risk classification: 12 Annex III requirements, 4 risk levels, ISO 27001 bridge crosswalk (Phase 57, D349) |
 | Creative Engine | `goals/creative_engine.md` | Customer-centric feature opportunity discovery: auto-discover competitors, scan review sites/forums/GitHub, extract pain points (deterministic keyword), 3-dimension scoring (pain_frequency 0.40 + gap_uniqueness 0.35 + effort_to_impact 0.25), trend detection, template-based spec generation, Innovation Engine bridge (Phase 58, D351-D360) |
 | CPMP Workflow | `goals/cpmp_workflow.md` | Contract Performance Management Portal: post-award lifecycle management — EVM (ANSI/EIA-748), CPARS prediction (NDAA), subcontractor FAR 52.219-9, CDRL auto-generation, COR portal, SAM.gov awards, portfolio health scoring (Phase 60, D-CPMP-1 through D-CPMP-10) |
-| Orchestration Improvements | `goals/multi_agent_orchestration.md` | Phase 61: Dispatcher-only orchestrator mode (D-DISP-1), declarative prompt chains (D-PC-1/2/3), ATLAS adversarial critique, session purpose (D-ORCH-5), async result injection (D-ORCH-7), tiered file access (D-ORCH-8), real-time orchestration dashboard |
+| Orchestration Improvements | `goals/multi_agent_orchestration.md` | Phase 61: Dispatcher-only orchestrator mode (D-DISP-1), declarative prompt chains (D-PC-1/2/3), ANVIL adversarial critique, session purpose (D-ORCH-5), async result injection (D-ORCH-7), tiered file access (D-ORCH-8), real-time orchestration dashboard |
 | Industry Research | `goals/industry_research.md` | Deep industry vertical research: 9-stage pipeline (SCOPE→FORECAST→DOSSIER), 9 source streams (incl. YouTube video), 6-dimension challenge scoring, regulatory mapping, capability coverage, build/buy analysis, cross-engine forecast with surprise predictions, dossier generation, HITL review, child app fitness trigger, cross-engine registration (Phase 63, D-RES-1 through D-RES-21) |
 | RAG Subsystem | `goals/rag_subsystem.md` | Universal RAG: multi-source ingestion (20+ tables), adaptive chunking, vector store ABC (SQLite/ChromaDB/FAISS), two-stage retrieval (vector top-50 → qwen3 re-rank → top-5), auto-inject into two-tier LLM, tiered retention (hot/warm/cold), PROV-AGENT provenance, child app 3-tier RAG (local/parent-federated/hybrid), knowledge search dashboard (Phase 64, D-RAG-1 through D-RAG-14) |
 | Fine-Tuning Extension | `goals/rag_subsystem.md` (Component 7) | QLoRA fine-tuning: dataset management, labeling, training (Unsloth/OpenAI/Bedrock/Azure), GGUF export, BLEU/ROUGE-L/perplexity evaluation, auto-promotion, LLM router override, marketplace LoRA adapter assets (Phase 64 Extension, D-FT-1 through D-FT-22) |

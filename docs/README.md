@@ -89,7 +89,7 @@ Detailed documentation for each ICDEV™ capability phase.
 | Phase | Guide | Description |
 |-------|-------|-------------|
 | 1 | [GOTCHA Framework](features/phase-01-gotcha-framework.md) | 6-layer deterministic agentic architecture |
-| 2 | [ATLAS Build Workflow](features/phase-02-atlas-build-workflow.md) | 5-phase build: Architect, Trace, Link, Assemble, Stress-test |
+| 2 | [ANVIL Build Workflow](features/phase-02-atlas-build-workflow.md) | 5-phase build: Architect, Navigate, Verify, Integrate, Launch |
 | 3 | [TDD/BDD Testing](features/phase-03-tdd-bdd-testing.md) | RED-GREEN-REFACTOR cycle with 6-language support |
 | 4 | [NIST Compliance](features/phase-04-nist-compliance.md) | NIST 800-53 Rev 5 control mapping and SSP generation |
 | 5 | [Security Scanning](features/phase-05-security-scanning.md) | SAST, dependency audit, secret detection, container scanning |

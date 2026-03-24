@@ -8,7 +8,7 @@
 - **Architecture:** agent
 - **Agents:** 11
   - **Orchestrator** (port 9443): Task routing, workflow management
-  - **Architect** (port 9444): ATLAS A/T phases, system design
+  - **Architect** (port 9444): ANVIL A/T phases, system design
   - **Builder** (port 9445): TDD code gen (RED->GREEN->REFACTOR)
   - **Knowledge** (port 9449): Self-healing patterns, recommendations
   - **Monitor** (port 9450): Log analysis, metrics, alerts, health checks
@@ -46,7 +46,7 @@
 ## Key Facts
 - This is a generated child application of ICDEV™
 - This application CANNOT generate child applications (grandchild prevention)
-- ATLAS workflow does not include fitness assessment step
+- ANVIL workflow does not include fitness assessment step
 
 ## Session History
 (Populated automatically by memory system)

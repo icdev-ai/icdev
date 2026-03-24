@@ -164,10 +164,10 @@ capabilities:
     db_tables: ["ft_datasets", "ft_dataset_examples", "ft_training_jobs", "ft_training_job_events", "ft_model_versions", "ft_active_models", "ft_evaluations", "ft_promotion_log", "ft_hyperparam_results"]
   orchestration:
     always_on: true
-    description: "Prompt chains, dispatcher mode, session purpose, ATLAS adversarial critique"
+    description: "Prompt chains, dispatcher mode, session purpose, ANVIL adversarial critique"
     source_dirs: []
-    includes: ["tools/agent/prompt_chain_executor.py", "tools/agent/dispatcher_mode.py", "tools/agent/session_purpose.py", "tools/agent/atlas_critique.py", "args/prompt_chains.yaml", "args/atlas_critique_config.yaml"]
-    db_tables: ["atlas_critique_sessions", "atlas_critique_findings", "prompt_chain_executions", "dispatcher_mode_overrides", "session_purposes"]
+    includes: ["tools/agent/prompt_chain_executor.py", "tools/agent/dispatcher_mode.py", "tools/agent/session_purpose.py", "tools/agent/anvil_critique.py", "args/prompt_chains.yaml", "args/anvil_critique_config.yaml"]
+    db_tables: ["anvil_critique_sessions", "anvil_critique_findings", "prompt_chain_executions", "dispatcher_mode_overrides", "session_purposes"]
   govcon:
     always_on: false
     trigger: { never: true }
@@ -179,7 +179,7 @@ capabilities:
 agents:
   core:
     - { name: orchestrator, base_port: 8443, role: "Task routing, workflow management" }
-    - { name: architect, base_port: 8444, role: "ATLAS A/T phases, system design" }
+    - { name: architect, base_port: 8444, role: "ANVIL A/T phases, system design" }
     - { name: builder, base_port: 8445, role: "TDD code gen (RED->GREEN->REFACTOR)" }
     - { name: knowledge, base_port: 8449, role: "Self-healing patterns, recommendations" }
     - { name: monitor, base_port: 8450, role: "Log analysis, metrics, alerts, health checks" }

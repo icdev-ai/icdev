@@ -5,7 +5,7 @@ Validate the complete SPARKPILOT system through multi-layer testing: unit tests 
 
 ## Trigger
 - `/sparkpilot-test` skill invoked
-- Post-build validation in ATLAS workflow
+- Post-build validation in ANVIL workflow
 - Pre-merge gate check
 - Pre-deployment validation
 

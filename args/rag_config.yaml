@@ -65,7 +65,7 @@ rag:
       - research_forecasts
       - compliance_artifacts
       - memory_entries
-      - atlas_critique_sessions      # ATLAS-CR critique findings
+      - anvil_critique_sessions      # ANVIL-CR critique findings
     batch_sources:
       - audit_trail
       - ai_telemetry
@@ -95,9 +95,9 @@ rag:
     critique_history_federation: true # Child apps can query parent critique findings
 
   critique_integration:
-    enabled: true                    # RAG-augmented ATLAS-CR critiques
+    enabled: true                    # RAG-augmented ANVIL-CR critiques
     source_types:                    # Source types to search for critique context
-      - atlas_critique_sessions
+      - anvil_critique_sessions
       - compliance_artifacts
       - innovation_signals
     max_critique_context_chars: 3000 # Max RAG context for critique phase

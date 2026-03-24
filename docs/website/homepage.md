@@ -142,7 +142,7 @@ ICDEV™ isn't a monolith — it's a multi-agent system where specialized AI age
 | Agent | Role |
 |---|---|
 | Orchestrator | Task routing, workflow management |
-| Architect | System design, ATLAS workflow |
+| Architect | System design, ANVIL workflow |
 | Builder | TDD code generation (RED-GREEN-REFACTOR) |
 | Compliance | ATO artifacts, 30+ frameworks |
 | Security | SAST, dependency audit, secrets, containers |

@@ -69,7 +69,7 @@ GOAL_FILE_MAP: Dict[str, str] = {
     "ato_acceleration": "ato_acceleration.md",
     # Phase 64: RAG subsystem
     "rag_subsystem": "rag_subsystem.md",
-    # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ATLAS critique)
+    # Phase 61: Multi-agent orchestration (prompt chains, dispatcher, ANVIL critique)
     "multi_agent_orchestration": "multi_agent_orchestration.md",
     # Genesis v2.0 Autonomous Research Lab
     "genesis_daemon": "genesis_daemon.md",
@@ -83,7 +83,7 @@ GOAL_FILE_MAP: Dict[str, str] = {
 # ============================================================
 
 GOAL_PURPOSE_MAP: Dict[str, str] = {
-    "build_app": "5/6-step ATLAS build process",
+    "build_app": "5/6-step ANVIL build process",
     "tdd_workflow": "RED\u2192GREEN\u2192REFACTOR cycle with BDD",
     "compliance_workflow": "Generate ATO artifacts (SSP, POAM, STIG, SBOM)",
     "security_scan": "SAST, dependency audit, secret detection",
@@ -110,7 +110,7 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
     "code_intelligence": "AST metrics, smell detection, maintainability scoring",
     "ato_acceleration": "Multi-framework ATO: FedRAMP, CMMC, OSCAL, eMASS, cATO",
     "rag_subsystem": "Multi-source knowledge ingestion, semantic retrieval, cross-engine querying",
-    "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
+    "multi_agent_orchestration": "Prompt chains, dispatcher mode, session purpose, ANVIL critique",
     "genesis_daemon": "Autonomous research lab — 14 Reflexes, Trust Kernel, circuit breakers",
     "genesis_promoter": "Knowledge Bridge — GKP export/import, dedup, auto-promote, human review",
     "autoresearch": "Bayesian Autoresearch — Karpathy-loop autonomous experiments with info-gain selection",
@@ -121,7 +121,7 @@ GOAL_PURPOSE_MAP: Dict[str, str] = {
 # ============================================================
 
 GOAL_DISPLAY_NAME_MAP: Dict[str, str] = {
-    "build_app": "ATLAS/M-ATLAS Workflow",
+    "build_app": "ANVIL/M-ANVIL Workflow",
     "tdd_workflow": "TDD Workflow",
     "compliance_workflow": "Compliance Workflow",
     "security_scan": "Security Scanning",

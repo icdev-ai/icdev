@@ -499,16 +499,16 @@ AST-based code quality metrics, smell detection, deterministic maintainability s
 - Runtime feedback: `runtime_feedback.py` (test-to-source mapping)
 {% endif %}
 
-### ATLAS Workflow
+### ANVIL Workflow
 
-Build process follows the ATLAS methodology:
+Build process follows the ANVIL methodology:
 {% if atlas_config.get("model_phase", False) %}
-1. **Model** -- Import/validate SysML and DOORS models (M-ATLAS pre-phase)
+1. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)
 {% endif %}
 {% for phase in atlas_phases %}{{ loop.index }}. **{{ phase | capitalize }}** -- {{ atlas_phase_descriptions.get(phase, phase) }}
 {% endfor %}
 {% if atlas_config.get("critique_enabled", False) %}
-**ATLAS-CR (Adversarial Critique):** After stress-test, security/compliance/knowledge critics review the output.  Consensus: GO (0 critical, 0 high), CONDITIONAL (0 critical), NOGO (any critical).
+**ANVIL-CR (Adversarial Critique):** After stress-test, security/compliance/knowledge critics review the output.  Consensus: GO (0 critical, 0 high), CONDITIONAL (0 critical), NOGO (any critical).
 {% if atlas_config.get("critique_rag_augmented", False) %}- RAG-augmented: Critics receive relevant knowledge context from RAG retrieval before reviewing.
 {% endif %}{% endif %}
 
@@ -517,14 +517,14 @@ Build process follows the ATLAS methodology:
 - Prompt chains: Declarative YAML multi-step LLM reasoning (plan_critique_refine, scout_analyze_recommend)
 - Dispatcher mode: Orchestrator restricted to delegation tools only (GOTCHA separation of concerns)
 - Session purpose: Declared intent per session for NIST AU-3 audit traceability
-{% if atlas_config.get("critique_enabled", False) %}- ATLAS critique: 3 critics (security, compliance, knowledge) with GO/CONDITIONAL/NOGO consensus
+{% if atlas_config.get("critique_enabled", False) %}- ANVIL critique: 3 critics (security, compliance, knowledge) with GO/CONDITIONAL/NOGO consensus
 {% endif %}
 ```bash
 python tools/agent/prompt_chain_executor.py --list --json
 python tools/agent/prompt_chain_executor.py --chain plan_critique_refine --input "text" --project-id "proj-123" --json
 python tools/agent/dispatcher_mode.py --status --project-id "proj-123" --json
 python tools/agent/session_purpose.py --declare "task description" --project-id "proj-123" --json
-{% if atlas_config.get("critique_enabled", False) %}python tools/agent/atlas_critique.py --project-id "proj-123" --phase-output "text" --json
+{% if atlas_config.get("critique_enabled", False) %}python tools/agent/anvil_critique.py --project-id "proj-123" --phase-output "text" --json
 {% endif %}```
 {% if capabilities.get("testing", False) %}
 
@@ -625,16 +625,16 @@ Be direct.  Be reliable.  Get it done.
 
 
 # ===========================================================================
-# ATLAS phase descriptions -- used by both Jinja2 and fallback renderers
+# ANVIL phase descriptions -- used by both Jinja2 and fallback renderers
 # ===========================================================================
 
-ATLAS_PHASE_DESCRIPTIONS: Dict[str, str] = {
+ANVIL_PHASE_DESCRIPTIONS: Dict[str, str] = {
     "architect": "System design, component decomposition, interface contracts",
     "trace": "Requirements traceability matrix, compliance mapping",
     "link": "Wire components together, dependency injection, A2A registration",
     "assemble": "Build, test (TDD RED->GREEN->REFACTOR), integrate",
     "stress_test": "Load testing, security scanning, compliance gate checks",
-    "critique": "Adversarial review by security, compliance, and knowledge critics (ATLAS-CR)",
+    "critique": "Adversarial review by security, compliance, and knowledge critics (ANVIL-CR)",
 }
 
 
@@ -644,7 +644,7 @@ ATLAS_PHASE_DESCRIPTIONS: Dict[str, str] = {
 
 GOAL_METADATA: Dict[str, Dict[str, str]] = {
     "build_app": {
-        "name": "ATLAS Workflow",
+        "name": "ANVIL Workflow",
         "purpose": "5-step build: Architect -> Trace -> Link -> Assemble -> Stress-test",
     },
     "tdd_workflow": {
@@ -754,7 +754,7 @@ GOAL_METADATA: Dict[str, Dict[str, str]] = {
     },
     "multi_agent_orchestration": {
         "name": "Multi-Agent Orchestration",
-        "purpose": "Prompt chains, dispatcher mode, session purpose, ATLAS critique",
+        "purpose": "Prompt chains, dispatcher mode, session purpose, ANVIL critique",
     },
 }
 
@@ -857,7 +857,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     """Transform a raw blueprint dict into the template rendering context.
 
     Enriches the blueprint data with derived values needed by the Jinja2
-    template (agent tiers, goal metadata, ATLAS phase descriptions, etc.).
+    template (agent tiers, goal metadata, ANVIL phase descriptions, etc.).
 
     Args:
         blueprint: Raw blueprint dict from app_blueprint.py.
@@ -886,7 +886,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     # Build MCP server list from agent roster
     mcp_servers = _derive_mcp_servers(agents, capabilities)
 
-    # Determine ATLAS phases (exclude fitness assessment)
+    # Determine ANVIL phases (exclude fitness assessment)
     atlas_phases = atlas_config.get("phases", [
         "architect", "trace", "link", "assemble", "stress_test",
     ])
@@ -932,7 +932,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
         "mcp_servers": mcp_servers,
         "atlas_config": atlas_config,
         "atlas_phases": atlas_phases,
-        "atlas_phase_descriptions": ATLAS_PHASE_DESCRIPTIONS,
+        "atlas_phase_descriptions": ANVIL_PHASE_DESCRIPTIONS,
         "parent_callback": parent_callback,
         "cloud_provider": cloud_provider,
         "goals_list": goals_list,
@@ -1086,7 +1086,7 @@ def _build_key_decisions(blueprint: Dict[str, Any]) -> List[Dict[str, str]]:
         })
         decisions.append({
             "id": "D9",
-            "text": "M-ATLAS adds Model pre-phase to ATLAS (backward compatible -- skips if no model)",
+            "text": "M-ANVIL adds Model pre-phase to ANVIL (backward compatible -- skips if no model)",
         })
         decisions.append({
             "id": "D12",
@@ -1516,16 +1516,16 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
         parts.append("- Drift detection: `sync_engine.py`")
         parts.append("- DES compliance: `des_assessor.py`, `des_report_generator.py`\n")
 
-    # ATLAS workflow
+    # ANVIL workflow
     atlas_phases = ctx["atlas_phases"]
-    parts.append("### ATLAS Workflow\n")
-    parts.append("Build process follows the ATLAS methodology:\n")
+    parts.append("### ANVIL Workflow\n")
+    parts.append("Build process follows the ANVIL methodology:\n")
     idx = 1
     if ctx["atlas_config"].get("model_phase", False):
-        parts.append(f"{idx}. **Model** -- Import/validate SysML and DOORS models (M-ATLAS pre-phase)")
+        parts.append(f"{idx}. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)")
         idx += 1
     for phase in atlas_phases:
-        desc = ATLAS_PHASE_DESCRIPTIONS.get(phase, phase)
+        desc = ANVIL_PHASE_DESCRIPTIONS.get(phase, phase)
         parts.append(f"{idx}. **{phase.capitalize()}** -- {desc}")
         idx += 1
     parts.append("")

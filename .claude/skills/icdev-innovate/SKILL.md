@@ -11,7 +11,7 @@ CUI // SP-CTI
 
 ## Overview
 
-The Innovation Engine enables ICDEV™ to continuously and autonomously improve itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps — then generating solutions through the existing ATLAS build pipeline with full compliance triage.
+The Innovation Engine enables ICDEV™ to continuously and autonomously improve itself by discovering developer pain points, CVEs, compliance changes, and competitive gaps — then generating solutions through the existing ANVIL build pipeline with full compliance triage.
 
 Use this skill when you want to:
 - Discover new innovation opportunities from the web or internal telemetry
@@ -170,7 +170,7 @@ python tools/innovation/signal_ranker.py --calibrate --json
 Web Sources ──┐
 Introspective ├─► DISCOVER ──► SCORE ──► TRIAGE ──► GENERATE ──► BUILD ──► PUBLISH
 Competitive ──┤                                                     │          │
-Standards ────┘                                               (ATLAS/TDD) (Marketplace)
+Standards ────┘                                               (ANVIL/TDD) (Marketplace)
                                                                               │
                                            CALIBRATE ◄── MEASURE ◄── FEEDBACK ┘
 ```

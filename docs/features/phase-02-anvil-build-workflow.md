@@ -1,11 +1,11 @@
-# Phase 2 — ATLAS Build Workflow
+# Phase 2 — ANVIL Build Workflow
 
 **CUI // SP-CTI**
 
 | Field | Value |
 |-------|-------|
 | Phase | 2 |
-| Title | ATLAS Build Workflow |
+| Title | ANVIL Build Workflow |
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | Phase 1 (GOTCHA Framework Foundation) |
@@ -20,19 +20,19 @@ Building production-grade applications with AI assistance requires more than cod
 
 Government and DoD systems demand a rigorous, repeatable build process that produces auditable, traceable, and production-ready artifacts. The build process must enforce design-before-code, validate all integrations before implementation, and stress-test before delivery. Furthermore, Model-Based Systems Engineering (MBSE) projects require an additional pre-phase that imports authoritative system models and establishes a digital thread before any design decisions are made.
 
-ATLAS provides this structured 5-step build methodology (Architect, Trace, Link, Assemble, Stress-test), with M-ATLAS extending it to 6 steps by adding a Model pre-phase for MBSE-enabled projects. Each step maps directly to a GOTCHA layer, ensuring the framework's separation of concerns is maintained throughout the build lifecycle.
+ANVIL provides this structured 5-step build methodology (Architect, Navigate, Verify, Integrate, Launch), with M-ANVIL extending it to 6 steps by adding a Model pre-phase for MBSE-enabled projects. Each step maps directly to a GOTCHA layer, ensuring the framework's separation of concerns is maintained throughout the build lifecycle.
 
 ---
 
 ## 2. Goals
 
-1. Define a repeatable 5-step build process (ATLAS) that prevents common "vibe coding" anti-patterns
+1. Define a repeatable 5-step build process (ANVIL) that prevents common "vibe coding" anti-patterns
 2. Ensure all applications start with architecture decisions (Architect) before any code is written
 3. Require data schema definition, integration mapping, and technology stack approval (Trace) before implementation
 4. Validate all external connections (APIs, databases, MCP servers, OAuth flows) before building (Link)
 5. Enforce a layered build order: database first, backend second, frontend last (Assemble)
 6. Require functional, integration, and edge case testing before delivery (Stress-test)
-7. Support MBSE-enabled projects via M-ATLAS variant that adds a Model pre-phase for SysML/DOORS NG import
+7. Support MBSE-enabled projects via M-ANVIL variant that adds a Model pre-phase for SysML/DOORS NG import
 8. Integrate acceptance criteria validation (V&V) as a mandatory gate in the Stress-test phase
 
 ---
@@ -57,7 +57,7 @@ ATLAS provides this structured 5-step build methodology (Architect, Trace, Link,
                                             +----------------+
 ```
 
-### 3.2 M-ATLAS Variant (MBSE-Enabled)
+### 3.2 M-ANVIL Variant (MBSE-Enabled)
 
 ```
 +-------+    +-------+    +-------+    +-------+    +----------+    +------------+
@@ -74,7 +74,7 @@ ATLAS provides this structured 5-step build methodology (Architect, Trace, Link,
 
 ### 3.3 GOTCHA Layer Mapping
 
-| ATLAS Step | GOTCHA Layer | Role |
+| ANVIL Step | GOTCHA Layer | Role |
 |------------|--------------|------|
 | Architect | Goals | Define the process, problem, success criteria |
 | Trace | Context | Reference patterns, data schemas, integrations |
@@ -176,7 +176,7 @@ The system SHALL run acceptance criteria validation (`acceptance_validator.py`) 
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D9 | M-ATLAS adds "Model" pre-phase to ATLAS (backward compatible) | Skips if no model exists; ATLAS starts at Architect for non-MBSE projects |
+| D9 | M-ANVIL adds "Model" pre-phase to ANVIL (backward compatible) | Skips if no model exists; ANVIL starts at Architect for non-MBSE projects |
 | D44 | Flag-based (`--agentic`) for backward compatibility | Omitting the flag produces identical output to pre-agentic behavior |
 | D46 | Fitness scoring: weighted rule-based + optional LLM override | Deterministic scoring with escape hatch for nuanced assessments |
 | D47 | Blueprint-driven generation -- single config drives all generators | One source of truth for the entire generation pipeline |
@@ -211,7 +211,7 @@ python tools/builder/scaffolder.py --project-path /tmp --name "my-app" \
 python tools/builder/language_support.py --detect "/path/to/project"
 python tools/builder/language_support.py --list
 
-# M-ATLAS Model phase (MBSE-enabled projects)
+# M-ANVIL Model phase (MBSE-enabled projects)
 python tools/mbse/xmi_parser.py --project-id "proj-123" --file model.xmi --json
 python tools/mbse/reqif_parser.py --project-id "proj-123" --file reqs.reqif --json
 python tools/mbse/digital_thread.py --project-id "proj-123" auto-link --json
@@ -219,5 +219,5 @@ python tools/mbse/model_code_generator.py --project-id "proj-123" --language pyt
 python tools/mbse/model_control_mapper.py --project-id "proj-123" --map-all --json
 
 # Build workflow skill
-/icdev-build    # Build code using true TDD via M-ATLAS workflow
+/icdev-build    # Build code using true TDD via M-ANVIL workflow
 ```

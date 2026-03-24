@@ -14,7 +14,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D6:** Audit trail is append-only/immutable (no UPDATE/DELETE — NIST AU compliance)
 - **D7:** Python stdlib `xml.etree.ElementTree` for XMI/ReqIF parsing (zero deps, air-gap safe)
 - **D8:** Normalized DB tables for model elements (enables SQL joins across digital thread)
-- **D9:** M-ATLAS adds "Model" pre-phase to ATLAS (backward compatible — skips if no model)
+- **D9:** M-ANVIL adds "Model" pre-phase to ANVIL (backward compatible — skips if no model)
 - **D10:** File-based sync only for Cameo (air-gapped desktop, no API — XMI export/import)
 - **D11:** PI-snapshot versioning with SHA-256 content hashing for drift detection
 - **D12:** N:M digital thread links (one block → many code modules; one control → many requirements)

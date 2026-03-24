@@ -26,7 +26,7 @@ constraints:
 | Agent ID | Skills | Responsibility |
 |----------|--------|----------------|
 | `orchestrator-agent` | task-routing, workflow-management, aggregation, status-reporting | Top-level coordination, final aggregation, cross-agent conflict resolution |
-| `architect-agent` | system-design, api-design, data-model, technology-selection | ATLAS A/T phases, architecture decisions, component design, interface contracts |
+| `architect-agent` | system-design, api-design, data-model, technology-selection | ANVIL A/T phases, architecture decisions, component design, interface contracts |
 | `builder-agent` | scaffold, code-generation, test-writing, lint, format, refactor | TDD code generation (RED-GREEN-REFACTOR), project scaffolding, code quality |
 | `compliance-agent` | ssp-generation, poam-generation, stig-check, sbom-generation, cui-marking, control-mapping, fedramp-assessment, cmmc-assessment, oscal-generation, crosswalk-query | ATO artifact generation, compliance assessment across NIST/FedRAMP/CMMC/CSSP frameworks |
 | `security-agent` | sast-scan, dependency-audit, secret-detection, container-scan, threat-model, vulnerability-assessment | Security scanning, vulnerability detection, threat modeling |

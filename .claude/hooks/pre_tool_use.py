@@ -199,9 +199,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cpmp_evm_periods",
         "cpmp_cdrl_generations",
         "cpmp_cor_access_log",
-        # Phase 61 — ATLAS Critique (Feature 3)
-        "atlas_critique_sessions",
-        "atlas_critique_findings",
+        # Phase 61 — ANVIL Critique (Feature 3)
+        "anvil_critique_sessions",
+        "anvil_critique_findings",
         # Phase 61 — Prompt Chain Execution (Feature 2)
         "prompt_chain_executions",
         # Phase 61 — Dispatcher Mode (Feature 1)

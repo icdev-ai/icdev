@@ -375,7 +375,7 @@ CORE_AGENTS: List[Dict[str, Any]] = [
     {
         "name": "architect",
         "base_port": 8444,
-        "role": "ATLAS A/T phases, system design",
+        "role": "ANVIL A/T phases, system design",
     },
     {
         "name": "builder",

@@ -22,7 +22,7 @@ When an RFP requirement mentions integrated platforms, complete solutions, SDLC 
 | Aspect | What the Proposal Says |
 |--------|----------------------|
 | **Identity** | "ICDEV™ (Intelligent Certified Development) platform — a complete autonomous software development system" |
-| **Architecture** | 15 specialized AI agents, 6-layer GOTCHA framework, ATLAS workflow methodology |
+| **Architecture** | 15 specialized AI agents, 6-layer GOTCHA framework, ANVIL workflow methodology |
 | **Scale** | 42 compliance frameworks, 500+ deterministic tools, 6 first-class programming languages |
 | **Compliance** | Dual-hub crosswalk (NIST 800-53 + ISO 27001) — implement once, cascade everywhere |
 | **Deployment** | 6 CSPs (AWS GovCloud, Azure Gov, GCP Assured, OCI Gov, IBM IC4G, local/air-gapped) |

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for ATLAS Critique Phase — adversarial plan review (Phase 61, Feature 3).
+"""Tests for ANVIL Critique Phase — adversarial plan review (Phase 61, Feature 3).
 
 Coverage: session creation, parallel critic dispatch (mocked), finding
 classification by severity, consensus computation (GO/NOGO/CONDITIONAL),
@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from icdev.tools.agent.atlas_critique import (
+from icdev.tools.agent.anvil_critique import (
     AtlasCritique,
     CritiqueSession,
     Finding,
@@ -60,7 +60,7 @@ def critique_disabled(tmp_db, tmp_path):
     """Create an AtlasCritique with critique disabled."""
     config_path = tmp_path / "disabled.yaml"
     config_path.write_text(
-        "atlas_critique:\n  enabled: false\n  max_rounds: 3\n  critics: []\n",
+        "anvil_critique:\n  enabled: false\n  max_rounds: 3\n  critics: []\n",
         encoding="utf-8",
     )
     return AtlasCritique(db_path=tmp_db, config_path=config_path)
@@ -162,7 +162,7 @@ class TestConfiguration:
         """Loading config from valid YAML file."""
         yaml_path = tmp_path / "test_config.yaml"
         yaml_path.write_text(
-            "atlas_critique:\n  enabled: true\n  max_rounds: 5\n"
+            "anvil_critique:\n  enabled: true\n  max_rounds: 5\n"
             "  critics:\n"
             "    - agent: test-agent\n"
             "      role: tester\n"
@@ -189,8 +189,8 @@ class TestDatabase:
             ).fetchall()
         ]
         conn.close()
-        assert "atlas_critique_sessions" in tables
-        assert "atlas_critique_findings" in tables
+        assert "anvil_critique_sessions" in tables
+        assert "anvil_critique_findings" in tables
 
     def test_tables_idempotent(self, tmp_db):
         """Running ensure_tables twice does not raise."""
@@ -201,14 +201,14 @@ class TestDatabase:
         """Can insert a session row."""
         conn = sqlite3.connect(str(tmp_db))
         conn.execute(
-            """INSERT INTO atlas_critique_sessions
+            """INSERT INTO anvil_critique_sessions
                (id, project_id, phase_input_hash, status, created_at)
                VALUES (?, ?, ?, ?, ?)""",
             ("sess-001", "proj-123", "abc123", "in_progress", "2026-01-01T00:00:00"),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM atlas_critique_sessions WHERE id = ?",
+            "SELECT * FROM anvil_critique_sessions WHERE id = ?",
             ("sess-001",),
         ).fetchone()
         conn.close()
@@ -218,13 +218,13 @@ class TestDatabase:
         """Can insert a finding row with valid types."""
         conn = sqlite3.connect(str(tmp_db))
         conn.execute(
-            """INSERT INTO atlas_critique_sessions
+            """INSERT INTO anvil_critique_sessions
                (id, project_id, phase_input_hash, status, created_at)
                VALUES (?, ?, ?, ?, ?)""",
             ("sess-002", "proj-123", "abc123", "in_progress", "2026-01-01T00:00:00"),
         )
         conn.execute(
-            """INSERT INTO atlas_critique_findings
+            """INSERT INTO anvil_critique_findings
                (id, session_id, critic_agent, round_number,
                 finding_type, severity, title, description, created_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -235,7 +235,7 @@ class TestDatabase:
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM atlas_critique_findings WHERE id = ?",
+            "SELECT * FROM anvil_critique_findings WHERE id = ?",
             ("find-001",),
         ).fetchone()
         conn.close()
@@ -245,7 +245,7 @@ class TestDatabase:
         """Inserting a finding with invalid finding_type raises IntegrityError."""
         conn = sqlite3.connect(str(tmp_db))
         conn.execute(
-            """INSERT INTO atlas_critique_sessions
+            """INSERT INTO anvil_critique_sessions
                (id, project_id, phase_input_hash, status, created_at)
                VALUES (?, ?, ?, ?, ?)""",
             ("sess-003", "proj-123", "abc123", "in_progress", "2026-01-01T00:00:00"),
@@ -253,7 +253,7 @@ class TestDatabase:
         conn.commit()
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                """INSERT INTO atlas_critique_findings
+                """INSERT INTO anvil_critique_findings
                    (id, session_id, critic_agent, round_number,
                     finding_type, severity, title, description, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -268,7 +268,7 @@ class TestDatabase:
         """Inserting a finding with invalid severity raises IntegrityError."""
         conn = sqlite3.connect(str(tmp_db))
         conn.execute(
-            """INSERT INTO atlas_critique_sessions
+            """INSERT INTO anvil_critique_sessions
                (id, project_id, phase_input_hash, status, created_at)
                VALUES (?, ?, ?, ?, ?)""",
             ("sess-004", "proj-123", "abc123", "in_progress", "2026-01-01T00:00:00"),
@@ -276,7 +276,7 @@ class TestDatabase:
         conn.commit()
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                """INSERT INTO atlas_critique_findings
+                """INSERT INTO anvil_critique_findings
                    (id, session_id, critic_agent, round_number,
                     finding_type, severity, title, description, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -572,7 +572,7 @@ class TestFindingsStorage:
         conn = sqlite3.connect(str(tmp_db))
         conn.row_factory = sqlite3.Row
         findings = conn.execute(
-            "SELECT * FROM atlas_critique_findings WHERE session_id = ?",
+            "SELECT * FROM anvil_critique_findings WHERE session_id = ?",
             (session_id,),
         ).fetchall()
         conn.close()

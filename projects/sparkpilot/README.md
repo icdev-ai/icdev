@@ -12,7 +12,7 @@ ICDEV™'s `/icdev-agentic` command assessed SparkPilot's fitness for agentic ar
 
 **What ICDEV™ generated for SparkPilot:**
 - Full 6-layer GOTCHA framework (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
-- ATLAS/M-ATLAS workflow for TDD build cycles
+- ANVIL/M-ANVIL workflow for TDD build cycles
 - 11 specialized AI agents with A2A protocol communication
 - 31-table SQLite database with append-only audit trail
 - Flask web dashboard with 8 interactive pages
@@ -143,7 +143,7 @@ Manage multiple devices from a single dashboard. OTA firmware updates use canary
 | Agent | Port | Tier | Role |
 |-------|------|------|------|
 | **Orchestrator** | 9443 | Core | Task routing, workflow management, NL command parsing |
-| **Architect** | 9444 | Core | Firmware architecture design, ATLAS A/T phases |
+| **Architect** | 9444 | Core | Firmware architecture design, ANVIL A/T phases |
 | **Embedded Builder** | 9445 | Domain | TDD C/C++ code gen, CMake, FreeRTOSConfig.h, cross-compilation |
 | **Compliance** | 9446 | Domain | SBOM, NIST, IEC 62443, DO-178C, ISO 26262 (Pro Mode only) |
 | **Security** | 9447 | Domain | SAST (Cppcheck/MISRA), CVE triage, secret detection |

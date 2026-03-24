@@ -5447,11 +5447,11 @@ CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(q
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
 
 -- =========================================================================
--- ATLAS Critique Phase (Phase 61 — Feature 3)
+-- ANVIL Critique Phase (Phase 61 — Feature 3)
 -- =========================================================================
 
--- Critique sessions: one per ATLAS critique invocation (append-only except status updates)
-CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
+-- Critique sessions: one per ANVIL critique invocation (append-only except status updates)
+CREATE TABLE IF NOT EXISTS anvil_critique_sessions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,
     workflow_id TEXT,
@@ -5472,13 +5472,13 @@ CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
     completed_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_critique_session_project ON atlas_critique_sessions(project_id);
-CREATE INDEX IF NOT EXISTS idx_critique_session_status ON atlas_critique_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_critique_session_project ON anvil_critique_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_critique_session_status ON anvil_critique_sessions(status);
 
 -- Critique findings: individual findings from critic agents (append-only, NIST AU)
-CREATE TABLE IF NOT EXISTS atlas_critique_findings (
+CREATE TABLE IF NOT EXISTS anvil_critique_findings (
     id TEXT PRIMARY KEY,
-    session_id TEXT NOT NULL REFERENCES atlas_critique_sessions(id),
+    session_id TEXT NOT NULL REFERENCES anvil_critique_sessions(id),
     critic_agent TEXT NOT NULL,
     round_number INTEGER DEFAULT 1,
     finding_type TEXT NOT NULL CHECK(finding_type IN (
@@ -5495,9 +5495,9 @@ CREATE TABLE IF NOT EXISTS atlas_critique_findings (
     created_at TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_critique_finding_session ON atlas_critique_findings(session_id);
-CREATE INDEX IF NOT EXISTS idx_critique_finding_severity ON atlas_critique_findings(severity);
-CREATE INDEX IF NOT EXISTS idx_critique_finding_type ON atlas_critique_findings(finding_type);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_session ON anvil_critique_findings(session_id);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_severity ON anvil_critique_findings(severity);
+CREATE INDEX IF NOT EXISTS idx_critique_finding_type ON anvil_critique_findings(finding_type);
 
 -- =========================================================================
 -- PROMPT CHAIN EXECUTIONS (Phase 61 — Feature 2)

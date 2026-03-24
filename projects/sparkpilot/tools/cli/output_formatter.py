@@ -656,7 +656,7 @@ if __name__ == "__main__":
     print()
 
     # -- Pipeline --
-    print(format_section("ATLAS Workflow"))
+    print(format_section("ANVIL Workflow"))
     print()
     print(format_pipeline([
         {"name": "Model",     "status": "completed"},

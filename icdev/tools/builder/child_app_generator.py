@@ -7,7 +7,7 @@
 """Child App Generator - generates mini-ICDEV™ clone applications from blueprints.
 
 This is the core engine for ICDEV™ Phase 19 agentic app generation. Every child
-app includes the full GOTCHA framework, ATLAS workflow, own agents, memory system,
+app includes the full GOTCHA framework, ANVIL workflow, own agents, memory system,
 and CI/CD — everything except the ability to generate new applications.
 
 Decision D21: Copy-and-adapt over template library.
@@ -442,8 +442,8 @@ def _get_agent_skills(agent_name: str, blueprint: dict) -> list:
             },
             {
                 "id": "atlas-workflow",
-                "name": "ATLAS Workflow",
-                "description": "Execute ATLAS build phases",
+                "name": "ANVIL Workflow",
+                "description": "Execute ANVIL build phases",
             },
         ],
         "builder": [
@@ -1194,7 +1194,7 @@ def step_04_memory_bootstrap(child_root: Path, blueprint: dict) -> dict:
         f"- This is a generated child application of ICDEV™\n"
         f"- This application CANNOT generate child applications "
         f"(grandchild prevention)\n"
-        f"- ATLAS workflow does not include fitness assessment step\n"
+        f"- ANVIL workflow does not include fitness assessment step\n"
     )
     if parent_cb.get("enabled"):
         memory_content += (
@@ -2221,7 +2221,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
         f"Coding Development platform.**\n\n"
         f"ICDEV™ is a meta-builder that autonomously constructs Gov/DoD applications "
         f"using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
-        f"Hard Prompts) and the ATLAS workflow (Architect → Trace → Link → Assemble "
+        f"Hard Prompts) and the ANVIL workflow (Architect → Trace → Link → Assemble "
         f"→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
         f"compliance, and self-healing capabilities.\n"
     )
@@ -2588,7 +2588,7 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
     """Step 14: Validate GOTCHA framework compliance of generated child app.
 
     Runs the gotcha_validator to verify all 6 GOTCHA layers are populated
-    and ATLAS workflow structure is present. This ensures child apps follow
+    and ANVIL workflow structure is present. This ensures child apps follow
     the GOTCHA framework as mandated by build_app.md.
 
     BMAD-adapted: adversarial validation — assumes the build is incomplete

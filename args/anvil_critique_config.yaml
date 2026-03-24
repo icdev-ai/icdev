@@ -1,12 +1,12 @@
 # CUI // SP-CTI
-# ATLAS Critique Phase Configuration (Phase 61 — Feature 3)
+# ANVIL Critique Phase Configuration (Phase 61 — Feature 3)
 #
 # Adversarial plan critique between Assemble and Stress-test.
 # Multiple domain agents independently review the plan, then
 # the architect revises.  Creates adversarial review pressure
 # to catch issues before stress-testing.
 
-atlas_critique:
+anvil_critique:
   enabled: true
   max_rounds: 3
 

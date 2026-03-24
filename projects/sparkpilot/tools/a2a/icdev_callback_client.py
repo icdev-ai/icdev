@@ -160,19 +160,19 @@ def query_parent_rag(query: str, top_k: int = 5) -> dict:
 
 
 def send_critique_findings(session_id: str, findings: list) -> dict:
-    """Send ATLAS critique findings to parent for federated history.
+    """Send ANVIL critique findings to parent for federated history.
 
     Enables cross-child critique learning: findings from one child app
     are available to parent and sibling apps via critique history queries.
 
     Args:
-        session_id: Local ATLAS critique session ID.
-        findings: List of critique finding dicts from atlas_critique.py.
+        session_id: Local ANVIL critique session ID.
+        findings: List of critique finding dicts from anvil_critique.py.
 
     Returns:
         Dict with acknowledgment or error.
     """
-    return call_parent("atlas_critique.report_findings", {
+    return call_parent("anvil_critique.report_findings", {
         "session_id": session_id,
         "child_id": "sparkpilot",
         "findings": findings,
@@ -180,7 +180,7 @@ def send_critique_findings(session_id: str, findings: list) -> dict:
 
 
 def query_critique_history(project_type: str = "", limit: int = 20) -> dict:
-    """Query parent for historical ATLAS critique findings.
+    """Query parent for historical ANVIL critique findings.
 
     Retrieves critique patterns and common findings from parent and sibling
     apps to inform local critique sessions.
@@ -195,7 +195,7 @@ def query_critique_history(project_type: str = "", limit: int = 20) -> dict:
     params = {"child_id": "sparkpilot", "limit": limit}
     if project_type:
         params["project_type"] = project_type
-    return call_parent("atlas_critique.get_history", params)
+    return call_parent("anvil_critique.get_history", params)
 
 
 if __name__ == "__main__":

@@ -103,9 +103,9 @@ At 90% accuracy per step, a 5-step LLM chain yields ~59% end-to-end accuracy. GO
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### ATLAS Workflow — How Applications Get Built
+### ANVIL Workflow — How Applications Get Built
 
-Every application follows the ATLAS methodology (with optional Model phase for MBSE):
+Every application follows the ANVIL methodology (with optional Model phase for MBSE):
 
 ```
   ┌──────────┐   ┌───────────┐   ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐
@@ -175,7 +175,7 @@ Every application follows the ATLAS methodology (with optional Model phase for M
                               ▼
 ┌──────────────┐    ┌─────────────────────┐    ┌──────────────┐
 │   MEASURE    │    │   INTAKE (require)  │    │    BUILD     │
-│  Runtime     │◄───│  RICOAS: AI-driven  │───▶│  ATLAS/TDD   │
+│  Runtime     │◄───│  RICOAS: AI-driven  │───▶│  ANVIL/TDD   │
 │  Feedback    │    │  gap detection,     │    │  6 languages │
 │  Code Intel  │    │  SAFe decomposition │    │  500+ tools  │
 └──────┬───────┘    └─────────────────────┘    └──────┬───────┘
@@ -232,7 +232,7 @@ Every cycle strengthens the system:
 
 | Capability | What It Means |
 |:---|:---|
-| **Child App Generation** | ICDEV™ generates mini-ICDEV™ clones — production applications with their own GOTCHA framework, ATLAS workflow, 10-12 agents, 21 goals, and full compliance stack |
+| **Child App Generation** | ICDEV™ generates mini-ICDEV™ clones — production applications with their own GOTCHA framework, ANVIL workflow, 10-12 agents, 21 goals, and full compliance stack |
 | **Evolutionary Intelligence** | Capability genome versioning (semver + SHA-256), 72-hour staging window, bidirectional parent-child learning, cross-pollination with HITL approval |
 | **Federated Marketplace** | Share skills, goals, compliance extensions across tenant organizations through a 9-gate security pipeline with IL-aware content filtering |
 | **Innovation Engine** | Autonomous self-improvement: web scanning (CVE, standards, community), 5-dimension scoring, compliance triage, trend detection, solution generation |
@@ -461,7 +461,7 @@ Customer Need
              │
              ▼
 ┌─────────────────────────┐
-│  ATLAS BUILD PIPELINE   │  TDD code generation in 6 languages
+│  ANVIL BUILD PIPELINE   │  TDD code generation in 6 languages
 │  9-Step Test Pipeline   │  STIG-hardened containers
 │  Multi-Cloud Deploy     │  cATO monitoring
 │  Self-Healing Monitor   │  Pattern-based auto-remediation

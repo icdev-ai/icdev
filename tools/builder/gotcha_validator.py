@@ -7,7 +7,7 @@
 """GOTCHA Framework Compliance Validator.
 
 Validates that a project directory conforms to the 6-layer GOTCHA framework
-and ATLAS workflow structure. Designed to run post-generation on child apps
+and ANVIL workflow structure. Designed to run post-generation on child apps
 or standalone against any ICDEV™-compatible project.
 
 The 6 GOTCHA layers:
@@ -22,7 +22,7 @@ Additional BMAD-adapted quality checks:
   7. CLAUDE.md   — project documentation referencing GOTCHA
   8. Memory      — memory/MEMORY.md for long-term context
   9. Database    — tools/db/ with init script
-  10. ATLAS      — goals/build_app.md (ATLAS workflow present)
+  10. ANVIL      — goals/build_app.md (ANVIL workflow present)
 
 Decision D44: Flag-based backward compatibility (--gate for CI/CD blocking).
 Pattern: Follows claude_dir_validator.py declarative check registry.
@@ -169,7 +169,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
             status="fail",
             expected="At least 1 goal workflow file (e.g., build_app.md)",
             actual="0 goal files (empty directory)",
-            fix_suggestion="Add goal files: build_app.md (ATLAS), tdd_workflow.md, compliance_workflow.md",
+            fix_suggestion="Add goal files: build_app.md (ANVIL), tdd_workflow.md, compliance_workflow.md",
             message="GOTCHA Layer 1 (Goals) empty: no workflow definitions found",
         ))
 
@@ -599,7 +599,7 @@ def _check_database(project_dir: Path) -> List[GotchaCheck]:
 
 
 def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
-    """Check Meta: ATLAS workflow (goals/build_app.md) exists."""
+    """Check Meta: ANVIL workflow (goals/build_app.md) exists."""
     checks = []
     build_app = project_dir / "goals" / "build_app.md"
 
@@ -608,24 +608,24 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
         has_atlas = "ATLAS" in content
         checks.append(GotchaCheck(
             check_id="GOTCHA-10",
-            check_name="ATLAS workflow present",
+            check_name="ANVIL workflow present",
             layer="meta",
             status="pass" if has_atlas else "warn",
-            expected="goals/build_app.md with ATLAS workflow",
-            actual="Present" + (" with ATLAS reference" if has_atlas else " but no ATLAS reference"),
-            fix_suggestion="" if has_atlas else "Ensure build_app.md documents the ATLAS workflow",
-            message="ATLAS workflow " + ("found" if has_atlas else "file exists but ATLAS not referenced"),
+            expected="goals/build_app.md with ANVIL workflow",
+            actual="Present" + (" with ANVIL reference" if has_atlas else " but no ANVIL reference"),
+            fix_suggestion="" if has_atlas else "Ensure build_app.md documents the ANVIL workflow",
+            message="ANVIL workflow " + ("found" if has_atlas else "file exists but ANVIL not referenced"),
         ))
     else:
         checks.append(GotchaCheck(
             check_id="GOTCHA-10",
-            check_name="ATLAS workflow present",
+            check_name="ANVIL workflow present",
             layer="meta",
             status="warn",
-            expected="goals/build_app.md with ATLAS workflow definition",
+            expected="goals/build_app.md with ANVIL workflow definition",
             actual="Not found",
-            fix_suggestion="Copy build_app.md from ICDEV™ or create ATLAS workflow documentation",
-            message="ATLAS workflow missing — no goals/build_app.md",
+            fix_suggestion="Copy build_app.md from ICDEV™ or create ANVIL workflow documentation",
+            message="ANVIL workflow missing — no goals/build_app.md",
         ))
 
     return checks

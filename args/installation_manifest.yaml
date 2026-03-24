@@ -706,7 +706,7 @@ modules:
 
   agentic_generation:
     name: "Agentic Child App Generation"
-    description: "Generate mini-ICDEV™ clone child applications with GOTCHA/ATLAS. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
+    description: "Generate mini-ICDEV™ clone child applications with GOTCHA/ANVIL. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
     required: false
     packages:
       - tools/builder/agentic_fitness.py

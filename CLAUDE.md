@@ -123,7 +123,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 
 ## ICDEV™ System — Intelligent Certified Development
 
-Meta-builder that autonomously builds Gov/DoD applications using GOTCHA + ATLAS workflow. Full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing.
+Meta-builder that autonomously builds Gov/DoD applications using GOTCHA + ANVIL workflow. Full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing.
 
 ### Environment
 - **Classification:** CUI // SP-CTI (IL4/IL5), SECRET (IL6)
