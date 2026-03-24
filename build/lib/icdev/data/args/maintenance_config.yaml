@@ -1,0 +1,55 @@
+# Maintenance Audit Configuration
+# Controls dependency scanning, vulnerability checking, SLA enforcement, and remediation
+
+# SLA (Service Level Agreement) thresholds for vulnerability remediation
+sla:
+  critical_hours: 48       # 2 days — critical vulnerabilities
+  high_hours: 168          # 7 days — high vulnerabilities
+  medium_hours: 720        # 30 days — medium vulnerabilities
+  low_hours: 2160          # 90 days — low vulnerabilities
+
+# Dependency staleness thresholds
+staleness:
+  warning_days: 90         # Flag as warning if dependency is >90 days behind latest
+  critical_days: 180       # Flag as critical if dependency is >180 days behind latest
+  max_acceptable_days: 365 # Hard limit — anything older is a finding
+
+# Maintenance score calculation
+scoring:
+  overdue_critical_penalty: 15   # Points deducted per overdue critical SLA
+  overdue_high_penalty: 10       # Points deducted per overdue high SLA
+  overdue_medium_penalty: 5      # Points deducted per overdue medium SLA
+  overdue_low_penalty: 2         # Points deducted per overdue low SLA
+  staleness_penalty_per_day: 0.1 # Points deducted per day of avg staleness above baseline
+  staleness_baseline_days: 90    # No staleness penalty below this threshold
+
+# Remediation engine settings
+remediation:
+  auto_remediate: true                  # Enable automatic remediation
+  auto_remediate_max_severity: "medium" # Auto-fix medium and below without confirmation
+  require_tests_pass: true              # Require tests to pass before marking as applied
+  require_lint_pass: true               # Require linting to pass before marking as applied
+  branch_prefix: "remediation/"         # Git branch prefix for remediation branches
+  commit_prefix: "[MAINT]"             # Commit message prefix for remediation commits
+  max_concurrent_remediations: 5        # Max simultaneous remediation branches
+
+# Advisory/vulnerability data sources
+advisory_sources:
+  - "tool-native"    # Use language-native tools (pip-audit, npm audit, cargo-audit, etc.)
+  - "osv"            # OSV.dev API (unified, open-source vulnerability database)
+
+# Reporting settings
+reporting:
+  trend_lookback_days: 90    # How far back to look for trend analysis
+  include_resolved: false    # Include resolved vulnerabilities in reports
+  report_format: "markdown"  # Report format (markdown)
+  cui_markings: true         # Apply CUI markings to reports
+
+# Supported package registries for version lookups (used by dependency_scanner)
+registries:
+  pypi: "https://pypi.org/pypi/{package}/json"
+  npm: "https://registry.npmjs.org/{package}"
+  maven: "https://search.maven.org/solrsearch/select?q=g:{group}+AND+a:{artifact}&rows=1&wt=json"
+  crates: "https://crates.io/api/v1/crates/{crate}"
+  go: "https://proxy.golang.org/{module}/@latest"
+  nuget: "https://api.nuget.org/v3-flatcontainer/{package}/index.json"

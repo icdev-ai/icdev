@@ -1,0 +1,67 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Default project constitution principles for DoD/Gov systems (ADR D158)",
+  "default_principles": [
+    {
+      "text": "All user-facing APIs must enforce authentication (CAC/PIV for DoD, MFA minimum)",
+      "category": "security",
+      "priority": 1,
+      "keywords": ["authentication", "CAC", "PIV", "MFA", "login", "SSO"]
+    },
+    {
+      "text": "All data at rest and in transit must use FIPS 140-2/3 validated encryption",
+      "category": "security",
+      "priority": 1,
+      "keywords": ["encryption", "FIPS", "TLS", "AES", "data at rest", "data in transit"]
+    },
+    {
+      "text": "All changes must maintain append-only audit trail (NIST AU controls)",
+      "category": "compliance",
+      "priority": 1,
+      "keywords": ["audit", "trail", "log", "AU-2", "AU-3", "append-only"]
+    },
+    {
+      "text": "CUI markings must be present on all generated artifacts",
+      "category": "compliance",
+      "priority": 1,
+      "keywords": ["CUI", "marking", "classification", "banner"]
+    },
+    {
+      "text": "No feature may degrade existing ATO boundary without ISSO review",
+      "category": "compliance",
+      "priority": 1,
+      "keywords": ["ATO", "boundary", "ISSO", "authorization"]
+    },
+    {
+      "text": "All features must include acceptance criteria with testable assertions",
+      "category": "quality",
+      "priority": 2,
+      "keywords": ["acceptance", "criteria", "testable", "Given", "When", "Then"]
+    },
+    {
+      "text": "All external integrations must have defined error handling and circuit breaker patterns",
+      "category": "architecture",
+      "priority": 2,
+      "keywords": ["integration", "error handling", "circuit breaker", "retry", "fallback"]
+    },
+    {
+      "text": "All containers must run as non-root with read-only root filesystem",
+      "category": "operations",
+      "priority": 2,
+      "keywords": ["container", "non-root", "read-only", "rootfs", "Docker", "K8s"]
+    },
+    {
+      "text": "Dependencies must be auditable and air-gap installable",
+      "category": "security",
+      "priority": 2,
+      "keywords": ["dependency", "air-gap", "SBOM", "supply chain", "auditable"]
+    },
+    {
+      "text": "All features must be accessible (WCAG 2.1 AA minimum for UI)",
+      "category": "quality",
+      "priority": 3,
+      "keywords": ["accessible", "WCAG", "ARIA", "screen reader", "a11y"]
+    }
+  ]
+}

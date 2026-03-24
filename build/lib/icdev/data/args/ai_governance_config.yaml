@@ -1,0 +1,137 @@
+# CUI // SP-CTI
+# AI Governance Configuration — Phase 50
+# Intake detection + chat integration for AI Transparency & Accountability tools
+#
+# Follows D26 (declarative YAML), D322 (keyword detection), D328 (single config)
+
+ai_governance:
+  # Auto-trigger conditions (D322)
+  auto_trigger:
+    ai_ml_mention: true           # Trigger on any AI/ML keyword
+    federal_agency: true          # All federal agencies per OMB M-25-21
+    impact_level_minimum: "IL2"   # All impact levels (OMB applies broadly)
+
+  # Intake detection keywords by governance pillar (D322)
+  intake_detection:
+    keywords_by_pillar:
+      ai_inventory:
+        - "ai system"
+        - "machine learning"
+        - "ml model"
+        - "deep learning"
+        - "neural network"
+        - "natural language processing"
+        - "nlp"
+        - "computer vision"
+        - "recommendation engine"
+        - "predictive model"
+        - "automated decision"
+        - "algorithmic"
+        - "chatbot"
+        - "virtual assistant"
+        - "generative ai"
+        - "large language model"
+        - "llm"
+        - "foundation model"
+      model_documentation:
+        - "model card"
+        - "model documentation"
+        - "training data"
+        - "model performance"
+        - "model accuracy"
+        - "model bias"
+        - "model validation"
+        - "model versioning"
+      human_oversight:
+        - "human oversight"
+        - "human in the loop"
+        - "human on the loop"
+        - "manual review"
+        - "human approval"
+        - "override capability"
+        - "escalation"
+        - "appeal process"
+      impact_assessment:
+        - "impact assessment"
+        - "rights impacting"
+        - "safety critical"
+        - "high risk ai"
+        - "algorithmic impact"
+        - "disparate impact"
+        - "bias assessment"
+        - "fairness"
+      transparency:
+        - "transparency"
+        - "explainability"
+        - "interpretability"
+        - "notice"
+        - "disclosure"
+        - "ai disclosure"
+      accountability:
+        - "accountability"
+        - "responsible ai"
+        - "caio"
+        - "chief ai officer"
+        - "ai governance"
+        - "ethics review"
+        - "incident response"
+
+    # Absence signals — indicate no AI governance exists
+    absence_signals:
+      - "no ai governance"
+      - "no model documentation"
+      - "no oversight process"
+      - "we don't track ai"
+
+  # Chat governance thresholds (D327)
+  chat_governance:
+    advisory_cooldown_turns: 5    # Don't repeat same advisory within N turns
+    check_frequency: "every_assistant_response"
+    ai_keywords:
+      - "ai system"
+      - "machine learning"
+      - "ml model"
+      - "deep learning"
+      - "neural network"
+      - "nlp"
+      - "computer vision"
+      - "recommendation"
+      - "predictive model"
+      - "automated decision"
+      - "algorithmic"
+      - "chatbot"
+      - "generative ai"
+      - "llm"
+      - "foundation model"
+      - "model training"
+      - "model card"
+      - "model performance"
+      - "ai governance"
+      - "responsible ai"
+    advisory_priority_order:
+      - "oversight_plan_missing"
+      - "impact_assessment_missing"
+      - "model_card_missing"
+      - "caio_not_designated"
+      - "fairness_not_assessed"
+      - "reassessment_overdue"
+
+  # Readiness dimension config (D323)
+  readiness:
+    weight: 0.10
+    scoring:
+      inventory_registered: 0.20
+      model_cards_present: 0.15
+      oversight_plan_exists: 0.20
+      impact_assessment_done: 0.20
+      caio_designated: 0.10
+      transparency_frameworks_selected: 0.15
+
+  # Probe questions for missing pillars
+  probe_questions:
+    ai_inventory: "Does this system use AI/ML models? If so, what types (classification, NLP, recommendation, generation)?"
+    model_documentation: "Are there existing model cards or documentation for the AI models used?"
+    human_oversight: "What human oversight is in place for AI decisions? Is there an appeal process?"
+    impact_assessment: "Has an algorithmic impact assessment been conducted? Does the AI make rights-impacting decisions?"
+    transparency: "Are users notified when AI is making or supporting decisions?"
+    accountability: "Is there a designated Chief AI Officer (CAIO) or responsible official?"

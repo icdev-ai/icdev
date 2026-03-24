@@ -1,0 +1,55 @@
+# CUI // SP-CTI
+# Security Hardening Workflow — SAST → Deps → Secrets → OWASP → ATLAS
+description: "Security hardening: multi-layer scanning, AI threat assessment, supply chain verification"
+category: security
+steps:
+  - id: sast
+    name: "SAST Security Scan"
+    tool: "tools/security/sast_runner.py"
+    inject_project_id: false
+    args:
+      project-dir: "tools/"
+    description: "Static Application Security Testing (Bandit)"
+
+  - id: deps
+    name: "Dependency Vulnerability Audit"
+    tool: "tools/security/dependency_auditor.py"
+    inject_project_id: false
+    args:
+      project-dir: "tools/"
+    description: "Check dependencies for known CVEs"
+
+  - id: secrets
+    name: "Secret Detection"
+    tool: "tools/security/secret_detector.py"
+    inject_project_id: false
+    args:
+      project-dir: "tools/"
+    description: "Scan for hardcoded secrets and credentials"
+
+  - id: owasp
+    name: "OWASP Agentic Assessment"
+    tool: "tools/compliance/owasp_agentic_assessor.py"
+    depends_on: [sast]
+    description: "OWASP Agentic AI threat assessment (T01-T17)"
+
+  - id: owasp_asi
+    name: "OWASP ASI Assessment"
+    tool: "tools/compliance/owasp_asi_assessor.py"
+    depends_on: [sast]
+    description: "OWASP ASI01-ASI10 agentic risk assessment"
+
+  - id: atlas
+    name: "MITRE ATLAS Assessment"
+    tool: "tools/compliance/atlas_assessor.py"
+    depends_on: [owasp]
+    description: "MITRE ATLAS AI threat framework assessment"
+
+  - id: patterns
+    name: "Dangerous Pattern Scan"
+    tool: "tools/security/code_pattern_scanner.py"
+    inject_project_id: false
+    args:
+      project-dir: "tools/"
+    required: false
+    description: "Scan for dangerous code patterns across 6 languages"

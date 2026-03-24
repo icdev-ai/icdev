@@ -1,0 +1,510 @@
+{
+  "framework": "PCI DSS v4.0",
+  "version": "4.0",
+  "requirements": [
+    {
+      "id": "PCI-1.1",
+      "title": "Network Security Controls Policies and Procedures",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "1",
+      "nist_800_53_refs": ["SC-7", "PL-1", "PL-2", "CM-1"],
+      "description": "All security policies and operational procedures for network security controls are documented, kept up to date, in active use, and known to all affected parties."
+    },
+    {
+      "id": "PCI-1.2",
+      "title": "Network Security Control Configuration Standards",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "1",
+      "nist_800_53_refs": ["SC-7", "SC-7(5)", "CM-2", "CM-6"],
+      "description": "Configuration standards for network security controls are defined, implemented, and maintained, covering inbound and outbound traffic rules, connection types, and protocols allowed through the CDE boundary."
+    },
+    {
+      "id": "PCI-1.3",
+      "title": "Network Access to and from the CDE is Restricted",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "1",
+      "nist_800_53_refs": ["SC-7", "SC-7(5)", "AC-4"],
+      "description": "Inbound and outbound traffic to the cardholder data environment is restricted to only necessary traffic, and all other traffic is specifically denied."
+    },
+    {
+      "id": "PCI-1.4",
+      "title": "NSCs Between Trusted and Untrusted Networks",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "1",
+      "nist_800_53_refs": ["SC-7", "SC-7(3)", "AC-4"],
+      "description": "Network security controls are implemented between trusted and untrusted networks, isolating the CDE from untrusted networks including the Internet, wireless, and third-party connections."
+    },
+    {
+      "id": "PCI-1.5",
+      "title": "Risks to the CDE from Computing Devices Mitigated",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "1",
+      "nist_800_53_refs": ["SC-7", "AC-19", "CM-7"],
+      "description": "Risks to the CDE from computing devices that are able to connect to both untrusted networks and the CDE are mitigated through security controls on the device."
+    },
+    {
+      "id": "PCI-2.1",
+      "title": "Secure Configuration Policies and Procedures",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "2",
+      "nist_800_53_refs": ["CM-1", "CM-2", "CM-6", "PL-1"],
+      "description": "All security policies and operational procedures for applying secure configurations to all system components are documented, kept up to date, in active use, and known to all affected parties."
+    },
+    {
+      "id": "PCI-2.2",
+      "title": "System Components Configured and Managed Securely",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "2",
+      "nist_800_53_refs": ["CM-2", "CM-6", "CM-7", "RA-5"],
+      "description": "Configuration standards are developed, implemented, and maintained to cover all system components, address all known security vulnerabilities, and be consistent with industry-accepted system hardening standards such as CIS Benchmarks and DISA STIGs."
+    },
+    {
+      "id": "PCI-2.3",
+      "title": "Wireless Environments Configured and Managed Securely",
+      "goal": "Build and Maintain a Secure Network and Systems",
+      "requirement_number": "2",
+      "nist_800_53_refs": ["AC-18", "SC-8", "SC-13", "CM-6"],
+      "description": "Wireless environments connected to or that could impact the CDE are configured and managed securely, including changing vendor defaults for wireless encryption keys, passwords, and SNMP community strings."
+    },
+    {
+      "id": "PCI-3.1",
+      "title": "Account Data Protection Policies and Procedures",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["SC-28", "MP-1", "PL-1", "SC-12"],
+      "description": "All security policies and operational procedures for protecting stored account data are documented, kept up to date, in active use, and known to all affected parties."
+    },
+    {
+      "id": "PCI-3.2",
+      "title": "Storage of Account Data is Kept to a Minimum",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["SI-12", "MP-6", "DM-2"],
+      "description": "Account data storage amount and retention time are limited to that which is required for legal, regulatory, and business requirements. Data exceeding defined retention periods is securely deleted."
+    },
+    {
+      "id": "PCI-3.3",
+      "title": "Sensitive Authentication Data Not Stored After Authorization",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["SI-12", "AU-11", "MP-6"],
+      "description": "Sensitive authentication data (SAD) including full track data, card verification codes, and PINs is not retained after authorization, even if encrypted."
+    },
+    {
+      "id": "PCI-3.4",
+      "title": "PAN Display is Restricted",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["AC-3", "AC-6", "MP-3"],
+      "description": "Access to displays of full PAN and ability to copy PAN is restricted via masking. Only personnel with a legitimate business need can see more than the first six and last four digits."
+    },
+    {
+      "id": "PCI-3.5",
+      "title": "PAN is Secured Wherever it is Stored",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["SC-28", "SC-28(1)", "SC-13", "SC-12"],
+      "description": "PAN is rendered unreadable anywhere it is stored using one-way hashes, truncation, index tokens, or strong cryptography with associated key management processes."
+    },
+    {
+      "id": "PCI-3.6",
+      "title": "Cryptographic Keys Protecting Stored Account Data are Protected",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["SC-12", "SC-12(1)", "SC-13"],
+      "description": "Procedures are defined and implemented to protect cryptographic keys used to protect stored account data against disclosure and misuse, covering generation, distribution, storage, access, rotation, and destruction."
+    },
+    {
+      "id": "PCI-3.7",
+      "title": "Cryptographic Key Management Lifecycle",
+      "goal": "Protect Account Data",
+      "requirement_number": "3",
+      "nist_800_53_refs": ["SC-12", "SC-13", "SC-17"],
+      "description": "Where cryptography is used to protect stored account data, key management policies and procedures covering the full key lifecycle are defined and implemented."
+    },
+    {
+      "id": "PCI-4.1",
+      "title": "Transmission Encryption Policies and Procedures",
+      "goal": "Protect Account Data",
+      "requirement_number": "4",
+      "nist_800_53_refs": ["SC-8", "SC-8(1)", "PL-1", "SC-13"],
+      "description": "All security policies and operational procedures for protecting cardholder data with strong cryptography during transmission over open, public networks are documented and maintained."
+    },
+    {
+      "id": "PCI-4.2",
+      "title": "PAN Protected with Strong Cryptography During Transmission",
+      "goal": "Protect Account Data",
+      "requirement_number": "4",
+      "nist_800_53_refs": ["SC-8", "SC-8(1)", "SC-13", "SC-23"],
+      "description": "PAN is secured with strong cryptography whenever it is sent over open, public networks. Only trusted keys and certificates are accepted, with TLS 1.2 or higher required."
+    },
+    {
+      "id": "PCI-5.1",
+      "title": "Anti-Malware Policies and Procedures",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "5",
+      "nist_800_53_refs": ["SI-3", "PL-1", "SI-1"],
+      "description": "All security policies and operational procedures for protecting all systems against malware are documented, kept up to date, in active use, and known to all affected parties."
+    },
+    {
+      "id": "PCI-5.2",
+      "title": "Malware is Prevented or Detected and Addressed",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "5",
+      "nist_800_53_refs": ["SI-3", "SI-3(1)", "SI-3(2)"],
+      "description": "An anti-malware solution is deployed on all system components commonly affected by malware, detecting all known types and performing periodic scans and active real-time monitoring."
+    },
+    {
+      "id": "PCI-5.3",
+      "title": "Anti-Malware Mechanisms and Processes are Active and Maintained",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "5",
+      "nist_800_53_refs": ["SI-3", "CM-5", "AC-6", "SI-3(10)"],
+      "description": "Anti-malware mechanisms and processes are active, maintained, and monitored. Users cannot disable or alter anti-malware protections unless specifically documented and authorized by management."
+    },
+    {
+      "id": "PCI-5.4",
+      "title": "Anti-Phishing Mechanisms Protect Against Phishing Attacks",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "5",
+      "nist_800_53_refs": ["SI-3", "SI-8", "AT-2(2)"],
+      "description": "Anti-phishing mechanisms are in place to protect users against phishing attacks, including processes to detect and protect personnel against phishing via email, social engineering, and other vectors."
+    },
+    {
+      "id": "PCI-6.1",
+      "title": "Secure Development Policies and Procedures",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "6",
+      "nist_800_53_refs": ["SA-3", "SA-8", "PL-1", "SA-15"],
+      "description": "All security policies and operational procedures for developing and maintaining secure systems and software are documented, establishing a secure software development lifecycle (SSDLC)."
+    },
+    {
+      "id": "PCI-6.2",
+      "title": "Bespoke and Custom Software Developed Securely",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "6",
+      "nist_800_53_refs": ["SA-8", "SA-11", "SA-15", "SA-16"],
+      "description": "Bespoke and custom software are developed securely using secure coding techniques that address common software attacks including OWASP Top 10, with mandatory code reviews."
+    },
+    {
+      "id": "PCI-6.3",
+      "title": "Security Vulnerabilities are Identified and Addressed",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "6",
+      "nist_800_53_refs": ["RA-5", "SI-2", "SI-5", "PM-16"],
+      "description": "Security vulnerabilities are identified and managed by establishing a process using reputable sources for vulnerability information, assigning risk rankings, and installing critical/high patches within one month of release."
+    },
+    {
+      "id": "PCI-6.4",
+      "title": "Public-Facing Web Applications Protected from Attacks",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "6",
+      "nist_800_53_refs": ["SI-3", "SC-7", "SA-11", "SI-10"],
+      "description": "Public-facing web applications are protected against known attacks through web application firewalls (WAF) or code reviews, with ongoing assessment of new threats and vulnerabilities."
+    },
+    {
+      "id": "PCI-6.5",
+      "title": "Changes to All System Components Managed Securely",
+      "goal": "Maintain a Vulnerability Management Program",
+      "requirement_number": "6",
+      "nist_800_53_refs": ["CM-3", "CM-4", "CM-5", "SA-10"],
+      "description": "Changes to all system components in the production environment are made according to established change control processes including impact documentation, authorized approval, functionality testing, and back-out procedures."
+    },
+    {
+      "id": "PCI-7.1",
+      "title": "Access Control Policies and Procedures",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "7",
+      "nist_800_53_refs": ["AC-1", "AC-2", "AC-3", "PL-1"],
+      "description": "All security policies and operational procedures for restricting access to system components and cardholder data by business need to know are documented and maintained."
+    },
+    {
+      "id": "PCI-7.2",
+      "title": "Access to System Components and Data is Appropriately Defined",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "7",
+      "nist_800_53_refs": ["AC-2", "AC-3", "AC-6", "AC-6(1)"],
+      "description": "An access control model is defined and includes granting access only to those individuals whose job requires such access, enforcing least privileges for job responsibilities."
+    },
+    {
+      "id": "PCI-7.3",
+      "title": "Access to System Components and Data is Managed via Access Control Systems",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "7",
+      "nist_800_53_refs": ["AC-3", "AC-6", "AC-6(5)", "CM-5"],
+      "description": "Access to system components and data is managed via an access control system that restricts access based on the defined access control model, with default deny-all and periodic review."
+    },
+    {
+      "id": "PCI-8.1",
+      "title": "Identification and Authentication Policies and Procedures",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "8",
+      "nist_800_53_refs": ["IA-1", "IA-2", "IA-5", "PL-1"],
+      "description": "All security policies and operational procedures for identifying users and authenticating access to system components are documented, defining identity management, credential management, and MFA requirements."
+    },
+    {
+      "id": "PCI-8.2",
+      "title": "User Identification and Related Accounts Managed Throughout Lifecycle",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "8",
+      "nist_800_53_refs": ["IA-2", "IA-4", "AC-2"],
+      "description": "All users are assigned a unique ID before accessing system components or cardholder data. Shared, group, or generic IDs are not used for administrative or critical access. Every action is attributable to an individual user."
+    },
+    {
+      "id": "PCI-8.3",
+      "title": "Strong Authentication Established and Managed",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "8",
+      "nist_800_53_refs": ["IA-2", "IA-5", "IA-5(1)"],
+      "description": "Strong authentication for users and administrators is established through minimum password complexity of 12 characters with numeric and alphabetic, account lockout after 10 failed attempts, and session timeout after 15 minutes of inactivity."
+    },
+    {
+      "id": "PCI-8.4",
+      "title": "Multi-Factor Authentication Implemented for CDE and Remote Access",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "8",
+      "nist_800_53_refs": ["IA-2(1)", "IA-2(2)", "IA-2(6)", "AC-17"],
+      "description": "Multi-factor authentication is implemented for all access into the CDE and for all remote network access originating from outside the entity's network, requiring at least two independent authentication factors."
+    },
+    {
+      "id": "PCI-8.5",
+      "title": "Multi-Factor Authentication Systems Configured to Prevent Misuse",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "8",
+      "nist_800_53_refs": ["IA-2(1)", "IA-2(6)", "IA-5"],
+      "description": "Multi-factor authentication systems are configured to prevent misuse including replay attacks, and cannot be bypassed by any users including administrative users unless specifically documented and authorized."
+    },
+    {
+      "id": "PCI-8.6",
+      "title": "Application and System Accounts and Credentials Managed",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "8",
+      "nist_800_53_refs": ["AC-2", "IA-5", "IA-5(7)", "CM-6"],
+      "description": "Use of application and system accounts and associated authentication factors is strictly managed, with interactive login disabled for application/service accounts and passwords/passphrases changed periodically."
+    },
+    {
+      "id": "PCI-9.1",
+      "title": "Physical Access Control Policies and Procedures",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "9",
+      "nist_800_53_refs": ["PE-1", "PE-2", "PE-3", "PL-1"],
+      "description": "All security policies and operational procedures for restricting physical access to cardholder data are documented, covering access to data centers, server rooms, and areas housing cardholder data."
+    },
+    {
+      "id": "PCI-9.2",
+      "title": "Physical Access Controls Manage Entry into Sensitive Areas",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "9",
+      "nist_800_53_refs": ["PE-2", "PE-3", "PE-6", "PE-8"],
+      "description": "Appropriate facility entry controls limit and monitor physical access to systems in the CDE, including badge readers, locks, surveillance cameras, and visitor management processes."
+    },
+    {
+      "id": "PCI-9.3",
+      "title": "Physical Access for Personnel and Visitors Authorized and Managed",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "9",
+      "nist_800_53_refs": ["PE-2", "PE-3", "PE-8"],
+      "description": "Physical access for personnel and visitors is authorized and managed with identification badges, visitor escorts, visitor logs, and badge deactivation for terminated personnel."
+    },
+    {
+      "id": "PCI-9.4",
+      "title": "Media with Cardholder Data Securely Stored, Accessed, Distributed, and Destroyed",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "9",
+      "nist_800_53_refs": ["MP-2", "MP-4", "MP-5", "MP-6"],
+      "description": "All media with cardholder data is physically secured, classified, and sent by secured courier. Hard-copy materials are destroyed via cross-cut shredding, incineration, or pulping when no longer needed."
+    },
+    {
+      "id": "PCI-9.5",
+      "title": "Point-of-Interaction Devices Protected from Tampering",
+      "goal": "Implement Strong Access Control Measures",
+      "requirement_number": "9",
+      "nist_800_53_refs": ["PE-3", "PE-6", "CM-3"],
+      "description": "Point-of-interaction (POI) devices are protected from tampering and unauthorized substitution through maintaining an up-to-date list of devices, periodic inspection, and training personnel to be aware of suspicious behavior."
+    },
+    {
+      "id": "PCI-10.1",
+      "title": "Logging and Monitoring Policies and Procedures",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["AU-1", "AU-2", "PL-1", "SI-4"],
+      "description": "All security policies and operational procedures for logging and monitoring all access to system components and cardholder data are documented, defining auditable events, log retention periods, and monitoring responsibilities."
+    },
+    {
+      "id": "PCI-10.2",
+      "title": "Audit Logs Record User Activities and Anomalies",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["AU-2", "AU-3", "AU-12", "AU-14"],
+      "description": "Audit logs are enabled and active for all system components to capture individual user accesses to cardholder data, administrative actions, access to audit trails, invalid access attempts, and identification/authentication events."
+    },
+    {
+      "id": "PCI-10.3",
+      "title": "Audit Logs are Protected from Destruction and Tampering",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["AU-9", "AU-9(4)", "AU-8", "AU-8(1)"],
+      "description": "Audit logs are protected from destruction and unauthorized modifications using access controls, physical or logical separation, and time-synchronization technology. Logs are promptly backed up to a centralized log server."
+    },
+    {
+      "id": "PCI-10.4",
+      "title": "Audit Logs are Reviewed to Identify Anomalies",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["AU-6", "AU-6(1)", "SI-4", "CA-7"],
+      "description": "Audit logs are reviewed at least once daily for all security events, logs of all CDE system components, critical system components, and systems performing security functions. Automated mechanisms are used to perform initial log reviews."
+    },
+    {
+      "id": "PCI-10.5",
+      "title": "Audit Log History Retained and Available for Analysis",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["AU-11", "AU-4", "AU-9"],
+      "description": "Audit log history is retained for at least 12 months, with at least the most recent three months immediately available for analysis."
+    },
+    {
+      "id": "PCI-10.6",
+      "title": "Time-Synchronization Mechanisms Support Consistent Time",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["AU-8", "AU-8(1)"],
+      "description": "Time-synchronization technology is implemented and kept current, with critical system clocks synchronized using NTP from designated authoritative time sources."
+    },
+    {
+      "id": "PCI-10.7",
+      "title": "Failures of Critical Security Controls Detected and Responded To",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "10",
+      "nist_800_53_refs": ["SI-4", "SI-6", "CA-7", "IR-4"],
+      "description": "Failures of critical security control systems including firewalls, IDS/IPS, FIM, anti-malware, access controls, audit logging, and segmentation controls are detected, alerted, and addressed promptly."
+    },
+    {
+      "id": "PCI-11.1",
+      "title": "Security Testing Policies and Procedures",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "11",
+      "nist_800_53_refs": ["CA-2", "RA-5", "PL-1", "CA-8"],
+      "description": "All security policies and operational procedures for regularly testing security of systems and networks are documented, defining vulnerability scanning, penetration testing, and network monitoring requirements."
+    },
+    {
+      "id": "PCI-11.2",
+      "title": "Wireless Access Points Identified and Monitored",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "11",
+      "nist_800_53_refs": ["AC-18", "SI-4", "PM-14"],
+      "description": "Authorized and unauthorized wireless access points are managed by testing for the presence of wireless access points at least quarterly and identifying all authorized and unauthorized devices."
+    },
+    {
+      "id": "PCI-11.3",
+      "title": "Vulnerabilities Identified via Internal and External Scans",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "11",
+      "nist_800_53_refs": ["RA-5", "RA-5(2)", "SI-2"],
+      "description": "Internal vulnerability scans are performed at least quarterly and after significant changes. External scans are performed quarterly by an Approved Scanning Vendor (ASV). High-risk and critical vulnerabilities are resolved and rescans confirm resolution."
+    },
+    {
+      "id": "PCI-11.4",
+      "title": "Penetration Testing Performed Regularly",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "11",
+      "nist_800_53_refs": ["CA-8", "CA-8(1)", "RA-5"],
+      "description": "External and internal penetration testing is performed at least annually and after significant changes, covering both network-layer and application-layer testing. Exploitable vulnerabilities are corrected and retested."
+    },
+    {
+      "id": "PCI-11.5",
+      "title": "Network Intrusions and File Changes Detected and Responded To",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "11",
+      "nist_800_53_refs": ["SI-4", "SI-7", "SI-7(1)", "IR-4"],
+      "description": "Intrusion-detection and intrusion-prevention techniques detect and prevent intrusions into the network. File integrity monitoring detects unauthorized modification of critical system files, configuration files, and content files."
+    },
+    {
+      "id": "PCI-11.6",
+      "title": "Unauthorized Changes on Payment Pages Detected and Responded To",
+      "goal": "Regularly Monitor and Test Networks",
+      "requirement_number": "11",
+      "nist_800_53_refs": ["SI-7", "SI-4", "CM-3"],
+      "description": "Change and tamper detection mechanisms are deployed on payment pages to alert personnel to unauthorized modification of HTTP headers and content of payment pages as received by the consumer browser."
+    },
+    {
+      "id": "PCI-12.1",
+      "title": "Information Security Policy Established and Maintained",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["PL-1", "PL-2", "PM-1", "PM-9"],
+      "description": "An overall information security policy is established, published, maintained, and disseminated to all relevant personnel. The policy is reviewed at least annually and addresses all PCI DSS requirements."
+    },
+    {
+      "id": "PCI-12.2",
+      "title": "Acceptable Use Policies Defined and Implemented",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["PL-4", "AC-20", "PS-6"],
+      "description": "Acceptable use policies for end-user technologies are defined, documented, and implemented, including explicit approval by authorized parties, acceptable uses of the technology, and list of company-approved products."
+    },
+    {
+      "id": "PCI-12.3",
+      "title": "Risks to Cardholder Data Environment Formally Identified and Managed",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["RA-3", "RA-3(1)", "PM-9"],
+      "description": "A formal risk assessment is performed at least annually and upon significant changes, identifying critical assets, threats, and vulnerabilities, resulting in documented risk analysis and targeted risk management."
+    },
+    {
+      "id": "PCI-12.4",
+      "title": "PCI DSS Compliance is Managed",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["PM-1", "PM-2", "PM-10", "CA-2"],
+      "description": "Executive management establishes responsibility for the protection of cardholder data and a PCI DSS compliance program, with a designated individual or team accountable for PCI DSS compliance."
+    },
+    {
+      "id": "PCI-12.5",
+      "title": "PCI DSS Scope Documented and Validated",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["CA-2", "CA-7", "PM-5", "RA-2"],
+      "description": "The scope of PCI DSS is documented and confirmed by the entity at least annually and upon significant change to the in-scope environment, including identification of all system components, people, processes, and technologies."
+    },
+    {
+      "id": "PCI-12.6",
+      "title": "Security Awareness Education is an Ongoing Activity",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["AT-1", "AT-2", "AT-2(2)", "AT-3"],
+      "description": "A formal security awareness program is implemented, with training upon hire and at least annually thereafter, including awareness of threats, cardholder data protection responsibilities, and phishing and social engineering."
+    },
+    {
+      "id": "PCI-12.7",
+      "title": "Personnel are Screened to Reduce Insider Threat Risks",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["PS-3", "PS-3(3)", "PS-7"],
+      "description": "Potential personnel who will have access to the CDE are screened prior to hire to minimize the risk of attacks from internal sources, including background checks within local law constraints."
+    },
+    {
+      "id": "PCI-12.8",
+      "title": "Third-Party Service Providers Managed and Monitored",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["SA-9", "PS-7", "SR-1", "SR-6"],
+      "description": "Risk to information assets associated with third-party service provider relationships is managed through maintained inventory, written agreements acknowledging security responsibility, due diligence, and annual compliance monitoring."
+    },
+    {
+      "id": "PCI-12.9",
+      "title": "TPSPs Support Customers' PCI DSS Compliance",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["SA-9", "SA-9(2)", "SA-4"],
+      "description": "Third-party service providers support their customers' PCI DSS compliance by providing written agreement of their PCI DSS responsibilities and responding to customer requests for compliance information."
+    },
+    {
+      "id": "PCI-12.10",
+      "title": "Security Incidents and Suspected Compromises Responded To Immediately",
+      "goal": "Support Information Security with Organizational Policies and Programs",
+      "requirement_number": "12",
+      "nist_800_53_refs": ["IR-1", "IR-2", "IR-4", "IR-6", "IR-8"],
+      "description": "An incident response plan exists and is ready to be activated, defining roles, communication strategies, specific procedures, business recovery, legal requirements, and payment brand notification. The plan is tested annually."
+    }
+  ]
+}

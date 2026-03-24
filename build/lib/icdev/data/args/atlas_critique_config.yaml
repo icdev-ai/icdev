@@ -1,0 +1,66 @@
+# CUI // SP-CTI
+# ATLAS Critique Phase Configuration (Phase 61 — Feature 3)
+#
+# Adversarial plan critique between Assemble and Stress-test.
+# Multiple domain agents independently review the plan, then
+# the architect revises.  Creates adversarial review pressure
+# to catch issues before stress-testing.
+
+atlas_critique:
+  enabled: true
+  max_rounds: 3
+
+  critics:
+    - agent: security-agent
+      role: security_reviewer
+      focus:
+        - security_vulnerability
+        - data_handling_issue
+        - deployment_risk
+      prompt_context: |
+        You are reviewing an implementation plan as a security expert.
+        Focus on: attack surface, input validation, authentication/authorization,
+        encryption, secrets handling, OWASP Top 10, and STIG compliance.
+
+    - agent: compliance-agent
+      role: compliance_reviewer
+      focus:
+        - compliance_gap
+        - data_handling_issue
+      prompt_context: |
+        You are reviewing an implementation plan as a compliance expert.
+        Focus on: NIST 800-53 control coverage, FedRAMP requirements,
+        CUI marking requirements, audit trail completeness, and ATO impact.
+
+    - agent: knowledge-agent
+      role: patterns_reviewer
+      focus:
+        - architecture_flaw
+        - performance_risk
+        - maintainability_concern
+        - testing_gap
+      prompt_context: |
+        You are reviewing an implementation plan as a patterns/quality expert.
+        Focus on: design patterns, code maintainability, test coverage,
+        performance bottlenecks, and lessons from past failures.
+
+  consensus_rules:
+    go:
+      max_critical: 0
+      max_high: 0
+    conditional:
+      max_critical: 0
+      # any number of high allowed — must be addressed in revision
+    nogo:
+      # any critical finding triggers nogo
+
+  revision_prompt: |
+    The following findings were identified during adversarial critique.
+    Revise the plan to address ALL critical and high findings.
+    For each finding, explain how the revision addresses it.
+
+    Findings:
+    {findings}
+
+    Original plan:
+    {original_plan}
