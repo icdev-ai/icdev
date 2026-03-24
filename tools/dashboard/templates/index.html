@@ -40,40 +40,230 @@
     </div>
 </div>
 
-<!-- Project Kanban Board -->
+<!-- Task Kanban Board -->
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <h2 style="margin:0;">Task Board</h2>
+    <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+</div>
 <div class="kanban-board" id="kanban-board">
     {% set columns = [
-        ("planning", "Planning"),
-        ("active", "Active"),
-        ("completed", "Completed"),
-        ("inactive", "Inactive")
+        ("backlog", "Backlog"),
+        ("scheduled", "Scheduled"),
+        ("in_progress", "In Progress"),
+        ("done", "Done")
     ] %}
     {% for status_key, status_label in columns %}
     <div class="kanban-column" data-status="{{ status_key }}">
         <div class="kanban-column-header">
             <h3>{{ status_label }}</h3>
-            <span class="kanban-column-count">{{ kanban_columns[status_key] | length }}</span>
+            <span class="kanban-column-count">0</span>
         </div>
         <div class="kanban-column-body">
-            {% for project in kanban_columns[status_key] %}
-            <a href="/projects/{{ project.id }}" class="kanban-card" data-project-id="{{ project.id }}">
-                <div class="kanban-card-title" title="{{ project.name }}">{{ project.name }}</div>
-                <div class="kanban-card-meta">
-                    {% if project.type %}
-                    <span class="badge badge-info">{{ project.type }}</span>
-                    {% endif %}
-                    {% if project.classification %}
-                    <span class="badge badge-warning">{{ project.classification }}</span>
-                    {% endif %}
-                </div>
-            </a>
-            {% else %}
-            <div class="kanban-empty">No projects</div>
-            {% endfor %}
+            <div class="kanban-empty">Loading...</div>
         </div>
     </div>
     {% endfor %}
 </div>
+
+<!-- Add/Edit Task Modal -->
+<div id="task-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:500px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);">
+            <h3 id="task-modal-title" style="margin:0;">Add Task</h3>
+            <button class="btn btn-sm" onclick="closeTaskModal()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+            <input type="hidden" id="task-edit-id">
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Title *</label>
+                <input type="text" id="task-title" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);" placeholder="e.g. Build notification system">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Description</label>
+                <textarea id="task-desc" rows="3" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); resize:vertical;" placeholder="Optional details..."></textarea>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Type</label>
+                    <select id="task-type" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="build">Build</option>
+                        <option value="run">Run</option>
+                        <option value="fix">Fix</option>
+                        <option value="research">Research</option>
+                        <option value="deploy">Deploy</option>
+                        <option value="test">Test</option>
+                        <option value="chore">Chore</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Priority</label>
+                    <select id="task-priority" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Status</label>
+                <select id="task-status" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                    <option value="backlog">Backlog</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="done">Done</option>
+                </select>
+            </div>
+        </div>
+        <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" onclick="closeTaskModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveTask()">Save</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function openAddTaskModal() {
+    document.getElementById('task-modal-title').textContent = 'Add Task';
+    document.getElementById('task-edit-id').value = '';
+    document.getElementById('task-title').value = '';
+    document.getElementById('task-desc').value = '';
+    document.getElementById('task-type').value = 'build';
+    document.getElementById('task-priority').value = 'medium';
+    document.getElementById('task-status').value = 'backlog';
+    document.getElementById('task-modal').style.display = 'flex';
+}
+
+function openEditTaskModal(task) {
+    document.getElementById('task-modal-title').textContent = 'Edit Task';
+    document.getElementById('task-edit-id').value = task.id;
+    document.getElementById('task-title').value = task.title;
+    document.getElementById('task-desc').value = task.description || '';
+    document.getElementById('task-type').value = task.task_type;
+    document.getElementById('task-priority').value = task.priority;
+    document.getElementById('task-status').value = task.status;
+    document.getElementById('task-modal').style.display = 'flex';
+}
+
+function closeTaskModal() {
+    document.getElementById('task-modal').style.display = 'none';
+}
+
+function saveTask() {
+    var editId = document.getElementById('task-edit-id').value;
+    var payload = {
+        title: document.getElementById('task-title').value,
+        description: document.getElementById('task-desc').value,
+        task_type: document.getElementById('task-type').value,
+        priority: document.getElementById('task-priority').value,
+        status: document.getElementById('task-status').value
+    };
+    if (!payload.title.trim()) { alert('Title is required'); return; }
+
+    var url = editId ? '/api/kanban/tasks/' + editId : '/api/kanban/tasks';
+    var method = editId ? 'PATCH' : 'POST';
+
+    fetch(url, { method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+        .then(function(r) { return r.json(); })
+        .then(function() { closeTaskModal(); refreshKanbanTasks(); })
+        .catch(function(e) { alert('Error: ' + e); });
+}
+
+function moveTask(taskId, newStatus) {
+    fetch('/api/kanban/tasks/' + taskId + '/move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() { refreshKanbanTasks(); })
+    .catch(function(e) { alert('Error: ' + e); });
+}
+
+function deleteTask(taskId) {
+    if (!confirm('Delete this task?')) return;
+    fetch('/api/kanban/tasks/' + taskId, { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function() { refreshKanbanTasks(); })
+        .catch(function(e) { alert('Error: ' + e); });
+}
+
+var _allTasks = [];
+
+function refreshKanbanTasks() {
+    fetch('/api/kanban/tasks')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _allTasks = data.tasks || [];
+            renderTaskKanban(_allTasks);
+        });
+}
+
+function renderTaskKanban(tasks) {
+    var board = document.getElementById('kanban-board');
+    if (!board) return;
+
+    var columns = { backlog: [], scheduled: [], in_progress: [], done: [] };
+    tasks.forEach(function(t) {
+        var s = t.status || 'backlog';
+        if (columns[s]) columns[s].push(t);
+        else columns.backlog.push(t);
+    });
+
+    var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
+    var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
+    var nextStatus = { backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
+    var prevStatus = { scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
+
+    board.querySelectorAll('.kanban-column').forEach(function(colEl) {
+        var status = colEl.getAttribute('data-status');
+        if (!columns[status]) return;
+        var items = columns[status];
+
+        var countEl = colEl.querySelector('.kanban-column-count');
+        if (countEl) countEl.textContent = items.length;
+
+        var bodyEl = colEl.querySelector('.kanban-column-body');
+        if (!bodyEl) return;
+
+        if (items.length === 0) {
+            bodyEl.innerHTML = '<div class="kanban-empty">No tasks</div>';
+            return;
+        }
+
+        var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+        bodyEl.innerHTML = items.map(function(t) {
+            var icon = typeIcons[t.task_type] || '';
+            var pColor = priorityColors[t.priority] || '#6b7280';
+            var arrows = '';
+            if (prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">\u25C0</button>';
+            if (nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">\u25B6</button>';
+
+            return '<div class="kanban-card" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
+                + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
+                + '<div class="kanban-card-meta">'
+                + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
+                + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
+                + '</div>'
+                + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
+                + '<div style="display:flex; gap:4px;">' + arrows + '</div>'
+                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">\u2715</button>'
+                + '</div>'
+                + '</div>';
+        }).join('');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', refreshKanbanTasks);
+</script>
+
+<style>
+.kanban-move-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; line-height: 1;
+}
+.kanban-move-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+</style>
 
 <!-- Charts Row -->
 <div class="chart-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 24px;">
