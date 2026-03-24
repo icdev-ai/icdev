@@ -243,12 +243,15 @@ def _sha256_dir(dir_path):
     """Compute SHA-256 digest of directory contents (sorted, cross-platform)."""
     hasher = hashlib.sha256()
     dir_path = Path(dir_path)
-    skip = {"__pycache__", ".git", "node_modules", ".tmp", ".DS_Store"}
+    skip = {"__pycache__", ".git", "node_modules", ".DS_Store"}
 
     for fpath in sorted(dir_path.rglob("*")):
-        if fpath.is_file() and not any(s in fpath.parts for s in skip):
-            rel = fpath.relative_to(dir_path).as_posix()
-            hasher.update(rel.encode("utf-8"))
+        if fpath.is_file():
+            # Only skip directories that are direct children of the scan dir
+            rel = fpath.relative_to(dir_path)
+            if any(s in rel.parts for s in skip):
+                continue
+            hasher.update(rel.as_posix().encode("utf-8"))
             hasher.update(fpath.read_bytes())
 
     return hasher.hexdigest()
