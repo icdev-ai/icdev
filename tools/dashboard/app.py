@@ -72,6 +72,12 @@ from tools.dashboard.api.migration import migration_api  # noqa: E402
 from tools.dashboard.api.sbd import sbd_api  # noqa: E402
 from tools.dashboard.api.pr_intel import pr_intel_api  # noqa: E402
 from tools.dashboard.api.iac import iac_api  # noqa: E402
+from tools.dashboard.api.cato import cato_api  # noqa: E402
+from tools.dashboard.api.control_inheritance import control_inheritance_api  # noqa: E402
+from tools.dashboard.api.migration_cost import migration_cost_api  # noqa: E402
+from tools.dashboard.api.compliance_debt import compliance_debt_api  # noqa: E402
+from tools.dashboard.api.stig_manager import stig_manager_api  # noqa: E402
+from tools.dashboard.api.ato_package import ato_package_api  # noqa: E402
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
     _HAS_FINETUNE_API = True
@@ -815,6 +821,12 @@ def create_app() -> Flask:
     app.register_blueprint(sbd_api)
     app.register_blueprint(pr_intel_api)
     app.register_blueprint(iac_api)
+    app.register_blueprint(cato_api)
+    app.register_blueprint(control_inheritance_api)
+    app.register_blueprint(migration_cost_api)
+    app.register_blueprint(compliance_debt_api)
+    app.register_blueprint(stig_manager_api)
+    app.register_blueprint(ato_package_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_RAG_EVAL_API:
@@ -2094,6 +2106,36 @@ def create_app() -> Flask:
     def iac_page():
         """IaC Gallery — STIG-hardened Infrastructure as Code for multi-cloud IL2-IL6."""
         return render_template("iac.html")
+
+    @app.route("/cato")
+    def cato_page():
+        """Continuous ATO — real-time ATO health score and evidence freshness."""
+        return render_template("cato.html")
+
+    @app.route("/control-inheritance")
+    def control_inheritance_page():
+        """Control Inheritance Visualizer — CSP vs customer responsibility mapping."""
+        return render_template("control_inheritance.html")
+
+    @app.route("/migration-cost")
+    def migration_cost_page():
+        """Migration Cost Estimator — 7R ROI calculator with compliance cost."""
+        return render_template("migration_cost.html")
+
+    @app.route("/compliance-debt")
+    def compliance_debt_page():
+        """Compliance Debt Burndown — POAM, control, and STIG debt tracking."""
+        return render_template("compliance_debt.html")
+
+    @app.route("/stig-manager")
+    def stig_manager_page():
+        """STIG Benchmark Manager — import, track, and assess DISA STIG findings."""
+        return render_template("stig_manager.html")
+
+    @app.route("/ato-package")
+    def ato_package_page():
+        """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
+        return render_template("ato_package.html")
 
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():
