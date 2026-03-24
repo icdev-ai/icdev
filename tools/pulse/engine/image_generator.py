@@ -260,8 +260,8 @@ _TOPIC_VISUAL_MAP = {
     "intelligence": "intelligence operations center with multiple data feeds, analysis dashboards, correlation maps on large screens",
     "research": "research lab with data visualization dashboards, trend analysis charts, scientific publication graphs",
     "proposal": "government proposal review workspace with compliance checklists, document sections, evaluation matrices on screens",
-    "govcon": "government contracting office with SAM.gov data on screens, proposal volumes, compliance matrices",
-    # SAM.gov bridge domain topics
+    "govcon": "government contracting office with procurement data on screens, proposal volumes, compliance matrices",
+    # Federal bridge domain topics
     "cloud migration": "hybrid cloud migration diagram with on-premise servers connecting to cloud, data flowing between environments, security checkpoints",
     "cloud": "cloud computing infrastructure with virtual servers, load balancers, security groups, multi-region architecture diagram",
     "data integration": "enterprise data integration hub with ETL pipelines, database connections, API gateways, unified data flowing between systems",

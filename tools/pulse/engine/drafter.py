@@ -64,6 +64,8 @@ Rules:
 - Every section must provide concrete, actionable value.
 - Include a Call to Action section at the end linking to GitHub ({github_url}).
 - Do NOT include links to documentation or community channels.
+- Do NOT include CLI commands (python tools/...), internal tool paths, or backend \
+  names like Pulse, SAM.gov, or sam_bridge. Describe capabilities generically.
 - Start IMMEDIATELY with the Markdown content (# Title on the first line). \
   Do NOT include any preamble like "Here's a blog post" or "Okay, here is". \
   Do NOT use ## for the main title — use a single # for the article title.
@@ -110,7 +112,8 @@ Rules:
 - Write in Markdown.
 - Target {word_min}-{word_max} words.
 - Explain concepts before showing implementation.
-- Include CLI examples and configuration snippets where helpful.
+- Do NOT include CLI commands (python tools/...), internal tool paths, or backend \
+  names like Pulse, SAM.gov, or sam_bridge. Describe capabilities generically.
 - When referencing ICDEV™, link to {github_url} on first mention.
 - Include placeholder markers: [HERO_IMAGE] at top, [SOURCE_REF:url] for citations.
 - Do NOT include [VIDEO_EMBED] placeholders — this template uses NO embedded videos.
@@ -142,7 +145,7 @@ Write a comprehensive feature spotlight article.
 3. **Understanding the Problem** — educate on the domain. \
    Reference standards (NIST, FedRAMP, CMMC, OWASP) where relevant.
 4. **How It Works** — detailed walkthrough with architecture, \
-   capabilities, config options. Include code/CLI examples.
+   capabilities, config options. Describe generically — no internal CLI commands.
 5. **Real-World Use Cases** — 2-3 concrete scenarios with \
    different personas (developer, compliance officer, security engineer).
 6. **Getting Started** — step-by-step quickstart. Copy-paste friendly.
@@ -633,7 +636,11 @@ def rewrite_article_via_llm(
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": ctx["prompt"]}],
-            system_prompt="You are a professional editor. Return only improved Markdown.",
+            system_prompt=(
+                "You are a professional editor. Return only improved Markdown. "
+                "CRITICAL: Never include internal tool names (Pulse, SAM.gov), CLI commands "
+                "(python tools/...), or backend implementation details in published content."
+            ),
             max_tokens=8192,
             project_id=PULSE_PROJECT_ID,
             skip_injection_scan=True,  # Internal pipeline — article content triggers false positives

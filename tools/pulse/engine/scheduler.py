@@ -409,8 +409,8 @@ def _inject_cross_links(run_id: str, body_md: str, current_title: str) -> str:
         link_title = best_match["title"] or "Related Article"
         crosslink_block = (
             f"\n\n---\n\n"
-            f"> **Related Reading:** [{link_title}](/pulse/post/{best_match['id']})"
-            f" — Explore more on this topic in our Pulse library.\n\n"
+            f"> **Related Reading:** [{link_title}](/articles/{best_match['id']})"
+            f" — Explore more on this topic in our article library.\n\n"
         )
 
         # Insert before the last ## heading (usually Conclusion or CTA)
@@ -1125,7 +1125,7 @@ def enrich_post_with_capabilities(post_id: str) -> dict:
     findings = [{
         "category": "capability_enrichment",
         "message": "Article should reference ICDEV™ capabilities naturally",
-        "suggestion": "Weave relevant ICDEV™ tool references, CLI examples, and capability descriptions into the narrative",
+        "suggestion": "Weave relevant ICDEV™ capability descriptions into the narrative. Do NOT include CLI commands, internal tool paths, or references to Pulse, SAM.gov, or any backend tooling names.",
     }]
 
     # Rewrite with capability context
