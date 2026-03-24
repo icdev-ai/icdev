@@ -183,6 +183,7 @@
             <thead>
                 <tr>
                     <th>ID</th>
+                    <th>Summary</th>
                     <th>Type</th>
                     <th class="sortable" data-sort="reflex" onclick="sortGKPs('reflex')">Reflex <span class="sort-arrow" id="sort-arrow-reflex"></span></th>
                     <th class="sortable" data-sort="confidence" onclick="sortGKPs('confidence')">Confidence <span class="sort-arrow" id="sort-arrow-confidence"></span></th>
@@ -192,7 +193,7 @@
                 </tr>
             </thead>
             <tbody id="g-gkp-tbody">
-                <tr><td colspan="7" style="text-align:center; color:var(--text-dim);">Click Refresh or a filter to load GKPs</td></tr>
+                <tr><td colspan="8" style="text-align:center; color:var(--text-dim);">Click Refresh or a filter to load GKPs</td></tr>
             </tbody>
         </table>
     </div>
@@ -213,13 +214,28 @@
                 <div><strong>Confidence:</strong> <span id="gkp-d-confidence"></span></div>
                 <div><strong>Status:</strong> <span id="gkp-d-status"></span></div>
                 <div><strong>Created:</strong> <span id="gkp-d-created"></span></div>
-                <div><strong>SHA-256:</strong> <span id="gkp-d-sha" style="font-size:11px;word-break:break-all;"></span></div>
             </div>
-            <h4 style="margin-top:16px;">Payload</h4>
-            <pre id="gkp-d-payload" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:300px; font-size:12px;"></pre>
+
+            <!-- Human-readable payload summary -->
+            <div id="gkp-d-summary-section" style="margin-top:16px; padding:16px; background:var(--bg-code); border-radius:8px; border-left:3px solid var(--accent, #3b82f6);">
+                <div id="gkp-d-title" style="font-size:16px; font-weight:600; margin-bottom:8px;"></div>
+                <div id="gkp-d-description" style="color:var(--text-dim); line-height:1.5;"></div>
+                <div id="gkp-d-meta" style="margin-top:12px; display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-dim);"></div>
+                <div id="gkp-d-url" style="margin-top:8px;"></div>
+            </div>
+
+            <details style="margin-top:12px;">
+                <summary style="cursor:pointer; color:var(--text-dim); font-size:12px;">Raw Payload JSON</summary>
+                <pre id="gkp-d-payload" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:300px; font-size:12px; margin-top:8px;"></pre>
+            </details>
             <div id="gkp-d-evidence-section" style="display:none;">
-                <h4 style="margin-top:16px;">Evidence</h4>
-                <pre id="gkp-d-evidence" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:200px; font-size:12px;"></pre>
+                <details style="margin-top:8px;">
+                    <summary style="cursor:pointer; color:var(--text-dim); font-size:12px;">Evidence</summary>
+                    <pre id="gkp-d-evidence" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:200px; font-size:12px; margin-top:8px;"></pre>
+                </details>
+            </div>
+            <div style="margin-top:12px; font-size:11px; color:var(--text-dim); word-break:break-all;">
+                <strong>SHA-256:</strong> <span id="gkp-d-sha"></span>
             </div>
         </div>
         <div class="gkp-modal-footer" id="gkp-modal-actions">
@@ -336,10 +352,23 @@ function sortGKPs(field) {
     renderGKPRows(cachedGKPs);
 }
 
+function extractGKPSummary(g) {
+    let p = g.payload;
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch(e) { return p.substring(0, 80); } }
+    if (!p || typeof p !== 'object') return '—';
+    // Try common payload keys in priority order
+    const title = p.title || p.name || p.description || p.action || p.summary || p.finding || '';
+    const desc = p.description || p.action || p.detail || '';
+    // Show title, and if description is different, append it
+    let summary = title;
+    if (desc && desc !== title) summary += ' — ' + desc;
+    return summary.length > 120 ? summary.substring(0, 117) + '...' : summary;
+}
+
 function renderGKPRows(gkps) {
     const tbody = document.getElementById('g-gkp-tbody');
     if (gkps.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-dim);">No GKPs found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-dim);">No GKPs found</td></tr>';
         return;
     }
     let sorted = [...gkps];
@@ -361,19 +390,24 @@ function renderGKPRows(gkps) {
             g.promotion_status === 'pending_review' ? 'gkp-row-pending' :
             g.promotion_status === 'rejected' ? 'gkp-row-rejected' : '';
         tr.className = statusClass;
+        tr.style.cursor = 'pointer';
+        tr.onclick = function(e) { if (!e.target.closest('button')) viewGKP(g.id); };
 
         const statusBadge = g.promotion_status === 'pending_review' ? 'badge-yellow' :
             g.promotion_status.includes('promoted') ? 'badge-green' :
             g.promotion_status === 'rejected' ? 'badge-red' : 'badge-gray';
 
-        let actions = `<button class="btn btn-sm" onclick="viewGKP('${g.id}')">View</button> `;
+        const summary = extractGKPSummary(g);
+
+        let actions = '';
         if (g.promotion_status === 'pending_review') {
             actions += `<button class="btn btn-sm btn-success" onclick="promoteGKP('${g.id}')">Promote</button> `;
             actions += `<button class="btn btn-sm btn-danger" onclick="rejectGKP('${g.id}')">Reject</button>`;
         }
 
         tr.innerHTML = `
-            <td style="font-family:monospace;font-size:12px;">${g.id}</td>
+            <td style="font-family:monospace;font-size:11px;">${g.id}</td>
+            <td style="max-width:350px;font-size:13px;" title="${summary.replace(/"/g, '&quot;')}">${summary}</td>
             <td><span class="badge badge-blue">${g.artifact_type}</span></td>
             <td>${g.genesis_reflex}</td>
             <td>${(g.confidence || 0).toFixed(2)}</td>
@@ -389,7 +423,7 @@ function loadGKPs(statusFilter) {
     let url = '/api/genesis/gkps' + APP_PARAM;
     if (statusFilter) url += '&status=' + statusFilter;
     const tbody = document.getElementById('g-gkp-tbody');
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Loading...</td></tr>';
 
     fetch('/api/genesis/promoter/stats' + APP_PARAM)
         .then(r => r.json())
@@ -408,7 +442,7 @@ function loadGKPs(statusFilter) {
             renderGKPRows(cachedGKPs);
         })
         .catch(e => {
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#ef4444;">Error: ' + e + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#ef4444;">Error: ' + e + '</td></tr>';
         });
 }
 
@@ -417,7 +451,6 @@ function viewGKP(gkpId) {
         .then(r => r.json())
         .then(data => {
             if (data.error) { alert(data.error); return; }
-            document.getElementById('gkp-modal-title').textContent = 'GKP: ' + data.id;
             document.getElementById('gkp-d-id').textContent = data.id;
             document.getElementById('gkp-d-type').textContent = data.artifact_type;
             document.getElementById('gkp-d-reflex').textContent = data.genesis_reflex;
@@ -428,6 +461,34 @@ function viewGKP(gkpId) {
 
             let payload = data.payload;
             try { payload = JSON.parse(payload); } catch(e) {}
+
+            // Human-readable summary
+            if (payload && typeof payload === 'object') {
+                const title = payload.title || payload.name || payload.action || 'Untitled';
+                document.getElementById('gkp-modal-title').textContent = title;
+                document.getElementById('gkp-d-title').textContent = title;
+                document.getElementById('gkp-d-description').textContent = payload.description || payload.action || payload.detail || '';
+
+                // Build meta line: source, score, published date
+                let metaParts = [];
+                if (payload.source) metaParts.push('<strong>Source:</strong> ' + payload.source);
+                if (payload.score !== undefined) metaParts.push('<strong>Score:</strong> ' + payload.score);
+                if (payload.published) metaParts.push('<strong>Published:</strong> ' + payload.published);
+                document.getElementById('gkp-d-meta').innerHTML = metaParts.join(' &middot; ');
+
+                // URL link
+                const urlEl = document.getElementById('gkp-d-url');
+                if (payload.url) {
+                    urlEl.innerHTML = '<a href="' + payload.url + '" target="_blank" rel="noopener" style="color:var(--accent, #3b82f6); font-size:13px;">View source &rarr;</a>';
+                } else {
+                    urlEl.innerHTML = '';
+                }
+                document.getElementById('gkp-d-summary-section').style.display = 'block';
+            } else {
+                document.getElementById('gkp-modal-title').textContent = 'GKP: ' + data.id;
+                document.getElementById('gkp-d-summary-section').style.display = 'none';
+            }
+
             document.getElementById('gkp-d-payload').textContent = JSON.stringify(payload, null, 2);
 
             const evSection = document.getElementById('gkp-d-evidence-section');
