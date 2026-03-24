@@ -67,5 +67,15 @@ PORTAL_PORT: 8443
      - Log: `.tmp/api_gateway.log`
    - **Poll Trigger**: `.tmp/poll_trigger.log`
    - To stop dashboard: `kill $(lsof -ti:5000)` or `pkill -f "tools/dashboard/app.py"`
+
+9. Check for pending Kanban tasks (prompt files written by Genesis kanban reflex):
+   ```bash
+   ls .tmp/kanban/*.md 2>/dev/null
+   ```
+   If any `.md` files exist, read each one and execute the task described in it. After completing each task, move it to "done" via the API and delete the prompt file:
+   ```bash
+   curl -s -X POST http://localhost:5050/api/kanban/tasks/<task_id>/move -H "Content-Type: application/json" -d '{"status": "done"}'
+   rm .tmp/kanban/<task_id>.md
+   ```
    - To stop portal: `kill $(lsof -ti:8443)` or `pkill -f "tools/saas/api_gateway.py"`
    - To stop poll trigger: `pkill -f "tools/ci/triggers/poll_trigger.py"`

@@ -291,6 +291,17 @@ reflexes:
     max_auto_heals_per_hour: 5
     cooldown_minutes: 10
 
+  kanban:
+    enabled: true
+    risk_tier: green
+    schedule: "continuous"
+    interval_seconds: 300  # Check every 5 minutes for due tasks
+    description: "Poll kanban_tasks for scheduled tasks past due, move to in_progress, write prompt files"
+    success_metric:
+      name: tasks_activated
+      threshold: 0
+      operator: gte
+
   # ── ORANGE tier (code mutation, human review required) ───────────────────
 
   evolve:
