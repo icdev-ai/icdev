@@ -1,10 +1,10 @@
-# Build App — ATLAS Workflow
+# Build App — ANVIL Workflow
 
 ## Goal
 
 Build full-stack applications using AI assistance within the GOTCHA framework. This workflow ensures apps are production-ready, not just demos.
 
-**ATLAS** is a 5-step process (6 steps with optional Critique phase):
+**ANVIL** is a 5-step process (6 steps with optional Critique phase):
 
 | Step | Phase | What You Do |
 |------|-------|-------------|
@@ -15,7 +15,7 @@ Build full-stack applications using AI assistance within the GOTCHA framework. T
 | **C** | Critique | *(Optional)* Adversarial multi-agent plan review |
 | **S** | Stress-test | Test functionality, error handling |
 
-When the Critique phase is enabled (`atlas_critique.enabled: true` in `args/atlas_critique_config.yaml`), the workflow becomes **ATLAS-CR**:
+When the Critique phase is enabled (`anvil_critique.enabled: true` in `args/anvil_critique_config.yaml`), the workflow becomes **ANVIL-CR**:
 
 ```
 A(rchitect) → T(race) → L(ink) → A(ssemble) → C(ritique) → S(tress-test)
@@ -42,7 +42,7 @@ flowchart LR
     style Stop fill:#3a1a1a,stroke:#e74c3c,color:#e0e0e0
 ```
 
-If the Critique phase is disabled, ATLAS operates as the original 5-step process (backward compatible).
+If the Critique phase is disabled, ANVIL operates as the original 5-step process (backward compatible).
 
 ## For prod builds when asked specifically add:
 + V - Validate (security/input sanitization, edge cases, unit tests)
@@ -245,7 +245,7 @@ Working application with:
 
 **Purpose:** Adversarial multi-agent review of the Assemble output before stress-testing. Catches security, compliance, and architectural issues early through independent parallel review.
 
-This phase is **optional** and controlled by `atlas_critique.enabled` in `args/atlas_critique_config.yaml`. When disabled, ATLAS proceeds directly from Assemble to Stress-test (backward compatible).
+This phase is **optional** and controlled by `anvil_critique.enabled` in `args/anvil_critique_config.yaml`. When disabled, ANVIL proceeds directly from Assemble to Stress-test (backward compatible).
 
 ### How It Works
 
@@ -382,9 +382,9 @@ Test report with:
 
 ---
 
-## M-ATLAS Variant (MBSE-Enabled Projects)
+## M-ANVIL Variant (MBSE-Enabled Projects)
 
-If the project has `mbse_enabled=1`, use the **M-ATLAS** workflow which adds a **Model** pre-phase:
+If the project has `mbse_enabled=1`, use the **M-ANVIL** workflow which adds a **Model** pre-phase:
 
 | Step | Phase | What You Do |
 |------|-------|-------------|
@@ -431,7 +431,7 @@ flowchart LR
 4. Generate code scaffolding: `python tools/mbse/model_code_generator.py --project-id X --language python --output ./src`
 5. Map model to NIST controls: `python tools/mbse/model_control_mapper.py --project-id X --map-all`
 
-If no model exists, skip this phase — ATLAS starts at Architect (backward compatible).
+If no model exists, skip this phase — ANVIL starts at Architect (backward compatible).
 
 ---
 
@@ -457,7 +457,7 @@ These are the mistakes "vibe coders" make:
 
 ## GOTCHA Layer Mapping
 
-| ATLAS Step | GOTCHA Layer |
+| ANVIL Step | GOTCHA Layer |
 |------------|--------------|
 | Architect | Goals (define the process) |
 | Trace | Context (reference patterns) |
@@ -500,7 +500,7 @@ All child applications MUST be generated through the `child_app_generator.py` pi
 13. Production audit (38-check readiness scan)
 14. **GOTCHA compliance validation** (6-layer + 4 meta checks)
 
-**Do NOT manually scaffold child applications.** Manual creation bypasses GOTCHA layer population, ATLAS workflow integration, and compliance validation.
+**Do NOT manually scaffold child applications.** Manual creation bypasses GOTCHA layer population, ANVIL workflow integration, and compliance validation.
 
 ### 2. Post-Generation GOTCHA Validation
 
@@ -517,7 +517,7 @@ After generation, `gotcha_validator.py` (`tools/builder/gotcha_validator.py`) MU
 | CLAUDE.md | meta | Exists and references "GOTCHA" |
 | Memory | meta | `memory/MEMORY.md` exists |
 | Database | meta | `tools/db/` has an init script |
-| ATLAS | meta | `goals/build_app.md` exists |
+| ANVIL | meta | `goals/build_app.md` exists |
 
 ### 3. BMAD Quality Gates (Recommended)
 

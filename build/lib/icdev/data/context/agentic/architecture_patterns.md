@@ -37,7 +37,7 @@ Agents are organized into 3 tiers based on their role and criticality:
 | Agent | Port Offset | Role |
 |-------|-------------|------|
 | Orchestrator | +0 | Task routing, workflow management, result aggregation |
-| Architect | +1 | ATLAS/M-ATLAS A/T phases, system design, technology selection |
+| Architect | +1 | ANVIL/M-ANVIL A/T phases, system design, technology selection |
 | Builder | +2 | TDD code generation (RED-GREEN-REFACTOR), scaffolding, lint, format |
 
 ### Tier 2: Domain (Conditional — Based on Fitness Score)
@@ -104,7 +104,7 @@ blueprint.json
   ├── db_schema             # Core + capability tables
   ├── memory_config         # Memory system settings
   ├── cicd_config           # Pipeline template and stages
-  ├── atlas_config          # ATLAS or M-ATLAS workflow
+  ├── atlas_config          # ANVIL or M-ANVIL workflow
   ├── gotcha_dirs           # Directory structure specification
   ├── agent_ports           # Port assignments
   └── classification        # CUI markings and encryption

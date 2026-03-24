@@ -175,7 +175,7 @@ routing:
 
 | Function | Default Primary | Purpose |
 |----------|----------------|---------|
-| `agent_architect` | claude-opus | ATLAS A/T phases, system design |
+| `agent_architect` | claude-opus | ANVIL A/T phases, system design |
 | `agent_orchestrator` | claude-opus | Task routing, workflow management |
 | `agent_builder` | claude-opus | TDD code generation |
 | `agent_compliance` | claude-sonnet | ATO artifact generation |

@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Generate mini-ICDEV™ clone applications that include the full GOTCHA framework, ATLAS workflow, own agents, memory system, and CI/CD — everything except the ability to generate new applications. These child applications are fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads.
+Generate mini-ICDEV™ clone applications that include the full GOTCHA framework, ANVIL workflow, own agents, memory system, and CI/CD — everything except the ability to generate new applications. These child applications are fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads.
 
 **Why this matters:** Organizations need multiple independent agentic systems — one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Automated generation produces a consistent, compliant, tested child application in minutes, with all GOTCHA layers pre-wired and ready for mission-specific customization.
 
@@ -132,7 +132,7 @@ The blueprint is the single source of truth for all generation steps. No hardcod
 | db_schema | Core tables first, capability tables via `migrate_add_capability()` |
 | memory_config | Memory system settings: dual storage (markdown + SQLite), embedding model |
 | cicd_config | Pipeline template, stages, gates, webhook endpoints |
-| atlas_config | ATLAS or M-ATLAS workflow (if MBSE enabled) |
+| atlas_config | ANVIL or M-ANVIL workflow (if MBSE enabled) |
 | gotcha_dirs | Directory structure: goals/, tools/, args/, context/, hardprompts/ |
 | agent_ports | Base port + offset for each agent |
 | classification | CUI markings, impact level, encryption requirements |
@@ -330,7 +330,7 @@ Write `data/generation_summary.json` in the child application directory containi
 
 ## Related Files
 
-- **Goals:** `goals/build_app.md` (ATLAS workflow used by child apps), `goals/tdd_workflow.md` (TDD cycle used by child apps), `goals/compliance_workflow.md` (ATO artifacts if compliance enabled)
+- **Goals:** `goals/build_app.md` (ANVIL workflow used by child apps), `goals/tdd_workflow.md` (TDD cycle used by child apps), `goals/compliance_workflow.md` (ATO artifacts if compliance enabled)
 - **Tools:** `tools/builder/agentic_fitness.py`, `tools/builder/app_blueprint.py`, `tools/builder/scaffolder.py`
 - **Context:** `context/agentic/fitness_rubric.md`, `context/agentic/architecture_patterns.md`, `context/agentic/governance_baseline.md`, `context/agentic/capability_registry.yaml`, `context/agentic/csp_mcp_registry.yaml`
 - **Hard Prompts:** `hardprompts/agent/agentic_architect.md`, `hardprompts/agent/skill_design.md`, `hardprompts/agent/governance_review.md`

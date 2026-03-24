@@ -8,7 +8,7 @@
 | Title | Agentic Application Generation |
 | Status | Implemented |
 | Priority | P1 |
-| Dependencies | Phase 12 (Build App / ATLAS Workflow), Phase 11 (Compliance Workflow) |
+| Dependencies | Phase 12 (Build App / ANVIL Workflow), Phase 11 (Compliance Workflow) |
 | Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
@@ -16,11 +16,11 @@
 
 ## 1. Problem Statement
 
-Organizations need multiple independent agentic systems -- one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Each new agentic application requires the full GOTCHA framework (6 layers), ATLAS workflow, agent infrastructure, memory system, compliance scaffolding, CI/CD pipeline, and cloud provider integration -- all wired together correctly from day one.
+Organizations need multiple independent agentic systems -- one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Each new agentic application requires the full GOTCHA framework (6 layers), ANVIL workflow, agent infrastructure, memory system, compliance scaffolding, CI/CD pipeline, and cloud provider integration -- all wired together correctly from day one.
 
 Without automated generation, teams either copy-paste from existing systems (creating drift and inconsistency) or build from scratch (wasting weeks of effort and introducing configuration errors). The result is a proliferation of inconsistent agentic systems that cannot be audited, updated, or governed centrally.
 
-ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications that inherit the full GOTCHA framework, ATLAS workflow, own agents, memory system, and CI/CD -- everything except the ability to generate further children (grandchild prevention). These child applications must be fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads, produced in minutes rather than weeks.
+ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications that inherit the full GOTCHA framework, ANVIL workflow, own agents, memory system, and CI/CD -- everything except the ability to generate further children (grandchild prevention). These child applications must be fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads, produced in minutes rather than weeks.
 
 ---
 
@@ -70,7 +70,7 @@ The generation pipeline follows 7 steps:
 1. **Gather Requirements** -- Interactive collection of app name, cloud provider, compliance needs, impact level, language, MBSE, and deployment target
 2. **Assess Fitness** -- Score across 6 weighted dimensions (>= 6.0 full agent, 4.0-5.9 hybrid, < 4.0 traditional)
 3. **User Decisions** -- Confirm architecture, MBSE, ATO, cloud provider, port offset, agent roster
-4. **Generate Blueprint** -- Single JSON blueprint drives all generators (capability map, agent roster, file manifest, CSP MCP servers, DB schema, memory config, CI/CD config, ATLAS config, classification)
+4. **Generate Blueprint** -- Single JSON blueprint drives all generators (capability map, agent roster, file manifest, CSP MCP servers, DB schema, memory config, CI/CD config, ANVIL config, classification)
 5. **Scaffold + Generate** -- Phase 1: base language scaffold (15+ files), Phase 2: agentic generation (12 steps)
 6. **Verify** -- Directory structure, content, and functional checks
 7. **Document and Register** -- Audit trail, generation summary, memory entry

@@ -78,7 +78,7 @@ Each tool is 100% deterministic. LLM only picks the order.
 ICDev/
 +-- goals/                     # Process definitions (what to achieve)
 |   +-- manifest.md            # Index of all goal workflows
-|   +-- build_app.md           # ATLAS/M-ATLAS build workflow
+|   +-- build_app.md           # ANVIL/M-ANVIL build workflow
 |   +-- compliance_workflow.md # ATO artifact generation
 |   +-- security_scan.md       # SAST, dependency audit, secrets
 |   +-- deploy_workflow.md     # IaC, pipeline, staging, production
@@ -329,12 +329,12 @@ python tools/memory/hybrid_search.py --query "query" --time-decay
 
 ---
 
-## ATLAS / M-ATLAS Workflow
+## ANVIL / M-ANVIL Workflow
 
-ATLAS is the build workflow for constructing applications. M-ATLAS adds a "Model" pre-phase for MBSE integration.
+ANVIL is the build workflow for constructing applications. M-ANVIL adds a "Model" pre-phase for MBSE integration.
 
 ```
-M-ATLAS Workflow (6 phases):
+M-ANVIL Workflow (6 phases):
 
   [Model]  -->  Architect  -->  Trace  -->  Link  -->  Assemble  -->  Stress-test
      |             |             |           |            |              |
@@ -347,7 +347,7 @@ M-ATLAS Workflow (6 phases):
                                          test ->                    gates.
                                          control.
 
-ATLAS Workflow (5 phases -- no Model step):
+ANVIL Workflow (5 phases -- no Model step):
 
   Architect  -->  Trace  -->  Link  -->  Assemble  -->  Stress-test
 ```
@@ -356,7 +356,7 @@ ATLAS Workflow (5 phases -- no Model step):
 
 | Phase | Purpose | Key Tools |
 |-------|---------|-----------|
-| **Model** (M-ATLAS only) | Parse SysML XMI, import DOORS ReqIF | `xmi_parser.py`, `reqif_parser.py` |
+| **Model** (M-ANVIL only) | Parse SysML XMI, import DOORS ReqIF | `xmi_parser.py`, `reqif_parser.py` |
 | **Architect** | System design, component decomposition | `app_blueprint.py`, architecture decisions |
 | **Trace** | Map requirements to NIST 800-53 controls | `control_mapper.py`, `crosswalk_engine.py` |
 | **Link** | Build digital thread: model-code-test-control | `digital_thread.py`, `traceability_builder.py` |
@@ -436,7 +436,7 @@ These shape the environment that amplifies agent effectiveness.
 |  7.  Docs               CLAUDE.md, SKILL.md, goals/     |
 |  8.  Tests              pytest + behave + Playwright +   |
 |                         security/compliance gates        |
-|  9.  Architecture       GOTCHA layers, ATLAS workflow    |
+|  9.  Architecture       GOTCHA layers, ANVIL workflow    |
 |  10. Plans              specs/, plan files, goals/       |
 |  11. Templates          context/ JSON, hardprompts/,     |
 |                         args/ YAML                       |

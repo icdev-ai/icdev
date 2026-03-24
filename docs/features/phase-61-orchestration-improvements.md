@@ -22,7 +22,7 @@ ICDEV™'s multi-agent architecture (15 agents, 3 tiers) handles task decomposit
 
 2. **No declarative prompt chaining** — Multi-step LLM reasoning (e.g., plan → critique → refine) requires ad-hoc Python code. Adding a new reasoning chain means writing new code rather than declaring steps in YAML.
 
-3. **No adversarial plan review** — ANVIL workflow moves from Assemble directly to Stress-test with no structured review phase. Critical architecture flaws, compliance gaps, and security vulnerabilities are caught late (during stress-testing) rather than early (during review).
+3. **No adversarial plan review** — ANVIL workflow moves from Integrate directly to Launch with no structured review phase. Critical architecture flaws, compliance gaps, and security vulnerabilities are caught late (during stress-testing) rather than early (during review).
 
 4. **No session intent tracking** — Agent sessions lack declared purpose, making NIST AU-3 audit traceability difficult. Post-incident forensics cannot determine what an agent session was authorized to do.
 

@@ -5447,10 +5447,10 @@ CREATE INDEX IF NOT EXISTS idx_prop_qr_question ON proposal_question_responses(q
 CREATE INDEX IF NOT EXISTS idx_prop_qr_opp ON proposal_question_responses(opportunity_id);
 
 -- =========================================================================
--- ATLAS Critique Phase (Phase 61 — Feature 3)
+-- ANVIL Critique Phase (Phase 61 — Feature 3)
 -- =========================================================================
 
--- Critique sessions: one per ATLAS critique invocation (append-only except status updates)
+-- Critique sessions: one per ANVIL critique invocation (append-only except status updates)
 CREATE TABLE IF NOT EXISTS atlas_critique_sessions (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL,

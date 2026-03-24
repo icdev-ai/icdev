@@ -70,7 +70,7 @@ The generation pipeline follows 7 steps:
 1. **Gather Requirements** -- Interactive collection of app name, cloud provider, compliance needs, impact level, language, MBSE, and deployment target
 2. **Assess Fitness** -- Score across 6 weighted dimensions (>= 6.0 full agent, 4.0-5.9 hybrid, < 4.0 traditional)
 3. **User Decisions** -- Confirm architecture, MBSE, ATO, cloud provider, port offset, agent roster
-4. **Generate Blueprint** -- Single JSON blueprint drives all generators (capability map, agent roster, file manifest, CSP MCP servers, DB schema, memory config, CI/CD config, ATLAS config, classification)
+4. **Generate Blueprint** -- Single JSON blueprint drives all generators (capability map, agent roster, file manifest, CSP MCP servers, DB schema, memory config, CI/CD config, ANVIL config, classification)
 5. **Scaffold + Generate** -- Phase 1: base language scaffold (15+ files), Phase 2: agentic generation (12 steps)
 6. **Verify** -- Directory structure, content, and functional checks
 7. **Document and Register** -- Audit trail, generation summary, memory entry

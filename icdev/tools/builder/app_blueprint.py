@@ -1167,14 +1167,14 @@ def generate_blueprint(
         "auth": "bearer_token" if parent_callback_url else "none",
     }
 
-    # Step 9: ATLAS config — fitness step is disabled in child apps
-    atlas_config = {
+    # Step 9: ANVIL config — fitness step is disabled in child apps
+    anvil_config = {
         "fitness_step": False,
         "model_phase": capabilities.get("mbse", False),
         "phases": ["architect", "trace", "link", "assemble", "stress_test"],
     }
-    if atlas_config["model_phase"]:
-        atlas_config["phases"].insert(0, "model")
+    if anvil_config["model_phase"]:
+        anvil_config["phases"].insert(0, "model")
 
     # Step 10: Grandchild prevention — prevents recursive child app generation
     grandchild_prevention = {
@@ -1212,7 +1212,7 @@ def generate_blueprint(
         "cicd_config": cicd_config,
         "goals_config": goals_config,
         "parent_callback": parent_callback,
-        "atlas_config": atlas_config,
+        "anvil_config": anvil_config,
         "grandchild_prevention": grandchild_prevention,
         "file_manifest": [],  # Populated below
         "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),

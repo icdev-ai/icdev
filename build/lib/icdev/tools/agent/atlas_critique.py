@@ -11,11 +11,11 @@ Decision D6:   All findings and sessions are append-only (NIST AU).
 Decision D26:  Critic configuration is declarative YAML.
 
 CLI:
-    python tools/agent/atlas_critique.py --project-id proj-123 \\
+    python tools/agent/anvil_critique.py --project-id proj-123 \\
         --phase-output "plan text or file path" --json
-    python tools/agent/atlas_critique.py --project-id proj-123 \\
+    python tools/agent/anvil_critique.py --project-id proj-123 \\
         --session-id sess-123 --status --json
-    python tools/agent/atlas_critique.py --project-id proj-123 \\
+    python tools/agent/anvil_critique.py --project-id proj-123 \\
         --history --json
 """
 
@@ -87,7 +87,7 @@ class Finding:
 
 @dataclass
 class CritiqueSession:
-    """An ATLAS critique session spanning one or more rounds."""
+    """An ANVIL critique session spanning one or more rounds."""
     id: str = ""
     project_id: str = ""
     workflow_id: str = ""
@@ -346,7 +346,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_completed", "atlas-critique",
-                    f"ATLAS critique GO after round {round_num}",
+                    f"ANVIL critique GO after round {round_num}",
                     project_id=project_id,
                     details={"session_id": session.id, "consensus": "go",
                              "rounds": round_num},
@@ -360,7 +360,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_completed", "atlas-critique",
-                    f"ATLAS critique NOGO — {counts['critical']} critical findings",
+                    f"ANVIL critique NOGO — {counts['critical']} critical findings",
                     project_id=project_id,
                     details={"session_id": session.id, "consensus": "nogo",
                              "critical_count": counts["critical"]},
@@ -378,7 +378,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_revision_requested", "atlas-critique",
-                    f"ATLAS critique revision round {round_num}",
+                    f"ANVIL critique revision round {round_num}",
                     project_id=project_id,
                     details={"session_id": session.id, "round": round_num},
                     db_path=self._db_path,
@@ -390,7 +390,7 @@ class AtlasCritique:
                 self._update_session(session)
                 _audit(
                     "critique_completed", "atlas-critique",
-                    f"ATLAS critique CONDITIONAL — max rounds ({effective_max}) exhausted",
+                    f"ANVIL critique CONDITIONAL — max rounds ({effective_max}) exhausted",
                     project_id=project_id,
                     details={"session_id": session.id, "consensus": "conditional",
                              "high_count": session.high_count},
@@ -872,10 +872,10 @@ def main():
         # Human-readable output
         try:
             from icdev.tools.cli.output_formatter import format_banner, format_table
-            print(format_banner("ATLAS Critique Phase"))
+            print(format_banner("ANVIL Critique Phase"))
         except ImportError:
             print("=" * 60)
-            print("  ATLAS Critique Phase")
+            print("  ANVIL Critique Phase")
             print("=" * 60)
 
         if "error" in result:

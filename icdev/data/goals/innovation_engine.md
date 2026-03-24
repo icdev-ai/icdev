@@ -7,7 +7,7 @@ CUI // SP-CTI
 The Innovation Engine enables ICDEV™ to continuously and autonomously improve itself by:
 1. Discovering developer pain points, CVEs, compliance changes, and competitive gaps
 2. Scoring and triaging discoveries through compliance-first gates
-3. Generating solution specifications using existing ATLAS/M-ATLAS workflow
+3. Generating solution specifications using existing ANVIL/M-ANVIL workflow
 4. Publishing solutions to the ICDEV™ marketplace for ecosystem-wide benefit
 5. Learning from feedback to improve future discovery quality
 
@@ -31,7 +31,7 @@ DISCOVER (web + introspective + competitive + standards)
     → SCORE (5-dimension weighted average)
         → TRIAGE (5-stage compliance gate)
             → GENERATE (template-based spec)
-                → BUILD (ATLAS/M-ATLAS TDD)
+                → BUILD (ANVIL/M-ANVIL TDD)
                     → PUBLISH (marketplace 7-gate pipeline)
                         → MEASURE (adoption + impact)
                             → CALIBRATE (weight adjustment)
@@ -146,7 +146,7 @@ Template-based spec generation with sections:
 ## Stage 5-6: Build & Publish
 
 Reuse existing ICDEV™ pipelines:
-- **Build:** ATLAS/M-ATLAS workflow via `/icdev-build`
+- **Build:** ANVIL/M-ANVIL workflow via `/icdev-build`
 - **Test:** Full test suite via `/icdev-test`
 - **Security:** SAST + dependency audit via `/icdev-secure`
 - **Compliance:** CUI markings + STIG via `/icdev-comply`

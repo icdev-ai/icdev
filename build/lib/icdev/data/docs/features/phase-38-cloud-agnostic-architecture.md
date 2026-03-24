@@ -885,7 +885,7 @@ CSP Feeds (RSS/API/HTML)                    Innovation Engine (Phase 35)
   OCI Release Notes ──┤   │ scan            │    ↓
   IBM Announcements ──┘   │ classify        ├─→ GENERATE (solution_generator.py)
                           │ dedup           │    ↓
-                          ↓                 └─→ BUILD/PUBLISH (ATLAS + marketplace)
+                          ↓                 └─→ BUILD/PUBLISH (ANVIL + marketplace)
                     innovation_signals
                     (source='csp_monitor')
                           │

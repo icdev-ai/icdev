@@ -5,7 +5,7 @@ Validate the complete ICDEV™ system through multi-layer testing: unit tests (p
 
 ## Trigger
 - `/icdev-test` skill invoked
-- Post-build validation in ATLAS workflow
+- Post-build validation in ANVIL workflow
 - Pre-merge gate check
 - Pre-deployment validation
 

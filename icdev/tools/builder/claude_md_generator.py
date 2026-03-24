@@ -432,7 +432,7 @@ AST-based code quality metrics, smell detection, deterministic maintainability s
 ### ANVIL Workflow
 
 Build process follows the ANVIL methodology:
-{% if atlas_config.get("model_phase", False) %}
+{% if anvil_config.get("model_phase", False) %}
 1. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)
 {% endif %}
 {% for phase in atlas_phases %}{{ loop.index }}. **{{ phase | capitalize }}** -- {{ atlas_phase_descriptions.get(phase, phase) }}
@@ -768,7 +768,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     classification = blueprint.get("classification", "CUI")
     impact_level = blueprint.get("impact_level", "IL4")
     agents_raw = blueprint.get("agents", [])
-    atlas_config = blueprint.get("atlas_config", {})
+    anvil_config = blueprint.get("anvil_config", {})
     parent_callback = blueprint.get("parent_callback", {})
     cloud_provider = blueprint.get("cloud_provider", {})
     goals_config = blueprint.get("goals_config", [])
@@ -785,7 +785,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
     mcp_servers = _derive_mcp_servers(agents, capabilities)
 
     # Determine ANVIL phases (exclude fitness assessment)
-    atlas_phases = atlas_config.get("phases", [
+    atlas_phases = anvil_config.get("phases", [
         "architect", "trace", "link", "assemble", "stress_test",
     ])
     # Ensure fitness is never present
@@ -828,7 +828,7 @@ def _build_template_context(blueprint: Dict[str, Any]) -> Dict[str, Any]:
         "impact_level": impact_level,
         "agents": agents,
         "mcp_servers": mcp_servers,
-        "atlas_config": atlas_config,
+        "anvil_config": anvil_config,
         "atlas_phases": atlas_phases,
         "atlas_phase_descriptions": ANVIL_PHASE_DESCRIPTIONS,
         "parent_callback": parent_callback,
@@ -1419,7 +1419,7 @@ def _build_system_section(ctx: Dict[str, Any]) -> str:
     parts.append("### ANVIL Workflow\n")
     parts.append("Build process follows the ANVIL methodology:\n")
     idx = 1
-    if ctx["atlas_config"].get("model_phase", False):
+    if ctx["anvil_config"].get("model_phase", False):
         parts.append(f"{idx}. **Model** -- Import/validate SysML and DOORS models (M-ANVIL pre-phase)")
         idx += 1
     for phase in atlas_phases:

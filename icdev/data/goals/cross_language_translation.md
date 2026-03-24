@@ -166,6 +166,6 @@ python tools/translation/translation_manager.py \
 | Phase 29 (Monitoring) | Translation jobs emit heartbeat events |
 | Phase 35 (Innovation) | Translation metrics feed innovation engine |
 | Phase 36 (Evolutionary) | Translation capability tracked as genome dimension |
-| Phase 37 (ATLAS) | Prompt injection scanning on translation prompts |
+| Phase 37 (ANVIL) | Prompt injection scanning on translation prompts |
 | Phase 38 (Cloud) | Multi-cloud LLM selection via router |
 | Phase 39 (Observability) | Translation events logged to audit trail |

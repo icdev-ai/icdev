@@ -8,7 +8,7 @@
 | Title | TDD/BDD Testing Framework |
 | Status | Implemented |
 | Priority | P0 |
-| Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 2 (ATLAS Build Workflow) |
+| Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 2 (ANVIL Build Workflow) |
 | Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
@@ -257,5 +257,5 @@ python tools/builder/language_support.py --list
 
 # Skills
 /icdev-test     # Run full test suite (pytest + behave BDD)
-/icdev-build    # Build code using true TDD (RED->GREEN->REFACTOR) via M-ATLAS
+/icdev-build    # Build code using true TDD (RED->GREEN->REFACTOR) via M-ANVIL
 ```

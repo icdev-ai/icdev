@@ -444,12 +444,12 @@ def get_prompt_chains():
 
 
 # =====================================================================
-# ATLAS Critiques (graceful — table may not exist)
+# ANVIL Critiques (graceful — table may not exist)
 # =====================================================================
 
 @orchestration_api.route("/critiques")
 def get_critiques():
-    """Return ATLAS critique sessions (if table exists)."""
+    """Return ANVIL critique sessions (if table exists)."""
     try:
         conn = _get_db()
         limit = int(request.args.get("limit", 20))

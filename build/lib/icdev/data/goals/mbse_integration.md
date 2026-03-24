@@ -4,7 +4,7 @@
 
 ## Goal
 
-Integrate MBSE into the ICDEV™ SDLC using the M-ATLAS workflow variant (Model → Architect → Trace → Link → Assemble → Stress-test). Provides end-to-end digital thread from DOORS requirements through SysML models to generated code, tests, and NIST controls. Supports DoDI 5000.87 Digital Engineering Strategy (DES) compliance and SAFe Program Increment (PI) model snapshots.
+Integrate MBSE into the ICDEV™ SDLC using the M-ANVIL workflow variant (Model → Architect → Trace → Link → Assemble → Stress-test). Provides end-to-end digital thread from DOORS requirements through SysML models to generated code, tests, and NIST controls. Supports DoDI 5000.87 Digital Engineering Strategy (DES) compliance and SAFe Program Increment (PI) model snapshots.
 
 **Why this matters:** DoDI 5000.87 mandates digital engineering for all DoD acquisition programs. Without model-code traceability, programs fail audits and cannot demonstrate that delivered code implements the authoritative design. The digital thread closes the loop from requirement to deployment.
 
@@ -21,9 +21,9 @@ Integrate MBSE into the ICDEV™ SDLC using the M-ATLAS workflow variant (Model 
 
 ---
 
-## M-ATLAS Workflow
+## M-ANVIL Workflow
 
-Extension of ATLAS adding a Model pre-phase. If no model exists, falls back to standard ATLAS.
+Extension of ANVIL adding a Model pre-phase. If no model exists, falls back to standard ANVIL.
 
 | Step | Phase | Description |
 |------|-------|-------------|
@@ -492,7 +492,7 @@ MBSE artifacts are subject to the same security gates as all ICDEV™ outputs:
 ## Related Goals
 
 - **Feeds from:** `goals/init_project.md` (project setup with `--mbse` flag)
-- **Feeds into:** `goals/build_app.md` (ATLAS workflow, M-phase prepends), `goals/tdd_workflow.md` (model-generated test stubs), `goals/compliance_workflow.md` (NIST control mappings), `goals/deploy_workflow.md` (DES gate check)
+- **Feeds into:** `goals/build_app.md` (ANVIL workflow, M-phase prepends), `goals/tdd_workflow.md` (model-generated test stubs), `goals/compliance_workflow.md` (NIST control mappings), `goals/deploy_workflow.md` (DES gate check)
 - **Tools:** `tools/mbse/xmi_parser.py`, `tools/mbse/reqif_parser.py`, `tools/mbse/digital_thread.py`, `tools/mbse/model_codegen.py`, `tools/mbse/control_mapper.py`, `tools/mbse/drift_detector.py`, `tools/mbse/des_assessor.py`, `tools/mbse/pi_snapshot.py`, `tools/mbse/report_generator.py`
 - **Context:** `context/compliance/nist_800_53.json`, `context/mbse/sysml_stereotypes.json`, `context/mbse/des_5000_87_goals.json`
 - **Args:** `args/reqif_mappings.yaml`, `args/mbse_defaults.yaml`
@@ -501,4 +501,4 @@ MBSE artifacts are subject to the same security gates as all ICDEV™ outputs:
 
 ## Changelog
 
-- 2026-02-16: Initial creation — M-ATLAS workflow with 9 steps covering XMI/ReqIF import, digital thread, codegen, NIST mapping, drift detection, DES compliance, PI snapshots, and reporting
+- 2026-02-16: Initial creation — M-ANVIL workflow with 9 steps covering XMI/ReqIF import, digital thread, codegen, NIST mapping, drift detection, DES compliance, PI snapshots, and reporting

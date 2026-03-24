@@ -19,7 +19,7 @@ DIAGRAM_CATALOG = {
     # ── Workflow Diagrams ───────────────────────────────────────────
 
     "atlas_workflow": {
-        "title": "ATLAS Build Workflow",
+        "title": "ANVIL Build Workflow",
         "description": "5-step application build process: Architect, Trace, Link, Assemble, Stress-test",
         "category": "workflows",
         "roles": [],
@@ -37,7 +37,7 @@ DIAGRAM_CATALOG = {
     },
 
     "m_atlas_workflow": {
-        "title": "M-ATLAS Workflow (MBSE-Enabled)",
+        "title": "M-ANVIL Workflow (MBSE-Enabled)",
         "description": "6-step build with Model pre-phase for MBSE projects",
         "category": "workflows",
         "roles": [],

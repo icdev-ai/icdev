@@ -29,7 +29,7 @@ Claude Code is the primary interface for developers working with ICDEV™. You t
 
 ### Building Features
 
-Talk about what you want to build. Claude follows the ATLAS workflow (Architect, Trace, Link, Assemble, Stress-test) automatically.
+Talk about what you want to build. Claude follows the ANVIL workflow (Architect, Navigate, Verify, Integrate, Launch) automatically.
 
 > Build a REST API endpoint for user profile management. It should support GET, PUT, and DELETE with role-based access control.
 

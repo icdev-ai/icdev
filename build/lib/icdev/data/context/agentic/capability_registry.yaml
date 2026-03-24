@@ -158,7 +158,7 @@ capabilities:
 agents:
   core:
     - { name: orchestrator, base_port: 8443, role: "Task routing, workflow management" }
-    - { name: architect, base_port: 8444, role: "ATLAS A/T phases, system design" }
+    - { name: architect, base_port: 8444, role: "ANVIL A/T phases, system design" }
     - { name: builder, base_port: 8445, role: "TDD code gen (RED->GREEN->REFACTOR)" }
     - { name: knowledge, base_port: 8449, role: "Self-healing patterns, recommendations" }
     - { name: monitor, base_port: 8450, role: "Log analysis, metrics, alerts, health checks" }

@@ -8,7 +8,7 @@
 | Title | MBSE Integration |
 | Status | Implemented |
 | Priority | P0 |
-| Dependencies | Phase 11 (Compliance Workflow), Phase 12 (Build App / ATLAS Workflow) |
+| Dependencies | Phase 11 (Compliance Workflow), Phase 12 (Build App / ANVIL Workflow) |
 | Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
@@ -20,7 +20,7 @@ DoDI 5000.87 mandates digital engineering for all DoD acquisition programs. With
 
 Currently, SysML models authored in tools like Cameo Systems Modeler and requirements managed in IBM DOORS NG exist in isolation from the code that implements them. There is no automated mechanism to import model elements into the development environment, generate code scaffolding from model definitions, map model elements to NIST 800-53 security controls, detect drift between model and code, or capture point-in-time snapshots for SAFe PI boundaries.
 
-ICDEV™ needs an MBSE integration layer that extends the ATLAS workflow with a Model pre-phase (M-ATLAS), establishing bidirectional traceability from DOORS requirements through SysML models to generated code, test cases, and NIST compliance controls, with continuous drift detection and DES compliance assessment.
+ICDEV™ needs an MBSE integration layer that extends the ANVIL workflow with a Model pre-phase (M-ANVIL), establishing bidirectional traceability from DOORS requirements through SysML models to generated code, test cases, and NIST compliance controls, with continuous drift detection and DES compliance assessment.
 
 ---
 
@@ -71,7 +71,7 @@ ICDEV™ needs an MBSE integration layer that extends the ATLAS workflow with a 
                                                                  +-----------+
 ```
 
-M-ATLAS extends the standard ATLAS workflow by adding a Model pre-phase. If no model exists, the system gracefully falls back to standard ATLAS. The pipeline processes:
+M-ANVIL extends the standard ANVIL workflow by adding a Model pre-phase. If no model exists, the system gracefully falls back to standard ANVIL. The pipeline processes:
 
 - **M (Model)** -- Import XMI/ReqIF, build digital thread, generate code scaffolding
 - **A (Architect)** -- System design informed by model elements (blocks, interfaces, behaviors)
@@ -182,7 +182,7 @@ The system SHALL support comparing two PI snapshots to show element deltas, cove
 |----|----------|-----------|
 | D7 | Python stdlib `xml.etree.ElementTree` for XMI/ReqIF parsing | Zero external dependencies, air-gap safe |
 | D8 | Normalized DB tables for model elements | Enables SQL joins across the digital thread |
-| D9 | M-ATLAS adds "Model" pre-phase to ATLAS | Backward compatible -- skips if no model exists |
+| D9 | M-ANVIL adds "Model" pre-phase to ANVIL | Backward compatible -- skips if no model exists |
 | D10 | File-based sync only for Cameo | Air-gapped desktop, no API -- XMI export/import |
 | D11 | PI-snapshot versioning with SHA-256 content hashing | Drift detection between PI boundaries |
 | D12 | N:M digital thread links | One block can map to many code modules; one control to many requirements |

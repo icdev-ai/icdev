@@ -20,7 +20,7 @@ ICDEV™ supports 6 first-class programming languages (Python, Java, Go, Rust, C
 
 Prior to Phase 42, the `/icdev-init` and `/icdev-build` commands provided language-agnostic scaffolding that required manual customization for each language's ecosystem. This led to inconsistent project setups, missed security scanning steps (e.g., forgetting `gosec` for Go or `cargo-audit` for Rust), and incomplete CI/CD pipeline configurations. The lack of language-specific planning meant that the 12 Leverage Points of Agentic Development framework — which describes the 12 tunable dimensions of agent behavior — was not being fully utilized during project initialization.
 
-Phase 42 introduces 6 language-specific planning commands (`/plan_python`, `/plan_java`, `/plan_go`, `/plan_rust`, `/plan_csharp`, `/plan_typescript`) that generate comprehensive, opinionated build plans tailored to each language's ecosystem. These plans serve as the "Plans" leverage point (dimension 10), providing detailed implementation blueprints that the agent follows through the ATLAS workflow.
+Phase 42 introduces 6 language-specific planning commands (`/plan_python`, `/plan_java`, `/plan_go`, `/plan_rust`, `/plan_csharp`, `/plan_typescript`) that generate comprehensive, opinionated build plans tailored to each language's ecosystem. These plans serve as the "Plans" leverage point (dimension 10), providing detailed implementation blueprints that the agent follows through the ANVIL workflow.
 
 ---
 
@@ -64,10 +64,10 @@ Plan Generator
 Markdown Plan Document
     │
     ↓
-/icdev-init (scaffold) → ATLAS Workflow (build)
+/icdev-init (scaffold) → ANVIL Workflow (build)
 ```
 
-Each `/plan_<language>` command reads from the language registry and framework patterns to generate an 8-section build plan as a markdown document. The plan is reviewed by the developer, optionally customized, and then executed through `/icdev-init` for scaffolding followed by the ATLAS TDD workflow for implementation.
+Each `/plan_<language>` command reads from the language registry and framework patterns to generate an 8-section build plan as a markdown document. The plan is reviewed by the developer, optionally customized, and then executed through `/icdev-init` for scaffolding followed by the ANVIL TDD workflow for implementation.
 
 ### 12 Leverage Points Framework
 

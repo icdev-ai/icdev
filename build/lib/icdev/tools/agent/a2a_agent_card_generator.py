@@ -47,7 +47,7 @@ AGENT_SKILLS = {
         {"id": "agent_status", "name": "Agent Status", "description": "Query agent health and availability"},
     ],
     "architect": [
-        {"id": "system_design", "name": "System Design", "description": "ATLAS/M-ATLAS architecture design"},
+        {"id": "system_design", "name": "System Design", "description": "ANVIL/M-ANVIL architecture design"},
         {"id": "blueprint_generate", "name": "Blueprint Generation", "description": "Generate application blueprints"},
     ],
     "builder": [

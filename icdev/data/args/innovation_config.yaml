@@ -281,7 +281,7 @@ solution_generation:
 
   # Build pipeline integration
   build:
-    use_atlas_workflow: true         # Follow ATLAS/M-ATLAS for builds
+    use_atlas_workflow: true         # Follow ANVIL/M-ANVIL for builds
     tdd_required: true               # RED -> GREEN -> REFACTOR
     min_test_coverage: 80            # Minimum coverage for generated solution
 

@@ -7,7 +7,7 @@
 """Solution Spec Generator — auto-generate solution specs from triaged innovation signals.
 
 Takes triaged+approved signals and generates structured solution specifications that
-feed into ICDEV™'s existing ATLAS build pipeline. Specs are deterministic (template-based,
+feed into ICDEV™'s existing ANVIL build pipeline. Specs are deterministic (template-based,
 not LLM) with GOTCHA layer mapping, BDD acceptance criteria, compliance impact, test
 plans, and marketplace asset type classification.
 
@@ -91,7 +91,7 @@ GOTCHA_LAYER_INFO = {
         "proposed_template": ("Create a new goal workflow in `goals/` that defines:\n"
             "1. Objective and success criteria\n2. Required tools and invocation order\n"
             "3. Expected outputs and validation rules\n4. Error handling and edge cases\n"
-            "5. Integration with existing ATLAS/M-ATLAS phases"),
+            "5. Integration with existing ANVIL/M-ANVIL phases"),
         "asset_type": "goal", "effort": "M",
         "test_unit": "Validate goal YAML/markdown structure, required sections present",
         "test_bdd": ("Feature: {title} workflow\n  Scenario: Execute {title} end-to-end\n"

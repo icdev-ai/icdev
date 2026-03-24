@@ -6,7 +6,7 @@
 # POC: ICDEV™ System Administrator
 """MITRE ATLAS v5.4.0 compliance report generator.
 
-Loads ATLAS assessment data from atlas_assessments table, builds mitigation
+Loads ANVIL assessment data from atlas_assessments table, builds mitigation
 coverage analysis, technique exposure, OWASP LLM Top 10 cross-reference,
 gap analysis, remediation recommendations, and NIST 800-53 control mapping.
 Generates a comprehensive ATLAS compliance report with CUI markings.
@@ -348,7 +348,7 @@ class ATLASReportGenerator:
         if total == 0:
             return (
                 "No ATLAS assessments have been recorded for this project. "
-                "Run the ATLAS assessor before generating this report:\n\n"
+                "Run the ANVIL assessor before generating this report:\n\n"
                 "```\npython tools/compliance/atlas_assessor.py "
                 f"--project-id {project.get('id', 'proj-XXX')}\n```"
             )
@@ -406,7 +406,7 @@ class ATLASReportGenerator:
             lines.append("")
             lines.append(
                 f"**{not_satisfied} mitigation(s) are not satisfied** -- "
-                "remediation is required before the ATLAS gate can pass."
+                "remediation is required before the ANVIL gate can pass."
             )
 
         return "\n".join(lines)

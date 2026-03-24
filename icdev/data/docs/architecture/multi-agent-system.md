@@ -22,7 +22,7 @@ ICDEV™ operates a 15-agent multi-agent system organized into 3 tiers: Core (2 
                         |           |               |
                         |  +--------v----------+    |
                         |  | Architect:8444     |    |
-                        |  | ATLAS/M-ATLAS,    |    |
+                        |  | ANVIL/M-ANVIL,    |    |
                         |  | system design     |    |
                         |  +-------------------+    |
                         +----------+----------------+
@@ -51,7 +51,7 @@ ICDEV™ operates a 15-agent multi-agent system organized into 3 tiers: Core (2 
 | Tier | Agent | Port | Primary Role | Effort Level |
 |------|-------|------|-------------|--------------|
 | Core | **Orchestrator** | 8443 | Task routing, workflow management, DAG execution | high |
-| Core | **Architect** | 8444 | ATLAS/M-ATLAS Architecture and Trace phases, system design | high |
+| Core | **Architect** | 8444 | ANVIL/M-ANVIL Architecture and Trace phases, system design | high |
 | Domain | **Builder** | 8445 | TDD code generation (RED-GREEN-REFACTOR), scaffolding | max |
 | Domain | **Compliance** | 8446 | ATO artifacts (SSP, POAM, STIG, SBOM, FedRAMP, CMMC, OSCAL, eMASS, cATO) | high |
 | Domain | **Security** | 8447 | SAST, dependency audit, secret detection, container scanning | high |

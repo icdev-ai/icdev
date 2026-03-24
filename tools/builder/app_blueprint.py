@@ -1305,7 +1305,6 @@ def _persist_blueprint(blueprint: Dict[str, Any]) -> bool:
         return False
 
     try:
-        import sqlite3
         conn = get_connection()
         conn.execute(
             """INSERT OR REPLACE INTO app_blueprints

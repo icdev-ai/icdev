@@ -75,7 +75,7 @@ Developer: "Build a REST API for user management with RBAC"
     - icdev.yaml (project config)
     - Dev profile (coding standards via cascade resolution)
     - CLAUDE.md (orchestration instructions)
-    - goals/build_app.md (ATLAS workflow)
+    - goals/build_app.md (ANVIL workflow)
         |
         v
   Claude orchestrates (developer doesn't see this):
