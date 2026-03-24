@@ -695,10 +695,17 @@ class DaemonBase(abc.ABC):
             if success and metric_passed:
                 state.record_success(metric_value)
                 self.clear_checkpoint(name)  # Resumability: clear on success
-                self.log_audit(
-                    f"{self.event_prefix}.reflex.completed", name, risk_tier,
-                    details, success=True, duration_ms=duration_ms,
-                    metric_name=metric_name, metric_value=metric_value)
+                # SILENT suppression: skip audit log when reflex has nothing to report
+                # (metric_value == 0 and details indicate no-op)
+                silent = details.get("status") in (
+                    "no_due_tasks", "air_gapped", "no_changes",
+                    "nothing_to_do", "empty",
+                ) or (metric_value == 0 and not details.get("tasks"))
+                if not silent:
+                    self.log_audit(
+                        f"{self.event_prefix}.reflex.completed", name, risk_tier,
+                        details, success=True, duration_ms=duration_ms,
+                        metric_name=metric_name, metric_value=metric_value)
                 return {
                     "status": "success", "reflex": name,
                     "metric": {metric_name: metric_value},
