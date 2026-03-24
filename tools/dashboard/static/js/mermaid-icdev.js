@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    var NS = window.ICDEV™ || (window.ICDEV™ = {});
+    var NS = window.ICDEV || (window.ICDEV = {});
 
     // ========================================================================
     // DARK THEME CONFIGURATION (D-M6)

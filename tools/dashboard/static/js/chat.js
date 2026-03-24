@@ -72,7 +72,7 @@
         if (badge) _userId = badge.textContent.trim() || _userId;
     } catch (e) {}
 
-    var ns = window.ICDEV™ || {};
+    var ns = window.ICDEV || {};
 
     // ===================================================================
     // Utility helpers
@@ -1544,7 +1544,7 @@
         closeContext: closeContext
     };
 
-    window.ICDEV™ = ns;
+    window.ICDEV = ns;
 
     // Init on DOM ready
     if (document.readyState === 'loading') {

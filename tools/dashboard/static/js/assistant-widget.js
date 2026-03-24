@@ -116,8 +116,8 @@
             } else {
                 // Render markdown if available
                 var rendered = msg.content;
-                if (typeof ICDEV™ !== 'undefined' && ICDEV™.renderMarkdown) {
-                    rendered = ICDEV™.renderMarkdown(msg.content);
+                if (typeof ICDEV !== 'undefined' && ICDEV.renderMarkdown) {
+                    rendered = ICDEV.renderMarkdown(msg.content);
                 } else if (typeof marked !== 'undefined') {
                     try { rendered = marked.parse(msg.content); } catch (e) { rendered = escHtml(msg.content); }
                 } else {

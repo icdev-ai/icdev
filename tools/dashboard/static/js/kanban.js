@@ -50,7 +50,7 @@
                 return;
             }
 
-            var esc = window.ICDEV™ && ICDEV™.escapeHTML ? ICDEV™.escapeHTML : function (s) { return String(s || ""); };
+            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function (s) { return String(s || ""); };
             var html = items.map(function (p) {
                 var typeBadge = p.type
                     ? '<span class="badge badge-info">' + esc(p.type) + "</span>"
@@ -74,8 +74,8 @@
      * Fetch projects from API and re-render the Kanban board.
      */
     function refreshKanban() {
-        if (!window.ICDEV™ || !ICDEV™.fetchJSON) return;
-        ICDEV™.fetchJSON("/api/projects").then(function (data) {
+        if (!window.ICDEV || !ICDEV.fetchJSON) return;
+        ICDEV.fetchJSON("/api/projects").then(function (data) {
             if (data && data.projects) {
                 renderKanban(data.projects);
             }
@@ -105,9 +105,9 @@
     });
 
     // Expose to global ICDEV™ namespace
-    if (window.ICDEV™) {
-        ICDEV™.refreshKanban = refreshKanban;
-        ICDEV™.startKanbanRefresh = startKanbanRefresh;
-        ICDEV™.stopKanbanRefresh = stopKanbanRefresh;
+    if (window.ICDEV) {
+        ICDEV.refreshKanban = refreshKanban;
+        ICDEV.startKanbanRefresh = startKanbanRefresh;
+        ICDEV.stopKanbanRefresh = stopKanbanRefresh;
     }
 })();

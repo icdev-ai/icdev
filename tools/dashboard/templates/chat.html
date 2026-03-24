@@ -158,7 +158,7 @@
                 <h4 class="chat-sidebar-heading">Elicitation Techniques</h4>
                 <div id="technique-active" class="technique-active-banner" style="display:none;">
                     <span id="technique-active-name"></span>
-                    <button class="technique-deactivate-btn" onclick="ICDEV™.chatDeactivateTechnique()" title="Deactivate">&times;</button>
+                    <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
                 </div>
                 <div id="technique-chips" class="technique-chips"></div>
             </div>
@@ -177,18 +177,18 @@
             </div>
 
             <div id="chat-actions" class="chat-actions">
-                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV™.chatGeneratePlan()">Generate Plan &#x2192;</button>
-                <button class="btn btn-secondary" id="export-btn" style="display:none;" onclick="ICDEV™.chatExport()">Export Requirements</button>
+                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
+                <button class="btn btn-secondary" id="export-btn" style="display:none;" onclick="ICDEV.chatExport()">Export Requirements</button>
             </div>
 
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
                 <h4 class="chat-sidebar-heading">What's next?</h4>
-                <button class="btn btn-primary" onclick="ICDEV™.chatTriggerBuild()">Generate Application</button>
-                <button class="btn btn-secondary" onclick="ICDEV™.chatRunSimulation()">Run Simulation (COAs)</button>
-                <button class="btn btn-secondary" onclick="ICDEV™.chatViewRequirements()">View Requirements</button>
-                <button class="btn btn-secondary" onclick="ICDEV™.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
-                <button class="btn btn-secondary" onclick="ICDEV™.chatValidatePRD()">&#x2714; Validate PRD</button>
+                <button class="btn btn-primary" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>
             </div>
 
             <!-- Build Pipeline -->
@@ -197,8 +197,8 @@
                 <div id="build-pipeline-phases" class="build-pipeline"></div>
                 <div id="build-pipeline-status" class="build-pipeline-status"></div>
                 <div id="build-done-actions" class="build-done-actions" style="display:none;">
-                    <button class="btn btn-primary" onclick="ICDEV™.chatViewProject()">View Project</button>
-                    <button class="btn btn-secondary" onclick="ICDEV™.chatRunTests()">Run Tests</button>
+                    <button class="btn btn-primary" onclick="ICDEV.chatViewProject()">View Project</button>
+                    <button class="btn btn-secondary" onclick="ICDEV.chatRunTests()">Run Tests</button>
                     <button class="btn btn-secondary" onclick="window.open('/events','_blank')">View Events</button>
                 </div>
             </div>
