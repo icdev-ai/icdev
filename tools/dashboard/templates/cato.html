@@ -1,0 +1,532 @@
+{% extends "base.html" %}
+{% block title %}Continuous ATO - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Continuous ATO</span>
+    </nav>
+
+    <h1>Continuous ATO Dashboard</h1>
+    <p class="text-muted">Real-time Authorization to Operate health monitoring, evidence freshness, control implementation, and certification status.</p>
+
+    <!-- ================================================================= -->
+    <!-- 1. ATO Health Gauge                                                -->
+    <!-- ================================================================= -->
+    <div style="display:flex;flex-direction:column;align-items:center;margin:2rem 0;">
+        <div style="position:relative;width:200px;height:200px;">
+            <div id="health-gauge" style="width:200px;height:200px;border-radius:50%;background:conic-gradient(#9e9e9e 0deg,#9e9e9e 360deg);display:flex;align-items:center;justify-content:center;">
+                <div style="width:140px;height:140px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+                    <span id="health-score" style="font-size:2.8rem;font-weight:bold;color:#333;">--</span>
+                    <span id="health-label" style="font-size:0.85rem;color:#666;">ATO Health</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sub-score bars -->
+        <div id="sub-scores" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;width:100%;max-width:900px;margin-top:1.5rem;">
+            <div class="sub-score-card" style="padding:0.75rem 1rem;border:1px solid #ddd;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <span style="font-size:0.85rem;font-weight:600;">Evidence Freshness</span>
+                    <span id="sub-evidence" style="font-size:0.85rem;font-weight:bold;">--%</span>
+                </div>
+                <div style="height:8px;background:#eee;border-radius:4px;overflow:hidden;">
+                    <div id="bar-evidence" style="height:100%;width:0%;background:#4caf50;border-radius:4px;transition:width 0.6s;"></div>
+                </div>
+            </div>
+            <div class="sub-score-card" style="padding:0.75rem 1rem;border:1px solid #ddd;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <span style="font-size:0.85rem;font-weight:600;">Control Implementation</span>
+                    <span id="sub-controls" style="font-size:0.85rem;font-weight:bold;">--%</span>
+                </div>
+                <div style="height:8px;background:#eee;border-radius:4px;overflow:hidden;">
+                    <div id="bar-controls" style="height:100%;width:0%;background:#2196f3;border-radius:4px;transition:width 0.6s;"></div>
+                </div>
+            </div>
+            <div class="sub-score-card" style="padding:0.75rem 1rem;border:1px solid #ddd;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <span style="font-size:0.85rem;font-weight:600;">POAM Resolution</span>
+                    <span id="sub-poam" style="font-size:0.85rem;font-weight:bold;">--%</span>
+                </div>
+                <div style="height:8px;background:#eee;border-radius:4px;overflow:hidden;">
+                    <div id="bar-poam" style="height:100%;width:0%;background:#ff9800;border-radius:4px;transition:width 0.6s;"></div>
+                </div>
+            </div>
+            <div class="sub-score-card" style="padding:0.75rem 1rem;border:1px solid #ddd;border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;margin-bottom:0.3rem;">
+                    <span style="font-size:0.85rem;font-weight:600;">Certification Status</span>
+                    <span id="sub-cert" style="font-size:0.85rem;font-weight:bold;">--%</span>
+                </div>
+                <div style="height:8px;background:#eee;border-radius:4px;overflow:hidden;">
+                    <div id="bar-cert" style="height:100%;width:0%;background:#9c27b0;border-radius:4px;transition:width 0.6s;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 2. Certification Cards                                             -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">ATO Certifications</h2>
+    <div id="cert-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1rem;margin:1rem 0;">
+        <div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">Loading certifications...</div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 3. Stats Grid                                                      -->
+    <!-- ================================================================= -->
+    <div id="stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-total-controls" style="font-size:2rem;font-weight:bold;">--</div>
+            <div style="color:#666;">Total Controls</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-implemented-pct" style="font-size:2rem;font-weight:bold;color:#4caf50;">--</div>
+            <div style="color:#666;">Implemented %</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-fresh-pct" style="font-size:2rem;font-weight:bold;color:#2196f3;">--</div>
+            <div style="color:#666;">Fresh Evidence %</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-open-poams" style="font-size:2rem;font-weight:bold;color:#f44336;">--</div>
+            <div style="color:#666;">Open POAMs</div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 4. Control Family Heatmap                                          -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">Control Family Heatmap</h2>
+    <div id="family-heatmap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:0.5rem;margin:1rem 0;">
+        <div style="padding:1rem;text-align:center;color:#999;">Loading...</div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 5. Evidence Stream Table                                           -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">Evidence Stream</h2>
+    <div style="margin-bottom:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        <label style="font-weight:600;font-size:0.9rem;">Filter:</label>
+        <select id="filter-ev-status" onchange="loadEvidence()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:0.85rem;">
+            <option value="">All Status</option>
+            <option value="current">Current</option>
+            <option value="stale">Stale</option>
+            <option value="expired">Expired</option>
+            <option value="superseded">Superseded</option>
+        </select>
+        <select id="filter-ev-type" onchange="loadEvidence()" style="padding:0.3rem 0.6rem;border:1px solid #ccc;border-radius:4px;background:#fff;font-size:0.85rem;">
+            <option value="">All Types</option>
+            <option value="scan_result">Scan Result</option>
+            <option value="test_result">Test Result</option>
+            <option value="config_check">Config Check</option>
+            <option value="manual_review">Manual Review</option>
+            <option value="attestation">Attestation</option>
+            <option value="artifact">Artifact</option>
+        </select>
+    </div>
+    <div class="table-container" style="overflow-x:auto;">
+        <table id="tbl-evidence" style="width:100%;border-collapse:collapse;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;">
+                    <th style="text-align:left;padding:0.5rem;cursor:pointer;" onclick="sortEvidence('control_id')">Control ID</th>
+                    <th style="text-align:left;padding:0.5rem;cursor:pointer;" onclick="sortEvidence('evidence_type')">Type</th>
+                    <th style="text-align:left;padding:0.5rem;cursor:pointer;" onclick="sortEvidence('evidence_source')">Source</th>
+                    <th style="text-align:center;padding:0.5rem;cursor:pointer;" onclick="sortEvidence('status')">Status</th>
+                    <th style="text-align:center;padding:0.5rem;">Freshness</th>
+                    <th style="text-align:left;padding:0.5rem;">Automation</th>
+                    <th style="text-align:left;padding:0.5rem;cursor:pointer;" onclick="sortEvidence('collected_at')">Collected At</th>
+                    <th style="text-align:left;padding:0.5rem;">Expires At</th>
+                </tr>
+            </thead>
+            <tbody id="evidence-body">
+                <tr><td colspan="8" style="padding:1rem;text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div id="evidence-pagination" style="display:flex;justify-content:center;gap:0.5rem;margin:1rem 0;"></div>
+
+    <!-- ================================================================= -->
+    <!-- 6. Activity Timeline                                               -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">Evidence Collection Timeline</h2>
+    <div id="timeline-chart" style="display:flex;align-items:flex-end;gap:4px;height:160px;padding:1rem 0;border-bottom:1px solid #ddd;overflow-x:auto;">
+        <div style="color:#999;margin:auto;">Loading timeline...</div>
+    </div>
+    <div id="timeline-labels" style="display:flex;gap:4px;font-size:0.65rem;color:#999;overflow-x:auto;"></div>
+
+    <!-- ================================================================= -->
+    <!-- 7. Refresh Evidence                                                -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">Refresh Evidence</h2>
+    <div style="margin:1rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:8px;background:#fafafa;">
+        <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;">
+            <div style="flex:1;min-width:200px;">
+                <label for="refresh-project" style="display:block;font-weight:600;margin-bottom:0.3rem;">Project ID</label>
+                <input id="refresh-project" type="text" placeholder="e.g., proj-001" style="width:100%;padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;">
+            </div>
+            <button onclick="refreshEvidence()" style="padding:0.5rem 1.5rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.9rem;white-space:nowrap;">Refresh Stale Evidence</button>
+        </div>
+        <div id="refresh-result" style="margin-top:0.75rem;font-size:0.9rem;"></div>
+    </div>
+</div>
+
+<script>
+/* ========================================================================
+   Continuous ATO Dashboard — inline JS, no external libraries
+   ======================================================================== */
+
+const API = '/api/cato';
+let evidenceData = [];
+let evidenceSortCol = 'collected_at';
+let evidenceSortAsc = false;
+let evidencePage = 1;
+
+// --- Status badge helper ---
+function statusBadge(status) {
+    const colors = {
+        current: '#4caf50', stale: '#ff9800', expired: '#f44336',
+        superseded: '#9e9e9e', certified: '#4caf50', in_progress: '#2196f3',
+        submitted: '#ff9800', under_review: '#ff9800', denied: '#f44336',
+        revoked: '#f44336', open: '#f44336', completed: '#4caf50',
+        accepted_risk: '#ff9800', implemented: '#4caf50',
+        partially_implemented: '#ff9800', planned: '#2196f3',
+        not_applicable: '#9e9e9e', compensating: '#9c27b0'
+    };
+    const c = colors[status] || '#9e9e9e';
+    return `<span style="display:inline-block;padding:0.15rem 0.5rem;border-radius:12px;background:${c};color:#fff;font-size:0.75rem;font-weight:600;">${(status || '').replace(/_/g, ' ')}</span>`;
+}
+
+function heatColor(pct) {
+    if (pct >= 90) return '#2e7d32';
+    if (pct >= 75) return '#4caf50';
+    if (pct >= 50) return '#ff9800';
+    if (pct >= 25) return '#f44336';
+    return '#b71c1c';
+}
+
+function gaugeColor(score) {
+    if (score >= 80) return '#4caf50';
+    if (score >= 50) return '#ff9800';
+    return '#f44336';
+}
+
+// --- 1. Health Gauge ---
+async function loadHealth() {
+    try {
+        const res = await fetch(`${API}/health`);
+        const d = await res.json();
+        if (d.error) return;
+
+        const score = d.health_score;
+        const color = gaugeColor(score);
+        const deg = (score / 100) * 360;
+
+        document.getElementById('health-gauge').style.background =
+            `conic-gradient(${color} 0deg, ${color} ${deg}deg, #e0e0e0 ${deg}deg, #e0e0e0 360deg)`;
+        document.getElementById('health-score').textContent = score;
+        document.getElementById('health-score').style.color = color;
+
+        const c = d.components;
+        document.getElementById('sub-evidence').textContent = c.evidence_freshness + '%';
+        document.getElementById('bar-evidence').style.width = c.evidence_freshness + '%';
+        document.getElementById('bar-evidence').style.background = gaugeColor(c.evidence_freshness);
+
+        document.getElementById('sub-controls').textContent = c.control_implementation + '%';
+        document.getElementById('bar-controls').style.width = c.control_implementation + '%';
+        document.getElementById('bar-controls').style.background = gaugeColor(c.control_implementation);
+
+        document.getElementById('sub-poam').textContent = c.poam_resolution + '%';
+        document.getElementById('bar-poam').style.width = c.poam_resolution + '%';
+        document.getElementById('bar-poam').style.background = gaugeColor(c.poam_resolution);
+
+        document.getElementById('sub-cert').textContent = c.certification_status + '%';
+        document.getElementById('bar-cert').style.width = c.certification_status + '%';
+        document.getElementById('bar-cert').style.background = gaugeColor(c.certification_status);
+
+        // Update stats from health data
+        document.getElementById('stat-fresh-pct').textContent = c.evidence_freshness + '%';
+        document.getElementById('stat-implemented-pct').textContent = c.control_implementation + '%';
+    } catch (e) {
+        console.error('Health load error:', e);
+    }
+}
+
+// --- 2. Certification Cards ---
+async function loadCertifications() {
+    try {
+        const res = await fetch(`${API}/certifications`);
+        const d = await res.json();
+        const container = document.getElementById('cert-cards');
+
+        if (!d.certifications || d.certifications.length === 0) {
+            container.innerHTML = '<div style="padding:1.5rem;border:1px solid #eee;border-radius:8px;text-align:center;color:#999;">No certifications found</div>';
+            return;
+        }
+
+        container.innerHTML = d.certifications.map(cert => {
+            let borderColor = '#ddd';
+            if (cert.expiration_warning === 'expired') borderColor = '#f44336';
+            else if (cert.expiration_warning === 'expiring_soon') borderColor = '#ff9800';
+
+            const daysRemaining = cert.days_remaining || 0;
+            const maxDays = 365;
+            const progressPct = Math.max(0, Math.min(100, (daysRemaining / maxDays) * 100));
+            const progressColor = daysRemaining < 0 ? '#f44336' : daysRemaining <= 90 ? '#ff9800' : '#4caf50';
+
+            const riskColors = { low: '#4caf50', moderate: '#ff9800', high: '#f44336', critical: '#b71c1c' };
+            const riskColor = riskColors[cert.risk_level] || '#9e9e9e';
+
+            return `
+            <div style="padding:1.25rem;border:2px solid ${borderColor};border-radius:8px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                    <strong style="font-size:1rem;">${cert.project_id || 'Unknown'}</strong>
+                    ${statusBadge(cert.status)}
+                </div>
+                <div style="font-size:0.85rem;color:#555;margin-bottom:0.5rem;">
+                    <div><strong>Certified:</strong> ${cert.certified_date || 'N/A'}</div>
+                    <div><strong>Expires:</strong> ${cert.expiration_date || 'N/A'}</div>
+                    <div><strong>Authorizing Official:</strong> ${cert.authorizing_official || 'N/A'}</div>
+                    <div><strong>Risk Level:</strong> <span style="color:${riskColor};font-weight:600;">${(cert.risk_level || 'N/A').toUpperCase()}</span></div>
+                </div>
+                <div style="margin-top:0.5rem;">
+                    <div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:0.2rem;">
+                        <span>Days Remaining</span>
+                        <span style="font-weight:600;color:${progressColor};">${daysRemaining}</span>
+                    </div>
+                    <div style="height:8px;background:#eee;border-radius:4px;overflow:hidden;">
+                        <div style="height:100%;width:${progressPct}%;background:${progressColor};border-radius:4px;"></div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        console.error('Certifications load error:', e);
+    }
+}
+
+// --- 3. Stats (controls + POAMs) ---
+async function loadStats() {
+    try {
+        // Controls stats
+        const cRes = await fetch(`${API}/controls`);
+        const cData = await cRes.json();
+        if (cData.families) {
+            let total = 0, implemented = 0;
+            cData.families.forEach(f => {
+                total += f.total;
+                implemented += f.implemented + (f.not_applicable || 0);
+            });
+            document.getElementById('stat-total-controls').textContent = total;
+            if (total > 0) {
+                document.getElementById('stat-implemented-pct').textContent =
+                    Math.round((implemented / total) * 100) + '%';
+            }
+        }
+
+        // Evidence stats (use page 1 total)
+        const eRes = await fetch(`${API}/evidence?per_page=1`);
+        const eData = await eRes.json();
+        // fresh evidence already loaded from health
+
+        // Open POAMs — derive from health response
+        // We'll use a separate lightweight query via evidence endpoint
+    } catch (e) {
+        console.error('Stats load error:', e);
+    }
+}
+
+async function loadOpenPoams() {
+    try {
+        const res = await fetch('/api/compliance/poam?status=open');
+        const d = await res.json();
+        document.getElementById('stat-open-poams').textContent = d.total || 0;
+    } catch (e) {
+        // Fallback: show '--'
+        document.getElementById('stat-open-poams').textContent = '--';
+    }
+}
+
+// --- 4. Control Family Heatmap ---
+async function loadHeatmap() {
+    try {
+        const res = await fetch(`${API}/controls`);
+        const d = await res.json();
+        const container = document.getElementById('family-heatmap');
+
+        const allFamilies = ['AC','AU','AT','CM','CP','IA','IR','MA','MP','PE','PL','PM','PS','RA','SA','SC','SI','SR'];
+        const familyMap = {};
+        if (d.families) {
+            d.families.forEach(f => { familyMap[f.family] = f; });
+        }
+
+        container.innerHTML = allFamilies.map(fam => {
+            const data = familyMap[fam];
+            const pct = data ? data.implementation_pct : 0;
+            const bg = heatColor(pct);
+            const tooltip = data ? `${fam}: ${pct}% (${data.implemented}/${data.total} implemented)` : `${fam}: No data`;
+            return `
+            <div title="${tooltip}" style="padding:0.75rem;border-radius:6px;background:${bg};color:#fff;text-align:center;cursor:default;min-width:80px;">
+                <div style="font-weight:bold;font-size:1.1rem;">${fam}</div>
+                <div style="font-size:0.8rem;opacity:0.9;">${pct}%</div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        console.error('Heatmap load error:', e);
+    }
+}
+
+// --- 5. Evidence Stream Table ---
+async function loadEvidence() {
+    try {
+        const status = document.getElementById('filter-ev-status').value;
+        const etype = document.getElementById('filter-ev-type').value;
+        let url = `${API}/evidence?page=${evidencePage}&per_page=25`;
+        if (status) url += `&status=${status}`;
+        if (etype) url += `&evidence_type=${etype}`;
+
+        const res = await fetch(url);
+        const d = await res.json();
+        evidenceData = d.evidence || [];
+
+        const tbody = document.getElementById('evidence-body');
+        if (evidenceData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" style="padding:1rem;text-align:center;color:#999;">No evidence records found</td></tr>';
+        } else {
+            tbody.innerHTML = evidenceData.map(ev => `
+                <tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:0.5rem;font-family:monospace;font-size:0.85rem;">${ev.control_id || ''}</td>
+                    <td style="padding:0.5rem;font-size:0.85rem;">${(ev.evidence_type || '').replace(/_/g, ' ')}</td>
+                    <td style="padding:0.5rem;font-size:0.85rem;">${ev.evidence_source || ''}</td>
+                    <td style="padding:0.5rem;text-align:center;">${statusBadge(ev.status)}</td>
+                    <td style="padding:0.5rem;text-align:center;">${ev.is_fresh ? '<span style="color:#4caf50;font-weight:bold;">Fresh</span>' : '<span style="color:#f44336;font-weight:bold;">Stale</span>'}</td>
+                    <td style="padding:0.5rem;font-size:0.85rem;">${ev.automation_frequency || 'manual'}</td>
+                    <td style="padding:0.5rem;font-size:0.85rem;">${ev.collected_at || ''}</td>
+                    <td style="padding:0.5rem;font-size:0.85rem;">${ev.expires_at || ''}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Pagination
+        const totalPages = Math.ceil((d.total || 0) / (d.per_page || 25));
+        const pagDiv = document.getElementById('evidence-pagination');
+        if (totalPages > 1) {
+            let html = '';
+            for (let p = 1; p <= Math.min(totalPages, 10); p++) {
+                const active = p === evidencePage;
+                html += `<button onclick="goEvidencePage(${p})" style="padding:0.3rem 0.6rem;border:1px solid ${active ? '#1976d2' : '#ccc'};border-radius:4px;background:${active ? '#1976d2' : '#fff'};color:${active ? '#fff' : '#333'};cursor:pointer;font-size:0.8rem;">${p}</button>`;
+            }
+            pagDiv.innerHTML = html;
+        } else {
+            pagDiv.innerHTML = '';
+        }
+    } catch (e) {
+        console.error('Evidence load error:', e);
+    }
+}
+
+function goEvidencePage(p) {
+    evidencePage = p;
+    loadEvidence();
+}
+
+function sortEvidence(col) {
+    if (evidenceSortCol === col) evidenceSortAsc = !evidenceSortAsc;
+    else { evidenceSortCol = col; evidenceSortAsc = true; }
+    evidenceData.sort((a, b) => {
+        const va = (a[col] || '').toString();
+        const vb = (b[col] || '').toString();
+        return evidenceSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    });
+    const tbody = document.getElementById('evidence-body');
+    tbody.innerHTML = evidenceData.map(ev => `
+        <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:0.5rem;font-family:monospace;font-size:0.85rem;">${ev.control_id || ''}</td>
+            <td style="padding:0.5rem;font-size:0.85rem;">${(ev.evidence_type || '').replace(/_/g, ' ')}</td>
+            <td style="padding:0.5rem;font-size:0.85rem;">${ev.evidence_source || ''}</td>
+            <td style="padding:0.5rem;text-align:center;">${statusBadge(ev.status)}</td>
+            <td style="padding:0.5rem;text-align:center;">${ev.is_fresh ? '<span style="color:#4caf50;font-weight:bold;">Fresh</span>' : '<span style="color:#f44336;font-weight:bold;">Stale</span>'}</td>
+            <td style="padding:0.5rem;font-size:0.85rem;">${ev.automation_frequency || 'manual'}</td>
+            <td style="padding:0.5rem;font-size:0.85rem;">${ev.collected_at || ''}</td>
+            <td style="padding:0.5rem;font-size:0.85rem;">${ev.expires_at || ''}</td>
+        </tr>
+    `).join('');
+}
+
+// --- 6. Activity Timeline ---
+async function loadTimeline() {
+    try {
+        const res = await fetch(`${API}/timeline`);
+        const d = await res.json();
+        const chart = document.getElementById('timeline-chart');
+        const labels = document.getElementById('timeline-labels');
+
+        if (!d.weeks || d.weeks.length === 0) {
+            chart.innerHTML = '<div style="color:#999;margin:auto;">No timeline data</div>';
+            labels.innerHTML = '';
+            return;
+        }
+
+        const weeks = d.weeks.slice().reverse(); // chronological order
+        const maxCount = Math.max(...weeks.map(w => w.count), 1);
+
+        chart.innerHTML = weeks.map(w => {
+            const h = Math.max(4, (w.count / maxCount) * 140);
+            return `<div title="${w.week}: ${w.count} events" style="flex:1;min-width:16px;max-width:40px;height:${h}px;background:#1976d2;border-radius:3px 3px 0 0;cursor:default;"></div>`;
+        }).join('');
+
+        labels.innerHTML = weeks.map((w, i) => {
+            // Show label every 4th bar
+            if (i % 4 === 0) {
+                return `<div style="flex:1;min-width:16px;max-width:40px;text-align:center;">${w.week}</div>`;
+            }
+            return `<div style="flex:1;min-width:16px;max-width:40px;"></div>`;
+        }).join('');
+    } catch (e) {
+        console.error('Timeline load error:', e);
+    }
+}
+
+// --- 7. Refresh Evidence ---
+async function refreshEvidence() {
+    const projectId = document.getElementById('refresh-project').value.trim();
+    const resultDiv = document.getElementById('refresh-result');
+    if (!projectId) {
+        resultDiv.innerHTML = '<span style="color:#f44336;">Please enter a Project ID.</span>';
+        return;
+    }
+    resultDiv.innerHTML = '<span style="color:#666;">Refreshing...</span>';
+    try {
+        const res = await fetch(`${API}/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: projectId })
+        });
+        const d = await res.json();
+        if (d.error) {
+            resultDiv.innerHTML = `<span style="color:#f44336;">Error: ${d.error}</span>`;
+        } else {
+            resultDiv.innerHTML = `<span style="color:#4caf50;">${d.message}</span>`;
+            // Reload data after refresh
+            loadHealth();
+            loadEvidence();
+        }
+    } catch (e) {
+        resultDiv.innerHTML = `<span style="color:#f44336;">Request failed: ${e.message}</span>`;
+    }
+}
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+    loadHealth();
+    loadCertifications();
+    loadStats();
+    loadOpenPoams();
+    loadHeatmap();
+    loadEvidence();
+    loadTimeline();
+});
+</script>
+{% endblock %}
