@@ -172,7 +172,7 @@ class EMASSClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-Classification": "CUI",
-            "User-Agent": "ICDEV™-Compliance-Engine/1.0",
+            "User-Agent": "ICDEV-Compliance-Engine/1.0",
         })
 
         # eMASS API key header (required in addition to PKI).

@@ -163,7 +163,7 @@ flowchart TD
 {% block scripts %}
 <script>
 (function() {
-    if (!window.ICDEV™ || !ICDEV.donutChart) return;
+    if (!window.ICDEV || !ICDEV.donutChart) return;
     var alerts = {{ alerts | tojson }};
     if (alerts.length > 0) {
         var sevCounts = {};

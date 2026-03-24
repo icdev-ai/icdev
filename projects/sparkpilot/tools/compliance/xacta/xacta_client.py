@@ -121,7 +121,7 @@ class XactaClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "X-Classification": "CUI",
-            "User-Agent": "ICDEV™-Compliance-Engine/1.0",
+            "User-Agent": "ICDEV-Compliance-Engine/1.0",
         })
 
         # PKI/certificate-based auth

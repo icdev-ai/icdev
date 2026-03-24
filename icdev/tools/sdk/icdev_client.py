@@ -7,9 +7,9 @@ Works offline, air-gap safe, no server dependency.  Project-scoped —
 set project_id once, use everywhere.
 
 Usage:
-    from icdev.tools.sdk.icdev_client import ICDEV™Client
+    from icdev.tools.sdk.icdev_client import ICDEVClient
 
-    client = ICDEV™Client(project_id="proj-123", project_dir="/path/to/project")
+    client = ICDEVClient(project_id="proj-123", project_dir="/path/to/project")
     status = client.project_status()
     ssp = client.generate_ssp()
     stig = client.check_stig()
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 BASE_DIR = get_project_root()
-class ICDEV™Error(Exception):
+class ICDEVError(Exception):
     """Raised when an ICDEV™ CLI tool returns a non-zero exit code."""
 
     def __init__(self, tool: str, returncode: int, stderr: str):
@@ -33,7 +33,7 @@ class ICDEV™Error(Exception):
         super().__init__(f"ICDEV™ tool '{tool}' failed (exit {returncode}): {stderr}")
 
 
-class ICDEV™Client:
+class ICDEVClient:
     """Thin Python SDK wrapping ICDEV™ CLI tools.
 
     Args:
@@ -67,7 +67,7 @@ class ICDEV™Client:
             Parsed JSON dict from tool stdout.
 
         Raises:
-            ICDEV™Error: If tool exits with non-zero code.
+            ICDEVError: If tool exits with non-zero code.
         """
         full_path = str(BASE_DIR / tool_path)
         cmd = [self._python, full_path] + (args or []) + ["--json"]
@@ -82,7 +82,7 @@ class ICDEV™Client:
         )
 
         if result.returncode != 0:
-            raise ICDEV™Error(tool_path, result.returncode, result.stderr.strip())
+            raise ICDEVError(tool_path, result.returncode, result.stderr.strip())
 
         try:
             return json.loads(result.stdout)

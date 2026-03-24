@@ -330,7 +330,7 @@ def scan_community_forums(config, session_config=None):
         keyword_filter = [kw.lower() for kw in (session_config or {}).get("keywords", [])]
 
         headers = {
-            "User-Agent": "ICDEV™-ResearchEngine/1.0 (GovTech research; CUI // SP-CTI)",
+            "User-Agent": "ICDEV-ResearchEngine/1.0 (GovTech research; CUI // SP-CTI)",
         }
 
         for subreddit in subreddits:
@@ -501,7 +501,7 @@ def scan_review_sites(config, session_config=None):
 
     delay = _rate_delay(config, "review_site")
     headers = {
-        "User-Agent": "ICDEV™-ResearchEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-ResearchEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -1032,7 +1032,7 @@ def scan_saas_commercial(config, session_config=None):
 
     delay = source_cfg.get("rate_limit", {}).get("delay_between_requests_seconds", 3)
     headers = {
-        "User-Agent": "ICDEV™-ResearchEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-ResearchEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -1176,7 +1176,7 @@ def scan_news_blogs(config, session_config=None):
 
     delay = source_cfg.get("rate_limit", {}).get("delay_between_requests_seconds", 3)
     headers = {
-        "User-Agent": "ICDEV™-ResearchEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-ResearchEngine/1.0 (GovTech research)",
         "Accept": "application/rss+xml, application/xml, text/xml, text/html",
     }
 
@@ -1318,7 +1318,7 @@ def scan_patents(config, session_config=None):
 
     delay = source_cfg.get("rate_limit", {}).get("delay_between_requests_seconds", 3)
     headers = {
-        "User-Agent": "ICDEV™-ResearchEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-ResearchEngine/1.0 (GovTech research)",
         "Accept": "text/html",
     }
 

@@ -31,7 +31,6 @@ from tools.databridge.connector import (
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
-    ConnectorType,
     SchemaDefinition,
     SchemaField,
 )

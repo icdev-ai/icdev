@@ -130,7 +130,7 @@ def _safe_get(url, headers=None, params=None, as_text=False):
     try:
         hdrs = headers or {}
         hdrs.setdefault("User-Agent",
-                        "Mozilla/5.0 (compatible; ICDEV™Bot/1.0; +https://icdev.local)")
+                        "Mozilla/5.0 (compatible; ICDEVBot/1.0; +https://icdev.local)")
         resp = _requests.get(url, headers=hdrs, params=params, timeout=30)
         if resp.status_code in (403, 429):
             return None, "rate_limited" if resp.status_code == 429 else "forbidden"

@@ -1452,7 +1452,7 @@ def _extract_and_fetch_urls(text):
     for url in urls[:3]:  # limit to 3 URLs per message
         try:
             resp = _requests.get(url, timeout=10, headers={
-                "User-Agent": "ICDEV™-Intake-Agent/1.0",
+                "User-Agent": "ICDEV-Intake-Agent/1.0",
                 "Accept": "text/html,application/json,text/plain",
             })
             resp.raise_for_status()

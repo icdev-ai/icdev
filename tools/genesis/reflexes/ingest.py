@@ -52,7 +52,7 @@ def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
     """Fetch URL content."""
     try:
         headers = {
-            "User-Agent": "ICDEV™-Genesis/2.0 (Ingest Reflex)",
+            "User-Agent": "ICDEV-Genesis/2.0 (Ingest Reflex)",
             "Accept": "application/xml, application/json, text/xml, */*",
         }
         req = Request(url, headers=headers)

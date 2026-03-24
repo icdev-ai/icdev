@@ -250,7 +250,7 @@ def _parse_rss_feed(url: str, filter_keywords: List[str] = None,
 
     try:
         resp = requests.get(url, timeout=timeout, headers={
-            "User-Agent": "ICDEV™-CSP-Monitor/1.0"
+            "User-Agent": "ICDEV-CSP-Monitor/1.0"
         })
         resp.raise_for_status()
     except Exception as exc:

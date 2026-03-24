@@ -6,7 +6,7 @@ Covers:
   - All constant categories exist and follow naming conventions
   - GenAI operation, system, agent constants
   - GenAI request/response/usage constants
-  - ICDEV™ extension constants
+  - ICDEV extension constants
   - MCP tool call constants (D284)
   - A2A constants (D285)
   - Span names and kinds
@@ -79,7 +79,7 @@ class TestGenAIUsage:
 # ICDEV™ Extensions
 # ---------------------------------------------------------------------------
 
-class TestICDEV™Extensions:
+class TestICDEVExtensions:
     def test_thinking_tokens(self):
         assert ga.GEN_AI_USAGE_THINKING_TOKENS == "gen_ai.usage.thinking_tokens"
 
@@ -139,7 +139,7 @@ class TestA2AAttributes:
 # ICDEV™ Metadata
 # ---------------------------------------------------------------------------
 
-class TestICDEV™Metadata:
+class TestICDEVMetadata:
     def test_project_id(self):
         assert ga.ICDEV_PROJECT_ID == "icdev.project_id"
 

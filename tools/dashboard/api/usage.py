@@ -6,7 +6,6 @@ Provides per-user token aggregation, per-provider breakdown, and cost estimates.
 Admin sees all users' usage; others see only their own.
 """
 
-import sqlite3
 from tools.db.storage import get_connection
 
 from flask import Blueprint, g, jsonify, request
@@ -47,7 +46,10 @@ DEFAULT_COST_PER_1K = {
 def _estimate_cost(model_id, input_tokens, output_tokens):
     """Estimate cost in USD from token counts."""
     rates = DEFAULT_COST_PER_1K.get(model_id, {"input": 0.003, "output": 0.015})
-    cost = (input_tokens / 1000.0) * rates["input"] + (output_tokens / 1000.0) * rates["output"]
+    cost = (
+        (input_tokens / 1000.0) * rates["input"]
+        + (output_tokens / 1000.0) * rates["output"]
+    )
     return round(cost, 6)
 
 
@@ -59,8 +61,6 @@ def _estimate_cost(model_id, input_tokens, output_tokens):
 @usage_api.route("/summary")
 def usage_summary():
     """Overall usage summary by agent."""
-    user = _get_user()
-
     conn = _get_db()
     try:
         rows = conn.execute(
@@ -84,8 +84,6 @@ def usage_summary():
 @usage_api.route("/by-provider")
 def usage_by_provider():
     """Token usage breakdown by provider/model."""
-    user = _get_user()
-
     conn = _get_db()
     try:
         rows = conn.execute(
@@ -110,8 +108,6 @@ def usage_by_provider():
 @usage_api.route("/time-series")
 def usage_time_series():
     """Daily token usage over time for charting."""
-    user = _get_user()
-
     days = min(int(request.args.get("days", "30")), 90)
     conn = _get_db()
     try:
@@ -143,8 +139,6 @@ def usage_time_series():
 @usage_api.route("/totals")
 def usage_totals():
     """Grand totals for stat cards."""
-    user = _get_user()
-
     conn = _get_db()
     try:
         row = conn.execute(

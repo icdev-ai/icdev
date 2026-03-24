@@ -322,7 +322,7 @@ def scan_g2(config, competitors=None):
         return signals
 
     headers = {
-        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -428,7 +428,7 @@ def scan_capterra(config, competitors=None):
         return signals
 
     headers = {
-        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -529,7 +529,7 @@ def scan_trustradius(config, competitors=None):
         return signals
 
     headers = {
-        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -635,7 +635,7 @@ def scan_reddit(config, competitors=None):
     delay = _rate_delay(config, "community_forums")
 
     headers = {
-        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research; CUI // SP-CTI)",
+        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research; CUI // SP-CTI)",
     }
 
     for subreddit in subreddits:
@@ -826,7 +826,7 @@ def scan_producthunt(config, competitors=None):
     max_results = ph_config.get("max_results", 20)
 
     headers = {
-        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
         "Accept": "application/json, text/html",
     }
 
@@ -929,7 +929,7 @@ def scan_govcon_blogs(config, competitors=None):
     delay = _rate_delay(config, "community_forums")
 
     headers = {
-        "User-Agent": "ICDEV™-CreativeEngine/1.0 (GovTech research)",
+        "User-Agent": "ICDEV-CreativeEngine/1.0 (GovTech research)",
         "Accept": "text/html, application/json",
     }
 

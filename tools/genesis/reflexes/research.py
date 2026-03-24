@@ -56,7 +56,7 @@ def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
     """Fetch URL content.  Returns None on failure."""
     try:
         headers = {
-            "User-Agent": "ICDEV™-Genesis/2.0 (Research Reflex)",
+            "User-Agent": "ICDEV-Genesis/2.0 (Research Reflex)",
             "Accept": "application/xml, application/rss+xml, application/json, text/xml, */*",
         }
         req = Request(url, headers=headers)

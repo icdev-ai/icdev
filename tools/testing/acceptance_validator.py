@@ -179,7 +179,7 @@ def check_page(base_url: str, page_path: str, timeout: int = 10) -> UIPageCheckR
     result = UIPageCheckResult(url=url)
 
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "ICDEV™-AcceptanceValidator/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-AcceptanceValidator/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             result.status_code = resp.status
             html = resp.read().decode("utf-8", errors="replace")

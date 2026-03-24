@@ -70,7 +70,7 @@ def _score_relevance(text: str) -> float:
 
 def _fetch_json(url: str, headers: dict = None, timeout: int = 15) -> dict:
     """Fetch JSON from URL with timeout and user-agent."""
-    hdrs = {"User-Agent": "ICDEV™-Scout/1.0 (autonomous research scanner)"}
+    hdrs = {"User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"}
     if headers:
         hdrs.update(headers)
     req = urllib.request.Request(url, headers=hdrs)
@@ -227,7 +227,7 @@ def _scan_arxiv(config: dict) -> List[dict]:
 
     try:
         req = urllib.request.Request(url, headers={
-            "User-Agent": "ICDEV™-Scout/1.0 (autonomous research scanner)"
+            "User-Agent": "ICDEV-Scout/1.0 (autonomous research scanner)"
         })
         with urllib.request.urlopen(req, timeout=20) as resp:  # nosec B310 — arXiv API
             xml_text = resp.read().decode("utf-8")

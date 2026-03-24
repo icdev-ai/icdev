@@ -1471,3 +1471,11 @@
 | Cascade Bridge | tools\simulation\cascade_bridge.py | Auto-registered: simulation/cascade_bridge.py | --json | JSON |
 | Query Parser | tools\simulation\query_parser.py | Auto-registered: simulation/query_parser.py | --json | JSON |
 | Risk Monitor | tools\simulation\risk_monitor.py | Auto-registered: simulation/risk_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Injection Scanner | tools\security\injection_scanner.py | Auto-registered: security/injection_scanner.py | --json | JSON |
+| Telegram Listener | tools\notifications\adapters\telegram_listener.py | Auto-registered: adapters/telegram_listener.py | --json | JSON |
+| Telegram Connector | tools\databridge\connectors\telegram_connector.py | Auto-registered: connectors/telegram_connector.py | --json | JSON |

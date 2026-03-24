@@ -165,7 +165,7 @@ class _ErrorHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             self.wfile.write(
-                b"<html><body><script>ReferenceError: ICDEV™ is not defined</script></body></html>"
+                b"<html><body><script>ReferenceError: ICDEV is not defined</script></body></html>"
             )
         else:
             self.send_response(200)
