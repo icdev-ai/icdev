@@ -163,13 +163,13 @@ flowchart TD
 {% block scripts %}
 <script>
 (function() {
-    if (!window.ICDEV™ || !ICDEV™.donutChart) return;
+    if (!window.ICDEV™ || !ICDEV.donutChart) return;
     var alerts = {{ alerts | tojson }};
     if (alerts.length > 0) {
         var sevCounts = {};
         var sevColors = { critical: '#dc3545', high: '#e8590c', medium: '#ffc107', low: '#28a745', info: '#4a90d9' };
         alerts.forEach(function(a) { var s = a.severity || 'info'; sevCounts[s] = (sevCounts[s] || 0) + 1; });
-        ICDEV™.donutChart('chart-mon-severity', {
+        ICDEV.donutChart('chart-mon-severity', {
             segments: Object.keys(sevCounts).map(function(s) {
                 return { label: s, value: sevCounts[s], color: sevColors[s] || '#6c6c80' };
             }),
@@ -178,7 +178,7 @@ flowchart TD
         var statCounts = {};
         var statColors = { firing: '#dc3545', resolved: '#28a745', acknowledged: '#ffc107' };
         alerts.forEach(function(a) { var s = a.status || 'unknown'; statCounts[s] = (statCounts[s] || 0) + 1; });
-        ICDEV™.donutChart('chart-mon-status', {
+        ICDEV.donutChart('chart-mon-status', {
             segments: Object.keys(statCounts).map(function(s) {
                 return { label: s, value: statCounts[s], color: statColors[s] || '#6c6c80' };
             }),
