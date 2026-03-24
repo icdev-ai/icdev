@@ -67,6 +67,11 @@ from tools.dashboard.api.fedramp_20x import fedramp_20x_api  # noqa: E402
 from tools.dashboard.api.evidence import evidence_api  # noqa: E402
 from tools.dashboard.api.lineage import lineage_api  # noqa: E402
 from tools.dashboard.api.filesync import filesync_api  # noqa: E402
+from tools.dashboard.api.security_scan import security_scan_api  # noqa: E402
+from tools.dashboard.api.migration import migration_api  # noqa: E402
+from tools.dashboard.api.sbd import sbd_api  # noqa: E402
+from tools.dashboard.api.pr_intel import pr_intel_api  # noqa: E402
+from tools.dashboard.api.iac import iac_api  # noqa: E402
 try:
     from tools.dashboard.api.finetune import finetune_api  # noqa: E402
     _HAS_FINETUNE_API = True
@@ -805,6 +810,11 @@ def create_app() -> Flask:
     app.register_blueprint(evidence_api)
     app.register_blueprint(lineage_api)
     app.register_blueprint(filesync_api)
+    app.register_blueprint(security_scan_api)
+    app.register_blueprint(migration_api)
+    app.register_blueprint(sbd_api)
+    app.register_blueprint(pr_intel_api)
+    app.register_blueprint(iac_api)
     if _HAS_FINETUNE_API:
         app.register_blueprint(finetune_api)
     if _HAS_RAG_EVAL_API:
@@ -2055,6 +2065,35 @@ def create_app() -> Flask:
         except Exception:
             pass
         return render_template("simulation.html", stats=stats, scenarios=scenarios)
+
+    # ------------------------------------------------------------------
+    # Phase 73: Cloud Migration Security Pages (5 new dashboard pages)
+    # ------------------------------------------------------------------
+
+    @app.route("/security-scan")
+    def security_scan_page():
+        """Security Scan Results — multi-layer scanning dashboard (SAST, dependency, secret, container)."""
+        return render_template("security_scan.html")
+
+    @app.route("/migration")
+    def migration_page():
+        """Application Migration Tracker — 7R strategy assessment with compliance impact scoring."""
+        return render_template("migration.html")
+
+    @app.route("/sbd")
+    def sbd_page():
+        """CISA Secure by Design Assessment — 8-pillar assessment with automated gating."""
+        return render_template("sbd.html")
+
+    @app.route("/pr-intel")
+    def pr_intel_page():
+        """PR Intelligence — compliance drift detection at the pull request level."""
+        return render_template("pr_intel.html")
+
+    @app.route("/iac")
+    def iac_page():
+        """IaC Gallery — STIG-hardened Infrastructure as Code for multi-cloud IL2-IL6."""
+        return render_template("iac.html")
 
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():

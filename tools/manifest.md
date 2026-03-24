@@ -1463,3 +1463,11 @@
 | Kg Seeder | tools\trading\market_intel\kg_seeder.py | Auto-registered: market_intel/kg_seeder.py | --json | JSON |
 | Scenario Engine | tools\trading\market_intel\scenario_engine.py | Auto-registered: market_intel/scenario_engine.py | --json | JSON |
 | Universe | tools\trading\market_intel\universe.py | Auto-registered: market_intel/universe.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cascade Bridge | tools\simulation\cascade_bridge.py | Auto-registered: simulation/cascade_bridge.py | --json | JSON |
+| Query Parser | tools\simulation\query_parser.py | Auto-registered: simulation/query_parser.py | --json | JSON |
+| Risk Monitor | tools\simulation\risk_monitor.py | Auto-registered: simulation/risk_monitor.py | --json | JSON |

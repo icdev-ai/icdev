@@ -44,12 +44,24 @@
 
             <!-- Compliance & Security -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/oscal', '/prod-audit', '/ai-transparency', '/ai-accountability'] %}active{% endif %}">Compliance</a>
+                <a href="#" class="{% if request.path in ['/oscal', '/prod-audit', '/ai-transparency', '/ai-accountability', '/sbd', '/evidence', '/lineage'] %}active{% endif %}">Compliance</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/oscal">OSCAL</a></li>
                     <li><a href="/prod-audit">Production Audit</a></li>
                     <li><a href="/ai-transparency">AI Transparency</a></li>
                     <li><a href="/ai-accountability">AI Accountability</a></li>
+                    <li><a href="/sbd">Secure by Design</a></li>
+                </ul>
+            </li>
+
+            <!-- Security & Migration -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/security-scan', '/migration', '/pr-intel', '/iac'] %}active{% endif %}">Security</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/security-scan">Security Scans</a></li>
+                    <li><a href="/pr-intel">PR Intelligence</a></li>
+                    <li><a href="/migration">Migration</a></li>
+                    <li><a href="/iac">IaC Gallery</a></li>
                 </ul>
             </li>
 
