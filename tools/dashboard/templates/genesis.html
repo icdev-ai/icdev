@@ -306,12 +306,49 @@ function refreshStatus() {
             const breakers = Object.values(data.reflexes || {}).filter(r => r.circuit_breaker_open).length;
             document.getElementById('g-breakers').textContent = breakers;
             document.getElementById('g-audit-events').textContent = data.audit?.events_last_24h || 0;
+
+            // Rebuild reflex table rows from API data
+            const reflexes = data.reflexes || {};
+            const tbody = document.querySelector('#g-reflex-table tbody');
+            if (tbody && Object.keys(reflexes).length > 0) {
+                tbody.innerHTML = '';
+                Object.entries(reflexes).forEach(([name, info]) => {
+                    const tierClass = info.risk_tier === 'green' ? 'badge-green' :
+                        info.risk_tier === 'yellow' ? 'badge-yellow' : 'badge-orange';
+                    let statusBadge;
+                    if (info.circuit_breaker_open) {
+                        statusBadge = '<span class="badge badge-red">TRIPPED</span>';
+                    } else if (info.enabled) {
+                        statusBadge = '<span class="badge badge-green">ACTIVE</span>';
+                    } else {
+                        statusBadge = '<span class="badge badge-gray">DISABLED</span>';
+                    }
+                    const lastRun = info.last_run_at ? info.last_run_at.substring(0, 16) : '\u2014';
+                    const metric = info.last_metric_value != null ? info.last_metric_value : '\u2014';
+                    const failClass = info.total_failures > 0 ? 'red' : '';
+                    const tr = document.createElement('tr');
+                    tr.id = 'reflex-row-' + name;
+                    tr.innerHTML = '<td><strong>' + name + '</strong></td>'
+                        + '<td><span class="badge ' + tierClass + '">' + (info.risk_tier || '').toUpperCase() + '</span></td>'
+                        + '<td>' + (info.schedule || '') + '</td>'
+                        + '<td>' + statusBadge + '</td>'
+                        + '<td>' + lastRun + '</td>'
+                        + '<td class="green">' + (info.total_successes || 0) + '</td>'
+                        + '<td class="' + failClass + '">' + (info.total_failures || 0) + '</td>'
+                        + '<td>' + metric + '</td>'
+                        + '<td><button class="btn btn-sm" onclick="runReflex(\'' + name + '\')" id="btn-run-' + name + '">Run</button></td>';
+                    tbody.appendChild(tr);
+                });
+            }
         })
         .catch(e => {
             document.getElementById('g-refresh-btn').textContent = 'Refresh Status';
             alert('Fetch error: ' + e);
         });
 }
+
+// Auto-load reflex status on page load
+document.addEventListener('DOMContentLoaded', function() { refreshStatus(); });
 
 function runReflex(name) {
     const btn = document.getElementById('btn-run-' + name);
