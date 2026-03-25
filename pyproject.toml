@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icdev"
-version = "1.1.1"
-description = "ICDEV™ — Intelligent Certified Development Environment. AI-powered SDLC platform with NIST 800-53 RMF compliance, multi-agent orchestration, and the GOTCHA framework."
+version = "1.2.0"
+description = "ICDEV™ — Intelligent Certified Development Platform. AI-powered SDLC with NIST 800-53 RMF compliance, multi-agent orchestration, FORGE framework, and ANVIL build workflow."
 readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"
 authors = [
     {name = "Sovanna Chuon"},
 ]
-keywords = ["devops", "compliance", "nist", "fedramp", "govcloud", "llm", "agentic", "sdlc", "gotcha"]
+keywords = ["devops", "compliance", "nist", "fedramp", "govcloud", "llm", "agentic", "sdlc", "forge", "anvil"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -41,7 +41,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/icdev-ai/icdev"
+Homepage = "https://icdev.ai/"
 Documentation = "https://github.com/icdev-ai/icdev/tree/main/docs"
 Repository = "https://github.com/icdev-ai/icdev"
 Issues = "https://github.com/icdev-ai/icdev/issues"
