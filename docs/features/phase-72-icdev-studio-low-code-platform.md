@@ -496,7 +496,7 @@ CREATE TABLE studio_workflows (
 - Real code output (6 languages, not proprietary)
 - IL6/SECRET/SIPR deployment
 - Multi-cloud LLM (not locked to AWS Bedrock)
-- Open GOTCHA architecture (not black box)
+- Open FORGE architecture (not black box)
 - SBOM/SLSA/supply-chain built-in
 - Full SDLC (TDD/BDD, CI/CD, IaC) not just app building
 - Marketplace with federated cross-org sync

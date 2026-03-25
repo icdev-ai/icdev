@@ -272,9 +272,9 @@ Capabilities proven in one child can be brokered to other children via the paren
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Discover | Tools | `innovation_manager.py`, `learning_collector.py`, `telemetry_collector.py` |
 | Evaluate | Tools | `capability_evaluator.py` |

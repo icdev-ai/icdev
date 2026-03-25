@@ -5,7 +5,7 @@ Adapted from the Agent Harness pattern of phase-level tool curation:
 each phase receives only the tools it needs, reducing token overhead and
 preventing off-script tool calls.
 
-GOTCHA goals already *suggest* tools per step, but don't *enforce* it.
+FORGE goals already *suggest* tools per step, but don't *enforce* it.
 This module adds programmatic enforcement: given a goal name and phase,
 it returns the allowed tool list and can validate whether a tool call
 is permitted.

@@ -69,7 +69,7 @@
 | Web Scanner | tools/innovation/web_scanner.py | Scan GitHub, NVD, Stack Overflow, HN for innovation signals | --scan, --source, --all, --list-sources, --history, --json | Signals + storage results |
 | Signal Ranker | tools/innovation/signal_ranker.py | 5-dimension weighted innovation scoring (D21 pattern) | --score, --score-all, --top, --calibrate, --json | Scores + breakdowns |
 | Trend Detector | tools/innovation/trend_detector.py | Cross-signal pattern detection via keyword co-occurrence (D207) | --detect, --report, --velocity, --json | Trends + velocity |
-| Triage Engine | tools/innovation/triage_engine.py | 5-stage compliance-first triage pipeline (classify, GOTCHA fit, boundary, compliance, dedup/license) | --triage, --triage-all, --summary, --json | Triage outcomes |
+| Triage Engine | tools/innovation/triage_engine.py | 5-stage compliance-first triage pipeline (classify, FORGE fit, boundary, compliance, dedup/license) | --triage, --triage-all, --summary, --json | Triage outcomes |
 | Solution Generator | tools/innovation/solution_generator.py | Auto-generate solution specs from approved signals (D208) | --generate, --generate-all, --list, --status, --json | Solution specs |
 | Innovation Manager | tools/innovation/innovation_manager.py | Main orchestrator + daemon mode for full pipeline | --run, --discover, --score, --triage, --generate, --daemon, --status, --json | Pipeline results |
 | Introspective Analyzer | tools/innovation/introspective_analyzer.py | Internal telemetry mining (D203) — gate failures, unused tools, slow pipelines, knowledge gaps | --analyze, --type, --all, --json | Analysis findings |
@@ -221,7 +221,7 @@
 | Dev Profile Manager | tools/builder/dev_profile_manager.py | 5-layer cascade dev profiles (Platform→Tenant→Program→Project→User) with version immutability, role-based locks, LLM injection (D183-D188) | --scope, --scope-id, --create, --get, --update, --resolve, --lock, --inject, --diff, --rollback, --json | Profile + cascade |
 | Profile Detector | tools/builder/profile_detector.py | Auto-detect dev profile from repo analysis or natural language text (D185 advisory-only) | --repo-path, --text, --json | Detected dimensions |
 | Profile MD Generator | tools/builder/profile_md_generator.py | Generate PROFILE.md from resolved dev profile via Jinja2 (D186) | --scope, --scope-id, --output, --store, --json | PROFILE.md path |
-| GOTCHA Validator | tools/builder/gotcha_validator.py | Validate GOTCHA framework compliance for child apps (6 layers + 4 meta checks) | --project-dir, --json, --human, --gate | Validation report |
+| FORGE Validator | tools/builder/forge_validator.py | Validate FORGE framework compliance for child apps (6 layers + 4 meta checks) | --project-dir, --json, --human, --gate | Validation report |
 | Agentic Test: A2A Callback | tools/builder/agentic_test_templates/test_a2a_callback.py | Template test for A2A callback verification in child apps | (pytest template) | Test results |
 | Agentic Test: Agent Health | tools/builder/agentic_test_templates/test_agent_health.py | Template test for agent health endpoint verification in child apps | (pytest template) | Test results |
 

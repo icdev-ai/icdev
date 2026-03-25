@@ -4,9 +4,9 @@
 
 ## Purpose
 
-Generate mini-ICDEV™ clone applications that include the full GOTCHA framework, ANVIL workflow, own agents, memory system, and CI/CD — everything except the ability to generate new applications. These child applications are fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads.
+Generate mini-ICDEV™ clone applications that include the full FORGE framework, ANVIL workflow, own agents, memory system, and CI/CD — everything except the ability to generate new applications. These child applications are fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads.
 
-**Why this matters:** Organizations need multiple independent agentic systems — one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Automated generation produces a consistent, compliant, tested child application in minutes, with all GOTCHA layers pre-wired and ready for mission-specific customization.
+**Why this matters:** Organizations need multiple independent agentic systems — one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Automated generation produces a consistent, compliant, tested child application in minutes, with all FORGE layers pre-wired and ready for mission-specific customization.
 
 ---
 
@@ -164,7 +164,7 @@ This is the main generation step. It runs two phases:
 
 | Step | What It Generates |
 |------|-------------------|
-| 1 | GOTCHA directory structure: `goals/`, `tools/`, `args/`, `context/`, `hardprompts/` |
+| 1 | FORGE directory structure: `goals/`, `tools/`, `args/`, `context/`, `hardprompts/` |
 | 2 | Tool scripts: copy from ICDEV™ with path/port/db adaptations |
 | 3 | Agent definitions: `tools/agent/` with agent cards at `tools/agent/cards/*.json` |
 | 4 | Memory system: `memory/MEMORY.md`, `tools/memory/`, SQLite schema |
@@ -298,7 +298,7 @@ Write `data/generation_summary.json` in the child application directory containi
 - [ ] Fitness assessment completed with all 6 dimensions scored
 - [ ] User decisions confirmed and logged in audit trail
 - [ ] Blueprint generated with all sections populated
-- [ ] Child app scaffolded with GOTCHA directory structure
+- [ ] Child app scaffolded with FORGE directory structure
 - [ ] All agents in roster have valid agent cards
 - [ ] Database initializes successfully
 - [ ] Memory system reads and writes correctly
@@ -310,9 +310,9 @@ Write `data/generation_summary.json` in the child application directory containi
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Gather Requirements | Orchestration | AI (you) + user interaction |
 | Assess Fitness | Tools | `agentic_fitness.py` |

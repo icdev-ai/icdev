@@ -970,7 +970,7 @@ TOOL_REGISTRY = {
         "category": "marketplace",
         "module": "tools.mcp.marketplace_server",
         "handler": "handle_publish_asset",
-        "description": "Publish a GOTCHA asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
+        "description": "Publish a FORGE asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
         "input_schema": {"type": "object", "properties": {"asset_path": {"type": "string", "description": "Path to asset directory"}, "asset_type": {"type": "string", "enum": ["skill", "goal", "hardprompt", "context", "args", "compliance"]}, "tenant_id": {"type": "string", "description": "Publisher tenant ID"}, "publisher_user": {"type": "string", "description": "Publisher identity"}, "publisher_org": {"type": "string", "description": "Publisher organization"}, "target_tier": {"type": "string", "enum": ["tenant_local", "central_vetted"], "default": "tenant_local"}, "asset_id": {"type": "string", "description": "Existing asset ID (for new version)"}, "new_version": {"type": "string", "description": "Version for update"}, "changelog": {"type": "string"}, "signing_key": {"type": "string", "description": "Path to RSA private key"}}, "required": ["asset_path", "asset_type", "tenant_id"]},
     },
     "install_asset": {

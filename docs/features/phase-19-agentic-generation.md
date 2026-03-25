@@ -16,11 +16,11 @@
 
 ## 1. Problem Statement
 
-Organizations need multiple independent agentic systems -- one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Each new agentic application requires the full GOTCHA framework (6 layers), ANVIL workflow, agent infrastructure, memory system, compliance scaffolding, CI/CD pipeline, and cloud provider integration -- all wired together correctly from day one.
+Organizations need multiple independent agentic systems -- one per program, per enclave, or per mission thread. Manually bootstrapping each system is error-prone and takes weeks. Each new agentic application requires the full FORGE framework (6 layers), ANVIL workflow, agent infrastructure, memory system, compliance scaffolding, CI/CD pipeline, and cloud provider integration -- all wired together correctly from day one.
 
 Without automated generation, teams either copy-paste from existing systems (creating drift and inconsistency) or build from scratch (wasting weeks of effort and introducing configuration errors). The result is a proliferation of inconsistent agentic systems that cannot be audited, updated, or governed centrally.
 
-ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications that inherit the full GOTCHA framework, ANVIL workflow, own agents, memory system, and CI/CD -- everything except the ability to generate further children (grandchild prevention). These child applications must be fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads, produced in minutes rather than weeks.
+ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications that inherit the full FORGE framework, ANVIL workflow, own agents, memory system, and CI/CD -- everything except the ability to generate further children (grandchild prevention). These child applications must be fully autonomous, cloud-native systems capable of building, testing, deploying, and self-healing their own workloads, produced in minutes rather than weeks.
 
 ---
 
@@ -28,7 +28,7 @@ ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications th
 
 1. Assess application specifications across 6 fitness dimensions (data complexity, decision complexity, user interaction, integration density, compliance sensitivity, scale variability) to recommend architecture type (full agent, hybrid, traditional)
 2. Generate a comprehensive blueprint from fitness scorecard and user decisions that drives all subsequent generation steps
-3. Scaffold child applications with the full GOTCHA directory structure (goals/, tools/, args/, context/, hardprompts/)
+3. Scaffold child applications with the full FORGE directory structure (goals/, tools/, args/, context/, hardprompts/)
 4. Generate 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) plus up to 2 ATO agents (Compliance, Security) when compliance is required
 5. Produce dynamic CLAUDE.md via Jinja2 that documents only the capabilities present in the child application
 6. Generate standalone DB init scripts with core tables and capability-specific tables added via migration
@@ -61,7 +61,7 @@ ICDEV™ needs the ability to generate mini-ICDEV™ clone child applications th
                      +------+------+------+------+------+---+---+
                      |      |      |      |      |      |       |
                      v      v      v      v      v      v       v
-                  GOTCHA  Agents Memory  Goals  CI/CD   DB    CLAUDE.md
+                  FORGE  Agents Memory  Goals  CI/CD   DB    CLAUDE.md
                   Dirs    Cards  System  Files  Pipeline Init  (Jinja2)
 ```
 
@@ -97,8 +97,8 @@ The blueprint SHALL include cloud provider MCP server selections based on target
 
 ### 4.3 Child Application Generation
 
-#### REQ-19-005: GOTCHA Framework
-The child application SHALL include the complete GOTCHA directory structure: goals/, tools/, args/, context/, hardprompts/ with content adapted from ICDEV™.
+#### REQ-19-005: FORGE Framework
+The child application SHALL include the complete FORGE directory structure: goals/, tools/, args/, context/, hardprompts/ with content adapted from ICDEV™.
 
 #### REQ-19-006: Agent Roster
 The child application SHALL include 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) with configurable port offsets (default +1000). Up to 2 additional ATO agents (Compliance, Security) SHALL be included when compliance is required.

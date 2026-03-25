@@ -10,7 +10,7 @@ Pipeline:
   3. Claude Sonnet rewrites based on findings (planner tier)
   4. Final WriteGuard verification
 
-GOTCHA-compliant: LLM calls go through tools/llm/router.py, not direct API.
+FORGE-compliant: LLM calls go through tools/llm/router.py, not direct API.
 """
 
 import json

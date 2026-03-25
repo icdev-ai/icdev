@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Genesis Goal Template Generator — convert detected tool patterns to GOTCHA goals.
+"""Genesis Goal Template Generator — convert detected tool patterns to FORGE goals.
 
-Takes a tool-chain pattern from pattern_detector and produces a GOTCHA-compliant
+Takes a tool-chain pattern from pattern_detector and produces a FORGE-compliant
 goal markdown file suitable for marketplace publishing as a suggested_goal.
 
 Template-based generation (deterministic) with optional scanner-tier LLM polish.
@@ -69,7 +69,7 @@ sessions over the past {lookback_days} days.
 - Output format matches expected schema (--json flag)
 - Audit trail entry logged for each step
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
 | Layer | Artifact |
 |-------|----------|
@@ -107,7 +107,7 @@ def _tool_name_to_title(tool_names: List[str]) -> str:
 
 
 def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) -> Dict[str, Any]:
-    """Generate a GOTCHA goal markdown from a detected tool-chain pattern.
+    """Generate a FORGE goal markdown from a detected tool-chain pattern.
 
     Args:
         pattern: Dict with 'pattern' (list of tool names), 'frequency',

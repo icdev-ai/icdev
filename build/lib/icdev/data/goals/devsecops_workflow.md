@@ -376,9 +376,9 @@ ISSO: <pending confirmation>
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Signal detection | Orchestration | AI detects DevSecOps signals during intake |
 | Profile creation | Tools | profile_manager.py |

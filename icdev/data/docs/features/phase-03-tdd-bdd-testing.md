@@ -8,7 +8,7 @@
 | Title | TDD/BDD Testing Framework |
 | Status | Implemented |
 | Priority | P0 |
-| Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 2 (ANVIL Build Workflow) |
+| Dependencies | Phase 1 (FORGE Framework Foundation), Phase 2 (ANVIL Build Workflow) |
 | Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 

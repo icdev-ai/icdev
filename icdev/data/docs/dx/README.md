@@ -90,7 +90,7 @@ Developer
     v
 +---------------------------+
 |    ICDEV™ Orchestration     |  <-- You never see this
-|  (GOTCHA Framework)       |
+|  (FORGE Framework)       |
 |                           |
 |  Goals -> Tools -> Args   |
 |  Context -> Hard Prompts  |

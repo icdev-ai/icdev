@@ -5,7 +5,7 @@ Type: python webapp
 
 ## Architecture
 
-GOTCHA framework — deterministic Python tools in `tools/` with `--json` output.
+FORGE framework — deterministic Python tools in `tools/` with `--json` output.
 Goals: `goals/manifest.md` | Tools: `tools/manifest.md` | Config: `args/`
 
 ## Rules

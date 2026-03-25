@@ -2,7 +2,7 @@
 # Genesis v2.0 — Autonomous Research Lab Configuration
 #
 # Controls the always-on Genesis daemon and its 14 Reflexes.
-# This is the ARGS layer (GOTCHA) — change behavior without editing goals/tools.
+# This is the ARGS layer (FORGE) — change behavior without editing goals/tools.
 #
 # Override any value via environment variable:
 #   ICDEV_GENESIS_ENABLED=true
@@ -374,7 +374,7 @@ reflexes:
     enabled: true
     risk_tier: yellow
     schedule: "weekly Wed 12:00"
-    description: "Detect recurring tool patterns, generate GOTCHA goal workflow drafts"
+    description: "Detect recurring tool patterns, generate FORGE goal workflow drafts"
     success_metric:
       name: patterns_detected
       threshold: 0

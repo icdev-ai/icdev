@@ -21,7 +21,7 @@ calibration_examples:
       The compound error problem is not theoretical. If an AI model produces
       correct output 90% of the time, the probability of a correct outcome
       across a five-step workflow drops to roughly 59%. Across ten steps, it
-      falls below 35%. ICDEV™'s GOTCHA framework breaks this chain by separating
+      falls below 35%. ICDEV™'s FORGE framework breaks this chain by separating
       probabilistic AI orchestration from deterministic Python tool execution.
     reasoning: "Original insight (compound error math), concrete numbers, connects theory to architecture solution."
 

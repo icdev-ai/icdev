@@ -119,7 +119,7 @@ CHALLENGE_SOLUTION_TOPICS = [
 # Feature Spotlight: specific ICDEV™ features to deep-dive
 FEATURE_SPOTLIGHT_TOPICS = [
     # Core Platform
-    "ICDEV™ GOTCHA Framework: 6-layer architecture that separates AI from business logic",
+    "ICDEV™ FORGE Framework: 6-layer architecture that separates AI from business logic",
     "ICDEV™ multi-agent architecture: 12 specialized agents with A2A protocol",
     "ICDEV™ LLM Router: token-optimized three-tier model routing (scanner, worker, planner)",
     # Compliance Tools

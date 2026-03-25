@@ -180,7 +180,7 @@ Standards ────┘                                               (ANVIL/T
 1. **License Check** — No GPL/AGPL/SSPL (copyleft risk for Gov/DoD)
 2. **Boundary Impact** — RED items blocked from auto-generation
 3. **Compliance Alignment** — Must not weaken existing compliance posture
-4. **GOTCHA Fit** — Must map to Goal/Tool/Arg/Context/HardPrompt
+4. **FORGE Fit** — Must map to Goal/Tool/Arg/Context/HardPrompt
 5. **Duplicate Detection** — Content hash dedup (similarity > 0.85)
 6. **Budget Cap** — Max 10 auto-solutions per PI
 7. **All existing ICDEV™ security gates** — SAST, deps, secrets, CUI, STIG

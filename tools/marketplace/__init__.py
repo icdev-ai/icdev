@@ -1,2 +1,2 @@
 # [TEMPLATE: CUI // SP-CTI]
-"""ICDEV™ Marketplace — Federated GOTCHA Asset Registry (Phase 22)."""
+"""ICDEV™ Marketplace — Federated FORGE Asset Registry (Phase 22)."""

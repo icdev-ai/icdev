@@ -415,9 +415,9 @@ Intake begins
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | MOSA signal detection | Orchestration | AI detects MOSA signals during intake |
 | Compliance assessment | Tools | mosa_assessor.py |

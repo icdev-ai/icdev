@@ -20,7 +20,7 @@ DoD and government organizations face a persistent challenge in legacy software 
 
 ICDEV™ already supports 6 first-class languages (Python, Java, Go, Rust, C#, TypeScript) with full toolchain coverage (scaffold, lint, format, SAST, dep audit, BDD, code gen). However, translating between these 30 directional language pairs requires more than simple LLM prompting. LLMs excel at translating small code snippets but struggle with project-level translation: maintaining consistent naming, resolving cross-file dependencies, mapping language-specific idioms, preserving type safety, and ensuring the translated output compiles and passes tests.
 
-The GOTCHA principle — that LLMs are probabilistic while business logic must be deterministic — dictates a hybrid approach. Deterministic extraction parses source code into a language-agnostic Intermediate Representation (IR). Deterministic type-checking validates signature compatibility before translation. LLM-assisted translation handles the creative mapping between language idioms. Deterministic assembly scaffolds the target project. A validate-and-repair loop uses compiler feedback to fix translation errors. This 5-phase pipeline maximizes translation quality while maintaining auditability and compliance traceability.
+The FORGE principle — that LLMs are probabilistic while business logic must be deterministic — dictates a hybrid approach. Deterministic extraction parses source code into a language-agnostic Intermediate Representation (IR). Deterministic type-checking validates signature compatibility before translation. LLM-assisted translation handles the creative mapping between language idioms. Deterministic assembly scaffolds the target project. A validate-and-repair loop uses compiler feedback to fix translation errors. This 5-phase pipeline maximizes translation quality while maintaining auditability and compliance traceability.
 
 ---
 
@@ -164,7 +164,7 @@ BDD `.feature` files SHALL be copied unchanged; only step definition implementat
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
-| D242 | Hybrid 5-phase pipeline (deterministic + LLM) | Consistent with GOTCHA: LLMs probabilistic, business logic deterministic |
+| D242 | Hybrid 5-phase pipeline (deterministic + LLM) | Consistent with FORGE: LLMs probabilistic, business logic deterministic |
 | D243 | IR pivot — language-agnostic JSON IR | Enables chunk-based translation, round-trip validation, progress tracking |
 | D244 | Post-order dependency graph traversal | Translate leaf nodes first ensures dependencies resolved before dependents |
 | D245 | Non-destructive output (extends D18) | Source never modified; output to separate directory |

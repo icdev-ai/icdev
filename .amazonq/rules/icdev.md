@@ -12,7 +12,7 @@
 
 ## Architecture
 
-GOTCHA framework: deterministic Python tools in `tools/` with `--json` output. Goals in `goals/`, config in `args/`.
+FORGE framework: deterministic Python tools in `tools/` with `--json` output. Goals in `goals/`, config in `args/`.
 
 ## AWS GovCloud
 

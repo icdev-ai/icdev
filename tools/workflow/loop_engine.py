@@ -5,7 +5,7 @@
 LLM-agnostic enforcement of disciplined development loops. Any AI coding
 assistant calls these deterministic Python tools; the tools enforce the
 discipline. Inspired by PAUL (Plan-Apply-Unify Loop) but implemented as
-GOTCHA-compliant tools with DB-backed state.
+FORGE-compliant tools with DB-backed state.
 
 Usage:
     python tools/workflow/loop_engine.py --create --project-id "proj-123" --phase "auth-module" --json

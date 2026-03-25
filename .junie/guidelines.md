@@ -4,7 +4,7 @@
 
 Python webapp project at IL4 (CUI).
 
-Uses the GOTCHA framework: deterministic Python CLI tools in `tools/` with `--json` output, goal workflows in `goals/`, configuration in `args/`.
+Uses the FORGE framework: deterministic Python CLI tools in `tools/` with `--json` output, goal workflows in `goals/`, configuration in `args/`.
 
 ## Coding Conventions
 

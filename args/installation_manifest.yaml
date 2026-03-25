@@ -682,7 +682,7 @@ modules:
       - llm
 
   marketplace:
-    name: "Federated GOTCHA Marketplace"
+    name: "Federated FORGE Marketplace"
     description: "Publish, install, search, review, and sync skills/goals/hardprompts/context/args/compliance extensions across tenant orgs with 7-gate security pipeline, IL compatibility checks, and federation sync."
     required: false
     packages:
@@ -706,7 +706,7 @@ modules:
 
   agentic_generation:
     name: "Agentic Child App Generation"
-    description: "Generate mini-ICDEV™ clone child applications with GOTCHA/ANVIL. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
+    description: "Generate mini-ICDEV™ clone child applications with FORGE/ANVIL. Fitness assessment, blueprint generation, 12-step scaffold, and dynamic CLAUDE.md."
     required: false
     packages:
       - tools/builder/agentic_fitness.py
@@ -1051,7 +1051,7 @@ db_table_groups:
       - child_app_registry
 
   marketplace:
-    description: "Federated GOTCHA marketplace: assets, versions, reviews, installations, scans, ratings, embeddings, dependencies"
+    description: "Federated FORGE marketplace: assets, versions, reviews, installations, scans, ratings, embeddings, dependencies"
     tables:
       - marketplace_assets
       - marketplace_versions

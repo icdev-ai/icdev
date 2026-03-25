@@ -378,7 +378,7 @@ def seed_from_catalog():
             tools_content = (
                 f"ICDEV™ implements {name} through the following automated tools:\n\n"
                 + "\n".join(f"- {t}" for t in tools) + "\n\n"
-                f"All tools are deterministic Python scripts following the GOTCHA framework. "
+                f"All tools are deterministic Python scripts following the FORGE framework. "
                 f"They produce reproducible, auditable output with CUI markings and audit trail logging."
             )
             conn.execute(

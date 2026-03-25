@@ -122,7 +122,7 @@ Slash commands are shortcuts for common workflows. They're optional — you can 
 | `/icdev-integrate` | Sync with Jira, ServiceNow, GitLab, DOORS NG |
 | `/icdev-mbse` | MBSE integration (SysML, digital thread) |
 | `/icdev-monitor` | Production monitoring and self-healing |
-| `/icdev-market` | GOTCHA asset marketplace |
+| `/icdev-market` | FORGE asset marketplace |
 | `/icdev-agentic` | Generate agentic child application |
 | `/icdev-boundary` | ATO boundary impact and supply chain risk |
 

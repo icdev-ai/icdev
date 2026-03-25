@@ -1368,7 +1368,7 @@ def _run_agentic_generation(args, base_files):
     3. Generate child app via child_app_generator.py
 
     The base scaffold provides the language-specific project structure.
-    The agentic pipeline adds GOTCHA framework, agents, memory, CI/CD, etc.
+    The agentic pipeline adds FORGE framework, agents, memory, CI/CD, etc.
     """
     import importlib.util
 
@@ -1491,7 +1491,7 @@ def main():
     agentic_group = parser.add_argument_group("agentic generation (Phase 19)")
     agentic_group.add_argument(
         "--agentic", action="store_true",
-        help="Generate mini-ICDEV™ clone with GOTCHA framework, agents, memory, CI/CD")
+        help="Generate mini-ICDEV™ clone with FORGE framework, agents, memory, CI/CD")
     agentic_group.add_argument(
         "--fitness-scorecard", type=str, default=None,
         help="Path to fitness scorecard JSON (from agentic_fitness.py)")

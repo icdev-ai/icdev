@@ -579,9 +579,9 @@ Log at each major milestone: registration, analysis, strategy approval, plan cre
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Register and Analyze | Tools | `legacy_analyzer.py` |
 | Extract Architecture | Tools | `architecture_extractor.py` |

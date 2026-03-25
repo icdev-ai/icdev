@@ -96,7 +96,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Per-tenant K8s namespace provisioning (D63)
 - Offline license keys with RSA-SHA256 signatures for on-prem (D64)
 - Helm chart for on-prem deployment (D65)
-- Federated GOTCHA marketplace with 3-tier catalog (D74-D81)
+- Federated FORGE marketplace with 3-tier catalog (D74-D81)
 - 7-gate automated security scanning for marketplace assets (D76)
 - IL-aware compatibility checking with high-watermark consumption rule (D77)
 - Community ratings and reviews for marketplace assets
@@ -153,7 +153,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Phase 1-6] - 2025-XX-XX
 
 ### Added
-- Initial ICDEV™ platform with GOTCHA 6-layer agentic framework
+- Initial ICDEV™ platform with FORGE 6-layer agentic framework
 - ANVIL and M-ANVIL build workflows (Architect, Navigate, Verify, Integrate, Launch)
 - 15 multi-agent architecture across 3 tiers (Core, Domain, Support)
 - A2A protocol (JSON-RPC 2.0 over mutual TLS) for inter-agent communication

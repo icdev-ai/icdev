@@ -8,7 +8,7 @@ Zero-trust import/export bridge between the ClawHub (clawhub.ai) open skill ecos
 
 ## Problem
 
-ICDEV™'s marketplace is tenant-federated but internal. The OpenClaw/ClawHub ecosystem has 2,857+ community-authored AI skills that could accelerate capability development. However, OpenClaw and ICDEV™ have fundamentally different architectures (Node.js vs Python, flat markdown vs GOTCHA 6-layer, no compliance vs CUI/NIST).
+ICDEV™'s marketplace is tenant-federated but internal. The OpenClaw/ClawHub ecosystem has 2,857+ community-authored AI skills that could accelerate capability development. However, OpenClaw and ICDEV™ have fundamentally different architectures (Node.js vs Python, flat markdown vs FORGE 6-layer, no compliance vs CUI/NIST).
 
 ## Solution
 

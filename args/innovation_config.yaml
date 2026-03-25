@@ -252,7 +252,7 @@ scoring:
 triage:
   # GOTCHA fit assessment
   gotcha_fit:
-    required_layer: true         # Signal must map to at least one GOTCHA layer
+    required_layer: true         # Signal must map to at least one FORGE layer
     layer_mapping:
       goal: [workflow, process, procedure, methodology, best practice]
       tool: [script, utility, generator, scanner, checker, validator, analyzer]

@@ -1,11 +1,11 @@
-# Phase 22 — Federated GOTCHA Asset Marketplace
+# Phase 22 — Federated FORGE Asset Marketplace
 
 **CUI // SP-CTI**
 
 | Field | Value |
 |-------|-------|
 | Phase | 22 |
-| Title | Federated GOTCHA Asset Marketplace |
+| Title | Federated FORGE Asset Marketplace |
 | Status | Implemented |
 | Priority | P1 |
 | Dependencies | Phase 21 (SaaS Multi-Tenancy) |
@@ -16,17 +16,17 @@
 
 ## 1. Problem Statement
 
-Government and defense software teams frequently build the same compliance skills, security scanning goals, CUI marking templates, and deployment hardprompts independently. Without a shared catalog, every tenant organization re-invents identical GOTCHA framework assets from scratch, wasting engineering cycles and introducing inconsistencies across programs of record. The problem is compounded by classification boundaries: sharing assets between IL4, IL5, and IL6 environments requires rigorous security scanning, digital signing, and human review to prevent unauthorized data movement.
+Government and defense software teams frequently build the same compliance skills, security scanning goals, CUI marking templates, and deployment hardprompts independently. Without a shared catalog, every tenant organization re-invents identical FORGE framework assets from scratch, wasting engineering cycles and introducing inconsistencies across programs of record. The problem is compounded by classification boundaries: sharing assets between IL4, IL5, and IL6 environments requires rigorous security scanning, digital signing, and human review to prevent unauthorized data movement.
 
 Existing package managers (npm, PyPI, Helm Hub) were designed for open-source software distribution and lack the classification-aware, compliance-validated, governance-enforced publishing pipeline required for DoD/IC environments. They have no concept of Impact Level compatibility, CUI marking enforcement, SBOM attestation, or mandatory ISSO review for cross-organization sharing. A purpose-built federated marketplace that reuses the Phase 21 SaaS infrastructure (authentication, RBAC, tenant isolation) fills this gap.
 
-The marketplace also closes the loop on the GOTCHA framework itself: skills, goals, hardprompts, context files, args configurations, and compliance extensions become first-class shareable artifacts with full provenance tracking, enabling a community-driven ecosystem that accelerates ATO timelines across the enterprise.
+The marketplace also closes the loop on the FORGE framework itself: skills, goals, hardprompts, context files, args configurations, and compliance extensions become first-class shareable artifacts with full provenance tracking, enabling a community-driven ecosystem that accelerates ATO timelines across the enterprise.
 
 ---
 
 ## 2. Goals
 
-1. Enable customer developer communities to **publish, search, install, and review** GOTCHA framework assets (skills, goals, hardprompts, context, args, compliance extensions) through a federated marketplace
+1. Enable customer developer communities to **publish, search, install, and review** FORGE framework assets (skills, goals, hardprompts, context, args, compliance extensions) through a federated marketplace
 2. Enforce a **7-gate automated security pipeline** for all published assets covering SAST, secret detection, dependency audit, CUI markings, SBOM generation, supply chain provenance, and digital signing
 3. Implement a **3-tier federated catalog** (tenant-local, cross-tenant review, central vetted registry) with promotion workflows and mandatory human ISSO review for cross-tenant sharing
 4. Enforce **IL-aware compatibility** so assets marked at a given Impact Level cannot be consumed by lower-IL tenants without classification filtering
@@ -54,7 +54,7 @@ TENANT-LOCAL CATALOG (per-org private catalog)
 DEVELOPER WORKSPACE (local asset development)
 ```
 
-### 3.2 Shareable GOTCHA Asset Types
+### 3.2 Shareable FORGE Asset Types
 
 | Type | Format | Primary File |
 |------|--------|-------------|
@@ -86,7 +86,7 @@ Asset submitted
 ### 4.1 Publishing
 
 #### REQ-22-001: Asset Publish Pipeline
-The system SHALL validate, scan, and publish GOTCHA assets through a 7-gate security pipeline before making them available in the tenant-local catalog.
+The system SHALL validate, scan, and publish FORGE assets through a 7-gate security pipeline before making them available in the tenant-local catalog.
 
 #### REQ-22-002: Cross-Tenant Promotion
 The system SHALL require mandatory ISSO/security officer human review before promoting assets from a tenant-local catalog to the central vetted registry.
@@ -172,7 +172,7 @@ The system SHALL maintain a complete provenance chain for every asset version in
 | D76 | 7-gate automated + mandatory human review for cross-tenant sharing | Automated scanning catches known issues; human review catches intent/context issues |
 | D77 | Independent IL marking per asset with high-watermark consumption rule | Prevents lower-classification environments from consuming higher-classification assets |
 | D78 | Ollama nomic-embed-text for air-gapped semantic search | Air-gap safe vector search without cloud dependency |
-| D79 | Full GOTCHA asset sharing (skills, goals, hardprompts, context, args, compliance) | Maximizes reuse across the entire framework, not just skills |
+| D79 | Full FORGE asset sharing (skills, goals, hardprompts, context, args, compliance) | Maximizes reuse across the entire framework, not just skills |
 | D80 | Append-only marketplace audit trail | NIST AU compliance; full traceability of all marketplace operations |
 | D81 | Asset SBOM required for executable assets | Supply chain traceability for assets containing runnable code |
 

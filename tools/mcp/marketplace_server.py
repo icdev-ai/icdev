@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Marketplace MCP server exposing GOTCHA asset registry tools.
+"""Marketplace MCP server exposing FORGE asset registry tools.
 
 Tools:
     publish_asset    - Publish an asset through the 7-gate pipeline
@@ -87,7 +87,7 @@ def _audit(event_type, actor, action, project_id=None, details=None):
 # ---------------------------------------------------------------------------
 
 def handle_publish_asset(args: dict) -> dict:
-    """Publish a GOTCHA asset through the 7-gate security pipeline."""
+    """Publish a FORGE asset through the 7-gate security pipeline."""
     if not _MODULES_LOADED:
         raise RuntimeError(f"Marketplace modules not loaded: {_IMPORT_ERROR}")
 
@@ -375,7 +375,7 @@ def create_server() -> MCPServer:
     # --- Tools ---
     server.register_tool(
         "publish_asset",
-        "Publish a GOTCHA asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
+        "Publish a FORGE asset (skill/goal/hardprompt/context/args/compliance) through 7-gate security pipeline",
         {
             "type": "object",
             "properties": {

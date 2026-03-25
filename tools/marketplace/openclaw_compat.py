@@ -8,7 +8,7 @@
 
 OpenClaw and ICDEV™ have fundamentally different architectures:
 - OpenClaw: Node.js AI assistant, npm skills, flat markdown, shell/browser tools
-- ICDEV™: GOTCHA 6-layer framework, Python tools, CUI compliance, MCP gateway
+- ICDEV™: FORGE 6-layer framework, Python tools, CUI compliance, MCP gateway
 
 This module:
 1. Validates an OpenClaw skill for ICDEV™ compatibility

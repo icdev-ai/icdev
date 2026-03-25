@@ -1,4 +1,4 @@
-"""ICDEV™ Tools -- the T in GOTCHA.
+"""ICDEV™ Tools -- the T in FORGE.
 
 Provides fallback to root-level tools/ for submodules not yet migrated
 to icdev/tools/ (e.g., saas, marketplace, gateway, etc.).

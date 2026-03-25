@@ -24,9 +24,9 @@ That system is ICDEV™.
 
 ICDEV™ — Intelligent Certified Development — is an open-source meta-builder. Think of it as an AI-powered factory that builds other applications. It doesn't just generate code. It orchestrates an entire software development lifecycle: requirements, architecture, development, testing, security scanning, compliance validation, and deployment — all driven by conversation.
 
-### The GOTCHA Framework
+### The FORGE Framework
 
-Under the hood, ICDEV™ runs on something called the GOTCHA framework — six layers that separate *what* you want from *how* it gets done:
+Under the hood, ICDEV™ runs on something called the FORGE framework — six layers that separate *what* you want from *how* it gets done:
 
 | Layer | What It Does | Why It Matters |
 |-------|-------------|----------------|

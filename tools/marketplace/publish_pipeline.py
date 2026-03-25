@@ -6,7 +6,7 @@
 # POC: ICDEV™ System Administrator
 """Marketplace Publish Pipeline — Orchestrate scan, validate, sign, and publish.
 
-Full pipeline for publishing a GOTCHA asset to the marketplace:
+Full pipeline for publishing a FORGE asset to the marketplace:
     1. Validate asset structure (SKILL.md / goal.md / etc.)
     2. Parse and validate metadata (YAML frontmatter)
     3. Register asset + version in catalog

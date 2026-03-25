@@ -31,8 +31,8 @@ platform_html = """<style>
 </style>
 <div class="icdev-page">
 
-<h2>The GOTCHA Framework</h2>
-<p>ICDEV™ is built on a 6-layer agentic architecture called GOTCHA. The AI orchestrates &mdash; deterministic Python scripts execute. This separation ensures business logic is reproducible, auditable, and never probabilistic.</p>
+<h2>The FORGE Framework</h2>
+<p>ICDEV™ is built on a 6-layer agentic architecture called FORGE. The AI orchestrates &mdash; deterministic Python scripts execute. This separation ensures business logic is reproducible, auditable, and never probabilistic.</p>
 
 <table>
 <thead><tr><th>Layer</th><th>Purpose</th><th>Example</th></tr></thead>

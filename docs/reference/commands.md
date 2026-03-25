@@ -1837,7 +1837,7 @@ python tools/research/research_engine.py --daemon --json
 
 ---
 
-## Marketplace — Federated GOTCHA Asset Registry (Phase 22)
+## Marketplace — Federated FORGE Asset Registry (Phase 22)
 ```bash
 # Publish a skill to tenant-local catalog
 python tools/marketplace/publish_pipeline.py --asset-path /path --asset-type skill --tenant-id "tenant-abc" --publisher-user "user@mil" --json

@@ -2249,7 +2249,7 @@ CREATE INDEX IF NOT EXISTS idx_fips200_project ON fips200_assessments(project_id
 CREATE INDEX IF NOT EXISTS idx_fips200_status ON fips200_assessments(status);
 
 -- ============================================================
--- MARKETPLACE — Federated GOTCHA Asset Registry (Phase 22)
+-- MARKETPLACE — Federated FORGE Asset Registry (Phase 22)
 -- ============================================================
 
 -- Core asset registry (skills, goals, hardprompts, context, args, compliance extensions)

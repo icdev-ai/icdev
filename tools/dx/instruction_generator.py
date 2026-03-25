@@ -161,9 +161,9 @@ This file provides guidance to AI coding agents working with this ICDEV™ proje
 | ATO Status | {{ ato_status }} |
 | Cloud | {{ cloud }} |
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
-This project uses the GOTCHA framework — a 6-layer agentic system where AI orchestrates deterministic Python tools:
+This project uses the FORGE framework — a 6-layer agentic system where AI orchestrates deterministic Python tools:
 
 | Layer | Directory | Role |
 |-------|-----------|------|
@@ -276,7 +276,7 @@ Guidance for Google Gemini when working with this ICDEV™ project.
 
 ## Architecture
 
-This project uses the GOTCHA framework: Goals define workflows, Tools (Python CLI scripts in `tools/`) execute deterministically, Args/Context/Hard Prompts configure behavior. You orchestrate by reading goals and calling tools.
+This project uses the FORGE framework: Goals define workflows, Tools (Python CLI scripts in `tools/`) execute deterministically, Args/Context/Hard Prompts configure behavior. You orchestrate by reading goals and calling tools.
 
 All tools support `--json` for machine-readable output.
 
@@ -357,7 +357,7 @@ This is an ICDEV™-managed project ({{ impact_level }}, {{ classification_level
 
 ## Architecture
 
-GOTCHA framework: deterministic Python tools in `tools/` with `--json` output. Read `goals/manifest.md` for workflows, `tools/manifest.md` for available tools.
+FORGE framework: deterministic Python tools in `tools/` with `--json` output. Read `goals/manifest.md` for workflows, `tools/manifest.md` for available tools.
 
 ## Key Commands
 
@@ -411,7 +411,7 @@ alwaysApply: true
 
 ## Architecture
 
-GOTCHA framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
+FORGE framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
 
 ## Rules
 
@@ -441,7 +441,7 @@ TEMPLATE_WINDSURF_MD = r"""# ICDEV™ Project Rules — {{ project_name }}
 
 ## Architecture
 
-GOTCHA framework with deterministic Python CLI tools in `tools/`. All support `--json` output.
+FORGE framework with deterministic Python CLI tools in `tools/`. All support `--json` output.
 
 ## Coding Rules
 
@@ -482,7 +482,7 @@ TEMPLATE_AMAZON_Q_MD = r"""# ICDEV™ Project Rules — {{ project_name }}
 
 ## Architecture
 
-GOTCHA framework: deterministic Python tools in `tools/` with `--json` output. Goals in `goals/`, config in `args/`.
+FORGE framework: deterministic Python tools in `tools/` with `--json` output. Goals in `goals/`, config in `args/`.
 
 ## AWS GovCloud
 
@@ -517,7 +517,7 @@ TEMPLATE_JUNIE_MD = r"""# ICDEV™ Project Guidelines — {{ project_name }}
 
 {{ project_language | capitalize }} {{ project_type }} project at {{ impact_level }} ({{ classification_level }}).
 
-Uses the GOTCHA framework: deterministic Python CLI tools in `tools/` with `--json` output, goal workflows in `goals/`, configuration in `args/`.
+Uses the FORGE framework: deterministic Python CLI tools in `tools/` with `--json` output, goal workflows in `goals/`, configuration in `args/`.
 
 ## Coding Conventions
 
@@ -552,7 +552,7 @@ Type: {{ project_language }} {{ project_type }}
 
 ## Architecture
 
-GOTCHA framework — deterministic Python tools in `tools/` with `--json` output.
+FORGE framework — deterministic Python tools in `tools/` with `--json` output.
 Goals: `goals/manifest.md` | Tools: `tools/manifest.md` | Config: `args/`
 
 ## Rules
@@ -609,7 +609,7 @@ Every generated file must include `# CUI // {{ classification_category }}` as th
 
 ## Architecture
 
-This project uses the GOTCHA framework. Tools are in `tools/` (deterministic Python scripts, all support `--json`). Workflows are in `goals/`. Configuration in `args/`.
+This project uses the FORGE framework. Tools are in `tools/` (deterministic Python scripts, all support `--json`). Workflows are in `goals/`. Configuration in `args/`.
 
 ## Available CLI Tools
 
@@ -634,7 +634,7 @@ TEMPLATE_GOOSEHINTS = r"""# .goosehints — {{ project_name }}
 {{ project_name }} is an ICDEV™-managed {{ project_type }} ({{ project_language }}).
 Classification: {{ classification_level }} // {{ classification_category }} ({{ impact_level }})
 
-## GOTCHA Framework (6 Layers)
+## FORGE Framework (6 Layers)
 
 1. **Goals** (`goals/`) — Workflow definitions (check `goals/manifest.md` first)
 2. **Orchestration** (you) — Read goal, decide tool order, apply args, handle errors

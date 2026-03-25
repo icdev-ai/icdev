@@ -18,7 +18,7 @@
 
 ICDEV™'s multi-agent architecture (15 agents, 3 tiers) handles task decomposition, parallel execution, and domain authority — but several orchestration gaps remain:
 
-1. **Orchestrator boundary violation** — Nothing prevents the Orchestrator agent from directly executing tools like `scaffold` or `code_generation`, violating the GOTCHA principle that orchestration and execution must be separated. When the Orchestrator bypasses delegation, it introduces probabilistic behavior where deterministic tool execution is required.
+1. **Orchestrator boundary violation** — Nothing prevents the Orchestrator agent from directly executing tools like `scaffold` or `code_generation`, violating the FORGE principle that orchestration and execution must be separated. When the Orchestrator bypasses delegation, it introduces probabilistic behavior where deterministic tool execution is required.
 
 2. **No declarative prompt chaining** — Multi-step LLM reasoning (e.g., plan → critique → refine) requires ad-hoc Python code. Adding a new reasoning chain means writing new code rather than declaring steps in YAML.
 
@@ -106,7 +106,7 @@ Phase 61 closes these gaps with 7 features that strengthen orchestration boundar
 
 ### Key Design Principles
 
-- **GOTCHA enforcement** — Dispatcher mode ensures the Orchestrator delegates to domain agents, never executes tools directly (D-DISP-1)
+- **FORGE enforcement** — Dispatcher mode ensures the Orchestrator delegates to domain agents, never executes tools directly (D-DISP-1)
 - **Declarative configuration** — Prompt chains, critique roles, consensus rules, and file tiers are all YAML-driven; add new chains/critics/tiers without code changes (D26 pattern)
 - **Append-only audit** — `atlas_critique_findings` and `prompt_chain_executions` are immutable (D6, NIST AU compliance)
 - **Backward compatible** — All features default to disabled/optional; existing workflows unchanged without opt-in
@@ -118,7 +118,7 @@ Phase 61 closes these gaps with 7 features that strengthen orchestration boundar
 
 ### Feature 1: Dispatcher-Only Mode (`tools/agent/dispatcher_mode.py`)
 
-Enforces the GOTCHA orchestration principle: the Orchestrator agent delegates tasks but never executes tools directly.
+Enforces the FORGE orchestration principle: the Orchestrator agent delegates tasks but never executes tools directly.
 
 **Allowed Tools (when enabled):**
 - `task_dispatch` — delegate work to domain agents
@@ -410,7 +410,7 @@ CREATE TABLE session_purposes (
 
 | Decision | Pattern | Rationale |
 |----------|---------|-----------|
-| **D-DISP-1** | Dispatcher-only mode | Enforces GOTCHA orchestration principle: orchestrator delegates, never executes. Per-project overrides via DB table. |
+| **D-DISP-1** | Dispatcher-only mode | Enforces FORGE orchestration principle: orchestrator delegates, never executes. Per-project overrides via DB table. |
 | **D-PC-1** | YAML-driven prompt chains | Add new reasoning chains without code changes (D26 pattern). Declarative step definitions. |
 | **D-PC-2** | LLM routing via LLMRouter | Prompt chains use existing LLM router for function-level model selection, not A2A tool dispatch. |
 | **D-PC-3** | Sequential execution only | No DAG parallelism in prompt chains. Parallelism handled by `team_orchestrator.py` at subtask level. |
@@ -460,7 +460,7 @@ CREATE TABLE session_purposes (
 
 | System | Integration |
 |--------|-------------|
-| **GOTCHA/ANVIL** | Dispatcher mode enforces orchestrator boundary; ANVIL critique inserted between Assemble and Stress-test; prompt chains execute within M-ANVIL workflow |
+| **FORGE/ANVIL** | Dispatcher mode enforces orchestrator boundary; ANVIL critique inserted between Assemble and Stress-test; prompt chains execute within M-ANVIL workflow |
 | **Agent Subsystem** | Async result injection uses existing `agent_mailbox` schema; dispatcher mode integrates with `agent_config.yaml`; file tiers use `pre_tool_use.py` hook |
 | **Dashboard** | Real-time orchestration page at `/orchestration`; SSE streaming for mailbox; auto-refresh intervals for all sections |
 | **LLM Router** | Prompt chain executor maps agents to router functions for proper model selection; fallback chains respected |

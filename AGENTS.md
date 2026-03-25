@@ -15,9 +15,9 @@ This file provides guidance to AI coding agents working with this ICDEV™ proje
 | ATO Status | pre_ato |
 | Cloud | aws_govcloud |
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
-This project uses the GOTCHA framework — a 6-layer agentic system where AI orchestrates deterministic Python tools:
+This project uses the FORGE framework — a 6-layer agentic system where AI orchestrates deterministic Python tools:
 
 | Layer | Directory | Role |
 |-------|-----------|------|

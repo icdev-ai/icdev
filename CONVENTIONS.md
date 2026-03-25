@@ -30,7 +30,7 @@ Every generated file must include `# CUI // SP-CTI` as the first comment line. T
 
 ## Architecture
 
-This project uses the GOTCHA framework. Tools are in `tools/` (deterministic Python scripts, all support `--json`). Workflows are in `goals/`. Configuration in `args/`.
+This project uses the FORGE framework. Tools are in `tools/` (deterministic Python scripts, all support `--json`). Workflows are in `goals/`. Configuration in `args/`.
 
 ## Available CLI Tools
 

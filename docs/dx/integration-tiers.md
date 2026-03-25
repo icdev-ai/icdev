@@ -255,7 +255,7 @@ Tier 1 (Pipeline)     Tier 2 (Claude)     Tier 3 (API)
       |                     |                   |
       v                     v                   v
 +----------------------------------------------------------+
-|                    GOTCHA Framework                        |
+|                    FORGE Framework                        |
 |  Goals -> Orchestration -> Tools -> Args -> Context       |
 +----------------------------------------------------------+
       |

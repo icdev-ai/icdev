@@ -312,7 +312,7 @@ python tools/dashboard/app.py                        # Start web dashboard on po
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- you read goals, call tools, apply args, reference context, and use hard prompts.  You never execute work directly; you delegate to deterministic Python scripts.
 
@@ -515,7 +515,7 @@ Build process follows the ANVIL methodology:
 ### Orchestration
 
 - Prompt chains: Declarative YAML multi-step LLM reasoning (plan_critique_refine, scout_analyze_recommend)
-- Dispatcher mode: Orchestrator restricted to delegation tools only (GOTCHA separation of concerns)
+- Dispatcher mode: Orchestrator restricted to delegation tools only (FORGE separation of concerns)
 - Session purpose: Declared intent per session for NIST AU-3 audit traceability
 {% if atlas_config.get("critique_enabled", False) %}- ANVIL critique: 3 critics (security, compliance, knowledge) with GO/CONDITIONAL/NOGO consensus
 {% endif %}
@@ -1246,7 +1246,7 @@ def _generate_fallback(blueprint: Dict[str, Any]) -> str:
         sections.append(f"## {ctx['app_name']} — Overview\n")
         sections.append(f"{ctx['app_description']}\n")
 
-    # -- GOTCHA Framework --
+    # -- FORGE Framework --
     sections.append("---\n")
     sections.append(_build_gotcha_section())
 
@@ -1389,8 +1389,8 @@ def _build_commands_section(ctx: Dict[str, Any]) -> str:
 
 
 def _build_gotcha_section() -> str:
-    """Build the GOTCHA framework section for fallback rendering."""
-    return """## Architecture: GOTCHA Framework
+    """Build the FORGE framework section for fallback rendering."""
+    return """## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- you read goals, call tools, apply args, reference context, and use hard prompts.  You never execute work directly; you delegate to deterministic Python scripts.
 

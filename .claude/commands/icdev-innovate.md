@@ -94,7 +94,7 @@ SCOPE: Comma-separated analysis scopes to run. Default: `all`. Options: `introsp
 
     a. **Executive Summary** — Total signals discovered, scored, triaged. Active trends. Pipeline health.
 
-    b. **Top Signals** — List top 10 signals by score with: title, source, score, dimensions, triage result, GOTCHA layer, boundary tier.
+    b. **Top Signals** — List top 10 signals by score with: title, source, score, dimensions, triage result, FORGE layer, boundary tier.
 
     c. **Active Trends** — Group related signals into themes. Show velocity (accelerating/stable/declining).
 
@@ -115,7 +115,7 @@ SCOPE: Comma-separated analysis scopes to run. Default: `all`. Options: `introsp
     i. **Tenet Alignment Check** — For each recommendation, verify:
        - Deterministic (no probabilistic business logic)
        - Read-only / advisory-only (no autonomous code modification)
-       - GOTCHA framework fit (maps to Goal/Tool/Arg/Context/HardPrompt)
+       - FORGE framework fit (maps to Goal/Tool/Arg/Context/HardPrompt)
        - Air-gap safe (works without internet)
        - Compliance-first (strengthens, never weakens posture)
 

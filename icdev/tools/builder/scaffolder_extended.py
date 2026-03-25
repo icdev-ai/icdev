@@ -1625,7 +1625,7 @@ def generate_agentic_sidecar(project_root: Path, app_name: str, language: str) -
     """Generate Python agentic sidecar for non-Python language projects.
 
     Non-Python child apps get a Python sidecar in `sidecar/agentic/` that
-    provides GOTCHA framework, agents, and memory system alongside the main
+    provides FORGE framework, agents, and memory system alongside the main
     language project. Connected via docker-compose.yaml.
 
     Args:
@@ -1675,7 +1675,7 @@ CMD ["python", "orchestrator.py"]
 # CUI // SP-CTI
 \"\"\"Agentic sidecar orchestrator for {app_name} ({language}).
 
-This sidecar provides GOTCHA framework, ANVIL workflow, agent communication,
+This sidecar provides FORGE framework, ANVIL workflow, agent communication,
 and memory system alongside the main {language} application.
 \"\"\"
 

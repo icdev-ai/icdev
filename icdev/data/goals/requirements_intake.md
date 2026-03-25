@@ -188,9 +188,9 @@ classDiagram
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Intake Stage | GOTCHA Layer |
+| Intake Stage | FORGE Layer |
 |--------------|--------------|
 | Session Setup | Goals (define what to capture) |
 | Conversational Intake | Orchestration (AI guides conversation) |

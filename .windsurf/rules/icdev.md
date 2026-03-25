@@ -4,7 +4,7 @@
 
 ## Architecture
 
-GOTCHA framework with deterministic Python CLI tools in `tools/`. All support `--json` output.
+FORGE framework with deterministic Python CLI tools in `tools/`. All support `--json` output.
 
 ## Coding Rules
 

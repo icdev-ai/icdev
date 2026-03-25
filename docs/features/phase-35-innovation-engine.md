@@ -30,7 +30,7 @@ The Innovation Engine transforms ICDEV™ from a reactive tool that waits for in
 2. Enable introspective analysis that mines internal ICDEV™ telemetry for improvement opportunities: failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps, and knowledge gaps -- fully air-gap safe (D203)
 3. Score all discovered signals across 5 weighted dimensions: community demand (0.30), impact breadth (0.25), feasibility (0.20), compliance alignment (0.15), and novelty (0.10)
 4. Triage signals through a 5-stage compliance gate: classify signal, GOTCHA fit check, boundary impact assessment, compliance pre-check, and duplicate/license check
-5. Generate template-based solution specifications (not LLM-generated) with problem statement, GOTCHA layer mapping, acceptance criteria, compliance impact, and test plan (D208)
+5. Generate template-based solution specifications (not LLM-generated) with problem statement, FORGE layer mapping, acceptance criteria, compliance impact, and test plan (D208)
 6. Support competitive intelligence by monitoring GitHub-based competitors (backstage, snyk, trivy, checkov) for feature releases and performing gap analysis (D205)
 7. Monitor standards body publications (NIST CSRC, CISA advisories, DoD CIO memos, FedRAMP updates) with graceful degradation when offline (D204)
 8. Implement feedback calibration that adjusts scoring weights based on marketplace adoption metrics, with a maximum 0.02 step per calibration cycle and minimum 10 data points
@@ -133,7 +133,7 @@ The system SHALL apply human-in-the-loop thresholds: score >= 0.80 auto-queues f
 ### 4.3 Triage
 
 #### REQ-35-007: Five-Stage Compliance Triage
-Every signal SHALL pass through all 5 triage stages: (1) classify signal by category, (2) GOTCHA fit check (must map to Goal/Tool/Arg/Context/HardPrompt), (3) boundary impact assessment (GREEN/YELLOW/ORANGE/RED), (4) compliance pre-check (must not weaken compliance posture), and (5) duplicate and license check.
+Every signal SHALL pass through all 5 triage stages: (1) classify signal by category, (2) FORGE fit check (must map to Goal/Tool/Arg/Context/HardPrompt), (3) boundary impact assessment (GREEN/YELLOW/ORANGE/RED), (4) compliance pre-check (must not weaken compliance posture), and (5) duplicate and license check.
 
 #### REQ-35-008: License Blocking (D202)
 The triage engine SHALL block signals associated with GPL, AGPL, or SSPL licensed components (copyleft risk for Gov/DoD environments).
@@ -144,7 +144,7 @@ The triage engine SHALL detect duplicate signals using content hash comparison w
 ### 4.4 Generation and Feedback
 
 #### REQ-35-010: Template-Based Solution Specs (D208)
-The system SHALL generate solution specifications from templates (not LLM-generated) containing: problem statement, GOTCHA layer mapping, proposed solution, acceptance criteria (BDD-style), compliance impact assessment, test plan, marketplace asset type, and estimated effort.
+The system SHALL generate solution specifications from templates (not LLM-generated) containing: problem statement, FORGE layer mapping, proposed solution, acceptance criteria (BDD-style), compliance impact assessment, test plan, marketplace asset type, and estimated effort.
 
 #### REQ-35-011: Budget Cap (D201)
 The system SHALL enforce a maximum of 10 auto-generated solutions per Program Increment to prevent scope creep.
@@ -212,7 +212,7 @@ The system SHALL support continuous background scanning in daemon mode with conf
 - License check: no GPL/AGPL/SSPL components (copyleft risk for Gov/DoD)
 - Boundary impact: RED items blocked from auto-generation, require manual review
 - Compliance alignment: signals that would weaken existing compliance posture are blocked
-- GOTCHA fit: signals must map to at least one GOTCHA layer (Goal/Tool/Arg/Context/HardPrompt)
+- FORGE fit: signals must map to at least one FORGE layer (Goal/Tool/Arg/Context/HardPrompt)
 - Duplicate detection: content hash dedup with similarity > 0.85 prevents redundant work
 - Budget cap: max 10 auto-solutions per PI enforced at the solution generation stage
 - Build gates: all generated solutions must pass existing security gates (SAST, deps, secrets, CUI)

@@ -113,7 +113,7 @@ DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
     "core": {
         "name": "ICDEV™ Core",
         "version": "1.0.0",
-        "description": "Core GOTCHA framework, project management, audit trail, memory system",
+        "description": "Core FORGE framework, project management, audit trail, memory system",
         "dependencies": [],
         "category": "foundation",
     },
@@ -321,7 +321,7 @@ DEFAULT_MODULES: Dict[str, Dict[str, Any]] = {
         "category": "platform",
     },
     "marketplace": {
-        "name": "GOTCHA Marketplace",
+        "name": "FORGE Marketplace",
         "version": "1.0.0",
         "description": "Federated asset marketplace with 7-gate security pipeline",
         "dependencies": ["core", "saas"],

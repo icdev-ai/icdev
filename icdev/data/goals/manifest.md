@@ -32,9 +32,9 @@
 | Framework Planning | goals/framework_planning.md | Language-specific build commands (Python/Java/Go/Rust/C#/TypeScript), 12 Leverage Points framework (Phase 42) |
 | Multi-Agent Orchestration | goals/multi_agent_orchestration.md | Opus 4.6 multi-agent: DAG workflow, parallel execution, collaboration patterns, domain authority vetoes, agent memory |
 | Security Categorization | goals/security_categorization.md | FIPS 199/200 categorization with SP 800-60 types, high watermark, CNSSI 1253, dynamic baseline |
-| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV™ clone apps with GOTCHA/ANVIL |
+| Agentic Generation | `goals/agentic_generation.md` | Generate mini-ICDEV™ clone apps with FORGE/ANVIL |
 | SaaS Multi-Tenancy | goals/saas_multi_tenancy.md | Multi-tenant SaaS: API gateway (REST+MCP SSE), per-tenant DB, 3 auth methods, subscription tiers, artifact delivery, tenant portal, Helm on-prem **(parent-only)** |
-| Marketplace | goals/marketplace.md | Federated GOTCHA asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline (Phase 22) **(parent-only)** |
+| Marketplace | goals/marketplace.md | Federated FORGE asset marketplace: publish, install, search, review, sync skills/goals/hardprompts/context/args/compliance across tenant orgs with 7-gate security pipeline (Phase 22) **(parent-only)** |
 | Universal Compliance | goals/universal_compliance.md | Universal Compliance Platform: 10 data categories, dual-hub crosswalk (NIST+ISO), 6 Wave 1 frameworks, auto-detection, multi-regime assessment (Phase 23) |
 | DevSecOps Workflow | goals/devsecops_workflow.md | DevSecOps profile management, maturity assessment, pipeline security generation, policy-as-code (Kyverno/OPA), image signing & attestation (Phase 24) |
 | Zero Trust Architecture | goals/zero_trust_architecture.md | ZTA 7-pillar maturity scoring, NIST SP 800-207 compliance, service mesh generation (Istio/Linkerd), network segmentation, PDP/PEP config, cATO posture monitoring (Phase 25) |

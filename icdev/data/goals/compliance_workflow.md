@@ -487,9 +487,9 @@ ATO READINESS: <READY | NOT READY — <reason>>
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Generate SSP | Tools | ssp_generator.py |
 | Generate POAM | Tools | poam_generator.py |
@@ -815,9 +815,9 @@ Classification: CUI // SP-CTI
 
 ---
 
-## GOTCHA Layer Mapping (Updated)
+## FORGE Layer Mapping (Updated)
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Generate SSP | Tools | ssp_generator.py |
 | Generate POAM | Tools | poam_generator.py |

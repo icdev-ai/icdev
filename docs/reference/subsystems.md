@@ -74,7 +74,7 @@ python tools/innovation/signal_ranker.py --calibrate --json
 | License Check | No GPL/AGPL/SSPL (copyleft risk) |
 | Boundary Impact | RED items blocked from auto-generation |
 | Compliance Alignment | Must not weaken existing compliance posture |
-| GOTCHA Fit | Must map to Goal/Tool/Arg/Context/HardPrompt |
+| FORGE Fit | Must map to Goal/Tool/Arg/Context/HardPrompt |
 | Duplicate Detection | Content hash dedup (similarity > 0.85) |
 | Budget Cap | Max 10 auto-solutions per PI |
 | Build Gates | All existing security gates (SAST, deps, secrets, CUI) |
@@ -359,7 +359,7 @@ ICDEV™ is exposed as a multi-tenant SaaS platform. The SaaS layer **wraps** ex
 
 ---
 
-## Marketplace — Federated GOTCHA Asset Registry (Phase 22)
+## Marketplace — Federated FORGE Asset Registry (Phase 22)
 
 ### Overview
 Customer developer communities share skills, goals, hardprompts, context, args, and compliance extensions through a federated marketplace with mandatory security scanning, compliance validation, and governance enforcement. 100% air-gapped, integrated with Phase 21 SaaS infrastructure.

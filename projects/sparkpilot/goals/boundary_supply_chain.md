@@ -180,9 +180,9 @@ stateDiagram-v2
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Phase | GOTCHA Layer |
+| Phase | FORGE Layer |
 |-------|--------------|
 | ATO System Registration | Goals (define boundary scope) |
 | Boundary Impact Assessment | Orchestration (AI evaluates impact) |

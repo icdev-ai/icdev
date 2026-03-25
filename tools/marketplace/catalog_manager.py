@@ -7,7 +7,7 @@
 """Marketplace Catalog Manager — CRUD for assets and versions.
 
 Manages the lifecycle of marketplace assets (skills, goals, hardprompts,
-context, args, compliance extensions) within the federated GOTCHA registry.
+context, args, compliance extensions) within the federated FORGE registry.
 
 Supports tenant-local catalogs and cross-tenant sharing to the central
 vetted registry.

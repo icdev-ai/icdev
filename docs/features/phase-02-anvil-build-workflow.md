@@ -8,7 +8,7 @@
 | Title | ANVIL Build Workflow |
 | Status | Implemented |
 | Priority | P0 |
-| Dependencies | Phase 1 (GOTCHA Framework Foundation) |
+| Dependencies | Phase 1 (FORGE Framework Foundation) |
 | Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 
@@ -20,7 +20,7 @@ Building production-grade applications with AI assistance requires more than cod
 
 Government and DoD systems demand a rigorous, repeatable build process that produces auditable, traceable, and production-ready artifacts. The build process must enforce design-before-code, validate all integrations before implementation, and stress-test before delivery. Furthermore, Model-Based Systems Engineering (MBSE) projects require an additional pre-phase that imports authoritative system models and establishes a digital thread before any design decisions are made.
 
-ANVIL provides this structured 5-step build methodology (Architect, Navigate, Verify, Integrate, Launch), with M-ANVIL extending it to 6 steps by adding a Model pre-phase for MBSE-enabled projects. Each step maps directly to a GOTCHA layer, ensuring the framework's separation of concerns is maintained throughout the build lifecycle.
+ANVIL provides this structured 5-step build methodology (Architect, Navigate, Verify, Integrate, Launch), with M-ANVIL extending it to 6 steps by adding a Model pre-phase for MBSE-enabled projects. Each step maps directly to a FORGE layer, ensuring the framework's separation of concerns is maintained throughout the build lifecycle.
 
 ---
 
@@ -72,9 +72,9 @@ ANVIL provides this structured 5-step build methodology (Architect, Navigate, Ve
 +-------+    +-------+    +-------+    +-------+    +----------+    +------------+
 ```
 
-### 3.3 GOTCHA Layer Mapping
+### 3.3 FORGE Layer Mapping
 
-| ANVIL Step | GOTCHA Layer | Role |
+| ANVIL Step | FORGE Layer | Role |
 |------------|--------------|------|
 | Architect | Goals | Define the process, problem, success criteria |
 | Trace | Context | Reference patterns, data schemas, integrations |
@@ -128,7 +128,7 @@ All items on the connection validation checklist SHALL show green status before 
 The system SHALL enforce the build order: database schema first, backend API routes second, frontend UI last.
 
 #### REQ-02-012: GOTCHA Separation
-Generated code SHALL follow GOTCHA separation of concerns -- UI components, business logic, and data access in distinct layers.
+Generated code SHALL follow FORGE separation of concerns -- UI components, business logic, and data access in distinct layers.
 
 ### 4.5 Stress-test Phase
 

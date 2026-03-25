@@ -34,18 +34,18 @@ capabilities:
     keywords: ["prompt chain", "LLM reasoning", "chain of thought", "plan critique refine", "multi-step reasoning"]
     source_catalog_id: "cap-multi-agent"
 
-  - slug: gotcha-framework
-    name: "GOTCHA 6-Layer Architecture"
-    description: "Goals, Orchestration, Tools, Context, Hard Prompts, Args -- separation of concerns between probabilistic AI orchestration and deterministic business logic"
+  - slug: forge-framework
+    name: "FORGE 6-Layer Architecture"
+    description: "Frameworks, Orchestration, Routines, Guidance, Evidence, Args -- separation of concerns between probabilistic AI orchestration and deterministic business logic"
     cli_examples:
       - "python tools/agent/session_purpose.py --declare 'task description' --project-id sparkpilot --json"
     related_controls: ["PL-2", "SA-3"]
     article_hooks:
-      - "90% accuracy per step = ~59% over 5 steps. GOTCHA separates probabilistic AI from deterministic tools to prevent error accumulation"
+      - "90% accuracy per step = ~59% over 5 steps. FORGE separates probabilistic AI from deterministic tools to prevent error accumulation"
       - "500+ deterministic Python tools -- no probabilistic business logic in the critical path"
-      - "GOTCHA is the architecture that lets AI orchestrate without executing -- tools do the work, AI decides what to call"
+      - "FORGE is the architecture that lets AI orchestrate without executing -- tools do the work, AI decides what to call"
     frameworks: []
-    keywords: ["GOTCHA", "agentic architecture", "separation of concerns", "deterministic", "orchestration layer"]
+    keywords: ["FORGE", "agentic architecture", "separation of concerns", "deterministic", "orchestration layer"]
     source_catalog_id: "cap-multi-agent"
 
   - slug: atlas-workflow

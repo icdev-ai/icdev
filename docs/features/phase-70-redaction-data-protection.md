@@ -200,7 +200,7 @@ agency_surrogates:
 - **D-RDT-9:** Central hook in router.invoke() protects all modules and child apps
 - **D-RDT-10:** mode: all (default) — every LLM call redacted unless exempt
 - **D-RDT-6:** Past performance generalization via deterministic rules (no LLM)
-- **D-RDT-7:** Deny-list config in YAML (GOTCHA args/ pattern)
+- **D-RDT-7:** Deny-list config in YAML (FORGE args/ pattern)
 
 ## Source Attribution
 

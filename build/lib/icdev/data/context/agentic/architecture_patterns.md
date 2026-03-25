@@ -10,9 +10,9 @@ Child applications are self-contained agentic systems with their own agents, mem
 
 ---
 
-## Pattern 1: GOTCHA Framework
+## Pattern 1: FORGE Framework
 
-Every child application uses the 6-layer GOTCHA framework. This is non-negotiable — it is the structural foundation that separates probabilistic AI orchestration from deterministic tool execution.
+Every child application uses the 6-layer FORGE framework. This is non-negotiable — it is the structural foundation that separates probabilistic AI orchestration from deterministic tool execution.
 
 | Layer | Directory | Role in Child App |
 |-------|-----------|-------------------|
@@ -23,7 +23,7 @@ Every child application uses the 6-layer GOTCHA framework. This is non-negotiabl
 | **Hard Prompts** | `hardprompts/` | Reusable LLM instruction templates for common tasks |
 | **Args** | `args/` | YAML/JSON behavior settings that change behavior without editing code |
 
-**Rationale:** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step compounds to ~59% over 5 steps. GOTCHA enforces separation of concerns so the AI orchestrates while tools execute reliably.
+**Rationale:** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step compounds to ~59% over 5 steps. FORGE enforces separation of concerns so the AI orchestrates while tools execute reliably.
 
 **Enforcement:** The scaffolder generates all 6 directories. Post-generation verification checks that each contains at least one file. CLAUDE.md documents the framework for the child's AI orchestrator.
 
@@ -246,7 +246,7 @@ Child agents use ICDEV™ base ports + a configurable offset (default: 1000).
 
 | # | Pattern | Key Principle |
 |---|---------|---------------|
-| 1 | GOTCHA Framework | Separate AI orchestration from deterministic execution |
+| 1 | FORGE Framework | Separate AI orchestration from deterministic execution |
 | 2 | Agent Tiers | Core always present; domain conditional; support always present |
 | 3 | A2A Protocol | JSON-RPC 2.0 over mTLS for agent communication |
 | 4 | Blueprint-Driven | Single JSON drives all generation; no hardcoded decisions |

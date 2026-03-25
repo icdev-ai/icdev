@@ -204,7 +204,7 @@ categories:
       - "mbse"
 
   marketplace:
-    description: "GOTCHA asset marketplace, publishing, installation"
+    description: "FORGE asset marketplace, publishing, installation"
     keywords:
       - "marketplace"
       - "asset"

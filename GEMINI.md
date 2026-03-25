@@ -10,7 +10,7 @@ Guidance for Google Gemini when working with this ICDEV™ project.
 
 ## Architecture
 
-This project uses the GOTCHA framework: Goals define workflows, Tools (Python CLI scripts in `tools/`) execute deterministically, Args/Context/Hard Prompts configure behavior. You orchestrate by reading goals and calling tools.
+This project uses the FORGE framework: Goals define workflows, Tools (Python CLI scripts in `tools/`) execute deterministically, Args/Context/Hard Prompts configure behavior. You orchestrate by reading goals and calling tools.
 
 All tools support `--json` for machine-readable output.
 

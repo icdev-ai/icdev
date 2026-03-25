@@ -34,7 +34,7 @@ Tier 3: Cloud/ICDEV™ (Bedrock, SageMaker, ICDEV™ Agents)
 ├── Model training + deployment to Tier 2
 ├── Compliance monitoring + audit trail
 ├── Self-healing firmware crash analysis
-└── ICDEV™ GOTCHA/ANVIL workflow
+└── ICDEV™ FORGE/ANVIL workflow
 ```
 
 ---
@@ -177,7 +177,7 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 │  │   machines   │  │ • Shadow     │  │ • Priority inver │   │
 │  └──────────────┘  └──────────────┘  └──────────────────┘   │
 │                                                              │
-│  GOTCHA Framework │ ANVIL Workflow │ 10-12 Agents            │
+│  FORGE Framework │ ANVIL Workflow │ 10-12 Agents            │
 │  TDD/BDD for C   │ Memory System  │ ICDEV™ A2A Bridge        │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -307,5 +307,5 @@ FreeRTOS-ai bridges the gap between embedded RTOS firmware development and enter
 1. **Fitness Assessment** — Run `agentic_fitness.py` with this spec
 2. **Blueprint Generation** — Generate app blueprint from fitness scorecard
 3. **Child App Generation** — Use `child_app_generator.py` pipeline
-4. **GOTCHA Validation** — Run `gotcha_validator.py --gate` post-generation
+4. **FORGE Validation** — Run `forge_validator.py --gate` post-generation
 5. **Prototype** — Start with Cortex-M7 + TFLite Micro + MQTT agent protocol

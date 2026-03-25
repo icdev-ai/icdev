@@ -242,7 +242,7 @@ def _render_template(template_str, data, platform) -> str:
 
 **AGENTS.md** (Codex — the universal fallback, ~200 rendered lines):
 - Project identity & classification
-- GOTCHA architecture overview (condensed)
+- FORGE architecture overview (condensed)
 - Available CLI tools (most important 20)
 - Coding standards from dev profile
 - Compliance guardrails

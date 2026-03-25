@@ -3,7 +3,7 @@
 """Genesis Synthesize Reflex — auto-generate goal workflows from observed patterns.
 
 Mines tool execution telemetry (hook_events, ai_telemetry) for recurring
-multi-tool sequences, generates GOTCHA-compliant goal drafts, and stages
+multi-tool sequences, generates FORGE-compliant goal drafts, and stages
 them as GKP artifacts for human review.
 
 YELLOW tier (writes goal drafts to staging, never activates autonomously).

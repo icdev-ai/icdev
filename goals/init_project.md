@@ -208,9 +208,9 @@ Audit entry logged:
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Validate inputs | Args | User-provided parameters |
 | Create DB record | Tools | project_create.py |

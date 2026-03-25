@@ -13,7 +13,7 @@ Pipeline stages:
   5. Review     — Human approval gate (dashboard wizard)
   6. Publish    — Export + push to WordPress
 
-GOTCHA-compliant: LLM calls go through tools/llm/router.py.
+FORGE-compliant: LLM calls go through tools/llm/router.py.
 """
 
 import json

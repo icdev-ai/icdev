@@ -57,7 +57,7 @@ These commands embody the 12 Leverage Points framework:
 6. **Types** — Strong typing (dataclasses, Pydantic, DB schemas)
 7. **Docs** — Clear instructions (CLAUDE.md, SKILL.md, goals)
 8. **Tests** — Validation (pytest + behave + Playwright + gates)
-9. **Architecture** — System design (GOTCHA layers, ANVIL workflow)
+9. **Architecture** — System design (FORGE layers, ANVIL workflow)
 10. **Plans** — Implementation blueprints (framework commands)
 11. **Templates** — Reusable patterns (context/ JSON, hardprompts/)
 12. **Workflows** — Orchestration logic (goals/, CI/CD pipelines)

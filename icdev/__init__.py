@@ -2,9 +2,9 @@
 
 A system that builds systems. AI-powered meta-builder for generating
 complete, autonomous, ATO-ready applications with 42 compliance framework
-mappings, 15 coordinating AI agents, and the GOTCHA framework.
+mappings, 15 coordinating AI agents, and the FORGE framework.
 
-GOTCHA layers:
+FORGE layers:
   G - Goals     (workflow definitions)
   O - Orchestration (AI agent layer)
   T - Tools     (deterministic Python scripts)

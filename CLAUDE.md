@@ -46,7 +46,7 @@ See `requirements.txt`. Key: sqlite3, pathlib, json (stdlib); openai, anthropic,
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 6-layer agentic system. AI orchestrates; tools execute deterministically.
 
@@ -105,7 +105,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 - In Behave step definitions, match step text to tool return signatures
 - SQL CHECK constraints: derive from Python constants, never hardcode
 - Entity types: add to BOTH the Python constant AND the SQL CHECK constraint
-- Child apps: ALWAYS use `child_app_generator.py` + `gotcha_validator.py --gate`
+- Child apps: ALWAYS use `child_app_generator.py` + `forge_validator.py --gate`
 - Before writing tests: ALWAYS run `api_surface_extractor.py --file <module> --json`
 - **Cross-platform:** pathlib.Path, `encoding='utf-8'`, `tempfile.gettempdir()`, `datetime.now(timezone.utc)`, `hashlib.sha256` not md5
 - **LLM config via `.env`**, never hardcode model IDs in Python
@@ -123,7 +123,7 @@ If `memory/MEMORY.md` doesn't exist, this is a fresh environment. Run `/initiali
 
 ## ICDEV™ System — Intelligent Certified Development
 
-Meta-builder that autonomously builds Gov/DoD applications using GOTCHA + ANVIL workflow. Full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing.
+Meta-builder that autonomously builds Gov/DoD applications using FORGE + ANVIL workflow. Full SDLC with TDD/BDD, NIST 800-53 RMF compliance, and self-healing.
 
 ### Environment
 - **Classification:** CUI // SP-CTI (IL4/IL5), SECRET (IL6)

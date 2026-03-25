@@ -150,7 +150,7 @@ genesis_trigger:
     auto_rollback_on_failure: true
   build_timeout_minutes: 60       # Max time for Genesis build + validation
   use_child_app_generator: true   # For new child apps, use child_app_generator.py
-  use_gotcha_validator: true      # Validate via gotcha_validator.py --gate
+  use_forge_validator: true      # Validate via forge_validator.py --gate
 
 # ---------------------------------------------------------------------------
 # Digest output

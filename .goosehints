@@ -6,7 +6,7 @@
 ICDEV™ Project is an ICDEV™-managed webapp (python).
 Classification: CUI // SP-CTI (IL4)
 
-## GOTCHA Framework (6 Layers)
+## FORGE Framework (6 Layers)
 
 1. **Goals** (`goals/`) — Workflow definitions (check `goals/manifest.md` first)
 2. **Orchestration** (you) — Read goal, decide tool order, apply args, handle errors

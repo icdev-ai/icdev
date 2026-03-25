@@ -2,7 +2,7 @@
 # Workflow Discipline Engine Configuration (Phase 66, D-WF-1 through D-WF-7)
 #
 # Adapts PAUL (Plan-Apply-Unify Loop) concepts into LLM-agnostic
-# deterministic tools for the GOTCHA framework.
+# deterministic tools for the FORGE framework.
 
 # Loop lifecycle settings
 loop:

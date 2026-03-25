@@ -187,7 +187,7 @@ python tools/ci/workflows/icdev_sdlc.py 123          # Run full SDLC pipeline
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.  The AI (you) is the orchestration layer -- you read goals, call tools, apply args, reference context, and use hard prompts.  You never execute work directly; you delegate to deterministic Python scripts.
 
@@ -463,7 +463,7 @@ Build process follows the ANVIL methodology:
 ### Orchestration
 
 - Prompt chains: Declarative YAML multi-step LLM reasoning (plan_critique_refine, scout_analyze_recommend)
-- Dispatcher mode: Orchestrator restricted to delegation tools only (GOTCHA separation of concerns)
+- Dispatcher mode: Orchestrator restricted to delegation tools only (FORGE separation of concerns)
 - Session purpose: Declared intent per session for NIST AU-3 audit traceability
 ```bash
 python tools/agent/prompt_chain_executor.py --list --json

@@ -4,13 +4,13 @@
 # CUI Category: CTI
 # Distribution: D
 # POC: ICDEV™ System Administrator
-"""GOTCHA Framework Compliance Validator.
+"""FORGE Framework Compliance Validator.
 
-Validates that a project directory conforms to the 6-layer GOTCHA framework
+Validates that a project directory conforms to the 6-layer FORGE framework
 and ANVIL workflow structure. Designed to run post-generation on child apps
 or standalone against any ICDEV™-compatible project.
 
-The 6 GOTCHA layers:
+The 6 FORGE layers:
   1. Goals       — goals/ with manifest + workflow files
   2. Orchestration — agent cards, agent config, or CLAUDE.md orchestration
   3. Tools       — tools/ with deterministic Python scripts
@@ -28,10 +28,10 @@ Decision D44: Flag-based backward compatibility (--gate for CI/CD blocking).
 Pattern: Follows claude_dir_validator.py declarative check registry.
 
 Usage:
-    python tools/builder/gotcha_validator.py --project-dir /path/to/app --json
-    python tools/builder/gotcha_validator.py --project-dir /path/to/app --human
-    python tools/builder/gotcha_validator.py --project-dir /path/to/app --gate
-    python tools/builder/gotcha_validator.py --project-dir /path/to/app --check goals --json
+    python tools/builder/forge_validator.py --project-dir /path/to/app --json
+    python tools/builder/forge_validator.py --project-dir /path/to/app --human
+    python tools/builder/forge_validator.py --project-dir /path/to/app --gate
+    python tools/builder/forge_validator.py --project-dir /path/to/app --check goals --json
 
 Exit codes: 0 = all checks pass, 1 = at least one check failed
 """
@@ -119,7 +119,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
             expected="goals/ directory with workflow definitions",
             actual="Directory not found",
             fix_suggestion="Create goals/ and add workflow files (build_app.md, manifest.md)",
-            message="GOTCHA Layer 1 (Goals) missing: no goals/ directory",
+            message="FORGE Layer 1 (Goals) missing: no goals/ directory",
         ))
         return checks
 
@@ -170,7 +170,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
             expected="At least 1 goal workflow file (e.g., build_app.md)",
             actual="0 goal files (empty directory)",
             fix_suggestion="Add goal files: build_app.md (ANVIL), tdd_workflow.md, compliance_workflow.md",
-            message="GOTCHA Layer 1 (Goals) empty: no workflow definitions found",
+            message="FORGE Layer 1 (Goals) empty: no workflow definitions found",
         ))
 
     return checks
@@ -233,7 +233,7 @@ def _check_orchestration(project_dir: Path) -> List[GotchaCheck]:
             expected="Agent cards, agent_config.yaml, or CLAUDE.md",
             actual="None found",
             fix_suggestion="Run child_app_generator.py or create agent definitions manually",
-            message="GOTCHA Layer 2 (Orchestration) missing: no agent definitions or CLAUDE.md",
+            message="FORGE Layer 2 (Orchestration) missing: no agent definitions or CLAUDE.md",
         ))
 
     return checks
@@ -253,7 +253,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
             expected="tools/ directory with deterministic Python scripts",
             actual="Directory not found",
             fix_suggestion="Create tools/ and add deterministic scripts (one job each)",
-            message="GOTCHA Layer 3 (Tools) missing: no tools/ directory",
+            message="FORGE Layer 3 (Tools) missing: no tools/ directory",
         ))
         return checks
 
@@ -308,8 +308,8 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
             status="fail",
             expected="At least 1 Python script in tools/",
             actual="0 Python files",
-            fix_suggestion="Add deterministic Python tools following GOTCHA pattern",
-            message="GOTCHA Layer 3 (Tools) empty: no Python scripts in tools/",
+            fix_suggestion="Add deterministic Python tools following FORGE pattern",
+            message="FORGE Layer 3 (Tools) empty: no Python scripts in tools/",
         ))
 
     return checks
@@ -329,7 +329,7 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
             expected="args/ directory with YAML/JSON config files",
             actual="Directory not found",
             fix_suggestion="Create args/ and add config files (project_defaults.yaml, etc.)",
-            message="GOTCHA Layer 6 (Args) missing: no args/ directory",
+            message="FORGE Layer 6 (Args) missing: no args/ directory",
         ))
         return checks
 
@@ -357,7 +357,7 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
             expected="At least 1 YAML/JSON config file",
             actual="0 config files",
             fix_suggestion="Add args/project_defaults.yaml, args/security_gates.yaml, etc.",
-            message="GOTCHA Layer 6 (Args) empty: no config files found",
+            message="FORGE Layer 6 (Args) empty: no config files found",
         ))
 
     return checks
@@ -377,7 +377,7 @@ def _check_context(project_dir: Path) -> List[GotchaCheck]:
             expected="context/ directory with reference material",
             actual="Directory not found",
             fix_suggestion="Create context/ and add reference material (compliance catalogs, patterns)",
-            message="GOTCHA Layer 5 (Context) missing: no context/ directory",
+            message="FORGE Layer 5 (Context) missing: no context/ directory",
         ))
         return checks
 
@@ -406,7 +406,7 @@ def _check_context(project_dir: Path) -> List[GotchaCheck]:
             expected="At least 1 context subdirectory with files",
             actual="0 non-empty subdirectories",
             fix_suggestion="Add context/compliance/, context/languages/, or domain-specific reference material",
-            message="GOTCHA Layer 5 (Context) empty: no reference material found",
+            message="FORGE Layer 5 (Context) empty: no reference material found",
         ))
 
     return checks
@@ -426,7 +426,7 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
             expected="hardprompts/ directory with LLM instruction templates",
             actual="Directory not found",
             fix_suggestion="Create hardprompts/ and add LLM instruction templates (.md files)",
-            message="GOTCHA Layer 4 (Hard Prompts) missing: no hardprompts/ directory",
+            message="FORGE Layer 4 (Hard Prompts) missing: no hardprompts/ directory",
         ))
         return checks
 
@@ -451,7 +451,7 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
             expected="At least 1 .md template in hardprompts/",
             actual="0 templates (empty directory)",
             fix_suggestion="Add LLM instruction templates: hardprompts/agent/architect.md, etc.",
-            message="GOTCHA Layer 4 (Hard Prompts) empty: no instruction templates found",
+            message="FORGE Layer 4 (Hard Prompts) empty: no instruction templates found",
         ))
 
     return checks
@@ -484,10 +484,10 @@ def _check_claude_md(project_dir: Path) -> List[GotchaCheck]:
             check_name="CLAUDE.md references GOTCHA",
             layer="meta",
             status="pass",
-            expected="CLAUDE.md mentioning GOTCHA framework",
+            expected="CLAUDE.md mentioning FORGE framework",
             actual="GOTCHA reference found",
             fix_suggestion="",
-            message="CLAUDE.md found with GOTCHA framework reference",
+            message="CLAUDE.md found with FORGE framework reference",
         ))
     else:
         checks.append(GotchaCheck(
@@ -495,10 +495,10 @@ def _check_claude_md(project_dir: Path) -> List[GotchaCheck]:
             check_name="CLAUDE.md references GOTCHA",
             layer="meta",
             status="warn",
-            expected="CLAUDE.md mentioning GOTCHA framework",
+            expected="CLAUDE.md mentioning FORGE framework",
             actual="CLAUDE.md exists but no GOTCHA reference",
-            fix_suggestion="Add GOTCHA framework section to CLAUDE.md documenting the 6-layer structure",
-            message="CLAUDE.md exists but does not reference GOTCHA framework",
+            fix_suggestion="Add FORGE framework section to CLAUDE.md documenting the 6-layer structure",
+            message="CLAUDE.md exists but does not reference FORGE framework",
         ))
 
     return checks
@@ -714,7 +714,7 @@ def _format_human(report: GotchaReport) -> str:
     lines = []
     lines.append("")
     lines.append("=" * 65)
-    lines.append("  GOTCHA Framework Compliance Validation")
+    lines.append("  FORGE Framework Compliance Validation")
     lines.append("=" * 65)
     lines.append(f"  Project:  {report.project_dir}")
     lines.append(f"  Score:    {report.score:.0%} ({report.passed_checks}/{report.total_checks} passed)")
@@ -765,14 +765,14 @@ def _format_human(report: GotchaReport) -> str:
 def main():
     """CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="GOTCHA Framework Compliance Validator",
+        description="FORGE Framework Compliance Validator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python tools/builder/gotcha_validator.py --project-dir . --human\n"
-            "  python tools/builder/gotcha_validator.py --project-dir /path/to/child --json\n"
-            "  python tools/builder/gotcha_validator.py --project-dir /path/to/child --gate\n"
-            "  python tools/builder/gotcha_validator.py --project-dir . --check goals --json\n"
+            "  python tools/builder/forge_validator.py --project-dir . --human\n"
+            "  python tools/builder/forge_validator.py --project-dir /path/to/child --json\n"
+            "  python tools/builder/forge_validator.py --project-dir /path/to/child --gate\n"
+            "  python tools/builder/forge_validator.py --project-dir . --check goals --json\n"
         ),
     )
     parser.add_argument("--project-dir", required=True,

@@ -84,7 +84,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D76:** 7-gate automated + mandatory human review for cross-tenant sharing
 - **D77:** Independent IL marking per asset with high-watermark consumption rule
 - **D78:** Ollama nomic-embed-text for air-gapped marketplace semantic search (D72 pattern)
-- **D79:** Full GOTCHA asset sharing: skills, goals, hardprompts, context, args, compliance extensions
+- **D79:** Full FORGE asset sharing: skills, goals, hardprompts, context, args, compliance extensions
 - **D80:** Append-only marketplace audit trail (publish, install, review, rate) per D6 pattern
 - **D81:** Asset SBOM generation required for executable assets (supply chain traceability)
 - **D82:** Ollama LLaVA for air-gapped vision; vision is a message format concern (multimodal content blocks), not a provider architecture concern — all 3 providers (Bedrock, Anthropic, OpenAI-compat) support it via existing infrastructure
@@ -246,7 +246,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D239:** CSP monitoring integrated as Innovation Engine source (Phase 35) — reuses existing signal scoring, triage, and solution generation pipeline; CSP changes treated as innovation signals with category mapping and government/compliance boosts
 - **D240:** Declarative CSP service registry as JSON catalog (extends D26 pattern) — baseline of all CSP services, compliance programs, regions, and FIPS status; monitor diffs live data against registry to detect changes; human review required before registry updates
 - **D241:** CSP changelog generates actionable recommendations per change type — each change type (deprecation, compliance scope change, breaking API change, etc.) maps to specific files and actions
-- **D242:** Hybrid 5-phase translation pipeline — deterministic extraction + type-checking + LLM translation + deterministic assembly + validate-repair loop. Consistent with GOTCHA principle (LLMs probabilistic, business logic deterministic)
+- **D242:** Hybrid 5-phase translation pipeline — deterministic extraction + type-checking + LLM translation + deterministic assembly + validate-repair loop. Consistent with FORGE principle (LLMs probabilistic, business logic deterministic)
 - **D243:** IR pivot — source code extracted into language-agnostic JSON IR before translation. Enables chunk-based translation, round-trip validation, progress tracking per unit
 - **D244:** Post-order dependency graph traversal at function/class granularity — translate leaf nodes first, then dependents (Amazon Oxidizer)
 - **D245:** Non-destructive output (extends D18) — translation output to separate directory, source never modified
@@ -485,7 +485,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 
 ### D-DISP — Dispatcher Mode
 
-- **D-DISP-1:** Dispatcher-only orchestrator mode restricts orchestrator to delegation tools (dispatch, route, status, mailbox) and blocks domain tools (scaffold, generate_code, ssp_generate, etc.) — enforces GOTCHA separation of concerns, per-project DB overrides
+- **D-DISP-1:** Dispatcher-only orchestrator mode restricts orchestrator to delegation tools (dispatch, route, status, mailbox) and blocks domain tools (scaffold, generate_code, ssp_generate, etc.) — enforces FORGE separation of concerns, per-project DB overrides
 
 ### D-PC — Prompt Chains
 
@@ -568,7 +568,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D-DH-7:** Multi-tenant via tenant_id column — future-proofed for multi-org without schema change
 - **D-DH-8:** Export delegates to existing tools (oscal_generator, xacta_export, emass_export) where possible
 - **D-DH-9:** All dh_ tables are append-only (new version = new row, status change on old row) — NIST AU compliant
-- **D-DH-10:** Profile definitions are JSON in context/ (GOTCHA context layer), not hardcoded in tools
+- **D-DH-10:** Profile definitions are JSON in context/ (FORGE context layer), not hardcoded in tools
 - **D-DH-11:** Module-level docs with independent health scores, rolling up to parent app
 - **D-DH-12:** Portfolio aggregate uses weighted average by app criticality
 - **D-DH-13:** Imported artifacts stored as-is with format detection (SPDX, CycloneDX, PDF, OSCAL)
@@ -626,7 +626,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D-HARNESS-1:** Loop state in `.tmp/sessions/` JSON (ephemeral, not DB)
 - **D-HARNESS-2:** Loop detection is soft-signal only (stderr, exit 0) -- never blocks
 - **D-HARNESS-3:** Progress file is JSON (models handle structured data better)
-- **D-HARNESS-4:** Exit criteria in args/ YAML (GOTCHA separation)
+- **D-HARNESS-4:** Exit criteria in args/ YAML (FORGE separation)
 - **D-HARNESS-5:** Trace analyzer scanner-tier only (zero Claude tokens)
 - **D-HARNESS-6:** Maturity assessor read-only, advisory-only
 - **D-HARNESS-7:** Scaffolder generates 3 hooks (minimal), not all 7
@@ -694,7 +694,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D-CF-26:** AI runbook generation is non-critical-path, always outputs status='draft'
 - **D-CF-27:** RTO/RPO stored as hours (REAL) on cf_applications -- simple numeric comparison
 - **D-CF-28:** Single unified Ops MCP server with 18 tools (reduces MCP server proliferation)
-- **D-CF-29:** YAML runbook templates in args/cloudforge_runbook_templates/ (GOTCHA args layer)
+- **D-CF-29:** YAML runbook templates in args/cloudforge_runbook_templates/ (FORGE args layer)
 - **D-CF-30:** Community: 3 runbooks, no snippets/AI/discovery; Pro: unlimited
 
 ### D-SC — Scale Engine
@@ -715,7 +715,7 @@ All architecture decisions for the ICDEV™ platform. Numbered D1-D360+ and pref
 - **D-RDT-4:** Two-pass detection: surrogate entities (PERSON, LOCATION) at 0.7 threshold with Faker replacements; hard-redact entities (SSN, credit card) at 0.3 threshold with [REDACTED] placeholders
 - **D-RDT-5:** Conversation-scoped surrogate registries with 72-hour TTL, persisted to SQLite
 - **D-RDT-6:** Past performance generalization via deterministic rules (dates→quarters, amounts→ranges, counts→rounded) — no LLM needed
-- **D-RDT-7:** GovCon deny-lists and custom terms in YAML config (GOTCHA args/ pattern)
+- **D-RDT-7:** GovCon deny-lists and custom terms in YAML config (FORGE args/ pattern)
 - **D-RDT-8:** Ollama gemma3 for NER (replaces spaCy — Python 3.14 compatible, air-gap safe, zero new dependencies)
 - **D-RDT-9:** Central pre-invoke hook in router.invoke() protects ALL 50+ LLM callers — no per-module integration
 - **D-RDT-10:** Scope mode: all (default) — every LLM call redacted unless exempt; enforced modules never skip even for local routing

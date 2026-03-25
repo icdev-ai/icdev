@@ -3,7 +3,7 @@
 capabilities to article topics via deterministic keyword scoring.
 
 Design decisions:
-    D-PULSE-CAP-1: Capability YAML files in context/capabilities/ (GOTCHA context layer)
+    D-PULSE-CAP-1: Capability YAML files in context/capabilities/ (FORGE context layer)
     D-PULSE-CAP-4: Deterministic keyword matching for capability lookup (zero LLM)
 
 Usage:

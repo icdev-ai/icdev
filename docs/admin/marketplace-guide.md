@@ -4,7 +4,7 @@
 
 ## Overview
 
-The ICDEV™ Federated GOTCHA Marketplace (Phase 22) enables customer developer communities to share reusable assets across tenant organizations with mandatory security scanning, compliance validation, and governance enforcement. The marketplace operates entirely within air-gapped environments and integrates with the Phase 21 SaaS multi-tenancy infrastructure.
+The ICDEV™ Federated FORGE Marketplace (Phase 22) enables customer developer communities to share reusable assets across tenant organizations with mandatory security scanning, compliance validation, and governance enforcement. The marketplace operates entirely within air-gapped environments and integrates with the Phase 21 SaaS multi-tenancy infrastructure.
 
 ### Supported Asset Types
 
@@ -149,7 +149,7 @@ python tools/marketplace/install_manager.py \
 
 ### Installation Rules
 
-- Assets are installed into the appropriate GOTCHA layer directory (`goals/`, `tools/`, `context/`, etc.)
+- Assets are installed into the appropriate FORGE layer directory (`goals/`, `tools/`, `context/`, etc.)
 - IL compatibility is enforced at install time (see below)
 - Dependency resolution is automatic -- if Asset B depends on Asset A, Asset A is installed first
 - Installed assets are recorded in the `marketplace_installations` table with full provenance

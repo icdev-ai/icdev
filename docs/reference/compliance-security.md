@@ -102,7 +102,7 @@ Implementing AC-2 satisfies FedRAMP AC-2, 800-171 3.1.1, CMMC AC.L2-3.1.1, and c
 | License Check | No GPL/AGPL/SSPL (copyleft risk) |
 | Boundary Impact | RED items blocked from auto-generation |
 | Compliance Alignment | Must not weaken existing compliance posture |
-| GOTCHA Fit | Must map to Goal/Tool/Arg/Context/HardPrompt |
+| FORGE Fit | Must map to Goal/Tool/Arg/Context/HardPrompt |
 | Duplicate Detection | Content hash dedup (similarity > 0.85) |
 | Budget Cap | Max 10 auto-solutions per PI |
 | Build Gates | All existing security gates (SAST, deps, secrets, CUI) |

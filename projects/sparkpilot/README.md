@@ -8,10 +8,10 @@
 
 SparkPilot was **autonomously generated** by [ICDEV™ (Intelligent Certified Development)](https://github.com/icdev-ai/icdev) — a meta-builder platform that creates fully compliant, agentic applications for Government and DoD environments.
 
-ICDEV™'s `/icdev-agentic` command assessed SparkPilot's fitness for agentic architecture, generated a blueprint, and scaffolded the entire application — including 11 AI agents, 23 goal workflows, 31 database tables, 10 MCP servers, and a full GOTCHA framework — in a single automated pipeline. The dashboard, compliance frameworks, memory system, and CI/CD integration were all produced by ICDEV™'s child app generator without manual coding.
+ICDEV™'s `/icdev-agentic` command assessed SparkPilot's fitness for agentic architecture, generated a blueprint, and scaffolded the entire application — including 11 AI agents, 23 goal workflows, 31 database tables, 10 MCP servers, and a full FORGE framework — in a single automated pipeline. The dashboard, compliance frameworks, memory system, and CI/CD integration were all produced by ICDEV™'s child app generator without manual coding.
 
 **What ICDEV™ generated for SparkPilot:**
-- Full 6-layer GOTCHA framework (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
+- Full 6-layer FORGE framework (Frameworks, Orchestration, Routines, Guidance, Evidence)
 - ANVIL/M-ANVIL workflow for TDD build cycles
 - 11 specialized AI agents with A2A protocol communication
 - 31-table SQLite database with append-only audit trail
@@ -204,7 +204,7 @@ sparkpilot/
 │   └── sparkpilot.db            # SQLite database (31 tables)
 ├── docs/
 │   └── screenshots/             # Dashboard screenshots
-├── goals/                       # 23 goal workflows (GOTCHA layer 1)
+├── goals/                       # 23 goal workflows (FORGE layer 1)
 ├── hardprompts/                  # Reusable LLM instruction templates
 ├── k8s/                         # Kubernetes manifests (STIG-hardened)
 ├── memory/                      # Long-term memory system
@@ -257,9 +257,9 @@ sparkpilot/
 | FIPS 140-3 | Cryptographic module validation |
 | NIST AI RMF | AI risk management |
 
-## GOTCHA Framework
+## FORGE Framework
 
-SparkPilot follows the 6-layer GOTCHA architecture:
+SparkPilot follows the 6-layer FORGE architecture:
 
 | Layer | Directory | Role |
 |-------|-----------|------|

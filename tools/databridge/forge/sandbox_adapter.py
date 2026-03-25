@@ -741,7 +741,7 @@ class SandboxAdapter:
     Auto-detects the best available backend at initialization:
     OpenSandbox API > Docker > subprocess.
 
-    All methods are deterministic and use stdlib only (D-CF-4, GOTCHA compliant).
+    All methods are deterministic and use stdlib only (D-CF-4, FORGE compliant).
     """
 
     def __init__(

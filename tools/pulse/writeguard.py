@@ -1,6 +1,6 @@
 """WriteGuard integration bridge for ICDEV™ Pulse.
 
-GOTCHA-compliant: All checks are deterministic (no LLM). Rewriting is
+FORGE-compliant: All checks are deterministic (no LLM). Rewriting is
 handled by Claude Code (the orchestration layer), not by this module.
 
 Connects to ICDEV™'s WriteGuard tools via direct Python imports for:
@@ -255,7 +255,7 @@ def run_full_quality_check(text: str) -> dict:
 def rewrite_content(text: str, quality_results: dict) -> dict:
     """Apply deterministic fixes and return findings for Claude Code to rewrite.
 
-    GOTCHA-compliant: This function does NOT call any LLM. It applies regex-based
+    FORGE-compliant: This function does NOT call any LLM. It applies regex-based
     deterministic fixes and returns the findings/instructions so Claude Code
     (the orchestration layer) can perform the LLM-quality rewrite directly.
 

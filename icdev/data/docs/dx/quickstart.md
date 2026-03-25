@@ -141,7 +141,7 @@ You don't need to know this, but for the curious:
 | Push code | SAST, dependency audit, secret detection, container scan |
 | Create a PR | STIG check, CUI validation, test execution, compliance gate evaluation |
 | Merge to main | SSP/POAM regeneration, SBOM update, cATO evidence refresh |
-| Talk to Claude | GOTCHA orchestration: reads goals, calls tools, applies args, references context |
+| Talk to Claude | FORGE orchestration: reads goals, calls tools, applies args, references context |
 | Drop `icdev.yaml` | Auto-configures pipeline, loads dev profile, sets compliance posture |
 
 ---

@@ -370,9 +370,9 @@ This integration addresses AML.T0080 (Context Poisoning) and AML.T0104 (Poisoned
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Prompt Injection Detection | Tools | `prompt_injection_detector.py` |
 | AI Telemetry | Tools | `ai_telemetry_logger.py` |

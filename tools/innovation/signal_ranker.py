@@ -102,9 +102,9 @@ COMPLIANCE_NEUTRAL_CATEGORIES = {
     "testing", "ai_tooling", "modernization",
 }
 
-# GOTCHA layer keyword mapping — used for feasibility scoring
+# FORGE layer keyword mapping — used for feasibility scoring
 # Mirrors triage.gotcha_fit.layer_mapping from innovation_config.yaml
-DEFAULT_GOTCHA_LAYERS = {
+DEFAULT_FORGE_LAYERS = {
     "goal": ["workflow", "process", "procedure", "methodology", "best practice"],
     "tool": ["script", "utility", "generator", "scanner", "checker", "validator", "analyzer"],
     "arg": ["configuration", "setting", "threshold", "parameter", "tuning"],
@@ -190,7 +190,7 @@ def _get_thresholds(config=None):
 
 
 def _get_gotcha_layers(config=None):
-    """Extract GOTCHA layer mapping from config, falling back to defaults."""
+    """Extract FORGE layer mapping from config, falling back to defaults."""
     if config is None:
         config = _load_config()
     triage = config.get("triage", {})
@@ -198,7 +198,7 @@ def _get_gotcha_layers(config=None):
     layer_mapping = gotcha_fit.get("layer_mapping", {})
     if layer_mapping:
         return {k: [kw.lower() for kw in v] for k, v in layer_mapping.items()}
-    return {k: [kw.lower() for kw in v] for k, v in DEFAULT_GOTCHA_LAYERS.items()}
+    return {k: [kw.lower() for kw in v] for k, v in DEFAULT_FORGE_LAYERS.items()}
 
 
 def _get_signal_categories(config=None):
@@ -315,7 +315,7 @@ def _score_impact_breadth(signal, conn):
 def _score_feasibility(signal, config=None):
     """Score feasibility dimension.
 
-    Checks if the signal category maps to an existing GOTCHA layer,
+    Checks if the signal category maps to an existing FORGE layer,
     indicating ICDEV™ has the architecture to address it.
 
     Args:
@@ -336,7 +336,7 @@ def _score_feasibility(signal, config=None):
 
     text_corpus = f"{title} {description} {json.dumps(metadata).lower()}"
 
-    # Count how many GOTCHA layers this signal maps to
+    # Count how many FORGE layers this signal maps to
     layers_matched = 0
     total_layers = len(gotcha_layers)
     matched_layer_names = []
@@ -610,7 +610,7 @@ def _score_technical_depth(signal, config=None):
             subsystem_boost += boost_val
     subsystem_boost = min(0.30, subsystem_boost)
 
-    # Layer diversity bonus: reward signals that span multiple GOTCHA layers
+    # Layer diversity bonus: reward signals that span multiple FORGE layers
     gotcha_layers_hit = sum(
         1 for prefix in ("tools/", "args/", "context/", "hardprompts/", "goals/")
         if prefix in matched_paths

@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Dispatcher-Only Orchestrator Mode (Phase 61, D-DISP-1).
 
-Enforces the GOTCHA principle that the Orchestration layer delegates work
+Enforces the FORGE principle that the Orchestration layer delegates work
 to domain agents rather than executing tools directly. When enabled,
 the orchestrator is restricted to dispatch-related tools only (task_dispatch,
 agent_status, agent_mailbox, workflow_status, prompt_chain_execute).

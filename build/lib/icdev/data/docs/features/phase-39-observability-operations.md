@@ -18,7 +18,7 @@
 
 ICDEV™'s 15-agent multi-agent architecture operates across MCP servers, A2A protocol channels, dashboard endpoints, and remote gateway channels. Without real-time visibility into agent execution, tool usage, and session lifecycle, operators cannot detect anomalies, audit agent behavior, or diagnose failures. Prior to Phase 39, tool invocations were fire-and-forget with no centralized event stream, making post-mortem analysis dependent on scattered log files.
 
-The GOTCHA framework mandates that business logic remain deterministic while the AI orchestration layer handles probabilistic decisions. This separation requires an observability layer that captures every tool use event, agent execution result, and session lifecycle transition in an append-only, tamper-evident audit trail. Without HMAC-signed event integrity, the audit trail cannot satisfy NIST 800-53 AU controls for non-repudiation.
+The FORGE framework mandates that business logic remain deterministic while the AI orchestration layer handles probabilistic decisions. This separation requires an observability layer that captures every tool use event, agent execution result, and session lifecycle transition in an append-only, tamper-evident audit trail. Without HMAC-signed event integrity, the audit trail cannot satisfy NIST 800-53 AU controls for non-repudiation.
 
 Furthermore, enterprise deployments require integration with existing SIEM platforms (Splunk, ELK) for centralized monitoring. The observability layer must forward events to external systems while maintaining air-gap compatibility through buffered offline operation and graceful degradation when SIEM endpoints are unreachable.
 

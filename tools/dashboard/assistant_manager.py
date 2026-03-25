@@ -505,7 +505,7 @@ def get_suggestions(
     if not scope:
         return [
             "What modules make up the ICDEV™ architecture?",
-            "How does the GOTCHA framework work?",
+            "How does the FORGE framework work?",
             "What databases does ICDEV™ use?",
         ]
 

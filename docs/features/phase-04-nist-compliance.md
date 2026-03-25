@@ -8,7 +8,7 @@
 | Title | NIST 800-53 Compliance & ATO Artifact Generation |
 | Status | Implemented |
 | Priority | P0 |
-| Dependencies | Phase 1 (GOTCHA Framework Foundation), Phase 3 (TDD/BDD Testing Framework) |
+| Dependencies | Phase 1 (FORGE Framework Foundation), Phase 3 (TDD/BDD Testing Framework) |
 | Author | ICDEV™ Architect Agent |
 | Date | 2026-02-23 |
 

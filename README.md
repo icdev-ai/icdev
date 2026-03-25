@@ -36,11 +36,11 @@ Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV
 
 ### How ICDEV™ Built GovProposal
 
-ICDEV™ generated GovProposal the same way it generates any application — through the GOTCHA framework and ANVIL workflow. GovProposal inherited:
+ICDEV™ generated GovProposal the same way it generates any application — through the FORGE framework and ANVIL workflow. GovProposal inherited:
 
 | What It Got | How It Works |
 |-------------|--------------|
-| **6-layer GOTCHA framework** | Goals, Orchestration, Tools, Args, Context, Hard Prompts — separating deterministic logic from AI |
+| **6-layer FORGE framework** | Frameworks, Orchestration, Routines, Guidance, Evidence — separating deterministic logic from AI |
 | **Multi-agent architecture** | 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) + 2 ATO agents |
 | **229-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
 | **42 compliance frameworks** | Dual-hub crosswalk engine — implement a control once, map to FedRAMP, CMMC, CJIS, HIPAA, and 38 more |
@@ -224,7 +224,7 @@ Most GovTech teams spend 12-18 months and millions of dollars getting from "we n
 │  Full application in 12 deterministic steps            │
 │  → 300+ files: agents, tools, goals, tests, CI/CD     │
 │  → 229-table database with append-only audit trail     │
-│  → GOTCHA framework + ANVIL workflow baked in          │
+│  → FORGE framework + ANVIL workflow baked in          │
 │  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
 └───────────────────────────┬───────────────────────────┘
                             ▼
@@ -305,7 +305,7 @@ This is where ICDEV™ does what no other tool does. From the approved blueprint
 
 | Step | What Gets Generated |
 |------|---------------------|
-| 1. Directory Tree | 40+ directories following GOTCHA structure |
+| 1. Directory Tree | 40+ directories following FORGE structure |
 | 2. Tools | All deterministic Python scripts, adapted with app-specific naming and ports |
 | 3. Agent Infrastructure | 5-7 AI agent definitions with Agent Cards, MCP server stubs, config |
 | 4. Memory System | MEMORY.md, daily logs, SQLite database, semantic search capability |
@@ -318,7 +318,7 @@ This is where ICDEV™ does what no other tool does. From the approved blueprint
 | 11. CLAUDE.md | Dynamic documentation (Jinja2) — only documents present capabilities |
 | 12. Audit & Registration | Logged to append-only audit trail, registered in child registry, genome manifest |
 
-The generated application isn't a template. It's a **living system** with its own GOTCHA framework, ANVIL workflow, multi-agent architecture, memory system, compliance automation, and CI/CD pipeline. It inherits ICDEV™'s capabilities but is independently deployable.
+The generated application isn't a template. It's a **living system** with its own FORGE framework, ANVIL workflow, multi-agent architecture, memory system, compliance automation, and CI/CD pipeline. It inherits ICDEV™'s capabilities but is independently deployable.
 
 Before generation, ICDEV™ scores **fitness across 6 dimensions** to determine the right architecture:
 
@@ -515,7 +515,7 @@ python tools/builder/child_app_generator.py --blueprint blueprint.json \
 Agents communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS). Each publishes an Agent Card at `/.well-known/agent.json`. Workflows use DAG-based parallel execution with domain authority vetoes.
 
 **Orchestration Controls:**
-- **Dispatcher mode** — Orchestrator delegates only, never executes tools directly (GOTCHA enforcement)
+- **Dispatcher mode** — Orchestrator delegates only, never executes tools directly (FORGE enforcement)
 - **Declarative prompt chains** — YAML-driven sequential LLM-to-LLM reasoning (plan → critique → refine)
 - **Session purpose tracking** — NIST AU-3 audit traceability for every agent session
 - **Async result injection** — high-priority mailbox delivery for completed background tasks
@@ -568,7 +568,7 @@ Generated applications connect to 100+ cloud-provider MCP servers automatically 
 
 ---
 
-## GOTCHA Framework
+## FORGE Framework
 
 ICDEV™'s core architecture separates deterministic tools from probabilistic AI:
 
@@ -583,9 +583,9 @@ ICDEV™'s core architecture separates deterministic tools from probabilistic AI
 └──────────────────────────────────────────────────────┘
 ```
 
-**Why?** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step = ~59% over 5 steps. GOTCHA fixes this by keeping AI in the orchestration layer and critical logic in deterministic Python scripts.
+**Why?** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step = ~59% over 5 steps. FORGE fixes this by keeping AI in the orchestration layer and critical logic in deterministic Python scripts.
 
-Generated child applications inherit the full GOTCHA framework — they aren't wrappers or templates, they're autonomous systems that can build their own features using the same methodology.
+Generated child applications inherit the full FORGE framework — they aren't wrappers or templates, they're autonomous systems that can build their own features using the same methodology.
 
 ---
 
@@ -607,7 +607,7 @@ Generated child applications inherit the full GOTCHA framework — they aren't w
 │          │ Infra    │ SupplyChn │           │            │
 │          │          │ Simulatn  │           │            │
 ├──────────┴──────────┴───────────┴───────────┴────────────┤
-│                   GOTCHA Framework                         │
+│                   FORGE Framework                         │
 │       Goals │ Tools │ Args │ Context │ Hard Prompts        │
 ├──────────────────────────────────────────────────────────┤
 │  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │

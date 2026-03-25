@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# Pulse Article Templates — GOTCHA Args Layer
+# Pulse Article Templates — FORGE Args Layer
 # Defines article types, structures, SEO patterns, and CTA blocks.
 # Referenced by tools/pulse/engine/drafter.py for template-aware drafting.
 
@@ -101,7 +101,7 @@ templates:
         - "Security & Zero Trust" for ZTA, threat modeling, SAST topics
         - "AI & Automation" for agentic AI, LLM security, automation topics
         - "Federal IT" for government IT modernization, acquisition topics
-        - "Agentic Engineering" for agentic coding, autonomous development, systems that build systems, GOTCHA, ANVIL topics
+        - "Agentic Engineering" for agentic coding, autonomous development, systems that build systems, FORGE, ANVIL topics
       secondary_rules: >
         Assign 1-2 secondary categories if the article spans multiple domains.
         Never assign more than 3 categories total.
@@ -123,7 +123,7 @@ templates:
           keywords: ["federal", "government", "DoD", "acquisition", "IL4", "GovCloud", "modernization"]
         - slug: agentic-engineering
           name: "Agentic Engineering"
-          keywords: ["agentic coding", "autonomous development", "systems that build systems", "GOTCHA", "ANVIL", "AI engineering", "self-assembling software", "code generation", "TDD", "architecture"]
+          keywords: ["agentic coding", "autonomous development", "systems that build systems", "FORGE", "ANVIL", "AI engineering", "self-assembling software", "code generation", "TDD", "architecture"]
         - slug: market-intelligence
           name: "Market Intelligence"
           keywords: ["trading", "crypto", "equities", "market analysis", "algorithmic trading", "portfolio", "signals", "alpha", "bull", "bear", "stocks", "forex", "sentiment"]
@@ -509,7 +509,7 @@ sam_bridge:
     notice_types: "o,p,r,s,k"
 
 # Capability Catalog — injects ICDEV™ capability context into articles
-# D-PULSE-CAP-1: YAML files in context/capabilities/ (GOTCHA context layer)
+# D-PULSE-CAP-1: YAML files in context/capabilities/ (FORGE context layer)
 # D-PULSE-CAP-4: Deterministic keyword matching (zero LLM)
 capability_catalog:
   enabled: true

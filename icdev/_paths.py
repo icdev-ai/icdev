@@ -54,7 +54,7 @@ def get_project_root() -> Path:
 
 
 def get_data_path(name: str) -> Path:
-    """Resolve a GOTCHA data directory (args, context, goals, hardprompts, etc.).
+    """Resolve a FORGE data directory (args, context, goals, hardprompts, etc.).
 
     Args:
         name: Directory name — one of 'args', 'context', 'goals',

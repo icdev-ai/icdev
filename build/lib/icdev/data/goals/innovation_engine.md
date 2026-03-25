@@ -119,7 +119,7 @@ DISCOVER (web + introspective + competitive + standards)
 Every signal passes through ALL 5 stages:
 
 1. **Classify Signal** — Map to category via keyword matching
-2. **GOTCHA Fit Check** — Must map to Goal/Tool/Arg/Context/HardPrompt
+2. **FORGE Fit Check** — Must map to Goal/Tool/Arg/Context/HardPrompt
 3. **Boundary Impact** — GREEN/YELLOW/ORANGE/RED assessment
 4. **Compliance Pre-Check** — Block if would weaken compliance posture
 5. **Duplicate/License Check** — Dedup + license compatibility
@@ -129,13 +129,13 @@ Every signal passes through ALL 5 stages:
 - Compliance-weakening detected → BLOCKED
 - GPL/AGPL/SSPL license → BLOCKED
 - Duplicate signal (similarity > 0.85) → BLOCKED
-- No GOTCHA layer fit → BLOCKED
+- No FORGE layer fit → BLOCKED
 
 ## Stage 4: Solution Generation
 
 Template-based spec generation with sections:
 1. Problem Statement
-2. GOTCHA Layer mapping
+2. FORGE Layer mapping
 3. Proposed Solution (layer-specific template)
 4. Acceptance Criteria (BDD-style)
 5. Compliance Impact assessment
@@ -195,5 +195,5 @@ Weight adjustment: max 0.02 step per calibration cycle, min 10 data points.
 1. **Same CVE from NVD + GitHub Advisories** — Dedup by content_hash (CVE ID)
 2. **Competitor releases a feature ICDEV™ already has** — Novelty score = 0, auto-logged
 3. **Standards body publishes draft (not final)** — Flag as draft, lower priority
-4. **Innovation signal maps to multiple GOTCHA layers** — Pick primary, note others
+4. **Innovation signal maps to multiple FORGE layers** — Pick primary, note others
 5. **Solution spec fails quality check** — Block generation, log for manual review

@@ -344,8 +344,8 @@ DIAGRAM_CATALOG = {
     },
 
     "gotcha_layers": {
-        "title": "GOTCHA Framework Layers",
-        "description": "6-layer agentic system: Goals, Orchestration, Tools, Context, Hard Prompts, Args",
+        "title": "FORGE Framework Layers",
+        "description": "6-layer agentic system: Frameworks, Orchestration, Routines, Guidance, Evidence, Args",
         "category": "architecture",
         "roles": [],
         "mermaid": """flowchart TD

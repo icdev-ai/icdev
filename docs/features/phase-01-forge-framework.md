@@ -1,11 +1,11 @@
-# Phase 1 — GOTCHA Framework Foundation
+# Phase 1 — FORGE Framework Foundation
 
 **CUI // SP-CTI**
 
 | Field | Value |
 |-------|-------|
 | Phase | 1 |
-| Title | GOTCHA Framework Foundation |
+| Title | FORGE Framework Foundation |
 | Status | Implemented |
 | Priority | P0 |
 | Dependencies | None |
@@ -20,13 +20,13 @@ Large Language Models are probabilistic systems. When used directly for business
 
 The fundamental challenge is separating what LLMs are good at (orchestration, decision-making, natural language understanding) from what must be deterministic (business logic, compliance checks, security scanning, infrastructure generation). Without a structured framework, AI-assisted development devolves into "vibe coding" -- producing demos that cannot survive production scrutiny, compliance audits, or operational stress.
 
-ICDEV™ requires a foundational architecture that enforces this separation of concerns while providing a complete operational model: persistent memory across sessions, manifest-driven tool discovery, goal-driven workflows, configurable behavior, reusable context, and templated prompts. This is the GOTCHA framework.
+ICDEV™ requires a foundational architecture that enforces this separation of concerns while providing a complete operational model: persistent memory across sessions, manifest-driven tool discovery, goal-driven workflows, configurable behavior, reusable context, and templated prompts. This is the FORGE framework.
 
 ---
 
 ## 2. Goals
 
-1. Establish a 6-layer architecture (Goals, Orchestration, Tools, Args, Context, Hard Prompts) that enforces separation between probabilistic AI orchestration and deterministic tool execution
+1. Establish a 6-layer architecture (Frameworks, Orchestration, Routines, Guidance, Evidence) that enforces separation between probabilistic AI orchestration and deterministic tool execution
 2. Implement a manifest system (`goals/manifest.md`, `tools/manifest.md`) that serves as a single source of truth for all available workflows and tools
 3. Build a dual-storage memory system (markdown files for human readability + SQLite databases for machine searchability) with 6 memory types
 4. Define a session start protocol that loads long-term context, daily logs, and project state before any work begins
@@ -42,7 +42,7 @@ ICDEV™ requires a foundational architecture that enforces this separation of c
 
 ```
 +---------------------------------------------------------------+
-|                    GOTCHA Framework                             |
+|                    FORGE Framework                             |
 |                                                                |
 |  +-------------------+    +-----------------------------+      |
 |  | GOALS             |    | ORCHESTRATION (LLM)         |      |

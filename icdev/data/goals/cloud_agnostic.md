@@ -4,7 +4,7 @@
 
 ## Purpose
 
-Enable ICDEV™ to deploy on any supported Cloud Service Provider (CSP) — or on-premises — using a single, unified abstraction layer. Cloud-specific details (endpoints, SDKs, regions, compliance certifications) are encapsulated behind provider ABCs so that the GOTCHA framework, compliance engine, and all tools operate identically regardless of the underlying infrastructure.
+Enable ICDEV™ to deploy on any supported Cloud Service Provider (CSP) — or on-premises — using a single, unified abstraction layer. Cloud-specific details (endpoints, SDKs, regions, compliance certifications) are encapsulated behind provider ABCs so that the FORGE framework, compliance engine, and all tools operate identically regardless of the underlying infrastructure.
 
 **Why this matters:** Government and DoD customers deploy on different cloud environments — AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government Cloud, IBM Cloud for Government (IC4G), or fully air-gapped on-premises enclaves. ICDEV™ must support all of these without duplicating business logic. A single `cloud_config.yaml` setting switches the entire stack.
 
@@ -278,9 +278,9 @@ python tools/cloud/csp_changelog.py --generate --json                    # Gener
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Cloud Mode Selection | Tools | `cloud_mode_manager.py` |
 | Provider Resolution | Tools | `provider_factory.py` |

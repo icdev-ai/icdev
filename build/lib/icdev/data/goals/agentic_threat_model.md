@@ -114,7 +114,7 @@ Formal threat model mapping OWASP Agentic AI threats (T1-T17) and Microsoft STRI
 | T02 | Tool Misuse | Builder (code gen), Infrastructure (Terraform), all 14 MCP servers | `pre_tool_use.py` hook with deny patterns; Security agent hard veto (D42); SAST gates; read-only rootfs; drop ALL capabilities | **Low** | Gap 2: No multi-step tool chain validation; individual calls checked but sequences are not |
 | T03 | Privilege Compromise | Orchestrator (task routing), RBAC (D172), domain authority (D42) | 5-role RBAC; domain authority matrix with hard/soft vetoes; per-agent port isolation; mTLS | **Low** | Gap 5: Static trust levels; no dynamic trust scoring based on runtime behavior |
 | T04 | Resource Overload | All agents, Bedrock LLM calls, dashboard SSE | Rate limiting per tenant; HPA (D141); PDB (D143); circuit breaker (D146); token budget controls; retry with exponential backoff (D147) | **Low** | Covered |
-| T05 | Cascading Hallucinations | Builder (code gen), Architect (design), Orchestrator (task decomposition) | GOTCHA framework separates LLM from business logic; structured JSON outputs (D39); deterministic tool validation; TDD gates; acceptance validation gate | **Low** | Gap 3: No output semantic validation between agent handoffs; structural checks only |
+| T05 | Cascading Hallucinations | Builder (code gen), Architect (design), Orchestrator (task decomposition) | FORGE framework separates LLM from business logic; structured JSON outputs (D39); deterministic tool validation; TDD gates; acceptance validation gate | **Low** | Gap 3: No output semantic validation between agent handoffs; structural checks only |
 | T06 | Prompt Injection | All agents accepting external input, Gateway (5 channels), marketplace assets | 5-category prompt injection detector (D215); marketplace Gates 8-9 (D231); Gateway 8-gate security chain; confidence thresholds with block/flag/warn/allow | **Low** | Covered |
 | T07 | Misaligned Behaviors | Orchestrator (workflow selection), Builder (implementation choices), child apps | Goals define expected behavior; acceptance validation gate; Security/Compliance hard vetoes; child genome versioning (D209) | **Medium** | Gap 1 + Gap 7: No continuous alignment monitoring; misalignment detected only at gate checkpoints |
 | T08 | Repudiation of Actions | All agents, A2A protocol, audit trail | Append-only audit trail (D6); HMAC-SHA256 event signing (D31); AI telemetry with SHA-256 hashing (D216); correlation IDs (D149); JSONL agent execution logs (D35) | **Low** | Covered |
@@ -215,7 +215,7 @@ MCP servers use stdio transport (local subprocess), which provides strong proces
 | icdev-gateway | `send_command`, `bind_user` | Unauthorized command injection via bound channels | User binding (D136), allowlist (D137), rate limiting, blocked commands |
 | icdev-marketplace | `publish_asset`, `install_asset` | Supply chain poisoning via malicious assets | 9-gate pipeline (D231), IL compatibility check, digital signature |
 | icdev-devsecops | `pipeline_security_generate`, `policy_generate` | Policy weakening, attestation bypass | DevSecOps maturity gate, policy-as-code validation |
-| icdev-innovation | `run_pipeline`, `generate_solution` | Auto-generation of insecure solutions | Budget cap (10/PI), license check, compliance triage, GOTCHA fit check |
+| icdev-innovation | `run_pipeline`, `generate_solution` | Auto-generation of insecure solutions | Budget cap (10/PI), license check, compliance triage, FORGE fit check |
 
 **Gap 6 impact:** Because MCP uses stdio transport with no per-tool authorization, any client with access to an MCP server can invoke all tools on that server. The `pre_tool_use.py` hook provides deny-pattern filtering but not affirmative RBAC. Phase 45 addresses this with per-tool permission mapping aligned to dashboard roles (D172).
 
@@ -277,9 +277,9 @@ All threats rated **High** or **Medium** residual risk, with remediation path.
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Component | GOTCHA Layer | File |
+| Component | FORGE Layer | File |
 |-----------|-------------|------|
 | Threat model (this document) | Goals | `goals/agentic_threat_model.md` |
 | Prompt injection detection | Tools | `tools/security/prompt_injection_detector.py` |

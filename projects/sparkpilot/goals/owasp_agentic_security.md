@@ -362,9 +362,9 @@ python tools/compliance/owasp_agentic_assessor.py --project-id "proj-123" --json
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | Behavioral Drift Detection | Tools | `ai_telemetry_logger.py --drift` |
 | Tool Chain Validation | Tools | `tool_chain_validator.py` |

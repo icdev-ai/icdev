@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-# LLM-as-a-Judge Configuration — GOTCHA Args Layer
+# LLM-as-a-Judge Configuration — FORGE Args Layer
 # Rubric-based semantic evaluation via Prometheus-2 (local) or Claude (cloud).
 # Complements WriteGuard deterministic checks with coherence, persuasiveness,
 # specificity, completeness, and audience fit dimensions.

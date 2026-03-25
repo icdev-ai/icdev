@@ -29,7 +29,7 @@ pytest tests/ -v
 
 Some commands here.
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
 This is a 6-layer agentic system.
 
@@ -92,7 +92,7 @@ class TestSectionParsing:
     def test_top_level_sections(self, indexer):
         names = indexer.section_names
         assert "Quick Reference" in names
-        assert "Architecture: GOTCHA Framework" in names
+        assert "Architecture: FORGE Framework" in names
         assert "Testing Framework" in names
 
     def test_subsections_found(self, indexer):

@@ -151,7 +151,7 @@ def generate_system_card(
                 ],
                 "processing": [
                     "LLM inference via cloud providers (Bedrock, Azure, GCP, OCI, IBM)",
-                    "Deterministic tool execution (GOTCHA framework)",
+                    "Deterministic tool execution (FORGE framework)",
                     "Compliance assessment via crosswalk engine",
                 ],
                 "outputs": [

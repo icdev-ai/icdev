@@ -13,7 +13,7 @@ entering the build pipeline.
 
 Pipeline Stages:
     1. Classify Signal     — Map to signal_categories from innovation_config.yaml
-    2. GOTCHA Fit Check    — Signal must map to at least one GOTCHA layer
+    2. FORGE Fit Check    — Signal must map to at least one FORGE layer
     2.5 Module Impact      — Map to specific ICDEV™ tools/files (Phase 71 enhancement)
     3. Boundary Impact     — Estimate ATO boundary impact (GREEN/YELLOW/ORANGE/RED)
     4. Compliance Pre-Check — Detect compliance-weakening anti-patterns
@@ -89,7 +89,7 @@ except ImportError:
 # =========================================================================
 # CONSTANTS
 # =========================================================================
-GOTCHA_LAYERS = ["goal", "tool", "arg", "context", "hardprompt"]
+FORGE_LAYERS = ["goal", "tool", "arg", "context", "hardprompt"]
 
 BOUNDARY_TIERS = {
     "GREEN": "No ATO boundary change",
@@ -310,17 +310,17 @@ def _stage_classify_signal(signal, config):
 # STAGE 2: GOTCHA FIT CHECK
 # =========================================================================
 def _stage_gotcha_fit(signal, config):
-    """Check whether signal maps to at least one GOTCHA layer.
+    """Check whether signal maps to at least one FORGE layer.
 
     Uses triage.gotcha_fit.layer_mapping from config to match keywords
-    in the signal title + description against each GOTCHA layer.
+    in the signal title + description against each FORGE layer.
 
     Args:
         signal: Dict with at least 'title' and 'description'.
         config: Full innovation config dict.
 
     Returns:
-        Tuple of (result, details). Blocks if no GOTCHA layer matches
+        Tuple of (result, details). Blocks if no FORGE layer matches
         and triage.gotcha_fit.required_layer is true.
     """
     triage_config = config.get("triage", {})
@@ -343,7 +343,7 @@ def _stage_gotcha_fit(signal, config):
         return "block", {
             "matched_layers": [],
             "layer_scores": layer_scores,
-            "reason": "Signal does not map to any GOTCHA layer (goal/tool/arg/context/hardprompt)",
+            "reason": "Signal does not map to any FORGE layer (goal/tool/arg/context/hardprompt)",
         }
 
     # Pick the best-matching layer (most keyword hits)
@@ -364,7 +364,7 @@ def _stage_gotcha_fit(signal, config):
 def _map_module_impact(signal, conn, config):
     """Map signal to specific ICDEV™ modules that would be enhanced (Phase 71 lesson).
 
-    Goes beyond GOTCHA layer matching to identify exact tools/files that
+    Goes beyond FORGE layer matching to identify exact tools/files that
     would benefit from this signal's integration.
 
     Args:
@@ -1060,7 +1060,7 @@ def triage_all_scored(db_path=None):
 def get_triage_summary(db_path=None):
     """Summarize triage outcomes across all triaged signals.
 
-    Provides aggregate counts by triage result, category, GOTCHA layer,
+    Provides aggregate counts by triage result, category, FORGE layer,
     boundary tier, and recent triage log entries.
 
     Args:
@@ -1095,7 +1095,7 @@ def get_triage_summary(db_path=None):
         for row in rows:
             by_category[row["category"] or "uncategorized"] = row["cnt"]
 
-        # Count by GOTCHA layer
+        # Count by FORGE layer
         by_gotcha = {}
         rows = conn.execute(
             """SELECT gotcha_layer, COUNT(*) as cnt
@@ -1268,7 +1268,7 @@ def _print_human(args, result):
         print(f"Signal:        {sig.get('signal_id', '')} — {sig.get('title', '')}")
         print(f"Score:         {sig.get('score', 0.0):.4f}")
         print(f"Category:      {sig.get('category', 'N/A')}")
-        print(f"GOTCHA Layer:  {sig.get('gotcha_layer', 'N/A')}")
+        print(f"FORGE Layer:  {sig.get('gotcha_layer', 'N/A')}")
         print(f"Boundary Tier: {sig.get('boundary_tier', 'N/A')}")
 
         if sig.get("blocked"):
@@ -1323,7 +1323,7 @@ def _print_human(args, result):
 
         by_gotcha = result.get("by_gotcha_layer", {})
         if by_gotcha:
-            print("\nBy GOTCHA Layer:")
+            print("\nBy FORGE Layer:")
             for layer, count in sorted(by_gotcha.items()):
                 print(f"  {layer:12s}: {count}")
 

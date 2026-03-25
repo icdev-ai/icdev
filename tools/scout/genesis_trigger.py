@@ -147,7 +147,7 @@ def _build_in_worktree(finding: dict, worktree_path: str, config: dict) -> dict:
         f"Requirements:\n"
         f"- Implement the suggested improvement\n"
         f"- Add appropriate tests\n"
-        f"- Follow ICDEV™ GOTCHA framework conventions\n"
+        f"- Follow ICDEV™ FORGE framework conventions\n"
         f"- Include CUI markings\n"
     )
 

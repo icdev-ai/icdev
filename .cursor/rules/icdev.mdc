@@ -14,7 +14,7 @@ alwaysApply: true
 
 ## Architecture
 
-GOTCHA framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
+FORGE framework: you orchestrate deterministic Python CLI tools in `tools/`. All tools support `--json`. Read `goals/manifest.md` for workflows.
 
 ## Rules
 

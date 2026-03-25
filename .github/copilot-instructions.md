@@ -12,7 +12,7 @@ This is an ICDEV™-managed project (IL4, CUI).
 
 ## Architecture
 
-GOTCHA framework: deterministic Python tools in `tools/` with `--json` output. Read `goals/manifest.md` for workflows, `tools/manifest.md` for available tools.
+FORGE framework: deterministic Python tools in `tools/` with `--json` output. Read `goals/manifest.md` for workflows, `tools/manifest.md` for available tools.
 
 ## Key Commands
 

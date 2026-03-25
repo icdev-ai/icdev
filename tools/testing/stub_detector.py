@@ -3,7 +3,7 @@
 """4-Level Verification & Stub Detection Tool (GSD-adapted).
 
 Implements a 4-level verification pipeline inspired by GSD's verification
-system, adapted for ICDEV™'s GOTCHA framework and air-gapped environments.
+system, adapted for ICDEV™'s FORGE framework and air-gapped environments.
 
 Levels:
   1. EXISTS     — File was created / artifact present

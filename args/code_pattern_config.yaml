@@ -160,7 +160,7 @@ framework_allowlist:
     - tools/
   # Pattern names that are legitimate in the allowed_dirs
   allowed_patterns:
-    - subprocess_spawn    # GOTCHA Tool layer — list-arg invocation, no shell
+    - subprocess_spawn    # FORGE Tool layer — list-arg invocation, no shell
     - dunder_import       # D66 ABC provider pattern — dynamic loading
     - importlib_usage     # D66 pluggable architecture — plugin loading
     - compile_usage       # re.compile() — regex, not code exec

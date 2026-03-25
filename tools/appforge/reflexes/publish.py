@@ -108,7 +108,7 @@ AppForge doesn't wait for a requirements document. It scans for challenges, eval
 
 ## Get Started
 
-The ICDEV™ ecosystem — including AppForge, Workflow Studio (217 tools across 16 categories), and the full GOTCHA framework — is available at [https://github.com/icdev-ai](https://github.com/icdev-ai) and [https://icdev.ai](https://icdev.ai).
+The ICDEV™ ecosystem — including AppForge, Workflow Studio (217 tools across 16 categories), and the full FORGE framework — is available at [https://github.com/icdev-ai](https://github.com/icdev-ai) and [https://icdev.ai](https://icdev.ai).
 
 Whether you're in {vertical.lower()} or any other industry, the pattern is the same: describe your challenge, let the system build, review your working application.
 

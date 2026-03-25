@@ -1,14 +1,14 @@
-# GOTCHA Framework Architecture Guide
+# FORGE Framework Architecture Guide
 
 CUI // SP-CTI
 
 ## Overview
 
-GOTCHA is a 6-layer agentic system architecture that separates probabilistic AI orchestration from deterministic business logic. The name is an acronym for its layers: **G**oals, **O**rchestration, **T**ools, **C**ontext, **H**ard Prompts, and **A**rgs.
+FORGE is a 6-layer agentic system architecture that separates probabilistic AI orchestration from deterministic business logic. The name is an acronym for its layers: **G**oals, **O**rchestration, **T**ools, **C**ontext, **H**ard Prompts, and **A**rgs.
 
 ### The Core Problem
 
-LLMs are probabilistic. Business logic must be deterministic. At 90% accuracy per step, a 5-step workflow achieves only ~59% end-to-end accuracy (0.9^5 = 0.59). GOTCHA solves this by confining LLM reasoning to orchestration decisions while delegating all execution to deterministic Python scripts.
+LLMs are probabilistic. Business logic must be deterministic. At 90% accuracy per step, a 5-step workflow achieves only ~59% end-to-end accuracy (0.9^5 = 0.59). FORGE solves this by confining LLM reasoning to orchestration decisions while delegating all execution to deterministic Python scripts.
 
 ```
 Accuracy degradation without separation of concerns:
@@ -17,7 +17,7 @@ Accuracy degradation without separation of concerns:
   ------    ------    ------    ------    ------
    90%  -->  81%  -->  73%  -->  66%  -->  59%
 
-With GOTCHA: LLM decides WHAT to do, deterministic tools DO it.
+With FORGE: LLM decides WHAT to do, deterministic tools DO it.
 Each tool is 100% deterministic. LLM only picks the order.
 ```
 
@@ -436,7 +436,7 @@ These shape the environment that amplifies agent effectiveness.
 |  7.  Docs               CLAUDE.md, SKILL.md, goals/     |
 |  8.  Tests              pytest + behave + Playwright +   |
 |                         security/compliance gates        |
-|  9.  Architecture       GOTCHA layers, ANVIL workflow    |
+|  9.  Architecture       FORGE layers, ANVIL workflow    |
 |  10. Plans              specs/, plan files, goals/       |
 |  11. Templates          context/ JSON, hardprompts/,     |
 |                         args/ YAML                       |

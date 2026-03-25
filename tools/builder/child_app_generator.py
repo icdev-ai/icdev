@@ -2,7 +2,7 @@
 """Child App Generator - generates mini-ICDEV™ clone applications from blueprints.
 
 This is the core engine for ICDEV™ Phase 19 agentic app generation. Every child
-app includes the full GOTCHA framework, ANVIL workflow, own agents, memory system,
+app includes the full FORGE framework, ANVIL workflow, own agents, memory system,
 and CI/CD — everything except the ability to generate new applications.
 
 Decision D21: Copy-and-adapt over template library.
@@ -337,7 +337,7 @@ def _copy_directory(
 # ---------------------------------------------------------------------------
 
 def step_01_create_directory_tree(child_root: Path, blueprint: dict) -> dict:
-    """Step 1: Create the full GOTCHA directory structure."""
+    """Step 1: Create the full FORGE directory structure."""
     created_dirs = []
     capabilities = blueprint.get("capabilities", {})
 
@@ -2456,7 +2456,7 @@ CAP_DESCRIPTIONS: Dict[str, str] = {
     "devsecops": "DevSecOps — Pipeline security, policy-as-code (Kyverno/OPA), image attestation",
     "zta": "Zero Trust Architecture — 7-pillar maturity, NIST 800-207, service mesh, mTLS",
     "mosa": "DoD MOSA — Modular Open Systems, ICD/TSP generation, modularity analysis",
-    "marketplace": "GOTCHA Marketplace — Federated asset sharing, 7-gate security pipeline",
+    "marketplace": "FORGE Marketplace — Federated asset sharing, 7-gate security pipeline",
     "innovation": "Innovation Engine — Autonomous self-improvement, web scanning, trend detection",
     "translation": "Cross-Language Translation — 5-phase hybrid pipeline, 30 language pairs",
     "observability": "Observability & XAI — Distributed tracing, provenance, AgentSHAP attribution",
@@ -2506,7 +2506,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
         "**Built with [ICDEV™](https://github.com/icdev) — the Intelligent "
         "Coding Development platform.**\n\n"
         "ICDEV™ is a meta-builder that autonomously constructs Gov/DoD applications "
-        "using the GOTCHA framework (Goals, Orchestration, Tools, Args, Context, "
+        "using the FORGE framework (Goals, Orchestration, Tools, Args, Context, "
         "Hard Prompts) and the ANVIL workflow (Architect → Trace → Link → Assemble "
         "→ Stress-test). It handles the full SDLC with TDD/BDD, NIST 800-53 RMF "
         "compliance, and self-healing capabilities.\n"
@@ -2524,7 +2524,7 @@ def _generate_readme(child_root: Path, blueprint: dict) -> dict:
     # Architecture
     sections.append(
         "## Architecture\n\n"
-        "This application follows the **GOTCHA 6-Layer Framework**:\n\n"
+        "This application follows the **FORGE 6-Layer Framework**:\n\n"
         "| Layer | Role |\n"
         "|-------|------|\n"
         "| **Goals** | Process definitions — what to achieve, which tools, expected outputs |\n"
@@ -2625,9 +2625,9 @@ This file provides guidance to Claude Code when working with {app_name}.
 
 ---
 
-## Architecture: GOTCHA Framework
+## Architecture: FORGE Framework
 
-This is a 6-layer agentic system: Goals, Orchestration, Tools, Args, Context, Hard Prompts.
+This is a 6-layer agentic system: Frameworks, Orchestration, Routines, Guidance, Evidence.
 
 ### Key Files
 - `goals/manifest.md` — Index of all goal workflows
@@ -2870,16 +2870,16 @@ def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
 
 
 def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
-    """Step 14: Validate GOTCHA framework compliance of generated child app.
+    """Step 14: Validate FORGE framework compliance of generated child app.
 
-    Runs the gotcha_validator to verify all 6 GOTCHA layers are populated
+    Runs the forge_validator to verify all 6 FORGE layers are populated
     and ANVIL workflow structure is present. This ensures child apps follow
-    the GOTCHA framework as mandated by build_app.md.
+    the FORGE framework as mandated by build_app.md.
 
     BMAD-adapted: adversarial validation — assumes the build is incomplete
     until proven otherwise.
     """
-    validate_fn = _import_sister("gotcha_validator", "validate")
+    validate_fn = _import_sister("forge_validator", "validate")
 
     if validate_fn:
         report = validate_fn(child_root)
@@ -2897,18 +2897,18 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
         for check in report_dict.get("checks", []):
             if check.get("status") == "fail":
                 logger.warning(
-                    "GOTCHA validation FAIL: %s — %s (fix: %s)",
+                    "FORGE validation FAIL: %s — %s (fix: %s)",
                     check.get("check_id"), check.get("message"),
                     check.get("fix_suggestion"),
                 )
             elif check.get("status") == "warn":
                 logger.info(
-                    "GOTCHA validation WARN: %s — %s",
+                    "FORGE validation WARN: %s — %s",
                     check.get("check_id"), check.get("message"),
                 )
 
         logger.info(
-            "Step 14: GOTCHA validation — score %.0f%% (%d/%d passed, %d failed)",
+            "Step 14: FORGE validation — score %.0f%% (%d/%d passed, %d failed)",
             report_dict.get("score", 0) * 100,
             report_dict.get("passed_checks", 0),
             report_dict.get("total_checks", 0),
@@ -2925,7 +2925,7 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
         }
 
     # Fallback: basic directory existence check
-    logger.warning("Step 14: gotcha_validator not available, running basic check")
+    logger.warning("Step 14: forge_validator not available, running basic check")
     gotcha_dirs = ["goals", "tools", "args", "context", "hardprompts", "memory"]
     present = [d for d in gotcha_dirs if (child_root / d).is_dir()]
     missing = [d for d in gotcha_dirs if d not in present]
@@ -3130,7 +3130,7 @@ def generate_child_app(
     """Generate a complete child application from a blueprint.
 
     Executes 20 steps sequentially (12 core + 9b license + 9c claude config +
-    11b README + 13 audit + 14 GOTCHA validation + 15 syntax validation +
+    11b README + 13 audit + 14 FORGE validation + 15 syntax validation +
     16 DB execution + 17 agent card validation), collecting results from each.
 
     Args:

@@ -270,7 +270,7 @@ _PRODUCT_TEMPLATES = {
         "The Contractor delivers the ICDEV™ (Intelligent Certified Development) platform — "
         "a complete autonomous software development system that generates ATO-ready "
         "government applications from natural language requirements. ICDEV™ orchestrates "
-        "15 specialized AI agents across its 6-layer GOTCHA framework to handle the full "
+        "15 specialized AI agents across its 6-layer FORGE framework to handle the full "
         "SDLC with TDD/BDD, multi-framework compliance automation, and continuous "
         "authorization monitoring.\n\n"
         "Platform Capabilities Delivered On-Premises:\n"

@@ -163,9 +163,9 @@ Generates CUI-marked certification report including:
 
 ---
 
-## GOTCHA Layer Mapping
+## FORGE Layer Mapping
 
-| Step | GOTCHA Layer | Component |
+| Step | FORGE Layer | Component |
 |------|-------------|-----------|
 | SbD assessment | Tools | sbd_assessor.py |
 | SbD report | Tools | sbd_report_generator.py |

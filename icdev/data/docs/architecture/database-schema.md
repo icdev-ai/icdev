@@ -251,7 +251,7 @@ data/
 
 | Table | Purpose | Mutable |
 |-------|---------|---------|
-| `marketplace_assets` | Published GOTCHA asset metadata | Yes |
+| `marketplace_assets` | Published FORGE asset metadata | Yes |
 | `marketplace_versions` | Published asset versions (immutable, D80) | **Append-only** |
 | `marketplace_reviews` | ISSO/security officer review records | **Append-only** |
 | `marketplace_installations` | Asset installation records per tenant | Yes |
