@@ -332,6 +332,28 @@ reflexes:
       - tools/db/storage.py  # Critical infrastructure, no auto-mutation
       - tools/genesis/daemon.py  # No self-modification of the daemon itself
     require_human_merge: true
+    # ── Feature: Variant Archive (DGM-inspired) ──────────────────────────────
+    # Store accepted AND rejected mutation variants for learning context
+    archive:
+      enabled: true
+      path: data/genesis/evolve_archive
+      max_variants_per_tool: 10
+    # ── Feature: Meta-Evolve (self-modifying selection strategy) ─────────────
+    # Rotates selection strategy when acceptance rate drops below threshold
+    meta_evolve:
+      enabled: false  # Off by default, opt-in
+      evaluate_every_n_cycles: 10
+      strategies:
+        - worst_code_quality
+        - most_failures
+        - highest_churn
+        - lowest_coverage
+      min_acceptance_rate: 0.20
+    # ── Feature: Peer-Review Gate (Hyperagents-inspired) ─────────────────────
+    # Lightweight LLM diff review before running full test suite
+    peer_review:
+      enabled: false  # Off by default
+      reviewer_function: wg_coherence_check  # Scanner tier in LLM router
 
   docs:
     enabled: true
