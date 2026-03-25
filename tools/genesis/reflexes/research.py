@@ -11,6 +11,7 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe (graceful degradation).
 
 import hashlib
 import json
+import logging
 import os
 import sys
 import xml.etree.ElementTree as ET
@@ -24,6 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection
+from tools.security.injection_scanner import scan_text
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
