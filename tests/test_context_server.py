@@ -116,7 +116,7 @@ class TestGetSection:
         assert content is not None
 
     def test_partial_match(self, indexer):
-        content = indexer.get_section("GOTCHA")
+        content = indexer.get_section("FORGE")
         assert content is not None
         assert "6-layer" in content
 

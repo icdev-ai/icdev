@@ -127,7 +127,7 @@ All items on the connection validation checklist SHALL show green status before 
 #### REQ-02-011: Build Order Enforcement
 The system SHALL enforce the build order: database schema first, backend API routes second, frontend UI last.
 
-#### REQ-02-012: GOTCHA Separation
+#### REQ-02-012: FORGE Separation
 Generated code SHALL follow FORGE separation of concerns -- UI components, business logic, and data access in distinct layers.
 
 ### 4.5 Stress-test Phase

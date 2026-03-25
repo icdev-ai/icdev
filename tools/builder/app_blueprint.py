@@ -750,7 +750,7 @@ def resolve_capabilities(
     capabilities["govcon"] = False  # D-CHILD-3: GovProposal/CPMP/GovCon parent-only
 
     # Phase 61: Orchestration always enabled (prompt chains, dispatcher mode,
-    # session purpose — core GOTCHA separation of concerns)
+    # session purpose — core FORGE separation of concerns)
     capabilities["orchestration"] = True
 
     logger.info("Resolved capabilities: %s",

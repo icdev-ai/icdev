@@ -853,6 +853,6 @@ Classification: CUI // SP-CTI
 
 ## Changelog
 
-- 2026-02-15: Added SbD assessment (steps 15-16), RTM (step 17), IV&V assessment (steps 18-19), updated success criteria and GOTCHA mapping
-- 2026-02-15: Added CSSP assessment (steps 9-14), Xacta 360 sync, updated success criteria and GOTCHA mapping
+- 2026-02-15: Added SbD assessment (steps 15-16), RTM (step 17), IV&V assessment (steps 18-19), updated success criteria and FORGE mapping
+- 2026-02-15: Added CSSP assessment (steps 9-14), Xacta 360 sync, updated success criteria and FORGE mapping
 - 2026-02-14: Initial creation

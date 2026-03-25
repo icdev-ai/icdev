@@ -29,7 +29,7 @@ The Innovation Engine transforms ICDEV™ from a reactive tool that waits for in
 1. Implement web intelligence scanning across 6 external source categories (GitHub, NVD, Stack Overflow, Hacker News, package registries, compliance feeds) with per-source configurable scan frequency
 2. Enable introspective analysis that mines internal ICDEV™ telemetry for improvement opportunities: failed self-heals, gate failure frequency, unused tools, slow pipeline stages, NLQ gaps, and knowledge gaps -- fully air-gap safe (D203)
 3. Score all discovered signals across 5 weighted dimensions: community demand (0.30), impact breadth (0.25), feasibility (0.20), compliance alignment (0.15), and novelty (0.10)
-4. Triage signals through a 5-stage compliance gate: classify signal, GOTCHA fit check, boundary impact assessment, compliance pre-check, and duplicate/license check
+4. Triage signals through a 5-stage compliance gate: classify signal, FORGE fit check, boundary impact assessment, compliance pre-check, and duplicate/license check
 5. Generate template-based solution specifications (not LLM-generated) with problem statement, FORGE layer mapping, acceptance criteria, compliance impact, and test plan (D208)
 6. Support competitive intelligence by monitoring GitHub-based competitors (backstage, snyk, trivy, checkov) for feature releases and performing gap analysis (D205)
 7. Monitor standards body publications (NIST CSRC, CISA advisories, DoD CIO memos, FedRAMP updates) with graceful degradation when offline (D204)
@@ -72,14 +72,14 @@ The Innovation Engine transforms ICDEV™ from a reactive tool that waits for in
 |  STAGE 3: TRIAGE      v                                        |
 |  +---------------------------------------------------+        |
 |  | 5-Stage Compliance Gate                            |        |
-|  | 1. Classify -> 2. GOTCHA Fit -> 3. Boundary       |        |
+|  | 1. Classify -> 2. FORGE Fit -> 3. Boundary       |        |
 |  | 4. Compliance Pre-Check -> 5. Dedup/License        |        |
 |  +---------------------------------------------------+        |
 |                       |                                        |
 |  STAGE 4: GENERATE    v                                        |
 |  +---------------------------------------------------+        |
 |  | Solution Generator (template-based, not LLM)      |        |
-|  | Problem + GOTCHA Map + Acceptance + Tests          |        |
+|  | Problem + FORGE Map + Acceptance + Tests          |        |
 |  +---------------------------------------------------+        |
 |                       |                                        |
 |  STAGES 5-7           v                                        |

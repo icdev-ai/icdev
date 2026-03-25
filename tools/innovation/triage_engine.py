@@ -307,7 +307,7 @@ def _stage_classify_signal(signal, config):
 
 
 # =========================================================================
-# STAGE 2: GOTCHA FIT CHECK
+# STAGE 2: FORGE FIT CHECK
 # =========================================================================
 def _stage_gotcha_fit(signal, config):
     """Check whether signal maps to at least one FORGE layer.

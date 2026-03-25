@@ -79,7 +79,7 @@ def move_tools(dry_run: bool) -> list[str]:
         # Create a minimal __init__.py
         actions.append(f"CREATE {init_dst}")
         if not dry_run:
-            init_dst.write_text('"""ICDEV™ Tools -- the T in GOTCHA."""\n')
+            init_dst.write_text('"""ICDEV™ Tools -- the T in FORGE."""\n')
 
     for item in sorted(src_tools.iterdir()):
         if item.name.startswith("__"):
@@ -115,7 +115,7 @@ def copy_data_dirs(dry_run: bool) -> list[str]:
     data_init = dst_data / "__init__.py"
     actions.append(f"CREATE {data_init}")
     if not dry_run:
-        data_init.write_text('"""ICDEV™ data -- GOTCHA layers (Goals, Context, Hardprompts, Args)."""\n')
+        data_init.write_text('"""ICDEV™ data -- FORGE layers (Goals, Context, Hardprompts, Args)."""\n')
 
     for dirname in DATA_DIRS:
         src = PROJECT_ROOT / dirname

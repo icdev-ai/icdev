@@ -16,7 +16,7 @@ Architecture:
     - Maps signal categories to FORGE layers (goal/tool/arg/context/hardprompt)
     - Optional spec quality checking via spec_quality_checker.py (D156)
     - Results stored in innovation_solutions table (append-only, D6)
-    - Implementation blueprints with concrete file paths, DB tables, and GOTCHA checklist (Phase 71)
+    - Implementation blueprints with concrete file paths, DB tables, and FORGE checklist (Phase 71)
 
 Usage:
     python tools/innovation/solution_generator.py --generate --signal-id "sig-xxx" --json
@@ -319,7 +319,7 @@ def _build_implementation_blueprint(gotcha_layer, signal, metadata):
     """Generate implementation blueprint with specific files and actions (Phase 71 lesson).
 
     Maps signal to concrete work packages: new files, modified files,
-    DB tables, config changes, and GOTCHA registration items.
+    DB tables, config changes, and FORGE registration items.
 
     Args:
         gotcha_layer: Resolved FORGE layer.
@@ -429,7 +429,7 @@ def _build_implementation_blueprint(gotcha_layer, signal, metadata):
             "- `args/llm_config.yaml` — Add routing entry if new LLM function introduced"
         )
 
-    # GOTCHA 8-point registration checklist (always the same)
+    # FORGE 8-point registration checklist (always the same)
     gotcha_checklist = (
         "- [ ] `tools/manifest.md` — Add tool entry\n"
         "- [ ] `docs/reference/commands.md` — Add CLI commands\n"
@@ -467,7 +467,7 @@ def _build_implementation_blueprint(gotcha_layer, signal, metadata):
         f"{db_section}\n\n"
         f"### Configuration Changes\n"
         f"{config_section}\n\n"
-        f"### GOTCHA Registration Checklist\n"
+        f"### FORGE Registration Checklist\n"
         f"{gotcha_checklist}"
         f"{source_section}"
     )

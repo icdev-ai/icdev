@@ -56,7 +56,7 @@ def run(*, config: Dict = None, **kwargs) -> Dict[str, Any]:
     Pipeline:
       1. Detect recurring tool-chain patterns (pattern_detector)
       2. Filter patterns not yet converted to goals
-      3. Generate GOTCHA goal drafts (goal_template_generator)
+      3. Generate FORGE goal drafts (goal_template_generator)
       4. Create GKP artifacts with promotion_status='pending_review'
 
     Returns:

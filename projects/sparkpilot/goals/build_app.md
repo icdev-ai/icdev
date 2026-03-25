@@ -201,7 +201,7 @@ All green checkmarks. If anything fails, fix it before proceeding.
 
 ### Architecture Layers
 
-Follow GOTCHA separation:
+Follow FORGE separation:
 
 1. **Frontend** (what user sees)
    - UI components
@@ -574,7 +574,7 @@ After generation, `forge_validator.py` (`tools/builder/forge_validator.py`) MUST
 | Args | A | `args/` has at least 1 YAML file |
 | Context | C | `context/` has at least 1 subdirectory with content |
 | Hard Prompts | H | `hardprompts/` has at least 1 `.md` file |
-| CLAUDE.md | meta | Exists and references "GOTCHA" |
+| CLAUDE.md | meta | Exists and references "FORGE" |
 | Memory | meta | `memory/MEMORY.md` exists |
 | Database | meta | `tools/db/` has an init script |
 | ANVIL | meta | `goals/build_app.md` exists |

@@ -2865,7 +2865,7 @@ def step_13_production_audit(child_root: Path, blueprint: dict) -> dict:
 
 
 # ============================================================
-# STEP 14: GOTCHA Compliance Validation
+# STEP 14: FORGE Compliance Validation
 # ============================================================
 
 
@@ -2931,7 +2931,7 @@ def step_14_gotcha_validation(child_root: Path, blueprint: dict) -> dict:
     missing = [d for d in gotcha_dirs if d not in present]
 
     if missing:
-        logger.warning("Step 14: Missing GOTCHA directories: %s", ", ".join(missing))
+        logger.warning("Step 14: Missing FORGE directories: %s", ", ".join(missing))
 
     return {
         "method": "fallback",

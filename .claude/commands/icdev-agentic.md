@@ -59,7 +59,7 @@ the ability to generate new applications.
    - Check .mcp.json has CSP servers
    - Report summary to user
 
-8. **GOTCHA Compliance Validation**
+8. **FORGE Compliance Validation**
    Run the FORGE validator as a mandatory gate:
    ```bash
    python tools/builder/forge_validator.py --project-dir <child_path> --gate

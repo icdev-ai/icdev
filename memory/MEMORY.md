@@ -14,7 +14,7 @@
 ## Key Facts
 
 - **Project initialized:** 2026-02-14
-- **Framework:** GOTCHA (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
+- **Framework:** FORGE (Goals, Orchestration, Tools, Args, Context, Hard Prompts)
 - **System:** ICDEV™ — Intelligent Certified Development meta-builder for Gov/DoD (IL4+)
 - **Database:** SQLite (data/icdev.db) with 32 tables across 7 domains
 - **MCP Servers:** 5 stdio servers (core, compliance, builder, infra, knowledge) — all operational

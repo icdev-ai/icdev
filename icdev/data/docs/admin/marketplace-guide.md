@@ -11,7 +11,7 @@ The ICDEV™ Federated FORGE Marketplace (Phase 22) enables customer developer c
 | Type | Description |
 |------|-------------|
 | `skill` | Claude Code slash commands and workflows |
-| `goal` | GOTCHA goal workflow definitions |
+| `goal` | FORGE goal workflow definitions |
 | `hardprompt` | Reusable LLM instruction templates |
 | `context` | Static reference material (tone rules, ICP descriptions, case studies) |
 | `args` | YAML/JSON behavior configuration |

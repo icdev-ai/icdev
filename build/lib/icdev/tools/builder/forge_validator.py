@@ -19,7 +19,7 @@ The 6 FORGE layers:
   6. Args        — args/ with YAML/JSON behavior settings
 
 Additional BMAD-adapted quality checks:
-  7. CLAUDE.md   — project documentation referencing GOTCHA
+  7. CLAUDE.md   — project documentation referencing FORGE
   8. Memory      — memory/MEMORY.md for long-term context
   9. Database    — tools/db/ with init script
   10. ANVIL      — goals/build_app.md (ANVIL workflow present)
@@ -53,7 +53,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 @dataclasses.dataclass
 class GotchaCheck:
-    """Result of a single GOTCHA compliance check."""
+    """Result of a single FORGE compliance check."""
     check_id: str
     check_name: str
     layer: str  # "goals", "orchestration", "tools", "context", "hardprompts", "args", "meta"
@@ -73,7 +73,7 @@ class GotchaCheck:
 
 @dataclasses.dataclass
 class GotchaReport:
-    """Aggregate GOTCHA compliance validation report."""
+    """Aggregate FORGE compliance validation report."""
     overall_pass: bool
     timestamp: str
     project_dir: str
@@ -112,7 +112,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
     # Check goals directory exists
     if not goals_dir.is_dir():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-01",
+            check_id="FORGE-01",
             check_name="Goals directory exists",
             layer="goals",
             status="fail",
@@ -127,7 +127,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
     manifest = goals_dir / "manifest.md"
     if manifest.exists():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-01a",
+            check_id="FORGE-01a",
             check_name="Goals manifest exists",
             layer="goals",
             status="pass",
@@ -138,7 +138,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-01a",
+            check_id="FORGE-01a",
             check_name="Goals manifest exists",
             layer="goals",
             status="warn",
@@ -152,7 +152,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
     goal_files = [f for f in goals_dir.glob("*.md") if f.name != "manifest.md"]
     if goal_files:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-01b",
+            check_id="FORGE-01b",
             check_name="Goal workflow files present",
             layer="goals",
             status="pass",
@@ -163,7 +163,7 @@ def _check_goals(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-01b",
+            check_id="FORGE-01b",
             check_name="Goal workflow files present",
             layer="goals",
             status="fail",
@@ -192,7 +192,7 @@ def _check_orchestration(project_dir: Path) -> List[GotchaCheck]:
     if has_cards:
         card_count = len(list(agent_cards_dir.glob("*.json")))
         checks.append(GotchaCheck(
-            check_id="GOTCHA-02a",
+            check_id="FORGE-02a",
             check_name="Agent cards present",
             layer="orchestration",
             status="pass",
@@ -203,7 +203,7 @@ def _check_orchestration(project_dir: Path) -> List[GotchaCheck]:
         ))
     elif has_config:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-02a",
+            check_id="FORGE-02a",
             check_name="Agent config present",
             layer="orchestration",
             status="pass",
@@ -215,7 +215,7 @@ def _check_orchestration(project_dir: Path) -> List[GotchaCheck]:
     elif has_claude_md:
         # CLAUDE.md exists — orchestration is implicit (Claude is the orchestrator)
         checks.append(GotchaCheck(
-            check_id="GOTCHA-02a",
+            check_id="FORGE-02a",
             check_name="Orchestration layer present",
             layer="orchestration",
             status="warn",
@@ -226,7 +226,7 @@ def _check_orchestration(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-02a",
+            check_id="FORGE-02a",
             check_name="Orchestration layer present",
             layer="orchestration",
             status="fail",
@@ -246,7 +246,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
 
     if not tools_dir.is_dir():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-03",
+            check_id="FORGE-03",
             check_name="Tools directory exists",
             layer="tools",
             status="fail",
@@ -264,7 +264,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
 
     if len(tool_subdirs) >= 3:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-03a",
+            check_id="FORGE-03a",
             check_name="Tool subdirectories present",
             layer="tools",
             status="pass",
@@ -276,7 +276,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
     else:
         missing = min_tool_dirs - tool_subdirs
         checks.append(GotchaCheck(
-            check_id="GOTCHA-03a",
+            check_id="FORGE-03a",
             check_name="Tool subdirectories present",
             layer="tools",
             status="fail" if len(tool_subdirs) == 0 else "warn",
@@ -291,7 +291,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
     py_files = [f for f in py_files if "__pycache__" not in str(f)]
     if py_files:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-03b",
+            check_id="FORGE-03b",
             check_name="Tool scripts present",
             layer="tools",
             status="pass",
@@ -302,7 +302,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-03b",
+            check_id="FORGE-03b",
             check_name="Tool scripts present",
             layer="tools",
             status="fail",
@@ -322,7 +322,7 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
 
     if not args_dir.is_dir():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-04",
+            check_id="FORGE-04",
             check_name="Args directory exists",
             layer="args",
             status="fail",
@@ -339,7 +339,7 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
 
     if all_config:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-04a",
+            check_id="FORGE-04a",
             check_name="Args config files present",
             layer="args",
             status="pass",
@@ -350,7 +350,7 @@ def _check_args(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-04a",
+            check_id="FORGE-04a",
             check_name="Args config files present",
             layer="args",
             status="fail",
@@ -370,7 +370,7 @@ def _check_context(project_dir: Path) -> List[GotchaCheck]:
 
     if not context_dir.is_dir():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-05",
+            check_id="FORGE-05",
             check_name="Context directory exists",
             layer="context",
             status="fail",
@@ -388,7 +388,7 @@ def _check_context(project_dir: Path) -> List[GotchaCheck]:
 
     if non_empty_subdirs:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-05a",
+            check_id="FORGE-05a",
             check_name="Context subdirectories with content",
             layer="context",
             status="pass",
@@ -399,7 +399,7 @@ def _check_context(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-05a",
+            check_id="FORGE-05a",
             check_name="Context subdirectories with content",
             layer="context",
             status="fail",
@@ -419,7 +419,7 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
 
     if not hp_dir.is_dir():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-06",
+            check_id="FORGE-06",
             check_name="Hard Prompts directory exists",
             layer="hardprompts",
             status="fail",
@@ -433,7 +433,7 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
     md_files = list(hp_dir.rglob("*.md"))
     if md_files:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-06a",
+            check_id="FORGE-06a",
             check_name="Hard prompt templates present",
             layer="hardprompts",
             status="pass",
@@ -444,7 +444,7 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-06a",
+            check_id="FORGE-06a",
             check_name="Hard prompt templates present",
             layer="hardprompts",
             status="fail",
@@ -458,13 +458,13 @@ def _check_hardprompts(project_dir: Path) -> List[GotchaCheck]:
 
 
 def _check_claude_md(project_dir: Path) -> List[GotchaCheck]:
-    """Check Meta: CLAUDE.md exists and references GOTCHA."""
+    """Check Meta: CLAUDE.md exists and references FORGE."""
     checks = []
     claude_md = project_dir / "CLAUDE.md"
 
     if not claude_md.exists():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-07",
+            check_id="FORGE-07",
             check_name="CLAUDE.md exists",
             layer="meta",
             status="fail",
@@ -476,27 +476,27 @@ def _check_claude_md(project_dir: Path) -> List[GotchaCheck]:
         return checks
 
     content = claude_md.read_text(encoding="utf-8", errors="replace")
-    has_gotcha = "GOTCHA" in content or "gotcha" in content.lower()
+    has_gotcha = "FORGE" in content or "gotcha" in content.lower()
 
     if has_gotcha:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-07",
-            check_name="CLAUDE.md references GOTCHA",
+            check_id="FORGE-07",
+            check_name="CLAUDE.md references FORGE",
             layer="meta",
             status="pass",
             expected="CLAUDE.md mentioning FORGE framework",
-            actual="GOTCHA reference found",
+            actual="FORGE reference found",
             fix_suggestion="",
             message="CLAUDE.md found with FORGE framework reference",
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-07",
-            check_name="CLAUDE.md references GOTCHA",
+            check_id="FORGE-07",
+            check_name="CLAUDE.md references FORGE",
             layer="meta",
             status="warn",
             expected="CLAUDE.md mentioning FORGE framework",
-            actual="CLAUDE.md exists but no GOTCHA reference",
+            actual="CLAUDE.md exists but no FORGE reference",
             fix_suggestion="Add FORGE framework section to CLAUDE.md documenting the 6-layer structure",
             message="CLAUDE.md exists but does not reference FORGE framework",
         ))
@@ -511,7 +511,7 @@ def _check_memory(project_dir: Path) -> List[GotchaCheck]:
 
     if memory_md.exists():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-08",
+            check_id="FORGE-08",
             check_name="Memory system present",
             layer="meta",
             status="pass",
@@ -522,7 +522,7 @@ def _check_memory(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-08",
+            check_id="FORGE-08",
             check_name="Memory system present",
             layer="meta",
             status="warn",
@@ -542,7 +542,7 @@ def _check_database(project_dir: Path) -> List[GotchaCheck]:
 
     if not db_dir.is_dir():
         checks.append(GotchaCheck(
-            check_id="GOTCHA-09",
+            check_id="FORGE-09",
             check_name="Database init script present",
             layer="meta",
             status="warn",
@@ -556,7 +556,7 @@ def _check_database(project_dir: Path) -> List[GotchaCheck]:
     init_scripts = [f for f in db_dir.glob("init*.py")]
     if init_scripts:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-09",
+            check_id="FORGE-09",
             check_name="Database init script present",
             layer="meta",
             status="pass",
@@ -567,7 +567,7 @@ def _check_database(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-09",
+            check_id="FORGE-09",
             check_name="Database init script present",
             layer="meta",
             status="warn",
@@ -589,7 +589,7 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
         content = build_app.read_text(encoding="utf-8", errors="replace")
         has_atlas = "ATLAS" in content
         checks.append(GotchaCheck(
-            check_id="GOTCHA-10",
+            check_id="FORGE-10",
             check_name="ANVIL workflow present",
             layer="meta",
             status="pass" if has_atlas else "warn",
@@ -600,7 +600,7 @@ def _check_atlas(project_dir: Path) -> List[GotchaCheck]:
         ))
     else:
         checks.append(GotchaCheck(
-            check_id="GOTCHA-10",
+            check_id="FORGE-10",
             check_name="ANVIL workflow present",
             layer="meta",
             status="warn",
@@ -639,7 +639,7 @@ def validate(
     project_dir: str | Path,
     checks: Optional[List[str]] = None,
 ) -> GotchaReport:
-    """Run GOTCHA compliance validation on a project directory.
+    """Run FORGE compliance validation on a project directory.
 
     Args:
         project_dir: Path to the project root directory.
@@ -661,7 +661,7 @@ def validate(
                 all_checks.extend(results)
             except Exception as e:
                 all_checks.append(GotchaCheck(
-                    check_id=f"GOTCHA-ERR-{check_name}",
+                    check_id=f"FORGE-ERR-{check_name}",
                     check_name=f"Error running {check_name}",
                     layer=check_name,
                     status="fail",

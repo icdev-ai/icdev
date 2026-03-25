@@ -167,12 +167,12 @@ class ClaudeMdIndexer:
             "compliance-agent": ["Compliance", "Crosswalk", "Gates", "Security Gates", "NIST", "FedRAMP"],
             "security": ["Security", "SAST", "Vulnerability", "Secret", "Gates", "ATLAS"],
             "security-agent": ["Security", "SAST", "Vulnerability", "Secret", "Gates", "ATLAS"],
-            "architect": ["Architecture", "GOTCHA", "ANVIL", "MCP", "Agent"],
-            "architect-agent": ["Architecture", "GOTCHA", "ANVIL", "MCP", "Agent"],
+            "architect": ["Architecture", "FORGE", "ANVIL", "MCP", "Agent"],
+            "architect-agent": ["Architecture", "FORGE", "ANVIL", "MCP", "Agent"],
             "infrastructure": ["Infrastructure", "Terraform", "K8s", "Docker", "Cloud", "Deploy"],
             "infrastructure-agent": ["Infrastructure", "Terraform", "K8s", "Docker", "Cloud", "Deploy"],
-            "orchestrator": ["Architecture", "Agent", "Workflow", "MCP", "GOTCHA"],
-            "orchestrator-agent": ["Architecture", "Agent", "Workflow", "MCP", "GOTCHA"],
+            "orchestrator": ["Architecture", "Agent", "Workflow", "MCP", "FORGE"],
+            "orchestrator-agent": ["Architecture", "Agent", "Workflow", "MCP", "FORGE"],
         }
 
         keywords = role_keywords.get(role, [])

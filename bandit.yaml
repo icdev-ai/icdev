@@ -2,7 +2,7 @@
 # Bandit SAST Configuration for ICDEV™ Framework
 #
 # ICDEV™ is a meta-builder framework that legitimately uses subprocess,
-# importlib, and try-except-pass patterns as part of its GOTCHA architecture.
+# importlib, and try-except-pass patterns as part of its FORGE architecture.
 # These skips suppress known false positives inherent to framework design.
 #
 # Skipped checks are ONLY suppressed for the ICDEV™ platform codebase.
@@ -12,10 +12,10 @@
 skips:
   # B110: try-except-pass — ICDEV™ uses resilient orchestration where
   # auxiliary operations (audit logging, telemetry, feature detection)
-  # must not block core workflows. Intentional per GOTCHA design.
+  # must not block core workflows. Intentional per FORGE design.
   - B110
 
-  # B404: import subprocess — Required for GOTCHA Tool layer.
+  # B404: import subprocess — Required for FORGE Tool layer.
   # ICDEV™ invokes external tools (ruff, pytest, git, terraform, kubectl)
   # via subprocess. This is the framework's primary execution mechanism.
   - B404

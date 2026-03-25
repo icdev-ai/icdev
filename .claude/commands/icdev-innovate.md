@@ -80,7 +80,7 @@ SCOPE: Comma-separated analysis scopes to run. Default: `all`. Options: `introsp
    python tools/innovation/triage_engine.py --triage-all --json
    ```
 
-   Gates: classify, GOTCHA fit, boundary impact, compliance pre-check, duplicate/license.
+   Gates: classify, FORGE fit, boundary impact, compliance pre-check, duplicate/license.
 
 ### Phase 4: Synthesis & Recommendations
 

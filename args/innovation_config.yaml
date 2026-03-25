@@ -250,7 +250,7 @@ scoring:
 # Triage Pipeline
 # =========================================================================
 triage:
-  # GOTCHA fit assessment
+  # FORGE fit assessment
   gotcha_fit:
     required_layer: true         # Signal must map to at least one FORGE layer
     layer_mapping:
