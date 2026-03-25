@@ -10,6 +10,7 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
 
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -20,6 +21,10 @@ from urllib.request import Request, urlopen
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+from tools.security.injection_scanner import scan_text
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
@@ -185,10 +190,37 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             targets_data.append({"repo": repo, "category": target.get("category", ""), "info": {}, "error": True})
             continue
 
+        # Injection scan on external text fields (description, topics)
+        scannable = " ".join(filter(None, [
+            info.get("description", ""),
+            " ".join(info.get("topics", [])),
+        ]))
+        if scannable:
+            findings = scan_text(scannable, source=f"github:{repo}")
+            critical = [f for f in findings if f["severity"] == "critical"]
+            if critical:
+                logger.warning(
+                    "Injection attempt blocked from github:%s: %s",
+                    repo, [f["category"] for f in critical],
+                )
+                errors += 1
+                targets_data.append({"repo": repo, "category": target.get("category", ""), "info": {}, "error": True})
+                continue
+
         release = None
         watch = target.get("watch", [])
         if "releases" in watch:
             release = _get_latest_release(repo)
+            # Scan release notes for injection
+            if release and release.get("body"):
+                rel_findings = scan_text(release["body"], source=f"github:{repo}/releases")
+                rel_critical = [f for f in rel_findings if f["severity"] == "critical"]
+                if rel_critical:
+                    logger.warning(
+                        "Injection in release notes blocked from github:%s: %s",
+                        repo, [f["category"] for f in rel_critical],
+                    )
+                    release["body"] = "[REDACTED — injection detected]"
 
         targets_data.append({
             "repo": repo,

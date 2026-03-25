@@ -225,6 +225,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             feed_results.append({"feed": feed_name, "status": "fetch_failed"})
             continue
 
+        # Injection scan — block content with critical findings
+        findings = scan_text(content, source=url)
+        critical = [f for f in findings if f["severity"] == "critical"]
+        if critical:
+            logger.warning(
+                "Injection attempt blocked from %s: %s",
+                url, [f["category"] for f in critical],
+            )
+            feed_results.append({
+                "feed": feed_name, "status": "blocked",
+                "reason": "injection_detected",
+                "categories": [f["category"] for f in critical],
+            })
+            continue
+
         # Parse based on type
         if feed_type == "json":
             entries = _parse_json_feed(content)

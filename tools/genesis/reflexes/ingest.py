@@ -11,6 +11,7 @@ writes directly into the knowledge graph for RAG retrieval.
 GREEN tier (non-destructive writes to KG tables).  Air-gap safe.
 """
 
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -24,6 +25,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection
+from tools.security.injection_scanner import scan_text
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
@@ -189,6 +193,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         content = _fetch_url(url)
         if not content:
             feed_results.append({"feed": feed_name, "status": "fetch_failed"})
+            continue
+
+        # Injection scan — block content with critical findings
+        findings = scan_text(content, source=url)
+        critical = [f for f in findings if f["severity"] == "critical"]
+        if critical:
+            logger.warning(
+                "Injection attempt blocked from %s: %s",
+                url, [f["category"] for f in critical],
+            )
+            feed_results.append({
+                "feed": feed_name, "status": "blocked",
+                "reason": "injection_detected",
+                "categories": [f["category"] for f in critical],
+            })
             continue
 
         if feed_type == "json":
