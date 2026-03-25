@@ -276,6 +276,7 @@ def _check_tools(project_dir: Path) -> List[GotchaCheck]:
         return checks
 
     # Check for minimum tool subdirectories
+    min_tool_dirs = {"db", "memory", "mcp"}
     tool_subdirs = {d.name for d in tools_dir.iterdir() if d.is_dir()}
     if len(tool_subdirs) >= 3:
         checks.append(GotchaCheck(

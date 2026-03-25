@@ -870,7 +870,7 @@ def main():
     else:
         # Human-readable output
         try:
-            from tools.cli.output_formatter import format_banner, format_table
+            from tools.cli.output_formatter import format_banner  # noqa: F401
             print(format_banner("ANVIL Critique Phase"))
         except ImportError:
             print("=" * 60)
