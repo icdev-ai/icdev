@@ -115,14 +115,15 @@ _CUI_CONFIG = _load_yaml(_CUI_YAML) if _CUI_YAML.exists() else {}
 
 CUI_BANNER_TOP = os.environ.get(
     "ICDEV_CUI_BANNER_TOP",
-    _CUI_CONFIG.get("banner_top", "CUI // SP-CTI"),
+    _CUI_CONFIG.get("banner_top", ""),
 )
 CUI_BANNER_BOTTOM = os.environ.get(
     "ICDEV_CUI_BANNER_BOTTOM",
-    _CUI_CONFIG.get("banner_bottom", "CUI // SP-CTI"),
+    _CUI_CONFIG.get("banner_bottom", ""),
 )
 CUI_BANNER_ENABLED = os.environ.get(
-    "ICDEV_CUI_BANNER_ENABLED", "true"
+    "ICDEV_CUI_BANNER_ENABLED",
+    _CUI_CONFIG.get("banner_enabled", "false"),
 ).lower() in ("1", "true", "yes")
 
 # ---------------------------------------------------------------------------
