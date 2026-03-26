@@ -7,7 +7,7 @@
 (function () {
     "use strict";
 
-    var REFRESH_INTERVAL_MS = 30000;
+    var REFRESH_INTERVAL_MS = 300000; // 5 minutes
     var _kanbanTimer = null;
 
     /**
