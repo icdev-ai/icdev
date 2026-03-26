@@ -914,68 +914,6 @@ def audit():
 
 
 # ---------------------------------------------------------------------------
-# Routes: Phase Roadmap
-# ---------------------------------------------------------------------------
-@portal_bp.route("/phases")
-@_portal_auth_required
-def phases():
-    """Phase roadmap — ICDEV™ phases filtered by tenant tier and impact level."""
-    tenant_id = g.tenant_id
-    tenant = _get_tenant_info(tenant_id)
-    tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
-
-    # Determine tenant's tier and impact level for filtering
-    subscription = _get_subscription(tenant_id)
-    tier = (subscription or {}).get("tier", (tenant or {}).get("tier", "starter"))
-    impact_level = (tenant or {}).get("impact_level", "IL4")
-
-    # Load phases from registry
-    try:
-        from tools.dashboard.phase_loader import (
-            load_phases, load_categories, load_statuses,
-            get_phase_summary, filter_phases,
-        )
-        all_phases = load_phases()
-        categories = load_categories()
-        statuses = load_statuses()
-
-        # Filter to phases available for this tenant's tier
-        phases_list = filter_phases(all_phases, tier=tier)
-        summary = get_phase_summary(phases_list)
-
-        # Also compute all-phases summary for comparison
-        all_summary = get_phase_summary(all_phases)
-    except (ImportError, Exception):
-        phases_list = []
-        categories = {}
-        statuses = {}
-        summary = {"total": 0, "completed": 0, "active": 0, "planned": 0,
-                   "progress_pct": 0, "by_category": {}}
-        all_summary = summary
-
-    # Optional category filter
-    cat_filter = request.args.get("category", "")
-    if cat_filter:
-        phases_list = [p for p in phases_list if p.get("category") == cat_filter]
-
-    return render_template(
-        "phases.html",
-        tenant_name=tenant_name,
-        phases=phases_list,
-        categories=categories,
-        statuses=statuses,
-        summary=summary,
-        all_summary=all_summary,
-        category_filter=cat_filter,
-        tenant_tier=tier,
-        tenant_il=impact_level,
-        user_name=session.get("portal_user_name", "User"),
-        user_role=session.get("portal_user_role", "viewer"),
-        active_page="phases",
-    )
-
-
-# ---------------------------------------------------------------------------
 # Routes: CMMC Self-Assessment (Phase 4 — Enhancement #8)
 # ---------------------------------------------------------------------------
 @portal_bp.route("/cmmc")
