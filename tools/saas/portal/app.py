@@ -249,8 +249,64 @@ def _utcnow():
 # ---------------------------------------------------------------------------
 # Auth Helpers (portal session)
 # ---------------------------------------------------------------------------
+def _auto_login_env_key():
+    """Auto-login using ICDEV_DASHBOARD_API_KEY from .env (mirrors dashboard behavior).
+
+    If the env key is set and valid, creates a portal session automatically
+    so the user never sees the login page.
+
+    Returns True if auto-login succeeded and session is now populated.
+    """
+    env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "").strip()
+    if not env_key:
+        return False
+
+    key_hash = hashlib.sha256(env_key.encode("utf-8")).hexdigest()
+    conn = _get_platform_conn()
+    try:
+        row = conn.execute(
+            """SELECT k.id as key_id, k.tenant_id, k.user_id, k.status as key_status,
+                      u.role, u.email, u.display_name,
+                      t.status as tenant_status, t.name as tenant_name
+               FROM api_keys k
+               JOIN users u ON k.user_id = u.id AND k.tenant_id = u.tenant_id
+               JOIN tenants t ON k.tenant_id = t.id
+               WHERE k.key_hash = ?""",
+            (key_hash,),
+        ).fetchone()
+
+        if not row:
+            return False
+
+        row = dict(row)
+        if row["key_status"] not in ("active", 1) or row["tenant_status"] != "active":
+            return False
+
+        # Create portal session
+        portal_token = "psess_" + secrets.token_hex(24)
+        _register_portal_session(
+            portal_token, row["tenant_id"], row["user_id"], row["role"],
+        )
+        session["portal_tenant_id"] = row["tenant_id"]
+        session["portal_user_id"] = row["user_id"]
+        session["portal_user_role"] = row["role"]
+        session["portal_user_email"] = row["email"]
+        session["portal_user_name"] = row.get("display_name") or row["email"]
+        session["portal_tenant_name"] = row["tenant_name"]
+        session["portal_session_token"] = portal_token
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
 def _portal_auth_required(f):
-    """Decorator: redirect to login if no portal session."""
+    """Decorator: redirect to login if no portal session.
+
+    Auto-logs in via ICDEV_DASHBOARD_API_KEY from .env if no session exists
+    (same behavior as the main dashboard).
+    """
     from functools import wraps
 
     @wraps(f)
@@ -261,7 +317,9 @@ def _portal_auth_required(f):
             return f(*args, **kwargs)
         # Fall back to session-based auth
         if "portal_tenant_id" not in session:
-            return redirect(url_for("portal.login"))
+            # Try auto-login via .env key before redirecting to login
+            if not _auto_login_env_key():
+                return redirect(url_for("portal.login"))
         g.tenant_id = session["portal_tenant_id"]
         g.user_id = session.get("portal_user_id")
         g.user_role = session.get("portal_user_role")
@@ -319,7 +377,15 @@ def _get_subscription(tenant_id):
 # ---------------------------------------------------------------------------
 @portal_bp.route("/login", methods=["GET"])
 def login():
-    """Render the login page (public endpoint)."""
+    """Render the login page (public endpoint).
+
+    If already authenticated (session or .env auto-login), redirect to dashboard.
+    """
+    if "portal_tenant_id" in session:
+        return redirect(url_for("portal.dashboard"))
+    # Try auto-login via .env key
+    if _auto_login_env_key():
+        return redirect(url_for("portal.dashboard"))
     error = request.args.get("error")
     return render_template("login.html", error=error)
 
