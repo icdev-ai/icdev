@@ -124,7 +124,8 @@ def _get_due_tasks() -> list:
             "  WHEN 'medium' THEN 2 "
             "  ELSE 3 END, "
             "created_at ASC "
-            f"LIMIT {slots}"
+            "LIMIT %s",
+            (slots,),
         ).fetchall()
         result.extend(dict(r) for r in backlog)
 
@@ -183,14 +184,24 @@ Execute this task as described above. When complete:
     return str(prompt_path)
 
 
-def _send_notification(task: dict):
-    """Send notification via dashboard DB + Telegram."""
-    title = f"Task due: {task['title']}"
+def _send_notification(task: dict, event: str = "in_progress"):
+    """Send notification via dashboard DB + Telegram.
+
+    Args:
+        task: The kanban task dict.
+        event: Status event — 'in_progress', 'done', 'failed'.
+    """
+    event_labels = {
+        "in_progress": "now in progress",
+        "done": "completed",
+        "failed": "failed (will retry)",
+    }
+    label = event_labels.get(event, event)
+    title = f"Task {event}: {task['title']}"
     body = (
         f"Kanban task '{task['title']}' "
-        f"({task['task_type']}/{task['priority']}) "
-        f"is now in progress.\n"
-        f"Prompt file ready for next Claude session."
+        f"({task.get('task_type', 'build')}/{task.get('priority', 'medium')}) "
+        f"is {label}."
     )
 
     # Dashboard notification
@@ -203,10 +214,10 @@ def _send_notification(task: dict):
                 "created_at) "
                 "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
-                    f"notif-kanban-{task['id']}",
+                    f"notif-kanban-{task['id']}-{event}",
                     title,
                     body,
-                    "info",
+                    "success" if event == "done" else "info",
                     "genesis.kanban",
                     _utcnow_iso(),
                 ),
@@ -214,15 +225,27 @@ def _send_notification(task: dict):
             conn.commit()
         finally:
             conn.close()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Dashboard notification failed: %s", exc)
+
+    # Telegram notification — load .env for bot token
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(BASE_DIR / ".env")
+    except ImportError:
         pass
 
-    # Telegram notification
     try:
         from tools.notifications.adapters.telegram import send
-        send(title, body, severity="info")
-    except Exception:
-        pass  # Telegram not configured or unavailable
+        severity = "success" if event == "done" else "info"
+        result = send(title, body, severity=severity)
+        if result.get("status") != "sent":
+            logger.warning(
+                "Telegram notification failed: %s",
+                result.get("message", "unknown"),
+            )
+    except Exception as exc:
+        logger.warning("Telegram notification error: %s", exc)
 
 
 def _poll_telegram():
@@ -299,8 +322,14 @@ def _check_completed():
             completed.append(task_id)
             prompt_path = PROMPT_DIR / f"{task_id}.md"
             if ret == 0:
-                # Claude completed successfully — task should already
-                # be moved to done by Claude itself. Clean up just in case.
+                # Claude completed successfully — mark done, notify
+                try:
+                    _move_task(task_id, "done")
+                except Exception:
+                    pass
+                _send_notification(
+                    {"id": task_id, "title": task_id}, event="done",
+                )
                 if prompt_path.exists():
                     prompt_path.unlink()
                 print(f"  Kanban: {task_id} completed (exit {ret})")
@@ -313,6 +342,10 @@ def _check_completed():
                 )
                 try:
                     _move_task(task_id, "backlog")
+                    _send_notification(
+                        {"id": task_id, "title": task_id},
+                        event="failed",
+                    )
                 except Exception:
                     pass
             del _running[task_id]

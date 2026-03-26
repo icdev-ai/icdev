@@ -1492,3 +1492,9 @@
 | Regime Premiums | tools\trading\factors\regime_premiums.py | Auto-registered: factors/regime_premiums.py | --json | JSON |
 | Signal Validator | tools\trading\factors\signal_validator.py | Auto-registered: factors/signal_validator.py | --json | JSON |
 | Skill Tracker | tools\trading\factors\skill_tracker.py | Auto-registered: factors/skill_tracker.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Govcon Scan | tools\genesis\reflexes\govcon_scan.py | Auto-registered: reflexes/govcon_scan.py | --json | JSON |

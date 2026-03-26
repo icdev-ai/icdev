@@ -452,6 +452,9 @@ def get_connection(db_path: str = None) -> StorageConnection:
 
     For SQLite: uses db_path or ICDEV_DB_PATH env var.
     For PostgreSQL: uses ICDEV_PG_* env vars or ICDEV_DATABASE_URL.
+    If PostgreSQL is configured but unreachable, falls back to SQLite
+    so that operations (task creation, notifications) are not silently
+    lost during PG outages.
 
     Returns a StorageConnection wrapper that transparently handles
     SQL translation between SQLite and PostgreSQL.
@@ -460,8 +463,17 @@ def get_connection(db_path: str = None) -> StorageConnection:
 
     if backend == "postgresql":
         db_url = os.environ.get("ICDEV_DATABASE_URL")
-        raw_conn = _get_pg_connection(db_url)
-        return StorageConnection(raw_conn, "postgresql")
+        try:
+            raw_conn = _get_pg_connection(db_url)
+            return StorageConnection(raw_conn, "postgresql")
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "PostgreSQL unavailable (%s), falling back to SQLite",
+                exc,
+            )
+            raw_conn = _get_sqlite_connection(db_path)
+            return StorageConnection(raw_conn, "sqlite")
     else:
         raw_conn = _get_sqlite_connection(db_path)
         return StorageConnection(raw_conn, "sqlite")

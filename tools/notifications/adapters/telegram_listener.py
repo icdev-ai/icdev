@@ -382,7 +382,19 @@ def poll_updates() -> List[Dict[str, Any]]:
             continue
 
         chat_id = message.get("chat", {}).get("id")
-        reply = process_message(message)
+        try:
+            reply = process_message(message)
+        except Exception as exc:
+            # DB down or task creation failed — do NOT save offset
+            # so the message will be retried on the next poll cycle.
+            if chat_id:
+                _reply(
+                    chat_id,
+                    f"\u26a0\ufe0f Task creation failed (will retry): "
+                    f"{type(exc).__name__}: {exc}",
+                )
+            continue
+
         if reply and chat_id:
             _reply(chat_id, reply)
             results.append({
