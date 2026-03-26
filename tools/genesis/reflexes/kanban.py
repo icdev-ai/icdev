@@ -1,23 +1,27 @@
 # CUI // SP-CTI
-"""Kanban Executor Reflex — polls kanban_tasks for due scheduled tasks
-and prepares them for execution.
+"""Kanban Executor Reflex — polls kanban_tasks for due scheduled tasks,
+promotes them, and dispatches to Claude Code CLI for autonomous execution.
 
 Flow:
-1. Query kanban_tasks WHERE status='scheduled' AND scheduled_at <= NOW()
-2. Move each due task to 'in_progress'
-3. Write a prompt file to .tmp/kanban/ for Claude Code to pick up
-4. Send a dashboard notification
-5. Return metrics on tasks processed
+1. Poll Telegram for incoming commands
+2. Query kanban_tasks for due scheduled + backlog tasks (rate-limited)
+3. Move each due task to 'in_progress', write prompt file
+4. Dispatch prompt file to `claude` CLI as a background subprocess
+5. On completion: move to 'done', notify via Telegram, delete prompt file
 
-The prompt files are consumed by Claude Code sessions (via /start
-or manual pickup). Each file contains the full task context needed
-for autonomous execution.
+The claude CLI runs headless with --dangerously-skip-permissions so tasks
+execute without human approval. The daemon monitors subprocess completion.
 """
 
+import logging
+import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -232,48 +236,159 @@ def _poll_telegram():
         return []
 
 
+# ---------------------------------------------------------------------------
+# Claude CLI executor
+# ---------------------------------------------------------------------------
+CLAUDE_CLI = shutil.which("claude") or str(
+    Path.home() / ".local" / "bin" / "claude"
+)
+
+# Track running subprocesses: {task_id: subprocess.Popen}
+_running: Dict[str, subprocess.Popen] = {}
+
+
+def _dispatch_to_claude(task: dict, prompt_path: str):
+    """Launch claude CLI in background to execute the task."""
+    task_id = task["id"]
+    title = task.get("title", "Untitled")
+
+    prompt_text = Path(prompt_path).read_text(encoding="utf-8")
+
+    # Build the full instruction for Claude
+    instruction = (
+        f"{prompt_text}\n\n"
+        f"When complete:\n"
+        f"1. Move to done: POST http://localhost:5050/api/kanban/"
+        f"tasks/{task_id}/move with {{\"status\": \"done\"}}\n"
+        f"2. Notify: python -c \"from tools.notifications.adapters."
+        f"telegram import send; send('Task Completed', "
+        f"'{title} — done', severity='success')\"\n"
+        f"3. Delete prompt file: {prompt_path}\n"
+    )
+
+    try:
+        proc = subprocess.Popen(
+            [
+                CLAUDE_CLI,
+                "--print",
+                "--dangerously-skip-permissions",
+                "--max-turns", "50",
+                "-p", instruction,
+            ],
+            cwd=str(BASE_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        _running[task_id] = proc
+        print(f"  Kanban: dispatched {task_id} to claude (PID {proc.pid})")
+    except FileNotFoundError:
+        print(f"  Kanban: claude CLI not found at {CLAUDE_CLI}")
+    except Exception as e:
+        print(f"  Kanban: dispatch error for {task_id}: {e}")
+
+
+def _check_completed():
+    """Check for completed claude subprocesses and clean up."""
+    completed = []
+    for task_id, proc in list(_running.items()):
+        ret = proc.poll()
+        if ret is not None:
+            completed.append(task_id)
+            prompt_path = PROMPT_DIR / f"{task_id}.md"
+            if ret == 0:
+                # Claude completed successfully — task should already
+                # be moved to done by Claude itself. Clean up just in case.
+                if prompt_path.exists():
+                    prompt_path.unlink()
+                print(f"  Kanban: {task_id} completed (exit {ret})")
+            else:
+                # Claude failed — move task back to backlog for retry
+                stderr = proc.stderr.read() if proc.stderr else ""
+                print(
+                    f"  Kanban: {task_id} failed (exit {ret})"
+                    f"{': ' + stderr[:200] if stderr else ''}"
+                )
+                try:
+                    _move_task(task_id, "backlog")
+                except Exception:
+                    pass
+            del _running[task_id]
+    return completed
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
-    # Poll Telegram for new commands first
+    # 1. Check for completed claude subprocesses
+    completed = _check_completed()
+
+    # 2. Poll Telegram for new commands
     tg_results = _poll_telegram()
     if tg_results:
         print(f"  Kanban: {len(tg_results)} Telegram commands")
 
+    # 3. Don't promote new tasks if claude is already running
+    if _running:
+        print(
+            f"  Kanban: {len(_running)} task(s) executing in claude, "
+            f"waiting..."
+        )
+        return {
+            "success": True,
+            "metric_value": len(completed),
+            "details": {
+                "status": "executing",
+                "running": list(_running.keys()),
+                "completed_this_cycle": completed,
+                "telegram_commands": len(tg_results),
+            },
+        }
+
+    # 4. Find due tasks
     due_tasks = _get_due_tasks()
 
     if not due_tasks:
         return {
             "success": True,
-            "metric_value": 0,
-            "details": {"status": "no_due_tasks"},
+            "metric_value": len(completed),
+            "details": {
+                "status": "no_due_tasks",
+                "completed_this_cycle": completed,
+            },
         }
 
     processed = []
     errors = 0
 
-    for task in due_tasks:
-        try:
-            # Move to in_progress
-            _move_task(task["id"], "in_progress")
+    # Only dispatch ONE task at a time to claude
+    task = due_tasks[0]
+    try:
+        # Move to in_progress
+        _move_task(task["id"], "in_progress")
 
-            # Write prompt file for Claude Code
-            prompt_path = _write_prompt_file(task)
+        # Write prompt file
+        prompt_path = _write_prompt_file(task)
 
-            # Send notification
-            _send_notification(task)
+        # Send notification
+        _send_notification(task)
 
-            processed.append({
-                "id": task["id"],
-                "title": task["title"],
-                "prompt_file": prompt_path,
-            })
-            print(
-                f"  Kanban: {task['id']} "
-                f"'{task['title']}' -> in_progress"
-            )
-        except Exception as e:
-            errors += 1
-            print(f"  Kanban error: {task['id']}: {e}")
+        # Dispatch to claude CLI
+        _dispatch_to_claude(task, prompt_path)
+
+        processed.append({
+            "id": task["id"],
+            "title": task["title"],
+            "prompt_file": prompt_path,
+        })
+        print(
+            f"  Kanban: {task['id']} "
+            f"'{task['title']}' -> in_progress -> dispatched"
+        )
+    except Exception as e:
+        errors += 1
+        print(f"  Kanban error: {task['id']}: {e}")
 
     return {
         "success": errors == 0,
@@ -281,6 +396,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "details": {
             "tasks_activated": len(processed),
             "telegram_commands": len(tg_results),
+            "completed_this_cycle": completed,
             "errors": errors,
             "tasks": processed,
         },
