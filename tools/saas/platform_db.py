@@ -591,8 +591,83 @@ def log_platform_audit(
 # ---------------------------------------------------------------------------
 # Seed Demo Data
 # ---------------------------------------------------------------------------
+def _get_env_api_key() -> str | None:
+    """Read ICDEV_DASHBOARD_API_KEY from .env or environment."""
+    key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "").strip()
+    if key:
+        return key
+    # Try reading .env directly
+    env_path = PROJECT_ROOT / ".env"
+    if env_path.exists():
+        with open(env_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("ICDEV_DASHBOARD_API_KEY="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
+def ensure_env_key_registered():
+    """Ensure ICDEV_DASHBOARD_API_KEY from .env is registered in platform DB.
+
+    If the icdev-demo tenant exists, checks whether the .env key hash is already
+    in api_keys.  If not, inserts it so the key works for portal login.
+
+    Returns:
+        dict with status and message.
+    """
+    env_key = _get_env_api_key()
+    if not env_key:
+        return {"status": "skip", "message": "No ICDEV_DASHBOARD_API_KEY in .env"}
+
+    key_hash = hashlib.sha256(env_key.encode("utf-8")).hexdigest()
+
+    conn = get_platform_connection()
+    cursor = conn.cursor()
+    try:
+        # Already registered?
+        cursor.execute("SELECT id FROM api_keys WHERE key_hash = ?", (key_hash,))
+        if cursor.fetchone():
+            return {"status": "ok", "message": "Env key already registered"}
+
+        # Find demo tenant + admin user
+        cursor.execute(
+            "SELECT t.id as tenant_id, u.id as user_id "
+            "FROM tenants t JOIN users u ON t.id = u.tenant_id "
+            "WHERE t.slug = 'icdev-demo' AND u.email = 'admin@icdev.local' "
+            "AND t.status = 'active' AND u.status = 'active' LIMIT 1"
+        )
+        row = cursor.fetchone()
+        if not row:
+            return {"status": "skip", "message": "No icdev-demo tenant — run --seed first"}
+
+        tenant_id, user_id = row[0], row[1]
+        key_id = str(uuid.uuid4())
+        key_prefix = env_key[:16] if len(env_key) >= 16 else env_key
+
+        cursor.execute(
+            "INSERT INTO api_keys (id, tenant_id, user_id, key_hash, key_prefix, "
+            "name, scopes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (key_id, tenant_id, user_id, key_hash, key_prefix,
+             "env-dashboard-key", "admin", "active"),
+        )
+        conn.commit()
+        logger.info("Registered ICDEV_DASHBOARD_API_KEY in platform DB (prefix=%s)", key_prefix)
+        return {"status": "ok", "message": f"Env key registered (prefix={key_prefix})"}
+    except Exception as exc:
+        conn.rollback()
+        logger.error("Failed to register env key: %s", exc)
+        return {"status": "error", "message": str(exc)}
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def seed_demo_data():
     """Create a demo tenant, admin user, API key, and subscription.
+
+    Uses ICDEV_DASHBOARD_API_KEY from .env when available, otherwise generates
+    a random key.
 
     Returns:
         dict with tenant_id, user_id, raw_api_key, and status.
@@ -603,7 +678,8 @@ def seed_demo_data():
         # Check if demo tenant already exists
         cursor.execute("SELECT id FROM tenants WHERE slug = 'icdev-demo'")
         if cursor.fetchone():
-            logger.info("Demo tenant already exists — skipping seed")
+            logger.info("Demo tenant already exists — ensuring env key is registered")
+            result = ensure_env_key_registered()
             # Fetch existing key prefix for display
             cursor.execute(
                 "SELECT k.key_prefix FROM api_keys k "
@@ -616,6 +692,7 @@ def seed_demo_data():
             return {
                 "status": "exists",
                 "message": f"Demo tenant already exists. Key prefix: {prefix}...",
+                "env_key_sync": result.get("message", ""),
             }
 
         tenant_id = str(uuid.uuid4())
@@ -623,8 +700,13 @@ def seed_demo_data():
         key_id = str(uuid.uuid4())
         sub_id = str(uuid.uuid4())
 
-        # Generate API key
-        raw_key = "icdev_" + secrets.token_hex(32)
+        # Use .env key if available, otherwise generate random
+        env_key = _get_env_api_key()
+        if env_key:
+            raw_key = env_key
+            logger.info("Using ICDEV_DASHBOARD_API_KEY from .env for demo tenant")
+        else:
+            raw_key = "icdev_" + secrets.token_hex(32)
         key_hash = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
         key_prefix = raw_key[:16]
 

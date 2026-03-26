@@ -342,6 +342,14 @@ def create_app(config=None):
     if config:
         app.config.update(config)
 
+    # ---- Ensure .env API key is registered in platform DB ----
+    try:
+        from tools.saas.platform_db import ensure_env_key_registered
+        result = ensure_env_key_registered()
+        logger.info("Env key sync: %s", result.get("message", "done"))
+    except Exception as exc:
+        logger.debug("Env key sync skipped: %s", exc)
+
     # ---- Register middleware (order matters) ----
 
     # 0. Correlation ID middleware (must be first — D149)
