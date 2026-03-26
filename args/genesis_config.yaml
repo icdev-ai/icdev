@@ -227,6 +227,19 @@ reflexes:
       - circuit_breaker_status
       - recommendations
 
+  govcon_scan:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 10:00"
+    description: "SAM.gov incremental scan → demand detection → Pulse article bridge"
+    success_metric:
+      name: govcon_new_opportunities
+      target: 0
+    outputs:
+      - sam_scan_results
+      - demand_signals
+      - pulse_articles
+
   # ── YELLOW tier (reversible writes, sandbox + rollback) ──────────────────
 
   publish:
