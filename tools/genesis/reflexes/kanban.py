@@ -86,7 +86,7 @@ def _get_due_tasks() -> list:
             "SELECT * FROM kanban_tasks "
             "WHERE status = 'scheduled' "
             "  AND scheduled_at IS NOT NULL "
-            "  AND scheduled_at <= NOW() "
+            "  AND scheduled_at <= datetime('now') "
             "ORDER BY "
             "CASE priority "
             "  WHEN 'critical' THEN 0 "

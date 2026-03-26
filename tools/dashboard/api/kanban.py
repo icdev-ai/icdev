@@ -27,7 +27,7 @@ def list_tasks():
     try:
         if status_filter:
             rows = conn.execute(
-                "SELECT * FROM kanban_tasks WHERE status = %s ORDER BY "
+                "SELECT * FROM kanban_tasks WHERE status = ? ORDER BY "
                 "CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
                 "WHEN 'medium' THEN 2 ELSE 3 END, created_at DESC",
                 (status_filter,),
@@ -64,7 +64,7 @@ def create_task():
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, "
             "status, scheduled_at, created_at, updated_at) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "VALUES (?,?,?,?,?,?,?,?,?)",
             (
                 task_id,
                 data["title"],
@@ -90,7 +90,7 @@ def update_task(task_id):
     conn = get_connection()
     try:
         existing = conn.execute(
-            "SELECT * FROM kanban_tasks WHERE id = %s", (task_id,)
+            "SELECT * FROM kanban_tasks WHERE id = ?", (task_id,)
         ).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
@@ -103,7 +103,7 @@ def update_task(task_id):
         vals = []
         for field in allowed:
             if field in data:
-                sets.append(f"{field} = %s")
+                sets.append(f"{field} = ?")
                 vals.append(data[field])
 
         if not sets:
@@ -111,19 +111,19 @@ def update_task(task_id):
 
         # Auto-set completed_at when moving to done
         if data.get("status") == "done" and existing["status"] != "done":
-            sets.append("completed_at = %s")
+            sets.append("completed_at = ?")
             vals.append(_utcnow())
         # Clear completed_at if moving out of done
         elif (data.get("status") and data["status"] != "done"
               and existing["status"] == "done"):
             sets.append("completed_at = NULL")
 
-        sets.append("updated_at = %s")
+        sets.append("updated_at = ?")
         vals.append(_utcnow())
         vals.append(task_id)
 
         conn.execute(
-            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = %s",
+            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = ?",
             tuple(vals),
         )
         conn.commit()
@@ -137,13 +137,14 @@ def delete_task(task_id):
     """Delete a kanban task."""
     conn = get_connection()
     try:
-        result = conn.execute(
-            "DELETE FROM kanban_tasks WHERE id = %s RETURNING id", (task_id,)
+        existing = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
         ).fetchone()
+        if not existing:
+            return jsonify({"error": "Task not found"}), 404
+        conn.execute("DELETE FROM kanban_tasks WHERE id = ?", (task_id,))
         conn.commit()
-        if result:
-            return jsonify({"status": "deleted", "id": task_id})
-        return jsonify({"error": "Task not found"}), 404
+        return jsonify({"status": "deleted", "id": task_id})
     finally:
         conn.close()
 
@@ -160,19 +161,19 @@ def move_task(task_id):
     conn = get_connection()
     try:
         existing = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)
+            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
         ).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
-        sql = "UPDATE kanban_tasks SET status = %s, updated_at = %s"
+        sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
         if new_status == "done" and existing["status"] != "done":
-            sql += ", completed_at = %s"
+            sql += ", completed_at = ?"
             vals.append(now)
         elif new_status != "done" and existing["status"] == "done":
             sql += ", completed_at = NULL"
-        sql += " WHERE id = %s"
+        sql += " WHERE id = ?"
         vals.append(task_id)
 
         conn.execute(sql, tuple(vals))

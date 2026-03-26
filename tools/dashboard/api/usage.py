@@ -113,15 +113,16 @@ def usage_time_series():
     try:
         rows = conn.execute(
             """SELECT
-                   created_at::date as day,
+                   DATE(created_at) as day,
                    SUM(input_tokens) as input_tokens,
                    SUM(output_tokens) as output_tokens,
                    SUM(cost_estimate_usd) as cost,
                    COUNT(*) as requests
                FROM agent_token_usage
-               WHERE created_at >= NOW() - INTERVAL '%s days'
-               GROUP BY created_at::date
-               ORDER BY day""" % days,
+               WHERE created_at >= datetime('now', ?)
+               GROUP BY DATE(created_at)
+               ORDER BY day""",
+            (f"-{days} days",),
         ).fetchall()
 
         result = []

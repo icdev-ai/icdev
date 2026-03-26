@@ -5528,7 +5528,7 @@ def create_app() -> Flask:
             from tools.marketplace.openclaw_bridge import _get_db
             conn = _get_db()
             conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = LEAST(1.0, GREATEST(0.0, trust_score + %s)), updated_at = NOW() WHERE id = %s",
+                "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)), updated_at = datetime('now') WHERE id = ?",
                 (bump, import_id),
             )
             conn.commit()
@@ -5597,7 +5597,7 @@ def create_app() -> Flask:
             from tools.marketplace.openclaw_bridge import _get_db
             conn = _get_db()
             conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = %s, updated_at = NOW() WHERE id = %s",
+                "UPDATE openclaw_imports SET trust_score = ?, updated_at = datetime('now') WHERE id = ?",
                 (trust_score, import_id),
             )
             conn.commit()
