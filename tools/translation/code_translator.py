@@ -146,15 +146,14 @@ def _invoke_llm(prompt, config, function_name="code_translation"):
     """Invoke LLM via the router. Returns translated code string."""
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.invoke(
-            function=function_name,
-            prompt=prompt,
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             temperature=config.get("translation", {}).get("temperature", 0.2),
         )
-        if isinstance(response, dict):
-            return response.get("content", response.get("text", str(response)))
-        return str(response)
+        response = router.invoke(function_name, request)
+        return response.content if response and response.content else None
     except ImportError:
         return None
     except Exception:

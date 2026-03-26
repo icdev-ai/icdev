@@ -108,7 +108,7 @@ def _llm_judge(prompt: str, system: str = "") -> str:
             temperature=0.0,
             classification="CUI",
         )
-        response = router.invoke(request, function="rag_evaluate")
+        response = router.invoke("rag_evaluate", request)
         return response.content.strip()
     except Exception as exc:
         logger.debug("LLM judge failed: %s", exc)

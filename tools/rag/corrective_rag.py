@@ -255,12 +255,13 @@ def _aggregate_with_llm(
             f"unified context paragraph for the query: '{query}'\n\n{context}"
         )
 
-        result = router.invoke(
-            function_name="memory_consolidation",
+        from tools.llm.provider import LLMRequest
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             system_prompt="You are a concise knowledge synthesizer. Combine the retrieval results into a single coherent context.",
-            user_prompt=prompt,
         )
-        return result.get("content", "") if isinstance(result, dict) else str(result)
+        result = router.invoke("memory_consolidation", request)
+        return result.content if result and result.content else ""
     except Exception as exc:
         logger.debug("LLM aggregation failed, returning raw context: %s", exc)
         return ""

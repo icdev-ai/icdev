@@ -210,7 +210,7 @@ def _summarize_results(query, top_entries, cache_ttl=_SUMMARY_CACHE_TTL):
         router = LLMRouter()
 
         # Use memory_consolidation function (scanner tier — qwen3.5, zero Claude)
-        from tools.llm.router import LLMRequest
+        from tools.llm.provider import LLMRequest
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=512,
@@ -218,14 +218,7 @@ def _summarize_results(query, top_entries, cache_ttl=_SUMMARY_CACHE_TTL):
         response = router.invoke("memory_consolidation", request)
 
         # Extract text from response
-        if hasattr(response, "text") and response.text:
-            summary = response.text.strip()
-        elif hasattr(response, "content") and isinstance(response.content, str):
-            summary = response.content.strip()
-        elif isinstance(response, dict):
-            summary = (response.get("text") or response.get("content", "")).strip()
-        else:
-            summary = str(response).strip()
+        summary = response.content.strip() if response and response.content else ""
 
         if summary:
             _summary_cache[entry_key] = (summary, time.time())

@@ -201,7 +201,7 @@ class LLMRerankerProvider(RerankerProvider):
                 temperature=0.1,
                 classification="CUI",
             )
-            response = router.invoke(request, function="rag_rerank")
+            response = router.invoke("rag_rerank", request)
 
             # Parse response
             content = response.content.strip()

@@ -363,7 +363,7 @@ def _repair_with_llm(
             skip_injection_scan=True,  # Internal pipeline
         )
 
-        response = router.invoke(request, function=function_name)
+        response = router.invoke(function_name, request)
         if response and response.content:
             repaired = response.content.strip()
             # Strip markdown code fences if present

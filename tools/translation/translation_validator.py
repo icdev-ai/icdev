@@ -582,15 +582,14 @@ def repair_translation(unit, source_code, translated_code, errors,
 
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.invoke(
-            function="code_translation_repair",
-            prompt=prompt,
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
         )
-        if isinstance(response, dict):
-            return response.get("content", response.get("text"))
-        return str(response) if response else None
+        response = router.invoke("code_translation_repair", request)
+        return response.content if response and response.content else None
     except Exception:
         return None
 

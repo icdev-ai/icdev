@@ -83,6 +83,7 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
     """
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
 
         # Build prompt for qwen3 worker
@@ -147,13 +148,13 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
         except ImportError:
             pass  # Redaction module not installed — proceed unsanitized
 
-        response = router.invoke(
-            function_name="proposal_drafting",
-            prompt=prompt,
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
         )
+        response = router.invoke("proposal_drafting", request)
 
-        if response and response.get("content"):
-            return response["content"], "two_tier_llm"
+        if response and response.content:
+            return response.content, "two_tier_llm"
 
     except Exception:
         pass

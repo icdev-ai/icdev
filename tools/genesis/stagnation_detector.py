@@ -274,6 +274,7 @@ class StagnationDetector:
         alternatives = []
         try:
             from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
             router = LLMRouter()
             system = (
                 f"You are the '{persona}' lateral thinking persona. "
@@ -282,8 +283,7 @@ class StagnationDetector:
                 f"1-{self.max_alts} concrete, actionable alternative approaches. "
                 f"Return JSON array: [{{\"description\": \"...\"}}, ...]"
             )
-            result = router.invoke(
-                function="code_analysis",  # scanner tier
+            request = LLMRequest(
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": context[:4000]},
@@ -291,7 +291,8 @@ class StagnationDetector:
                 max_tokens=2048,
                 temperature=0.7,
             )
-            text = result.get("content", "") if isinstance(result, dict) else str(result)
+            result = router.invoke("code_analysis", request)
+            text = result.content if result and result.content else ""
             # Parse JSON array from response
             import re as _re
             match = _re.search(r"\[.*\]", text, _re.DOTALL)

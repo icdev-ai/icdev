@@ -192,14 +192,15 @@ def polish_with_llm(goal_data: Dict[str, Any]) -> Dict[str, Any]:
 
         # Try LLM router (scanner tier — zero Claude cost)
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        response = router.invoke(
-            function="memory_consolidation",  # Scanner tier
-            prompt=prompt,
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=512,
         )
-        if response and isinstance(response, dict):
-            text = response.get("text", response.get("content", ""))
+        response = router.invoke("memory_consolidation", request)
+        if response and response.content:
+            text = response.content
             if text and len(text) > 20:
                 # Replace description in the goal markdown
                 goal_data["llm_polished"] = True

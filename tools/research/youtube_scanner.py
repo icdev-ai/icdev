@@ -155,6 +155,7 @@ def _summarize_transcript(transcript: str, config: Dict) -> str:
 
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
         prompt = (
@@ -164,11 +165,12 @@ def _summarize_transcript(transcript: str, config: Dict) -> str:
             "points. Output as concise bullet points (max 400 words).\n\n"
             f"TRANSCRIPT:\n{transcript[:8000]}"
         )
-        result = router.invoke(
-            llm_function,
-            {"prompt": prompt, "max_tokens": 600},
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=600,
         )
-        summary = result.get("content", "") or result.get("text", "")
+        result = router.invoke(llm_function, request)
+        summary = result.content if result and result.content else ""
         if summary and len(summary) > 50:
             return summary[:4000]
     except Exception as exc:

@@ -449,7 +449,7 @@ class CRAGScorer:
                 temperature=0.0,
                 classification="CUI",
             )
-            response = router.invoke(request, function="rag_evaluate")
+            response = router.invoke("rag_evaluate", request)
             parsed = _safe_extract_json(response.content.strip(), "{")
             if isinstance(parsed, dict):
                 qtype = parsed.get("question_type", "").lower().strip()

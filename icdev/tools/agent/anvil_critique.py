@@ -595,11 +595,12 @@ class AtlasCritique:
             return []
 
         try:
-            response = router.invoke(
-                prompt=prompt,
-                function="plan_review",
+            from icdev.tools.llm.provider import LLMRequest
+            request = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
             )
-            text = response.get("text", "") if isinstance(response, dict) else str(response)
+            response = router.invoke("plan_review", request)
+            text = response.content if response and response.content else ""
             return self._parse_findings(text, focus_areas)
         except Exception as exc:
             logger.error("Agent %s invocation failed: %s", agent_id, exc)
@@ -763,11 +764,12 @@ class AtlasCritique:
             }
 
         try:
-            response = router.invoke(
-                prompt=prompt,
-                function="plan_revision",
+            from icdev.tools.llm.provider import LLMRequest
+            request = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
             )
-            text = response.get("text", "") if isinstance(response, dict) else str(response)
+            response = router.invoke("plan_revision", request)
+            text = response.content if response and response.content else ""
             return {
                 "revised_plan": text,
                 "summary": f"Revised to address {len(high_and_critical)} findings",

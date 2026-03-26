@@ -447,12 +447,13 @@ def _refine_questions_llm(graph_id, questions, node_map):
             "Return a JSON array of objects with keys: question, type, priority.\n\n"
             f"Questions:\n{raw_qs}"
         )
-        resp = router.invoke(
-            prompt=prompt,
-            function="ft_pair_generation",  # scanner-tier routing
+        from tools.llm.provider import LLMRequest
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=1024,
         )
-        content = resp.get("content", "") if isinstance(resp, dict) else str(resp)
+        resp = router.invoke("ft_pair_generation", request)
+        content = resp.content if resp and resp.content else ""
         # Try to parse JSON from response
         start = content.find("[")
         end = content.rfind("]")

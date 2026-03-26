@@ -82,6 +82,7 @@ def _llm_hypotheses(domain: str, config: dict, current_metric: float,
     """Generate hypotheses via scanner-tier LLM (qwen3.5)."""
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
     except (ImportError, Exception):
         return []
@@ -111,12 +112,12 @@ Respond as JSON array:
 [{{"hypothesis": "...", "category": "...", "estimated_impact": "high|medium|low"}}]"""
 
     try:
-        response = router.invoke(
-            prompt=prompt,
-            function="hypothesis_generation",
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=2048,
         )
-        text = response.get("text", "")
+        response = router.invoke("hypothesis_generation", request)
+        text = response.content if response and response.content else ""
         # Parse JSON from response
         if "```" in text:
             lines = text.split("\n")
