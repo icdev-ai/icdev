@@ -1479,3 +1479,15 @@
 | Injection Scanner | tools\security\injection_scanner.py | Auto-registered: security/injection_scanner.py | --json | JSON |
 | Telegram Listener | tools\notifications\adapters\telegram_listener.py | Auto-registered: adapters/telegram_listener.py | --json | JSON |
 | Telegram Connector | tools\databridge\connectors\telegram_connector.py | Auto-registered: connectors/telegram_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Alpha Calculator | tools\trading\factors\alpha_calculator.py | Auto-registered: factors/alpha_calculator.py | --json | JSON |
+| Cost Model | tools\trading\factors\cost_model.py | Auto-registered: factors/cost_model.py | --json | JSON |
+| Factor Data | tools\trading\factors\factor_data.py | Auto-registered: factors/factor_data.py | --json | JSON |
+| Factor Regression | tools\trading\factors\factor_regression.py | Auto-registered: factors/factor_regression.py | --json | JSON |
+| Regime Premiums | tools\trading\factors\regime_premiums.py | Auto-registered: factors/regime_premiums.py | --json | JSON |
+| Signal Validator | tools\trading\factors\signal_validator.py | Auto-registered: factors/signal_validator.py | --json | JSON |
+| Skill Tracker | tools\trading\factors\skill_tracker.py | Auto-registered: factors/skill_tracker.py | --json | JSON |

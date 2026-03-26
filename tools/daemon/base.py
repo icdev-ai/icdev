@@ -52,7 +52,7 @@ except ImportError:
                 if _k and _k not in os.environ:
                     os.environ[_k] = _v
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Risk tier constants (shared across all daemons)
