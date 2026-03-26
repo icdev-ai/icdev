@@ -36,22 +36,53 @@ def _ensure_prompt_dir():
     PROMPT_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _count_in_progress() -> int:
+    """Count how many tasks are currently in_progress."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM kanban_tasks "
+            "WHERE status = 'in_progress'"
+        ).fetchone()
+        return dict(row).get("cnt", 0)
+    finally:
+        conn.close()
+
+
+def _count_pending_prompts() -> int:
+    """Count unexecuted prompt files in .tmp/kanban/."""
+    if not PROMPT_DIR.exists():
+        return 0
+    return len(list(PROMPT_DIR.glob("task-*.md")))
+
+
+# Max tasks to auto-promote per cycle (prevents flooding)
+MAX_AUTO_PROMOTE = 2
+# Max in-progress tasks at any time (prevents pile-up)
+MAX_IN_PROGRESS = 3
+
+
 def _get_due_tasks() -> list:
     """Find tasks ready for execution:
-    1. Scheduled tasks whose scheduled_at has passed
-    2. Backlog tasks (auto-promote to in_progress)
+    1. Scheduled tasks whose scheduled_at has passed (always promoted)
+    2. Backlog tasks (auto-promote, rate-limited)
+
+    Rate limiting:
+    - Max MAX_AUTO_PROMOTE backlog tasks promoted per cycle
+    - Won't promote if MAX_IN_PROGRESS tasks already in_progress
+    - Won't promote if there are unexecuted prompt files waiting
 
     Priority order: critical > high > medium > low,
     then oldest first.
     """
     conn = get_connection()
     try:
-        rows = conn.execute(
+        # Always pick up scheduled-and-due tasks
+        scheduled = conn.execute(
             "SELECT * FROM kanban_tasks "
-            "WHERE (status = 'scheduled' "
+            "WHERE status = 'scheduled' "
             "  AND scheduled_at IS NOT NULL "
-            "  AND scheduled_at <= NOW()) "
-            "OR status = 'backlog' "
+            "  AND scheduled_at <= NOW() "
             "ORDER BY "
             "CASE priority "
             "  WHEN 'critical' THEN 0 "
@@ -60,7 +91,40 @@ def _get_due_tasks() -> list:
             "  ELSE 3 END, "
             "created_at ASC"
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = [dict(r) for r in scheduled]
+
+        # Rate-limit backlog auto-promotion
+        current_in_progress = _count_in_progress()
+        pending_prompts = _count_pending_prompts()
+
+        if current_in_progress >= MAX_IN_PROGRESS:
+            return result  # Too many in-progress, only return scheduled
+
+        if pending_prompts >= MAX_AUTO_PROMOTE:
+            return result  # Prompt files waiting, don't add more
+
+        slots = min(
+            MAX_AUTO_PROMOTE,
+            MAX_IN_PROGRESS - current_in_progress,
+        )
+        if slots <= 0:
+            return result
+
+        backlog = conn.execute(
+            "SELECT * FROM kanban_tasks "
+            "WHERE status = 'backlog' "
+            "ORDER BY "
+            "CASE priority "
+            "  WHEN 'critical' THEN 0 "
+            "  WHEN 'high' THEN 1 "
+            "  WHEN 'medium' THEN 2 "
+            "  ELSE 3 END, "
+            "created_at ASC "
+            f"LIMIT {slots}"
+        ).fetchall()
+        result.extend(dict(r) for r in backlog)
+
+        return result
     finally:
         conn.close()
 
