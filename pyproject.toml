@@ -82,9 +82,18 @@ llm-ibm = [
 llm-all = [
     "icdev[llm,llm-bedrock,llm-gemini,llm-azure,llm-vertex,llm-oci,llm-ibm]",
 ]
-# Air-gap safe: all providers except Google/Vertex (no google-auth, no tensorboard)
+# Local LLM only — zero cloud deps, zero auth, fully air-gapped
+# Works with: vLLM, llama.cpp server, TGI, LocalAI, LM Studio, Ollama, etc.
+# Any server exposing OpenAI-compatible /v1/chat/completions endpoint
+# Config: set type: openai_compatible + base_url in args/llm_config.yaml
+llm-local = [
+    "openai>=1.0",       # OpenAI SDK used as client for any compatible server
+    "ollama>=0.2",       # Native Ollama client (optional, openai_compatible also works)
+]
+# Air-gap safe: all non-Google providers (no google-auth, no tensorboard)
 llm-airgap = [
-    "icdev[llm,llm-bedrock,llm-azure]",
+    "icdev[llm-local,llm-bedrock,llm-azure]",
+    "anthropic>=0.30",   # Direct Anthropic API (if on-prem proxy available)
 ]
 # Semantic/keyword search
 search = [
@@ -128,6 +137,10 @@ full = [
 # Air-gap safe full install (no Google auth, no tensorboard)
 full-airgap = [
     "icdev[llm-airgap,search,testing,security]",
+]
+# Minimal air-gap: local LLM only + search (smallest footprint)
+minimal-airgap = [
+    "icdev[llm-local,search]",
 ]
 
 [project.scripts]
