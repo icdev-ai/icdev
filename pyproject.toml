@@ -48,19 +48,25 @@ Issues = "https://github.com/icdev-ai/icdev/issues"
 Changelog = "https://github.com/icdev-ai/icdev/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-# Core LLM providers (OpenAI, Anthropic/Bedrock, Gemini, Ollama)
+# Core LLM providers — air-gap safe (no Google/cloud auth required)
 llm = [
     "openai>=1.0",
     "anthropic>=0.30",
-    "boto3>=1.34",
-    "google-generativeai>=0.5",
     "ollama>=0.2",
+]
+# AWS Bedrock (requires AWS credentials, not Google auth)
+llm-bedrock = [
+    "boto3>=1.34",
+]
+# Google Gemini (pulls google-auth — NOT air-gap compatible)
+llm-gemini = [
+    "google-generativeai>=0.5",
 ]
 # Azure OpenAI (uses openai SDK with Azure endpoint)
 llm-azure = [
     "openai>=1.0",
 ]
-# Google Vertex AI
+# Google Vertex AI (pulls google-auth — NOT air-gap compatible)
 llm-vertex = [
     "google-cloud-aiplatform>=1.40",
 ]
@@ -72,9 +78,13 @@ llm-oci = [
 llm-ibm = [
     "ibm-watsonx-ai>=1.0",
 ]
-# All LLM providers
+# All LLM providers (includes Google — use llm-airgap for restricted envs)
 llm-all = [
-    "icdev[llm,llm-azure,llm-vertex,llm-oci,llm-ibm]",
+    "icdev[llm,llm-bedrock,llm-gemini,llm-azure,llm-vertex,llm-oci,llm-ibm]",
+]
+# Air-gap safe: all providers except Google/Vertex (no google-auth, no tensorboard)
+llm-airgap = [
+    "icdev[llm,llm-bedrock,llm-azure]",
 ]
 # Semantic/keyword search
 search = [
@@ -103,15 +113,21 @@ dev = [
     "twine>=5.0",
 ]
 # Image generation (Pulse hero images via SDXL Turbo on local GPU)
+# Note: torch may pull tensorboard as transitive dep — use --no-deps torch
+# then install torch deps manually if in air-gapped environment
 image-gen = [
     "torch>=2.1",
     "diffusers>=0.27",
     "transformers>=4.36",
     "accelerate>=0.25",
 ]
-# Everything
+# Everything (includes Google — NOT air-gap safe)
 full = [
     "icdev[llm-all,search,testing,security]",
+]
+# Air-gap safe full install (no Google auth, no tensorboard)
+full-airgap = [
+    "icdev[llm-airgap,search,testing,security]",
 ]
 
 [project.scripts]
