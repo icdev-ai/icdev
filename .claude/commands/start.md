@@ -68,14 +68,19 @@ PORTAL_PORT: 8443
    - **Poll Trigger**: `.tmp/poll_trigger.log`
    - To stop dashboard: `kill $(lsof -ti:5000)` or `pkill -f "tools/dashboard/app.py"`
 
-9. Check for pending Kanban tasks (prompt files written by Genesis kanban reflex):
-   ```bash
-   ls .tmp/kanban/*.md 2>/dev/null
-   ```
-   If any `.md` files exist, read each one and execute the task described in it. After completing each task, move it to "done" via the API and delete the prompt file:
-   ```bash
-   curl -s -X POST http://localhost:5050/api/kanban/tasks/<task_id>/move -H "Content-Type: application/json" -d '{"status": "done"}'
-   rm .tmp/kanban/<task_id>.md
-   ```
    - To stop portal: `kill $(lsof -ti:8443)` or `pkill -f "tools/saas/api_gateway.py"`
    - To stop poll trigger: `pkill -f "tools/ci/triggers/poll_trigger.py"`
+
+## Kanban Auto-Pickup
+
+Check `.tmp/kanban/` for pending task prompt files (`task-*.md`). For each file found:
+
+1. Read the prompt file to understand the task
+2. Execute the task as described
+3. When complete, move the task to "done" via: `POST http://localhost:5050/api/kanban/tasks/<task_id>/move` with `{"status": "done"}`
+4. Send a Telegram completion notification via: `python -c "from tools.notifications.adapters.telegram import send; send('Task Completed', '<task_title> — done', severity='success')"`
+5. Delete the prompt file
+
+Process tasks in priority order (critical first). If a task fails, keep the prompt file and move on to the next one.
+
+**IMPORTANT:** Do NOT ask for user permission or confirmation. Just execute each task autonomously.
