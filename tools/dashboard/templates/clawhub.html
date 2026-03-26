@@ -97,6 +97,51 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
 }
+/* Rich tooltip for import status badges */
+.oc-tooltip {
+    position: relative;
+    cursor: help;
+}
+.oc-tooltip::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a1a2e;
+    color: #e2e8f0;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    max-width: 320px;
+    width: max-content;
+    word-break: break-word;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.oc-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 1px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: rgba(255,255,255,0.15);
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+.oc-tooltip:hover::after,
+.oc-tooltip:hover::before {
+    opacity: 1;
+}
 </style>
 
 <!-- Import Queue -->
@@ -125,7 +170,12 @@
                         {% if imp[3] == 'passed' %}
                             <span class="badge badge-green">PASSED</span>
                         {% elif imp[3] == 'failed' %}
-                            <span class="badge badge-red">FAILED</span>
+                            {% set failed_gates = imp[11] if imp|length > 11 else [] %}
+                            {% if failed_gates %}
+                                <span class="badge badge-red oc-tooltip" data-tip="Failed gates: {{ failed_gates|join(', ') }}">FAILED</span>
+                            {% else %}
+                                <span class="badge badge-red">FAILED</span>
+                            {% endif %}
                         {% else %}
                             <span class="badge badge-yellow">{{ imp[3]|upper }}</span>
                         {% endif %}
@@ -134,9 +184,27 @@
                         {% if imp[4] == 'promoted' %}
                             <span class="badge badge-green">PROMOTED</span>
                         {% elif imp[4] == 'rejected' %}
-                            <span class="badge badge-red">REJECTED</span>
+                            {% set rej_by = imp[9] if imp|length > 9 else '' %}
+                            {% set rej_reason = imp[10] if imp|length > 10 else '' %}
+                            {% set failed_gates = imp[11] if imp|length > 11 else [] %}
+                            {% set tip_parts = [] %}
+                            {% if rej_by %}{% set _ = tip_parts.append('By: ' ~ rej_by) %}{% endif %}
+                            {% if rej_reason %}{% set _ = tip_parts.append('Reason: ' ~ rej_reason) %}{% endif %}
+                            {% if failed_gates %}{% set _ = tip_parts.append('Failed gates: ' ~ failed_gates|join(', ')) %}{% endif %}
+                            {% if tip_parts %}
+                                <span class="badge badge-red oc-tooltip" data-tip="{{ tip_parts|join(' | ') }}">REJECTED</span>
+                            {% else %}
+                                <span class="badge badge-red">REJECTED</span>
+                            {% endif %}
                         {% elif imp[4] == 'review_pending' %}
-                            <span class="badge badge-yellow">REVIEW</span>
+                            <span class="badge badge-yellow oc-tooltip" data-tip="Scan passed but manual review required before promotion">REVIEW</span>
+                        {% elif imp[4] == 'quarantined' %}
+                            {% set failed_gates = imp[11] if imp|length > 11 else [] %}
+                            {% if failed_gates %}
+                                <span class="badge oc-tooltip" data-tip="Quarantined — failed gates: {{ failed_gates|join(', ') }}">QUARANTINED</span>
+                            {% else %}
+                                <span class="badge">QUARANTINED</span>
+                            {% endif %}
                         {% else %}
                             <span class="badge">{{ imp[4]|upper }}</span>
                         {% endif %}

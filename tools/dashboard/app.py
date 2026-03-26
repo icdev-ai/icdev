@@ -5302,7 +5302,9 @@ def create_app() -> Flask:
                     (i.get("id",""), i.get("skill_name",""), i.get("author", i.get("openclaw_author","")),
                      i.get("scan_status",""), i.get("status",""),
                      i.get("trust_score",0.3), i.get("has_scripts", i.get("has_executable_content", False)),
-                     i.get("review_required",False), str(i.get("created_at",""))[:19])
+                     i.get("review_required",False), str(i.get("created_at",""))[:19],
+                     i.get("rejected_by",""), i.get("rejected_reason",""),
+                     i.get("failed_gates", []))
                     for i in result.get("imports", [])
                 ]
         except Exception:

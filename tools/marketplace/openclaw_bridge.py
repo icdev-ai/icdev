@@ -1614,28 +1614,43 @@ def list_quarantine(status_filter=None):
         if status_filter:
             rows = conn.execute(
                 "SELECT id, skill_name, openclaw_author, scan_status, status, "
-                "trust_score, has_executable_content, review_required, created_at "
+                "trust_score, has_executable_content, review_required, created_at, "
+                "rejected_by, rejected_reason, gate_results "
                 "FROM openclaw_imports WHERE status = ? ORDER BY created_at DESC",
                 (status_filter,),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id, skill_name, openclaw_author, scan_status, status, "
-                "trust_score, has_executable_content, review_required, created_at "
+                "trust_score, has_executable_content, review_required, created_at, "
+                "rejected_by, rejected_reason, gate_results "
                 "FROM openclaw_imports ORDER BY created_at DESC",
             ).fetchall()
 
         items = []
         for r in rows:
             if hasattr(r, "keys"):
-                items.append(dict(r))
+                d = dict(r)
             else:
-                items.append({
+                d = {
                     "id": r[0], "skill_name": r[1], "author": r[2],
                     "scan_status": r[3], "status": r[4], "trust_score": r[5],
                     "has_scripts": bool(r[6]), "review_required": bool(r[7]),
-                    "created_at": r[8],
-                })
+                    "created_at": r[8], "rejected_by": r[9],
+                    "rejected_reason": r[10], "gate_results": r[11],
+                }
+            # Parse gate_results to extract failed gates summary
+            gate_raw = d.get("gate_results") or d.get("gate_results_raw")
+            failed_gates = []
+            if gate_raw:
+                try:
+                    gates = json.loads(gate_raw) if isinstance(gate_raw, str) else gate_raw
+                    failed_gates = [k for k, v in gates.items()
+                                    if isinstance(v, dict) and v.get("status") in ("fail", "failed")]
+                except Exception:
+                    pass
+            d["failed_gates"] = failed_gates
+            items.append(d)
 
         return {"success": True, "count": len(items), "imports": items}
     except Exception as exc:

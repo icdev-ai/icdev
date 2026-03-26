@@ -21,8 +21,11 @@ PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data"
 
 
 def _get_platform_conn():
-    """Get platform DB connection."""
-    conn = get_connection()
+    """Get platform DB connection (always SQLite)."""
+    import sqlite3 as _sqlite3
+    db_path = Path(os.environ.get("PLATFORM_DB_PATH", str(PLATFORM_DB_PATH)))
+    conn = _sqlite3.connect(str(db_path))
+    conn.row_factory = _sqlite3.Row
     return conn
 
 
