@@ -495,12 +495,14 @@ class ChatManager:
                 if r in ("user", "assistant", "system"):
                     conversation.append({"role": r, "content": m["content"]})
 
-            response = router.generate(
-                function_name="chat_response",
+            from tools.llm.provider import LLMRequest
+
+            request = LLMRequest(
                 messages=conversation,
-                model_hint=ctx.agent_model,
+                model=ctx.agent_model,
             )
-            return response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            response = router.invoke("chat_response", request)
+            return response.content if response.content else str(response)
 
         except (ImportError, Exception) as exc:
             logger.debug("LLM unavailable for chat: %s — using echo fallback", exc)

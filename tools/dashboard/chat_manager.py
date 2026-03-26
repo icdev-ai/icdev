@@ -633,12 +633,14 @@ class ChatManager:
                 compressed = _compress_history(chat_msgs, budget_tokens=3000)
                 conversation = sys_msgs + compressed
 
-            response = router.generate(
-                function_name="chat_response",
+            from tools.llm.provider import LLMRequest
+
+            request = LLMRequest(
                 messages=conversation,
-                model_hint=ctx.agent_model,
+                model=ctx.agent_model,
             )
-            result = response.get("content", str(response)) if isinstance(response, dict) else str(response)
+            response = router.invoke("chat_response", request)
+            result = response.content if response.content else str(response)
 
             # Store RAG sources in metadata for attribution display
             if rag_results:
