@@ -27,9 +27,9 @@ import sqlite3
 import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 from icdev._paths import get_project_root
 
 BASE_DIR = get_project_root()

@@ -540,7 +540,7 @@ def main():
         print(f"  Failed:       {stats['failed_count']}")
         print(f"  Mock %:       {stats['mock_percentage']}%")
         if stats["mock_threshold_exceeded"]:
-            print(f"  WARNING: Mock percentage exceeds threshold!")
+            print("  WARNING: Mock percentage exceeds threshold!")
 
 
 if __name__ == "__main__":
