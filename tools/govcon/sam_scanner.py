@@ -238,7 +238,7 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
         return {"error": "SAM_GOV_API_KEY not set in environment", "opportunities": []}
 
     rate_config = sam_config.get("rate_limit", {})
-    delay = rate_config.get("delay_between_requests", 0.15)
+    delay = rate_config.get("delay_between_requests", 1.0)  # 1s default (was 0.15)
     lookback_days = sam_config.get("lookback_days", 30)
     max_per_poll = sam_config.get("max_per_poll", 100)
     max_desc = sam_config.get("description_max_chars", MAX_DESCRIPTION_LENGTH)
@@ -247,8 +247,30 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
     naics_codes = [naics_filter] if naics_filter else sam_config.get("naics_codes", [])
     notice_types = [notice_type_filter] if notice_type_filter else sam_config.get("notice_types", [])
 
-    # Date range
-    posted_from = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%m/%d/%Y")
+    # Incremental scan: use last_synced watermark to avoid re-scanning
+    # known opportunities. Only look back to last successful sync + 1 day buffer.
+    try:
+        conn_check = _get_db(db_path)
+        last_row = conn_check.execute(
+            "SELECT MAX(last_synced) AS last_sync FROM sam_gov_opportunities"
+        ).fetchone()
+        conn_check.close()
+        last_sync = last_row["last_sync"] if last_row and last_row["last_sync"] else None
+    except Exception:
+        last_sync = None
+
+    if last_sync:
+        # Parse last_synced and use it as posted_from (with 1-day buffer)
+        try:
+            last_dt = datetime.fromisoformat(last_sync.replace("Z", "+00:00"))
+            # 1-day buffer to catch any late-posted opportunities
+            incremental_from = last_dt - timedelta(days=1)
+            posted_from = incremental_from.strftime("%m/%d/%Y")
+        except (ValueError, AttributeError):
+            posted_from = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%m/%d/%Y")
+    else:
+        # First scan: use full lookback
+        posted_from = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime("%m/%d/%Y")
     posted_to = datetime.now(timezone.utc).strftime("%m/%d/%Y")
 
     start_time = time.time()
@@ -280,7 +302,14 @@ def scan_sam_gov(config=None, naics_filter=None, notice_type_filter=None,
             data, err = _safe_get(api_url, params=params)
             if err:
                 errors.append({"naics": naics, "notice_type": ntype, "error": err})
-                time.sleep(delay)
+                if "rate_limit" in str(err):
+                    # Exponential backoff on rate limit: wait 5s, then 10s, etc.
+                    backoff = min(60, delay * (2 ** len(
+                        [e for e in errors if "rate_limit" in str(e.get("error", ""))]
+                    )))
+                    time.sleep(backoff)
+                else:
+                    time.sleep(delay)
                 continue
 
             opportunities = []
