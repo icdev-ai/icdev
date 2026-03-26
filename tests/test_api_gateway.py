@@ -176,10 +176,16 @@ class TestRateLimiting:
 class TestCORS:
     """Verify CORS headers for allowed and disallowed origins."""
 
+    @staticmethod
+    def _dashboard_origin():
+        port = os.environ.get("ICDEV_DASHBOARD_PORT", "5000")
+        return f"http://localhost:{port}"
+
     def test_allowed_origin_gets_cors_header(self, client):
         """Request from allowed origin receives Access-Control-Allow-Origin."""
-        resp = client.get("/health", headers={"Origin": "http://localhost:5000"})
-        assert resp.headers.get("Access-Control-Allow-Origin") == "http://localhost:5000"
+        origin = self._dashboard_origin()
+        resp = client.get("/health", headers={"Origin": origin})
+        assert resp.headers.get("Access-Control-Allow-Origin") == origin
 
     def test_disallowed_origin_no_cors_header(self, client):
         """Request from unknown origin does not receive CORS header."""
@@ -188,7 +194,8 @@ class TestCORS:
 
     def test_options_preflight_returns_204(self, client):
         """OPTIONS preflight request returns 204."""
-        resp = client.options("/health", headers={"Origin": "http://localhost:5000"})
+        origin = self._dashboard_origin()
+        resp = client.options("/health", headers={"Origin": origin})
         assert resp.status_code == 204
 
 

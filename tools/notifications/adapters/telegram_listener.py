@@ -82,7 +82,7 @@ def _api_call(
         req = urllib.request.Request(url)
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — Telegram Bot API only
             return json.loads(resp.read().decode("utf-8"))
     except Exception as e:
         return {"ok": False, "error": str(e)}

@@ -108,6 +108,14 @@ testing = [
     "ruff>=0.12",
     "pydantic>=2.0",
 ]
+# SaaS multi-tenancy (PostgreSQL, Redis, production WSGI — NOT needed for air-gap)
+saas = [
+    "psycopg2-binary>=2.9",
+    "PyJWT>=2.12",
+    "cryptography>=42.0",
+    "gunicorn>=22.0",
+    "redis>=5.0",
+]
 # Security scanning
 security = [
     "bandit>=1.7",
