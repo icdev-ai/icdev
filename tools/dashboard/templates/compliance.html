@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}Compliance Hub - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Compliance</span>
+    </nav>
+
+    <h1>Compliance Hub</h1>
+    <p class="text-muted">Unified compliance posture across NIST 800-53, FedRAMP, CMMC, DISA STIG, and continuous ATO.</p>
+
+    <!-- Summary Cards -->
+    <div id="compliance-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="card" style="padding:1.2rem;text-align:center;">
+            <div style="font-size:2rem;font-weight:bold;color:#1976d2;" id="ctrl-implemented">--</div>
+            <div style="font-size:0.85rem;color:#666;">Controls Implemented</div>
+        </div>
+        <div class="card" style="padding:1.2rem;text-align:center;">
+            <div style="font-size:2rem;font-weight:bold;color:#f57c00;" id="poam-open">--</div>
+            <div style="font-size:0.85rem;color:#666;">Open POAMs</div>
+        </div>
+        <div class="card" style="padding:1.2rem;text-align:center;">
+            <div style="font-size:2rem;font-weight:bold;color:#d32f2f;" id="stig-cat1">--</div>
+            <div style="font-size:0.85rem;color:#666;">CAT I Findings</div>
+        </div>
+        <div class="card" style="padding:1.2rem;text-align:center;">
+            <div style="font-size:2rem;font-weight:bold;color:#388e3c;" id="ato-status">--</div>
+            <div style="font-size:0.85rem;color:#666;">ATO Status</div>
+        </div>
+    </div>
+
+    <!-- Quick Links -->
+    <h2 style="margin-top:2rem;">Compliance Modules</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1rem 0 2rem;">
+        <a href="/oscal" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">OSCAL</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Machine-readable compliance artifacts — SSP, SAP, SAR, POA&amp;M</p>
+        </a>
+        <a href="/cato" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">Continuous ATO</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Real-time authorization monitoring and evidence collection</p>
+        </a>
+        <a href="/compliance-debt" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">Compliance Debt</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Track and burn down POAM, control, and STIG debt</p>
+        </a>
+        <a href="/ato-package" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">ATO Package Builder</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Assemble authorization packages for FedRAMP / DoD</p>
+        </a>
+        <a href="/sbd" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">Secure by Design</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Architecture-level security compliance assessment</p>
+        </a>
+        <a href="/control-inheritance" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">Control Inheritance</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Map inherited controls from cloud providers and shared services</p>
+        </a>
+        <a href="/mosa" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">MOSA</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Modular Open Systems Approach compliance assessment</p>
+        </a>
+        <a href="/stig-manager" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">STIG Manager</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Import, track, and assess DISA STIG benchmark findings</p>
+        </a>
+        <a href="/prod-audit" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">Production Audit</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">Audit trail analysis and evidence review</p>
+        </a>
+        <a href="/ai-transparency" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">AI Transparency</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">AI model cards, decision logs, and explainability</p>
+        </a>
+        <a href="/ai-accountability" class="card" style="padding:1.2rem;text-decoration:none;color:inherit;">
+            <h3 style="margin:0 0 0.4rem;font-size:1rem;">AI Accountability</h3>
+            <p style="margin:0;font-size:0.85rem;color:#666;">AI governance, bias tracking, and accountability framework</p>
+        </a>
+    </div>
+
+    <!-- Posture API -->
+    <h2>Compliance Posture</h2>
+    <div id="posture-table-wrap" style="margin:1rem 0 2rem;">
+        <table class="data-table" style="width:100%;">
+            <thead>
+                <tr><th>Framework</th><th>Controls</th><th>Implemented</th><th>Coverage</th><th>Status</th></tr>
+            </thead>
+            <tbody id="posture-body">
+                <tr><td colspan="5" style="text-align:center;color:#999;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script defer>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load summary stats from compliance API
+    fetch('/api/compliance/posture').then(r => r.json()).then(data => {
+        if (data.controls_implemented !== undefined) {
+            document.getElementById('ctrl-implemented').textContent = data.controls_implemented;
+        }
+        if (data.open_poams !== undefined) {
+            document.getElementById('poam-open').textContent = data.open_poams;
+        }
+        if (data.cat1_findings !== undefined) {
+            document.getElementById('stig-cat1').textContent = data.cat1_findings;
+        }
+        if (data.ato_status !== undefined) {
+            document.getElementById('ato-status').textContent = data.ato_status;
+        }
+        if (data.frameworks) {
+            var tbody = document.getElementById('posture-body');
+            tbody.innerHTML = '';
+            data.frameworks.forEach(function(fw) {
+                var pct = fw.total > 0 ? Math.round(fw.implemented / fw.total * 100) : 0;
+                var color = pct >= 80 ? '#388e3c' : pct >= 50 ? '#f57c00' : '#d32f2f';
+                tbody.innerHTML += '<tr><td>' + fw.name + '</td><td>' + fw.total +
+                    '</td><td>' + fw.implemented + '</td><td><span style="color:' + color +
+                    ';font-weight:bold;">' + pct + '%</span></td><td>' + (fw.status || '--') + '</td></tr>';
+            });
+        }
+    }).catch(function() {
+        document.getElementById('posture-body').innerHTML =
+            '<tr><td colspan="5" style="text-align:center;color:#999;">No compliance data available</td></tr>';
+    });
+});
+</script>
+{% endblock %}
