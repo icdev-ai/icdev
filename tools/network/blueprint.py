@@ -962,12 +962,13 @@ def create_network_blueprint():
         csv_files = export_ops_csvs(topo["name"], graph)
         import base64
         import io as _io
+        import re as _re
         buf = _io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for fname, content in csv_files.items():
                 zf.writestr(fname, content)
         encoded = base64.b64encode(buf.getvalue()).decode("ascii")
-        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', topo["name"])
+        safe_name = _re.sub(r'[^a-zA-Z0-9_-]', '_', topo["name"])
         _audit("EXPORT", "topology", topo_id, "csv")
         return jsonify({
             "format": "csv",
