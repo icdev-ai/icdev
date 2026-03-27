@@ -282,6 +282,11 @@ function utilBar(pct) {
 const HIGHLIGHTED_CELLS = [];
 
 function clearHighlights() {
+  // Stop any blast radius animations
+  if (typeof _blastAnimTimers !== 'undefined') {
+    _blastAnimTimers.forEach(t => clearTimeout(t));
+    _blastAnimTimers.length = 0;
+  }
   HIGHLIGHTED_CELLS.forEach(id => {
     const cell = graph.getCell(id);
     if (!cell) return;
@@ -290,9 +295,17 @@ function clearHighlights() {
       const style = (typeof getStyle !== 'undefined') ? getStyle(type) : { fill: '#1a1a2e', stroke: '#7a8cb0' };
       cell.attr('body/fill', style.fill);
       cell.attr('body/stroke', style.stroke);
+      cell.attr('body/strokeWidth', 1);
+      // Remove blast animation CSS classes
+      const view = paper.findViewByModel(cell);
+      if (view && view.el) {
+        view.el.classList.remove('blast-source', 'blast-compromised', 'blast-blocked', 'blast-zone');
+        view.el.style.filter = '';
+      }
     } else {
       cell.attr('line/stroke', '#e94560');
       cell.attr('line/strokeWidth', 2);
+      cell.removeAttr('line/strokeDasharray');
     }
   });
   HIGHLIGHTED_CELLS.length = 0;
@@ -392,19 +405,24 @@ function visualizeResult(simType, result) {
   }
 }
 
-/* ── Blast Radius Visualization ────────────────────────────────────────────── */
+/* ── Blast Radius Visualization (animated) ────────────────────────────────── */
+let _blastAnimTimers = [];
+
 function highlightBlastRadius(result) {
-  // Gradient colors: closer hops = darker red, further = lighter
+  // Clear any previous blast animation
+  _blastAnimTimers.forEach(t => clearTimeout(t));
+  _blastAnimTimers = [];
+
   const HOP_COLORS = [
-    { fill: '#4a0000', stroke: '#ff1744' },  // hop 1 — bright red
-    { fill: '#3a0a00', stroke: '#ff6d00' },  // hop 2 — orange
-    { fill: '#3a2a00', stroke: '#ffc107' },  // hop 3 — amber
-    { fill: '#2a2a00', stroke: '#ffeb3b' },  // hop 4 — yellow
-    { fill: '#1a2a00', stroke: '#cddc39' },  // hop 5+
+    { fill: '#4a0000', stroke: '#ff1744', glow: 'rgba(255,23,68,0.6)' },   // hop 1 — bright red
+    { fill: '#3a0a00', stroke: '#ff6d00', glow: 'rgba(255,109,0,0.5)' },   // hop 2 — orange
+    { fill: '#3a2a00', stroke: '#ffc107', glow: 'rgba(255,193,7,0.4)' },   // hop 3 — amber
+    { fill: '#2a2a00', stroke: '#ffeb3b', glow: 'rgba(255,235,59,0.3)' },  // hop 4 — yellow
+    { fill: '#1a2a00', stroke: '#cddc39', glow: 'rgba(205,220,57,0.3)' },  // hop 5+
   ];
-  const BLOCKED_STYLE = { fill: '#002a1a', stroke: '#00e676' };  // green = firewall held
-  const SOURCE_STYLE  = { fill: '#4a0022', stroke: '#ff1744' };  // pulsing red for source
-  const ZONE_STYLE    = { fill: '#1a1a00', stroke: '#ffc107' };  // amber outline
+  const BLOCKED_STYLE = { fill: '#002a1a', stroke: '#00e676', glow: 'rgba(0,230,118,0.4)' };
+  const SOURCE_STYLE  = { fill: '#4a0022', stroke: '#ff1744', glow: 'rgba(255,23,68,0.8)' };
+  const ZONE_STYLE    = { fill: '#1a1a00', stroke: '#ffc107', glow: 'rgba(255,193,7,0.3)' };
 
   // Build label-to-id map
   const labelToId = {};
@@ -415,84 +433,105 @@ function highlightBlastRadius(result) {
     idToEl[el.id] = el;
   });
 
-  // Highlight source node
-  const srcLabel = result.source;
-  const srcElId = labelToId[srcLabel];
-  if (srcElId) {
-    const srcEl = idToEl[srcElId];
-    if (srcEl) {
-      srcEl.attr('body/fill', SOURCE_STYLE.fill);
-      srcEl.attr('body/stroke', SOURCE_STYLE.stroke);
-      srcEl.attr('body/strokeWidth', 3);
-      HIGHLIGHTED_CELLS.push(srcElId);
+  // Collect all compromised/blocked IDs for edge highlighting
+  const compromisedIds = new Set();
+  const blockedIds = new Set();
+
+  // Helper: apply style to a node with CSS animation class
+  function _styleNode(elId, style, borderWidth, animClass) {
+    const el = idToEl[elId];
+    if (!el) return;
+    el.attr('body/fill', style.fill);
+    el.attr('body/stroke', style.stroke);
+    el.attr('body/strokeWidth', borderWidth);
+    HIGHLIGHTED_CELLS.push(elId);
+    // Apply CSS animation via the JointJS view
+    const view = paper.findViewByModel(el);
+    if (view && view.el) {
+      view.el.classList.add(animClass);
     }
   }
 
-  // Highlight each hop layer
+  // ── Phase 0: Source node (immediate — pulsing red) ──
+  const srcLabel = result.source;
+  const srcElId = labelToId[srcLabel];
+  if (srcElId) {
+    _styleNode(srcElId, SOURCE_STYLE, 4, 'blast-source');
+    compromisedIds.add(srcElId);
+  }
+
+  setStatus(`Blast radius: propagating from ${srcLabel}...`);
+
+  // ── Phase 1+: Each hop layer reveals with delay ──
+  const HOP_DELAY = 800; // ms between each hop wave
+
   (result.hop_layers || []).forEach(layer => {
     const hopIdx = Math.min(layer.hop - 1, HOP_COLORS.length - 1);
     const hopStyle = HOP_COLORS[hopIdx];
+    const delay = layer.hop * HOP_DELAY;
 
-    (layer.devices || []).forEach(d => {
-      const elId = labelToId[d.label];
-      if (!elId) return;
-      const el = idToEl[elId];
-      if (!el) return;
+    const timer = setTimeout(() => {
+      // Flash status
+      setStatus(`Blast radius: hop ${layer.hop} — ${(layer.devices||[]).length} devices reached`);
 
-      let style;
-      if (d.status === 'blocked') {
-        style = BLOCKED_STYLE;
-      } else if (d.status === 'zone_boundary') {
-        style = ZONE_STYLE;
-      } else {
-        style = hopStyle;
-      }
+      (layer.devices || []).forEach((d, di) => {
+        const elId = labelToId[d.label];
+        if (!elId) return;
 
-      el.attr('body/fill', style.fill);
-      el.attr('body/stroke', style.stroke);
-      el.attr('body/strokeWidth', d.status === 'blocked' ? 3 : 2);
-      HIGHLIGHTED_CELLS.push(elId);
-    });
-  });
+        // Stagger individual devices within a hop (50ms apart)
+        const deviceTimer = setTimeout(() => {
+          let style, bw, animClass;
+          if (d.status === 'blocked') {
+            style = BLOCKED_STYLE;
+            bw = 3;
+            animClass = 'blast-blocked';
+            blockedIds.add(elId);
+          } else if (d.status === 'zone_boundary') {
+            style = ZONE_STYLE;
+            bw = 3;
+            animClass = 'blast-zone';
+            compromisedIds.add(elId);
+          } else {
+            style = hopStyle;
+            bw = 2;
+            animClass = 'blast-compromised';
+            compromisedIds.add(elId);
+          }
+          _styleNode(elId, style, bw, animClass);
 
-  // Highlight edges between compromised nodes
-  const compromisedIds = new Set();
-  if (srcElId) compromisedIds.add(srcElId);
-  (result.hop_layers || []).forEach(layer => {
-    (layer.devices || []).forEach(d => {
-      if (d.status === 'compromised' || d.status === 'zone_boundary') {
-        const eid = labelToId[d.label];
-        if (eid) compromisedIds.add(eid);
-      }
-    });
-  });
-
-  graph.getLinks().forEach(lk => {
-    const src = lk.get('source')?.id;
-    const tgt = lk.get('target')?.id;
-    if (compromisedIds.has(src) && compromisedIds.has(tgt)) {
-      lk.attr('line/stroke', '#e74c3c');
-      lk.attr('line/strokeWidth', 3);
-      HIGHLIGHTED_CELLS.push(lk.id);
-    }
-    // Show blocked edges (to firewall) as dashed green
-    const blockedIds = new Set();
-    (result.hop_layers || []).forEach(layer => {
-      (layer.devices || []).forEach(d => {
-        if (d.status === 'blocked') {
-          const eid = labelToId[d.label];
-          if (eid) blockedIds.add(eid);
-        }
+          // Highlight edges to this device
+          graph.getLinks().forEach(lk => {
+            const lkSrc = lk.get('source')?.id;
+            const lkTgt = lk.get('target')?.id;
+            if ((compromisedIds.has(lkSrc) && elId === lkTgt) ||
+                (compromisedIds.has(lkTgt) && elId === lkSrc)) {
+              if (d.status === 'blocked') {
+                lk.attr('line/stroke', '#00e676');
+                lk.attr('line/strokeWidth', 3);
+                lk.attr('line/strokeDasharray', '6,3');
+              } else {
+                lk.attr('line/stroke', hopStyle.stroke);
+                lk.attr('line/strokeWidth', 3);
+                lk.removeAttr('line/strokeDasharray');
+              }
+              HIGHLIGHTED_CELLS.push(lk.id);
+            }
+          });
+        }, di * 50);
+        _blastAnimTimers.push(deviceTimer);
       });
-    });
-    if ((compromisedIds.has(src) && blockedIds.has(tgt)) ||
-        (compromisedIds.has(tgt) && blockedIds.has(src))) {
-      lk.attr('line/stroke', '#00e676');
-      lk.attr('line/strokeWidth', 3);
-      lk.attr('line/strokeDasharray', '6,3');
-      HIGHLIGHTED_CELLS.push(lk.id);
-    }
+    }, delay);
+    _blastAnimTimers.push(timer);
   });
+
+  // Final status after all hops
+  const totalHops = (result.hop_layers || []).length;
+  const finalTimer = setTimeout(() => {
+    const total = result.total_compromised || 0;
+    const blocked = result.total_blocked || 0;
+    setStatus(`Blast radius complete: ${total} compromised, ${blocked} blocked by firewalls/segmentation`);
+  }, (totalHops + 1) * HOP_DELAY);
+  _blastAnimTimers.push(finalTimer);
 }
 
 /* ── Packet Animation ─────────────────────────────────────────────────────────── */

@@ -513,6 +513,40 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 /* JointJS paper overrides */
 .joint-paper { background: transparent !important; }
 .sim-packet { filter: drop-shadow(0 0 4px currentColor); }
+
+/* ── Blast Radius Animations ──────────────────────────────────────────────── */
+.blast-source {
+  animation: blast-pulse-red 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 12px rgba(255,23,68,0.8));
+}
+.blast-compromised {
+  animation: blast-appear 0.4s ease-out, blast-pulse-amber 2s ease-in-out 0.4s infinite;
+  filter: drop-shadow(0 0 8px rgba(255,109,0,0.5));
+}
+.blast-blocked {
+  animation: blast-appear 0.4s ease-out, blast-pulse-green 2s ease-in-out 0.4s infinite;
+  filter: drop-shadow(0 0 8px rgba(0,230,118,0.5));
+}
+.blast-zone {
+  animation: blast-appear 0.4s ease-out;
+  filter: drop-shadow(0 0 6px rgba(255,193,7,0.4));
+}
+@keyframes blast-pulse-red {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(255,23,68,0.6)); }
+  50% { filter: drop-shadow(0 0 20px rgba(255,23,68,1)); }
+}
+@keyframes blast-pulse-amber {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(255,109,0,0.3)); }
+  50% { filter: drop-shadow(0 0 12px rgba(255,109,0,0.7)); }
+}
+@keyframes blast-pulse-green {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(0,230,118,0.3)); }
+  50% { filter: drop-shadow(0 0 12px rgba(0,230,118,0.7)); }
+}
+@keyframes blast-appear {
+  0% { opacity: 0; transform: scale(0.5); }
+  100% { opacity: 1; transform: scale(1); }
+}
 .outage-marker { animation: outage-pulse 1s ease-in-out infinite; }
 /* ── Canvas Tooltip ─────────────────────────────────────────────────────────── */
 .canvas-tooltip {
