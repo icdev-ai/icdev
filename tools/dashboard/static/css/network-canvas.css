@@ -306,7 +306,7 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 /* ────────────────────────────────────────────────────────────────────────────
    CANVAS EDITOR LAYOUT
 ───────────────────────────────────────────────────────────────────────────── */
-.canvas-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.canvas-layout { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; overflow: hidden; }
 
 /* ── Toolbar ────────────────────────────────────────────────────────────────── */
 .canvas-toolbar {
@@ -317,8 +317,10 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   border-bottom: 1px solid var(--border);
   padding: 6px 12px;
   flex-wrap: wrap;
-  height: 46px;
+  min-height: 40px;
   flex-shrink: 0;
+  z-index: 50;
+  position: relative;
 }
 .tb-group { display: flex; gap: 4px; padding-right: 10px; border-right: 1px solid var(--border); margin-right: 4px; }
 .tb-btn {
@@ -340,7 +342,7 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .tb-status { font-size: 11px; color: var(--text-dim); margin-left: auto; }
 
 /* ── Canvas Body ────────────────────────────────────────────────────────────── */
-.canvas-body { display: flex; flex: 1; overflow: hidden; }
+.canvas-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }
 
 /* ── Palette ────────────────────────────────────────────────────────────────── */
 .palette {
