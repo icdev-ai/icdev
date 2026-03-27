@@ -83,7 +83,6 @@ except ImportError:
         return -1
 
 try:
-    from tools.resilience.circuit_breaker import InMemoryCircuitBreaker
     _HAS_CB = True
 except ImportError:
     _HAS_CB = False

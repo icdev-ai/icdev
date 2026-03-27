@@ -271,7 +271,6 @@ class GCSProvider(StorageProvider):
 # OCI Object Storage
 # ============================================================
 try:
-    import oci as _oci_storage
     _HAS_OCI_STORAGE = True
 except ImportError:
     _HAS_OCI_STORAGE = False

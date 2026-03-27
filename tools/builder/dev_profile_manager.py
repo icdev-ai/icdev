@@ -320,7 +320,7 @@ def update_profile(scope, scope_id, changes, change_summary="",
         # Verify changes don't violate locks
         for dim_path in changes:
             if dim_path in locked_dims:
-                lock_info = next(l for l in locks if l["dimension_path"] == dim_path)
+                lock_info = next(lk for lk in locks if lk["dimension_path"] == dim_path)
                 return {
                     "error": f"Dimension '{dim_path}' is locked by {lock_info['lock_owner_role']}",
                     "locked_by": lock_info["locked_by"],

@@ -318,7 +318,6 @@ class MCPServer:
         # D284: Create trace span wrapping tool execution
         try:
             from tools.observability import get_tracer
-            from tools.observability.tracer import set_content_tag
             import hashlib as _hl
             tracer = get_tracer()
         except ImportError:

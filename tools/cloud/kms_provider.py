@@ -110,9 +110,6 @@ class AWSKMSProvider(KMSProvider):
 # Azure Key Vault (Cryptography)
 # ============================================================
 try:
-    from azure.keyvault.keys import KeyClient
-    from azure.keyvault.keys.crypto import CryptographyClient, EncryptionAlgorithm
-    from azure.identity import DefaultAzureCredential as _AzureCredKMS
     _HAS_AZURE_KMS = True
 except ImportError:
     _HAS_AZURE_KMS = False
@@ -145,7 +142,6 @@ class AzureKMSProvider(KMSProvider):
 # GCP Cloud KMS
 # ============================================================
 try:
-    from google.cloud import kms as _gcp_kms
     _HAS_GCP_KMS = True
 except ImportError:
     _HAS_GCP_KMS = False

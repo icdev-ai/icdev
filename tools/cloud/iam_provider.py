@@ -174,8 +174,6 @@ class AWSIAMProvider(IAMProvider):
 # Azure Entra ID (formerly Azure AD)
 # ============================================================
 try:
-    from azure.identity import DefaultAzureCredential as _AzureCredIAM
-    from azure.mgmt.authorization import AuthorizationManagementClient
     _HAS_AZURE_IAM = True
 except ImportError:
     _HAS_AZURE_IAM = False
@@ -309,7 +307,6 @@ class GCPCloudIAMProvider(IAMProvider):
 # OCI IAM
 # ============================================================
 try:
-    import oci as _oci_iam
     _HAS_OCI_IAM = True
 except ImportError:
     _HAS_OCI_IAM = False

@@ -89,7 +89,7 @@ def register_correlation_middleware(app):
         # D281: Extract or generate W3C traceparent alongside correlation ID
         try:
             from tools.observability.trace_context import (
-                parse_traceparent, generate_traceparent,
+                parse_traceparent,
                 set_current_context, context_from_correlation_id,
             )
             tp_header = request.headers.get("traceparent")

@@ -12,7 +12,6 @@ import importlib
 import os
 import sys
 import types
-import warnings
 
 # Deprecation warning suppressed — migration to icdev.tools is incomplete
 # and the warning fires on every import across hundreds of files.

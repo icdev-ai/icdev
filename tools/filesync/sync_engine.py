@@ -340,7 +340,7 @@ def get_job_status(job_id: str, db_path=None) -> Dict:
             "SELECT * FROM sync_log WHERE job_id=? ORDER BY created_at DESC LIMIT 20",
             (job_id,),
         ).fetchall()
-        job["recent_log"] = [dict(l) for l in logs]
+        job["recent_log"] = [dict(row) for row in logs]
 
         # Pending conflicts
         conflicts = conn.execute(

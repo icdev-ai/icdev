@@ -102,11 +102,14 @@ def _update_status(resolution_id: str, status: str,
         if extra:
             for col in ("branch_name", "pr_url"):
                 if col in extra:
-                    sets.append(f"{col} = ?"); params.append(extra[col])
+                    sets.append(f"{col} = ?")
+                    params.append(extra[col])
             if "test_passed" in extra:
-                sets.append("test_passed = ?"); params.append(extra["test_passed"])
+                sets.append("test_passed = ?")
+                params.append(extra["test_passed"])
             if "confidence" in extra:
-                sets.append("confidence = ?"); params.append(extra["confidence"])
+                sets.append("confidence = ?")
+                params.append(extra["confidence"])
             if "details" in extra:
                 sets.append("details = ?")
                 val = extra["details"]
@@ -528,7 +531,8 @@ def get_resolution_history(project_id: Optional[str] = None, limit: int = 50,
         q = "SELECT * FROM auto_resolution_log "
         params: list = []
         if project_id:
-            q += "WHERE project_id = ? "; params.append(project_id)
+            q += "WHERE project_id = ? "
+            params.append(project_id)
         q += "ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         rows = conn.execute(q, params).fetchall()

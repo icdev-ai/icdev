@@ -186,39 +186,39 @@ const CISCO_STENCILS = {
     body: 'M24,4 a20,20 0 1,0 0.01,0 Z',
     detail: 'M24,14 v20 M14,24 h20 M17,17 l-7,-7 M16.5,10.5 l-6.5,1.5 M10.5,16.5 l1.5,-6.5 M31,17 l7,-7 M31.5,10.5 l6.5,1.5 M37.5,16.5 l-1.5,-6.5 M17,31 l-7,7 M10.5,31.5 l1.5,6.5 M16.5,37.5 l-6.5,-1.5 M31,31 l7,7 M37.5,31.5 l-1.5,6.5 M31.5,37.5 l6.5,-1.5',
   },
-  // Switch L2: rectangle with small side arrows
+  // Switch L2: Cisco classic rectangle + inward side arrows
   'switch-l2': {
-    body: 'M8,16 h32 v16 h-32 Z M4,24 l4,-3 v6 Z M44,24 l-4,-3 v6 Z',
-    detail: 'M16,24 h16 M20,21 l-3,3 l3,3 M28,21 l3,3 l-3,3',
+    body: 'M10,14 h28 v20 h-28 Z M4,24 l6,-4 v8 Z M44,24 l-6,-4 v8 Z',
+    detail: 'M17,21 h14 M17,24 h14 M17,27 h14',
   },
-  // Switch L3: same with routing indicator
+  // Switch L3: same + vertical routing lines
   'switch-l3': {
-    body: 'M8,16 h32 v16 h-32 Z M4,24 l4,-3 v6 Z M44,24 l-4,-3 v6 Z',
-    detail: 'M16,24 h16 M20,21 l-3,3 l3,3 M28,21 l3,3 l-3,3 M24,12 v4 M24,32 v4',
+    body: 'M10,14 h28 v20 h-28 Z M4,24 l6,-4 v8 Z M44,24 l-6,-4 v8 Z',
+    detail: 'M17,21 h14 M17,24 h14 M17,27 h14 M24,10 v4 M24,34 v4',
   },
-  // Firewall: brick wall with flame
+  // Firewall: Cisco classic brick wall
   'firewall': {
-    body: 'M6,8 h36 v32 h-36 Z',
-    detail: 'M6,16 h36 M6,24 h36 M6,32 h36 M18,8 v8 M30,8 v8 M12,16 v8 M24,16 v8 M36,16 v8 M18,24 v8 M30,24 v8 M12,32 v8 M24,32 v8 M36,32 v8',
+    body: 'M8,10 h32 v28 h-32 Z',
+    detail: 'M8,17 h32 M8,24 h32 M8,31 h32 M20,10 v7 M32,10 v7 M14,17 v7 M26,17 v7 M20,24 v7 M32,24 v7 M14,31 v7 M26,31 v7',
   },
-  // Server: rack unit
+  // Server: rack unit with drive indicators
   'server': {
-    body: 'M10,6 h28 v36 h-28 Z',
-    detail: 'M10,14 h28 M10,22 h28 M10,30 h28 M32,9 a1.5,1.5 0 1,0 0.01,0 M32,17 a1.5,1.5 0 1,0 0.01,0 M32,25 a1.5,1.5 0 1,0 0.01,0 M32,33 a1.5,1.5 0 1,0 0.01,0',
+    body: 'M12,8 h24 v32 h-24 Z',
+    detail: 'M12,16 h24 M12,24 h24 M12,32 h24 M30,11 a1.5,1.5 0 1,0 0.01,0 M30,19 a1.5,1.5 0 1,0 0.01,0 M30,27 a1.5,1.5 0 1,0 0.01,0',
   },
-  // Load Balancer: circle with balance scales
+  // Load Balancer: Cisco diamond shape
   'load-balancer': {
-    body: 'M24,4 a20,20 0 1,0 0.01,0 Z',
-    detail: 'M24,12 v22 M14,18 h20 M14,18 l-2,8 h8 l-2,-8 M34,18 l-2,8 h8 l-2,-8',
+    body: 'M24,6 L42,24 L24,42 L6,24 Z',
+    detail: 'M18,24 h12 M24,18 v12',
   },
-  // WAP: antenna with waves
+  // WAP: antenna post with radio waves
   'wap': {
-    body: 'M16,38 h16 l-2,-4 h-12 Z',
-    detail: 'M24,34 v-18 M24,16 l-3,-3 M24,16 l3,-3 M18,20 a10,10 0 0,1 12,0 M14,16 a16,16 0 0,1 20,0 M10,12 a22,22 0 0,1 28,0',
+    body: 'M20,40 h8 l-1,-4 h-6 Z',
+    detail: 'M24,36 v-20 M18,18 a8,8 0 0,1 12,0 M14,14 a14,14 0 0,1 20,0 M10,10 a20,20 0 0,1 28,0',
   },
-  // Cloud: classic rounded cloud shape
+  // Cloud: classic puffy cloud
   'cloud': {
-    body: 'M14,32 C6,32 4,26 8,22 C6,16 12,12 18,14 C20,8 30,8 34,12 C38,10 44,14 42,20 C46,22 44,30 38,32 Z',
+    body: 'M14,34 C6,34 2,28 6,22 C4,14 12,10 20,12 C22,6 32,6 36,12 C40,8 46,14 44,22 C48,26 44,34 38,34 Z',
     detail: '',
   },
   // Patch Panel: panel with ports
@@ -342,7 +342,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       cursor: 'pointer',
     },
     stencilGroup: {
-      transform: 'translate(19, 4) scale(1.5)',  // Scale 48→72px, centered in 110w
+      transform: 'translate(8, 2) scale(1.33)',  // Scale 48→64px, fits 80w node
     },
     stencilBody: {
       d: '',
@@ -720,8 +720,8 @@ function createNode(type, x, y, label, nodeId, configData) {
 
   // Group/site containers are larger
   const isGroup = (type === 'group-site');
-  const w = isGroup ? 300 : 110;
-  const h = isGroup ? 200 : 70;
+  const w = isGroup ? 300 : 80;
+  const h = isGroup ? 200 : 60;
 
   // Try Cisco traditional stencil (filled shape + white detail)
   const stencil = getCiscoStencil(type);
@@ -738,7 +738,7 @@ function createNode(type, x, y, label, nodeId, configData) {
         rx: 6, ry: 6,
       },
       stencilGroup: stencil ? {
-        transform: 'translate(19, 4) scale(1.5)',
+        transform: 'translate(8, 2) scale(1.33)',
       } : { display: 'none' },
       stencilBody: stencil ? {
         d: stencil.body,

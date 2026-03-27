@@ -93,7 +93,6 @@ except ImportError:
 try:
     from tools.requirements.elicitation_techniques import (
         list_techniques as _list_techniques,
-        get_technique as _get_technique,
         activate_technique as _activate_technique,
         deactivate_technique as _deactivate_technique,
     )
@@ -1039,7 +1038,7 @@ def _run_test_pipeline(session_id):
                 _update("lint", "done", "0 violations")
             else:
                 lines = (result.stdout or "").strip().split("\n")
-                count = len([l for l in lines if l.strip()])
+                count = len([ln for ln in lines if ln.strip()])
                 _update("lint", "warning", f"{count} findings")
         except Exception:
             _update("lint", "done", "Ruff not available (skipped)")

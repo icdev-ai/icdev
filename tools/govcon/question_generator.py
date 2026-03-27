@@ -61,7 +61,6 @@ except ImportError:
     _HAS_YAML = False
 
 try:
-    from tools.audit.audit_logger import log_event as audit_log_event
     _HAS_AUDIT = True
 except ImportError:
     _HAS_AUDIT = False

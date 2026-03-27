@@ -29,7 +29,7 @@ def init_socketio(app):
     global _socketio
 
     try:
-        from flask_socketio import SocketIO, emit, join_room
+        from flask_socketio import SocketIO, join_room
 
         _socketio = SocketIO(
             app,

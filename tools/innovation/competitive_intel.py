@@ -102,7 +102,8 @@ def _get_db(db_path=None):
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}")
-    conn = get_connection(); conn.row_factory = sqlite3.Row
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
     return conn
 
 def _now():
@@ -185,7 +186,8 @@ def _fetch_enhancement_issues(repo, n=20):
         for iss in (data or []):
             num = iss.get("number")
             if not iss.get("pull_request") and num not in seen:
-                seen.add(num); out.append(iss)
+                seen.add(num)
+                out.append(iss)
     return out[:n], None
 
 def _extract_features(releases):
@@ -229,7 +231,8 @@ def scan_competitor(competitor_name, db_path=None):
     comp = next((c for c in _get_competitors() if c.get("name") == competitor_name), None)
     if not comp:
         return {"error": f"Competitor '{competitor_name}' not found in config"}
-    conn = _get_db(db_path); _ensure_table(conn)
+    conn = _get_db(db_path)
+    _ensure_table(conn)
     sid, ts = f"cscan-{uuid.uuid4().hex[:12]}", _now()
     rels, feats, issues, errs = [], [], [], []
     repo, website = comp.get("repo"), comp.get("website")
@@ -251,7 +254,7 @@ def scan_competitor(competitor_name, db_path=None):
                 rx = iss.get("reactions") or {}
                 issues.append({"number": iss.get("number"), "title": iss.get("title",""),
                     "state": iss.get("state",""),
-                    "labels": [l.get("name","") for l in iss.get("labels",[])],
+                    "labels": [lbl.get("name","") for lbl in iss.get("labels",[])],
                     "url": iss.get("html_url",""), "created_at": iss.get("created_at",""),
                     "reactions_thumbs_up": rx.get("+1", 0)})
     elif website:
@@ -300,7 +303,8 @@ def gap_analysis(db_path=None):
     mkw = _load_manifest_keywords()
     if not mkw:
         return {"error": "Could not load ICDEV™ manifest keywords"}
-    conn = _get_db(db_path); _ensure_table(conn)
+    conn = _get_db(db_path)
+    _ensure_table(conn)
     all_gaps, stats = [], {}
 
     for comp in _get_competitors():
@@ -363,7 +367,8 @@ def gap_analysis(db_path=None):
 
 def get_competitor_report(db_path=None):
     """Generate competitive intelligence report from stored scan data."""
-    conn = _get_db(db_path); _ensure_table(conn)
+    conn = _get_db(db_path)
+    _ensure_table(conn)
     comps_cfg = _get_competitors()
     competitors, ts, tg, cats = [], 0, 0, set()
     for comp in comps_cfg:

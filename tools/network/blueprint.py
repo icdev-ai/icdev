@@ -2764,7 +2764,7 @@ Output ONLY the JSON object. No other text."""
             text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
             if text.startswith("```"):
                 lines = text.split("\n")
-                lines = [l for l in lines if not l.strip().startswith("```")]
+                lines = [ln for ln in lines if not ln.strip().startswith("```")]
                 text = "\n".join(lines).strip()
             start = text.find("{")
             end = text.rfind("}") + 1

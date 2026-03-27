@@ -219,7 +219,7 @@ def _translate_to_copilot_prompt(skill_data):
                     lines.append(block)
             else:
                 # Include first 3 lines of body
-                body_lines = [l for l in body.split("\n") if l.strip()][:3]
+                body_lines = [ln for ln in body.split("\n") if ln.strip()][:3]
                 lines.extend(body_lines)
             lines.append("")
 

@@ -126,7 +126,7 @@ def _status_windows() -> Dict:
              "Select-Object -ExpandProperty ProcessId"],
             capture_output=True, text=True, timeout=8,
         )
-        pids = [l.strip() for l in result.stdout.strip().split("\n") if l.strip().isdigit()]
+        pids = [ln.strip() for ln in result.stdout.strip().split("\n") if ln.strip().isdigit()]
         daemon_running = len(pids) > 0
     except Exception:
         pass
