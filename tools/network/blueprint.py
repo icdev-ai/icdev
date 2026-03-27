@@ -410,6 +410,23 @@ def create_network_blueprint():
         conn.close()
         return render_template("network/cables.html", cables=cables)
 
+    @bp.route("/cross-connects")
+    @nc_login_required
+    def nc_cross_connects():
+        conn = get_connection()
+        xconns = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_cross_connects ORDER BY updated_at DESC"
+        ).fetchall()]
+        stats = {
+            "total": len(xconns),
+            "active": sum(1 for x in xconns if x.get("status") == "active"),
+            "planned": sum(1 for x in xconns if x.get("status") == "planned"),
+            "monthly_cost": sum(x.get("monthly_cost_usd") or 0 for x in xconns),
+            "facilities": len(set(x.get("facility", "") for x in xconns if x.get("facility"))),
+        }
+        conn.close()
+        return render_template("network/cross_connects.html", cross_connects=xconns, stats=stats)
+
     @bp.route("/projects")
     @nc_login_required
     def nc_projects():
@@ -500,6 +517,34 @@ def create_network_blueprint():
         conn.close()
         _audit("CREATE", "topology", topo_id, name)
         return jsonify({"id": topo_id, "name": name, "created_at": now}), 201
+
+    # Clear-all routes MUST be before <topo_id> parameterized routes
+    @bp.route("/api/topologies/clear-all", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_clear_all_topologies():
+        conn = get_connection()
+        conn.execute("DELETE FROM simulation_results")
+        conn.execute("DELETE FROM nc_project_topologies")
+        conn.execute("DELETE FROM nc_versions")
+        conn.execute("DELETE FROM nc_groups")
+        conn.execute("DELETE FROM nc_compliance_checks")
+        conn.execute("DELETE FROM topologies")
+        conn.commit()
+        conn.close()
+        _audit("CLEAR_ALL", "topologies", "", "All topologies cleared")
+        return jsonify({"cleared": "topologies"})
+
+    @bp.route("/api/simulations/clear-all", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_clear_all_simulations():
+        conn = get_connection()
+        conn.execute("DELETE FROM simulation_results")
+        conn.execute("DELETE FROM nc_mc_runs")
+        conn.execute("DELETE FROM nc_mc_scenarios")
+        conn.commit()
+        conn.close()
+        _audit("CLEAR_ALL", "simulations", "", "All simulations cleared")
+        return jsonify({"cleared": "simulations"})
 
     @bp.route("/api/topologies/<topo_id>", methods=["GET"])
     @nc_login_required
@@ -1078,6 +1123,86 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         _audit("DELETE", "cable", cid)
+        return jsonify({"deleted": cid})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API: Cross-Connects CRUD
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/cross-connects", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_cross_connects():
+        conn = get_connection()
+        rows = conn.execute("SELECT * FROM nc_cross_connects ORDER BY updated_at DESC").fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/cross-connects", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_cross_connect():
+        data = request.get_json(force=True, silent=True) or {}
+        cid = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_cross_connects (id, topology_id, xconn_id, facility, meet_me_room, "
+            "src_device, src_port, dst_device, dst_port, media_type, bandwidth, "
+            "provider_a, provider_z, loa_status, monthly_cost_usd, install_date, "
+            "status, notes, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (cid, data.get("topology_id"), data.get("xconn_id", ""),
+             data.get("facility", ""), data.get("meet_me_room", ""),
+             data.get("src_device", ""), data.get("src_port", ""),
+             data.get("dst_device", ""), data.get("dst_port", ""),
+             data.get("media_type", "SMF"), data.get("bandwidth", ""),
+             data.get("provider_a", ""), data.get("provider_z", ""),
+             data.get("loa_status", "pending"), data.get("monthly_cost_usd", 0),
+             data.get("install_date"), data.get("status", "planned"),
+             data.get("notes", ""), now, now)
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "cross_connect", cid, data.get("xconn_id", ""))
+        return jsonify({"id": cid}), 201
+
+    @bp.route("/api/cross-connects/<cid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_cross_connect(cid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute("SELECT id FROM nc_cross_connects WHERE id=?", (cid,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        allowed = ["xconn_id", "facility", "meet_me_room", "src_device", "src_port",
+                   "dst_device", "dst_port", "media_type", "bandwidth",
+                   "provider_a", "provider_z", "loa_status", "monthly_cost_usd",
+                   "install_date", "status", "notes", "topology_id"]
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if not fields:
+            conn.close()
+            return jsonify({"error": "No fields"}), 400
+        fields.append("updated_at=?")
+        values.append(_now())
+        values.append(cid)
+        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id=?", values)
+        conn.commit()
+        conn.close()
+        _audit("UPDATE", "cross_connect", cid)
+        return jsonify({"ok": True})
+
+    @bp.route("/api/cross-connects/<cid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_cross_connect(cid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_cross_connects WHERE id=?", (cid,))
+        conn.commit()
+        conn.close()
+        _audit("DELETE", "cross_connect", cid)
         return jsonify({"deleted": cid})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1901,33 +2026,6 @@ def create_network_blueprint():
         conn.close()
         _audit("SAVE_AS_TEMPLATE", "template", tpl_id, f"from {topo_id}")
         return jsonify({"id": tpl_id, "name": name}), 201
-
-    @bp.route("/api/topologies/clear-all", methods=["DELETE"])
-    @nc_login_required
-    def nc_api_clear_all_topologies():
-        conn = get_connection()
-        conn.execute("DELETE FROM simulation_results")
-        conn.execute("DELETE FROM nc_project_topologies")
-        conn.execute("DELETE FROM nc_versions")
-        conn.execute("DELETE FROM nc_groups")
-        conn.execute("DELETE FROM nc_compliance_checks")
-        conn.execute("DELETE FROM topologies")
-        conn.commit()
-        conn.close()
-        _audit("CLEAR_ALL", "topologies", "", "All topologies cleared")
-        return jsonify({"cleared": "topologies"})
-
-    @bp.route("/api/simulations/clear-all", methods=["DELETE"])
-    @nc_login_required
-    def nc_api_clear_all_simulations():
-        conn = get_connection()
-        conn.execute("DELETE FROM simulation_results")
-        conn.execute("DELETE FROM nc_mc_runs")
-        conn.execute("DELETE FROM nc_mc_scenarios")
-        conn.commit()
-        conn.close()
-        _audit("CLEAR_ALL", "simulations", "", "All simulations cleared")
-        return jsonify({"cleared": "simulations"})
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",

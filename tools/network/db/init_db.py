@@ -148,6 +148,29 @@ CREATE TABLE IF NOT EXISTS nc_cables (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS nc_cross_connects (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    xconn_id TEXT NOT NULL,
+    facility TEXT,
+    meet_me_room TEXT,
+    src_device TEXT,
+    src_port TEXT,
+    dst_device TEXT,
+    dst_port TEXT,
+    media_type TEXT DEFAULT 'SMF',
+    bandwidth TEXT,
+    provider_a TEXT,
+    provider_z TEXT,
+    loa_status TEXT DEFAULT 'pending',
+    monthly_cost_usd REAL DEFAULT 0,
+    install_date TEXT,
+    status TEXT DEFAULT 'planned',
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS nc_versions (
     id TEXT PRIMARY KEY,
     topology_id TEXT REFERENCES topologies(id),
@@ -1441,8 +1464,8 @@ TEMPLATES = [
         "id": "tpl-aws-dx-can",
         "name": "AWS Multi-Home Direct Connect to Campus (CAN)",
         "category": "Hybrid Cloud",
-        "description": "AWS VPC with dual Direct Connect circuits (diverse paths) terminating at a campus area network with redundant border routers, Transit Gateway hub, and on-prem firewall pair.",
-        "tags": json.dumps(["aws", "direct-connect", "hybrid", "campus", "multi-home", "dx"]),
+        "description": "AWS VPC with dual Direct Connect circuits (diverse paths) through meet-me rooms at colocation facilities, terminating at a campus area network with redundant border routers, Transit Gateway hub, and on-prem firewall pair.",
+        "tags": json.dumps(["aws", "direct-connect", "hybrid", "campus", "multi-home", "dx", "meet-me-room", "cross-connect"]),
         "graph_json": json.dumps({
             "nodes": [
                 # AWS Cloud
