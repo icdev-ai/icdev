@@ -278,14 +278,15 @@ class ReflexStateBase:
             now = utcnow_iso()
             conn = get_connection()
             try:
-                conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
+                conn.execute(f"""
                     UPDATE {self.state_table} SET
                         last_run_at = ?, consecutive_failures = 0,
                         total_runs = total_runs + 1,
                         total_successes = total_successes + 1,
                         last_metric_value = ?, last_error = NULL, updated_at = ?
                     WHERE reflex_name = ?
-                """, (now, metric_value, now, self.name))
+                """,  # nosec B608 -- table/column names are internal constants, not user input
+                (now, metric_value, now, self.name))
                 conn.commit()
             finally:
                 conn.close()
@@ -304,7 +305,7 @@ class ReflexStateBase:
                 failures = (state["consecutive_failures"] if state else 0) + 1
                 tripped = failures >= cb_config.get("max_consecutive_failures", 3)
 
-                conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
+                conn.execute(f"""
                     UPDATE {self.state_table} SET
                         last_run_at = ?, consecutive_failures = ?,
                         circuit_breaker_open = ?,
@@ -313,7 +314,8 @@ class ReflexStateBase:
                         total_failures = total_failures + 1,
                         last_error = ?, updated_at = ?
                     WHERE reflex_name = ?
-                """, (now, failures, 1 if tripped else 0,
+                """,  # nosec B608 -- table/column names are internal constants, not user input
+                (now, failures, 1 if tripped else 0,
                       now if tripped else None, error[:2000], now, self.name))
                 conn.commit()
                 return tripped
@@ -326,12 +328,13 @@ class ReflexStateBase:
             now = utcnow_iso()
             conn = get_connection()
             try:
-                conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
+                conn.execute(f"""
                     UPDATE {self.state_table} SET
                         consecutive_failures = 0, circuit_breaker_open = 0,
                         circuit_breaker_tripped_at = NULL, updated_at = ?
                     WHERE reflex_name = ?
-                """, (now, self.name))
+                """,  # nosec B608 -- table/column names are internal constants, not user input
+                (now, self.name))
                 conn.commit()
             finally:
                 conn.close()
@@ -346,10 +349,11 @@ class ReflexStateBase:
         now = utcnow_iso()
         conn = get_connection()
         try:
-            conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
+            conn.execute(f"""
                 UPDATE {self.state_table} SET enabled = ?, updated_at = ?
                 WHERE reflex_name = ?
-            """, (1 if enabled else 0, now, self.name))
+            """,  # nosec B608 -- table/column names are internal constants, not user input
+            (1 if enabled else 0, now, self.name))
             conn.commit()
         finally:
             conn.close()

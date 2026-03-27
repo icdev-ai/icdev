@@ -677,26 +677,26 @@ def retrieve(
                 like_params.extend([f"%{term}%", f"%{term}%"])
 
             where_likes = " OR ".join(like_clauses)
-            sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
+            sql = f"""
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
                 FROM kg_nodes
                 WHERE graph_id IN ({placeholders})
                   AND ({where_likes})
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             params: list = list(graph_ids) + like_params
             rows = conn.execute(sql, params).fetchall()
             matched_nodes = [dict(r) for r in rows]
         else:
             # No useful query terms — return top-centrality nodes
-            sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
+            sql = f"""
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
                 FROM kg_nodes
                 WHERE graph_id IN ({placeholders})
                 ORDER BY centrality DESC
                 LIMIT ?
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             rows = conn.execute(sql, list(graph_ids) + [top_k * 3]).fetchall()
             matched_nodes = [dict(r) for r in rows]
 
@@ -706,13 +706,13 @@ def retrieve(
             matched_id_set_kw = {n["id"] for n in matched_nodes}
 
             # Fetch all nodes with embeddings from target graphs
-            emb_sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
+            emb_sql = f"""
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at, embedding
                 FROM kg_nodes
                 WHERE graph_id IN ({placeholders})
                   AND embedding IS NOT NULL
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             emb_rows = conn.execute(emb_sql, list(graph_ids)).fetchall()
 
             # Score each node by cosine similarity to query
@@ -770,14 +770,14 @@ def retrieve(
         id_placeholders = ",".join("?" for _ in matched_ids)
 
         # Get edges connected to matched nodes
-        edge_sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
+        edge_sql = f"""
             SELECT id, graph_id, source_id, target_id,
                    relationship, weight, properties, created_at
             FROM kg_edges
             WHERE graph_id IN ({placeholders})
               AND (source_id IN ({id_placeholders})
                    OR target_id IN ({id_placeholders}))
-        """
+        """  # nosec B608 -- table/column names are internal constants, not user input
         edge_params = list(graph_ids) + matched_ids + matched_ids
         edge_rows = conn.execute(edge_sql, edge_params).fetchall()
         all_edges = [dict(r) for r in edge_rows]
@@ -796,12 +796,12 @@ def retrieve(
         # Fetch neighbor nodes
         if neighbor_ids:
             nbr_placeholders = ",".join("?" for _ in neighbor_ids)
-            nbr_sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
+            nbr_sql = f"""
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
                 FROM kg_nodes
                 WHERE id IN ({nbr_placeholders})
-            """
+            """  # nosec B608 -- table/column names are internal constants, not user input
             nbr_rows = conn.execute(nbr_sql, list(neighbor_ids)).fetchall()
             for r in nbr_rows:
                 matched_nodes.append(dict(r))

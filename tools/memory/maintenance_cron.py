@@ -171,10 +171,10 @@ def prune_stale(days=None, db_path=None):
 
     placeholders = ",".join("?" * len(prune_types))
     c.execute(
-        f"""DELETE FROM memory_entries  # nosec B608 -- table/column names are internal constants, not user input
+        f"""DELETE FROM memory_entries
            WHERE importance <= ?
              AND type IN ({placeholders})
-             AND created_at < datetime('now', ? || ' days')""",
+             AND created_at < datetime('now', ? || ' days')""",  # nosec B608 -- table/column names are internal constants, not user input
         [min_importance] + prune_types + [str(-prune_days)],
     )
     pruned = c.rowcount

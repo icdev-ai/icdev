@@ -461,7 +461,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
 
                 # Any element in chain -> nist_control
                 c.execute(
-                    """SELECT 1 FROM digital_thread_links  # nosec B608 -- table/column names are internal constants, not user input
+                    """SELECT 1 FROM digital_thread_links
                        WHERE project_id = ?
                          AND target_type = 'nist_control'
                          AND (
@@ -470,7 +470,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
                              OR (source_type = 'code_module' AND source_id = ?)
                              OR (source_type = 'test_file' AND source_id IN ({}))
                          )
-                       LIMIT 1""".format(",".join("?" * len(test_ids))),
+                       LIMIT 1""".format(",".join("?" * len(test_ids))),  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id, req_id, model_id, code_id, *test_ids),
                 )
                 if c.fetchone():

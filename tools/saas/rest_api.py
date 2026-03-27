@@ -1102,11 +1102,11 @@ def get_usage():
 
         # Summary statistics
         summary_row = conn.execute(
-            """SELECT COUNT(*) as total_calls,  # nosec B608 -- table/column names are internal constants, not user input
+            """SELECT COUNT(*) as total_calls,
                       COALESCE(SUM(tokens_used), 0) as total_tokens,
                       COALESCE(AVG(duration_ms), 0) as avg_duration_ms
                FROM usage_records
-               WHERE {}""".format(where_clause),
+               WHERE {}""".format(where_clause),  # nosec B608 -- table/column names are internal constants, not user input
             params_base,
         ).fetchone()
 

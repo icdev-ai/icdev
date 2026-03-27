@@ -707,13 +707,13 @@ def get_framework_coverage(
     placeholders = ",".join("?" for _ in fw_id_list)
 
     rows = conn.execute(
-        f"""SELECT n.id, n.label, n.properties  # nosec B608 -- table/column names are internal constants, not user input
+        f"""SELECT n.id, n.label, n.properties
             FROM kg_nodes n
             JOIN kg_edges e ON e.source_id = n.id
             WHERE e.graph_id = ?
               AND e.target_id IN ({placeholders})
               AND e.relationship = 'satisfies'
-              AND n.entity_type = 'control'""",
+              AND n.entity_type = 'control'""",  # nosec B608 -- table/column names are internal constants, not user input
         [graph_id] + fw_id_list,
     ).fetchall()
 

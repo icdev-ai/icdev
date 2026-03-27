@@ -680,9 +680,9 @@ def search_assets(query, asset_type=None, impact_level=None, catalog_tier=None,
         if asset_ids:
             placeholders = ",".join("?" for _ in asset_ids)
             emb_rows = conn.execute(
-                f"""SELECT asset_id, embedding  # nosec B608 -- table/column names are internal constants, not user input
+                f"""SELECT asset_id, embedding
                     FROM marketplace_embeddings
-                    WHERE asset_id IN ({placeholders})""",
+                    WHERE asset_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
                 asset_ids,
             ).fetchall()
 

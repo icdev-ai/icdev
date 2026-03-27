@@ -47,7 +47,7 @@ def list_traces():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
 
-        traces = conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
+        traces = conn.execute(f"""
             SELECT trace_id,
                    COUNT(*) as span_count,
                    MIN(start_time) as first_span,
@@ -59,7 +59,8 @@ def list_traces():
             GROUP BY trace_id
             ORDER BY first_span DESC
             LIMIT ? OFFSET ?
-        """, params + (limit, offset)).fetchall()
+        """,  # nosec B608 -- table/column names are internal constants, not user input
+        params + (limit, offset)).fetchall()
 
         total = conn.execute(
             f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input

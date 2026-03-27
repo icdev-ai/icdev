@@ -163,7 +163,7 @@ def pull_available(tenant_id, consumer_il, db_path=None):
     try:
         placeholders = ",".join("?" for _ in compatible_ils)
         available = conn.execute(
-            f"""SELECT a.id, a.slug, a.name, a.asset_type, a.description,  # nosec B608 -- table/column names are internal constants, not user input
+            f"""SELECT a.id, a.slug, a.name, a.asset_type, a.description,
                        a.current_version, a.impact_level, a.classification,
                        a.avg_rating, a.rating_count, a.install_count,
                        a.publisher_org, a.tags
@@ -175,7 +175,7 @@ def pull_available(tenant_id, consumer_il, db_path=None):
                       SELECT asset_id FROM marketplace_installations
                       WHERE tenant_id = ? AND status = 'active'
                   )
-                ORDER BY a.avg_rating DESC, a.install_count DESC""",
+                ORDER BY a.avg_rating DESC, a.install_count DESC""",  # nosec B608 -- table/column names are internal constants, not user input
             (*compatible_ils, tenant_id),
         ).fetchall()
 

@@ -171,7 +171,7 @@ def benchmarks():
             params = [project_id]
 
         rows = conn.execute(
-            f"""SELECT stig_id,  # nosec B608 -- table/column names are internal constants, not user input
+            f"""SELECT stig_id,
                        COUNT(*) AS total,
                        SUM(CASE WHEN severity = 'CAT1' THEN 1 ELSE 0 END) AS cat1,
                        SUM(CASE WHEN severity = 'CAT2' THEN 1 ELSE 0 END) AS cat2,
@@ -182,7 +182,7 @@ def benchmarks():
                        SUM(CASE WHEN status = 'Not_Reviewed' THEN 1 ELSE 0 END) AS nr
                 FROM stig_findings{where}
                 GROUP BY stig_id
-                ORDER BY stig_id""",
+                ORDER BY stig_id""",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         ).fetchall()
 
@@ -257,14 +257,14 @@ def findings():
         # Paginated results
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"""SELECT id, project_id, stig_id, finding_id, rule_id, severity,  # nosec B608 -- table/column names are internal constants, not user input
+            f"""SELECT id, project_id, stig_id, finding_id, rule_id, severity,
                        title, status, target_type, assessed_by, assessed_at,
                        created_at, updated_at
                 FROM stig_findings{where}
                 ORDER BY
                     CASE severity WHEN 'CAT1' THEN 1 WHEN 'CAT2' THEN 2 ELSE 3 END,
                     created_at DESC
-                LIMIT ? OFFSET ?""",
+                LIMIT ? OFFSET ?""",  # nosec B608 -- table/column names are internal constants, not user input
             params + [per_page, offset],
         ).fetchall()
 
@@ -319,13 +319,13 @@ def coverage():
             params = [project_id]
 
         rows = conn.execute(
-            f"""SELECT target_type, severity,  # nosec B608 -- table/column names are internal constants, not user input
+            f"""SELECT target_type, severity,
                        COUNT(*) AS total,
                        SUM(CASE WHEN status = 'NotAFinding' THEN 1 ELSE 0 END) AS naf,
                        SUM(CASE WHEN status = 'Not_Applicable' THEN 1 ELSE 0 END) AS na
                 FROM stig_findings{where}
                 GROUP BY target_type, severity
-                ORDER BY target_type, severity""",
+                ORDER BY target_type, severity""",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         ).fetchall()
 
@@ -381,11 +381,11 @@ def cat1():
             params.append(project_id)
 
         rows = conn.execute(
-            f"""SELECT id, project_id, stig_id, finding_id, rule_id, severity,  # nosec B608 -- table/column names are internal constants, not user input
+            f"""SELECT id, project_id, stig_id, finding_id, rule_id, severity,
                        title, description, status, target_type, assessed_by,
                        assessed_at, created_at
                 FROM stig_findings{where}
-                ORDER BY created_at DESC""",
+                ORDER BY created_at DESC""",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         ).fetchall()
 

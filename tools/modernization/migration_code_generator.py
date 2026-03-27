@@ -1093,7 +1093,7 @@ def generate_migration_tests(plan_id, output_dir="."):
         for trow in tables:
             tname = trow["table_name"]
             func = _safe_var_name(f"test_data_{tname}")
-            data_tests.append(textwrap.dedent(f"""\  # nosec B608 -- table/column names are internal constants, not user input
+            data_tests.append(textwrap.dedent(f"""
                 def {func}(legacy_conn, modern_conn):
                     \"\"\"Verify row counts match for table {tname}.\"\"\"
                     legacy_count = legacy_conn.execute("SELECT COUNT(*) FROM {tname}").fetchone()[0]
@@ -1101,7 +1101,8 @@ def generate_migration_tests(plan_id, output_dir="."):
                     assert legacy_count == modern_count, (
                         f"Row count mismatch for {tname}: {{legacy_count}} vs {{modern_count}}"
                     )
-            """))
+            """)  # nosec B608 -- table/column names are internal constants, not user input
+            )
         data_block = "\n\n".join(data_tests) if data_tests else "# No tables to test\npass\n"
         data_path = test_dir / "test_data_integrity.py"
         _write_file(data_path, textwrap.dedent(f"""\

@@ -436,7 +436,7 @@ exclude_dirs = ["tests", ".venv"]
     created.append(str(project_dir / "pyproject.toml"))
 
     # Dockerfile (STIG-hardened base)
-    dockerfile_content = f"""FROM python:3.11-slim AS base  # nosec B608 -- table/column names are internal constants, not user input
+    dockerfile_content = f"""FROM python:3.11-slim AS base
 
 LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"
@@ -474,7 +474,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
     CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "4", "src.{slug}.app:create_app()"]
-"""
+"""  # nosec B608 -- template content, not user input
     write_file(project_dir / "Dockerfile", dockerfile_content, classification)
     created.append(str(project_dir / "Dockerfile"))
 

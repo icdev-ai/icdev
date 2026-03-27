@@ -405,11 +405,11 @@ def export_reqif(session_id, output_path, include_trace=True, db_path=None):
             if req_ids:
                 placeholders = ",".join("?" * len(req_ids))
                 links = conn.execute(
-                    f"""SELECT source_id, target_id, link_type  # nosec B608 -- table/column names are internal constants, not user input
+                    f"""SELECT source_id, target_id, link_type
                         FROM digital_thread_links
                         WHERE source_type = 'intake_requirement'
                           AND target_type = 'intake_requirement'
-                          AND source_id IN ({placeholders})""",
+                          AND source_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
                     req_ids,
                 ).fetchall()
                 trace_links = [(dict(row)["source_id"], dict(row)["target_id"],

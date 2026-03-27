@@ -219,11 +219,11 @@ def analyze_gate_failures(db_path=None, min_failures=None, days=None):
                      "code_rejected", "deployment_failed", "approval_denied"]
         ph = ",".join("?" * len(gate_evts))
         rows = conn.execute(
-            f"""SELECT event_type, project_id, COUNT(*) AS cnt,  # nosec B608 -- table/column names are internal constants, not user input
+            f"""SELECT event_type, project_id, COUNT(*) AS cnt,
                        MIN(created_at) AS first_f, MAX(created_at) AS last_f
                 FROM audit_trail WHERE event_type IN ({ph}) AND created_at >= ?
                 GROUP BY event_type, project_id HAVING COUNT(*) >= ?
-                ORDER BY cnt DESC LIMIT 50""",
+                ORDER BY cnt DESC LIMIT 50""",  # nosec B608 -- table/column names are internal constants, not user input
             (*gate_evts, cutoff, mf)).fetchall()
         for row in rows:
             r["findings"].append({"gate_event_type": row["event_type"],
@@ -301,7 +301,7 @@ def analyze_slow_pipelines(db_path=None, threshold_seconds=None):
             eph = ",".join("?" * len(ends))
             try:
                 rows = conn.execute(
-                    f"""SELECT s.project_id, s.event_type AS se, s.created_at AS st,  # nosec B608 -- table/column names are internal constants, not user input
+                    f"""SELECT s.project_id, s.event_type AS se, s.created_at AS st,
                                e.event_type AS ee, e.created_at AS et,
                                CAST((julianday(e.created_at)-julianday(s.created_at))*86400 AS INTEGER) AS dur
                         FROM audit_trail s JOIN audit_trail e
@@ -309,7 +309,7 @@ def analyze_slow_pipelines(db_path=None, threshold_seconds=None):
                              AND e.event_type IN ({eph})
                         WHERE s.event_type IN ({sph})
                           AND CAST((julianday(e.created_at)-julianday(s.created_at))*86400 AS INTEGER) > ?
-                        ORDER BY dur DESC LIMIT 20""",
+                        ORDER BY dur DESC LIMIT 20""",  # nosec B608 -- table/column names are internal constants, not user input
                     (*ends, *starts, th)).fetchall()
             except sqlite3.OperationalError:
                 continue
