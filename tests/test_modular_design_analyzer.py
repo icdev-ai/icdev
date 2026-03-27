@@ -5,15 +5,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.mosa.modular_design_analyzer -- static modularity metrics."""
 
-import pytest
 
 from icdev.tools.mosa.modular_design_analyzer import (
     _build_dependency_graph,
-    _count_cycles,
     _detect_circular_deps,
     _extract_python_imports,
     _iter_source_files,
-    _module_name,
     analyze_modularity,
     evaluate_thresholds,
 )

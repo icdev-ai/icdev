@@ -11,7 +11,6 @@ and tenant reset functionality.
 """
 
 import time
-from unittest.mock import patch
 
 import pytest
 

@@ -330,7 +330,7 @@ def circuit_breaker(
                 result = func(*args, **kwargs)
                 cb.record_success()
                 return result
-            except Exception as exc:
+            except Exception:
                 cb.record_failure()
                 raise
 

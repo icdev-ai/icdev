@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from tools.rag.source_registry import SOURCE_REGISTRY, get_source_config
 from tools.rag.chunker import chunk_content

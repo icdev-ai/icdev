@@ -14,7 +14,6 @@ Covers:
   - No duplicate values across categories
 """
 
-import pytest
 
 from icdev.tools.observability import genai_attributes as ga
 

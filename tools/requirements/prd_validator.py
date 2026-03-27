@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path

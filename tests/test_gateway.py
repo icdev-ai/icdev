@@ -10,15 +10,11 @@ Tests:
     5. Command router (allowlist checking)
 """
 
-import json
-import os
 import sqlite3
 import sys
-import tempfile
-import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

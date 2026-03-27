@@ -22,7 +22,6 @@ Usage:
 """
 
 import json
-import sqlite3
 import subprocess
 import sys
 from datetime import datetime, timezone

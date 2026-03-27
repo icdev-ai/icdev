@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from unittest.mock import patch, MagicMock
 
-import pytest
 
 from tools.finetune.gpu_detector import (
     GPUDetectionResult,

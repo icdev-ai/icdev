@@ -6,11 +6,10 @@ Coverage: framework metadata, 6 automated checks (M0015, M0024, M0012,
 M0013, M0019, M0026), base class inheritance, return structure.
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 

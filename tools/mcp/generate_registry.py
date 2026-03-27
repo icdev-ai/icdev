@@ -566,7 +566,7 @@ def main():
     lines.append('Categories:')
     for cat, count in cat_counts.items():
         lines.append(f'    {cat} ({count})')
-    lines.append(f'')
+    lines.append('')
     lines.append(f'Total: {len(all_tools)} tools, {len(all_resources)} resources')
     lines.append('"""')
     lines.append('')
@@ -591,7 +591,7 @@ def main():
             desc = tool_info["description"].replace('"', '\\"')
             lines.append(f'        "description": "{desc}",')
             lines.append(f'        "input_schema": {schema_str},')
-            lines.append(f'    }},')
+            lines.append('    },')
 
     lines.append('}')
     lines.append('')
@@ -606,7 +606,7 @@ def main():
         lines.append(f'        "module": "{res_info["module"]}",')
         lines.append(f'        "handler": "{res_info["handler"]}",')
         lines.append(f'        "mime_type": "{res_info["mime_type"]}",')
-        lines.append(f'    }},')
+        lines.append('    },')
 
     lines.append('}')
     lines.append('')

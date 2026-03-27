@@ -1094,7 +1094,7 @@ def _format_human(action, result):
         lines.append(f"  Pain Point: {result.get('pain_point_id')}")
 
     elif action == "generate_all":
-        lines.append(f"\n  Batch Generation Summary")
+        lines.append("\n  Batch Generation Summary")
         lines.append(f"  {'=' * 40}")
         lines.append(f"  Generated:       {result.get('generated', 0)}")
         lines.append(f"  Skipped (score): {result.get('skipped_low_score', 0)}")

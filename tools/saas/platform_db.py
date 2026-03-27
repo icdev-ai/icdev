@@ -854,9 +854,9 @@ def main():
                 print(f"[INFO] {result['message']}")
             elif result["status"] == "ok":
                 print(f"[OK] {result['message']}")
-                print(f"  Tenant: ICDEV™ Demo (IL4 / Starter)")
-                print(f"  Admin:  admin@icdev.local")
-                print(f"  API Key (copy this to log in — shown only once):")
+                print("  Tenant: ICDEV™ Demo (IL4 / Starter)")
+                print("  Admin:  admin@icdev.local")
+                print("  API Key (copy this to log in — shown only once):")
                 print(f"    {result['raw_api_key']}")
             else:
                 print(f"[ERROR] {result.get('message', 'Unknown error')}")

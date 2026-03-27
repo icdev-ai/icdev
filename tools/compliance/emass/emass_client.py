@@ -17,7 +17,6 @@ Usage:
 
 import json
 import logging
-import sqlite3
 import time
 from tools.db.storage import get_connection
 from datetime import datetime, timezone

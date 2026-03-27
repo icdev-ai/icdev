@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for Universal Compliance Evidence Auto-Collector (Phase 56, D347)."""
 
-import json
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from pathlib import Path

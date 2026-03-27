@@ -6,14 +6,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 """Tests for tools.devsecops.profile_manager — DevSecOps profile CRUD, maturity
 detection, maturity assessment, and config fallback behavior."""
 
-import json
 import sqlite3
 from unittest.mock import patch
 
 import pytest
 
 from icdev.tools.devsecops.profile_manager import (
-    DB_PATH,
     _load_config,
     assess_maturity,
     create_profile,

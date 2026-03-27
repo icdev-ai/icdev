@@ -10,11 +10,10 @@ audit trail, edge cases.
 25 tests total.
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -24,8 +23,6 @@ if str(BASE_DIR) not in sys.path:
 
 from icdev.tools.agent.anvil_critique import (
     AtlasCritique,
-    CritiqueSession,
-    Finding,
     FINDING_TYPES,
     SEVERITY_LEVELS,
     SESSION_STATUSES,

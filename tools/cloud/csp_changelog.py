@@ -200,7 +200,7 @@ def generate_markdown_changelog(entries: List[Dict], days: int,
     lines = [
         "# CUI // SP-CTI",
         f"# CSP Service Changelog — Last {days} Days",
-        f"",
+        "",
         f"*Generated: {_now()}*",
         f"*Total changes: {len(entries)}*",
         "",
@@ -252,7 +252,7 @@ def generate_markdown_changelog(entries: List[Dict], days: int,
 
             if include_recommendations and entry["change_type"] in RECOMMENDATIONS:
                 rec = RECOMMENDATIONS[entry["change_type"]]
-                lines.append(f"")
+                lines.append("")
                 lines.append(f"**Recommended Action:** {rec['action']}")
                 lines.append(f"- {rec['details']}")
                 lines.append(f"- **Affected files:** {', '.join(rec['affected_files'][:3])}")

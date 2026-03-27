@@ -474,7 +474,7 @@ def _format_markdown(context: dict) -> str:
 
     # Header
     name = project.get("name", "Unknown")
-    lines.append(f"## ICDEV™ Project Context")
+    lines.append("## ICDEV™ Project Context")
     lines.append("")
 
     # Project info

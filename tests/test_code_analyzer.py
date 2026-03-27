@@ -12,7 +12,6 @@ import sqlite3
 import sys
 import textwrap
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -20,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from icdev.tools.analysis.code_analyzer import (
     CodeAnalyzer,
-    _CognitiveComplexityVisitor,
     _NestingDepthVisitor,
     _PythonComplexityVisitor,
     _count_lines,

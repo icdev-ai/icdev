@@ -917,7 +917,7 @@ def _print_human(args, result):
         return
 
     if args.detect:
-        print(f"CUI // SP-CTI")
+        print("CUI // SP-CTI")
         print(f"Creative Trend Detection -- {result.get('detected_at', '')}")
         print(f"  Pain points analyzed: {result.get('pain_points_analyzed', 0)}")
         print(f"  Trends detected:      {result.get('trends_detected', 0)}")
@@ -947,7 +947,7 @@ def _print_human(args, result):
             print(f"         keywords: {kws}")
 
     elif args.report:
-        print(f"CUI // SP-CTI")
+        print("CUI // SP-CTI")
         print(f"Creative Trend Report -- {result.get('generated_at', '')}")
         print(f"  {result.get('summary', '')}")
         stats = result.get("statistics", {})
@@ -967,7 +967,7 @@ def _print_human(args, result):
             print(f"    {cat}: {len(trends)} trends")
 
     elif args.velocity:
-        print(f"CUI // SP-CTI")
+        print("CUI // SP-CTI")
         print(f"Trend Velocity -- {result.get('name', '')}")
         print(f"  ID:           {result.get('trend_id', '')}")
         print(f"  Category:     {result.get('category', '')}")

@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for RAG evaluation dashboard API (D-KARL-9)."""
 
-import json
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock

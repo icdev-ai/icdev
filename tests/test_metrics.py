@@ -7,7 +7,6 @@ registration, and Prometheus text exposition output.
 """
 
 import sys
-import threading
 from pathlib import Path
 from unittest.mock import patch
 

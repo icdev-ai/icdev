@@ -11,7 +11,6 @@ Pattern: tools/mbse/sync_engine.py for SHA-256 content hashing.
 import hashlib
 import os
 import shutil
-import sqlite3
 import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone

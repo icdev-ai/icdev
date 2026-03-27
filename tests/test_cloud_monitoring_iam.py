@@ -6,14 +6,13 @@ Covers: MonitoringProvider, IAMProvider, RegistryProvider, CSPHealthChecker.
 All tested using Local implementations (no cloud SDK needed).
 """
 
-import json
 import os
 import sqlite3
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -65,7 +64,6 @@ class TestMonitoringProvider(unittest.TestCase):
     def test_abc_methods(self):
         """ABC should define send_metric, send_log, query_metrics, create_alarm, check_availability."""
         from icdev.tools.cloud.monitoring_provider import MonitoringProvider
-        import inspect
         methods = [m for m in dir(MonitoringProvider) if not m.startswith("_")]
         expected = {"send_metric", "send_log", "query_metrics", "create_alarm", "check_availability"}
         self.assertTrue(expected.issubset(set(methods)))

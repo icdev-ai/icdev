@@ -606,7 +606,7 @@ def _print_human(args, result):
             print(f"  Dossiers:   {result.get('total_dossiers', 0)}")
             sessions = result.get("sessions", {})
             if sessions:
-                print(f"\n  Sessions by Status:")
+                print("\n  Sessions by Status:")
                 for st, cnt in sessions.items():
                     print(f"    {st:25s} {cnt}")
         else:

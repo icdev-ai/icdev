@@ -158,7 +158,7 @@ def create_app() -> Flask:
             return jsonify({
                 "challenge_code": code,
                 "ttl_minutes": ttl,
-                "message": f"Enter this code in the ICDEV™ dashboard or provide your API key to complete binding.",
+                "message": "Enter this code in the ICDEV™ dashboard or provide your API key to complete binding.",
             })
 
         elif action == "verify":
@@ -316,7 +316,7 @@ def main():
 
     app = create_app()
 
-    print(f"CUI // SP-CTI")
+    print("CUI // SP-CTI")
     print(f"ICDEV™ Remote Command Gateway starting on {host}:{port}")
     print(f"Environment: {config.get('environment', {}).get('mode', 'connected')}")
     print(f"Active channels: {list(app.config.get('ADAPTERS', {}).keys())}")

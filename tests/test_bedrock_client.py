@@ -19,12 +19,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from icdev.tools.agent.bedrock_client import (
-    AVAILABILITY_CACHE_TTL,
-    BASE_RETRY_DELAY,
     DEFAULT_MODELS,
     FALLBACK_CHAIN,
-    MAX_RETRIES,
-    RETRYABLE_ERROR_CODES,
     BedrockRequest,
     BedrockResponse,
     _track_tokens,

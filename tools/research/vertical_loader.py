@@ -296,7 +296,7 @@ def _print_human(args, result):
         print(f"  Discovered: {result.get('total_discovered', 0)}")
         errs = result.get("errors", [])
         if errs:
-            print(f"\n  Errors:")
+            print("\n  Errors:")
             for e in errs:
                 print(f"    - {e}")
 

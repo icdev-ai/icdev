@@ -397,7 +397,7 @@ def publish(post_id):
     })
 
     exports = export_both(post_id)
-    console.print(f"[green bold]Published![/green bold]")
+    console.print("[green bold]Published![/green bold]")
     console.print(f"  MDX: {exports['mdx']}")
     console.print(f"  HTML: {exports['html']}")
 
@@ -433,7 +433,7 @@ def schedule():
     init_db()
     from tools.pulse.engine.scheduler import run_scheduled
 
-    console.print(f"[bold]Starting ICDEV™ Pulse scheduler...[/bold]")
+    console.print("[bold]Starting ICDEV™ Pulse scheduler...[/bold]")
     run_scheduled()
 
 

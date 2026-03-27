@@ -479,11 +479,11 @@ def _auto_provision_env_key():
             content = env_path.read_text(encoding="utf-8")
             if "ICDEV_DASHBOARD_API_KEY" not in content:
                 with open(env_path, "a", encoding="utf-8") as f:
-                    f.write(f"\n# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
+                    f.write("\n# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
                     f.write(f"ICDEV_DASHBOARD_API_KEY={raw_key}\n")
         else:
             with open(env_path, "w", encoding="utf-8") as f:
-                f.write(f"# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
+                f.write("# ICDEV™ Dashboard API Key (auto-generated, change to rotate)\n")
                 f.write(f"ICDEV_DASHBOARD_API_KEY={raw_key}\n")
     except OSError:
         pass  # Can't write .env — print to console instead
@@ -491,7 +491,7 @@ def _auto_provision_env_key():
     os.environ["ICDEV_DASHBOARD_API_KEY"] = raw_key
     print(f"[ICDEV™ Dashboard] Auto-generated API key: {raw_key}")
     print(f"[ICDEV™ Dashboard] Saved to {env_path}")
-    print(f"[ICDEV™ Dashboard] To rotate: change ICDEV_DASHBOARD_API_KEY in .env and restart")
+    print("[ICDEV™ Dashboard] To rotate: change ICDEV_DASHBOARD_API_KEY in .env and restart")
 
 
 def register_dashboard_auth(app: Flask):
@@ -583,7 +583,7 @@ def _cli_main():
     if args.command == "create-admin":
         user, raw_key = bootstrap_admin(args.email, args.name)
         print(f"Admin user created: {user['email']} (id: {user['id']})")
-        print(f"API Key (save this — it won't be shown again):")
+        print("API Key (save this — it won't be shown again):")
         print(f"  {raw_key}")
     elif args.command == "list-users":
         users = list_users()

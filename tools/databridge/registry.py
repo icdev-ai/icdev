@@ -9,7 +9,6 @@ Provides:
 from __future__ import annotations
 
 import logging
-import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional, Type

@@ -26,7 +26,6 @@ import logging
 import re
 import sys
 import textwrap
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -1828,7 +1827,7 @@ def generate_init_script(blueprint: Dict[str, Any]) -> str:
     parts.append("#   _entity_check = ','.join(repr(t) for t in ENTITY_TYPES)")
     parts.append("#")
     parts.append("#   Then in SQL:")
-    parts.append(f"#   CHECK (entity_type IN ({{_entity_check}}))")
+    parts.append("#   CHECK (entity_type IN ({_entity_check}))")
     parts.append("#")
     parts.append("# This avoids CHECK constraint mismatches when adding new types.")
     parts.append("# " + "-" * 60)

@@ -6,9 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 """Tests for tools.marketplace.search_engine — hybrid BM25 + semantic marketplace search."""
 
 import json
-import math
 import sqlite3
-import struct
 from unittest.mock import patch
 
 import pytest
@@ -16,7 +14,6 @@ import pytest
 from icdev.tools.marketplace.search_engine import (
     _bm25_score,
     _bm25_score_corpus,
-    _blob_to_embedding,
     _cosine_similarity,
     _embedding_to_blob,
     _generate_embedding_fallback,

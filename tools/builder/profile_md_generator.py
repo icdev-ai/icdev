@@ -475,8 +475,8 @@ def _fallback_generate(resolved_profile):
     lines = [
         "# PROFILE.md",
         "",
-        f"> **Auto-generated** from tenant development profile cascade.",
-        f"> Do not edit directly — update the profile via `dev_profile_manager.py`.",
+        "> **Auto-generated** from tenant development profile cascade.",
+        "> Do not edit directly — update the profile via `dev_profile_manager.py`.",
         f"> Generated: {now}",
         "",
         "---",

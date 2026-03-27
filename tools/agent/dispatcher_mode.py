@@ -571,7 +571,7 @@ def main():
                 ov = result["project_override"]
                 print(f"  Project override ({args.project_id}): enabled={ov['enabled']}")
             else:
-                print(f"  Project override: (none)")
+                print("  Project override: (none)")
             print(f"  Effective mode: {'DISPATCHER-ONLY' if effective else 'FULL ACCESS'}")
             print()
             print("  Dispatch-only tools:")

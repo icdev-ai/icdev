@@ -13,7 +13,6 @@ import argparse
 import hashlib
 import json
 import re
-import sqlite3
 import sys
 import uuid
 import xml.etree.ElementTree as ET

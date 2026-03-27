@@ -11,9 +11,7 @@ with Fernet encryption, tier gating, and ownership checks.
 Run: pytest tests/test_saas_llm_keys.py -v
 """
 
-import os
 import sqlite3
-from unittest.mock import patch
 
 import pytest
 

@@ -943,14 +943,14 @@ def _print_human(args, result):
         print(f"  Avg Score:       {result.get('avg_composite_score', 0.0):.3f}")
 
         tp = result.get("pipeline_throughput", {})
-        print(f"\n  Pipeline Backlog:")
+        print("\n  Pipeline Backlog:")
         print(f"    Pending extraction:  {tp.get('pending_extraction', 0)}")
         print(f"    Pending scoring:     {tp.get('pending_scoring', 0)}")
         print(f"    Pending generation:  {tp.get('pending_generation', 0)}")
 
         recs = result.get("recommendations", [])
         if recs:
-            print(f"\n  Recommendations:")
+            print("\n  Recommendations:")
             for r in recs:
                 print(f"    - {r}")
 

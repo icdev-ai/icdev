@@ -400,7 +400,7 @@ def _run_auto_fix(
     rc, stdout, stderr = _run_subprocess(cmd, timeout=180)
 
     if rc == 0:
-        return "fixed", f"Auto-fix succeeded (exit 0)", {"stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-200:] if stderr else ""}
+        return "fixed", "Auto-fix succeeded (exit 0)", {"stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-200:] if stderr else ""}
     else:
         return "failed", f"Auto-fix failed (exit {rc}): {stderr[:300]}", {"returncode": rc, "stdout_tail": stdout[-500:] if stdout else "", "stderr_tail": stderr[-500:] if stderr else ""}
 
@@ -616,7 +616,7 @@ def run_remediation(
                     if verification.status == "pass":
                         verified_pass += 1
                         if stream:
-                            print(f"    [OK] Verification passed", file=sys.stderr)
+                            print("    [OK] Verification passed", file=sys.stderr)
                     else:
                         verified_fail += 1
                         if stream:

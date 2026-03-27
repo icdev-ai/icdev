@@ -13,9 +13,7 @@ Covers:
 
 import json
 import sqlite3
-import tempfile
 import threading
-import uuid
 from pathlib import Path
 
 import pytest

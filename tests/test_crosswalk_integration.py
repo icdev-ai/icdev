@@ -5,11 +5,9 @@ Validates AC-2 cascade to FedRAMP/CMMC/800-171, coverage computation,
 gap analysis, dual-hub bridge (NIST <-> ISO 27001), and summary stats.
 """
 
-import json
 import sqlite3
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 

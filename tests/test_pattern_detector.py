@@ -8,8 +8,7 @@ feature extraction, similarity scoring, frequency anomaly detection, and
 full project analysis."""
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from datetime import datetime, timezone
 
 import pytest
 

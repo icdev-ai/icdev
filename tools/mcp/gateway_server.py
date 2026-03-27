@@ -164,7 +164,6 @@ def handle_send_command(params):
 
 def handle_gateway_status(params):
     """Show gateway status: active channels, recent commands."""
-    import sqlite3
     import yaml
 
     config_path = BASE_DIR / "args" / "remote_gateway_config.yaml"

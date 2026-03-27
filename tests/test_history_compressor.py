@@ -18,7 +18,6 @@ from icdev.tools.memory.history_compressor import (
     HistoryCompressor,
     TopicBoundary,
     DEFAULT_BUDGET,
-    _STOPWORDS,
 )
 
 

@@ -16,7 +16,6 @@ import argparse
 import hashlib
 import json
 import math
-import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path

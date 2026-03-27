@@ -4,7 +4,6 @@ the devices they're meant to contain. Also fix headings/badges positioning.
 """
 import json
 import sqlite3
-import sys
 from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "network_canvas.db"

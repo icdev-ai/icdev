@@ -15,7 +15,6 @@ from icdev.tools.mosa.icd_generator import (
     CUI_BANNER,
     _build_icd_content,
     _discover_interfaces,
-    _ensure_table,
     generate_icd,
 )
 

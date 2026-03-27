@@ -9,7 +9,6 @@ transfer executor, providers (local, sftp, cloud), watcher, sync engine.
 import hashlib
 import os
 import sqlite3
-import tempfile
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch

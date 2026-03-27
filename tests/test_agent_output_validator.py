@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for AgentOutputValidator (Phase 45, Gap 3, D259)."""
 
-import json
 import sqlite3
 from pathlib import Path
 

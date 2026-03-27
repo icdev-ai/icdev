@@ -17,8 +17,6 @@ Covers:
 import json
 import os
 import sqlite3
-import tempfile
-import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,8 +30,6 @@ from icdev.tools.observability.tracer import (
     NullSpan,
     NullTracer,
     ProxyTracer,
-    Span,
-    Tracer,
     set_content_tag,
 )
 from icdev.tools.observability.sqlite_tracer import SQLiteSpan, SQLiteTracer
@@ -475,7 +471,7 @@ class TestModuleLevelAPI:
         assert isinstance(tracer, NullTracer)
 
     def test_enable_tracing_sqlite(self, tmp_db):
-        from icdev.tools.observability import enable_tracing, get_tracer
+        from icdev.tools.observability import enable_tracing
         with patch.object(
             SQLiteTracer, '__init__',
             lambda self, **kw: (

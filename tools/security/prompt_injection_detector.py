@@ -23,7 +23,6 @@ import base64
 import hashlib
 import json
 import re
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

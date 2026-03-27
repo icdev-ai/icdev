@@ -24,7 +24,6 @@ Compliance:     NIST 800-53 Rev 5 / RMF
 import argparse
 import json
 import math
-import sqlite3
 import sys
 import uuid
 from tools.db.storage import get_connection

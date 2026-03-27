@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from icdev.tools.db.backup_manager import BackupManager, _compute_sha256
+from icdev.tools.db.backup_manager import BackupManager
 
 
 def _create_test_db(db_path: Path) -> Path:

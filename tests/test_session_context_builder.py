@@ -3,14 +3,10 @@
 """Tests for tools/project/session_context_builder.py."""
 
 import json
-import os
 import sqlite3
 import sys
-import tempfile
 from pathlib import Path
-from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.project.session_context_builder import (

@@ -135,7 +135,6 @@ def _log_auth_event(tenant_id: Optional[str], user_id: Optional[str],
                     event_type: str, details: dict, ip_address: str):
     """Log authentication event to platform audit trail."""
     try:
-        import sqlite3
         platform_db = Path(os.environ.get(
             "PLATFORM_DB_PATH", str(BASE_DIR / "data" / "platform.db")
         ))

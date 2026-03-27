@@ -469,7 +469,6 @@ class MetricsCollector:
         Best-effort: silently ignores if platform DB is unavailable.
         """
         try:
-            import sqlite3
 
             db_path = Path(__file__).resolve().parent.parent.parent / "data" / "platform.db"
             if not db_path.exists():

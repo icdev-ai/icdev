@@ -543,7 +543,7 @@ def main():
             print(f"  KB Blocks:      {result.get('knowledge_blocks', 0)}")
             print(f"  Linked Proposals: {result.get('linked_proposals', 0)}")
             if result.get("domain_distribution"):
-                print(f"\n  Domain Distribution:")
+                print("\n  Domain Distribution:")
                 for domain, cnt in result["domain_distribution"].items():
                     print(f"    {domain:20s} {cnt}")
         if result.get("total_errors", 0) > 0:

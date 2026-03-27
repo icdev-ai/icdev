@@ -5,11 +5,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.marketplace.publish_pipeline — marketplace asset publishing."""
 
-import json
-import os
 import sqlite3
-import tempfile
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -17,8 +14,6 @@ from icdev.tools.marketplace.publish_pipeline import (
     parse_skill_md,
     validate_asset_structure,
     publish_asset,
-    ASSET_TYPE_FILES,
-    ASSET_TYPE_ALTERNATIVES,
 )
 
 

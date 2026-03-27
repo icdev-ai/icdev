@@ -175,7 +175,7 @@ def ingest_source(
 
     sql += f" ORDER BY {pk} DESC"
     if limit > 0:
-        sql += f" LIMIT ?"
+        sql += " LIMIT ?"
         params.append(limit)
 
     try:
@@ -455,7 +455,7 @@ def main():
         if args.json_output:
             print(json.dumps(result, indent=2))
         else:
-            print(f"RAG Ingestion Status")
+            print("RAG Ingestion Status")
             print(f"  Backend: {result['vector_store_backend']}")
             print(f"  Available: {result['vector_store_available']}")
             print(f"  Total chunks: {result['total_chunks']}")

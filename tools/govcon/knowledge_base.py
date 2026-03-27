@@ -306,9 +306,9 @@ def seed_from_catalog():
                 f"multiple capabilities into a single platform. Rather than point solutions "
                 f"for individual requirements, the platform delivers:\n\n"
                 + "\n".join(f"- {kc}" for kc in prod.get("key_capabilities", [])) + "\n\n"
-                f"These capabilities are not standalone tools — they are deeply integrated "
-                f"through shared databases, unified audit trails, cross-domain compliance "
-                f"crosswalks, and orchestrated agent collaboration."
+                "These capabilities are not standalone tools — they are deeply integrated "
+                "through shared databases, unified audit trails, cross-domain compliance "
+                "crosswalks, and orchestrated agent collaboration."
             )
             conn.execute(
                 "INSERT INTO proposal_knowledge_base "
@@ -378,8 +378,8 @@ def seed_from_catalog():
             tools_content = (
                 f"ICDEV™ implements {name} through the following automated tools:\n\n"
                 + "\n".join(f"- {t}" for t in tools) + "\n\n"
-                f"All tools are deterministic Python scripts following the FORGE framework. "
-                f"They produce reproducible, auditable output with CUI markings and audit trail logging."
+                "All tools are deterministic Python scripts following the FORGE framework. "
+                "They produce reproducible, auditable output with CUI markings and audit trail logging."
             )
             conn.execute(
                 "INSERT INTO proposal_knowledge_base "

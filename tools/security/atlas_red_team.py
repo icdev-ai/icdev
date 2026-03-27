@@ -19,7 +19,6 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone

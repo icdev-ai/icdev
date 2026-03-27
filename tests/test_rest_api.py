@@ -7,7 +7,6 @@ use a temporary SQLite database with seed data.
 """
 
 import json
-import os
 import sqlite3
 import sys
 from pathlib import Path

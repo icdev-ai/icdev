@@ -667,7 +667,7 @@ def _print_human(result, args):
         return
 
     if args.extract_all or args.extract:
-        print(f"\n  Requirement Extraction Complete")
+        print("\n  Requirement Extraction Complete")
         print(f"  {'='*40}")
         print(f"  Opportunities: {result.get('opportunity_count', 0)}")
         print(f"  Extracted:     {result.get('extracted_count', 0)}")
@@ -675,7 +675,7 @@ def _print_human(result, args):
         print(f"  Duplicates:    {result.get('duplicate_count', 0)}")
         if result.get("clustering"):
             cl = result["clustering"]
-            print(f"\n  Clustering:")
+            print("\n  Clustering:")
             print(f"    New patterns:     {cl.get('new_patterns', 0)}")
             print(f"    Updated patterns: {cl.get('updated_patterns', 0)}")
             print(f"    Total patterns:   {cl.get('total_patterns', 0)}")
@@ -689,15 +689,15 @@ def _print_human(result, args):
             print(f"  [{p.get('domain_category','?'):12s}] {p.get('pattern_name','')[:40]}")
             print(f"      Freq: {p.get('frequency',0):3d} | Coverage: [{cov_bar:<10s}] {coverage:.0%} | Status: {p.get('status','')}")
     elif args.trends:
-        print(f"\n  Requirement Trends")
+        print("\n  Requirement Trends")
         print(f"  {'='*50}")
-        print(f"\n  Domain Distribution:")
+        print("\n  Domain Distribution:")
         for d in result.get("domain_trends", []):
             bar = "#" * min(d.get("total_freq", 0), 30)
             print(f"    {d['domain_category']:15s} {bar} ({d['total_freq']})")
         gaps = result.get("high_frequency_gaps", [])
         if gaps:
-            print(f"\n  High-Frequency Gaps (no ICDEV™ capability):")
+            print("\n  High-Frequency Gaps (no ICDEV™ capability):")
             for g in gaps[:10]:
                 print(f"    [{g.get('domain_category','')}] {g.get('pattern_name','')[:40]} (freq={g.get('frequency',0)})")
     print()

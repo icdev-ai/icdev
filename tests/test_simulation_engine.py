@@ -5,18 +5,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.simulation.simulation_engine -- 6-dimension what-if simulation."""
 
-import json
 import sqlite3
-from unittest.mock import patch
 
 import pytest
 
 from icdev.tools.simulation.simulation_engine import (
     ALL_DIMENSIONS,
-    DEFAULT_HOURLY_RATE,
-    INFRA_COST_PER_COMPONENT,
-    STORIES_PER_SPRINT,
-    SPRINTS_PER_PI,
     TSHIRT_HOURS,
     _impact_score,
     _pct,

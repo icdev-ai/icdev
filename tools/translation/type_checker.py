@@ -174,7 +174,7 @@ def map_type(source_type, source_lang, target_lang, mappings=None):
             if target_lang in coll_map:
                 result["target_type"] = coll_map[target_lang]
                 result["confidence"] = 0.8
-                result["warnings"].append(f"Collection type mapping — inner types must be translated separately")
+                result["warnings"].append("Collection type mapping — inner types must be translated separately")
                 return result
 
     # Check nullable patterns

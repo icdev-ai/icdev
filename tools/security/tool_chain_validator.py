@@ -17,7 +17,6 @@ CLI:
 
 import argparse
 import json
-import sqlite3
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta

@@ -911,10 +911,10 @@ def _print_human(args, result):
                     print(f"       {dim_str}")
                 print()
         else:
-            print(f"\n  No results.")
+            print("\n  No results.")
 
     elif args.gaps:
-        print(f"\n  Feature Gap Identification")
+        print("\n  Feature Gap Identification")
         print(f"    Gaps identified:  {result.get('gaps_identified', 0)}")
         print(f"    Total gaps in DB: {result.get('total_gaps', 0)}")
         print(f"    Threshold used:   {result.get('threshold_used', 0):.2f}")

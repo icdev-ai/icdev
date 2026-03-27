@@ -30,9 +30,7 @@ sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.webdriver.support import expected_conditions as EC
 
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5055")
 SCREENSHOT_DIR = os.path.join(

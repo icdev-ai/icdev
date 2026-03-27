@@ -5,15 +5,12 @@
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 from unittest import mock
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from icdev.tools.project.manifest_loader import (
-    IL_DEFAULTS,
     _apply_defaults,
     _apply_env_overrides,
     _deep_get,

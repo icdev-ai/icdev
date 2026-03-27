@@ -2,11 +2,9 @@
 # CUI // SP-CTI
 """Tests for tools/translation/dependency_mapper.py — Phase 43 dependency mapping."""
 
-import json
 import sys
 from pathlib import Path
 
-import pytest
 
 # Ensure project root on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))

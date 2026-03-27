@@ -1093,7 +1093,7 @@ def _cli() -> None:
             print(json.dumps(result, indent=2))
         else:
             print(f"Sandbox Adapter — backend: {result.get('backend', 'unknown')}")
-            print(f"Use --health, --test, or --execute --code '...' to interact.")
+            print("Use --health, --test, or --execute --code '...' to interact.")
         sys.exit(0)
 
 

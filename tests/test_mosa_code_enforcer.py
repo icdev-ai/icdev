@@ -5,13 +5,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.mosa.mosa_code_enforcer -- MOSA code violation detection."""
 
-import pytest
 
 from icdev.tools.mosa.mosa_code_enforcer import (
-    _build_module_map,
     _check_direct_coupling,
     _check_missing_openapi,
-    _extract_imports,
     scan_project,
 )
 

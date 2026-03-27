@@ -5,7 +5,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.dashboard.byok — BYOK (Bring Your Own Key) management."""
 
-import os
 import sqlite3
 
 import pytest

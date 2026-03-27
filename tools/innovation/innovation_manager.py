@@ -179,7 +179,7 @@ def stage_discover(sources=None, db_path=None):
         results["sub_results"]["web_scanner"] = {"error": "web_scanner not available"}
 
     results["completed_at"] = _now()
-    _audit("innovation.discover", f"Discovery complete", results.get("sub_results"))
+    _audit("innovation.discover", "Discovery complete", results.get("sub_results"))
     return results
 
 
@@ -626,13 +626,13 @@ def main():
                 print(f"  Healthy: {result.get('healthy', False)}")
                 print(f"  Total signals: {result.get('total_signals', 0)}")
                 print(f"  Last 24h: {result.get('signals_last_24h', 0)}")
-                print(f"\n  Signals by status:")
+                print("\n  Signals by status:")
                 for status, count in result.get("signals_by_status", {}).items():
                     print(f"    {status}: {count}")
-                print(f"\n  Solutions by status:")
+                print("\n  Solutions by status:")
                 for status, count in result.get("solutions_by_status", {}).items():
                     print(f"    {status}: {count}")
-                print(f"\n  Active trends:")
+                print("\n  Active trends:")
                 for status, count in result.get("trends_by_status", {}).items():
                     print(f"    {status}: {count}")
             elif args.pipeline_report:
@@ -641,13 +641,13 @@ def main():
                 print(f"  Health: {'OK' if result.get('pipeline_health') else 'DEGRADED'}")
                 print(f"  Total signals: {result.get('total_signals', 0)}")
                 throughput = result.get("pipeline_throughput", {})
-                print(f"\n  Pipeline backlog:")
+                print("\n  Pipeline backlog:")
                 print(f"    Pending scoring: {throughput.get('pending_scoring', 0)}")
                 print(f"    Pending triage: {throughput.get('pending_triage', 0)}")
                 print(f"    Pending generation: {throughput.get('pending_generation', 0)}")
                 recs = result.get("recommendations", [])
                 if recs:
-                    print(f"\n  Recommendations:")
+                    print("\n  Recommendations:")
                     for rec in recs:
                         print(f"    - {rec}")
             else:

@@ -2,7 +2,6 @@
 # CUI // SP-CTI
 """Tests for behavioral drift detection in AITelemetryLogger (Phase 45, Gap 1, D257)."""
 
-import math
 import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta

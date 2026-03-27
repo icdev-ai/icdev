@@ -6,7 +6,6 @@ import hashlib
 import logging
 import os
 import sys
-from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional

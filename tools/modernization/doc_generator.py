@@ -17,7 +17,6 @@ Usage:
 
 import argparse
 import json
-import sqlite3
 import sys
 import textwrap
 from tools.db.storage import get_connection

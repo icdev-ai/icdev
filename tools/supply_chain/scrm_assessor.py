@@ -20,7 +20,6 @@ CLI:
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import uuid
 from tools.db.storage import get_connection

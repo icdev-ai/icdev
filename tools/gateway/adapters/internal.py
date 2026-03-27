@@ -89,7 +89,6 @@ class InternalChatAdapter(BaseChannelAdapter):
         database and delivered via the existing SSE/polling mechanism.
         This method stores the response for the chat UI to pick up.
         """
-        import sqlite3
 
         db_path = BASE_DIR / "data" / "icdev.db"
         try:

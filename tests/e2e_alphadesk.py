@@ -119,7 +119,7 @@ def test_page_loads(driver, results):
             if js_errs:
                 results.fail(f"page_{slug}_js", "; ".join(js_errs))
             screenshot(driver, slug)
-            results.ok(f"page_{slug}", f"rendered")
+            results.ok(f"page_{slug}", "rendered")
         except Exception as exc:
             screenshot(driver, f"{slug}-error")
             results.fail(f"page_{slug}", str(exc))
@@ -191,7 +191,7 @@ def test_run_history(driver, results):
         # Check GOOGL run appears
         tbody_text = driver.find_element(By.ID, "runs-body").text
         assert "GOOGL" in tbody_text or "AAPL" in tbody_text, (
-            f"Run history should contain analysis run"
+            "Run history should contain analysis run"
         )
 
         screenshot(driver, "run-history")
@@ -317,7 +317,7 @@ def test_overview_live(driver, results):
         time.sleep(1)
 
         pv = driver.find_element(By.ID, "portfolio-value")
-        assert "$" in pv.text, f"Portfolio value should have $"
+        assert "$" in pv.text, "Portfolio value should have $"
 
         signal_count = driver.find_element(By.ID, "signal-count")
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Selenium E2E test for AlphaDesk analysis modal + ICDEV™'s INTaaS + Pulse."""
 
-import json
 import sys
 import time
 from pathlib import Path

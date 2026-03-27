@@ -32,7 +32,6 @@ import collections
 import hashlib
 import json
 import os
-import sqlite3
 import textwrap
 from tools.db.storage import get_connection
 from datetime import datetime, timezone

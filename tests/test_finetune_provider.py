@@ -5,8 +5,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Optional
-from unittest.mock import patch, MagicMock
+from typing import Any, Dict
 
 import pytest
 

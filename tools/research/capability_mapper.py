@@ -622,19 +622,19 @@ def _print_human(result, action):
 
         highest = result.get("capabilities_highest", [])
         if highest:
-            print(f"\n  Highest Coverage:")
+            print("\n  Highest Coverage:")
             for c in highest:
                 print(f"    {c['capability_name']:35s} avg={c['average_coverage']:.2f}  ({c['mapping_count']} mappings)")
 
         lowest = result.get("capabilities_lowest", [])
         if lowest:
-            print(f"\n  Lowest Coverage:")
+            print("\n  Lowest Coverage:")
             for c in lowest:
                 print(f"    {c['capability_name']:35s} avg={c['average_coverage']:.2f}  ({c['mapping_count']} mappings)")
 
         gaps = result.get("gap_capabilities", [])
         if gaps:
-            print(f"\n  Gap Capabilities (no coverage):")
+            print("\n  Gap Capabilities (no coverage):")
             for g in gaps:
                 print(f"    - {g['capability_name']}")
 

@@ -265,9 +265,9 @@ def _translate_to_cursor_rule(skill_data):
                 for cmd in commands:
                     for cmd_line in cmd.strip().split("\n"):
                         if cmd_line.strip() and not cmd_line.startswith("#"):
-                            lines.append(f"   ```bash")
+                            lines.append("   ```bash")
                             lines.append(f"   {cmd_line.strip()}")
-                            lines.append(f"   ```")
+                            lines.append("   ```")
             else:
                 # Summarize the step
                 summary = re.sub(

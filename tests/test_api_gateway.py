@@ -8,13 +8,9 @@ and gateway identification headers.
 Run: pytest tests/test_api_gateway.py -v --tb=short
 """
 
-import json
 import os
-import sqlite3
 import sys
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -161,7 +157,6 @@ class TestRateLimiting:
         """When rate limited, response body is JSON with error code."""
         # Simulate 429 by calling the error handler directly
         with app.test_request_context():
-            from flask import jsonify
             # The error handler is registered, so we test the structure
             test_client = app.test_client()
             resp = test_client.get("/health")
