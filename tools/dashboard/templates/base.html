@@ -75,19 +75,25 @@
 
             <!-- Intelligence -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/research', '/autoresearch', '/knowledge-search', '/code-quality', '/pulse', '/clawhub'] %}active{% endif %}">Intelligence</a>
+                <a href="#" class="{% if request.path in ['/knowledge-search', '/code-quality'] or (not airgap_mode and request.path in ['/research', '/autoresearch', '/pulse', '/clawhub']) %}active{% endif %}">Intelligence</a>
                 <ul class="nav-dropdown-menu">
+                    {% if not airgap_mode %}
                     <li><a href="/research">Research</a></li>
                     <li><a href="/autoresearch">Autoresearch</a></li>
+                    {% endif %}
                     <li><a href="/knowledge-search">Knowledge</a></li>
                     <li><a href="/code-quality">Code Quality</a></li>
+                    {% if not airgap_mode %}
                     <li><a href="/pulse">Pulse Blog</a></li>
                     <li><a href="/clawhub">ClawHub Skills</a></li>
+                    {% endif %}
                 </ul>
             </li>
 
+            {% if not airgap_mode %}
             <!-- Genesis (all apps) -->
             <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>
+            {% endif %}
 
             <!-- Build & Dev -->
             <li class="nav-dropdown">
@@ -123,7 +129,9 @@
                     <li><a href="/studio/cases">Case Management</a></li>
                     <li><a href="/studio/automations">Automations</a></li>
                     <li><a href="/studio/dashboards">Dashboard Builder</a></li>
+                    {% if not airgap_mode %}
                     <li><a href="/studio/marketplace">Marketplace</a></li>
+                    {% endif %}
                 </ul>
             </li>
 
