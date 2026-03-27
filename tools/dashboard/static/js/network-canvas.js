@@ -520,10 +520,43 @@ function initCanvas() {
 
   // Canvas is 5000x5000 — scrollable via .canvas-area overflow:auto
 
+  // ── Canvas panning (drag blank area to pan) ──
+  let _isPanning = false;
+  let _panStart = { x: 0, y: 0 };
+  let _panScrollStart = { x: 0, y: 0 };
+
+  paper.on('blank:pointerdown', (evt) => {
+    const canvasArea = document.querySelector('.canvas-area');
+    if (!canvasArea) return;
+    _isPanning = true;
+    _panStart = { x: evt.clientX, y: evt.clientY };
+    _panScrollStart = { x: canvasArea.scrollLeft, y: canvasArea.scrollTop };
+    canvasArea.style.cursor = 'grabbing';
+    evt.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (evt) => {
+    if (!_isPanning) return;
+    const canvasArea = document.querySelector('.canvas-area');
+    if (!canvasArea) return;
+    const dx = evt.clientX - _panStart.x;
+    const dy = evt.clientY - _panStart.y;
+    canvasArea.scrollLeft = _panScrollStart.x - dx;
+    canvasArea.scrollTop = _panScrollStart.y - dy;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (_isPanning) {
+      _isPanning = false;
+      const canvasArea = document.querySelector('.canvas-area');
+      if (canvasArea) canvasArea.style.cursor = '';
+    }
+  });
+
   // Selection
   paper.on('element:pointerclick', (view) => selectCell(view.model));
   paper.on('link:pointerclick', (view) => selectCell(view.model));
-  paper.on('blank:pointerclick', () => deselectAll());
+  paper.on('blank:pointerclick', () => { if (!_isPanning) deselectAll(); });
 
   // Double-click link to annotate cable run
   paper.on('link:pointerdblclick', (view) => {
@@ -681,6 +714,7 @@ function createNode(type, x, y, label, nodeId, configData) {
     node.set('nodeType', type);
     node.set('configData', config);
     graph.addCell(node);
+    _applyNodeRotation(node);
     return node;
   }
 
@@ -716,6 +750,7 @@ function createNode(type, x, y, label, nodeId, configData) {
     node.set('nodeType', type);
     node.set('configData', config);
     graph.addCell(node);
+    _applyNodeRotation(node);
     return node;
   }
 
@@ -766,6 +801,7 @@ function createNode(type, x, y, label, nodeId, configData) {
   node.set('nodeType', type);
   node.set('configData', config);
   graph.addCell(node);
+  _applyNodeRotation(node);
   return node;
 }
 
@@ -890,6 +926,10 @@ function selectCell(cell) {
     document.getElementById('cfg-ospf-area').value = config.ospf_area || '';
     document.getElementById('cfg-ospf-cost').value = config.ospf_cost || '';
     document.getElementById('cfg-notes').value = config.notes || '';
+    // Rotation
+    const rot = config._rotation || 0;
+    document.getElementById('cfg-rotation').value = rot;
+    document.getElementById('cfg-rotation-val').textContent = rot + '\u00B0';
     // Device Info
     document.getElementById('cfg-hostname').value = config.hostname || '';
     document.getElementById('cfg-model').value = config.model || '';
@@ -981,6 +1021,64 @@ async function _loadLinkedRecordOptions(config) {
       // API not available — keep empty
     }
   }
+}
+
+/* ── Apply saved rotation on node load ─────────────────────────────────────── */
+function _applyNodeRotation(node) {
+  const config = node.get('configData') || {};
+  const deg = parseInt(config._rotation) || 0;
+  if (deg === 0) return;
+  const type = node.get('nodeType') || '';
+  if (type.startsWith('text-')) {
+    const size = node.size();
+    node.attr('label/transform', `rotate(${deg}, ${size.width/2}, ${size.height/2})`);
+  } else if (type.startsWith('draw-')) {
+    const lx = node.attr('label/x') || 10;
+    const ly = node.attr('label/y') || 18;
+    node.attr('label/transform', `rotate(${deg}, ${lx}, ${ly})`);
+  } else {
+    const size = node.size();
+    node.attr('label/transform', `rotate(${deg}, ${size.width/2}, ${size.height-4})`);
+  }
+}
+
+/* ── Label Rotation ───────────────────────────────────────────────────────── */
+function applyRotation(deg) {
+  deg = parseInt(deg) || 0;
+  document.getElementById('cfg-rotation').value = deg;
+  document.getElementById('cfg-rotation-val').textContent = deg + '\u00B0';
+  if (!selectedCell || !selectedCell.isElement()) return;
+  pushUndo();
+  const config = selectedCell.get('configData') || {};
+  config._rotation = deg;
+  selectedCell.set('configData', config);
+  // Apply CSS transform rotation to the label via JointJS attr
+  if (deg === 0) {
+    selectedCell.attr('label/transform', '');
+  } else {
+    // Rotate around the label's reference point
+    const type = selectedCell.get('nodeType') || '';
+    let cx, cy;
+    if (type.startsWith('text-')) {
+      // Text nodes: rotate around center
+      const size = selectedCell.size();
+      cx = size.width / 2;
+      cy = size.height / 2;
+      selectedCell.attr('label/transform', `rotate(${deg}, ${cx}, ${cy})`);
+    } else if (type.startsWith('draw-')) {
+      // Drawing shapes: rotate label around its position
+      const labelX = selectedCell.attr('label/x') || 10;
+      const labelY = selectedCell.attr('label/y') || 18;
+      selectedCell.attr('label/transform', `rotate(${deg}, ${labelX}, ${labelY})`);
+    } else {
+      // Network devices: rotate around label anchor (center-bottom)
+      const size = selectedCell.size();
+      cx = size.width / 2;
+      cy = size.height - 4;
+      selectedCell.attr('label/transform', `rotate(${deg}, ${cx}, ${cy})`);
+    }
+  }
+  markDirty();
 }
 
 function deleteSelected() {
