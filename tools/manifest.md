@@ -1530,3 +1530,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Stig Import | tools\network\stig_import.py | Auto-registered: network/stig_import.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Intent Validator | tools\network\intent_validator.py | Auto-registered: network/intent_validator.py | --json | JSON |

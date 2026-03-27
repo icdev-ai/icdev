@@ -56,6 +56,9 @@ from tools.network.export_import import (  # noqa: E402
     to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
 )
 from tools.network.stig_import import import_stig_file  # noqa: E402
+from tools.network.intent_validator import (  # noqa: E402
+    validate_intent_policy, CONSTRAINT_TYPES,
+)
 
 
 def create_network_blueprint():
@@ -3151,6 +3154,284 @@ Output ONLY the JSON object. No other text."""
             mimetype=mime,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Intent-Based Validation — Page + API
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/intent/<topo_id>")
+    @nc_login_required
+    def nc_intent_page(topo_id):
+        conn = get_connection()
+        topo = conn.execute("SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not topo:
+            conn.close()
+            abort(404)
+        policies = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_intent_policies WHERE topology_id=? ORDER BY created_at DESC",
+            (topo_id,)
+        ).fetchall()]
+        for p in policies:
+            p["constraints"] = [_row_to_dict(c) for c in conn.execute(
+                "SELECT * FROM nc_intent_constraints WHERE policy_id=? AND is_active=1 ORDER BY created_at",
+                (p["id"],)
+            ).fetchall()]
+            last_run = conn.execute(
+                "SELECT * FROM nc_intent_validations WHERE policy_id=? ORDER BY ran_at DESC LIMIT 1",
+                (p["id"],)
+            ).fetchone()
+            p["last_validation"] = _row_to_dict(last_run) if last_run else None
+        conn.close()
+        return render_template("network/intent_validation.html",
+                               topology=_row_to_dict(topo),
+                               policies=policies,
+                               constraint_types=CONSTRAINT_TYPES)
+
+    @bp.route("/api/intent/<topo_id>/policies", methods=["GET"])
+    @nc_login_required
+    def nc_api_intent_list_policies(topo_id):
+        conn = get_connection()
+        policies = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_intent_policies WHERE topology_id=? ORDER BY created_at DESC",
+            (topo_id,)
+        ).fetchall()]
+        for p in policies:
+            p["constraints"] = [_row_to_dict(c) for c in conn.execute(
+                "SELECT * FROM nc_intent_constraints WHERE policy_id=? ORDER BY created_at",
+                (p["id"],)
+            ).fetchall()]
+        conn.close()
+        return jsonify({"policies": policies})
+
+    @bp.route("/api/intent/<topo_id>/policies", methods=["POST"])
+    @nc_login_required
+    def nc_api_intent_create_policy(topo_id):
+        data = request.get_json(force=True, silent=True) or {}
+        name = data.get("name", "").strip()
+        if not name:
+            return jsonify({"error": "Policy name required"}), 400
+        conn = get_connection()
+        topo = conn.execute("SELECT id FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+        pid = str(_uuid.uuid4())
+        now = _now()
+        conn.execute(
+            "INSERT INTO nc_intent_policies (id, topology_id, name, description, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (pid, topo_id, name, data.get("description", ""), now, now)
+        )
+        conn.commit()
+        conn.close()
+        _audit("INTENT_POLICY_CREATE", "intent_policy", pid, name)
+        return jsonify({"id": pid, "name": name}), 201
+
+    @bp.route("/api/intent/<topo_id>/policies/<policy_id>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_intent_update_policy(topo_id, policy_id):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        policy = conn.execute("SELECT id FROM nc_intent_policies WHERE id=? AND topology_id=?",
+                              (policy_id, topo_id)).fetchone()
+        if not policy:
+            conn.close()
+            return jsonify({"error": "Policy not found"}), 404
+        fields, values = [], []
+        for k in ["name", "description", "is_active"]:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if fields:
+            fields.append("updated_at=?")
+            values.append(_now())
+            values.append(policy_id)
+            conn.execute(f"UPDATE nc_intent_policies SET {', '.join(fields)} WHERE id=?", values)
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/intent/<topo_id>/policies/<policy_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_intent_delete_policy(topo_id, policy_id):
+        conn = get_connection()
+        policy = conn.execute("SELECT id FROM nc_intent_policies WHERE id=? AND topology_id=?",
+                              (policy_id, topo_id)).fetchone()
+        if not policy:
+            conn.close()
+            return jsonify({"error": "Policy not found"}), 404
+        conn.execute("DELETE FROM nc_intent_constraints WHERE policy_id=?", (policy_id,))
+        conn.execute("DELETE FROM nc_intent_validations WHERE policy_id=?", (policy_id,))
+        conn.execute("DELETE FROM nc_intent_policies WHERE id=?", (policy_id,))
+        conn.commit()
+        conn.close()
+        _audit("INTENT_POLICY_DELETE", "intent_policy", policy_id, "")
+        return jsonify({"ok": True})
+
+    @bp.route("/api/intent/<topo_id>/policies/<policy_id>/constraints", methods=["POST"])
+    @nc_login_required
+    def nc_api_intent_add_constraint(topo_id, policy_id):
+        data = request.get_json(force=True, silent=True) or {}
+        ctype = data.get("constraint_type", "")
+        if ctype not in CONSTRAINT_TYPES:
+            return jsonify({"error": f"Invalid constraint_type. Valid: {list(CONSTRAINT_TYPES.keys())}"}), 400
+        conn = get_connection()
+        policy = conn.execute("SELECT id FROM nc_intent_policies WHERE id=? AND topology_id=?",
+                              (policy_id, topo_id)).fetchone()
+        if not policy:
+            conn.close()
+            return jsonify({"error": "Policy not found"}), 404
+        cid = str(_uuid.uuid4())
+        rule_json = json.dumps(data.get("rule", {}))
+        conn.execute(
+            "INSERT INTO nc_intent_constraints (id, policy_id, constraint_type, severity, rule_json, description, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (cid, policy_id, ctype, data.get("severity", "CAT2"), rule_json,
+             data.get("description", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("INTENT_CONSTRAINT_ADD", "intent_constraint", cid, f"{ctype} on policy {policy_id}")
+        return jsonify({"id": cid, "constraint_type": ctype}), 201
+
+    @bp.route("/api/intent/<topo_id>/constraints/<constraint_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_intent_delete_constraint(topo_id, constraint_id):
+        conn = get_connection()
+        constraint = conn.execute(
+            "SELECT c.id FROM nc_intent_constraints c "
+            "JOIN nc_intent_policies p ON c.policy_id = p.id "
+            "WHERE c.id=? AND p.topology_id=?", (constraint_id, topo_id)
+        ).fetchone()
+        if not constraint:
+            conn.close()
+            return jsonify({"error": "Constraint not found"}), 404
+        conn.execute("DELETE FROM nc_intent_constraints WHERE id=?", (constraint_id,))
+        conn.commit()
+        conn.close()
+        _audit("INTENT_CONSTRAINT_DELETE", "intent_constraint", constraint_id, "")
+        return jsonify({"ok": True})
+
+    @bp.route("/api/intent/<topo_id>/policies/<policy_id>/validate", methods=["POST"])
+    @nc_login_required
+    def nc_api_intent_validate(topo_id, policy_id):
+        conn = get_connection()
+        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+        policy = conn.execute("SELECT * FROM nc_intent_policies WHERE id=? AND topology_id=?",
+                              (policy_id, topo_id)).fetchone()
+        if not policy:
+            conn.close()
+            return jsonify({"error": "Policy not found"}), 404
+        constraints = [_row_to_dict(c) for c in conn.execute(
+            "SELECT * FROM nc_intent_constraints WHERE policy_id=? AND is_active=1",
+            (policy_id,)
+        ).fetchall()]
+        if not constraints:
+            conn.close()
+            return jsonify({"error": "Policy has no active constraints"}), 400
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph"}), 500
+
+        # Parse rule_json strings
+        for c in constraints:
+            if isinstance(c.get("rule_json"), str):
+                try:
+                    c["rule_json"] = json.loads(c["rule_json"])
+                except Exception:
+                    c["rule_json"] = {}
+
+        result = validate_intent_policy(
+            topology_id=topo_id,
+            graph=graph,
+            constraints=constraints,
+            policy_name=policy["name"],
+        )
+
+        # Persist validation run
+        vid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_intent_validations (id, topology_id, policy_id, total_constraints, "
+            "passed, failed, violations_json, ran_at) VALUES (?,?,?,?,?,?,?,?)",
+            (vid, topo_id, policy_id, result["total_constraints"], result["passed"],
+             result["failed"], json.dumps(result["violations"]), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("INTENT_VALIDATE", "intent_policy", policy_id,
+               f"{result['status']}: {result['passed']}/{result['total_constraints']} passed")
+        result["validation_id"] = vid
+        return jsonify(result)
+
+    @bp.route("/api/intent/<topo_id>/validate-all", methods=["POST"])
+    @nc_login_required
+    def nc_api_intent_validate_all(topo_id):
+        """Validate topology against ALL active intent policies."""
+        conn = get_connection()
+        topo = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph"}), 500
+
+        policies = conn.execute(
+            "SELECT * FROM nc_intent_policies WHERE topology_id=? AND is_active=1",
+            (topo_id,)
+        ).fetchall()
+        results = []
+        now = _now()
+        for pol in policies:
+            constraints = [_row_to_dict(c) for c in conn.execute(
+                "SELECT * FROM nc_intent_constraints WHERE policy_id=? AND is_active=1",
+                (pol["id"],)
+            ).fetchall()]
+            if not constraints:
+                continue
+            for c in constraints:
+                if isinstance(c.get("rule_json"), str):
+                    try:
+                        c["rule_json"] = json.loads(c["rule_json"])
+                    except Exception:
+                        c["rule_json"] = {}
+            result = validate_intent_policy(topo_id, graph, constraints, pol["name"])
+            vid = str(_uuid.uuid4())
+            conn.execute(
+                "INSERT INTO nc_intent_validations (id, topology_id, policy_id, total_constraints, "
+                "passed, failed, violations_json, ran_at) VALUES (?,?,?,?,?,?,?,?)",
+                (vid, topo_id, pol["id"], result["total_constraints"], result["passed"],
+                 result["failed"], json.dumps(result["violations"]), now)
+            )
+            result["policy_id"] = pol["id"]
+            result["validation_id"] = vid
+            results.append(result)
+        conn.commit()
+        conn.close()
+        total_pass = sum(r["passed"] for r in results)
+        total_fail = sum(r["failed"] for r in results)
+        overall = "PASS" if total_fail == 0 and results else ("FAIL" if results else "NO_POLICIES")
+        return jsonify({
+            "topology_id": topo_id,
+            "overall_status": overall,
+            "policies_validated": len(results),
+            "total_passed": total_pass,
+            "total_failed": total_fail,
+            "results": results,
+        })
+
+    @bp.route("/api/intent/constraint-types", methods=["GET"])
+    @nc_login_required
+    def nc_api_intent_constraint_types():
+        return jsonify({"constraint_types": CONSTRAINT_TYPES})
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",

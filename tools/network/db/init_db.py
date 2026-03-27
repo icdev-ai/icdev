@@ -357,6 +357,41 @@ CREATE TABLE IF NOT EXISTS nc_boundaries (
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Intent-Based Validation: user-defined constraint policies
+CREATE TABLE IF NOT EXISTS nc_intent_policies (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    name        TEXT NOT NULL,
+    description TEXT,
+    is_active   INTEGER DEFAULT 1,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Individual constraints within an intent policy
+CREATE TABLE IF NOT EXISTS nc_intent_constraints (
+    id          TEXT PRIMARY KEY,
+    policy_id   TEXT REFERENCES nc_intent_policies(id),
+    constraint_type TEXT NOT NULL,  -- bandwidth, redundancy, isolation, latency, encryption, custom
+    severity    TEXT DEFAULT 'CAT2',  -- CAT1, CAT2, CAT3
+    rule_json   TEXT NOT NULL DEFAULT '{}',
+    description TEXT,
+    is_active   INTEGER DEFAULT 1,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Validation run results against intent policies
+CREATE TABLE IF NOT EXISTS nc_intent_validations (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    policy_id   TEXT REFERENCES nc_intent_policies(id),
+    total_constraints INTEGER DEFAULT 0,
+    passed      INTEGER DEFAULT 0,
+    failed      INTEGER DEFAULT 0,
+    violations_json TEXT DEFAULT '[]',
+    ran_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- NC-GAP-009: Classification on audit + immutability triggers
 -- (classification column added inline above)
 
