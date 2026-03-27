@@ -342,7 +342,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       cursor: 'pointer',
     },
     stencilGroup: {
-      transform: 'translate(8, 2) scale(1.33)',  // Scale 48→64px, fits 80w node
+      transform: 'translate(19, 3) scale(1.5)',  // Scale 48→72px centered in 110w
     },
     stencilBody: {
       d: '',
@@ -720,8 +720,8 @@ function createNode(type, x, y, label, nodeId, configData) {
 
   // Group/site containers are larger
   const isGroup = (type === 'group-site');
-  const w = isGroup ? 300 : 80;
-  const h = isGroup ? 200 : 60;
+  const w = isGroup ? 300 : 110;
+  const h = isGroup ? 200 : 70;
 
   // Try Cisco traditional stencil (filled shape + white detail)
   const stencil = getCiscoStencil(type);
@@ -732,13 +732,15 @@ function createNode(type, x, y, label, nodeId, configData) {
     size: { width: w, height: h },
     attrs: {
       body: {
-        fill: isGroup ? (config._fill || style.fill) : 'transparent',
-        stroke: isGroup ? (config._stroke || style.stroke) : 'transparent',
-        strokeWidth: isGroup ? 2 : 0,
-        rx: 6, ry: 6,
+        fill: config._fill || style.fill,
+        stroke: config._stroke || style.stroke,
+        strokeWidth: stencil ? 1 : 2,
+        strokeOpacity: stencil ? 0.3 : 1,
+        rx: stencil ? 8 : 6,
+        ry: stencil ? 8 : 6,
       },
       stencilGroup: stencil ? {
-        transform: 'translate(8, 2) scale(1.33)',
+        transform: 'translate(19, 3) scale(1.5)',
       } : { display: 'none' },
       stencilBody: stencil ? {
         d: stencil.body,

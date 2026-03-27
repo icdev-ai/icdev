@@ -418,9 +418,11 @@ class ATLASRedTeamScanner:
             conn = get_connection(db_path=str(self._db_path))
             wh, params = [], []
             if project_id:
-                wh.append("project_id = ?"); params.append(project_id)
+                wh.append("project_id = ?")
+                params.append(project_id)
             if technique:
-                wh.append("technique = ?"); params.append(technique)
+                wh.append("technique = ?")
+                params.append(technique)
             where = (" WHERE " + " AND ".join(wh)) if wh else ""
             rows = conn.execute(
                 f"SELECT * FROM atlas_red_team_results{where} ORDER BY scanned_at DESC",
@@ -442,7 +444,8 @@ class ATLASRedTeamScanner:
             conn = get_connection(db_path=str(self._db_path))
             where, params = "", []
             if project_id:
-                where = " WHERE project_id = ?"; params = [project_id]
+                where = " WHERE project_id = ?"
+                params = [project_id]
             rows = conn.execute(
                 f"""SELECT r.* FROM atlas_red_team_results r INNER JOIN (
                     SELECT technique, MAX(scanned_at) AS latest
@@ -456,7 +459,8 @@ class ATLASRedTeamScanner:
                 techs[r["technique"]] = {"name": r["technique_name"], "passed": p,
                     "tests_run": r["tests_run"], "tests_passed": r["tests_passed"],
                     "scanned_at": r["scanned_at"]}
-                total_r += r["tests_run"]; total_p += r["tests_passed"]
+                total_r += r["tests_run"]
+                total_p += r["tests_passed"]
                 if not p:
                     ok = False
             return {"overall_passed": ok if techs else False,
@@ -498,7 +502,8 @@ def main():
     elif args.summary:
         result = scanner.get_summary(project_id=args.project_id)
     else:
-        ap.print_help(); return
+        ap.print_help()
+        return
 
     if args.json:
         print(json.dumps(result, indent=2))
@@ -508,7 +513,8 @@ def main():
 
 def _print_human(result: dict, is_summary: bool = False):
     if "error" in result:
-        print(f"Error: {result['error']}"); return
+        print(f"Error: {result['error']}")
+        return
     if is_summary:
         status = "PASSED" if result.get("overall_passed") else "FAILED"
         print(f"ATLAS Red Team Summary: {status}")

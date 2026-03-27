@@ -289,9 +289,11 @@ def scan_all_competitors(db_path=None):
     results, tr, tf, ti = {}, 0, 0, 0
     for c in comps:
         nm = c.get("name", "unknown")
-        r = scan_competitor(nm, db_path=db_path); results[nm] = r
+        r = scan_competitor(nm, db_path=db_path)
+        results[nm] = r
         if "error" not in r:
-            tr += r.get("releases_found",0); tf += r.get("features_found",0)
+            tr += r.get("releases_found",0)
+            tf += r.get("features_found",0)
             ti += r.get("issues_found",0)
     _audit("competitive_intel.scan_all",
            f"Scanned {len(comps)} competitors: {tr} releases, {tf} features")
@@ -327,7 +329,8 @@ def gap_analysis(db_path=None):
             else:
                 g = {"competitor": nm, "category": cat, "feature": feat,
                      "overlap_score": round(sc, 3)}
-                comp_gaps.append(g); all_gaps.append(g)
+                comp_gaps.append(g)
+                all_gaps.append(g)
         total = max(len(feats), 1)
         stats[nm] = {"category": cat, "features_analyzed": len(feats),
                      "icdev_covered": covered, "gaps_found": len(comp_gaps),
@@ -356,7 +359,8 @@ def gap_analysis(db_path=None):
             stored += 1
         except sqlite3.IntegrityError:
             pass
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
     _audit("competitive_intel.gap_analysis",
            f"Gap analysis: {len(all_gaps)} gaps, {stored} signals stored",
            {"gaps": len(all_gaps), "signals_stored": stored})
@@ -424,7 +428,8 @@ def get_competitor_report(db_path=None):
 def _print_human(args, result):
     """Print human-readable CLI output."""
     if "error" in result:
-        print(f"ERROR: {result['error']}"); return
+        print(f"ERROR: {result['error']}")
+        return
     if args.scan:
         if args.all or not args.competitor:
             t = result.get("totals", {})

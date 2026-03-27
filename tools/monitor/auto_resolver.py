@@ -250,12 +250,18 @@ def _match_patterns(features: dict, db_path: Optional[Path] = None) -> Tuple[flo
                 wa, wb = set(fsig.replace("|", " ").split()), set(psig.replace("|", " ").split())
                 u = len(wa | wb)
                 score = len(wa & wb) / u if u else 0.0
-            if etype and etype in desc: score += 0.2
-            if etype and etype in psig: score += 0.25
-            if features.get("has_timeout") and "timeout" in desc: score += 0.1
-            if features.get("has_connection") and "connection" in desc: score += 0.1
-            if features.get("has_memory") and "memory" in desc: score += 0.1
-            if features.get("has_database") and "database" in desc: score += 0.1
+            if etype and etype in desc:
+                score += 0.2
+            if etype and etype in psig:
+                score += 0.25
+            if features.get("has_timeout") and "timeout" in desc:
+                score += 0.1
+            if features.get("has_connection") and "connection" in desc:
+                score += 0.1
+            if features.get("has_memory") and "memory" in desc:
+                score += 0.1
+            if features.get("has_database") and "database" in desc:
+                score += 0.1
             combined = min(score * r["confidence"], 1.0)
             if combined > best_score:
                 best_score = combined
@@ -594,7 +600,8 @@ def main() -> None:
             parser.error("--alert-file is required for --analyze and --resolve")
         ap = Path(args.alert_file)
         if not ap.exists():
-            print(json.dumps({"error": f"Alert file not found: {ap}"})); sys.exit(1)
+            print(json.dumps({"error": f"Alert file not found: {ap}"}))
+            sys.exit(1)
         with open(ap, encoding="utf-8") as fh:
             payload = json.load(fh)
         if args.analyze:
@@ -611,9 +618,12 @@ def main() -> None:
             c = res.get("confidence", (res.get("analysis") or {}).get("confidence", 0.0))
             print(f"Decision:   {d}\nConfidence: {c:.3f}")
             print(f"Reason:     {res.get('reason', res.get('message', ''))}")
-            if res.get("resolution_id"): print(f"Resolution: {res['resolution_id']}")
-            if res.get("pr_url"): print(f"PR URL:     {res['pr_url']}")
-            if res.get("resolution_status"): print(f"Status:     {res['resolution_status']}")
+            if res.get("resolution_id"):
+                print(f"Resolution: {res['resolution_id']}")
+            if res.get("pr_url"):
+                print(f"PR URL:     {res['pr_url']}")
+            if res.get("resolution_status"):
+                print(f"Status:     {res['resolution_status']}")
             if res.get("suggestion"):
                 print(f"Suggestion: {json.dumps(res['suggestion'], indent=2, default=str)}")
         return

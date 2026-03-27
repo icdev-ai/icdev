@@ -176,8 +176,10 @@ def analyze_failed_self_heals(db_path=None):
                 "confidence": row["confidence"] or 0.0, "occurrences": 0,
                 "projects": set(), "sources": set(), "last_seen": row["created_at"]})
             g["occurrences"] += 1
-            if row["project_id"]: g["projects"].add(row["project_id"])
-            if row["trigger_source"]: g["sources"].add(row["trigger_source"])
+            if row["project_id"]:
+                g["projects"].add(row["project_id"])
+            if row["trigger_source"]:
+                g["sources"].add(row["trigger_source"])
         for g in sorted(groups.values(), key=lambda x: x["occurrences"], reverse=True):
             r["findings"].append({
                 "pattern_id": g["pattern_id"], "pattern_type": g["pattern_type"],

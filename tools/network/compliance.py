@@ -265,11 +265,16 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
                 if n["id"] in (e["source"], e["target"]):
                     label = (e.get("label") or "").upper()
                     link_mbps = 1000
-                    if "400G" in label: link_mbps = 400000
-                    elif "100G" in label: link_mbps = 100000
-                    elif "40G" in label: link_mbps = 40000
-                    elif "25G" in label: link_mbps = 25000
-                    elif "10G" in label: link_mbps = 10000
+                    if "400G" in label:
+                        link_mbps = 400000
+                    elif "100G" in label:
+                        link_mbps = 100000
+                    elif "40G" in label:
+                        link_mbps = 40000
+                    elif "25G" in label:
+                        link_mbps = 25000
+                    elif "10G" in label:
+                        link_mbps = 10000
                     if link_mbps > max_rating and max_rating > 0:
                         add_finding(rule_map["NET-ENC-003"],
                                     f"{label_map.get(n['id'])} on {e.get('label', 'link')} ({link_mbps/1000:.0f}G > {max_rating/1000:.0f}G rated)",

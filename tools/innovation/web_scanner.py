@@ -263,7 +263,7 @@ def scan_github(config):
                         "url": item.get("html_url", ""),
                         "metadata": json.dumps({
                             "repo": repo,
-                            "labels": [l.get("name", "") for l in item.get("labels", [])],
+                            "labels": [lbl.get("name", "") for lbl in item.get("labels", [])],
                             "reactions_thumbs_up": thumbs_up,
                             "comments": item.get("comments", 0),
                             "created_at": item.get("created_at", ""),

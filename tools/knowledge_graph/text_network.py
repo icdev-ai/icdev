@@ -122,7 +122,6 @@ VERB_MAP = {
     "tracks":         "TRACKS_INDEX",
     "correlated with": "CORRELATED_WITH",
     # Cascade verbs
-    "requires":         "REQUIRES_RESOURCE",
     "needs":            "REQUIRES_RESOURCE",
     "consumes":         "REQUIRES_RESOURCE",
     "constrained by":   "CONSTRAINED_BY",
