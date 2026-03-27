@@ -1524,3 +1524,9 @@
 | Ato Generator | tools\network\ato_generator.py | Auto-registered: network/ato_generator.py | --json | JSON |
 | Fix Template Zones | tools\network\fix_template_zones.py | Auto-registered: network/fix_template_zones.py | --json | JSON |
 | Update Template Zones | tools\network\update_template_zones.py | Auto-registered: network/update_template_zones.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Stig Import | tools\network\stig_import.py | Auto-registered: network/stig_import.py | --json | JSON |

@@ -323,6 +323,20 @@ CREATE TABLE IF NOT EXISTS nc_users (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- STIG XCCDF/CKL import records (links external scan results to topology devices)
+CREATE TABLE IF NOT EXISTS nc_stig_imports (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    filename    TEXT NOT NULL,
+    format      TEXT NOT NULL,           -- ckl, xccdf
+    stig_name   TEXT,
+    stig_version TEXT,
+    total_hosts INTEGER DEFAULT 0,
+    matched_hosts INTEGER DEFAULT 0,
+    result_json TEXT DEFAULT '{}',       -- full match/color result
+    imported_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- NC-GAP-009: Classification on audit + immutability triggers
 -- (classification column added inline above)
 

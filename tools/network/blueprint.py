@@ -49,6 +49,7 @@ from tools.network.ato_generator import generate_ato_package  # noqa: E402
 from tools.network.export_import import (  # noqa: E402
     to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
 )
+from tools.network.stig_import import import_stig_file  # noqa: E402
 
 
 def create_network_blueprint():
@@ -1605,6 +1606,125 @@ def create_network_blueprint():
         return jsonify({"format": "xacta_xml",
                          "filename": f"{topo['name']}_compliance_report.xml",
                          "content": xml, "findings_count": len(findings)})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API: STIG XCCDF/CKL Import
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/compliance/<topo_id>/stig-import", methods=["POST"])
+    @nc_login_required
+    def nc_api_stig_import(topo_id):
+        """Import a STIG .ckl or XCCDF results file.
+
+        Match hostnames to canvas devices and return per-device compliance
+        color (green/yellow/red).
+        """
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph data"}), 500
+
+        # Accept file upload or raw XML body
+        content = None
+        filename = "upload.xml"
+        if request.files and "file" in request.files:
+            f = request.files["file"]
+            filename = f.filename or filename
+            content = f.read().decode("utf-8", errors="replace")
+        elif request.data:
+            content = request.data.decode("utf-8", errors="replace")
+            data = request.form or {}
+            filename = data.get("filename", filename)
+
+        if not content or not content.strip():
+            conn.close()
+            return jsonify({"error": "No file content provided"}), 400
+
+        result = import_stig_file(content, graph)
+
+        if "error" in result:
+            conn.close()
+            return jsonify(result), 400
+
+        # Persist import record
+        import_id = str(_uuid.uuid4())
+        now = _now()
+        conn.execute(
+            "INSERT INTO nc_stig_imports "
+            "(id, topology_id, filename, format, stig_name, stig_version, "
+            "total_hosts, matched_hosts, result_json, imported_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (import_id, topo_id, filename, result.get("format", ""),
+             result.get("stig_name", ""), result.get("stig_version", ""),
+             result.get("total_hosts", 0), result.get("total_matched", 0),
+             json.dumps(result), now),
+        )
+
+        # Also create compliance findings for failed STIG checks
+        audit_id = str(_uuid.uuid4())
+        total_pass = result.get("total_pass", 0)
+        total_fail = result.get("total_fail", 0)
+        conn.execute(
+            "INSERT INTO nc_compliance_checks "
+            "(id, topology_id, check_type, passed, failed, findings_json, ran_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (audit_id, topo_id, f"stig_import:{filename}",
+             total_pass, total_fail, json.dumps(result.get("matched", [])), now),
+        )
+
+        # Insert individual findings for each failed check on matched devices
+        for device in result.get("matched", []):
+            for f in device.get("findings", []):
+                fid = str(_uuid.uuid4())
+                rule_id = f.get("rule_id") or f.get("vuln_id", "UNKNOWN")
+                exists = conn.execute(
+                    "SELECT id FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND rule_id=? AND affected_entity=? AND status='open'",
+                    (topo_id, rule_id, device["label"]),
+                ).fetchone()
+                if not exists:
+                    conn.execute(
+                        "INSERT INTO nc_compliance_findings "
+                        "(id, topology_id, audit_id, rule_id, regime, severity, "
+                        "title, description, affected_entity, affected_type, created_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (fid, topo_id, audit_id, rule_id, "stig",
+                         f.get("severity", "CAT2"), f.get("title", rule_id),
+                         f.get("finding_details", ""),
+                         device["label"], "node", now),
+                    )
+
+        conn.commit()
+        conn.close()
+        _audit("STIG_IMPORT", "topology", topo_id,
+               f"{filename}: {result.get('total_matched', 0)}/{result.get('total_hosts', 0)} hosts matched")
+
+        result["import_id"] = import_id
+        result["audit_id"] = audit_id
+        return jsonify(result)
+
+    @bp.route("/api/compliance/<topo_id>/stig-imports", methods=["GET"])
+    @nc_login_required
+    def nc_api_stig_import_history(topo_id):
+        """List previous STIG import records for a topology."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, filename, format, stig_name, stig_version, "
+            "total_hosts, matched_hosts, imported_at "
+            "FROM nc_stig_imports WHERE topology_id=? ORDER BY imported_at DESC LIMIT 20",
+            (topo_id,),
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Projects CRUD

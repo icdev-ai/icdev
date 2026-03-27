@@ -10,6 +10,10 @@
     <a href="/network/canvas/{{ topology.id }}" class="btn btn-secondary">Canvas</a>
     <button class="btn btn-primary" onclick="runAudit()">Run Audit</button>
     <button class="btn btn-secondary" onclick="exportReport()">Export Xacta XML</button>
+    <label class="btn btn-secondary" style="cursor:pointer;" title="Import STIG .ckl or XCCDF results file">
+      &#x1f4c2; Import STIG
+      <input type="file" id="stig-file-input" accept=".ckl,.xml,.xccdf" style="display:none;" onchange="importStigFile(this)"/>
+    </label>
   </div>
 </div>
 
@@ -74,6 +78,42 @@
     <div id="findings-table"></div>
   </section>
 </div>
+
+<!-- STIG Import Results (populated by JS) -->
+<div id="stig-results" style="display:none;">
+  <section class="panel panel-wide">
+    <div class="panel-header"><h2 class="panel-title">STIG Import Results</h2></div>
+    <div id="stig-summary" class="stats-bar"></div>
+    <p style="padding:0 1rem;font-size:0.8rem;color:var(--text-dim);">
+      <span style="color:#e74c3c;">&#x25cf; Red</span> = CAT1 open findings &nbsp;
+      <span style="color:#f39c12;">&#x25cf; Yellow</span> = CAT2/CAT3 open &nbsp;
+      <span style="color:#27ae60;">&#x25cf; Green</span> = all checks passing
+    </p>
+    <div id="stig-diagram" style="padding:1rem;overflow:auto;max-height:500px;"></div>
+  </section>
+
+  <section class="panel panel-wide" id="stig-matched-panel" style="display:none;">
+    <div class="panel-header"><h2 class="panel-title" id="stig-matched-title">Matched Devices</h2></div>
+    <div id="stig-matched-table"></div>
+  </section>
+
+  <section class="panel panel-wide" id="stig-unmatched-panel" style="display:none;">
+    <div class="panel-header"><h2 class="panel-title">Unmatched</h2></div>
+    <div style="display:flex;gap:2rem;padding:1rem;flex-wrap:wrap;">
+      <div id="stig-unmatched-hosts"></div>
+      <div id="stig-unmatched-devices"></div>
+    </div>
+  </section>
+</div>
+
+<!-- STIG Import History -->
+<section class="panel panel-wide" id="stig-history-panel" style="display:none;">
+  <div class="panel-header"><h2 class="panel-title">STIG Import History</h2></div>
+  <table class="data-table" id="stig-history-table">
+    <thead><tr><th>Date</th><th>File</th><th>STIG</th><th>Format</th><th>Matched</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
 
 <!-- Previous Audits -->
 {% if audits %}
@@ -287,5 +327,166 @@ function exportReport() {
     URL.revokeObjectURL(url);
   });
 }
+
+// ── STIG Import ──────────────────────────────────────────────────────────
+
+function importStigFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+  const statusEl = document.getElementById('tb-status') || document.querySelector('.page-subtitle');
+  if (statusEl) statusEl.textContent = 'Importing STIG file...';
+
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/stig-import', {
+    method: 'POST', body: formData
+  }).then(r => r.json()).then(d => {
+    input.value = '';
+    if (d.error) { alert('Import error: ' + d.error); return; }
+    showStigResults(d);
+    loadStigHistory();
+  }).catch(e => { input.value = ''; alert('Import failed: ' + e); });
+}
+
+function showStigResults(d) {
+  document.getElementById('stig-results').style.display = 'block';
+
+  // Summary stats
+  document.getElementById('stig-summary').innerHTML = `
+    <div class="stat-card"><div class="stat-value">${d.stig_name || 'Unknown STIG'}</div><div class="stat-label">STIG ${d.stig_version || ''}</div></div>
+    <div class="stat-card"><div class="stat-value">${d.total_matched}/${d.total_hosts}</div><div class="stat-label">Hosts Matched</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#27ae60">${d.total_pass}</div><div class="stat-label">Checks Passed</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#e74c3c">${d.total_fail}</div><div class="stat-label">Checks Failed</div></div>
+  `;
+
+  // Render colored topology diagram
+  renderStigDiagram(d);
+
+  // Matched devices table
+  if (d.matched && d.matched.length) {
+    const panel = document.getElementById('stig-matched-panel');
+    panel.style.display = 'block';
+    document.getElementById('stig-matched-title').textContent = `Matched Devices (${d.matched.length})`;
+    let html = '<table class="data-table"><thead><tr><th>Device</th><th>Hostname</th><th>Status</th><th>CAT1</th><th>CAT2</th><th>CAT3</th><th>Pass</th><th>Fail</th></tr></thead><tbody>';
+    d.matched.forEach(m => {
+      const color = m.status === 'red' ? '#e74c3c' : m.status === 'yellow' ? '#f39c12' : '#27ae60';
+      html += `<tr>
+        <td><strong>${m.label}</strong></td>
+        <td>${m.hostname}</td>
+        <td><span style="color:${color};font-weight:bold;text-transform:uppercase;">${m.status}</span></td>
+        <td style="color:#e74c3c;">${m.cat1_count}</td>
+        <td style="color:#f39c12;">${m.cat2_count}</td>
+        <td style="color:#5dade2;">${m.cat3_count}</td>
+        <td style="color:#27ae60;">${m.summary.pass || 0}</td>
+        <td style="color:#e74c3c;">${m.summary.fail || 0}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('stig-matched-table').innerHTML = html;
+  }
+
+  // Unmatched hosts/devices
+  if ((d.unmatched_hosts && d.unmatched_hosts.length) || (d.unmatched_devices && d.unmatched_devices.length)) {
+    document.getElementById('stig-unmatched-panel').style.display = 'block';
+    let hostsHtml = '';
+    if (d.unmatched_hosts && d.unmatched_hosts.length) {
+      hostsHtml = '<div><strong style="color:#e74c3c;">Unmatched Hosts (no device match):</strong><ul style="margin:4px 0;padding-left:1.2rem;">';
+      d.unmatched_hosts.forEach(h => { hostsHtml += `<li>${h}</li>`; });
+      hostsHtml += '</ul></div>';
+    }
+    document.getElementById('stig-unmatched-hosts').innerHTML = hostsHtml;
+
+    let devHtml = '';
+    if (d.unmatched_devices && d.unmatched_devices.length) {
+      devHtml = '<div><strong style="color:#f39c12;">Devices Without STIG Data:</strong><ul style="margin:4px 0;padding-left:1.2rem;">';
+      d.unmatched_devices.forEach(dv => { devHtml += `<li>${dv.label}</li>`; });
+      devHtml += '</ul></div>';
+    }
+    document.getElementById('stig-unmatched-devices').innerHTML = devHtml;
+  }
+
+  document.getElementById('stig-results').scrollIntoView({behavior: 'smooth'});
+}
+
+function renderStigDiagram(d) {
+  const container = document.getElementById('stig-diagram');
+  fetch(NC_BASE + '/api/topologies/' + TOPO_ID).then(r => r.json()).then(topo => {
+    const graph = topo.graph_json || {nodes:[], edges:[]};
+    const nodes = graph.nodes || [];
+    const edges = graph.edges || [];
+    if (!nodes.length) { container.innerHTML = '<p style="color:var(--text-dim);">No nodes in topology.</p>'; return; }
+
+    // Build device status lookup from matched results
+    const deviceStatus = {};
+    (d.matched || []).forEach(m => {
+      deviceStatus[m.node_id] = m;
+    });
+
+    const padding = 60;
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    nodes.forEach(n => { const x=n.x||0, y=n.y||0; if(x<minX)minX=x; if(y<minY)minY=y; if(x>maxX)maxX=x; if(y>maxY)maxY=y; });
+    const w = (maxX-minX)+padding*2+120, h = (maxY-minY)+padding*2+80;
+    const ox = -minX+padding, oy = -minY+padding;
+    const pos = {};
+    nodes.forEach(n => { pos[n.id] = {x:(n.x||0)+ox, y:(n.y||0)+oy}; });
+
+    let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(w,400)}" height="${Math.max(h,300)}" style="font-family:Segoe UI,system-ui,sans-serif;">`;
+
+    // Draw edges
+    edges.forEach(e => {
+      const s=pos[e.source], t=pos[e.target];
+      if(!s||!t) return;
+      svg += `<line x1="${s.x+55}" y1="${s.y+30}" x2="${t.x+55}" y2="${t.y+30}" stroke="#2c3e6e" stroke-width="1.5" opacity="0.5"/>`;
+    });
+
+    // Draw nodes with STIG compliance coloring
+    nodes.forEach(n => {
+      const p = pos[n.id]; if(!p) return;
+      const label = n.label || n.id;
+      const ds = deviceStatus[n.id];
+      let fill, stroke, statusText;
+      if (ds) {
+        if (ds.status === 'red') { fill='#3a0f0f'; stroke='#e74c3c'; }
+        else if (ds.status === 'yellow') { fill='#2b1a0f'; stroke='#f39c12'; }
+        else { fill='#0f2b1a'; stroke='#27ae60'; }
+        const fc = ds.cat1_count + ds.cat2_count + ds.cat3_count;
+        statusText = fc > 0 ? `${fc} failing` : 'compliant';
+      } else {
+        fill='#1a1a2e'; stroke='#4a5568';
+        statusText = 'no data';
+      }
+      svg += `<rect x="${p.x}" y="${p.y}" width="110" height="60" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+      svg += `<text x="${p.x+55}" y="${p.y+22}" text-anchor="middle" fill="${stroke}" font-size="11" font-weight="bold">${label}</text>`;
+      svg += `<text x="${p.x+55}" y="${p.y+37}" text-anchor="middle" fill="#7a8cb0" font-size="9">${n.type||''}</text>`;
+      svg += `<text x="${p.x+55}" y="${p.y+52}" text-anchor="middle" fill="${stroke}" font-size="8">${statusText}</text>`;
+    });
+    svg += '</svg>';
+    container.innerHTML = svg;
+  });
+}
+
+function loadStigHistory() {
+  fetch(NC_BASE + '/api/compliance/' + TOPO_ID + '/stig-imports')
+    .then(r => r.json()).then(rows => {
+      if (!rows.length) return;
+      document.getElementById('stig-history-panel').style.display = 'block';
+      const tbody = document.querySelector('#stig-history-table tbody');
+      tbody.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="ts">${(r.imported_at||'').slice(0,16)}</td>
+          <td>${r.filename}</td>
+          <td>${r.stig_name || '—'}</td>
+          <td>${r.format}</td>
+          <td>${r.matched_hosts}/${r.total_hosts}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    });
+}
+
+// Load STIG import history on page load
+document.addEventListener('DOMContentLoaded', loadStigHistory);
 </script>
 {% endblock %}
