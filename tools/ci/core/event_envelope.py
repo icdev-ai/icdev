@@ -86,9 +86,12 @@ class EventEnvelope:
         if BOT_IDENTIFIER in text:
             return True
         if author:
-            # Normalize: strip trademark symbol for matching
-            normalized = author.lower().replace("\u2122", "")
-            if normalized in ("icdev-bot", "icdev"):
+            # Normalize: strip trademark/special symbols for matching
+            clean = "".join(
+                c for c in author.lower()
+                if c.isascii()
+            )
+            if clean in ("icdev-bot", "icdev"):
                 return True
         return False
 

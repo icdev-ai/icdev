@@ -85,8 +85,14 @@ class EventEnvelope:
         """Check if the message is from a bot."""
         if BOT_IDENTIFIER in text:
             return True
-        if author and author.lower() in ("icdev-bot", "icdev"):
-            return True
+        if author:
+            # Normalize: strip trademark/special symbols for matching
+            clean = "".join(
+                c for c in author.lower()
+                if c.isascii()
+            )
+            if clean in ("icdev-bot", "icdev"):
+                return True
         return False
 
     @staticmethod
