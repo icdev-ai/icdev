@@ -1741,6 +1741,488 @@ TEMPLATES = [
             ]
         }),
     },
+    # 24 ─ ICS/SCADA Purdue Model
+    {
+        "id": "tpl-ics-purdue",
+        "name": "ICS/SCADA Purdue Model (L0–L5)",
+        "category": "OT / Industrial",
+        "description": "Purdue Enterprise Reference Architecture for ICS/SCADA networks with 6 security levels, "
+                       "DMZ between IT and OT, and zone labels using drawing shapes.",
+        "tags": json.dumps(["ics", "scada", "purdue", "ot", "industrial", "nist-800-82"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Zone labels (headings)
+                _node("lbl-l5", "Level 5 — Enterprise Network", "text-heading", 320, 10, {"config": {"_textColor": "#74b9ff"}}),
+                _node("lbl-l4", "Level 4 — Site Business / IT", "text-heading", 320, 130, {"config": {"_textColor": "#74b9ff"}}),
+                _node("lbl-dmz", "IT / OT DMZ", "text-heading", 380, 270, {"config": {"_textColor": "#f39c12"}}),
+                _node("lbl-l3", "Level 3 — Site Operations", "text-heading", 330, 400, {"config": {"_textColor": "#27ae60"}}),
+                _node("lbl-l2", "Level 2 — Area Supervisory", "text-heading", 330, 530, {"config": {"_textColor": "#27ae60"}}),
+                _node("lbl-l1", "Level 1 — Basic Control", "text-heading", 340, 660, {"config": {"_textColor": "#e67e22"}}),
+                _node("lbl-l0", "Level 0 — Physical Process", "text-heading", 340, 790, {"config": {"_textColor": "#e74c3c"}}),
+                # Zone boundary boxes
+                _node("zone-enterprise", "", "draw-rect", 20, 35, {"config": {"_fill": "#0a1628", "_stroke": "#74b9ff", "_width": 900, "_height": 85}}),
+                _node("zone-it", "", "draw-rect", 20, 155, {"config": {"_fill": "#0a1628", "_stroke": "#74b9ff", "_width": 900, "_height": 100}}),
+                _node("zone-dmz", "", "draw-rect", 20, 295, {"config": {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": 900, "_height": 85, "_strokeWidth": 3}}),
+                _node("zone-ops", "", "draw-rect", 20, 425, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 900, "_height": 85}}),
+                _node("zone-super", "", "draw-rect", 20, 555, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 900, "_height": 85}}),
+                _node("zone-control", "", "draw-rect", 20, 685, {"config": {"_fill": "#1a1000", "_stroke": "#e67e22", "_width": 900, "_height": 85}}),
+                _node("zone-process", "", "draw-rect", 20, 815, {"config": {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": 900, "_height": 85}}),
+                # L5 — Enterprise
+                _node("erp", "ERP / SAP", "server", 120, 50),
+                _node("email", "Email Server", "server", 350, 50),
+                _node("inet-fw", "Internet FW", "firewall", 650, 50),
+                _node("inet", "Internet", "cloud", 830, 50),
+                # L4 — IT
+                _node("ad", "Active Directory", "server", 100, 170),
+                _node("av", "AV / Patch Mgmt", "server", 300, 170),
+                _node("historian-mirror", "Historian Mirror", "server", 530, 170),
+                _node("it-sw", "IT Core Switch", "switch-l3", 750, 170),
+                # DMZ
+                _node("dmz-fw-top", "IT/OT FW (North)", "firewall", 200, 310),
+                _node("jump", "Jump Server", "server", 430, 310),
+                _node("ids", "IDS / IPS", "siem", 650, 310),
+                _node("dmz-fw-bot", "IT/OT FW (South)", "firewall", 830, 310),
+                # L3 — Operations
+                _node("historian", "OT Historian", "server", 120, 440),
+                _node("ops-sw", "OT Core Switch", "switch-l3", 380, 440),
+                _node("eng-ws", "Engineering WS", "endpoint-pc", 600, 440),
+                _node("patch-mgmt", "OT Patch Server", "server", 800, 440),
+                # L2 — Supervisory
+                _node("hmi1", "HMI Station 1", "endpoint-pc", 120, 570),
+                _node("hmi2", "HMI Station 2", "endpoint-pc", 320, 570),
+                _node("scada-sw", "SCADA Switch", "switch-l2", 530, 570),
+                _node("scada-srv", "SCADA Server", "server", 750, 570),
+                # L1 — Control
+                _node("plc1", "PLC-01", "endpoint-iot", 120, 700),
+                _node("plc2", "PLC-02", "endpoint-iot", 300, 700),
+                _node("rtu1", "RTU-01", "endpoint-iot", 500, 700),
+                _node("ctrl-sw", "Control Switch", "switch-l2", 700, 700),
+                _node("safety", "Safety Controller", "endpoint-iot", 860, 700),
+                # L0 — Process
+                _node("sensor1", "Temp Sensor", "endpoint-iot", 120, 830),
+                _node("sensor2", "Pressure Sensor", "endpoint-iot", 300, 830),
+                _node("actuator1", "Valve Actuator", "endpoint-iot", 500, 830),
+                _node("actuator2", "Motor Drive", "endpoint-iot", 700, 830),
+                _node("cam1", "Process Camera", "endpoint-camera", 870, 830),
+            ],
+            "edges": [
+                _edge("erp", "it-sw", "10GbE", ""),
+                _edge("email", "it-sw", "10GbE", ""),
+                _edge("inet-fw", "inet", "WAN", ""),
+                _edge("inet-fw", "it-sw", "10GbE", ""),
+                _edge("ad", "it-sw", "10GbE", ""),
+                _edge("av", "it-sw", "10GbE", ""),
+                _edge("historian-mirror", "it-sw", "10GbE", ""),
+                _edge("it-sw", "dmz-fw-top", "10GbE", ""),
+                _edge("dmz-fw-top", "jump", "", ""),
+                _edge("jump", "ids", "", ""),
+                _edge("ids", "dmz-fw-bot", "", ""),
+                _edge("dmz-fw-bot", "ops-sw", "1GbE", ""),
+                _edge("historian", "ops-sw", "1GbE", ""),
+                _edge("eng-ws", "ops-sw", "1GbE", ""),
+                _edge("patch-mgmt", "ops-sw", "1GbE", ""),
+                _edge("ops-sw", "scada-sw", "1GbE", ""),
+                _edge("hmi1", "scada-sw", "1GbE", ""),
+                _edge("hmi2", "scada-sw", "1GbE", ""),
+                _edge("scada-srv", "scada-sw", "1GbE", ""),
+                _edge("scada-sw", "ctrl-sw", "1GbE", ""),
+                _edge("plc1", "ctrl-sw", "100Mbps", ""),
+                _edge("plc2", "ctrl-sw", "100Mbps", ""),
+                _edge("rtu1", "ctrl-sw", "100Mbps", ""),
+                _edge("safety", "ctrl-sw", "100Mbps", ""),
+                _edge("plc1", "sensor1", "Modbus", ""),
+                _edge("plc1", "sensor2", "Modbus", ""),
+                _edge("plc2", "actuator1", "Modbus", ""),
+                _edge("plc2", "actuator2", "Modbus", ""),
+                _edge("rtu1", "cam1", "Ethernet/IP", ""),
+            ]
+        }),
+    },
+    # 25 ─ SASE / SSE Architecture
+    {
+        "id": "tpl-sase-sse",
+        "name": "SASE / SSE Architecture",
+        "category": "Security",
+        "description": "Secure Access Service Edge — cloud-delivered security with ZTNA, SWG, CASB, and FWaaS. "
+                       "Branch, remote, and campus users connect through SASE PoPs.",
+        "tags": json.dumps(["sase", "sse", "ztna", "swg", "casb", "fwaas", "zero-trust"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Zone labels
+                _node("lbl-users", "User Locations", "text-heading", 80, 10, {"config": {"_textColor": "#74b9ff"}}),
+                _node("lbl-sase", "SASE / SSE Cloud", "text-heading", 380, 10, {"config": {"_textColor": "#f39c12"}}),
+                _node("lbl-apps", "Applications", "text-heading", 750, 10, {"config": {"_textColor": "#27ae60"}}),
+                # Zone boxes
+                _node("zone-users", "", "draw-rounded-rect", 20, 40, {"config": {"_fill": "#0a1628", "_stroke": "#74b9ff", "_width": 250, "_height": 520}}),
+                _node("zone-sase", "", "draw-rounded-rect", 310, 40, {"config": {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": 340, "_height": 520, "_strokeWidth": 3}}),
+                _node("zone-apps", "", "draw-rounded-rect", 690, 40, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 260, "_height": 520}}),
+                # SASE service badges
+                _node("badge-ztna", "ZTNA", "text-badge", 340, 60, {"config": {"_fill": "#2b0f3a", "_stroke": "#a29bfe"}}),
+                _node("badge-swg", "SWG", "text-badge", 420, 60, {"config": {"_fill": "#2b0f3a", "_stroke": "#a29bfe"}}),
+                _node("badge-casb", "CASB", "text-badge", 490, 60, {"config": {"_fill": "#2b0f3a", "_stroke": "#a29bfe"}}),
+                _node("badge-fwaas", "FWaaS", "text-badge", 567, 60, {"config": {"_fill": "#2b0f3a", "_stroke": "#a29bfe"}}),
+                # Users
+                _node("campus", "Campus Users", "endpoint-pc", 70, 80),
+                _node("branch1", "Branch Office A", "router", 70, 180),
+                _node("branch2", "Branch Office B", "router", 70, 280),
+                _node("remote", "Remote Worker", "endpoint-pc", 70, 380),
+                _node("mobile", "Mobile User", "endpoint-phone", 70, 470),
+                # SD-WAN edges
+                _node("sdwan1", "SD-WAN Edge", "sdwan-edge", 200, 180),
+                _node("sdwan2", "SD-WAN Edge", "sdwan-edge", 200, 280),
+                # SASE PoPs
+                _node("pop1", "SASE PoP (East)", "sase-pop", 380, 140),
+                _node("pop2", "SASE PoP (West)", "sase-pop", 380, 260),
+                _node("pop3", "SASE PoP (Central)", "sase-pop", 380, 380),
+                # SASE services
+                _node("ztna", "ZTNA Broker", "firewall", 530, 160),
+                _node("swg", "Secure Web GW", "firewall", 530, 280),
+                _node("casb", "CASB Proxy", "firewall", 530, 400),
+                # Applications
+                _node("saas", "SaaS (M365/GWS)", "cloud", 740, 100),
+                _node("iaas", "IaaS (AWS/Azure)", "aws-vpc", 740, 210),
+                _node("dc-app", "On-Prem DC App", "server", 740, 330),
+                _node("private", "Private App", "server", 740, 440),
+                # Internet
+                _node("inet", "Internet", "cloud", 530, 500),
+            ],
+            "edges": [
+                _edge("campus", "pop1", "Direct", ""),
+                _edge("branch1", "sdwan1", "LAN", ""),
+                _edge("branch2", "sdwan2", "LAN", ""),
+                _edge("sdwan1", "pop1", "IPSec Tunnel", "IPSec"),
+                _edge("sdwan2", "pop2", "IPSec Tunnel", "IPSec"),
+                _edge("remote", "pop3", "ZTNA Agent", "mTLS"),
+                _edge("mobile", "pop3", "ZTNA Agent", "mTLS"),
+                _edge("pop1", "ztna", "Inspect", ""),
+                _edge("pop2", "swg", "Inspect", ""),
+                _edge("pop3", "casb", "Inspect", ""),
+                _edge("pop1", "pop2", "Backbone", ""),
+                _edge("pop2", "pop3", "Backbone", ""),
+                _edge("ztna", "saas", "Proxy", "mTLS"),
+                _edge("ztna", "iaas", "Proxy", "mTLS"),
+                _edge("swg", "dc-app", "Proxy", ""),
+                _edge("casb", "private", "Proxy", "mTLS"),
+                _edge("swg", "inet", "Filtered", ""),
+            ]
+        }),
+    },
+    # 26 ─ Disaster Recovery (Active-Passive)
+    {
+        "id": "tpl-dr-active-passive",
+        "name": "Disaster Recovery (Active-Passive)",
+        "category": "Data Center",
+        "description": "Active-passive disaster recovery with primary and secondary data center sites, "
+                       "async replication, and automated failover via DNS/GSLB.",
+        "tags": json.dumps(["dr", "disaster-recovery", "active-passive", "replication", "failover"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Zone labels
+                _node("lbl-primary", "PRIMARY SITE (Active)", "text-heading", 100, 10, {"config": {"_textColor": "#27ae60"}}),
+                _node("lbl-dr", "DR SITE (Standby)", "text-heading", 620, 10, {"config": {"_textColor": "#e74c3c"}}),
+                _node("lbl-global", "Global Services", "text-heading", 370, 430, {"config": {"_textColor": "#f39c12"}}),
+                # Zone boxes
+                _node("zone-primary", "", "draw-rect", 20, 40, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 420, "_height": 370}}),
+                _node("zone-dr", "", "draw-rect", 500, 40, {"config": {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": 420, "_height": 370, "_strokeWidth": 2}}),
+                _node("zone-global", "", "draw-rounded-rect", 250, 460, {"config": {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": 440, "_height": 130}}),
+                # Status badges
+                _node("badge-active", "ACTIVE", "text-badge", 40, 50, {"config": {"_fill": "#0a2a0a", "_stroke": "#27ae60"}}),
+                _node("badge-standby", "STANDBY", "text-badge", 520, 50, {"config": {"_fill": "#2a0a0a", "_stroke": "#e74c3c"}}),
+                # Primary site
+                _node("p-fw", "Primary FW", "firewall", 80, 90),
+                _node("p-lb", "Primary LB", "load-balancer", 250, 90),
+                _node("p-web1", "Web Server 1", "server", 80, 200),
+                _node("p-web2", "Web Server 2", "server", 250, 200),
+                _node("p-app", "App Server", "server", 160, 300),
+                _node("p-db", "Primary DB", "server", 320, 300),
+                # DR site
+                _node("dr-fw", "DR Firewall", "firewall", 560, 90),
+                _node("dr-lb", "DR Load Balancer", "load-balancer", 730, 90),
+                _node("dr-web1", "DR Web 1", "server", 560, 200),
+                _node("dr-web2", "DR Web 2", "server", 730, 200),
+                _node("dr-app", "DR App Server", "server", 640, 300),
+                _node("dr-db", "DR DB (Replica)", "server", 800, 300),
+                # Global services
+                _node("gslb", "GSLB / DNS", "load-balancer", 310, 490),
+                _node("monitor", "Health Monitor", "siem", 490, 490),
+                _node("users", "End Users", "cloud", 80, 490),
+                # Replication arrow label
+                _node("lbl-repl", "Async Replication", "text-label", 400, 330, {"config": {"_textColor": "#f39c12"}}),
+            ],
+            "edges": [
+                # Primary
+                _edge("p-fw", "p-lb", "10GbE", ""),
+                _edge("p-lb", "p-web1", "10GbE", ""),
+                _edge("p-lb", "p-web2", "10GbE", ""),
+                _edge("p-web1", "p-app", "10GbE", ""),
+                _edge("p-web2", "p-app", "10GbE", ""),
+                _edge("p-app", "p-db", "10GbE", ""),
+                # DR
+                _edge("dr-fw", "dr-lb", "10GbE", ""),
+                _edge("dr-lb", "dr-web1", "10GbE", ""),
+                _edge("dr-lb", "dr-web2", "10GbE", ""),
+                _edge("dr-web1", "dr-app", "10GbE", ""),
+                _edge("dr-web2", "dr-app", "10GbE", ""),
+                _edge("dr-app", "dr-db", "10GbE", ""),
+                # Cross-site replication
+                _edge("p-db", "dr-db", "Async Repl", "IPSec"),
+                # Global
+                _edge("users", "gslb", "DNS", ""),
+                _edge("gslb", "p-fw", "Active", ""),
+                _edge("gslb", "dr-fw", "Failover", ""),
+                _edge("monitor", "p-lb", "Health Check", ""),
+                _edge("monitor", "dr-lb", "Health Check", ""),
+            ]
+        }),
+    },
+    # 27 ─ Air-Gapped / Cross-Domain Solution (CDS)
+    {
+        "id": "tpl-airgap-cds",
+        "name": "Air-Gapped / Cross-Domain Solution (CDS)",
+        "category": "Security",
+        "description": "Air-gapped network with cross-domain solution for controlled data transfer between "
+                       "classification levels (Unclass ↔ CUI ↔ SECRET). Uses NSA Type 1 encryptors and data diodes.",
+        "tags": json.dumps(["airgap", "cds", "cross-domain", "classification", "type1", "diode", "secret", "cui"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Zone labels
+                _node("lbl-unclass", "UNCLASSIFIED (NIPRNet)", "text-heading", 60, 10, {"config": {"_textColor": "#27ae60"}}),
+                _node("lbl-cui", "CUI // SP-CTI (IL4/IL5)", "text-heading", 360, 10, {"config": {"_textColor": "#f39c12"}}),
+                _node("lbl-secret", "SECRET (SIPRNet / IL6)", "text-heading", 700, 10, {"config": {"_textColor": "#e74c3c"}}),
+                _node("lbl-cds", "Cross-Domain Solution", "text-heading", 250, 440, {"config": {"_textColor": "#a29bfe"}}),
+                # Zone boxes
+                _node("zone-unclass", "", "draw-rect", 20, 40, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 250, "_height": 380}}),
+                _node("zone-cui", "", "draw-rect", 320, 40, {"config": {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": 280, "_height": 380, "_strokeWidth": 3}}),
+                _node("zone-secret", "", "draw-rect", 650, 40, {"config": {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": 280, "_height": 380, "_strokeWidth": 3}}),
+                _node("zone-cds", "", "draw-rounded-rect", 160, 470, {"config": {"_fill": "#120a20", "_stroke": "#a29bfe", "_width": 620, "_height": 160, "_strokeWidth": 3}}),
+                # Classification badges
+                _node("badge-u", "UNCLASSIFIED", "text-badge", 50, 55, {"config": {"_fill": "#0a2a0a", "_stroke": "#27ae60"}}),
+                _node("badge-cui", "CUI // SP-CTI", "text-badge", 370, 55, {"config": {"_fill": "#2a1a00", "_stroke": "#f39c12"}}),
+                _node("badge-s", "SECRET", "text-badge", 720, 55, {"config": {"_fill": "#2a0a0a", "_stroke": "#e74c3c"}}),
+                # UNCLASSIFIED network
+                _node("u-fw", "NIPR Firewall", "firewall", 60, 100),
+                _node("u-sw", "NIPR Switch", "switch-l3", 60, 200),
+                _node("u-ws1", "Workstation", "endpoint-pc", 60, 300),
+                _node("u-srv", "Web Server", "server", 180, 200),
+                _node("inet", "Internet / NIPRNet", "cloud", 180, 100),
+                # CUI network
+                _node("c-fw", "CUI Firewall", "firewall", 370, 100),
+                _node("c-enc", "KG-175D (TACLANE)", "kg-175d", 370, 200),
+                _node("c-sw", "CUI Switch", "switch-l3", 500, 200),
+                _node("c-ws1", "CUI Workstation", "endpoint-pc", 370, 310),
+                _node("c-srv", "CUI App Server", "server", 500, 310),
+                # SECRET network
+                _node("s-fw", "SIPR Firewall", "firewall", 710, 100),
+                _node("s-enc", "KG-250 (100G)", "kg-250", 710, 200),
+                _node("s-sw", "SIPR Switch", "switch-l3", 840, 200),
+                _node("s-ws1", "SIPR Workstation", "endpoint-pc", 710, 310),
+                _node("s-srv", "SIPR Server", "server", 840, 310),
+                # CDS components
+                _node("cds-guard", "CDS Guard", "firewall", 260, 510),
+                _node("cds-diode-up", "Data Diode (Up)", "type1-encryptor", 430, 500),
+                _node("cds-diode-dn", "Data Diode (Down)", "type1-encryptor", 430, 570),
+                _node("cds-filter", "Content Filter", "siem", 600, 510),
+                _node("cds-audit", "Audit Logger", "server", 430, 650, {"config": {"notes": "Immutable audit trail — NIST AU-6"}}),
+                # CDS annotation
+                _node("lbl-diode-note", "One-way data flow (hardware-enforced)", "text-label", 350, 640, {"config": {"_textColor": "#7a8cb0"}}),
+            ],
+            "edges": [
+                # UNCLASS internal
+                _edge("inet", "u-fw", "NIPRNet", ""),
+                _edge("u-fw", "u-sw", "10GbE", ""),
+                _edge("u-sw", "u-ws1", "1GbE", ""),
+                _edge("u-sw", "u-srv", "10GbE", ""),
+                # CUI internal
+                _edge("c-fw", "c-enc", "10GbE", "IPSec"),
+                _edge("c-enc", "c-sw", "10GbE", ""),
+                _edge("c-sw", "c-ws1", "1GbE", ""),
+                _edge("c-sw", "c-srv", "10GbE", ""),
+                # SECRET internal
+                _edge("s-fw", "s-enc", "10GbE", "IPSec"),
+                _edge("s-enc", "s-sw", "10GbE", ""),
+                _edge("s-sw", "s-ws1", "1GbE", ""),
+                _edge("s-sw", "s-srv", "10GbE", ""),
+                # CDS paths
+                _edge("u-sw", "cds-guard", "To CDS", ""),
+                _edge("cds-guard", "cds-diode-up", "Filtered", ""),
+                _edge("cds-diode-up", "cds-filter", "One-Way Up", ""),
+                _edge("cds-filter", "c-fw", "To CUI", ""),
+                _edge("c-sw", "cds-guard", "To CDS", ""),
+                _edge("cds-diode-dn", "cds-filter", "One-Way", ""),
+                _edge("cds-filter", "s-fw", "To SECRET", ""),
+                _edge("cds-guard", "cds-audit", "All Events", ""),
+            ]
+        }),
+    },
+    # 28 ─ 5G Private Network (MEC)
+    {
+        "id": "tpl-5g-private-mec",
+        "name": "5G Private Network (MEC)",
+        "category": "Wireless / 5G",
+        "description": "Private 5G network with Multi-access Edge Computing (MEC), 5G Core (UPF/AMF/SMF), "
+                       "gNodeBs, and local breakout for ultra-low-latency applications.",
+        "tags": json.dumps(["5g", "private-5g", "mec", "edge", "gnodeb", "upf", "amf"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Zone labels
+                _node("lbl-ran", "Radio Access Network (RAN)", "text-heading", 60, 10, {"config": {"_textColor": "#74b9ff"}}),
+                _node("lbl-edge", "Multi-access Edge Computing (MEC)", "text-heading", 340, 10, {"config": {"_textColor": "#f39c12"}}),
+                _node("lbl-core", "5G Core Network", "text-heading", 710, 10, {"config": {"_textColor": "#9b59b6"}}),
+                _node("lbl-apps", "Application Services", "text-heading", 370, 470, {"config": {"_textColor": "#27ae60"}}),
+                # Zone boxes
+                _node("zone-ran", "", "draw-rounded-rect", 20, 40, {"config": {"_fill": "#0a1628", "_stroke": "#74b9ff", "_width": 250, "_height": 400}}),
+                _node("zone-edge", "", "draw-rounded-rect", 310, 40, {"config": {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": 320, "_height": 400, "_strokeWidth": 3}}),
+                _node("zone-core", "", "draw-rounded-rect", 670, 40, {"config": {"_fill": "#120a20", "_stroke": "#9b59b6", "_width": 270, "_height": 400}}),
+                _node("zone-apps", "", "draw-rounded-rect", 230, 500, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 500, "_height": 140}}),
+                # RAN
+                _node("gnb1", "gNodeB (Macro)", "wap", 60, 80),
+                _node("gnb2", "gNodeB (Small Cell)", "wap", 60, 190),
+                _node("gnb3", "gNodeB (Indoor)", "wap", 60, 300),
+                _node("du1", "DU (Distributed Unit)", "server", 180, 130),
+                _node("du2", "DU (Distributed Unit)", "server", 180, 280),
+                _node("ue1", "UE — Smartphone", "endpoint-phone", 60, 390),
+                _node("ue2", "UE — IoT Sensor", "endpoint-iot", 180, 390),
+                # Badges for RAN
+                _node("badge-nr", "NR n78", "text-badge", 40, 50, {"config": {"_fill": "#0a1628", "_stroke": "#74b9ff"}}),
+                # MEC
+                _node("cu", "CU (Central Unit)", "server", 360, 80),
+                _node("mec-srv1", "MEC App Server", "server", 360, 190),
+                _node("mec-srv2", "MEC AI Inference", "server", 530, 190),
+                _node("upf-local", "UPF (Local Breakout)", "router", 450, 300),
+                _node("mec-sw", "MEC Switch", "switch-l3", 360, 300),
+                _node("mec-fw", "MEC Firewall", "firewall", 530, 300),
+                _node("mec-mon", "Edge Monitor", "siem", 530, 80),
+                # 5G Core
+                _node("amf", "AMF", "server", 720, 80),
+                _node("smf", "SMF", "server", 850, 80),
+                _node("upf-central", "UPF (Central)", "router", 720, 190),
+                _node("nrf", "NRF", "server", 850, 190),
+                _node("ausf", "AUSF / UDM", "server", 720, 300),
+                _node("nssf", "NSSF (Slicing)", "server", 850, 300),
+                _node("inet", "Internet / DN", "cloud", 790, 390),
+                # Applications
+                _node("app-ar", "AR/VR App", "server", 280, 530),
+                _node("app-video", "Video Analytics", "server", 430, 530),
+                _node("app-iot", "IoT Platform", "server", 580, 530),
+                _node("app-db", "Edge Database", "server", 430, 590),
+            ],
+            "edges": [
+                # RAN fronthaul
+                _edge("gnb1", "du1", "eCPRI", ""),
+                _edge("gnb2", "du1", "eCPRI", ""),
+                _edge("gnb3", "du2", "eCPRI", ""),
+                # RAN midhaul
+                _edge("du1", "cu", "F1", ""),
+                _edge("du2", "cu", "F1", ""),
+                # MEC internal
+                _edge("cu", "mec-sw", "25GbE", ""),
+                _edge("mec-sw", "mec-srv1", "25GbE", ""),
+                _edge("mec-sw", "mec-srv2", "25GbE", ""),
+                _edge("mec-sw", "upf-local", "25GbE", ""),
+                _edge("mec-sw", "mec-fw", "25GbE", ""),
+                _edge("mec-mon", "mec-sw", "10GbE", ""),
+                # MEC to Core (N2/N4)
+                _edge("cu", "amf", "N2", ""),
+                _edge("upf-local", "smf", "N4", ""),
+                _edge("upf-local", "upf-central", "N9", ""),
+                # Core internal
+                _edge("amf", "smf", "SBI", ""),
+                _edge("amf", "ausf", "SBI", ""),
+                _edge("smf", "upf-central", "N4", ""),
+                _edge("smf", "nrf", "SBI", ""),
+                _edge("nrf", "nssf", "SBI", ""),
+                _edge("upf-central", "inet", "N6", ""),
+                # Apps
+                _edge("mec-fw", "app-ar", "1GbE", ""),
+                _edge("mec-fw", "app-video", "10GbE", ""),
+                _edge("mec-fw", "app-iot", "1GbE", ""),
+                _edge("app-video", "app-db", "10GbE", ""),
+                _edge("app-iot", "app-db", "1GbE", ""),
+            ]
+        }),
+    },
+    # 29 ─ Satellite / SATCOM Backhaul
+    {
+        "id": "tpl-satcom-backhaul",
+        "name": "Satellite / SATCOM Backhaul",
+        "category": "Tactical / Remote",
+        "description": "Remote site connectivity via satellite (LEO/GEO) with SATCOM terminals, "
+                       "crypto devices, and tactical edge networking for DDIL environments.",
+        "tags": json.dumps(["satcom", "satellite", "vsat", "tactical", "ddil", "remote", "leo", "geo"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Zone labels
+                _node("lbl-remote", "Remote / Tactical Site", "text-heading", 50, 10, {"config": {"_textColor": "#e67e22"}}),
+                _node("lbl-space", "Space Segment", "text-heading", 380, 10, {"config": {"_textColor": "#74b9ff"}}),
+                _node("lbl-hub", "Teleport / Hub Station", "text-heading", 650, 10, {"config": {"_textColor": "#27ae60"}}),
+                _node("lbl-noc", "Network Operations Center", "text-heading", 650, 380, {"config": {"_textColor": "#9b59b6"}}),
+                # Zone boxes
+                _node("zone-remote", "", "draw-rect", 20, 40, {"config": {"_fill": "#1a1000", "_stroke": "#e67e22", "_width": 280, "_height": 530, "_strokeWidth": 2}}),
+                _node("zone-space", "", "draw-ellipse", 340, 60, {"config": {"_fill": "#0a1020", "_stroke": "#74b9ff", "_width": 240, "_height": 200}}),
+                _node("zone-hub", "", "draw-rect", 620, 40, {"config": {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": 300, "_height": 310}}),
+                _node("zone-noc", "", "draw-rounded-rect", 620, 400, {"config": {"_fill": "#120a20", "_stroke": "#9b59b6", "_width": 300, "_height": 160}}),
+                # Status badge
+                _node("badge-ddil", "DDIL Environment", "text-badge", 40, 55, {"config": {"_fill": "#2a1500", "_stroke": "#e67e22"}}),
+                # Remote site
+                _node("vsat1", "VSAT Terminal", "wap", 60, 100),
+                _node("bgan", "BGAN Terminal", "wap", 200, 100),
+                _node("r-enc", "KG-175G", "kg-175g", 130, 200),
+                _node("r-rtr", "Tactical Router", "router", 130, 290),
+                _node("r-sw", "Field Switch", "switch-l2", 60, 380),
+                _node("r-ws", "Command WS", "endpoint-pc", 60, 470),
+                _node("r-radio", "Tactical Radio", "wap", 200, 380),
+                _node("r-sensor", "ISR Sensor", "endpoint-camera", 200, 470),
+                _node("r-fw", "Edge Firewall", "firewall", 200, 290),
+                # Space
+                _node("sat-geo", "GEO Satellite", "cloud", 390, 90),
+                _node("sat-leo", "LEO Constellation", "cloud", 390, 180),
+                _node("lbl-ka", "Ka/Ku-Band", "text-label", 360, 260, {"config": {"_textColor": "#74b9ff"}}),
+                # Hub station
+                _node("h-dish1", "Hub Antenna 1", "wap", 680, 70),
+                _node("h-dish2", "Hub Antenna 2", "wap", 830, 70),
+                _node("h-enc", "KG-250", "kg-250", 750, 160),
+                _node("h-rtr", "Hub Router", "router", 750, 240),
+                _node("h-fw", "Hub Firewall", "firewall", 680, 300),
+                _node("mpls-pe", "MPLS PE", "mpls-pe", 840, 300),
+                # NOC
+                _node("noc-siem", "SIEM / SOC", "siem", 680, 430),
+                _node("noc-nms", "NMS / Monitoring", "server", 830, 430),
+                _node("noc-ws", "NOC Operator", "endpoint-pc", 750, 510),
+                # Backbone
+                _node("backbone", "Enterprise WAN", "cloud", 480, 450),
+            ],
+            "edges": [
+                # Remote to space
+                _edge("vsat1", "sat-geo", "Ka-Band Uplink", ""),
+                _edge("bgan", "sat-leo", "L-Band", ""),
+                # Space to hub
+                _edge("sat-geo", "h-dish1", "Ka-Band Downlink", ""),
+                _edge("sat-leo", "h-dish2", "Ku-Band Downlink", ""),
+                # Remote internal
+                _edge("vsat1", "r-enc", "Ethernet", ""),
+                _edge("bgan", "r-enc", "Ethernet", ""),
+                _edge("r-enc", "r-rtr", "Encrypted", "IPSec"),
+                _edge("r-rtr", "r-fw", "10/100", ""),
+                _edge("r-rtr", "r-sw", "10/100", ""),
+                _edge("r-sw", "r-ws", "1GbE", ""),
+                _edge("r-fw", "r-radio", "Tactical", ""),
+                _edge("r-radio", "r-sensor", "UHF/VHF", ""),
+                # Hub internal
+                _edge("h-dish1", "h-enc", "Ethernet", ""),
+                _edge("h-dish2", "h-enc", "Ethernet", ""),
+                _edge("h-enc", "h-rtr", "Decrypted", ""),
+                _edge("h-rtr", "h-fw", "10GbE", "OSPF"),
+                _edge("h-rtr", "mpls-pe", "10GbE", "OSPF"),
+                _edge("mpls-pe", "backbone", "MPLS VPN", "MPLS"),
+                # NOC
+                _edge("h-fw", "noc-siem", "10GbE", ""),
+                _edge("h-fw", "noc-nms", "10GbE", ""),
+                _edge("noc-siem", "noc-ws", "1GbE", ""),
+                _edge("noc-nms", "noc-ws", "1GbE", ""),
+                _edge("backbone", "noc-siem", "Telemetry", ""),
+            ]
+        }),
+    },
 ]
 
 
