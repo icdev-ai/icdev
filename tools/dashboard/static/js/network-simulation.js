@@ -282,10 +282,14 @@ function utilBar(pct) {
 const HIGHLIGHTED_CELLS = [];
 
 function clearHighlights() {
-  // Stop any blast radius animations
+  // Stop any blast radius / failover animations
   if (typeof _blastAnimTimers !== 'undefined') {
     _blastAnimTimers.forEach(t => clearTimeout(t));
     _blastAnimTimers.length = 0;
+  }
+  if (typeof _failoverAnimTimers !== 'undefined') {
+    _failoverAnimTimers.forEach(t => clearTimeout(t));
+    _failoverAnimTimers.length = 0;
   }
   HIGHLIGHTED_CELLS.forEach(id => {
     const cell = graph.getCell(id);
@@ -523,7 +527,7 @@ function visualizeResult(simType, result) {
       if (result.spof_nodes?.length) highlightSpof(result.spof_nodes);
       break;
     case 'failover':
-      if (result.risks?.length) highlightSpof(result.risks.map(r => r.node));
+      highlightFailover(result);
       break;
     case 'load':
       applyLoadHeatmap(result.utilization);
@@ -891,7 +895,7 @@ function visualizeResult(simType, result) {
       if (result.spof_nodes?.length) highlightSpof(result.spof_nodes);
       break;
     case 'failover':
-      if (result.risks?.length) highlightSpof(result.risks.map(r => r.node));
+      highlightFailover(result);
       break;
     case 'load':
       applyLoadHeatmap(result.utilization);
@@ -1092,6 +1096,60 @@ async function triggerBlastRadiusFromContext(maxHops) {
   if (typeof _blastCtxNodeId === 'undefined' || !_blastCtxNodeId) return;
   hideBlastContextMenu();
   await triggerBlastRadiusForNode(_blastCtxNodeId, maxHops || 3);
+}
+
+async function triggerFailoverFromContext() {
+  if (typeof _blastCtxNodeId === 'undefined' || !_blastCtxNodeId) return;
+  hideBlastContextMenu();
+  await _runSimFromContext('failover', _blastCtxNodeId);
+}
+
+async function triggerSpofFromContext() {
+  hideBlastContextMenu();
+  await _runSimFromContext('spof');
+}
+
+async function _runSimFromContext(simType, nodeId) {
+  openSimPanel();
+  const typeSelect = document.getElementById('sp-sim-type');
+  if (typeSelect) {
+    typeSelect.value = simType;
+    onSimTypeChange(simType);
+  }
+
+  const output = document.getElementById('sim-output');
+
+  if (!currentTopoId || currentTopoId === 'new') {
+    await saveTopology();
+  }
+  if (!currentTopoId || currentTopoId === 'new') {
+    if (output) output.textContent = 'Error: Save the topology first.';
+    return;
+  }
+
+  const cell = nodeId ? graph.getCell(nodeId) : null;
+  const label = cell ? (cell.attr('label/text') || nodeId) : 'topology';
+  if (output) output.textContent = `Running ${simType} analysis${nodeId ? ' for "' + label + '"' : ''}...`;
+
+  clearHighlights();
+  stopAnimations();
+  clearOutages();
+
+  try {
+    const body = { sim_type: simType };
+    if (nodeId) body.source = nodeId;
+    const r = await fetch(NC_BASE + `/api/topologies/${currentTopoId}/simulate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    const result = data.result || {};
+    if (output) output.textContent = formatResult(simType, result);
+    visualizeResult(simType, result);
+  } catch (err) {
+    if (output) output.textContent = 'Error: ' + err.message;
+  }
 }
 
 /**

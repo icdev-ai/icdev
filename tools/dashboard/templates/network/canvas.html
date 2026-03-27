@@ -54,6 +54,7 @@
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
       <a class="tb-btn" id="tb-mc-link" href="#" title="Monte Carlo cascading simulation">Simulate MC</a>
       <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
+      <button class="tb-btn" id="tb-stig-import-btn" onclick="openStigImportDialog()" title="Import STIG Viewer .ckl or XCCDF results — match hostnames to canvas devices and color by compliance status" style="color:#e74c3c;">&#x1f6e1; STIG</button>
       <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
     </div>
     <div class="tb-group">
@@ -765,21 +766,26 @@
 <div id="blast-ctx-menu" style="
   display:none;position:fixed;z-index:9999;
   background:#1a1a2e;border:1px solid #e94560;border-radius:6px;
-  box-shadow:0 4px 20px rgba(233,69,96,0.4);min-width:220px;overflow:hidden;">
+  box-shadow:0 4px 20px rgba(233,69,96,0.4);min-width:240px;overflow:hidden;">
   <div style="padding:8px 14px;background:#12122a;border-bottom:1px solid #2a2a4a;
-    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Security Analysis</div>
+    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Simulation</div>
   <div id="blast-ctx-device-name" style="padding:8px 14px 4px;font-size:12px;color:#e94560;font-weight:600;"></div>
-  <button onclick="triggerBlastRadiusFromContext()" style="
-    display:block;width:100%;text-align:left;padding:10px 14px;
-    background:transparent;border:none;color:#e0e0e0;cursor:pointer;font-size:13px;">
+  <button onclick="triggerBlastRadiusFromContext()" class="ctx-menu-btn">
     &#x1F4A5; What if compromised?
-    <span style="display:block;font-size:11px;color:#7a8cb0;margin-top:2px;">Blast radius simulation</span>
+    <span class="ctx-menu-sub">Blast radius — animated hop-by-hop propagation</span>
   </button>
-  <button onclick="triggerBlastRadiusFromContext(5)" style="
-    display:block;width:100%;text-align:left;padding:10px 14px;
-    background:transparent;border:none;color:#e0e0e0;cursor:pointer;font-size:13px;border-top:1px solid #2a2a4a;">
+  <button onclick="triggerBlastRadiusFromContext(5)" class="ctx-menu-btn">
     &#x1F6E1; Deep blast (5 hops)
-    <span style="display:block;font-size:11px;color:#7a8cb0;margin-top:2px;">Extended reachability analysis</span>
+    <span class="ctx-menu-sub">Extended reachability analysis</span>
+  </button>
+  <div style="border-top:1px solid #2a2a4a;margin:0;"></div>
+  <button onclick="triggerFailoverFromContext()" class="ctx-menu-btn">
+    &#x26A0; What if this device fails?
+    <span class="ctx-menu-sub">Failover — shows redundant paths and impact</span>
+  </button>
+  <button onclick="triggerSpofFromContext()" class="ctx-menu-btn">
+    &#x1F50D; SPOF analysis
+    <span class="ctx-menu-sub">Single points of failure in the topology</span>
   </button>
 </div>
 
@@ -1546,6 +1552,49 @@
       <button class="btn btn-secondary" onclick="closeAtoDialog()">Cancel</button>
     </div>
     <div id="ato-gen-output" class="sim-output" style="display:none;max-height:450px;overflow-y:auto;"></div>
+  </div>
+</div>
+<!-- STIG XCCDF/CKL Import Dialog -->
+<div id="stig-import-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:580px;max-height:85vh;overflow-y:auto;">
+    <div class="sim-panel-header">
+      <h3>&#x1f6e1; STIG XCCDF/CKL Import</h3>
+      <button class="close-btn" onclick="closeStigImportDialog()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 12px;">Upload a DISA STIG Viewer <strong>.ckl</strong> file or SCAP <strong>XCCDF</strong> results XML. Hostnames are matched to canvas devices and colored by compliance status.</p>
+
+    <!-- File chooser -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Upload File</div>
+      <input type="file" id="stig-file-input" accept=".ckl,.xml,.xccdf" style="display:none;" onchange="handleStigFileChange(this)"/>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-secondary" onclick="document.getElementById('stig-file-input').click()" style="font-size:12px;padding:6px 12px;">Choose File</button>
+        <span id="stig-file-name" style="font-size:12px;color:#95a5a6;">No file selected</span>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn btn-primary" id="stig-upload-btn" onclick="uploadStigFile()" disabled style="flex:1;background:#e74c3c;border-color:#c0392b;">Import &amp; Apply Overlay</button>
+        <button class="btn btn-secondary" onclick="closeStigImportDialog()">Close</button>
+      </div>
+    </div>
+
+    <!-- Status / results -->
+    <div id="stig-upload-status"></div>
+
+    <!-- Color legend -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Color Legend</div>
+      <div style="display:flex;gap:20px;font-size:11px;color:#bdc3c7;flex-wrap:wrap;">
+        <span><span style="color:#e74c3c;font-size:14px;">&#9679;</span> Red &mdash; CAT I open findings</span>
+        <span><span style="color:#f39c12;font-size:14px;">&#9679;</span> Yellow &mdash; CAT II/III open findings</span>
+        <span><span style="color:#2ecc71;font-size:14px;">&#9679;</span> Green &mdash; all checks passed</span>
+      </div>
+    </div>
+
+    <!-- Import history -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;">
+      <div style="font-size:11px;color:#7f8c8d;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Import History</div>
+      <div id="stig-history-list" style="max-height:180px;overflow-y:auto;"></div>
+    </div>
   </div>
 </div>
 <!-- AI Topology Reviewer Panel -->

@@ -514,6 +514,16 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .joint-paper { background: transparent !important; }
 .sim-packet { filter: drop-shadow(0 0 4px currentColor); }
 
+/* ── Context Menu Buttons ─────────────────────────────────────────────────── */
+.ctx-menu-btn {
+  display: block; width: 100%; text-align: left; padding: 10px 14px;
+  background: transparent; border: none; color: #e0e0e0; cursor: pointer; font-size: 13px;
+  border-top: 1px solid #2a2a4a; transition: background 0.1s;
+}
+.ctx-menu-btn:first-of-type { border-top: none; }
+.ctx-menu-btn:hover { background: var(--accent); }
+.ctx-menu-sub { display: block; font-size: 11px; color: #7a8cb0; margin-top: 2px; }
+
 /* ── Blast Radius Animations ──────────────────────────────────────────────── */
 .blast-source {
   animation: blast-pulse-red 1s ease-in-out infinite;
