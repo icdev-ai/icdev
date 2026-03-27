@@ -317,9 +317,138 @@ function highlightSpof(spofLabels) {
     if (spofLabels.includes(label)) {
       el.attr('body/fill', '#3a0000');
       el.attr('body/stroke', '#e74c3c');
+      el.attr('body/strokeWidth', 3);
       HIGHLIGHTED_CELLS.push(el.id);
+      const view = paper.findViewByModel(el);
+      if (view && view.el) view.el.classList.add('blast-source');
     }
   });
+}
+
+/* ── Animated Failover / Resilience Visualization ─────────────────────────── */
+let _failoverAnimTimers = [];
+
+function highlightFailover(result) {
+  _failoverAnimTimers.forEach(t => clearTimeout(t));
+  _failoverAnimTimers = [];
+
+  const RISK_COLORS = [
+    { fill: '#4a0000', stroke: '#ff1744', label: 'CRITICAL' },  // critical risk
+    { fill: '#3a0a00', stroke: '#ff6d00', label: 'HIGH' },      // high risk
+    { fill: '#3a2a00', stroke: '#ffc107', label: 'MEDIUM' },    // medium
+    { fill: '#1a2a00', stroke: '#cddc39', label: 'LOW' },       // low
+  ];
+  const REDUNDANT_STYLE = { fill: '#002a1a', stroke: '#00e676' };  // green = redundant/safe
+  const FAILED_STYLE = { fill: '#4a0000', stroke: '#ff1744' };     // red = simulated failure
+
+  const labelToId = {};
+  const idToEl = {};
+  graph.getElements().forEach(el => {
+    const lbl = el.attr('label/text') || '';
+    labelToId[lbl] = el.id;
+    idToEl[el.id] = el;
+  });
+
+  const risks = result.risks || [];
+  const score = result.resilience_score || 0;
+
+  setStatus(`Failover analysis: resilience score ${score}% — simulating ${risks.length} failure scenarios...`);
+
+  // Phase 1: Show overall resilience score color
+  const scoreColor = score >= 80 ? '#00e676' : score >= 50 ? '#ffc107' : '#ff1744';
+
+  // Phase 2: Animate each risk scenario
+  risks.forEach((risk, idx) => {
+    const delay = (idx + 1) * 1200;
+    const riskLevel = Math.min(idx, RISK_COLORS.length - 1);
+    const riskStyle = RISK_COLORS[riskLevel];
+
+    const timer = setTimeout(() => {
+      const nodeLabel = risk.node;
+      const elId = labelToId[nodeLabel];
+      if (!elId) return;
+      const el = idToEl[elId];
+      if (!el) return;
+
+      // Flash the failed node
+      el.attr('body/fill', FAILED_STYLE.fill);
+      el.attr('body/stroke', FAILED_STYLE.stroke);
+      el.attr('body/strokeWidth', 4);
+      HIGHLIGHTED_CELLS.push(elId);
+
+      const view = paper.findViewByModel(el);
+      if (view && view.el) view.el.classList.add('blast-source');
+
+      // Highlight affected links (links connected to this node go red/dashed)
+      graph.getLinks().forEach(lk => {
+        const src = lk.get('source')?.id;
+        const tgt = lk.get('target')?.id;
+        if (src === elId || tgt === elId) {
+          lk.attr('line/stroke', '#ff1744');
+          lk.attr('line/strokeWidth', 3);
+          lk.attr('line/strokeDasharray', '8,4');
+          HIGHLIGHTED_CELLS.push(lk.id);
+        }
+      });
+
+      // Show redundant paths (neighbors that have alternate routes)
+      const neighborIds = new Set();
+      graph.getLinks().forEach(lk => {
+        const src = lk.get('source')?.id;
+        const tgt = lk.get('target')?.id;
+        if (src === elId && tgt) neighborIds.add(tgt);
+        if (tgt === elId && src) neighborIds.add(src);
+      });
+
+      // Check if neighbors have other connections (redundancy)
+      const redundantTimer = setTimeout(() => {
+        neighborIds.forEach(nid => {
+          const nEl = idToEl[nid];
+          if (!nEl) return;
+          const otherLinks = graph.getLinks().filter(lk => {
+            const s = lk.get('source')?.id;
+            const t = lk.get('target')?.id;
+            return (s === nid || t === nid) && s !== elId && t !== elId;
+          });
+          if (otherLinks.length > 0) {
+            // Has redundant path — mark green
+            nEl.attr('body/fill', REDUNDANT_STYLE.fill);
+            nEl.attr('body/stroke', REDUNDANT_STYLE.stroke);
+            nEl.attr('body/strokeWidth', 2);
+            HIGHLIGHTED_CELLS.push(nid);
+            const nView = paper.findViewByModel(nEl);
+            if (nView && nView.el) nView.el.classList.add('blast-blocked');
+            // Highlight redundant links green
+            otherLinks.forEach(lk => {
+              lk.attr('line/stroke', '#00e676');
+              lk.attr('line/strokeWidth', 3);
+              lk.removeAttr('line/strokeDasharray');
+              HIGHLIGHTED_CELLS.push(lk.id);
+            });
+          } else {
+            // No redundancy — mark amber (at risk)
+            nEl.attr('body/fill', riskStyle.fill);
+            nEl.attr('body/stroke', riskStyle.stroke);
+            nEl.attr('body/strokeWidth', 2);
+            HIGHLIGHTED_CELLS.push(nid);
+            const nView = paper.findViewByModel(nEl);
+            if (nView && nView.el) nView.el.classList.add('blast-compromised');
+          }
+        });
+      }, 400);
+      _failoverAnimTimers.push(redundantTimer);
+
+      // Status update
+      setStatus(`Failover: if ${nodeLabel} fails — impact: ${risk.impact || 'unknown'} | fix: ${risk.recommendation || 'add redundancy'}`);
+    }, delay);
+    _failoverAnimTimers.push(timer);
+  });
+
+  // Final summary
+  const finalTimer = setTimeout(() => {
+    setStatus(`Failover complete: resilience ${score}% — ${risks.length} risks found (green=redundant, red=single point of failure)`);
+  }, (risks.length + 1) * 1200 + 500);
+  _failoverAnimTimers.push(finalTimer);
 }
 
 function highlightPath(hopLabels) {
