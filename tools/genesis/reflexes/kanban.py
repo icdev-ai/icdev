@@ -124,7 +124,7 @@ def _get_due_tasks() -> list:
             "  WHEN 'medium' THEN 2 "
             "  ELSE 3 END, "
             "created_at ASC "
-            "LIMIT %s",
+            "LIMIT ?",
             (slots,),
         ).fetchall()
         result.extend(dict(r) for r in backlog)
@@ -140,14 +140,14 @@ def _move_task(task_id: str, new_status: str):
     try:
         now = _utcnow_iso()
         sql = (
-            "UPDATE kanban_tasks SET status = %s, "
-            "updated_at = %s"
+            "UPDATE kanban_tasks SET status = ?, "
+            "updated_at = ?"
         )
         vals = [new_status, now]
         if new_status == "done":
-            sql += ", completed_at = %s"
+            sql += ", completed_at = ?"
             vals.append(now)
-        sql += " WHERE id = %s"
+        sql += " WHERE id = ?"
         vals.append(task_id)
         conn.execute(sql, tuple(vals))
         conn.commit()
@@ -212,7 +212,7 @@ def _send_notification(task: dict, event: str = "in_progress"):
                 "INSERT INTO notifications "
                 "(id, title, message, severity, source, "
                 "created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     f"notif-kanban-{task['id']}-{event}",
                     title,
@@ -322,14 +322,48 @@ def _check_completed():
             completed.append(task_id)
             prompt_path = PROMPT_DIR / f"{task_id}.md"
             if ret == 0:
-                # Claude completed successfully — mark done, notify
+                # Claude completed successfully — capture output, mark done, notify
+                claude_output = ""
+                try:
+                    claude_output = (proc.stdout.read() or "").strip()
+                except Exception:
+                    pass
                 try:
                     _move_task(task_id, "done")
                 except Exception:
                     pass
-                _send_notification(
-                    {"id": task_id, "title": task_id}, event="done",
-                )
+                # Build task dict with title from DB or fallback
+                task_dict = {"id": task_id, "title": task_id}
+                try:
+                    task_conn = get_connection()
+                    row = task_conn.execute(
+                        "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
+                        (task_id,),
+                    ).fetchone()
+                    task_conn.close()
+                    if row:
+                        task_dict = {
+                            "id": task_id,
+                            "title": row["title"],
+                            "task_type": row["task_type"],
+                            "priority": row["priority"],
+                        }
+                except Exception:
+                    pass
+                _send_notification(task_dict, event="done")
+                # Send Claude's actual answer back via Telegram
+                if claude_output:
+                    try:
+                        from tools.notifications.adapters.telegram import send
+                        # Telegram has 4096 char limit — truncate if needed
+                        answer = claude_output[:3800]
+                        send(
+                            f"Answer: {task_dict.get('title', task_id)[:60]}",
+                            answer,
+                            severity="info",
+                        )
+                    except Exception as tg_exc:
+                        logger.warning("Failed to relay Claude output to Telegram: %s", tg_exc)
                 if prompt_path.exists():
                     prompt_path.unlink()
                 print(f"  Kanban: {task_id} completed (exit {ret})")

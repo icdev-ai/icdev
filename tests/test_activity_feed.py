@@ -443,9 +443,11 @@ class TestStats:
         data = resp.get_json()
         assert "today" in data
         assert "last_hour" in data
-        # Most seeded events are from today but events at -4h/-5h may
-        # cross UTC midnight, so use >= instead of exact equality.
-        assert data["today"] >= 5
+        # Seeded events span -5h to -5m from now. Near UTC midnight the
+        # -4h and -5h events may land on "yesterday", so only the 7
+        # events within 3 hours are guaranteed "today". Use >= 3 as the
+        # safe lower bound (within-last-hour events always count).
+        assert data["today"] >= 3
         # Events in last hour: audit deployment(30m), security_scan(10m),
         # hook health_checker(20m), sbom_generator(5m) = 4
         assert data["last_hour"] >= 3
