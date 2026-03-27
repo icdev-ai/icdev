@@ -70,6 +70,7 @@
       <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
       <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
+      <button class="tb-btn" id="tb-ai-review-btn" onclick="openAiReviewPanel()" title="AI Topology Reviewer — LLM analysis of SPOF, redundancy gaps, STIG violations, and suggestions" style="color:#00d4ff;">&#x1f50d; AI Review</button>
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
@@ -1083,6 +1084,255 @@
       }).join('');
     }).catch(function(){});
   }
+
+  // ── AI Topology Reviewer ──────────────────────────────────────────────────
+
+  const _AI_REVIEW_SEV_COLORS = {
+    HIGH: '#e74c3c', MEDIUM: '#f39c12', LOW: '#3498db', INFO: '#7f8c8d'
+  };
+  const _AI_REVIEW_CAT_ICONS = {
+    SPOF: '⚠', REDUNDANCY: '⛓', STIG: '🛡', ENCRYPTION: '🔒',
+    SEGMENTATION: '🔀', ROUTING: '🔁', SUGGESTION: '💡'
+  };
+  let _aiReviewFindings = [];
+
+  function openAiReviewPanel() {
+    document.getElementById('ai-review-panel').classList.remove('hidden');
+    // Close other slide panels to avoid overlap
+    document.getElementById('nc-chat-panel').classList.add('hidden');
+    document.getElementById('netbox-panel').classList.add('hidden');
+  }
+
+  function closeAiReviewPanel() {
+    document.getElementById('ai-review-panel').classList.add('hidden');
+    clearAiReviewAnnotations();
+  }
+
+  function clearAiReviewAnnotations() {
+    document.getElementById('ai-annotation-layer').innerHTML = '';
+    // Remove canvas highlight class
+    if (typeof graph !== 'undefined' && graph) {
+      graph.getCells().forEach(function(cell) {
+        if (typeof paper !== 'undefined') {
+          const view = paper.findViewByModel(cell);
+          if (view && view.el) {
+            view.el.style.filter = '';
+            view.el.style.outline = '';
+          }
+        }
+      });
+    }
+  }
+
+  async function runAiReview() {
+    if (TOPOLOGY_ID === 'new') {
+      alert('Save the topology first.');
+      return;
+    }
+    const btn = document.getElementById('ai-review-run-btn');
+    const statusEl = document.getElementById('ai-review-status');
+    const bodyEl = document.getElementById('ai-review-body');
+    const emptyEl = document.getElementById('ai-review-empty');
+    const summaryEl = document.getElementById('ai-review-summary');
+    const findingsEl = document.getElementById('ai-review-findings');
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Analyzing…';
+    statusEl.textContent = 'Sending topology to AI…';
+    clearAiReviewAnnotations();
+    emptyEl.style.display = 'none';
+    summaryEl.style.display = 'none';
+    findingsEl.innerHTML = '';
+
+    try {
+      const r = await fetch(NC_BASE + '/api/ai-review/' + TOPOLOGY_ID, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: '{}',
+      });
+      const data = await r.json();
+
+      btn.disabled = false;
+      btn.textContent = '▶ Analyze Topology';
+
+      if (data.error) {
+        statusEl.style.color = '#e74c3c';
+        statusEl.textContent = 'Error: ' + data.error;
+        emptyEl.style.display = '';
+        return;
+      }
+
+      _aiReviewFindings = data.findings || [];
+      const cnt = _aiReviewFindings.length;
+      const high = _aiReviewFindings.filter(f => f.severity === 'HIGH').length;
+      const med = _aiReviewFindings.filter(f => f.severity === 'MEDIUM').length;
+      statusEl.style.color = high > 0 ? '#e74c3c' : med > 0 ? '#f39c12' : '#2ecc71';
+      statusEl.textContent = cnt + ' finding' + (cnt !== 1 ? 's' : '') +
+        (high ? ' — ' + high + ' HIGH' : '') +
+        (med ? ' · ' + med + ' MEDIUM' : '') +
+        ' via ' + (data.provider || 'AI');
+
+      // Summary
+      if (data.summary) {
+        summaryEl.textContent = data.summary;
+        summaryEl.style.display = '';
+      }
+
+      // Render findings list
+      if (!cnt) {
+        findingsEl.innerHTML = '<div style="text-align:center;padding:20px;color:#2ecc71;font-size:13px;">✓ No issues found — topology looks healthy.</div>';
+      } else {
+        findingsEl.innerHTML = _aiReviewFindings.map(function(f, i) {
+          const sevColor = _AI_REVIEW_SEV_COLORS[f.severity] || '#7f8c8d';
+          const catIcon = _AI_REVIEW_CAT_ICONS[f.category] || '•';
+          const hasNodes = f.node_ids && f.node_ids.length > 0;
+          return '<div class="ai-review-finding" data-finding-idx="' + i + '" '
+            + 'style="background:#0d1a2e;border-radius:6px;padding:10px 12px;margin-bottom:8px;border-left:3px solid ' + sevColor + ';cursor:pointer;" '
+            + 'onmouseenter="highlightFindingNodes(' + i + ',true)" '
+            + 'onmouseleave="highlightFindingNodes(' + i + ',false)" '
+            + 'onclick="zoomToFindingNodes(' + i + ')">'
+            + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+            + '<span style="background:' + sevColor + ';color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;min-width:20px;text-align:center;">' + f.id + '</span>'
+            + '<span style="font-size:10px;color:' + sevColor + ';font-weight:600;">' + f.severity + '</span>'
+            + '<span style="font-size:10px;color:#7f8c8d;">' + catIcon + ' ' + (f.category || '') + '</span>'
+            + (hasNodes ? '<span style="margin-left:auto;font-size:10px;color:#4a5568;">' + f.node_ids.length + ' device' + (f.node_ids.length > 1 ? 's' : '') + '</span>' : '')
+            + '</div>'
+            + '<div style="font-size:12px;color:#ecf0f1;font-weight:600;margin-bottom:4px;">' + escHtml(f.title || '') + '</div>'
+            + '<div style="font-size:11px;color:#95a5a6;line-height:1.45;margin-bottom:6px;">' + escHtml(f.description || '') + '</div>'
+            + '<details style="margin:0;"><summary style="font-size:10px;color:#00d4ff;cursor:pointer;user-select:none;">Suggestion</summary>'
+            + '<div style="font-size:11px;color:#b0c4d8;margin-top:4px;padding:6px 8px;background:#111827;border-radius:4px;">' + escHtml(f.suggestion || '') + '</div>'
+            + '</details>'
+            + '</div>';
+        }).join('');
+      }
+
+      // Pin annotation badges on canvas nodes
+      _pinAiReviewAnnotations(_aiReviewFindings);
+
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = '▶ Analyze Topology';
+      statusEl.style.color = '#e74c3c';
+      statusEl.textContent = 'Request failed: ' + err.message;
+      emptyEl.style.display = '';
+    }
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _getNodeCanvasRect(nodeId) {
+    if (typeof graph === 'undefined' || !graph) return null;
+    const cell = graph.getCell(nodeId);
+    if (!cell || cell.isLink()) return null;
+    if (typeof paper === 'undefined' || !paper) return null;
+    const view = paper.findViewByModel(cell);
+    if (!view) return null;
+    try {
+      const bbox = cell.getBBox();
+      const cx = bbox.x + bbox.width / 2;
+      const cy = bbox.y + bbox.height / 2;
+      const clientPt = paper.localToClientPoint(cx, cy);
+      return { x: clientPt.x, y: clientPt.y };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function _pinAiReviewAnnotations(findings) {
+    const layer = document.getElementById('ai-annotation-layer');
+    layer.innerHTML = '';
+    // Build map: nodeId -> [finding numbers]
+    const nodeMap = {};
+    findings.forEach(function(f) {
+      (f.node_ids || []).forEach(function(nid) {
+        if (!nodeMap[nid]) nodeMap[nid] = [];
+        nodeMap[nid].push(f.id);
+      });
+    });
+    Object.keys(nodeMap).forEach(function(nid) {
+      const pt = _getNodeCanvasRect(nid);
+      if (!pt) return;
+      const ids = nodeMap[nid];
+      // Show first finding ID as badge; if multiple, show count
+      const sevs = ids.map(function(fid) {
+        const f = findings.find(function(x) { return x.id === fid; });
+        return f ? f.severity : 'LOW';
+      });
+      const topSev = ['HIGH','MEDIUM','LOW','INFO'].find(function(s) { return sevs.includes(s); }) || 'INFO';
+      const color = _AI_REVIEW_SEV_COLORS[topSev] || '#7f8c8d';
+      const badge = document.createElement('div');
+      badge.style.cssText = [
+        'position:fixed',
+        'left:' + (pt.x - 10) + 'px',
+        'top:' + (pt.y - 28) + 'px',
+        'background:' + color,
+        'color:#fff',
+        'font-size:10px',
+        'font-weight:700',
+        'padding:2px 5px',
+        'border-radius:10px',
+        'box-shadow:0 2px 6px rgba(0,0,0,0.6)',
+        'pointer-events:none',
+        'white-space:nowrap',
+        'z-index:901',
+        'border:1px solid rgba(255,255,255,0.25)',
+        'font-family:monospace',
+      ].join(';');
+      badge.textContent = ids.length === 1 ? '#' + ids[0] : ids.length + ' issues';
+      badge.setAttribute('data-node-id', nid);
+      layer.appendChild(badge);
+    });
+  }
+
+  function highlightFindingNodes(idx, on) {
+    const f = _aiReviewFindings[idx];
+    if (!f || typeof graph === 'undefined' || !graph) return;
+    const nids = new Set(f.node_ids || []);
+    if (!nids.size) return;
+    const sevColor = _AI_REVIEW_SEV_COLORS[f.severity] || '#7f8c8d';
+    graph.getCells().forEach(function(cell) {
+      if (cell.isLink()) return;
+      const view = typeof paper !== 'undefined' ? paper.findViewByModel(cell) : null;
+      if (!view || !view.el) return;
+      if (nids.has(cell.id)) {
+        view.el.style.filter = on ? 'drop-shadow(0 0 8px ' + sevColor + ')' : '';
+        view.el.style.outline = on ? '2px solid ' + sevColor : '';
+      }
+    });
+  }
+
+  function zoomToFindingNodes(idx) {
+    const f = _aiReviewFindings[idx];
+    if (!f || !f.node_ids || !f.node_ids.length) return;
+    if (typeof graph === 'undefined' || !graph || typeof paper === 'undefined' || !paper) return;
+    // Collect bboxes of all affected nodes
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    f.node_ids.forEach(function(nid) {
+      const cell = graph.getCell(nid);
+      if (!cell || cell.isLink()) return;
+      const bb = cell.getBBox();
+      minX = Math.min(minX, bb.x);
+      minY = Math.min(minY, bb.y);
+      maxX = Math.max(maxX, bb.x + bb.width);
+      maxY = Math.max(maxY, bb.y + bb.height);
+    });
+    if (!isFinite(minX)) return;
+    const pad = 80;
+    const W = paper.el.clientWidth || 800;
+    const H = paper.el.clientHeight || 600;
+    const fw = maxX - minX + pad * 2;
+    const fh = maxY - minY + pad * 2;
+    const scale = Math.min(W / fw, H / fh, 1.5);
+    const tx = W / 2 - (minX + (maxX - minX) / 2) * scale;
+    const ty = H / 2 - (minY + (maxY - minY) / 2) * scale;
+    paper.scale(scale);
+    paper.translate(tx, ty);
+    // Re-pin badges after pan/zoom
+    _pinAiReviewAnnotations(_aiReviewFindings);
+    highlightFindingNodes(idx, true);
+  }
 </script>
 <!-- ATO Package Generator Dialog -->
 <div id="ato-overlay" class="sim-overlay hidden">
@@ -1109,6 +1359,34 @@
     <div id="ato-gen-output" class="sim-output" style="display:none;max-height:450px;overflow-y:auto;"></div>
   </div>
 </div>
+<!-- AI Topology Reviewer Panel -->
+<div id="ai-review-panel" class="nc-chat-panel hidden" style="right:0;left:auto;width:420px;display:flex;flex-direction:column;max-height:80vh;">
+  <div class="nc-chat-header" style="background:#0d1a2e;border-bottom:1px solid #1e3a5f;">
+    <span class="nc-chat-title" style="color:#00d4ff;">&#x1f50d; AI Topology Reviewer</span>
+    <div class="nc-chat-header-actions">
+      <button class="nc-chat-btn-sm" onclick="clearAiReviewAnnotations()" title="Clear annotations from canvas">Clear</button>
+      <button class="close-btn" onclick="closeAiReviewPanel()">&#x2715;</button>
+    </div>
+  </div>
+  <div style="padding:10px 14px;border-bottom:1px solid #1e3a5f;">
+    <button class="btn btn-primary" id="ai-review-run-btn" onclick="runAiReview()" style="width:100%;background:#00d4ff;border-color:#00b8d9;color:#0d1a2e;font-weight:600;">
+      &#x25b6; Analyze Topology
+    </button>
+    <div id="ai-review-status" style="margin-top:6px;font-size:11px;color:#7f8c8d;min-height:14px;"></div>
+  </div>
+  <div id="ai-review-body" style="flex:1;overflow-y:auto;padding:12px 14px;">
+    <div id="ai-review-empty" style="text-align:center;padding:32px 16px;color:#4a5568;">
+      <div style="font-size:28px;margin-bottom:8px;">&#x1f50d;</div>
+      <p style="font-size:12px;margin:0 0 4px;">Feed your diagram to the AI for analysis.</p>
+      <p style="font-size:11px;color:#2d3748;">Detects: SPOFs &bull; Redundancy gaps &bull; STIG violations &bull; Encryption issues &bull; Segmentation risks</p>
+    </div>
+    <div id="ai-review-summary" style="display:none;background:#0d1a2e;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#b0c4d8;line-height:1.5;border-left:3px solid #00d4ff;"></div>
+    <div id="ai-review-findings"></div>
+  </div>
+</div>
+<!-- Annotation badge container (absolutely positioned over canvas) -->
+<div id="ai-annotation-layer" style="position:fixed;top:0;left:0;pointer-events:none;z-index:900;"></div>
+
 <!-- NetBox IPAM Integration Panel -->
 <div id="netbox-panel" class="nc-chat-panel hidden" style="right:0;left:auto;width:380px;display:flex;flex-direction:column;">
   <div class="sim-panel-header" style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">

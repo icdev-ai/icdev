@@ -4223,6 +4223,218 @@ Output ONLY the JSON object. No other text."""
         conn.close()
         return jsonify({"log": [_row_to_dict(r) for r in rows]})
 
+    # ══════════════════════════════════════════════════════════════════════
+    # API: AI Topology Reviewer
+    # ══════════════════════════════════════════════════════════════════════
+
+    _AI_REVIEW_SYSTEM_PROMPT = """You are a senior network security engineer reviewing a network topology for a US Government system (DoD/FedRAMP).
+
+Analyze the provided topology and return ONLY a valid JSON object with this exact structure — no markdown, no explanation:
+
+{
+  "summary": "2-3 sentence plain-English overview of topology health",
+  "findings": [
+    {
+      "id": 1,
+      "severity": "HIGH",
+      "category": "SPOF",
+      "title": "Short title (under 60 chars)",
+      "description": "Plain-English explanation of the issue",
+      "node_ids": ["affected-node-id-1"],
+      "suggestion": "Specific remediation step"
+    }
+  ]
+}
+
+Severity levels: HIGH (immediate risk), MEDIUM (should fix), LOW (best practice), INFO (observation)
+
+Categories:
+- SPOF: Single point of failure — device or link whose removal disconnects the network
+- REDUNDANCY: Missing redundant paths, dual-homing, or HSRP/VRRP failover
+- STIG: STIG violations — unencrypted WAN/cross-zone links, missing firewall between zones, Telnet/HTTP, no management VLAN isolation
+- ENCRYPTION: Missing FIPS-140 encryption on sensitive flows, unencrypted inter-enclave links
+- SEGMENTATION: Missing firewall between trust zones, flat network, no DMZ separation
+- ROUTING: Suboptimal routing (single routing protocol, no route redistribution controls, missing summarization)
+- SUGGESTION: General best-practice improvement
+
+Rules:
+- SPOF: flag any node that is the sole connection between two or more subnets/zones
+- REDUNDANCY: critical devices (router, firewall, core switch) with only 1 uplink edge
+- STIG: any WAN/internet-facing link not using IPSec/mTLS/type1-encryptor; any server reachable from internet without firewall
+- node_ids must match IDs from the topology JSON exactly; use [] if not device-specific
+- Limit findings to 15 maximum; prioritize HIGH and MEDIUM
+- If topology has fewer than 2 nodes, return summary="Topology too small to review" and findings=[]
+
+Output ONLY the JSON object."""
+
+    @bp.route("/api/ai-review/<topo_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_ai_review(topo_id):
+        """Feed topology to LLM and return annotated findings (SPOF, redundancy, STIG, etc.)."""
+        import re
+        import requests as _req
+
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, name, graph_json, classification FROM topologies WHERE id=?",
+            (topo_id,),
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Invalid graph JSON"}), 500
+        conn.close()
+
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+
+        # Build compact topology description for the LLM (token-efficient)
+        node_lines = []
+        for n in nodes:
+            cfg = n.get("config", {})
+            meta = []
+            for k in ("ip", "asn", "vlan", "vrf", "ospf_area"):
+                if cfg.get(k):
+                    meta.append(f"{k}={cfg[k]}")
+            line = f'  {{"id":"{n["id"]}","label":"{n.get("label","")}","type":"{n.get("type","")}"'
+            if meta:
+                line += f',"meta":"{",".join(meta)}"'
+            line += "}"
+            node_lines.append(line)
+
+        edge_lines = []
+        for e in edges:
+            proto = e.get("protocol") or e.get("label") or ""
+            encrypted = e.get("_encrypted") or e.get("config", {}).get("_encrypted", False)
+            line = (
+                f'  {{"id":"{e["id"]}","src":"{e.get("source","")}","dst":"{e.get("target","")}","proto":"{proto}"'
+                + (f',"encrypted":true' if encrypted else "")
+                + "}"
+            )
+            edge_lines.append(line)
+
+        topo_text = (
+            f'Topology: "{topo["name"]}" | Classification: {topo["classification"] or "CUI"}\n'
+            f"Nodes ({len(nodes)}):\n" + "\n".join(node_lines) + "\n"
+            f"Edges ({len(edges)}):\n" + "\n".join(edge_lines)
+        )
+
+        def _parse_review(content):
+            text = content.strip()
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            if text.startswith("```"):
+                lines = [ln for ln in text.split("\n") if not ln.strip().startswith("```")]
+                text = "\n".join(lines).strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start < 0 or end <= start:
+                return None
+            return json.loads(text[start:end])
+
+        def _call_claude(prompt):
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                return None, "No ANTHROPIC_API_KEY"
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 4096,
+                    "temperature": 0.1,
+                    "system": _AI_REVIEW_SYSTEM_PROMPT,
+                    "messages": [{"role": "user", "content": prompt}],
+                },
+                timeout=90,
+            )
+            r.raise_for_status()
+            return r.json().get("content", [{}])[0].get("text", ""), None
+
+        def _call_ollama(prompt):
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
+            r = _req.post(
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "messages": [
+                        {"role": "system", "content": _AI_REVIEW_SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4096, "temperature": 0.1},
+                },
+                timeout=120,
+            )
+            r.raise_for_status()
+            return r.json().get("message", {}).get("content", ""), None
+
+        try:
+            provider = os.environ.get("NC_AI_PROVIDER", "auto")
+            content = None
+            used_provider = ""
+
+            if provider in ("auto", "claude"):
+                content, err = _call_claude(topo_text)
+                if content:
+                    used_provider = "claude"
+                elif provider == "claude":
+                    return jsonify({"error": f"Claude failed: {err}"}), 503
+
+            if not content and provider in ("auto", "ollama"):
+                content, err = _call_ollama(topo_text)
+                if content:
+                    used_provider = "ollama"
+                elif provider == "ollama":
+                    return jsonify({"error": f"Ollama failed: {err}"}), 503
+
+            if not content:
+                return jsonify({"error": "No LLM provider available"}), 503
+
+            result = _parse_review(content)
+            if result is None:
+                return jsonify({"error": "LLM did not return valid JSON", "raw": content[:500]}), 422
+
+            findings = result.get("findings", [])
+            # Validate node_ids exist in topology
+            valid_node_ids = {n["id"] for n in nodes}
+            for f in findings:
+                f["node_ids"] = [nid for nid in f.get("node_ids", []) if nid in valid_node_ids]
+
+            _audit("AI_REVIEW", "topology", topo_id,
+                   f"[{used_provider}] {len(findings)} findings | "
+                   f"HIGH:{sum(1 for f in findings if f.get('severity')=='HIGH')} "
+                   f"MED:{sum(1 for f in findings if f.get('severity')=='MEDIUM')}")
+
+            return jsonify({
+                "topology_id": topo_id,
+                "topology_name": topo["name"],
+                "summary": result.get("summary", ""),
+                "findings": findings,
+                "finding_count": len(findings),
+                "provider": used_provider,
+            })
+
+        except _req.exceptions.ConnectionError:
+            return jsonify({"error": "Cannot connect to LLM provider"}), 503
+        except _req.exceptions.Timeout:
+            return jsonify({"error": "LLM timed out"}), 504
+        except json.JSONDecodeError as exc:
+            return jsonify({"error": f"JSON parse error: {exc}"}), 422
+        except Exception as exc:
+            logger.exception("AI review failed")
+            return jsonify({"error": str(exc)}), 500
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",
                 len(bp.deferred_functions))
