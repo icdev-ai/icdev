@@ -188,13 +188,13 @@ const CISCO_STENCILS = {
   },
   // Switch L2: rectangle with bidirectional arrows
   'switch-l2': {
-    body: 'M6,14 h36 v20 h-36 Z',
-    detail: 'M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z M14,24 h8 M28,24 h-8',
+    body: 'M6,14 h36 v20 h-36 Z M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z',
+    detail: 'M14,24 h8 M28,24 h-8 M18,21 l-4,3 l4,3 M30,21 l4,3 l-4,3',
   },
-  // Switch L3: rectangle with arrows + vertical lines
+  // Switch L3: rectangle with arrows + vertical lines (taller)
   'switch-l3': {
-    body: 'M6,14 h36 v20 h-36 Z',
-    detail: 'M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z M14,24 h8 M28,24 h-8 M24,10 v4 M24,34 v4',
+    body: 'M6,14 h36 v20 h-36 Z M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z',
+    detail: 'M14,24 h8 M28,24 h-8 M18,21 l-4,3 l4,3 M30,21 l4,3 l-4,3 M24,10 v4 M24,34 v4',
   },
   // Firewall: brick wall with flame
   'firewall': {

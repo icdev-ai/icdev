@@ -1534,6 +1534,7 @@
 | Intent Validator | tools\network\intent_validator.py | Network Canvas intent-based topology validation engine — bandwidth, redundancy, isolation, latency, encryption constraints | --json | JSON |
 | Change Request | tools\network\change_request.py | Network Canvas Change Request Markup engine — add/remove/modify markup (green/red/yellow), CAB review document with before/after diffs | --json | JSON |
 | NetBox Client | tools\network\netbox_client.py | NetBox REST API client — pull devices, IP allocations, VLANs, prefixes, racks, circuits; push canvas nodes back as NetBox devices. Stdlib only (no third-party deps). Blueprint routes: GET /api/netbox/status, POST /api/netbox/configure, GET/POST /api/netbox/pull/*, POST /api/netbox/import/<topo_id>, POST /api/netbox/push/<topo_id>, GET /api/netbox/sync-log | --url, --token, --pull, --site, --json, --gate | JSON / text |
+| Auto-Discovery | tools\network\discovery.py | Live network auto-discovery agent — SNMP/SSH/CDP/LLDP neighbor crawl, ping sweep, JointJS graph builder, as-designed vs as-built diff. Optional deps: pysnmp, netmiko. Blueprint routes: GET /network/discovery, POST /api/discovery/scan, GET /api/discovery/scans, GET/DELETE /api/discovery/scans/<id>, POST /api/discovery/scans/<id>/import/<topo>, POST /api/discovery/diff, POST /api/discovery/ping, GET /api/discovery/capabilities | --target, --method, --community, --username, --diff, --json, --gate | JSON / text |
 
 
 ## Auto-Registered (Coherence Fix)
