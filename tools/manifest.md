@@ -1541,3 +1541,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Intent Validator | tools\network\intent_validator.py | Auto-registered: network/intent_validator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Topology Styler | tools\network\topology_styler.py | Auto-registered: network/topology_styler.py | --json | JSON |
