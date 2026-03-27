@@ -178,108 +178,109 @@ function getStyle(type) {
 }
 
 /* ── Cisco Traditional Stencils — filled SVG shapes (48x48 viewBox) ────────── */
-// Each entry: { fill: body path, detail: white internal strokes/paths }
-// Rendered as: solid colored body shape + white detail lines on top
+// Each entry: { body: filled shape path, detail: white internal strokes }
+// Authentic Cisco stencil shapes (48x48 viewBox)
+// Reference: cisco.com/c/en/us/products/visio-stencil-listing.html
 const CISCO_STENCILS = {
-  // Router: classic Cisco circle with cross arrows
+  // ── Router: circle + 4 cardinal arrows (N/S/E/W) ──
   'router': {
-    body: 'M24,4 a20,20 0 1,0 0.01,0 Z',
-    detail: 'M24,14 v20 M14,24 h20 M17,17 l-7,-7 M16.5,10.5 l-6.5,1.5 M10.5,16.5 l1.5,-6.5 M31,17 l7,-7 M31.5,10.5 l6.5,1.5 M37.5,16.5 l-1.5,-6.5 M17,31 l-7,7 M10.5,31.5 l1.5,6.5 M16.5,37.5 l-6.5,-1.5 M31,31 l7,7 M37.5,31.5 l-1.5,6.5 M31.5,37.5 l6.5,-1.5',
+    body: 'M24,6 a18,18 0 1,0 0.01,0 Z',
+    detail: 'M24,6 v8 M20,10 l4,-4 l4,4 M24,42 v-8 M20,38 l4,4 l4,-4 M6,24 h8 M10,20 l-4,4 l4,4 M42,24 h-8 M38,20 l4,4 l-4,4 M24,18 v12 M18,24 h12',
   },
-  // Switch L2: Cisco classic rectangle + inward side arrows
+  // ── Switch L2: rectangle + 2 paired arrows each side ──
   'switch-l2': {
-    body: 'M10,14 h28 v20 h-28 Z M4,24 l6,-4 v8 Z M44,24 l-6,-4 v8 Z',
-    detail: 'M17,21 h14 M17,24 h14 M17,27 h14',
+    body: 'M10,16 h28 v16 h-28 Z',
+    detail: 'M10,21 l-6,-3 v6 Z M10,30 l-6,-3 v6 Z M38,21 l6,-3 v6 Z M38,30 l6,-3 v6 Z M16,22 h16 M16,26 h16',
   },
-  // Switch L3: same + vertical routing lines
+  // ── Switch L3: switch rect + circle overlay on top (multilayer) ──
   'switch-l3': {
-    body: 'M10,14 h28 v20 h-28 Z M4,24 l6,-4 v8 Z M44,24 l-6,-4 v8 Z',
-    detail: 'M17,21 h14 M17,24 h14 M17,27 h14 M24,10 v4 M24,34 v4',
+    body: 'M10,20 h28 v16 h-28 Z M24,8 a10,10 0 1,0 0.01,0 Z',
+    detail: 'M10,25 l-6,-3 v6 Z M10,34 l-6,-3 v6 Z M38,25 l6,-3 v6 Z M38,34 l6,-3 v6 Z M16,26 h16 M16,30 h16 M20,8 l4,-4 l4,4 M24,4 v6',
   },
-  // Firewall: Cisco classic brick wall
+  // ── Firewall: upright brick wall (portrait rectangle) ──
   'firewall': {
-    body: 'M8,10 h32 v28 h-32 Z',
-    detail: 'M8,17 h32 M8,24 h32 M8,31 h32 M20,10 v7 M32,10 v7 M14,17 v7 M26,17 v7 M20,24 v7 M32,24 v7 M14,31 v7 M26,31 v7',
+    body: 'M12,6 h24 v36 h-24 Z',
+    detail: 'M12,12 h24 M12,18 h24 M12,24 h24 M12,30 h24 M12,36 h24 M24,6 v6 M20,12 v6 M28,12 v6 M24,18 v6 M20,24 v6 M28,24 v6 M24,30 v6 M20,36 v6 M28,36 v6',
   },
-  // Server: rack unit with drive indicators
+  // ── Server: tower/rack with drive bays ──
   'server': {
-    body: 'M12,8 h24 v32 h-24 Z',
-    detail: 'M12,16 h24 M12,24 h24 M12,32 h24 M30,11 a1.5,1.5 0 1,0 0.01,0 M30,19 a1.5,1.5 0 1,0 0.01,0 M30,27 a1.5,1.5 0 1,0 0.01,0',
+    body: 'M14,6 h20 v36 h-20 Z',
+    detail: 'M14,14 h20 M14,22 h20 M14,30 h20 M28,9 a1.5,1.5 0 1,0 0.01,0 M28,17 a1.5,1.5 0 1,0 0.01,0 M28,25 a1.5,1.5 0 1,0 0.01,0 M28,33 a1.5,1.5 0 1,0 0.01,0',
   },
-  // Load Balancer: Cisco diamond shape
+  // ── Load Balancer: right-pointing arrow/chevron ──
   'load-balancer': {
-    body: 'M24,6 L42,24 L24,42 L6,24 Z',
-    detail: 'M18,24 h12 M24,18 v12',
+    body: 'M8,12 h18 l14,12 l-14,12 h-18 Z',
+    detail: 'M14,20 h10 M14,24 h10 M14,28 h10',
   },
-  // WAP: antenna post with radio waves
+  // ── WAP: dot with concentric radio arcs ──
   'wap': {
-    body: 'M20,40 h8 l-1,-4 h-6 Z',
-    detail: 'M24,36 v-20 M18,18 a8,8 0 0,1 12,0 M14,14 a14,14 0 0,1 20,0 M10,10 a20,20 0 0,1 28,0',
+    body: 'M22,38 h4 v4 h-4 Z M20,38 l4,6 l4,-6',
+    detail: 'M24,38 v-14 M24,24 a0,0 0 1,0 0,0 M19,21 a7,7 0 0,1 10,0 M15,18 a12,12 0 0,1 18,0 M11,15 a17,17 0 0,1 26,0 M7,12 a22,22 0 0,1 34,0',
   },
-  // Cloud: classic puffy cloud
+  // ── Cloud: classic bumpy cloud ──
   'cloud': {
     body: 'M14,34 C6,34 2,28 6,22 C4,14 12,10 20,12 C22,6 32,6 36,12 C40,8 46,14 44,22 C48,26 44,34 38,34 Z',
     detail: '',
   },
-  // Patch Panel: panel with ports
+  // ── Patch Panel ──
   'patch-panel': {
-    body: 'M4,16 h40 v16 h-40 Z',
-    detail: 'M10,20 v8 M16,20 v8 M22,20 v8 M28,20 v8 M34,20 v8 M40,20 v8',
+    body: 'M6,18 h36 v12 h-36 Z',
+    detail: 'M12,21 v6 M18,21 v6 M24,21 v6 M30,21 v6 M36,21 v6',
   },
-  // Meet-Me Room: building
+  // ── Meet-Me Room: building with roof ──
   'meet-me-room': {
-    body: 'M8,40 V16 L24,6 L40,16 V40 Z',
-    detail: 'M18,40 V26 h12 V40 M14,20 h4 v4 h-4 Z M30,20 h4 v4 h-4 Z',
+    body: 'M8,40 V18 L24,6 L40,18 V40 Z',
+    detail: 'M18,40 V28 h12 V40 M14,22 h4 v3 h-4 Z M30,22 h4 v3 h-4 Z',
   },
-  // Cross-Connect: patch panel with X cables
+  // ── Cross-Connect: patch panel with X fiber runs ──
   'cross-connect': {
-    body: 'M4,14 h40 v20 h-40 Z',
-    detail: 'M12,14 v20 M22,14 v20 M32,14 v20 M8,18 l8,12 M16,18 l-8,12 M26,18 l8,12 M34,18 l-8,12',
+    body: 'M6,16 h36 v16 h-36 Z',
+    detail: 'M14,16 v16 M24,16 v16 M34,16 v16 M10,19 l6,10 M16,19 l-6,10 M28,19 l6,10 M34,19 l-6,10',
   },
-  // SIEM: monitor with eye
+  // ── SIEM: monitor with magnifier ──
   'siem': {
-    body: 'M6,8 h36 v28 h-36 Z M16,40 h16 M20,36 v4 M28,36 v4',
-    detail: 'M14,22 a10,6 0 1,1 20,0 a10,6 0 1,1 -20,0 M24,19 a3,3 0 1,0 0.01,0',
+    body: 'M8,10 h32 v22 h-32 Z M18,36 h12 M22,32 v4 M26,32 v4 M16,40 h16',
+    detail: 'M22,21 a5,5 0 1,0 0.01,0 M27,26 l4,4',
   },
-  // ROADM: hexagon
+  // ── ROADM: hexagon ──
   'roadm': {
-    body: 'M14,8 h20 l10,16 l-10,16 h-20 l-10,-16 Z',
-    detail: 'M18,24 h12 M24,18 v12',
+    body: 'M16,10 h16 l8,14 l-8,14 h-16 l-8,-14 Z',
+    detail: 'M20,24 h8 M24,20 v8',
   },
-  // Transponder: diamond
+  // ── Transponder: diamond ──
   'transponder': {
-    body: 'M24,6 l18,18 l-18,18 l-18,-18 Z',
-    detail: 'M18,24 h12 M24,18 v12',
+    body: 'M24,8 l16,16 l-16,16 l-16,-16 Z',
+    detail: 'M20,24 h8 M24,20 v8',
   },
-  // Endpoint PC: monitor
+  // ── Workstation/PC: monitor + stand ──
   'endpoint-pc': {
-    body: 'M8,8 h32 v24 h-32 Z M18,36 h12 M16,32 v4 M32,32 v4 M14,40 h20',
-    detail: 'M12,12 h24 v16 h-24 Z',
+    body: 'M8,8 h32 v22 h-32 Z',
+    detail: 'M12,12 h24 v14 h-24 Z M22,30 v4 M26,30 v4 M18,34 h12 v2 h-12 Z',
   },
-  // IP Phone
+  // ── IP Phone: handset on cradle ──
   'endpoint-phone': {
-    body: 'M12,6 h24 v36 h-24 Z',
-    detail: 'M16,10 h16 v8 h-16 Z M16,22 h4 v3 h-4 Z M22,22 h4 v3 h-4 Z M28,22 h4 v3 h-4 Z M16,27 h4 v3 h-4 Z M22,27 h4 v3 h-4 Z M28,27 h4 v3 h-4 Z M16,32 h4 v3 h-4 Z M22,32 h4 v3 h-4 Z M28,32 h4 v3 h-4 Z',
+    body: 'M14,10 h20 v28 h-20 Z',
+    detail: 'M18,14 h12 v6 h-12 Z M18,24 h4 v3 h-4 Z M26,24 h4 v3 h-4 Z M18,30 h4 v3 h-4 Z M26,30 h4 v3 h-4 Z',
   },
-  // IoT Device: chip
+  // ── IoT: sensor chip with pins ──
   'endpoint-iot': {
-    body: 'M14,14 h20 v20 h-20 Z',
-    detail: 'M18,14 v-6 M24,14 v-6 M30,14 v-6 M18,34 v6 M24,34 v6 M30,34 v6 M14,18 h-6 M14,24 h-6 M14,30 h-6 M34,18 h6 M34,24 h6 M34,30 h6 M20,20 h8 v8 h-8 Z',
+    body: 'M16,16 h16 v16 h-16 Z',
+    detail: 'M20,16 v-8 M24,16 v-8 M28,16 v-8 M20,32 v8 M24,32 v8 M28,32 v8 M16,20 h-8 M16,24 h-8 M16,28 h-8 M32,20 h8 M32,24 h8 M32,28 h8',
   },
-  // Camera
+  // ── Camera: body + lens ──
   'endpoint-camera': {
-    body: 'M8,16 h32 v20 h-32 Z',
-    detail: 'M24,26 a6,6 0 1,0 0.01,0 M24,26 a2,2 0 1,0 0.01,0 M30,14 l6,-4 v6',
+    body: 'M10,18 h28 v16 h-28 Z',
+    detail: 'M24,26 a4,4 0 1,0 0.01,0 M32,16 l4,-4 v4',
   },
-  // SD-WAN Edge
+  // ── SD-WAN Edge: oval hub ──
   'sdwan-edge': {
-    body: 'M4,24 a20,12 0 1,0 40,0 a20,12 0 1,0 -40,0 Z',
-    detail: 'M16,20 h16 M16,24 h16 M16,28 h16',
+    body: 'M24,14 a16,10 0 1,0 0.01,0 Z',
+    detail: 'M16,22 h16 M16,26 h16',
   },
-  // POP
+  // ── POP: building ──
   'pop': {
-    body: 'M8,38 V14 L24,6 L40,14 V38 Z',
-    detail: 'M8,14 L24,6 L40,14 M16,20 h16 v14 h-16 Z',
+    body: 'M10,40 V18 L24,8 L38,18 V40 Z',
+    detail: 'M10,18 L24,8 L38,18 M18,24 h12 v12 h-12 Z',
   },
 };
 
