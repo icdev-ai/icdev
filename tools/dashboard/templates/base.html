@@ -119,6 +119,23 @@
             </li>
             {% endif %}
 
+            {% if network_enabled %}
+            <!-- Network Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/network' in request.path %}active{% endif %}">Network</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/network/">Dashboard</a></li>
+                    <li><a href="/network/canvas/new">New Topology</a></li>
+                    <li><a href="/network/templates">Templates</a></li>
+                    <li><a href="/network/circuits">Circuits</a></li>
+                    <li><a href="/network/customers">Customers</a></li>
+                    <li><a href="/network/ipam">IPAM</a></li>
+                    <li><a href="/network/cables">Cables</a></li>
+                    <li><a href="/network/projects">Projects</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Studio (Phase 72) -->
             <li class="nav-dropdown">
                 <a href="#" class="{% if '/studio' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Studio</a>

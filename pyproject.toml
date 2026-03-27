@@ -138,13 +138,16 @@ image-gen = [
     "transformers>=4.36",
     "accelerate>=0.25",
 ]
+# Network Design Canvas — topology design, circuit tracking, compliance audit
+# Air-gap safe (all JS vendored locally, no CDN). Zero extra Python deps.
+network = []  # No extra deps — Flask/Jinja2/SQLite already in core
 # Everything (includes Google — NOT air-gap safe)
 full = [
-    "icdev[llm-all,search,testing,security]",
+    "icdev[llm-all,search,testing,security,network]",
 ]
 # Air-gap safe full install (no Google auth, no tensorboard)
 full-airgap = [
-    "icdev[llm-airgap,search,testing,security]",
+    "icdev[llm-airgap,search,testing,security,network]",
 ]
 # Minimal air-gap: local LLM only + search (smallest footprint)
 minimal-airgap = [
@@ -188,6 +191,7 @@ exclude = [
 "icdev.tools.dashboard" = [
     "templates/**/*.html",
     "static/**/*.css", "static/**/*.js",
+    "static/vendor/**/*.js", "static/vendor/**/*.css",
 ]
 "icdev.tools.db" = ["migrations/**/*.sql", "migrations/**/*.py"]
 

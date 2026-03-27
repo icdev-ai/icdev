@@ -98,6 +98,15 @@ _AIRGAP_DISABLED_ROUTES = frozenset({
     "/proposal-genesis", "/leads", "/studio/marketplace",
     "/alphadesk",
 })
+# Network Design Canvas: feature-flagged, air-gap compatible
+_NETWORK_ENABLED = os.environ.get("ICDEV_NETWORK_ENABLED", "true").lower() == "true"
+_HAS_NETWORK = False
+if _NETWORK_ENABLED:
+    try:
+        from tools.network.blueprint import create_network_blueprint
+        _HAS_NETWORK = True
+    except ImportError:
+        _HAS_NETWORK = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -787,6 +796,7 @@ def create_app() -> Flask:
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
+            "network_enabled": _HAS_NETWORK,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -871,6 +881,16 @@ def create_app() -> Flask:
     if _HAS_CHAT_API:
         app.register_blueprint(chat_api)
     app.register_blueprint(studio_api)
+
+    # ---- Network Design Canvas Blueprint ----
+    if _HAS_NETWORK:
+        try:
+            nc_bp = create_network_blueprint()
+            if nc_bp:
+                app.register_blueprint(nc_bp, url_prefix="/network")
+                app.logger.info("Network Design Canvas registered at /network/")
+        except Exception as exc:
+            app.logger.warning("Network Design Canvas failed to register: %s", exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
