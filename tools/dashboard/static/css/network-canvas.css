@@ -840,6 +840,10 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .color-swatch-custom::-webkit-color-swatch-wrapper { padding: 0; }
 .color-swatch-custom::-webkit-color-swatch { border: none; border-radius: 2px; }
 
+/* ── AI Generate button ───────────────────────────────────────────────────── */
+.tb-btn-ai { color: #a29bfe !important; border-color: #6c5ce7 !important; }
+.tb-btn-ai:hover { background: #1a0f2b !important; border-color: #a29bfe !important; }
+
 /* ── FIPS overlay button ───────────────────────────────────────────────────── */
 .tb-btn-fips { color: #f1c40f !important; border-color: #7b6b00 !important; }
 .tb-btn-fips:hover { background: #2b2b0f !important; border-color: #f1c40f !important; }

@@ -2032,6 +2032,136 @@ def create_network_blueprint():
         _audit("SAVE_AS_TEMPLATE", "template", tpl_id, f"from {topo_id}")
         return jsonify({"id": tpl_id, "name": name}), 201
 
+    # ══════════════════════════════════════════════════════════════════════
+    # AI Topology Generator — natural language → JointJS graph JSON
+    # Uses Ollama (scanner tier) for air-gap compatibility
+    # ══════════════════════════════════════════════════════════════════════
+
+    _AI_TOPO_SYSTEM_PROMPT = """You are a network topology generator. Given a natural language description, output ONLY a valid JSON object with this exact structure — no markdown, no explanation, no code fences:
+
+{"nodes": [...], "edges": [...]}
+
+Each node: {"id": "unique-id", "label": "Display Name", "type": "device-type", "x": number, "y": number, "config": {}}
+
+Each edge: {"id": "unique-id", "source": "node-id", "target": "node-id", "label": "link label", "protocol": "protocol or empty"}
+
+Valid device types (use ONLY these):
+- router, switch-l2, switch-l3, firewall, load-balancer, wap, server, patch-panel
+- endpoint-pc, endpoint-phone, endpoint-iot, endpoint-camera
+- cloud, aws-vpc, aws-tgw, aws-subnet, az-vnet, az-fw, gcp-vpc
+- vrf, vlan, subnet, security-zone
+- kg-175d, kg-175g, kg-250, kg-340, type1-encryptor, fips-140-l2, fips-140-l3, hsm, macsec
+- siem, sdwan-edge, mpls-pe, mpls-p, route-reflector, pop
+- media-fiber, media-ge, media-10ge, media-100ge
+- roadm, oadm, edfa, transponder, sonet-adm
+- meet-me-room, cross-connect
+- draw-rect (zone box — set config._fill, config._stroke, config._width, config._height)
+- text-heading (zone label — set config._textColor)
+- text-badge (tag — set config._fill, config._stroke)
+
+Layout guidelines:
+- Space devices 150-200px apart horizontally, 120-150px vertically
+- Group related devices in zones using draw-rect with text-heading labels
+- Use realistic network protocols: OSPF, BGP, eBGP, iBGP, MPLS, IPSec, mTLS, STP, VXLAN, etc.
+- Start layout at x=40, y=80 to leave room for headings
+- Add a text-badge at the top with the topology type name
+
+Output ONLY the JSON object. No other text."""
+
+    @bp.route("/api/ai-generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_ai_generate():
+        """Generate topology from natural language description using local LLM."""
+        data = request.get_json(force=True, silent=True) or {}
+        description = data.get("description", "").strip()
+        if not description:
+            return jsonify({"error": "description required"}), 400
+
+        try:
+            import requests as _req
+
+            # Direct Ollama /api/chat — air-gap compatible, no cloud APIs
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
+            messages = [
+                {"role": "system", "content": _AI_TOPO_SYSTEM_PROMPT},
+                {"role": "user", "content": description},
+            ]
+            r = _req.post(
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {
+                        "num_predict": 4096,
+                        "temperature": 0.3,
+                    },
+                },
+                timeout=120,
+            )
+            r.raise_for_status()
+            resp_json = r.json()
+            content = resp_json.get("message", {}).get("content", "")
+
+            # Strip qwen3 thinking blocks
+            import re
+            text = content.strip()
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+            if text.startswith("```"):
+                # Remove code fences
+                lines = text.split("\n")
+                lines = [l for l in lines if not l.strip().startswith("```")]
+                text = "\n".join(lines).strip()
+
+            # Find JSON object boundaries
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start < 0 or end <= start:
+                return jsonify({"error": "LLM did not return valid JSON", "raw": text[:500]}), 422
+
+            graph_json = json.loads(text[start:end])
+
+            # Validate structure
+            if "nodes" not in graph_json or "edges" not in graph_json:
+                return jsonify({"error": "Missing nodes/edges in response", "raw": text[:500]}), 422
+
+            # Ensure all nodes have required fields
+            for n in graph_json["nodes"]:
+                n.setdefault("id", str(_uuid.uuid4())[:8])
+                n.setdefault("label", "")
+                n.setdefault("type", "server")
+                n.setdefault("x", 100)
+                n.setdefault("y", 100)
+                n.setdefault("config", {})
+
+            for e in graph_json["edges"]:
+                e.setdefault("id", str(_uuid.uuid4())[:8])
+                e.setdefault("source", "")
+                e.setdefault("target", "")
+                e.setdefault("label", "")
+                e.setdefault("protocol", "")
+
+            _audit("AI_GENERATE", "topology", "", f"Generated from: {description[:100]}")
+            return jsonify({
+                "graph_json": graph_json,
+                "description": description,
+                "node_count": len(graph_json["nodes"]),
+                "edge_count": len(graph_json["edges"]),
+            })
+
+        except ImportError:
+            return jsonify({"error": "requests library not available"}), 503
+        except _req.exceptions.ConnectionError:
+            return jsonify({"error": "Cannot connect to Ollama — is it running? (default: localhost:11434)"}), 503
+        except _req.exceptions.Timeout:
+            return jsonify({"error": "Ollama timed out (120s) — try a simpler description or smaller model"}), 504
+        except json.JSONDecodeError as exc:
+            return jsonify({"error": f"Invalid JSON from LLM: {exc}", "raw": text[:500]}), 422
+        except Exception as exc:
+            logger.exception("AI generate failed")
+            return jsonify({"error": str(exc)}), 500
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",
                 len(bp.deferred_functions))

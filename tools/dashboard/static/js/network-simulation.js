@@ -997,6 +997,68 @@ function autoLayoutGrid() {
   setStatus('Grid layout applied');
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * AI Topology Generator — natural language to canvas
+ * Uses local Ollama LLM (air-gap compatible, scanner tier)
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+function openAiGenerateDialog() {
+  document.getElementById('ai-generate-overlay').classList.remove('hidden');
+  document.getElementById('ai-gen-description').focus();
+  document.getElementById('ai-gen-status').style.display = 'none';
+}
+
+function closeAiGenerateDialog() {
+  document.getElementById('ai-generate-overlay').classList.add('hidden');
+}
+
+async function runAiGenerate() {
+  const desc = document.getElementById('ai-gen-description').value.trim();
+  if (!desc) { alert('Please describe the network you want to generate.'); return; }
+
+  const btn = document.getElementById('ai-gen-btn');
+  const statusEl = document.getElementById('ai-gen-status');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = '<span style="color:#f39c12;">Sending to local LLM (Ollama)... this may take 15-30 seconds.</span>';
+
+  try {
+    const r = await fetch(NC_BASE + '/api/ai-generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({description: desc}),
+    });
+    const data = await r.json();
+
+    if (!r.ok || data.error) {
+      statusEl.innerHTML = '<span style="color:#e74c3c;">Error: ' + (data.error || 'Unknown error') + '</span>';
+      if (data.raw) statusEl.innerHTML += '<br><small style="color:#7a8cb0;">' + data.raw.substring(0, 300) + '</small>';
+      btn.disabled = false;
+      btn.textContent = 'Generate Topology';
+      return;
+    }
+
+    // Success — load onto canvas
+    if (typeof pushUndo === 'function') pushUndo();
+    if (typeof loadGraphJSON === 'function') loadGraphJSON(data.graph_json);
+    if (typeof updateStatusBar === 'function') updateStatusBar();
+    if (typeof markDirty === 'function') markDirty();
+
+    statusEl.innerHTML = '<span style="color:#27ae60;">Generated ' + data.node_count + ' nodes, ' + data.edge_count + ' edges.</span>';
+    setStatus('AI generated: ' + data.node_count + ' nodes, ' + data.edge_count + ' edges');
+
+    // Auto-close after a short delay
+    setTimeout(() => closeAiGenerateDialog(), 1500);
+
+  } catch (err) {
+    statusEl.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err.message + '</span>';
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Generate Topology';
+}
+
 /* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   // Wait a tick for canvas.js to init paper

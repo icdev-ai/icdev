@@ -53,6 +53,7 @@
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
       <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
       <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
+      <button class="tb-btn tb-btn-ai" onclick="openAiGenerateDialog()" title="AI Topology Generator — describe your network in plain text">✦ AI Generate</button>
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
@@ -612,6 +613,24 @@
       <div id="cd-preview" style="background:#12122a;border-radius:6px;padding:10px;text-align:center;min-height:60px;display:flex;align-items:center;justify-content:center;"></div>
     </div>
     <button class="btn btn-primary" onclick="createCustomDevice()" style="width:100%;">Add to Palette</button>
+  </div>
+</div>
+<!-- AI Topology Generator Dialog -->
+<div id="ai-generate-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:520px;">
+    <div class="sim-panel-header">
+      <h3>AI Topology Generator</h3>
+      <button class="close-btn" onclick="closeAiGenerateDialog()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Describe your network</label>
+      <textarea id="ai-gen-description" class="form-control" rows="5" placeholder="Example: A 3-tier campus network with redundant core switches, distribution layer per building, access switches with PoE WAPs, a DMZ with dual firewalls, and a data center spine-leaf fabric connected via 10GbE"></textarea>
+    </div>
+    <div class="form-group" style="display:flex;gap:8px;">
+      <button class="btn btn-primary" id="ai-gen-btn" onclick="runAiGenerate()" style="flex:1;">Generate Topology</button>
+      <button class="btn btn-secondary" onclick="closeAiGenerateDialog()">Cancel</button>
+    </div>
+    <div id="ai-gen-status" class="sim-output" style="display:none;"></div>
   </div>
 </div>
 {% endblock %}
