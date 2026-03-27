@@ -52,6 +52,7 @@
     </div>
     <div class="tb-group">
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
+      <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
       <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
       <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
@@ -707,6 +708,35 @@
     document.getElementById('ato-overlay').classList.remove('hidden');
   }
   function closeAtoDialog() { document.getElementById('ato-overlay').classList.add('hidden'); }
+
+  function exportFipsReport() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const btn = document.getElementById('tb-fips-report-btn');
+    const origText = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Generating...';
+    fetch(NC_BASE + '/api/compliance/' + TOPOLOGY_ID + '/fips-report', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({format: 'html'})
+    }).then(r => {
+      if (!r.ok) throw new Error('Failed to generate FIPS report');
+      return r.blob();
+    }).then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = TOPOLOGY_NAME.replace(/[^a-zA-Z0-9_-]/g, '_') + '_fips_report.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus('FIPS 140 Encryption Coverage Report exported');
+      btn.disabled = false; btn.textContent = origText;
+    }).catch(err => {
+      alert('Error: ' + err.message);
+      btn.disabled = false; btn.textContent = origText;
+    });
+  }
+
   function runAtoGenerate() {
     const btn = document.getElementById('ato-gen-btn');
     const output = document.getElementById('ato-gen-output');

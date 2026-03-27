@@ -617,3 +617,553 @@ def generate_xacta_export(system_name: str, classification: str, environment: st
     )
 
     return xml
+
+
+# ── FIPS 140 Encryption Coverage Report ───────────────────────────────────────
+
+ENCRYPTION_DEVICE_TYPES = {
+    "fips-140-l1", "fips-140-l2", "fips-140-l3", "fips-140-l4",
+    "hsm", "type1-encryptor",
+    "kg-175d", "kg-175g", "kg-250", "kg-340", "kg-245x", "kg-255",
+    "macsec", "qkd-device", "tls-terminator",
+}
+
+ENCRYPTED_PROTOCOL_SET = {
+    "ipsec", "ipsec esp", "gre/ipsec", "mtls", "tls", "dtls", "macsec", "bb84",
+}
+
+
+def generate_fips_coverage_report(
+    system_name: str,
+    classification: str,
+    environment: str,
+    graph: dict,
+    now_str: str,
+) -> dict:
+    """Generate a FIPS 140 Encryption Coverage Report for ISSM review.
+
+    Mirrors the client-side FIPS overlay logic but produces a structured,
+    exportable report with coverage gaps, unprotected links, encryption
+    device inventory, and actionable recommendations.
+
+    Args:
+        system_name: Name of the topology/system.
+        classification: Classification level (CUI, SECRET, TOP SECRET).
+        environment: Impact level (IL2-IL6).
+        graph: Dict with "nodes" and "edges" lists.
+        now_str: ISO timestamp for the report date.
+
+    Returns:
+        Dict with report sections: summary, encryption_devices,
+        protected_links, unprotected_links, coverage_gaps, and
+        recommendations.
+    """
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    label_map = {n["id"]: n.get("label", n["id"]) for n in nodes}
+    node_types = {n["id"]: n.get("type", "") for n in nodes}
+
+    # ── Identify encryption devices ───────────────────────────────────
+    encryption_devices = []
+    enc_device_ids = set()
+    for n in nodes:
+        ntype = node_types.get(n["id"], "")
+        if ntype in ENCRYPTION_DEVICE_TYPES:
+            enc_device_ids.add(n["id"])
+            rating = ENCRYPTOR_RATINGS.get(ntype, 0)
+            encryption_devices.append({
+                "id": n["id"],
+                "label": label_map.get(n["id"], n["id"]),
+                "type": ntype,
+                "fips_level": _fips_level(ntype),
+                "rated_throughput_mbps": rating,
+                "rated_throughput_display": _format_throughput(rating),
+            })
+
+    # ── Build protected-node set (adjacent to encryption devices) ─────
+    protected_node_ids = set(enc_device_ids)
+    for e in edges:
+        src, tgt = e.get("source", ""), e.get("target", "")
+        if src in enc_device_ids:
+            protected_node_ids.add(tgt)
+        if tgt in enc_device_ids:
+            protected_node_ids.add(src)
+
+    # ── Classify each link ────────────────────────────────────────────
+    protected_links = []
+    unprotected_links = []
+
+    for e in edges:
+        src = e.get("source", "")
+        tgt = e.get("target", "")
+        proto = (e.get("protocol") or "").strip()
+        link_label = e.get("label", "")
+
+        has_encrypted_proto = proto.lower() in ENCRYPTED_PROTOCOL_SET
+        src_is_enc = src in enc_device_ids
+        tgt_is_enc = tgt in enc_device_ids
+        src_protected = src in protected_node_ids
+        tgt_protected = tgt in protected_node_ids
+
+        is_protected = (
+            has_encrypted_proto or src_is_enc or tgt_is_enc
+            or (src_protected and tgt_protected)
+        )
+
+        link_info = {
+            "id": e.get("id", ""),
+            "source": label_map.get(src, src),
+            "source_id": src,
+            "target": label_map.get(tgt, tgt),
+            "target_id": tgt,
+            "label": link_label,
+            "protocol": proto,
+            "protection_method": _protection_method(
+                has_encrypted_proto, src_is_enc, tgt_is_enc,
+                src_protected, tgt_protected, proto, node_types,
+                src, tgt, label_map,
+            ),
+        }
+
+        if is_protected:
+            protected_links.append(link_info)
+        else:
+            unprotected_links.append(link_info)
+
+    # ── Coverage metrics ──────────────────────────────────────────────
+    total_links = len(protected_links) + len(unprotected_links)
+    coverage_pct = round(
+        len(protected_links) / max(total_links, 1) * 100, 1
+    )
+
+    # ── Coverage gaps (nodes with unprotected connections) ────────────
+    gap_nodes = {}
+    for link in unprotected_links:
+        for key in ("source_id", "target_id"):
+            nid = link[key]
+            ntype = node_types.get(nid, "")
+            if ntype not in ENCRYPTION_DEVICE_TYPES:
+                if nid not in gap_nodes:
+                    gap_nodes[nid] = {
+                        "id": nid,
+                        "label": label_map.get(nid, nid),
+                        "type": ntype,
+                        "unprotected_link_count": 0,
+                    }
+                gap_nodes[nid]["unprotected_link_count"] += 1
+    coverage_gaps = sorted(
+        gap_nodes.values(), key=lambda g: g["unprotected_link_count"], reverse=True
+    )
+
+    # ── Recommendations ───────────────────────────────────────────────
+    recommendations = _generate_recommendations(
+        classification, environment, unprotected_links, coverage_gaps,
+        encryption_devices, node_types, label_map, coverage_pct,
+    )
+
+    # ── Assemble report ───────────────────────────────────────────────
+    risk_level = "LOW"
+    if coverage_pct < 50:
+        risk_level = "CRITICAL"
+    elif coverage_pct < 75:
+        risk_level = "HIGH"
+    elif coverage_pct < 90:
+        risk_level = "MODERATE"
+
+    return {
+        "report_type": "FIPS 140 Encryption Coverage Report",
+        "system_name": system_name,
+        "classification": classification,
+        "environment": environment,
+        "generated_at": now_str,
+        "summary": {
+            "total_links": total_links,
+            "protected_links": len(protected_links),
+            "unprotected_links": len(unprotected_links),
+            "coverage_pct": coverage_pct,
+            "risk_level": risk_level,
+            "total_encryption_devices": len(encryption_devices),
+            "total_nodes": len(nodes),
+            "gap_node_count": len(coverage_gaps),
+        },
+        "encryption_devices": encryption_devices,
+        "protected_links": protected_links,
+        "unprotected_links": unprotected_links,
+        "coverage_gaps": coverage_gaps,
+        "recommendations": recommendations,
+    }
+
+
+def _fips_level(ntype: str) -> str:
+    """Map device type to FIPS validation level."""
+    level_map = {
+        "fips-140-l1": "FIPS 140-2/3 Level 1",
+        "fips-140-l2": "FIPS 140-2/3 Level 2",
+        "fips-140-l3": "FIPS 140-2/3 Level 3",
+        "fips-140-l4": "FIPS 140-2/3 Level 4",
+        "hsm": "FIPS 140-2/3 Level 3 (HSM)",
+        "type1-encryptor": "NSA Type 1",
+        "kg-175d": "NSA Type 1 (KG-175D)",
+        "kg-175g": "NSA Type 1 (KG-175G)",
+        "kg-250": "NSA Type 1 (KG-250)",
+        "kg-340": "NSA Type 1 (KG-340)",
+        "kg-245x": "NSA Type 1 (KG-245X)",
+        "kg-255": "NSA Type 1 (KG-255)",
+        "macsec": "IEEE 802.1AE (MACsec)",
+        "qkd-device": "Quantum Key Distribution",
+        "tls-terminator": "TLS Termination Point",
+    }
+    return level_map.get(ntype, "Unknown")
+
+
+def _format_throughput(mbps: int) -> str:
+    """Format Mbps as human-readable string."""
+    if mbps >= 1000000:
+        return f"{mbps / 1000000:.0f} Tbps"
+    if mbps >= 1000:
+        return f"{mbps / 1000:.0f} Gbps"
+    if mbps > 0:
+        return f"{mbps} Mbps"
+    return "N/A"
+
+
+def _protection_method(
+    has_proto: bool, src_enc: bool, tgt_enc: bool,
+    src_prot: bool, tgt_prot: bool, proto: str,
+    node_types: dict, src: str, tgt: str, label_map: dict,
+) -> str:
+    """Describe how a link is protected."""
+    methods = []
+    if has_proto:
+        methods.append(f"Encrypted protocol ({proto})")
+    if src_enc:
+        methods.append(f"Source is encryption device ({label_map.get(src, src)})")
+    if tgt_enc:
+        methods.append(f"Target is encryption device ({label_map.get(tgt, tgt)})")
+    if not has_proto and not src_enc and not tgt_enc and src_prot and tgt_prot:
+        methods.append("Both endpoints adjacent to encryption devices")
+    return "; ".join(methods) if methods else "None"
+
+
+def _generate_recommendations(
+    classification: str, environment: str,
+    unprotected_links: list, coverage_gaps: list,
+    encryption_devices: list, node_types: dict,
+    label_map: dict, coverage_pct: float,
+) -> list:
+    """Generate actionable ISSM recommendations based on gaps."""
+    recs = []
+    priority = 1
+
+    # Critical: classification requires Type 1
+    if classification in ("SECRET", "TOP SECRET"):
+        has_type1 = any(
+            d["type"] in {"type1-encryptor", "kg-175d", "kg-175g",
+                          "kg-250", "kg-340", "kg-245x", "kg-255"}
+            for d in encryption_devices
+        )
+        if not has_type1:
+            recs.append({
+                "priority": priority,
+                "severity": "CRITICAL",
+                "nist_control": "SC-13",
+                "title": "NSA Type 1 encryption required for classified data",
+                "detail": (
+                    f"Classification level {classification} requires NSA Type 1 "
+                    "encryption (e.g., KG-175D, KG-250) per CNSS Policy 15. "
+                    "No Type 1 devices detected in topology."
+                ),
+                "action": "Deploy NSA Type 1 encryptors on all WAN/inter-site links.",
+            })
+            priority += 1
+
+    # High: unprotected WAN-facing links
+    wan_types = {
+        "cloud", "aws-dx", "az-er", "gcp-ic", "oci-fc", "ibm-dl",
+        "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn", "sdwan-overlay",
+        "internet-exchange",
+    }
+    wan_unprotected = [
+        link for link in unprotected_links
+        if node_types.get(link["source_id"], "") in wan_types
+        or node_types.get(link["target_id"], "") in wan_types
+    ]
+    if wan_unprotected:
+        link_list = ", ".join(
+            f"{lnk['source']} \u2194 {lnk['target']}" for lnk in wan_unprotected[:5]
+        )
+        recs.append({
+            "priority": priority,
+            "severity": "CRITICAL",
+            "nist_control": "SC-8, SC-13",
+            "title": f"{len(wan_unprotected)} WAN/inter-site link(s) lack encryption",
+            "detail": (
+                f"Unprotected WAN links: {link_list}"
+                + (f" (+{len(wan_unprotected) - 5} more)" if len(wan_unprotected) > 5 else "")
+                + ". Data in transit on these links is exposed."
+            ),
+            "action": (
+                "Deploy FIPS 140-2 Level 2+ validated encryptors (inline or "
+                "IPSec/MACsec) on each unprotected WAN link."
+            ),
+        })
+        priority += 1
+
+    # Moderate: internal unprotected links
+    internal_unprotected = [
+        link for link in unprotected_links
+        if link not in wan_unprotected
+    ]
+    if internal_unprotected:
+        recs.append({
+            "priority": priority,
+            "severity": "HIGH" if coverage_pct < 75 else "MODERATE",
+            "nist_control": "SC-8",
+            "title": f"{len(internal_unprotected)} internal link(s) lack encryption",
+            "detail": (
+                "Internal links without encryption may expose CUI "
+                "to lateral movement threats. "
+                + (f"Top gap nodes: {', '.join(g['label'] for g in coverage_gaps[:3])}."
+                   if coverage_gaps else "")
+            ),
+            "action": (
+                "Implement MACsec or IPSec on internal trunk links, "
+                "prioritizing links between security zones."
+            ),
+        })
+        priority += 1
+
+    # IL4+ requires FIPS validated crypto
+    if environment in ("IL4", "IL5", "IL6"):
+        non_fips_devices = [
+            d for d in encryption_devices
+            if not d["type"].startswith("fips-") and d["type"] != "hsm"
+            and not d["type"].startswith("kg-")
+            and d["type"] != "type1-encryptor"
+        ]
+        if non_fips_devices:
+            recs.append({
+                "priority": priority,
+                "severity": "HIGH",
+                "nist_control": "SC-13",
+                "title": "Non-FIPS-validated encryption devices detected",
+                "detail": (
+                    f"{environment} requires FIPS 140-2/3 validated cryptographic "
+                    f"modules. Devices without FIPS validation: "
+                    + ", ".join(d["label"] for d in non_fips_devices)
+                    + "."
+                ),
+                "action": (
+                    "Replace or upgrade to FIPS 140-2/3 validated modules. "
+                    "Verify CMVP certificate numbers for each device."
+                ),
+            })
+            priority += 1
+
+    # Coverage below threshold
+    if coverage_pct < 100 and not recs:
+        recs.append({
+            "priority": priority,
+            "severity": "MODERATE",
+            "nist_control": "SC-8, SC-13",
+            "title": f"Encryption coverage at {coverage_pct}% — below 100% target",
+            "detail": (
+                f"{len(unprotected_links)} link(s) remain unprotected. "
+                "Full encryption coverage is required for ATO."
+            ),
+            "action": "Review unprotected links and add encryption as appropriate.",
+        })
+        priority += 1
+
+    # Positive note if full coverage
+    if coverage_pct == 100.0:
+        recs.append({
+            "priority": priority,
+            "severity": "INFO",
+            "nist_control": "SC-8, SC-13",
+            "title": "Full encryption coverage achieved",
+            "detail": (
+                "All links are protected by FIPS-validated encryption or "
+                "encrypted protocols. Maintain coverage during future changes."
+            ),
+            "action": "No action required. Continue monitoring during topology changes.",
+        })
+
+    return recs
+
+
+def export_fips_report_html(report: dict) -> str:
+    """Render a FIPS coverage report dict as a standalone HTML document.
+
+    Suitable for ISSM review, printing, or attachment to ATO packages.
+    Includes CUI markings, summary table, link inventory, and recommendations.
+    """
+    cls = report.get("classification", "CUI")
+    banner = "CUI // SP-CTI" if cls == "CUI" else cls
+    s = report["summary"]
+
+    # Risk-level color
+    risk_colors = {
+        "CRITICAL": "#dc3545", "HIGH": "#fd7e14",
+        "MODERATE": "#ffc107", "LOW": "#28a745", "INFO": "#17a2b8",
+    }
+    risk_color = risk_colors.get(s["risk_level"], "#6c757d")
+
+    # Build encryption devices table rows
+    dev_rows = ""
+    for d in report["encryption_devices"]:
+        dev_rows += (
+            f"<tr><td>{_esc(d['label'])}</td><td>{_esc(d['type'])}</td>"
+            f"<td>{_esc(d['fips_level'])}</td>"
+            f"<td>{_esc(d['rated_throughput_display'])}</td></tr>\n"
+        )
+    if not dev_rows:
+        dev_rows = '<tr><td colspan="4" style="color:#dc3545;font-weight:bold;">No encryption devices found</td></tr>'
+
+    # Build unprotected links table rows
+    unp_rows = ""
+    for link in report["unprotected_links"]:
+        unp_rows += (
+            f"<tr><td>{_esc(link['source'])}</td>"
+            f"<td>{_esc(link['target'])}</td>"
+            f"<td>{_esc(link['label'])}</td>"
+            f"<td>{_esc(link['protocol'] or 'None')}</td></tr>\n"
+        )
+    if not unp_rows:
+        unp_rows = '<tr><td colspan="4" style="color:#28a745;">All links protected</td></tr>'
+
+    # Build protected links table rows
+    prot_rows = ""
+    for link in report["protected_links"]:
+        prot_rows += (
+            f"<tr><td>{_esc(link['source'])}</td>"
+            f"<td>{_esc(link['target'])}</td>"
+            f"<td>{_esc(link['label'])}</td>"
+            f"<td>{_esc(link['protection_method'])}</td></tr>\n"
+        )
+    if not prot_rows:
+        prot_rows = '<tr><td colspan="4">No protected links</td></tr>'
+
+    # Build coverage gaps table rows
+    gap_rows = ""
+    for g in report["coverage_gaps"]:
+        gap_rows += (
+            f"<tr><td>{_esc(g['label'])}</td><td>{_esc(g['type'])}</td>"
+            f"<td>{g['unprotected_link_count']}</td></tr>\n"
+        )
+    if not gap_rows:
+        gap_rows = '<tr><td colspan="3" style="color:#28a745;">No coverage gaps</td></tr>'
+
+    # Build recommendations
+    rec_html = ""
+    for r in report["recommendations"]:
+        sev_color = risk_colors.get(r["severity"], "#6c757d")
+        rec_html += (
+            f'<div style="border-left:4px solid {sev_color};padding:8px 12px;margin-bottom:10px;background:#1a1a2e;">'
+            f'<strong>P{r["priority"]} [{r["severity"]}]</strong> — {_esc(r["title"])}<br>'
+            f'<em>NIST: {_esc(r["nist_control"])}</em><br>'
+            f'{_esc(r["detail"])}<br>'
+            f'<strong>Action:</strong> {_esc(r["action"])}'
+            f'</div>\n'
+        )
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FIPS 140 Encryption Coverage Report — {_esc(report['system_name'])}</title>
+<style>
+  body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f0f23; color: #e0e0e0; margin: 0; padding: 20px; }}
+  .banner {{ background: #b71c1c; color: #fff; text-align: center; padding: 6px; font-weight: bold; font-size: 14px; }}
+  h1 {{ color: #00d4ff; margin-top: 20px; }}
+  h2 {{ color: #00d4ff; border-bottom: 1px solid #333; padding-bottom: 4px; margin-top: 24px; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
+  th {{ background: #1a1a2e; color: #00d4ff; text-align: left; padding: 8px; border: 1px solid #333; }}
+  td {{ padding: 8px; border: 1px solid #333; }}
+  tr:nth-child(even) {{ background: #16213e; }}
+  .summary-grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 16px 0; }}
+  .summary-card {{ background: #1a1a2e; border: 1px solid #333; border-radius: 6px; padding: 12px; text-align: center; }}
+  .summary-card .value {{ font-size: 28px; font-weight: bold; }}
+  .summary-card .label {{ font-size: 12px; color: #888; margin-top: 4px; }}
+  .footer {{ margin-top: 30px; padding-top: 10px; border-top: 1px solid #333; font-size: 12px; color: #666; }}
+  @media print {{
+    body {{ background: #fff; color: #000; }}
+    .banner {{ background: #b71c1c; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    th {{ background: #e0e0e0; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+    tr:nth-child(even) {{ background: #f5f5f5; }}
+    .summary-card {{ background: #f5f5f5; border-color: #ccc; }}
+    h1, h2, th {{ color: #003366; }}
+  }}
+</style>
+</head>
+<body>
+<div class="banner">{_esc(banner)}</div>
+<h1>FIPS 140 Encryption Coverage Report</h1>
+<p><strong>System:</strong> {_esc(report['system_name'])} &nbsp;|&nbsp;
+   <strong>Classification:</strong> {_esc(cls)} &nbsp;|&nbsp;
+   <strong>Environment:</strong> {_esc(report['environment'])} &nbsp;|&nbsp;
+   <strong>Generated:</strong> {_esc(report['generated_at'])}</p>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="value" style="color:{risk_color};">{s['coverage_pct']}%</div>
+    <div class="label">Encryption Coverage</div>
+  </div>
+  <div class="summary-card">
+    <div class="value" style="color:#28a745;">{s['protected_links']}</div>
+    <div class="label">Protected Links</div>
+  </div>
+  <div class="summary-card">
+    <div class="value" style="color:#dc3545;">{s['unprotected_links']}</div>
+    <div class="label">Unprotected Links</div>
+  </div>
+  <div class="summary-card">
+    <div class="value" style="color:{risk_color};">{s['risk_level']}</div>
+    <div class="label">Risk Level</div>
+  </div>
+</div>
+
+<h2>Recommendations</h2>
+{rec_html}
+
+<h2>Encryption Device Inventory ({s['total_encryption_devices']})</h2>
+<table>
+<tr><th>Device</th><th>Type</th><th>FIPS Level</th><th>Rated Throughput</th></tr>
+{dev_rows}
+</table>
+
+<h2>Unprotected Links ({s['unprotected_links']})</h2>
+<table>
+<tr><th>Source</th><th>Target</th><th>Link Label</th><th>Protocol</th></tr>
+{unp_rows}
+</table>
+
+<h2>Coverage Gaps — Nodes with Unprotected Connections ({s['gap_node_count']})</h2>
+<table>
+<tr><th>Node</th><th>Type</th><th>Unprotected Links</th></tr>
+{gap_rows}
+</table>
+
+<h2>Protected Links ({s['protected_links']})</h2>
+<table>
+<tr><th>Source</th><th>Target</th><th>Link Label</th><th>Protection Method</th></tr>
+{prot_rows}
+</table>
+
+<div class="footer">
+  <p>Generated by ICDEV&#8482; Network Design Canvas — FIPS 140 Encryption Coverage Audit</p>
+  <p>This report is intended for ISSM review as part of the Authorization to Operate (ATO) package.</p>
+</div>
+<div class="banner">{_esc(banner)}</div>
+</body>
+</html>"""
+    return html
+
+
+def _esc(text: str) -> str:
+    """Minimal HTML escaping for report output."""
+    return (str(text)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;"))

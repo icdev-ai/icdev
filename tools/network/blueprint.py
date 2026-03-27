@@ -43,6 +43,7 @@ from tools.network.simulation import (  # noqa: E402
 )
 from tools.network.compliance import (  # noqa: E402
     run_compliance_audit, apply_compliance_fix, generate_xacta_export,
+    generate_fips_coverage_report, export_fips_report_html,
 )
 from tools.network.montecarlo import run_monte_carlo  # noqa: E402
 from tools.network.ato_generator import (  # noqa: E402
@@ -1611,6 +1612,71 @@ def create_network_blueprint():
         return jsonify({"format": "xacta_xml",
                          "filename": f"{topo['name']}_compliance_report.xml",
                          "content": xml, "findings_count": len(findings)})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API: FIPS 140 Encryption Coverage Report Export
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/compliance/<topo_id>/fips-report", methods=["POST"])
+    @nc_login_required
+    def nc_api_fips_report(topo_id):
+        """Generate a FIPS 140 Encryption Coverage Report for ISSM review.
+
+        Returns JSON report data or rendered HTML depending on format param.
+
+        Body JSON (optional):
+          {"format": "json" | "html"}   // default "json"
+        """
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT name, graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph data"}), 500
+
+        profile = conn.execute(
+            "SELECT * FROM nc_compliance_profiles WHERE topology_id=?",
+            (topo_id,),
+        ).fetchone()
+        conn.close()
+        profile = _row_to_dict(profile) if profile else {}
+
+        now = _now()
+        report = generate_fips_coverage_report(
+            system_name=topo["name"],
+            classification=profile.get("classification", "CUI"),
+            environment=profile.get("environment", "IL4"),
+            graph=graph,
+            now_str=now,
+        )
+
+        data = request.get_json(force=True, silent=True) or {}
+        fmt = data.get("format", "json")
+
+        _audit("FIPS_REPORT", "topology", topo_id,
+               f"coverage={report['summary']['coverage_pct']}% "
+               f"risk={report['summary']['risk_level']} format={fmt}")
+
+        if fmt == "html":
+            html = export_fips_report_html(report)
+            from flask import Response
+            return Response(
+                html,
+                mimetype="text/html",
+                headers={
+                    "Content-Disposition":
+                        f'attachment; filename="{topo["name"]}_fips_report.html"',
+                },
+            )
+
+        return jsonify(report)
 
     # ══════════════════════════════════════════════════════════════════════
     # API: STIG XCCDF/CKL Import
