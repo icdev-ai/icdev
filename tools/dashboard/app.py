@@ -89,6 +89,15 @@ try:
     _HAS_RAG_EVAL_API = True
 except ImportError:
     _HAS_RAG_EVAL_API = False
+# Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
+_AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
+# Pages disabled in air-gap mode (routes → friendly message instead of 404)
+_AIRGAP_DISABLED_ROUTES = frozenset({
+    "/pulse", "/clawhub", "/research", "/autoresearch",
+    "/genesis", "/govcon", "/proposals", "/cpmp",
+    "/proposal-genesis", "/leads", "/studio/marketplace",
+    "/alphadesk",
+})
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -777,9 +786,28 @@ def create_app() -> Flask:
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
-            "govcon_enabled": _HAS_GOVCON,
+            "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
+            "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
+
+    # ---- Air-gap route guard: friendly message for disabled pages ----
+    if _AIRGAP_MODE:
+        @app.before_request
+        def _airgap_route_guard():
+            path = flask_request.path.rstrip("/") or "/"
+            # Check exact match or prefix match for nested routes
+            for disabled in _AIRGAP_DISABLED_ROUTES:
+                if path == disabled or path.startswith(disabled + "/"):
+                    if flask_request.is_json or path.startswith("/api/"):
+                        return jsonify({
+                            "error": "unavailable",
+                            "message": "This feature is not available in air-gap mode.",
+                        }), 503
+                    return render_template(
+                        "airgap_unavailable.html",
+                        feature_name=disabled.strip("/").replace("-", " ").title(),
+                    ), 200
 
     # ---- Auto-register A2A agents from card files ----
     try:
