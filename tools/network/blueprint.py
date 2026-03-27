@@ -45,6 +45,7 @@ from tools.network.compliance import (  # noqa: E402
     run_compliance_audit, apply_compliance_fix, generate_xacta_export,
 )
 from tools.network.montecarlo import run_monte_carlo  # noqa: E402
+from tools.network.ato_generator import generate_ato_package  # noqa: E402
 from tools.network.export_import import (  # noqa: E402
     to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
 )
@@ -2215,6 +2216,167 @@ Output ONLY the JSON object. No other text."""
         except Exception as exc:
             logger.exception("AI generate failed")
             return jsonify({"error": str(exc)}), 500
+
+    # ══════════════════════════════════════════════════════════════════════
+    # API: ATO Package Auto-Generator
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/ato/<topo_id>/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_ato_generate(topo_id):
+        """Generate a partial ATO package from a topology (or region)."""
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, name, graph_json, classification FROM topologies WHERE id=?",
+            (topo_id,),
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        data = request.get_json(force=True, silent=True) or {}
+        region_id = data.get("region_id")  # optional group ID
+        system_name = data.get("system_name", topo["name"])
+        classification = data.get("classification", topo["classification"] or "CUI")
+
+        # Load regimes from compliance profile or request
+        profile = conn.execute(
+            "SELECT regimes, classification, environment FROM nc_compliance_profiles WHERE topology_id=?",
+            (topo_id,),
+        ).fetchone()
+        if profile:
+            try:
+                regimes = json.loads(profile["regimes"] or "[]")
+            except Exception:
+                regimes = data.get("regimes", ["fisma_high", "stig"])
+            classification = data.get("classification", profile["classification"] or classification)
+        else:
+            regimes = data.get("regimes", ["fisma_high", "stig"])
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph JSON"}), 500
+
+        # Load groups for region filtering
+        groups = []
+        if region_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
+            ).fetchall()
+            groups = [_row_to_dict(r) for r in rows]
+
+        # Check for as-built version
+        as_built = conn.execute(
+            "SELECT id FROM nc_versions WHERE topology_id=? AND label='As-Built' LIMIT 1",
+            (topo_id,),
+        ).fetchone()
+        has_as_built = as_built is not None
+
+        # Generate the ATO package
+        package = generate_ato_package(
+            topology_id=topo_id,
+            graph=graph,
+            system_name=system_name,
+            classification=classification,
+            regimes=regimes,
+            groups=groups,
+            region_id=region_id,
+            has_as_built_version=has_as_built,
+        )
+
+        # Persist to DB
+        pkg_id = package["package_id"]
+        now = _now()
+        user_id = ""
+        try:
+            user_id = session.get("user_id", "")
+        except RuntimeError:
+            pass
+
+        conn.execute(
+            "INSERT INTO nc_ato_packages "
+            "(id, topology_id, region_id, system_name, classification, regimes, "
+            "package_json, summary_json, overall_readiness, stig_pass_rate, "
+            "compliance_score, created_by, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                pkg_id, topo_id, region_id, system_name, classification,
+                json.dumps(regimes), json.dumps(package),
+                json.dumps(package["summary"]),
+                package["summary"]["overall_readiness"],
+                package["summary"]["stig_pass_rate"],
+                package["summary"]["compliance_score"],
+                user_id, now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        _audit("ATO_GENERATE", "topology", topo_id,
+               f"ATO package {pkg_id[:8]} | readiness={package['summary']['overall_readiness']} "
+               f"| region={region_id or 'full'}")
+
+        return jsonify(package), 201
+
+    @bp.route("/api/ato/<topo_id>/packages", methods=["GET"])
+    @nc_login_required
+    def nc_api_ato_list(topo_id):
+        """List all generated ATO packages for a topology."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, topology_id, region_id, system_name, classification, "
+            "regimes, summary_json, overall_readiness, stig_pass_rate, "
+            "compliance_score, created_by, created_at "
+            "FROM nc_ato_packages WHERE topology_id=? ORDER BY created_at DESC",
+            (topo_id,),
+        ).fetchall()
+        conn.close()
+        results = []
+        for r in rows:
+            d = _row_to_dict(r)
+            try:
+                d["summary"] = json.loads(d.pop("summary_json", "{}"))
+            except Exception:
+                d["summary"] = {}
+            try:
+                d["regimes"] = json.loads(d.get("regimes") or "[]")
+            except Exception:
+                pass
+            results.append(d)
+        return jsonify(results)
+
+    @bp.route("/api/ato/<topo_id>/packages/<pkg_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_ato_detail(topo_id, pkg_id):
+        """Get the full ATO package (all artifacts) by package ID."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT package_json FROM nc_ato_packages WHERE id=? AND topology_id=?",
+            (pkg_id, topo_id),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Package not found"}), 404
+        try:
+            return jsonify(json.loads(row["package_json"]))
+        except Exception:
+            return jsonify({"error": "Corrupt package data"}), 500
+
+    @bp.route("/api/ato/<topo_id>/packages/<pkg_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_ato_delete(topo_id, pkg_id):
+        """Delete an ATO package."""
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_ato_packages WHERE id=? AND topology_id=?",
+            (pkg_id, topo_id),
+        )
+        conn.commit()
+        conn.close()
+        _audit("ATO_DELETE", "ato_package", pkg_id, f"topology={topo_id}")
+        return jsonify({"ok": True})
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",

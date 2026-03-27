@@ -48,6 +48,7 @@
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
       <a class="tb-btn" id="tb-mc-link" href="#" title="Monte Carlo cascading simulation">Simulate MC</a>
       <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
+      <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
     </div>
     <div class="tb-group">
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
@@ -699,7 +700,113 @@
       else alert('Error: ' + (d.error || 'Unknown'));
     });
   }
+
+  // ── ATO Package Auto-Generator ─────────────────────────────────────────
+  function generateAtoPackage() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    document.getElementById('ato-overlay').classList.remove('hidden');
+  }
+  function closeAtoDialog() { document.getElementById('ato-overlay').classList.add('hidden'); }
+  function runAtoGenerate() {
+    const btn = document.getElementById('ato-gen-btn');
+    const output = document.getElementById('ato-gen-output');
+    btn.disabled = true; btn.textContent = 'Generating...';
+    output.style.display = 'block'; output.innerHTML = '<p style="color:#f39c12;">Generating ATO package...</p>';
+    const regionId = document.getElementById('ato-region-select').value || null;
+    const sysName = document.getElementById('ato-system-name').value || TOPOLOGY_NAME;
+    fetch(NC_BASE + '/api/ato/' + TOPOLOGY_ID + '/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({region_id: regionId, system_name: sysName})
+    }).then(r => r.json()).then(pkg => {
+      btn.disabled = false; btn.textContent = 'Generate ATO Package';
+      if (pkg.error) { output.innerHTML = '<p style="color:#e74c3c;">Error: ' + pkg.error + '</p>'; return; }
+      const s = pkg.summary || {};
+      const readinessColor = s.overall_readiness === 'GREEN' ? '#2ecc71' : s.overall_readiness === 'YELLOW' ? '#f1c40f' : '#e74c3c';
+      let html = '<div style="margin-bottom:12px;">';
+      html += '<h4 style="color:#ecf0f1;margin:0 0 8px;">ATO Package Generated</h4>';
+      html += '<table style="width:100%;font-size:12px;color:#bdc3c7;border-collapse:collapse;">';
+      html += '<tr><td style="padding:3px 6px;">Readiness</td><td style="padding:3px 6px;color:' + readinessColor + ';font-weight:bold;">' + (s.overall_readiness||'?') + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">STIG Pass Rate</td><td style="padding:3px 6px;">' + (s.stig_pass_rate||0) + '%' + (s.stig_gate_passed ? ' ✓' : ' ✗ CAT1 OPEN') + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Compliance Score</td><td style="padding:3px 6px;">' + (s.compliance_score||0) + '%</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Encryption Coverage</td><td style="padding:3px 6px;">' + (s.encryption_coverage_pct||0) + '%</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Security Zones</td><td style="padding:3px 6px;">' + (s.zone_count||0) + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Data Flows</td><td style="padding:3px 6px;">' + (s.total_flows||0) + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Protocols</td><td style="padding:3px 6px;">' + (s.total_protocols||0) + (s.insecure_protocols ? ' (' + s.insecure_protocols + ' insecure!)' : '') + '</td></tr>';
+      html += '<tr><td style="padding:3px 6px;">Findings</td><td style="padding:3px 6px;">CAT1:' + (s.cat1_findings||0) + ' CAT2:' + (s.cat2_findings||0) + ' CAT3:' + (s.cat3_findings||0) + '</td></tr>';
+      html += '</table></div>';
+      // Boundary diagram SVG preview
+      if (pkg.artifacts && pkg.artifacts.system_boundary_diagram && pkg.artifacts.system_boundary_diagram.svg) {
+        html += '<details style="margin-bottom:8px;"><summary style="color:#3498db;cursor:pointer;font-size:12px;">System Boundary Diagram (SVG)</summary>';
+        html += '<div style="overflow:auto;max-height:300px;margin-top:4px;background:#111;border-radius:4px;padding:4px;">' + pkg.artifacts.system_boundary_diagram.svg + '</div></details>';
+      }
+      // PPS Matrix preview
+      if (pkg.artifacts && pkg.artifacts.ports_protocols_services && pkg.artifacts.ports_protocols_services.matrix) {
+        const m = pkg.artifacts.ports_protocols_services.matrix;
+        html += '<details style="margin-bottom:8px;"><summary style="color:#3498db;cursor:pointer;font-size:12px;">Ports/Protocols/Services (' + m.length + ')</summary>';
+        html += '<table style="width:100%;font-size:10px;color:#bdc3c7;border-collapse:collapse;margin-top:4px;">';
+        html += '<tr style="color:#f39c12;"><th style="padding:2px 4px;text-align:left;">Protocol</th><th style="padding:2px 4px;text-align:left;">Port</th><th style="padding:2px 4px;text-align:left;">Service</th><th style="padding:2px 4px;">Encrypted</th></tr>';
+        m.forEach(function(r) {
+          html += '<tr><td style="padding:2px 4px;">' + r.protocol + '</td><td style="padding:2px 4px;">' + r.port + '</td><td style="padding:2px 4px;">' + r.service + '</td><td style="padding:2px 4px;text-align:center;">' + (r.encrypted ? '🔒' : '⚠') + '</td></tr>';
+        });
+        html += '</table></details>';
+      }
+      // STIG Checklist preview
+      if (pkg.artifacts && pkg.artifacts.stig_checklist && pkg.artifacts.stig_checklist.checklist) {
+        const cl = pkg.artifacts.stig_checklist.checklist;
+        html += '<details style="margin-bottom:8px;"><summary style="color:#3498db;cursor:pointer;font-size:12px;">STIG Checklist (' + cl.length + ' checks)</summary>';
+        html += '<table style="width:100%;font-size:10px;color:#bdc3c7;border-collapse:collapse;margin-top:4px;">';
+        html += '<tr style="color:#f39c12;"><th style="padding:2px 4px;text-align:left;">STIG ID</th><th style="padding:2px 4px;text-align:left;">Severity</th><th style="padding:2px 4px;text-align:left;">Title</th><th style="padding:2px 4px;">Status</th></tr>';
+        cl.forEach(function(c) {
+          var sc = c.status === 'NotAFinding' ? '#2ecc71' : c.status === 'Open' ? '#e74c3c' : '#7f8c8d';
+          html += '<tr><td style="padding:2px 4px;">' + c.stig_id + '</td><td style="padding:2px 4px;">' + c.severity + '</td><td style="padding:2px 4px;">' + c.title.substring(0,50) + '</td><td style="padding:2px 4px;color:' + sc + ';">' + c.status + '</td></tr>';
+        });
+        html += '</table></details>';
+      }
+      html += '<p style="color:#7f8c8d;font-size:10px;">Package ID: ' + (pkg.package_id||'').substring(0,8) + ' | Generated: ' + (pkg.generated_at||'').substring(0,19) + '</p>';
+      output.innerHTML = html;
+    }).catch(err => {
+      btn.disabled = false; btn.textContent = 'Generate ATO Package';
+      output.innerHTML = '<p style="color:#e74c3c;">Request failed: ' + err + '</p>';
+    });
+  }
+  // Load groups for region selector
+  function loadAtoRegions() {
+    if (TOPOLOGY_ID === 'new') return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID).then(r=>r.json()).then(function(){
+      return fetch(NC_BASE + '/api/groups?topology_id=' + TOPOLOGY_ID);
+    }).then(r=>r.ok ? r.json() : []).then(function(groups){
+      const sel = document.getElementById('ato-region-select');
+      if (!sel) return;
+      sel.innerHTML = '<option value="">-- Full Topology --</option>';
+      (groups || []).forEach(function(g) { sel.innerHTML += '<option value="' + g.id + '">' + g.label + (g.csp ? ' (' + g.csp.toUpperCase() + ')' : '') + '</option>'; });
+    }).catch(function(){});
+  }
 </script>
+<!-- ATO Package Generator Dialog -->
+<div id="ato-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:640px;">
+    <div class="sim-panel-header">
+      <h3>ATO Package Auto-Generator</h3>
+      <button class="close-btn" onclick="closeAtoDialog()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 12px;">Generate partial ATO package: system boundary diagram (RMF Step 1), data flow diagram, ports/protocols/services matrix, and pre-populated STIG checklist.</p>
+    <div class="form-group">
+      <label>System Name</label>
+      <input type="text" id="ato-system-name" class="form-control" placeholder="Information System name for ATO documentation"/>
+    </div>
+    <div class="form-group">
+      <label>Topology Region (optional)</label>
+      <select id="ato-region-select" class="form-control" onfocus="loadAtoRegions()">
+        <option value="">-- Full Topology --</option>
+      </select>
+    </div>
+    <div class="form-group" style="display:flex;gap:8px;">
+      <button class="btn btn-primary" id="ato-gen-btn" onclick="runAtoGenerate()" style="flex:1;background:#e74c3c;border-color:#c0392b;">Generate ATO Package</button>
+      <button class="btn btn-secondary" onclick="closeAtoDialog()">Cancel</button>
+    </div>
+    <div id="ato-gen-output" class="sim-output" style="display:none;max-height:450px;overflow-y:auto;"></div>
+  </div>
+</div>
 <script src="{{ url_for('static', filename='js/network-canvas.js') }}"></script>
 <script src="{{ url_for('static', filename='js/network-simulation.js') }}"></script>
 <script>

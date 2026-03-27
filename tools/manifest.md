@@ -1514,3 +1514,13 @@
 |------|------|-------------|-------|--------|
 | Export Import | tools\network\export_import.py | Auto-registered: network/export_import.py | --json | JSON |
 | Montecarlo | tools\network\montecarlo.py | Auto-registered: network/montecarlo.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Kanban Scheduler | tools\genesis\kanban_scheduler.py | Auto-registered: genesis/kanban_scheduler.py | --json | JSON |
+| Add Hpc To Aiml | tools\network\add_hpc_to_aiml.py | Auto-registered: network/add_hpc_to_aiml.py | --json | JSON |
+| Ato Generator | tools\network\ato_generator.py | Auto-registered: network/ato_generator.py | --json | JSON |
+| Fix Template Zones | tools\network\fix_template_zones.py | Auto-registered: network/fix_template_zones.py | --json | JSON |
+| Update Template Zones | tools\network\update_template_zones.py | Auto-registered: network/update_template_zones.py | --json | JSON |

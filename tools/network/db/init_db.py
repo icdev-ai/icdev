@@ -294,6 +294,23 @@ CREATE TABLE IF NOT EXISTS nc_backups (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ATO Package artifacts generated from topology regions
+CREATE TABLE IF NOT EXISTS nc_ato_packages (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    region_id   TEXT,                   -- NULL = full topology, else nc_groups.id
+    system_name TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI',
+    regimes     TEXT DEFAULT '["fisma_high","stig"]',  -- JSON array
+    package_json TEXT NOT NULL DEFAULT '{}',            -- full generated package
+    summary_json TEXT NOT NULL DEFAULT '{}',            -- readiness summary
+    overall_readiness TEXT DEFAULT 'RED',               -- GREEN, YELLOW, RED
+    stig_pass_rate REAL DEFAULT 0,
+    compliance_score REAL DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- NC-GAP-001: User authentication
 CREATE TABLE IF NOT EXISTS nc_users (
     id          TEXT PRIMARY KEY,

@@ -235,6 +235,37 @@ function formatResult(simType, result) {
       });
       break;
 
+    case 'blast_radius': {
+      const riskColors = { CRITICAL: '!!!', HIGH: '!! ', MEDIUM: '!  ', LOW: '   ' };
+      lines.push(`Source:       ${result.source || '?'} (compromised)`);
+      lines.push(`Max Hops:     ${result.max_hops || 3}`);
+      lines.push(`Risk:         ${riskColors[result.risk] || ''} ${result.risk || '?'}`);
+      lines.push(`Blast:        ${result.compromised_count}/${result.total_nodes} devices (${result.blast_pct}%)`);
+      lines.push(`Blocked by:   ${result.blocked_count} firewall(s)`);
+      lines.push(`Unreachable:  ${result.unreachable_count} device(s)`);
+      lines.push(`ZT Score:     ${result.zero_trust_score}/100`);
+      lines.push('');
+      const blastBar = utilBar(result.blast_pct);
+      lines.push(`Blast Radius: ${blastBar} ${result.blast_pct}%`);
+      lines.push('');
+      (result.hop_layers || []).forEach(layer => {
+        lines.push(`─── Hop ${layer.hop} ───`);
+        (layer.devices || []).forEach(d => {
+          let icon = '  ';
+          if (d.status === 'blocked')       icon = '🛡';
+          else if (d.status === 'zone_boundary') icon = '⚠';
+          else                              icon = '✕ ';
+          lines.push(`  ${icon} ${d.label} (${d.type}) [${d.status.toUpperCase()}]`);
+        });
+      });
+      if (result.narrative) {
+        lines.push('');
+        lines.push('Analysis:');
+        lines.push(result.narrative);
+      }
+      break;
+    }
+
     default:
       lines.push(JSON.stringify(result, null, 2));
   }
@@ -355,7 +386,113 @@ function visualizeResult(simType, result) {
     case 'load':
       applyLoadHeatmap(result.utilization);
       break;
+    case 'blast_radius':
+      highlightBlastRadius(result);
+      break;
   }
+}
+
+/* ── Blast Radius Visualization ────────────────────────────────────────────── */
+function highlightBlastRadius(result) {
+  // Gradient colors: closer hops = darker red, further = lighter
+  const HOP_COLORS = [
+    { fill: '#4a0000', stroke: '#ff1744' },  // hop 1 — bright red
+    { fill: '#3a0a00', stroke: '#ff6d00' },  // hop 2 — orange
+    { fill: '#3a2a00', stroke: '#ffc107' },  // hop 3 — amber
+    { fill: '#2a2a00', stroke: '#ffeb3b' },  // hop 4 — yellow
+    { fill: '#1a2a00', stroke: '#cddc39' },  // hop 5+
+  ];
+  const BLOCKED_STYLE = { fill: '#002a1a', stroke: '#00e676' };  // green = firewall held
+  const SOURCE_STYLE  = { fill: '#4a0022', stroke: '#ff1744' };  // pulsing red for source
+  const ZONE_STYLE    = { fill: '#1a1a00', stroke: '#ffc107' };  // amber outline
+
+  // Build label-to-id map
+  const labelToId = {};
+  const idToEl = {};
+  graph.getElements().forEach(el => {
+    const lbl = el.attr('label/text') || '';
+    labelToId[lbl] = el.id;
+    idToEl[el.id] = el;
+  });
+
+  // Highlight source node
+  const srcLabel = result.source;
+  const srcElId = labelToId[srcLabel];
+  if (srcElId) {
+    const srcEl = idToEl[srcElId];
+    if (srcEl) {
+      srcEl.attr('body/fill', SOURCE_STYLE.fill);
+      srcEl.attr('body/stroke', SOURCE_STYLE.stroke);
+      srcEl.attr('body/strokeWidth', 3);
+      HIGHLIGHTED_CELLS.push(srcElId);
+    }
+  }
+
+  // Highlight each hop layer
+  (result.hop_layers || []).forEach(layer => {
+    const hopIdx = Math.min(layer.hop - 1, HOP_COLORS.length - 1);
+    const hopStyle = HOP_COLORS[hopIdx];
+
+    (layer.devices || []).forEach(d => {
+      const elId = labelToId[d.label];
+      if (!elId) return;
+      const el = idToEl[elId];
+      if (!el) return;
+
+      let style;
+      if (d.status === 'blocked') {
+        style = BLOCKED_STYLE;
+      } else if (d.status === 'zone_boundary') {
+        style = ZONE_STYLE;
+      } else {
+        style = hopStyle;
+      }
+
+      el.attr('body/fill', style.fill);
+      el.attr('body/stroke', style.stroke);
+      el.attr('body/strokeWidth', d.status === 'blocked' ? 3 : 2);
+      HIGHLIGHTED_CELLS.push(elId);
+    });
+  });
+
+  // Highlight edges between compromised nodes
+  const compromisedIds = new Set();
+  if (srcElId) compromisedIds.add(srcElId);
+  (result.hop_layers || []).forEach(layer => {
+    (layer.devices || []).forEach(d => {
+      if (d.status === 'compromised' || d.status === 'zone_boundary') {
+        const eid = labelToId[d.label];
+        if (eid) compromisedIds.add(eid);
+      }
+    });
+  });
+
+  graph.getLinks().forEach(lk => {
+    const src = lk.get('source')?.id;
+    const tgt = lk.get('target')?.id;
+    if (compromisedIds.has(src) && compromisedIds.has(tgt)) {
+      lk.attr('line/stroke', '#e74c3c');
+      lk.attr('line/strokeWidth', 3);
+      HIGHLIGHTED_CELLS.push(lk.id);
+    }
+    // Show blocked edges (to firewall) as dashed green
+    const blockedIds = new Set();
+    (result.hop_layers || []).forEach(layer => {
+      (layer.devices || []).forEach(d => {
+        if (d.status === 'blocked') {
+          const eid = labelToId[d.label];
+          if (eid) blockedIds.add(eid);
+        }
+      });
+    });
+    if ((compromisedIds.has(src) && blockedIds.has(tgt)) ||
+        (compromisedIds.has(tgt) && blockedIds.has(src))) {
+      lk.attr('line/stroke', '#00e676');
+      lk.attr('line/strokeWidth', 3);
+      lk.attr('line/strokeDasharray', '6,3');
+      HIGHLIGHTED_CELLS.push(lk.id);
+    }
+  });
 }
 
 /* ── Packet Animation ─────────────────────────────────────────────────────────── */
