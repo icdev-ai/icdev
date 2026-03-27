@@ -447,10 +447,10 @@ class ATLASRedTeamScanner:
                 where = " WHERE project_id = ?"
                 params = [project_id]
             rows = conn.execute(
-                f"""SELECT r.* FROM atlas_red_team_results r INNER JOIN (  # nosec B608 -- table/column names are internal constants, not user input
+                f"""SELECT r.* FROM atlas_red_team_results r INNER JOIN (
                     SELECT technique, MAX(scanned_at) AS latest
                     FROM atlas_red_team_results{where} GROUP BY technique
-                ) l ON r.technique = l.technique AND r.scanned_at = l.latest""",
+                ) l ON r.technique = l.technique AND r.scanned_at = l.latest""",  # nosec B608 -- table/column names are internal constants, not user input
                 params).fetchall()
             conn.close()
             techs, total_r, total_p, ok = {}, 0, 0, True

@@ -408,9 +408,9 @@ class BaseAssessor(ABC):
             self._ensure_table(conn)
 
             rows = conn.execute(
-                f"""SELECT requirement_id, requirement_title, family, status  # nosec B608 -- table/column names are internal constants, not user input
+                f"""SELECT requirement_id, requirement_title, family, status
                     FROM {self.TABLE_NAME}
-                    WHERE project_id = ?""",
+                    WHERE project_id = ?""",  # nosec B608 -- table/column names are internal constants, not user input
                 (project_id,),
             ).fetchall()
 

@@ -1730,7 +1730,7 @@ def step_08_a2a_callback_client(child_root: Path, blueprint: dict) -> dict:
     default_url = parent_cb.get("url", "")
     auth_method = parent_cb.get("auth", "none")
 
-    client_content = f'''#!/usr/bin/env python3  # nosec B608 -- table/column names are internal constants, not user input
+    client_content = f'''#!/usr/bin/env python3
 # {cui_line}
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -1940,7 +1940,7 @@ if __name__ == "__main__":
     print(f"Parent capabilities: {{len(caps)}}")
     for cap in caps:
         print(f"  - {{cap}}")
-'''
+'''  # nosec B608 -- template content, not user input
 
     client_path = child_root / "tools" / "a2a" / "icdev_callback_client.py"
     client_path.parent.mkdir(parents=True, exist_ok=True)

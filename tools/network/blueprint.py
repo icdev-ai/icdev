@@ -2702,47 +2702,71 @@ def create_network_blueprint():
     # Uses Ollama (scanner tier) for air-gap compatibility
     # ══════════════════════════════════════════════════════════════════════
 
-    _AI_TOPO_SYSTEM_PROMPT = """You are a network topology generator for a dark-themed canvas (navy background #1a1a2e). Given a natural language description, output ONLY a valid JSON object — no markdown, no explanation, no code fences:
+    _AI_TOPO_SYSTEM_PROMPT = """You are a network topology generator for a dark-themed canvas (navy #1a1a2e background). Output ONLY a valid JSON object — no markdown, no explanation, no code fences.
 
+FORMAT:
 {"nodes": [...], "edges": [...]}
-
 Each node: {"id": "unique-id", "label": "Display Name", "type": "device-type", "x": number, "y": number, "config": {}}
-
 Each edge: {"id": "unique-id", "source": "node-id", "target": "node-id", "label": "link label", "protocol": "protocol or empty"}
 
-Valid device types (use ONLY these):
-- router, switch-l2, switch-l3, firewall, load-balancer, wap, server, patch-panel
-- endpoint-pc, endpoint-phone, endpoint-iot, endpoint-camera
-- cloud, aws-vpc, aws-tgw, aws-subnet, az-vnet, az-fw, gcp-vpc
-- vrf, vlan, subnet, security-zone
-- kg-175d, kg-175g, kg-250, kg-340, type1-encryptor, fips-140-l2, fips-140-l3, hsm, macsec
-- siem, sdwan-edge, mpls-pe, mpls-p, route-reflector, pop
-- media-fiber, media-ge, media-10ge, media-100ge
-- roadm, oadm, edfa, transponder, sonet-adm
-- meet-me-room, cross-connect
-- draw-rect (zone boundary box)
-- text-heading (zone title label)
-- text-badge (pill-shaped tag)
+═══ DEVICE TYPES (use ONLY these) ═══
+Physical:     router, switch-l2, switch-l3, firewall, load-balancer, wap, server, patch-panel
+Endpoints:    endpoint-pc, endpoint-phone, endpoint-iot, endpoint-camera
+Cloud:        cloud, aws-vpc, aws-tgw, aws-subnet, az-vnet, az-fw, gcp-vpc
+Logical:      vrf, vlan, subnet, security-zone
+Encryption:   kg-175d, kg-175g, kg-250, kg-340, type1-encryptor, fips-140-l2, fips-140-l3, hsm, macsec
+Monitoring:   siem, sdwan-edge, sase-pop
+SP/Carrier:   mpls-pe, mpls-p, route-reflector, pop, sonet-adm, roadm, oadm, edfa, transponder
+Media:        media-fiber, media-ge, media-10ge, media-100ge
+Colo:         meet-me-room, cross-connect
+Drawing:      draw-rect, draw-rounded-rect, text-heading, text-label, text-badge
 
-Zone color palette (dark fills, bright borders — ALWAYS use these for draw-rect):
-- Blue zone:   config: {"_fill": "#0a1628", "_stroke": "#3498db", "_width": W, "_height": H}
-- Green zone:  config: {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": W, "_height": H}
-- Orange zone: config: {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": W, "_height": H}
-- Red zone:    config: {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": W, "_height": H}
-- Purple zone: config: {"_fill": "#120a20", "_stroke": "#9b59b6", "_width": W, "_height": H}
-- Teal zone:   config: {"_fill": "#0a1a1a", "_stroke": "#00cec9", "_width": W, "_height": H}
+═══ MANDATORY STRUCTURE — follow this exact order in nodes array ═══
 
-For text-heading: config: {"_textColor": "<matching zone stroke color>"}
-For text-badge:   config: {"_fill": "#0f3460", "_stroke": "#4a9eff"}
+1. ZONE BOXES (draw-rect) — placed FIRST so they render behind devices
+2. ZONE HEADINGS (text-heading) — placed ABOVE their zone box (zone_y - 25px)
+3. BADGES (text-badge) — top of diagram for topology type name
+4. DEVICES — inside their zone boxes, with realistic labels
+5. ANNOTATION LABELS (text-label) — protocol/spec notes in clear space
+6. LEGEND PANEL — ALWAYS include, on the RIGHT side of the diagram
 
-Layout rules:
-- Zone boxes (draw-rect) MUST be placed FIRST in the nodes array (they render behind devices)
-- Text-heading labels go right after their zone box, positioned at the zone's top (y + 5)
-- Devices go inside their zone boxes
-- Space devices 150-200px apart horizontally, 120-150px vertically
-- Zone boxes should be wide enough (300-600px) and tall enough (120-250px) to contain their devices with padding
-- Start layout at x=40, y=40
-- Use realistic protocols: OSPF, BGP, eBGP, iBGP, MPLS, IPSec, mTLS, STP, VXLAN, etc.
+═══ ZONE COLOR PALETTE (dark fills, bright borders) ═══
+Blue:    {"_fill": "#0a1628", "_stroke": "#3498db", "_width": W, "_height": H}
+Green:   {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": W, "_height": H}
+Orange:  {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": W, "_height": H}
+Red:     {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": W, "_height": H}
+Purple:  {"_fill": "#120a20", "_stroke": "#9b59b6", "_width": W, "_height": H}
+Teal:    {"_fill": "#0a1a1a", "_stroke": "#00cec9", "_width": W, "_height": H}
+Legend:  {"_fill": "#0f1520", "_stroke": "#636e72", "_width": 240, "_height": H}
+
+text-heading config: {"_textColor": "<matching zone stroke color>"}
+text-badge config:   {"_fill": "#0f3460", "_stroke": "#4a9eff"}
+text-label config:   {"_textColor": "#7a8cb0"} (or matching color)
+
+═══ LAYOUT RULES ═══
+- Start at x=40, y=60. Leave 25px above zones for headings.
+- Space devices 150-200px apart horizontally, 130-160px vertically between tiers.
+- Zone boxes: 300-700px wide, 140-250px tall, with 40px padding around devices inside.
+- Zone headings: positioned at (zone_x + 20, zone_y - 25) with _textColor matching zone _stroke.
+- NEVER overlap text on text. Keep 30px vertical gap between text nodes.
+- Use different zone colors for different functional areas (e.g., blue=network, green=customer, orange=core, red=security, purple=control plane).
+
+═══ LEGEND (MANDATORY — always include) ═══
+Place a legend panel to the RIGHT of the main diagram (max_device_x + 120).
+Structure:
+- draw-rect background: {"_fill": "#0f1520", "_stroke": "#636e72", "_width": 240, "_height": <calculated>}
+- text-heading "Legend" at top
+- PROTOCOLS section: list only protocols used, with color matching link colors:
+  OSPF=#27ae60, iBGP=#85c1e9, eBGP=#3498db, MPLS=#ff9800, IPSec=#f7dc6f, mTLS=#fdcb6e, VXLAN=#00bcd4, BGP=#5dade2
+- DEVICES section: list device types used with their colors:
+  Router=#3498db, Switch=#27ae60, Firewall=#e94560, Server=#1abc9c, Cloud=#7f8c8d, WAP=#9b59b6, etc.
+- ZONES section: list zones by color with their heading labels:
+  "Blue = <heading text>", "Orange = <heading text>", etc.
+Each legend entry: text-label with "• <description>" and appropriate _textColor.
+Spacing: 22px between entries, 30px between sections.
+
+═══ PROTOCOLS (use realistic ones) ═══
+OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, mTLS, STP, VXLAN, BGP EVPN, GRE, SONET, OC-192, OLSR
 
 Output ONLY the JSON object. No other text."""
 
@@ -2861,6 +2885,13 @@ Output ONLY the JSON object. No other text."""
             graph_json, raw = _parse_llm_response(content)
             if graph_json is None:
                 return jsonify({"error": "LLM did not return valid JSON", "raw": raw}), 422
+
+            # Apply deterministic style rules (zone ordering, label deconfliction, legend)
+            try:
+                from tools.network.topology_styler import style_topology
+                graph_json = style_topology(graph_json)
+            except Exception as style_err:
+                logger.warning("Topology styler failed (non-fatal): %s", style_err)
 
             _audit("AI_GENERATE", "topology", "", f"[{used_provider}] Generated from: {description[:100]}")
             return jsonify({

@@ -1112,24 +1112,24 @@ def get_usage():
 
         # Top endpoints
         top_endpoints = conn.execute(
-            """SELECT endpoint, COUNT(*) as call_count,  # nosec B608 -- table/column names are internal constants, not user input
+            """SELECT endpoint, COUNT(*) as call_count,
                       COALESCE(AVG(duration_ms), 0) as avg_ms
                FROM usage_records
                WHERE {}
                GROUP BY endpoint
                ORDER BY call_count DESC
-               LIMIT 10""".format(where_clause),
+               LIMIT 10""".format(where_clause),  # nosec B608 -- table/column names are internal constants, not user input
             params_base,
         ).fetchall()
 
         # Recent records
         recent = conn.execute(
-            """SELECT endpoint, method, status_code, duration_ms,  # nosec B608 -- table/column names are internal constants, not user input
+            """SELECT endpoint, method, status_code, duration_ms,
                       tokens_used, recorded_at
                FROM usage_records
                WHERE {}
                ORDER BY recorded_at DESC
-               LIMIT ?""".format(where_clause),
+               LIMIT ?""".format(where_clause),  # nosec B608 -- table/column names are internal constants, not user input
             params_base + [min(limit, 500)],
         ).fetchall()
 

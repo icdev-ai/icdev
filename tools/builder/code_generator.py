@@ -308,7 +308,7 @@ if __name__ == "__main__":
 def _generate_model_code(entity: str, spec: str) -> str:
     """Generate a data model module."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER}  # nosec B608 -- table/column names are internal constants, not user input
+    return f'''{CUI_HEADER}
 """Data model for {entity}.
 
 Spec: {spec}
@@ -440,7 +440,7 @@ class {class_name}Repository:
             return c.rowcount > 0
         finally:
             conn.close()
-'''
+'''  # nosec B608 -- template content, not user input
 
 
 def _generate_service_code(entity: str, spec: str) -> str:

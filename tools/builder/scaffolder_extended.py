@@ -910,7 +910,7 @@ mod tests {{
     files.append(str(root / "features" / ".gitkeep"))
 
     # -- Dockerfile (STIG-hardened, multi-stage) --------------------------
-    dockerfile = f"""{CUI_HEADER_HASH}  # nosec B608 -- table/column names are internal constants, not user input
+    dockerfile = f"""{CUI_HEADER_HASH}
 # STIG-hardened multi-stage Dockerfile for Rust
 # CUI // SP-CTI
 
@@ -958,7 +958,7 @@ ENTRYPOINT ["./app"]
 
 # Read-only root filesystem — enforce via container runtime:
 #   docker run --read-only --tmpfs /tmp:rw,noexec,nosuid ...
-"""
+"""  # nosec B608 -- template content, not user input
     p = root / "Dockerfile"
     _write_file(p, dockerfile)
     files.append(str(p))
