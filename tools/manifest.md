@@ -1530,6 +1530,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Stig Import | tools\network\stig_import.py | Auto-registered: network/stig_import.py | --json | JSON |
+| Intent Validator | tools\network\intent_validator.py | Network Canvas intent-based topology validation engine — bandwidth, redundancy, isolation, latency, encryption constraints | --json | JSON |
 
 
 ## Auto-Registered (Coherence Fix)
