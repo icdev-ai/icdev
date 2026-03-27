@@ -1155,31 +1155,9 @@ async function ncChatSend() {
   sendBtn.disabled = true;
   sendBtn.textContent = '...';
 
-  // Try chat system first
-  const ctxId = await _ncChatEnsureContext();
-  if (ctxId) {
-    // Send via multi-stream chat
-    try {
-      const r = await fetch(`/api/chat/${ctxId}/send`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content: text}),
-      });
-      const data = await r.json();
-      if (data.error) throw new Error(data.error);
-
-      // Poll for response
-      _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Thinking...</span>');
-      _ncChatPollForResponse();
-    } catch (err) {
-      _ncChatAppendMsg('system', 'Chat error: ' + _escHtml(err.message) + '. Falling back to direct AI generate...');
-      await _ncChatDirectGenerate(text);
-    }
-  } else {
-    // Fallback: direct AI generate (no chat system)
-    _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Generating...</span>');
-    await _ncChatDirectGenerate(text);
-  }
+  // Use direct AI generate (Claude API — fast and reliable)
+  _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Generating topology...</span>');
+  await _ncChatDirectGenerate(text);
 
   sendBtn.disabled = false;
   sendBtn.textContent = 'Send';
