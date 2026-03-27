@@ -687,6 +687,171 @@ def _sim_fiber_budget(nodes, edges, params) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Blast Radius Simulation (Zero Trust validation)
+# ---------------------------------------------------------------------------
+
+# Device types that act as security boundaries (block lateral movement)
+FIREWALL_TYPES = frozenset({
+    "firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf",
+    "az-nsg", "oci-nsg",
+})
+
+# Inline security appliances that segment but don't fully block
+SECURITY_ZONE_TYPES = frozenset({
+    "security-zone", "sase-pop",
+})
+
+
+def _sim_blast_radius(nodes: list, edges: list, params: dict) -> dict:
+    """Simulate attacker blast radius from a compromised device.
+
+    BFS expansion from a source node up to N hops, stopping traversal at
+    firewall/security-boundary nodes.  Firewalls themselves are marked as
+    'boundary' (attacker reached the door but can't pass through).
+
+    Returns reachable devices per hop with risk classification.
+    """
+    node_map = {n["id"]: n for n in nodes}
+    label_map = {n["id"]: n.get("label", n["id"]) for n in nodes}
+    type_map = {n["id"]: (n.get("type") or n.get("nodeType") or "unknown") for n in nodes}
+
+    # Build undirected adjacency
+    adj: dict[str, set[str]] = {}
+    for e in edges:
+        adj.setdefault(e["source"], set()).add(e["target"])
+        adj.setdefault(e["target"], set()).add(e["source"])
+
+    source = params.get("source", "")
+    max_hops = int(params.get("max_hops", 3))
+
+    if not source:
+        # Default to first node
+        source = nodes[0]["id"] if nodes else ""
+    if source not in node_map:
+        return {
+            "sim_type": "blast_radius",
+            "error": f"Source node '{source}' not found",
+            "summary": "Select a device to simulate compromise",
+        }
+
+    # BFS with hop tracking, stopping at firewalls
+    visited: dict[str, int] = {source: 0}  # node_id -> hop distance
+    boundary_nodes: set[str] = set()        # firewalls that blocked expansion
+    frontier = [source]
+    hop_layers: list[list[dict]] = []       # per-hop detail
+
+    for hop in range(1, max_hops + 1):
+        next_frontier: list[str] = []
+        layer_devices: list[dict] = []
+
+        for current in frontier:
+            for neighbor in adj.get(current, set()):
+                if neighbor in visited:
+                    continue
+                visited[neighbor] = hop
+                ntype = type_map.get(neighbor, "unknown")
+
+                if ntype in FIREWALL_TYPES:
+                    # Attacker reaches the firewall but cannot pass through
+                    boundary_nodes.add(neighbor)
+                    layer_devices.append({
+                        "id": neighbor,
+                        "label": label_map.get(neighbor, neighbor),
+                        "type": ntype,
+                        "hop": hop,
+                        "status": "blocked",
+                    })
+                    # Do NOT add to next_frontier — traversal stops here
+                elif ntype in SECURITY_ZONE_TYPES:
+                    # Security zone boundary — mark but still traversable
+                    layer_devices.append({
+                        "id": neighbor,
+                        "label": label_map.get(neighbor, neighbor),
+                        "type": ntype,
+                        "hop": hop,
+                        "status": "zone_boundary",
+                    })
+                    next_frontier.append(neighbor)
+                else:
+                    layer_devices.append({
+                        "id": neighbor,
+                        "label": label_map.get(neighbor, neighbor),
+                        "type": ntype,
+                        "hop": hop,
+                        "status": "compromised",
+                    })
+                    next_frontier.append(neighbor)
+
+        if layer_devices:
+            hop_layers.append({"hop": hop, "devices": layer_devices})
+        frontier = next_frontier
+        if not frontier:
+            break
+
+    # Collect all reachable (compromised) node labels
+    compromised = [
+        d for layer in hop_layers for d in layer["devices"]
+        if d["status"] == "compromised"
+    ]
+    blocked = [
+        d for layer in hop_layers for d in layer["devices"]
+        if d["status"] == "blocked"
+    ]
+    zone_boundaries = [
+        d for layer in hop_layers for d in layer["devices"]
+        if d["status"] == "zone_boundary"
+    ]
+
+    total_nodes = len(nodes)
+    total_compromised = len(compromised) + 1  # +1 for the source
+    blast_pct = round(total_compromised / max(total_nodes, 1) * 100, 1)
+
+    # Risk rating
+    if blast_pct >= 75:
+        risk = "CRITICAL"
+    elif blast_pct >= 50:
+        risk = "HIGH"
+    elif blast_pct >= 25:
+        risk = "MEDIUM"
+    else:
+        risk = "LOW"
+
+    # Zero Trust score: more firewalls blocking = better segmentation
+    zt_score = 0
+    if total_nodes > 1:
+        blocked_ratio = len(blocked) / max(len(adj.get(source, set())), 1)
+        unreachable = total_nodes - len(visited)
+        zt_score = round(
+            min(100, (unreachable / max(total_nodes - 1, 1)) * 60
+                + blocked_ratio * 40),
+            1,
+        )
+
+    return {
+        "sim_type": "blast_radius",
+        "source": label_map.get(source, source),
+        "source_id": source,
+        "max_hops": max_hops,
+        "hop_layers": hop_layers,
+        "compromised_count": total_compromised,
+        "blocked_count": len(blocked),
+        "zone_boundary_count": len(zone_boundaries),
+        "total_nodes": total_nodes,
+        "blast_pct": blast_pct,
+        "risk": risk,
+        "zero_trust_score": zt_score,
+        "unreachable_count": total_nodes - len(visited),
+        "compromised_labels": [d["label"] for d in compromised],
+        "blocked_labels": [d["label"] for d in blocked],
+        "summary": (
+            f"Blast radius: {total_compromised}/{total_nodes} devices "
+            f"({blast_pct}%) reachable within {max_hops} hops — "
+            f"Risk: {risk}, ZT Score: {zt_score}/100"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
@@ -777,6 +942,9 @@ def _run_simulation(graph: dict, sim_type: str, params: dict) -> dict:
 
     if sim_type == "fiber_budget":
         return _sim_fiber_budget(nodes, edges, params)
+
+    if sim_type == "blast_radius":
+        return _sim_blast_radius(nodes, edges, params)
 
     return {"sim_type": sim_type, "error": "Unknown simulation type", "summary": "N/A"}
 
@@ -876,6 +1044,29 @@ def _add_narrative(result: dict) -> dict:
             frag = result.get("fragmentation_points", [])
             if frag:
                 lines.append(f"Upgrade MTU on: {', '.join(frag[:5])}")
+
+    elif st == "blast_radius":
+        risk = result.get("risk", "?")
+        blast_pct = result.get("blast_pct", 0)
+        src = result.get("source", "?")
+        compromised = result.get("compromised_count", 0)
+        total = result.get("total_nodes", 0)
+        blocked = result.get("blocked_count", 0)
+        zt = result.get("zero_trust_score", 0)
+        lines.append(f"If '{src}' is compromised, an attacker can reach "
+                     f"{compromised} of {total} devices ({blast_pct}%) "
+                     f"within {result.get('max_hops', 3)} hops.")
+        if blocked:
+            lines.append(f"{blocked} firewall(s) blocked further lateral movement.")
+        if risk in ("CRITICAL", "HIGH"):
+            lines.append("This indicates insufficient network segmentation. "
+                         "Add firewalls or security zones between segments to reduce blast radius.")
+        elif risk == "MEDIUM":
+            lines.append("Some segmentation exists but could be improved. "
+                         "Consider adding micro-segmentation per Zero Trust principles.")
+        else:
+            lines.append("Good segmentation \u2014 the blast radius is well contained.")
+        lines.append(f"Zero Trust segmentation score: {zt}/100.")
 
     if not lines:
         lines.append(f"Simulation type '{st}' completed. See the detailed results for analysis.")

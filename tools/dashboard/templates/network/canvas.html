@@ -549,6 +549,7 @@
         <option value="jumbo_mtu">Jumbo Frame / MTU Path Check</option>
         <option value="dwdm_optical">DWDM / Optical Quality</option>
         <option value="fiber_budget">Fiber Power Budget</option>
+        <option value="blast_radius">Blast Radius (Zero Trust)</option>
       </select>
       <!-- Extra params for routing sims -->
       <div id="sim-extra-params" class="hidden" style="margin-top:8px;">
@@ -559,6 +560,11 @@
         <div class="form-group" id="sim-mtu-group" style="display:none;">
           <label>Desired MTU</label>
           <input type="number" id="sp-mtu-size" class="form-control" value="9000" placeholder="9000 (jumbo)"/>
+        </div>
+        <div class="form-group" id="sim-blast-group" style="display:none;">
+          <label>Max Hops</label>
+          <input type="number" id="sp-max-hops" class="form-control" value="3" min="1" max="10" placeholder="3"/>
+          <small style="color:#888;">Click a device first, then Run to simulate compromise</small>
         </div>
       </div>
     </div>

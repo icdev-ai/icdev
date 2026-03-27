@@ -38,6 +38,14 @@ async function runSimulation() {
   if (prefixEl && prefixEl.value) extraParams.prefix = prefixEl.value;
   const mtuEl = document.getElementById('sp-mtu-size');
   if (mtuEl && mtuEl.value) extraParams.mtu_size = parseInt(mtuEl.value);
+  if (simType === 'blast_radius') {
+    const hopsEl = document.getElementById('sp-max-hops');
+    if (hopsEl && hopsEl.value) extraParams.max_hops = parseInt(hopsEl.value);
+    // Use selected node as source; fall back to first node
+    if (typeof selectedCell !== 'undefined' && selectedCell && selectedCell.isElement()) {
+      extraParams.source = selectedCell.id;
+    }
+  }
 
   try {
     const r = await fetch(NC_BASE + `/api/topologies/${currentTopoId}/simulate`, {
@@ -751,14 +759,17 @@ function onSimTypeChange(val) {
   const extra = document.getElementById('sim-extra-params');
   const prefixGrp = document.getElementById('sim-prefix-group');
   const mtuGrp = document.getElementById('sim-mtu-group');
+  const blastGrp = document.getElementById('sim-blast-group');
   if (!extra) return;
 
   const showPrefix = ['bgp_bestpath', 'bgp_propagation'].includes(val);
   const showMtu = val === 'jumbo_mtu';
+  const showBlast = val === 'blast_radius';
 
-  extra.classList.toggle('hidden', !showPrefix && !showMtu);
+  extra.classList.toggle('hidden', !showPrefix && !showMtu && !showBlast);
   if (prefixGrp) prefixGrp.style.display = showPrefix ? '' : 'none';
   if (mtuGrp) mtuGrp.style.display = showMtu ? '' : 'none';
+  if (blastGrp) blastGrp.style.display = showBlast ? '' : 'none';
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
