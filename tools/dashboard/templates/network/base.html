@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}Network Design Canvas{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/network-canvas.css') }}"/>
+  <script>const NC_BASE = '/network';</script>
+  {% block head %}{% endblock %}
+</head>
+<body style="display:flex;flex-direction:column;min-height:100vh;margin:0;">
+  {% if classification_banner %}
+  <div class="cui-banner">{{ classification_banner }}</div>
+  {% endif %}
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="nav-icon">⬡</span>
+      <a href="/network/" class="nav-title">Network Design Canvas</a>
+      <span class="nav-badge">ICDEV™</span>
+    </div>
+    <div class="nav-links">
+      <a href="/network/" class="nav-link {% if request.path == '/network/' %}active{% endif %}">Dashboard</a>
+      <a href="/network/templates" class="nav-link {% if '/network/templates' in request.path %}active{% endif %}">Templates</a>
+      <a href="/network/projects" class="nav-link {% if '/network/projects' in request.path %}active{% endif %}">Projects</a>
+      <a href="/network/circuits" class="nav-link {% if '/network/circuits' in request.path %}active{% endif %}">Circuits</a>
+      <a href="/network/customers" class="nav-link {% if '/network/customers' in request.path %}active{% endif %}">Customers</a>
+      <a href="/network/ipam" class="nav-link {% if '/network/ipam' in request.path %}active{% endif %}">IPAM</a>
+      <a href="/network/cables" class="nav-link {% if '/network/cables' in request.path %}active{% endif %}">Cables</a>
+      <a href="/network/canvas/new" class="nav-link btn-primary-sm">+ New Topology</a>
+      <a href="/" class="nav-link" style="margin-left:auto;font-size:0.8rem;">ICDEV Home</a>
+      {% if current_user %}
+      <a href="/network/logout" class="nav-link" style="font-size:0.8rem;color:var(--red);">Logout</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main-content">
+    {% if error is defined and error %}
+      <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span>Network Design Canvas — ICDEV™ &copy; 2026</span>
+    {% if classification_banner %}<span class="footer-classification">{{ classification_banner }}</span>{% endif %}
+  </footer>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

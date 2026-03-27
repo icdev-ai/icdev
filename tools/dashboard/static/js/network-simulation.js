@@ -1,0 +1,768 @@
+/**
+ * Network Design Canvas — Simulation visualization layer
+ * Renders simulation results on the JointJS canvas.
+ */
+
+/* ── Simulation Panel Controls ───────────────────────────────────────────────── */
+function openSimPanel() {
+  document.getElementById('sim-overlay').classList.remove('hidden');
+  document.getElementById('sim-output').textContent = '';
+}
+
+function closeSimPanel() {
+  document.getElementById('sim-overlay').classList.add('hidden');
+  clearHighlights();
+}
+
+/* ── Run Simulation ───────────────────────────────────────────────────────────── */
+async function runSimulation() {
+  const simType = document.getElementById('sp-sim-type').value;
+  const output = document.getElementById('sim-output');
+
+  if (!currentTopoId || currentTopoId === 'new') {
+    await saveTopology();
+  }
+  if (!currentTopoId || currentTopoId === 'new') {
+    output.textContent = 'Error: Save the topology first.';
+    return;
+  }
+
+  output.textContent = `Running ${simType}...`;
+  clearHighlights();
+  stopAnimations();
+  clearOutages();
+
+  // Collect extra params
+  const extraParams = { sim_type: simType };
+  const prefixEl = document.getElementById('sp-prefix');
+  if (prefixEl && prefixEl.value) extraParams.prefix = prefixEl.value;
+  const mtuEl = document.getElementById('sp-mtu-size');
+  if (mtuEl && mtuEl.value) extraParams.mtu_size = parseInt(mtuEl.value);
+
+  try {
+    const r = await fetch(NC_BASE + `/api/topologies/${currentTopoId}/simulate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(extraParams)
+    });
+    const data = await r.json();
+    const result = data.result || {};
+
+    output.textContent = formatResult(simType, result);
+    visualizeResult(simType, result);
+
+  } catch (err) {
+    output.textContent = 'Simulation error: ' + err.message;
+  }
+}
+
+/* ── Format result text ───────────────────────────────────────────────────────── */
+function formatResult(simType, result) {
+  const lines = [];
+  lines.push(`Simulation: ${simType.toUpperCase()}`);
+  lines.push(`Summary: ${result.summary || '—'}`);
+  lines.push('');
+
+  switch (simType) {
+    case 'ping':
+      lines.push(`Source:      ${result.source || '?'}`);
+      lines.push(`Destination: ${result.destination || '?'}`);
+      lines.push(`Reachable:   ${result.reachable ? 'YES' : 'NO'}`);
+      if (result.latency_ms != null) lines.push(`Latency:     ${result.latency_ms} ms`);
+      if (result.hops?.length) lines.push(`Path: ${result.hops.join(' → ')}`);
+      break;
+
+    case 'traceroute':
+      lines.push(`Source: ${result.source || '?'} → Dest: ${result.destination || '?'}`);
+      lines.push('');
+      (result.trace || []).forEach(h => {
+        lines.push(`  Hop ${h.hop}: ${h.node} (${h.latency_ms} ms)`);
+      });
+      break;
+
+    case 'spof':
+      lines.push(`SPOFs found: ${(result.spof_nodes || []).length}`);
+      (result.spof_nodes || []).forEach(n => lines.push(`  ✕ ${n}`));
+      break;
+
+    case 'failover':
+      lines.push(`Resilience Score: ${result.resilience_score}%`);
+      lines.push('');
+      (result.risks || []).forEach(r => {
+        lines.push(`  Node: ${r.node}`);
+        lines.push(`  Impact: ${r.impact}`);
+        lines.push(`  Fix: ${r.recommendation}`);
+        lines.push('');
+      });
+      break;
+
+    case 'load':
+      lines.push(`Avg Utilization: ${result.avg_utilization_pct}%`);
+      lines.push('');
+      (result.utilization || []).forEach(u => {
+        const bar = utilBar(u.utilization_pct);
+        lines.push(`  ${(u.label || u.edge).padEnd(20)} ${bar} ${u.utilization_pct}% [${u.status.toUpperCase()}]`);
+      });
+      break;
+
+    case 'bgp_bestpath':
+      lines.push(`Source:      ${result.source || '?'}`);
+      lines.push(`Destination: ${result.destination || '?'}`);
+      lines.push(`Decision:    ${result.decision_reason || '—'}`);
+      lines.push('');
+      (result.paths || []).forEach((p, i) => {
+        const marker = i === 0 ? '★ BEST' : `  #${i+1}`;
+        lines.push(`${marker}: ${p.path.join(' → ')}`);
+        lines.push(`    Weight=${p.weight} LP=${p.local_pref} AS_PATH=${p.as_path_length} MED=${p.med} Score=${p.score}`);
+        if (p.hop_details) {
+          p.hop_details.forEach(h => {
+            lines.push(`      ${h.node}: ASN=${h.asn} LP=${h.local_pref} MED=${h.med} W=${h.weight}`);
+          });
+        }
+        lines.push('');
+      });
+      break;
+
+    case 'bgp_propagation':
+      lines.push(`Originator: ${result.originator || '?'}`);
+      lines.push(`Reached: ${result.nodes_reached}/${result.total_bgp_nodes} BGP nodes`);
+      lines.push('');
+      (result.waves || []).forEach(w => {
+        lines.push(`Wave ${w.wave}: ${w.action}`);
+        lines.push(`  Nodes: ${w.nodes.join(', ')}`);
+        if (w.local_prefs) {
+          Object.entries(w.local_prefs).forEach(([n, lp]) => {
+            lines.push(`    ${n}: LOCAL_PREF=${lp}`);
+          });
+        }
+        lines.push('');
+      });
+      break;
+
+    case 'ospf_spf':
+      lines.push(`SPF Root: ${result.root || '?'}`);
+      lines.push(`ECMP nodes: ${(result.ecmp_nodes || []).join(', ') || 'none'}`);
+      lines.push('');
+      (result.spf_tree || []).forEach(n => {
+        lines.push(`  ${n.node.padEnd(20)} Cost=${String(n.cost).padStart(5)} Hops=${n.hops} Path: ${n.path.join(' → ')}`);
+      });
+      break;
+
+    case 'ospf_cost':
+      lines.push(`Links: ${(result.link_costs || []).length}`);
+      lines.push(`Load-balance groups: ${Object.keys(result.load_balance_groups || {}).length}`);
+      lines.push(`ABR boundaries: ${(result.abr_boundaries || []).length}`);
+      lines.push('');
+      (result.link_costs || []).forEach(lc => {
+        const abr = lc.is_abr_boundary ? ' [ABR]' : '';
+        lines.push(`  Cost=${String(lc.cost).padStart(5)}  ${lc.link}  (${lc.label || '—'}) Area=${lc.area}${abr}`);
+      });
+      if (Object.keys(result.load_balance_groups || {}).length) {
+        lines.push('');
+        lines.push('Equal-Cost Load Balancing:');
+        Object.entries(result.load_balance_groups).forEach(([cost, links]) => {
+          lines.push(`  Cost ${cost}: ${links.length} parallel paths`);
+          links.forEach(l => lines.push(`    ${l}`));
+        });
+      }
+      break;
+
+    case 'jumbo_mtu':
+      const ready = result.jumbo_ready ? 'YES' : 'NO';
+      lines.push(`Desired MTU:  ${result.desired_mtu}`);
+      lines.push(`Path MTU:     ${result.path_mtu}`);
+      lines.push(`Jumbo Ready:  ${ready}`);
+      if (result.bottleneck) lines.push(`Bottleneck:   ${result.bottleneck}`);
+      lines.push('');
+      lines.push('Path MTU Detail:');
+      (result.path_detail || []).forEach(p => {
+        const icon = p.status === 'ok' ? '  ' : '✕ ';
+        lines.push(`  ${icon}${p.node.padEnd(20)} MTU=${p.mtu} ${p.status}`);
+      });
+      lines.push('');
+      const fragPts = result.fragmentation_points || [];
+      if (fragPts.length) {
+        lines.push(`Fragmentation points (${fragPts.length}):`);
+        fragPts.forEach(n => lines.push(`  ✕ ${n}`));
+      } else {
+        lines.push('No fragmentation points — all nodes support jumbo frames.');
+      }
+      break;
+
+    case 'dwdm_optical':
+      const sys = result.system || {};
+      lines.push(`DWDM Optical Quality Analysis`);
+      lines.push(`═══════════════════════════════`);
+      lines.push(`Spans:     ${sys.total_spans}`);
+      lines.push(`Distance:  ${sys.total_distance_km} km`);
+      lines.push(`OSNR:      ${sys.osnr_db} dB  [${(sys.status || '').toUpperCase()}]`);
+      lines.push(`EDFAs:     ${sys.edfa_count}`);
+      lines.push(`Net Loss:  ${sys.total_net_loss_db} dB`);
+      lines.push(`CD Total:  ${sys.total_cd_ps_nm} ps/nm`);
+      lines.push(`PMD Total: ${sys.total_pmd_ps} ps`);
+      lines.push('');
+      lines.push('Per-Span Detail:');
+      (result.spans || []).forEach(s => {
+        const q = s.quality === 'good' ? '  ' : s.quality === 'warning' ? '! ' : '✕ ';
+        lines.push(`${q}${s.span}`);
+        lines.push(`    ${s.distance_km}km | Loss=${s.total_loss_db}dB | EDFA=${s.edfa_gain_db}dB | Net=${s.net_loss_db}dB`);
+        lines.push(`    CD=${s.chromatic_dispersion_ps_nm} ps/nm | PMD=${s.pmd_ps} ps | ${s.protocol}`);
+      });
+      break;
+
+    case 'fiber_budget':
+      lines.push(`Fiber Power Budget`);
+      lines.push(`═══════════════════`);
+      lines.push(`TX:           ${result.tx_node} @ ${result.tx_power_dbm} dBm`);
+      lines.push(`RX:           ${result.rx_node}`);
+      lines.push(`RX Sens:      ${result.rx_sensitivity_dbm} dBm`);
+      lines.push(`RX Power:     ${result.rx_power_dbm} dBm`);
+      lines.push(`Total Loss:   ${result.total_loss_db} dB`);
+      lines.push(`Margin:       ${result.margin_db} dB  [${(result.status || '').toUpperCase()}]`);
+      lines.push('');
+      lines.push('Power Level Walk:');
+      (result.budget_detail || []).forEach(b => {
+        const bar = b.power_dbm > -10 ? '█' : b.power_dbm > -20 ? '▓' : '░';
+        lines.push(`  ${bar} ${b.node.padEnd(22)} ${b.action.padEnd(10)} ${String(b.loss_db > 0 ? '-' + b.loss_db : b.loss_db < 0 ? '+' + Math.abs(b.loss_db) : '—').padStart(8)} dB  →  ${b.power_dbm} dBm`);
+      });
+      break;
+
+    default:
+      lines.push(JSON.stringify(result, null, 2));
+  }
+
+  return lines.join('\n');
+}
+
+function utilBar(pct) {
+  const filled = Math.round(pct / 10);
+  return '[' + '█'.repeat(filled) + '░'.repeat(10 - filled) + ']';
+}
+
+/* ── Visual highlighting on canvas ───────────────────────────────────────────── */
+const HIGHLIGHTED_CELLS = [];
+
+function clearHighlights() {
+  HIGHLIGHTED_CELLS.forEach(id => {
+    const cell = graph.getCell(id);
+    if (!cell) return;
+    if (cell.isElement()) {
+      const type = cell.get('nodeType') || 'unknown';
+      const style = (typeof getStyle !== 'undefined') ? getStyle(type) : { fill: '#1a1a2e', stroke: '#7a8cb0' };
+      cell.attr('body/fill', style.fill);
+      cell.attr('body/stroke', style.stroke);
+    } else {
+      cell.attr('line/stroke', '#e94560');
+      cell.attr('line/strokeWidth', 2);
+    }
+  });
+  HIGHLIGHTED_CELLS.length = 0;
+}
+
+function highlightSpof(spofLabels) {
+  graph.getElements().forEach(el => {
+    const label = el.attr('label/text') || '';
+    if (spofLabels.includes(label)) {
+      el.attr('body/fill', '#3a0000');
+      el.attr('body/stroke', '#e74c3c');
+      HIGHLIGHTED_CELLS.push(el.id);
+    }
+  });
+}
+
+function highlightPath(hopLabels) {
+  // Collect node ids by label
+  const labelToId = {};
+  graph.getElements().forEach(el => {
+    const lbl = el.attr('label/text') || '';
+    labelToId[lbl] = el.id;
+  });
+
+  hopLabels.forEach(lbl => {
+    const id = labelToId[lbl];
+    if (!id) return;
+    const el = graph.getCell(id);
+    if (el) {
+      el.attr('body/fill', '#0f2b0f');
+      el.attr('body/stroke', '#27ae60');
+      HIGHLIGHTED_CELLS.push(id);
+    }
+  });
+
+  // Highlight links in path
+  for (let i = 0; i < hopLabels.length - 1; i++) {
+    const srcId = labelToId[hopLabels[i]];
+    const tgtId = labelToId[hopLabels[i + 1]];
+    if (!srcId || !tgtId) continue;
+    graph.getLinks().forEach(lk => {
+      const src = lk.get('source')?.id;
+      const tgt = lk.get('target')?.id;
+      if ((src === srcId && tgt === tgtId) || (src === tgtId && tgt === srcId)) {
+        lk.attr('line/stroke', '#27ae60');
+        lk.attr('line/strokeWidth', 3);
+        HIGHLIGHTED_CELLS.push(lk.id);
+      }
+    });
+  }
+}
+
+function applyLoadHeatmap(utilization) {
+  // Map edge ids/labels to link colors
+  const edgeMap = {};
+  (utilization || []).forEach(u => {
+    edgeMap[u.edge] = u;
+  });
+
+  graph.getLinks().forEach(lk => {
+    const uid = edgeMap[lk.id];
+    if (!uid) return;
+    const pct = uid.utilization_pct;
+    let color;
+    if (pct > 75) color = '#e74c3c';      // critical — red
+    else if (pct > 50) color = '#f39c12'; // warning — orange
+    else color = '#27ae60';               // ok — green
+    lk.attr('line/stroke', color);
+    lk.attr('line/strokeWidth', 2 + Math.floor(pct / 30));
+    HIGHLIGHTED_CELLS.push(lk.id);
+  });
+}
+
+function visualizeResult(simType, result) {
+  switch (simType) {
+    case 'ping':
+      if (result.hops?.length) highlightPath(result.hops);
+      break;
+    case 'traceroute':
+      if (result.trace?.length) {
+        const hopLabels = result.trace.map(h => h.node);
+        highlightPath(hopLabels);
+      }
+      break;
+    case 'spof':
+      if (result.spof_nodes?.length) highlightSpof(result.spof_nodes);
+      break;
+    case 'failover':
+      if (result.risks?.length) highlightSpof(result.risks.map(r => r.node));
+      break;
+    case 'load':
+      applyLoadHeatmap(result.utilization);
+      break;
+  }
+}
+
+/* ── Packet Animation ─────────────────────────────────────────────────────────── */
+let _animFrames = [];
+
+function animatePacketPath(hopLabels, opts = {}) {
+  const speed = opts.speed || 600; // ms per hop
+  const color = opts.color || '#27ae60';
+  const size  = opts.size || 8;
+
+  // Map labels → element ids
+  const labelToId = {};
+  graph.getElements().forEach(el => { labelToId[el.attr('label/text') || ''] = el.id; });
+
+  // Build ordered list of (sourceView, targetView, link) for each hop
+  const hops = [];
+  for (let i = 0; i < hopLabels.length - 1; i++) {
+    const srcId = labelToId[hopLabels[i]];
+    const tgtId = labelToId[hopLabels[i + 1]];
+    if (!srcId || !tgtId) continue;
+    const link = graph.getLinks().find(lk => {
+      const s = lk.get('source')?.id, t = lk.get('target')?.id;
+      return (s === srcId && t === tgtId) || (s === tgtId && t === srcId);
+    });
+    if (link) hops.push({ srcId, tgtId, link });
+  }
+  if (!hops.length) return;
+
+  // Create SVG circle for the packet
+  const svgRoot = paper.svg;
+  const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  circle.setAttribute('r', size);
+  circle.setAttribute('fill', color);
+  circle.setAttribute('opacity', '0.9');
+  circle.classList.add('sim-packet');
+  svgRoot.appendChild(circle);
+
+  let hopIdx = 0;
+  function animateHop() {
+    if (hopIdx >= hops.length) {
+      // Trail end: flash destination, remove circle
+      setTimeout(() => { circle.remove(); }, 300);
+      return;
+    }
+    const hop = hops[hopIdx];
+    const linkView = paper.findViewByModel(hop.link);
+    if (!linkView) { hopIdx++; animateHop(); return; }
+
+    // Get path points from SVG
+    const pathEl = linkView.el.querySelector('path');
+    if (!pathEl) { hopIdx++; animateHop(); return; }
+    const pathLen = pathEl.getTotalLength();
+    const startTime = performance.now();
+
+    function step(ts) {
+      const elapsed = ts - startTime;
+      const t = Math.min(elapsed / speed, 1);
+      const pt = pathEl.getPointAtLength(t * pathLen);
+      circle.setAttribute('cx', pt.x);
+      circle.setAttribute('cy', pt.y);
+      if (t < 1) {
+        const frameId = requestAnimationFrame(step);
+        _animFrames.push(frameId);
+      } else {
+        hopIdx++;
+        animateHop();
+      }
+    }
+    const frameId = requestAnimationFrame(step);
+    _animFrames.push(frameId);
+  }
+  animateHop();
+}
+
+function stopAnimations() {
+  _animFrames.forEach(id => cancelAnimationFrame(id));
+  _animFrames.length = 0;
+  document.querySelectorAll('.sim-packet').forEach(el => el.remove());
+  document.querySelectorAll('.outage-marker').forEach(el => el.remove());
+}
+
+/* ── Link Outage / Circuit Cut ────────────────────────────────────────────────── */
+let _outageLinks = [];
+
+function simulateLinkOutage(linkId) {
+  const link = graph.getCell(linkId);
+  if (!link || !link.isLink()) return;
+
+  // Visual: make link dashed red with X marker
+  link.attr('line/stroke', '#e74c3c');
+  link.attr('line/strokeWidth', 3);
+  link.attr('line/strokeDasharray', '8,4');
+  HIGHLIGHTED_CELLS.push(linkId);
+  _outageLinks.push(linkId);
+
+  // Add X marker at midpoint
+  const linkView = paper.findViewByModel(link);
+  if (linkView) {
+    const pathEl = linkView.el.querySelector('path');
+    if (pathEl) {
+      const midPt = pathEl.getPointAtLength(pathEl.getTotalLength() / 2);
+      const svgRoot = paper.svg;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.classList.add('outage-marker');
+      g.setAttribute('transform', `translate(${midPt.x}, ${midPt.y})`);
+
+      // Red circle background
+      const bg = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      bg.setAttribute('r', '12');
+      bg.setAttribute('fill', '#e74c3c');
+      bg.setAttribute('opacity', '0.9');
+      g.appendChild(bg);
+
+      // X text
+      const txt = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      txt.setAttribute('text-anchor', 'middle');
+      txt.setAttribute('dy', '5');
+      txt.setAttribute('fill', '#fff');
+      txt.setAttribute('font-size', '14');
+      txt.setAttribute('font-weight', 'bold');
+      txt.textContent = '✕';
+      g.appendChild(txt);
+      svgRoot.appendChild(g);
+    }
+  }
+}
+
+function clearOutages() {
+  _outageLinks.forEach(id => {
+    const link = graph.getCell(id);
+    if (link) {
+      link.attr('line/strokeDasharray', '');
+    }
+  });
+  _outageLinks.length = 0;
+  document.querySelectorAll('.outage-marker').forEach(el => el.remove());
+}
+
+/* ── Enhanced Run Simulation — with outage support ────────────────────────────── */
+async function runOutageSimulation() {
+  // Let user click a link to cut it, then re-run simulations
+  setStatus('Click a link to simulate circuit cut...');
+  document.getElementById('sim-output').textContent = 'Click on a link in the canvas to simulate an outage.\nThen click "Run" to see impact.';
+
+  paper.on('link:pointerclick', function _outagePick(view) {
+    paper.off('link:pointerclick', _outagePick);
+    const link = view.model;
+    simulateLinkOutage(link.id);
+
+    const srcLabel = (graph.getCell(link.get('source')?.id) || {}).attr?.('label/text') || '?';
+    const tgtLabel = (graph.getCell(link.get('target')?.id) || {}).attr?.('label/text') || '?';
+    const msg = `Circuit cut: ${srcLabel} — ${tgtLabel}\nLink ${link.id} is now DOWN.`;
+    document.getElementById('sim-output').textContent = msg;
+    setStatus('Link outage simulated — run SPOF or Failover to see impact');
+  });
+}
+
+/* ── Zoom / Pan Controls ──────────────────────────────────────────────────────── */
+let _zoomLevel = 1;
+const ZOOM_STEP = 0.15;
+const ZOOM_MIN = 0.3;
+const ZOOM_MAX = 3;
+
+function zoomIn() {
+  _zoomLevel = Math.min(_zoomLevel + ZOOM_STEP, ZOOM_MAX);
+  paper.scale(_zoomLevel, _zoomLevel);
+  updateZoomDisplay();
+}
+
+function zoomOut() {
+  _zoomLevel = Math.max(_zoomLevel - ZOOM_STEP, ZOOM_MIN);
+  paper.scale(_zoomLevel, _zoomLevel);
+  updateZoomDisplay();
+}
+
+function zoomFit() {
+  paper.scaleContentToFit({ padding: 30, maxScale: 2 });
+  _zoomLevel = paper.scale().sx;
+  updateZoomDisplay();
+}
+
+function zoomReset() {
+  _zoomLevel = 1;
+  paper.scale(1, 1);
+  paper.translate(0, 0);
+  updateZoomDisplay();
+}
+
+function updateZoomDisplay() {
+  const el = document.getElementById('sb-zoom');
+  if (el) el.textContent = `Zoom: ${Math.round(_zoomLevel * 100)}%`;
+}
+
+/* ── Mouse wheel zoom ─────────────────────────────────────────────────────────── */
+function initZoomWheel() {
+  const canvasEl = document.getElementById('canvas-container');
+  if (!canvasEl) return;
+  canvasEl.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP;
+    _zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, _zoomLevel + delta));
+    paper.scale(_zoomLevel, _zoomLevel);
+    updateZoomDisplay();
+  }, { passive: false });
+}
+
+/* ── Enhanced visualize with animation ────────────────────────────────────────── */
+
+function visualizeResult(simType, result) {
+  stopAnimations();
+  switch (simType) {
+    case 'ping':
+      if (result.hops?.length) {
+        highlightPath(result.hops);
+        animatePacketPath(result.hops, { color: '#27ae60', speed: 500 });
+      }
+      break;
+    case 'traceroute':
+      if (result.trace?.length) {
+        const hopLabels = result.trace.map(h => h.node);
+        highlightPath(hopLabels);
+        animatePacketPath(hopLabels, { color: '#3498db', speed: 700 });
+      }
+      break;
+    case 'spof':
+      if (result.spof_nodes?.length) highlightSpof(result.spof_nodes);
+      break;
+    case 'failover':
+      if (result.risks?.length) highlightSpof(result.risks.map(r => r.node));
+      break;
+    case 'load':
+      applyLoadHeatmap(result.utilization);
+      break;
+    case 'bgp_bestpath':
+      if (result.best_path?.length) {
+        highlightPath(result.best_path);
+        animatePacketPath(result.best_path, { color: '#f39c12', speed: 600, size: 10 });
+      }
+      // Dim non-best paths
+      (result.paths || []).slice(1).forEach(p => {
+        highlightPathDim(p.path);
+      });
+      break;
+    case 'bgp_propagation':
+      // Animate wave-by-wave propagation
+      animateBgpWaves(result.waves || []);
+      break;
+    case 'ospf_spf':
+      if (result.best_path?.length) {
+        highlightPath(result.best_path);
+        animatePacketPath(result.best_path, { color: '#2ecc71', speed: 400 });
+      }
+      // Highlight ECMP nodes in blue
+      (result.ecmp_nodes || []).forEach(label => {
+        graph.getElements().forEach(el => {
+          if (el.attr('label/text') === label) {
+            el.attr('body/stroke', '#3498db');
+            el.attr('body/fill', '#0f1a3a');
+            HIGHLIGHTED_CELLS.push(el.id);
+          }
+        });
+      });
+      break;
+    case 'ospf_cost':
+      // Color links by cost (green=low, yellow=mid, red=high)
+      (result.link_costs || []).forEach(lc => {
+        const cost = lc.cost;
+        let color;
+        if (cost <= 4) color = '#27ae60';
+        else if (cost <= 10) color = '#f39c12';
+        else color = '#e74c3c';
+        graph.getLinks().forEach(lk => {
+          const src = graph.getCell(lk.get('source')?.id);
+          const tgt = graph.getCell(lk.get('target')?.id);
+          const srcLabel = src?.attr?.('label/text') || '';
+          const tgtLabel = tgt?.attr?.('label/text') || '';
+          if (lc.link.includes(srcLabel) && lc.link.includes(tgtLabel)) {
+            lk.attr('line/stroke', color);
+            lk.attr('line/strokeWidth', 3);
+            HIGHLIGHTED_CELLS.push(lk.id);
+          }
+        });
+      });
+      break;
+    case 'dwdm_optical':
+      // Color optical spans by quality
+      (result.spans || []).forEach(s => {
+        let color = '#27ae60';
+        if (s.quality === 'warning') color = '#f39c12';
+        if (s.quality === 'critical') color = '#e74c3c';
+        graph.getLinks().forEach(lk => {
+          const src = graph.getCell(lk.get('source')?.id);
+          const tgt = graph.getCell(lk.get('target')?.id);
+          const srcL = src?.attr?.('label/text') || '';
+          const tgtL = tgt?.attr?.('label/text') || '';
+          if (s.span.includes(srcL) && s.span.includes(tgtL)) {
+            lk.attr('line/stroke', color);
+            lk.attr('line/strokeWidth', 3);
+            HIGHLIGHTED_CELLS.push(lk.id);
+          }
+        });
+      });
+      // Highlight EDFAs in blue
+      graph.getElements().forEach(el => {
+        if (el.get('nodeType') === 'edfa') {
+          el.attr('body/stroke', '#00bfff');
+          el.attr('body/fill', '#0f2b3a');
+          HIGHLIGHTED_CELLS.push(el.id);
+        }
+      });
+      break;
+    case 'fiber_budget':
+      // Color nodes by power level
+      (result.budget_detail || []).forEach(b => {
+        graph.getElements().forEach(el => {
+          if (el.attr('label/text') === b.node) {
+            let color, fill;
+            if (b.power_dbm > -10) { color = '#27ae60'; fill = '#0f2b0f'; }
+            else if (b.power_dbm > -20) { color = '#f39c12'; fill = '#2b1a0f'; }
+            else { color = '#e74c3c'; fill = '#2b0f0f'; }
+            el.attr('body/stroke', color);
+            el.attr('body/fill', fill);
+            HIGHLIGHTED_CELLS.push(el.id);
+          }
+        });
+      });
+      break;
+    case 'jumbo_mtu':
+      // Highlight fragmentation points in red, ok in green
+      (result.node_audit || []).forEach(nm => {
+        graph.getElements().forEach(el => {
+          if (el.attr('label/text') === nm.node) {
+            if (nm.supports_jumbo) {
+              el.attr('body/stroke', '#27ae60');
+              el.attr('body/fill', '#0f2b0f');
+            } else {
+              el.attr('body/stroke', '#e74c3c');
+              el.attr('body/fill', '#3a0000');
+            }
+            HIGHLIGHTED_CELLS.push(el.id);
+          }
+        });
+      });
+      // Animate path showing where fragmentation happens
+      if (result.path_detail?.length) {
+        const pathLabels = result.path_detail.map(p => p.node);
+        animatePacketPath(pathLabels, {
+          color: result.jumbo_ready ? '#27ae60' : '#e74c3c',
+          speed: 600, size: 12
+        });
+      }
+      break;
+  }
+}
+
+/* ── BGP Wave Animation ──────────────────────────────────────────────────────── */
+function animateBgpWaves(waves) {
+  const labelToEl = {};
+  graph.getElements().forEach(el => { labelToEl[el.attr('label/text') || ''] = el; });
+
+  let delay = 0;
+  waves.forEach((wave, i) => {
+    setTimeout(() => {
+      wave.nodes.forEach(label => {
+        const el = labelToEl[label];
+        if (!el) return;
+        // Flash the node
+        el.attr('body/stroke', i === 0 ? '#f39c12' : '#27ae60');
+        el.attr('body/fill', i === 0 ? '#2b1a0f' : '#0f2b0f');
+        HIGHLIGHTED_CELLS.push(el.id);
+      });
+      setStatus(`BGP Wave ${wave.wave}: ${wave.nodes.join(', ')}`);
+    }, delay);
+    delay += 1200;
+  });
+}
+
+/* ── Dim highlight for non-best paths ────────────────────────────────────────── */
+function highlightPathDim(hopLabels) {
+  const labelToId = {};
+  graph.getElements().forEach(el => { labelToId[el.attr('label/text') || ''] = el.id; });
+
+  for (let i = 0; i < hopLabels.length - 1; i++) {
+    const srcId = labelToId[hopLabels[i]];
+    const tgtId = labelToId[hopLabels[i + 1]];
+    if (!srcId || !tgtId) continue;
+    graph.getLinks().forEach(lk => {
+      const src = lk.get('source')?.id, tgt = lk.get('target')?.id;
+      if ((src === srcId && tgt === tgtId) || (src === tgtId && tgt === srcId)) {
+        lk.attr('line/stroke', '#555');
+        lk.attr('line/strokeWidth', 1);
+        lk.attr('line/strokeDasharray', '4,4');
+        HIGHLIGHTED_CELLS.push(lk.id);
+      }
+    });
+  }
+}
+
+/* ── Sim type change — show/hide extra params ────────────────────────────────── */
+function onSimTypeChange(val) {
+  const extra = document.getElementById('sim-extra-params');
+  const prefixGrp = document.getElementById('sim-prefix-group');
+  const mtuGrp = document.getElementById('sim-mtu-group');
+  if (!extra) return;
+
+  const showPrefix = ['bgp_bestpath', 'bgp_propagation'].includes(val);
+  const showMtu = val === 'jumbo_mtu';
+
+  extra.classList.toggle('hidden', !showPrefix && !showMtu);
+  if (prefixGrp) prefixGrp.style.display = showPrefix ? '' : 'none';
+  if (mtuGrp) mtuGrp.style.display = showMtu ? '' : 'none';
+}
+
+/* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  // Wait a tick for canvas.js to init paper
+  setTimeout(initZoomWheel, 500);
+});

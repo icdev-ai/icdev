@@ -1,0 +1,66 @@
+{% extends "network/base.html" %}
+{% block title %}Projects — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Projects</h1>
+    <p class="page-subtitle">Manage network design engagements across customers and topologies</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ New Project</button>
+  </div>
+</div>
+
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">All Projects ({{ projects|length }})</h2></div>
+  {% if projects %}
+  <table class="data-table">
+    <thead><tr><th>Name</th><th>Customer</th><th>Status</th><th>Topologies</th><th>Owner</th><th>Updated</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="/network/projects/{{ p.id }}" class="table-link"><strong>{{ p.name }}</strong></a>
+          {% if p.description %}<div class="table-sub">{{ p.description[:80] }}</div>{% endif %}
+        </td>
+        <td>{{ p.customer_name or '—' }}</td>
+        <td><span class="badge badge-{% if p.status == 'approved' %}public{% elif p.status == 'deployed' %}public{% elif p.status == 'in_review' %}warning{% else %}info{% endif %}">{{ p.status }}</span></td>
+        <td>{{ p.topo_count }}</td>
+        <td>{{ p.owner or '—' }}</td>
+        <td class="ts">{{ (p.updated_at or '')[:16] }}</td>
+        <td class="actions">
+          <a href="/network/projects/{{ p.id }}" class="action-btn" title="Open">✏</a>
+          <button class="action-btn danger" onclick="delProject('{{ p.id }}')" title="Delete">✕</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p style="padding:1rem;color:var(--text-muted);">No projects yet.</p>{% endif %}
+</section>
+
+<div id="add-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Create Project</h3>
+    <form onsubmit="return submitProject(event)">
+      <div class="form-grid">
+        <label>Project Name <input name="name" required placeholder="Customer WAN Refresh"></label>
+        <label>Customer <select name="customer_id"><option value="">— None —</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+        <label>Status <select name="status"><option>draft</option><option>in_review</option><option>approved</option><option>deployed</option></select></label>
+        <label>Owner <input name="owner" placeholder="Your name"></label>
+        <label style="grid-column:span 2">Description <input name="description" placeholder="Project scope and goals"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function submitProject(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  fetch(NC_BASE+'/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>{if(r.ok)location.reload();});return false;}
+function delProject(id){if(!confirm('Delete this project?'))return;fetch(NC_BASE+'/api/projects/'+id,{method:'DELETE'}).then(()=>location.reload());}
+</script>
+{% endblock %}

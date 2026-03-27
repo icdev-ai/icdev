@@ -116,3 +116,5 @@ args/llm_config_trading.yaml
 data/alphadesk.db
 data/alphadesk.db-shm
 data/alphadesk.db-wal
+data/network_canvas.db-shm
+data/network_canvas.db-wal

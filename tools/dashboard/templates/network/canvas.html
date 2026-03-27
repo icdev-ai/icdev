@@ -1,0 +1,616 @@
+{% extends "network/base.html" %}
+{% block title %}{{ topology_name }} — Canvas Editor{% endblock %}
+
+{% block head %}
+<!-- JointJS + dependencies -->
+<link rel="stylesheet" href="https://unpkg.com/jointjs@3.7.7/dist/joint.css"/>
+<script src="https://unpkg.com/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
+<script src="https://unpkg.com/backbone@1.4.1/backbone-min.js"></script>
+<script src="https://unpkg.com/jointjs@3.7.7/dist/joint.js"></script>
+<style>
+  body { overflow: hidden; }
+  .main-content { padding: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="canvas-layout">
+
+  <!-- Toolbar -->
+  <div class="canvas-toolbar">
+    <div class="tb-group">
+      <button class="tb-btn" onclick="newCanvas()" title="New">⊞ New</button>
+      <button class="tb-btn" onclick="saveTopology()" title="Save (Ctrl+S)">💾 Save</button>
+      <button class="tb-btn" onclick="saveAsTopology()" title="Save As (new copy)">💾 Save As</button>
+      <button class="tb-btn" onclick="saveAsTemplate()" title="Save as reusable template">⊡ Save Template</button>
+      <button class="tb-btn" onclick="undoAction()" title="Undo">↩ Undo</button>
+      <button class="tb-btn" onclick="redoAction()" title="Redo">↪ Redo</button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" onclick="openTemplatesPanel()" title="Templates">⊡ Templates</button>
+      <button class="tb-btn" onclick="openSimPanel()" title="Simulate">▶ Simulate</button>
+      <button class="tb-btn tb-btn-danger" onclick="runOutageSimulation()" title="Simulate link outage">✕ Cut Link</button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" onclick="zoomIn()" title="Zoom In">+ Zoom</button>
+      <button class="tb-btn" onclick="zoomOut()" title="Zoom Out">- Zoom</button>
+      <button class="tb-btn" onclick="zoomFit()" title="Fit All">⊞ Fit</button>
+      <button class="tb-btn" onclick="zoomReset()" title="Reset Zoom">1:1</button>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn" onclick="exportAs('drawio')" title="Export draw.io">⬇ draw.io</button>
+      <button class="tb-btn" onclick="exportAs('svg')" title="Export SVG">⬇ SVG</button>
+    </div>
+    <div class="tb-group">
+      <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
+      <a class="tb-btn" id="tb-mc-link" href="#" title="Monte Carlo cascading simulation">Simulate MC</a>
+      <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
+    </div>
+    <div class="tb-center">
+      <span class="topology-name-display" id="topo-name-display">{{ topology_name }}</span>
+    </div>
+    <div class="tb-status" id="tb-status">Ready</div>
+  </div>
+
+  <!-- Body -->
+  <div class="canvas-body">
+
+    <!-- Left Palette -->
+    <div class="palette" id="palette">
+      <div class="palette-header">Object Library
+        <button class="palette-add-btn" onclick="openCustomDeviceDialog()" title="Create custom device type">+</button>
+      </div>
+      <div style="padding:4px 8px;">
+        <input type="text" id="palette-search" placeholder="Filter objects..." style="width:100%;padding:4px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);outline:none;"/>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Physical</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="router" ondragstart="onDragStart(event)" title="Layer 3 router — IP routing, BGP/OSPF/EIGRP">
+            <div class="pi-icon router-icon">R</div><span>Router</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="switch-l2" ondragstart="onDragStart(event)" title="Layer 2 switch — VLANs, STP, MAC forwarding">
+            <div class="pi-icon switch-icon">S2</div><span>Switch L2</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="switch-l3" ondragstart="onDragStart(event)" title="Layer 3 switch — routing + switching, inter-VLAN">
+            <div class="pi-icon switch-icon">S3</div><span>Switch L3</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="firewall" ondragstart="onDragStart(event)" title="Firewall — stateful packet inspection, ACLs, NAT">
+            <div class="pi-icon fw-icon">FW</div><span>Firewall</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="load-balancer" ondragstart="onDragStart(event)" title="Load Balancer — traffic distribution, VIPs, health checks">
+            <div class="pi-icon lb-icon">LB</div><span>Load Balancer</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="wap" ondragstart="onDragStart(event)" title="Wireless Access Point — 802.11ax/be, PoE powered">
+            <div class="pi-icon wap-icon">AP</div><span>WAP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="server" ondragstart="onDragStart(event)" title="Server — compute, storage, application host">
+            <div class="pi-icon srv-icon">SRV</div><span>Server</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="patch-panel" ondragstart="onDragStart(event)" title="Copper patch panel — structured cabling termination">
+            <div class="pi-icon pp-icon">PP</div><span>Patch Panel</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Physical Media</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="media-ge" ondragstart="onDragStart(event)" title="1 Gigabit Ethernet — 802.3ab copper / 802.3z fiber">
+            <div class="pi-icon ge-icon">GE</div><span>GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-10ge" ondragstart="onDragStart(event)" title="10 Gigabit Ethernet — 802.3ae, SFP+ or XFP">
+            <div class="pi-icon ge-icon">10G</div><span>10GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-25ge" ondragstart="onDragStart(event)" title="25 Gigabit Ethernet — 802.3by, SFP28">
+            <div class="pi-icon bw-icon">25G</div><span>25GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-40ge" ondragstart="onDragStart(event)" title="40 Gigabit Ethernet — 802.3ba, QSFP+">
+            <div class="pi-icon bw-icon">40G</div><span>40GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-100ge" ondragstart="onDragStart(event)" title="100 Gigabit Ethernet — 802.3bm, QSFP28">
+            <div class="pi-icon bw100-icon">100G</div><span>100GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-400ge" ondragstart="onDragStart(event)" title="400 Gigabit Ethernet — 802.3bs, QSFP-DD or OSFP">
+            <div class="pi-icon bw400-icon">400G</div><span>400GbE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sfp" ondragstart="onDragStart(event)" title="Small Form-factor Pluggable — 1GbE, 850nm/1310nm">
+            <div class="pi-icon sfp-icon">SFP</div><span>SFP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sfp-plus" ondragstart="onDragStart(event)" title="Enhanced SFP — 10GbE, SR/LR/ER">
+            <div class="pi-icon sfp-icon">SF+</div><span>SFP+</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="qsfp" ondragstart="onDragStart(event)" title="Quad SFP — 100GbE, SR4/LR4/CWDM4">
+            <div class="pi-icon qsfp-icon">QSF</div><span>QSFP28</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="qsfp-dd" ondragstart="onDragStart(event)" title="QSFP Double Density — 400GbE, DR4/FR4">
+            <div class="pi-icon qsfp-icon">QDD</div><span>QSFP-DD</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-fiber" ondragstart="onDragStart(event)" title="Single-mode or multi-mode fiber optic cable">
+            <div class="pi-icon fiber-icon">FO</div><span>Fiber</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-optical" ondragstart="onDragStart(event)" title="Dense Wavelength Division Multiplexing transport">
+            <div class="pi-icon optical-icon">OPT</div><span>Optical/DWDM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="media-converter" ondragstart="onDragStart(event)" title="Copper to fiber media converter">
+            <div class="pi-icon mc-icon">MC</div><span>Media Conv.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Encryption</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="macsec" ondragstart="onDragStart(event)">
+            <div class="pi-icon macsec-icon">MAC</div><span>MACsec</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="qkd-device" ondragstart="onDragStart(event)">
+            <div class="pi-icon qkd-icon">QKD</div><span>QKD Device</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="tls-terminator" ondragstart="onDragStart(event)">
+            <div class="pi-icon tls-icon">TLS</div><span>TLS Offload</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l1" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips1-icon">F1</div><span>FIPS 140 L1</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l2" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips2-icon">F2</div><span>FIPS 140 L2</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l3" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips3-icon">F3</div><span>FIPS 140 L3</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="fips-140-l4" ondragstart="onDragStart(event)">
+            <div class="pi-icon fips4-icon">F4</div><span>FIPS 140 L4</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="hsm" ondragstart="onDragStart(event)">
+            <div class="pi-icon hsm-icon">HSM</div><span>HSM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="type1-encryptor" ondragstart="onDragStart(event)" title="NSA Type 1 encryptor — generic HAIPE device">
+            <div class="pi-icon type1-icon">T1</div><span>Type 1 (NSA)</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-175d" ondragstart="onDragStart(event)" title="TACLANE-Micro — 2 Mbps to 2 Gbps HAIPE, most deployed NSA encryptor">
+            <div class="pi-icon kg-icon">175D</div><span>KG-175D</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-175g" ondragstart="onDragStart(event)" title="TACLANE-Flex — up to 10 Gbps, next-gen multi-mode tactical HAIPE">
+            <div class="pi-icon kg-icon">175G</div><span>KG-175G</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-250" ondragstart="onDragStart(event)" title="TACLANE-100G — 100 Gbps HAIPE for data center and backbone">
+            <div class="pi-icon kg-icon">250</div><span>KG-250</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-340" ondragstart="onDragStart(event)" title="KG-340 — 10 Gbps high-assurance IP network encryptor">
+            <div class="pi-icon kg-icon">340</div><span>KG-340</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-245x" ondragstart="onDragStart(event)" title="TACLANE-FLEX ECO — 1 Gbps low-SWaP tactical encryptor">
+            <div class="pi-icon kg-icon">245X</div><span>KG-245X</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="kg-255" ondragstart="onDragStart(event)" title="KG-255 — 400 Gbps optical backbone encryptor (emerging)">
+            <div class="pi-icon kg-icon">255</div><span>KG-255</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Endpoints</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="endpoint-pc" ondragstart="onDragStart(event)">
+            <div class="pi-icon pc-icon">PC</div><span>Workstation</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="endpoint-phone" ondragstart="onDragStart(event)">
+            <div class="pi-icon phone-icon">PH</div><span>IP Phone</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="endpoint-iot" ondragstart="onDragStart(event)">
+            <div class="pi-icon iot-icon">IoT</div><span>IoT Device</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="endpoint-camera" ondragstart="onDragStart(event)">
+            <div class="pi-icon cam-icon">CAM</div><span>IP Camera</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Controllers</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="wlc" ondragstart="onDragStart(event)">
+            <div class="pi-icon wlc-icon">WLC</div><span>WLC</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sdwan-edge" ondragstart="onDragStart(event)">
+            <div class="pi-icon sdw-icon">SDW</div><span>SD-WAN Edge</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="network-tap" ondragstart="onDragStart(event)">
+            <div class="pi-icon tap-icon">TAP</div><span>Network TAP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="siem" ondragstart="onDragStart(event)">
+            <div class="pi-icon siem-icon">SIM</div><span>SIEM</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Optical / DWDM</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="roadm" ondragstart="onDragStart(event)">
+            <div class="pi-icon roadm-icon">RDM</div><span>ROADM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="oadm" ondragstart="onDragStart(event)">
+            <div class="pi-icon oadm-icon">OAD</div><span>OADM</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="edfa" ondragstart="onDragStart(event)">
+            <div class="pi-icon edfa-icon">AMP</div><span>EDFA Amp</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="transponder" ondragstart="onDragStart(event)">
+            <div class="pi-icon txp-icon">TXP</div><span>Transponder</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="olt" ondragstart="onDragStart(event)">
+            <div class="pi-icon olt-icon">OLT</div><span>OLT</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="odf" ondragstart="onDragStart(event)">
+            <div class="pi-icon odf-icon">ODF</div><span>ODF</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="patch-panel-fiber" ondragstart="onDragStart(event)">
+            <div class="pi-icon fpp-icon">FPP</div><span>Fiber Patch</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Carrier / SP</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="pop" ondragstart="onDragStart(event)">
+            <div class="pi-icon pop-icon">POP</div><span>POP</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="mpls-pe" ondragstart="onDragStart(event)">
+            <div class="pi-icon pe-icon">PE</div><span>MPLS PE</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="mpls-p" ondragstart="onDragStart(event)">
+            <div class="pi-icon p-icon">P</div><span>MPLS P</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="route-reflector" ondragstart="onDragStart(event)">
+            <div class="pi-icon rr-icon">RR</div><span>Route Reflector</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="sonet-adm" ondragstart="onDragStart(event)">
+            <div class="pi-icon adm-icon">ADM</div><span>SONET ADM</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Annotation</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="annotation" ondragstart="onDragStart(event)">
+            <div class="pi-icon note-icon">...</div><span>Note</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="group-site" ondragstart="onDragStart(event)">
+            <div class="pi-icon group-icon">GRP</div><span>Site Group</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Logical</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="vrf" ondragstart="onDragStart(event)">
+            <div class="pi-icon vrf-icon">VRF</div><span>VRF</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="vlan" ondragstart="onDragStart(event)">
+            <div class="pi-icon vlan-icon">VLAN</div><span>VLAN</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="subnet" ondragstart="onDragStart(event)">
+            <div class="pi-icon sub-icon">⊂</div><span>Subnet</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="security-zone" ondragstart="onDragStart(event)">
+            <div class="pi-icon zone-icon">Z</div><span>Sec Zone</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="gre-tunnel" ondragstart="onDragStart(event)">
+            <div class="pi-icon tun-icon">GRE</div><span>GRE Tunnel</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="ipsec-tunnel" ondragstart="onDragStart(event)">
+            <div class="pi-icon tun-icon">IPS</div><span>IPSec</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="mpls-lsp" ondragstart="onDragStart(event)">
+            <div class="pi-icon mpls-icon">LSP</div><span>MPLS LSP</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cloud Networking — dynamically loaded from /api/cloud-objects -->
+      <div id="cloud-palette-container"></div>
+      <div class="palette-section">
+        <div class="palette-cat">Generic Cloud</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="cloud" ondragstart="onDragStart(event)">
+            <div class="pi-icon cloud-icon">☁</div><span>Cloud</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Canvas Area -->
+    <div class="canvas-area" id="canvas-drop-zone"
+         ondragover="event.preventDefault()"
+         ondrop="onDrop(event)">
+      <div id="canvas-container"></div>
+    </div>
+
+    <!-- Right Config Panel -->
+    <div class="config-panel" id="config-panel">
+      <div class="config-header">Properties</div>
+      <div id="config-empty" class="config-empty">
+        <div class="empty-icon">⬡</div>
+        <p>Select an object to configure</p>
+      </div>
+      <div id="config-form" class="hidden">
+        <div class="form-group">
+          <label>Type</label>
+          <input type="text" id="cfg-type" class="form-control" readonly/>
+        </div>
+        <div class="form-group">
+          <label>Label</label>
+          <input type="text" id="cfg-label" class="form-control" oninput="updateSelectedLabel(this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>IP Address</label>
+          <input type="text" id="cfg-ip" class="form-control" placeholder="e.g. 10.0.0.1/24" oninput="updateConfig('ip', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select id="cfg-protocol" class="form-control" onchange="updateConfig('protocol', this.value)">
+            <option value="">— None —</option>
+            <option value="OSPF">OSPF</option>
+            <option value="BGP">BGP</option>
+            <option value="EIGRP">EIGRP</option>
+            <option value="IS-IS">IS-IS</option>
+            <option value="RIP">RIP</option>
+            <option value="HSRP">HSRP</option>
+            <option value="VRRP">VRRP</option>
+            <option value="GLBP">GLBP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>MTU</label>
+          <input type="number" id="cfg-mtu" class="form-control" placeholder="1500" oninput="updateConfig('mtu', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VLAN ID</label>
+          <input type="number" id="cfg-vlan" class="form-control" placeholder="e.g. 100" oninput="updateConfig('vlan', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VRF</label>
+          <input type="text" id="cfg-vrf" class="form-control" placeholder="e.g. MGMT" oninput="updateConfig('vrf', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>ASN</label>
+          <input type="number" id="cfg-asn" class="form-control" placeholder="e.g. 65001" oninput="updateConfig('asn', this.value)"/>
+        </div>
+        <!-- BGP Attributes -->
+        <div class="form-group cfg-section-header">BGP Attributes</div>
+        <div class="form-group">
+          <label>LOCAL_PREF</label>
+          <input type="number" id="cfg-local-pref" class="form-control" placeholder="100 (default)" oninput="updateConfig('local_pref', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>MED</label>
+          <input type="number" id="cfg-med" class="form-control" placeholder="0" oninput="updateConfig('med', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Weight</label>
+          <input type="number" id="cfg-weight" class="form-control" placeholder="0 (Cisco)" oninput="updateConfig('weight', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Community</label>
+          <input type="text" id="cfg-community" class="form-control" placeholder="e.g. 65001:100" oninput="updateConfig('community', this.value)"/>
+        </div>
+        <!-- OSPF Attributes -->
+        <div class="form-group cfg-section-header">OSPF Attributes</div>
+        <div class="form-group">
+          <label>OSPF Area</label>
+          <input type="text" id="cfg-ospf-area" class="form-control" placeholder="0 (backbone)" oninput="updateConfig('ospf_area', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>OSPF Cost</label>
+          <input type="number" id="cfg-ospf-cost" class="form-control" placeholder="auto (ref_bw/bw)" oninput="updateConfig('ospf_cost', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="cfg-notes" class="form-control" rows="3" oninput="updateConfig('notes', this.value)"></textarea>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Object</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end canvas-body -->
+
+  <!-- Status Bar -->
+  <div class="canvas-statusbar">
+    <span id="sb-objects">Objects: 0</span>
+    <span id="sb-links">Links: 0</span>
+    <span id="sb-saved">Not saved</span>
+    <span id="sb-zoom">Zoom: 100%</span>
+  </div>
+
+</div><!-- end canvas-layout -->
+
+<!-- Simulation Overlay -->
+<div id="sim-overlay" class="sim-overlay hidden">
+  <div class="sim-panel">
+    <div class="sim-panel-header">
+      <h3>Simulation</h3>
+      <button class="close-btn" onclick="closeSimPanel()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Type</label>
+      <select id="sp-sim-type" class="form-control" onchange="onSimTypeChange(this.value)">
+        <option value="ping">Ping</option>
+        <option value="traceroute">Traceroute</option>
+        <option value="spof">SPOF Analysis</option>
+        <option value="failover">Failover / Resilience</option>
+        <option value="load">Load Heatmap</option>
+        <option value="bgp_bestpath">BGP Best Path Selection</option>
+        <option value="bgp_propagation">BGP Route Propagation</option>
+        <option value="ospf_spf">OSPF SPF (Shortest Path First)</option>
+        <option value="ospf_cost">OSPF Cost Analysis</option>
+        <option value="jumbo_mtu">Jumbo Frame / MTU Path Check</option>
+        <option value="dwdm_optical">DWDM / Optical Quality</option>
+        <option value="fiber_budget">Fiber Power Budget</option>
+      </select>
+      <!-- Extra params for routing sims -->
+      <div id="sim-extra-params" class="hidden" style="margin-top:8px;">
+        <div class="form-group" id="sim-prefix-group" style="display:none;">
+          <label>Prefix / Destination</label>
+          <input type="text" id="sp-prefix" class="form-control" placeholder="10.0.0.0/24"/>
+        </div>
+        <div class="form-group" id="sim-mtu-group" style="display:none;">
+          <label>Desired MTU</label>
+          <input type="number" id="sp-mtu-size" class="form-control" value="9000" placeholder="9000 (jumbo)"/>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="runSimulation()">Run</button>
+    <div id="sim-output" class="sim-output"></div>
+  </div>
+</div>
+
+<!-- Templates Overlay -->
+<div id="tpl-overlay" class="sim-overlay hidden">
+  <div class="sim-panel tpl-panel">
+    <div class="sim-panel-header">
+      <h3>Load Template</h3>
+      <button class="close-btn" onclick="closeTplPanel()">✕</button>
+    </div>
+    <div id="tpl-list" class="tpl-list-panel"></div>
+  </div>
+</div>
+<!-- Custom Device Dialog -->
+<div id="custom-device-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:380px;">
+    <div class="sim-panel-header">
+      <h3>Create Custom Device</h3>
+      <button class="close-btn" onclick="closeCustomDeviceDialog()">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Type ID</label>
+      <input type="text" id="cd-type-id" class="form-control" placeholder="e.g. my-device (lowercase, hyphens)"/>
+    </div>
+    <div class="form-group">
+      <label>Display Name</label>
+      <input type="text" id="cd-label" class="form-control" placeholder="e.g. My Custom Device"/>
+    </div>
+    <div class="form-group">
+      <label>Symbol (2-3 chars)</label>
+      <input type="text" id="cd-symbol" class="form-control" placeholder="e.g. MCD" maxlength="4"/>
+    </div>
+    <div class="form-group">
+      <label>Fill Color</label>
+      <input type="color" id="cd-fill" class="form-control" value="#1a1a2e" style="height:32px;padding:2px;"/>
+    </div>
+    <div class="form-group">
+      <label>Border Color</label>
+      <input type="color" id="cd-stroke" class="form-control" value="#7a8cb0" style="height:32px;padding:2px;"/>
+    </div>
+    <div class="form-group">
+      <label>Bandwidth (optional)</label>
+      <input type="text" id="cd-bandwidth" class="form-control" placeholder="e.g. 800GbE, 1.6TbE"/>
+    </div>
+    <div class="form-group">
+      <label>Preview</label>
+      <div id="cd-preview" style="background:#12122a;border-radius:6px;padding:10px;text-align:center;min-height:60px;display:flex;align-items:center;justify-content:center;"></div>
+    </div>
+    <button class="btn btn-primary" onclick="createCustomDevice()" style="width:100%;">Add to Palette</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const TOPOLOGY_ID = "{{ topology_id }}";
+  const TOPOLOGY_NAME = "{{ topology_name }}";
+
+  // Set links based on topology ID
+  if (TOPOLOGY_ID && TOPOLOGY_ID !== 'new') {
+    document.getElementById('tb-versions-link').href = NC_BASE + '/versions/' + TOPOLOGY_ID;
+    document.getElementById('tb-mc-link').href = NC_BASE + '/montecarlo/' + TOPOLOGY_ID;
+    document.getElementById('tb-compliance-link').href = NC_BASE + '/compliance/' + TOPOLOGY_ID;
+  }
+
+  function saveAsTopology() {
+    const name = prompt('Save as new topology name:', TOPOLOGY_NAME + ' (copy)');
+    if (!name) return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/save-as', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name})
+    }).then(r => r.json()).then(d => {
+      if (d.redirect) { alert('Saved as: ' + d.name); window.location = d.redirect; }
+      else alert('Error: ' + (d.error || 'Unknown'));
+    });
+  }
+
+  function saveAsTemplate() {
+    const name = prompt('Template name:', TOPOLOGY_NAME);
+    if (!name) return;
+    const category = prompt('Category (e.g. Custom, Campus LAN, Data Center):', 'Custom');
+    if (category === null) return;
+    fetch(NC_BASE + '/api/topologies/' + TOPOLOGY_ID + '/save-as-template', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name, category: category})
+    }).then(r => r.json()).then(d => {
+      if (d.id) alert('Saved as template: ' + d.name + ' (ID: ' + d.id + ')');
+      else alert('Error: ' + (d.error || 'Unknown'));
+    });
+  }
+</script>
+<script src="{{ url_for('static', filename='js/network-canvas.js') }}"></script>
+<script src="{{ url_for('static', filename='js/network-simulation.js') }}"></script>
+<script>
+// ── Load Cloud Networking palette from API ──────────────────────────────────
+(function(){
+  const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon'};
+  const CSP_LABELS = {aws:'AWS',azure:'Azure',gcp:'GCP',oci:'OCI',ibm:'IBM Cloud',multi_cloud:'Multi-Cloud'};
+  fetch(NC_BASE + '/api/cloud-objects').then(r=>r.json()).then(data=>{
+    const container = document.getElementById('cloud-palette-container');
+    if(!container) return;
+    for(const [csp, objects] of Object.entries(data)){
+      const section = document.createElement('div');
+      section.className = 'palette-section cloud-section';
+      const iconClass = CSP_ICONS[csp]||'cloud-icon';
+      section.innerHTML = `<div class="palette-cat">${CSP_LABELS[csp]||csp}</div><div class="palette-items">${
+        objects.map(o=>`<div class="palette-item" draggable="true" data-type="${o.type}" ondragstart="onDragStart(event)" title="${o.desc}"><div class="pi-icon ${iconClass}">${o.icon}</div><span>${o.label}</span></div>`).join('')
+      }</div>`;
+      section.querySelector('.palette-cat').addEventListener('click', () => section.classList.toggle('open'));
+      container.appendChild(section);
+    }
+  }).catch(()=>{});
+})();
+
+// ── Collapsible palette sections ─────────────────────────────────────────
+(function(){
+  document.querySelectorAll('.palette-section').forEach((sec, i) => {
+    if (i === 0) sec.classList.add('open');
+    const cat = sec.querySelector('.palette-cat');
+    if (cat) cat.addEventListener('click', () => sec.classList.toggle('open'));
+  });
+  // Search filter
+  const searchBox = document.getElementById('palette-search');
+  if (searchBox) {
+    searchBox.addEventListener('input', function() {
+      const q = this.value.toLowerCase().trim();
+      document.querySelectorAll('.palette-section').forEach(sec => {
+        const items = sec.querySelectorAll('.palette-item');
+        let anyVisible = false;
+        items.forEach(item => {
+          const text = (item.textContent + ' ' + (item.getAttribute('title')||'') + ' ' + (item.dataset.type||'')).toLowerCase();
+          const match = !q || text.includes(q);
+          item.style.display = match ? '' : 'none';
+          if (match) anyVisible = true;
+        });
+        sec.style.display = anyVisible || !q ? '' : 'none';
+        if (q && anyVisible) sec.classList.add('open');
+        if (!q) { /* restore default collapsed state except first */ }
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

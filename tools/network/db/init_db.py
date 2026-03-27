@@ -1,0 +1,1749 @@
+"""
+Network Design Canvas — DB initializer
+Creates schema and seeds 12 canonical network templates.
+"""
+import json
+import sqlite3
+import sys
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+# When integrated into ICDEV, DB lives in data/ directory
+_ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/network/db -> ICDev root
+DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
+
+
+def get_connection() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS topologies (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    template_id TEXT,
+    classification TEXT DEFAULT 'public',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_templates (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    category      TEXT,
+    description   TEXT,
+    graph_json    TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    thumbnail_svg TEXT,
+    tags          TEXT DEFAULT '[]'
+);
+
+CREATE TABLE IF NOT EXISTS simulation_results (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    sim_type    TEXT NOT NULL,
+    input_json  TEXT DEFAULT '{}',
+    result_json TEXT DEFAULT '{}',
+    ran_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_objects (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    object_type TEXT NOT NULL,
+    label       TEXT,
+    config_json TEXT DEFAULT '{}',
+    pos_x       REAL DEFAULT 0,
+    pos_y       REAL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS nc_audit (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    action      TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id   TEXT,
+    details     TEXT,
+    user_id     TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI',
+    ts          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_circuits (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    circuit_id TEXT NOT NULL,
+    carrier TEXT,
+    circuit_type TEXT,
+    bandwidth TEXT,
+    handoff_a TEXT,
+    handoff_z TEXT,
+    customer TEXT,
+    site TEXT,
+    monthly_cost_usd REAL DEFAULT 0,
+    contract_start TEXT,
+    contract_end TEXT,
+    sla_uptime_pct REAL DEFAULT 99.9,
+    install_status TEXT DEFAULT 'planned',
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    customer_type TEXT DEFAULT 'customer',
+    contact_name TEXT,
+    contact_email TEXT,
+    contract_ref TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_sites (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT REFERENCES nc_customers(id),
+    name TEXT NOT NULL,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    country TEXT DEFAULT 'US',
+    site_type TEXT DEFAULT 'office',
+    classification TEXT DEFAULT 'public',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_ipam_blocks (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    network TEXT NOT NULL,
+    vlan_id INTEGER,
+    vrf TEXT DEFAULT 'global',
+    description TEXT,
+    site_id TEXT,
+    gateway TEXT,
+    utilization_pct REAL DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_cables (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    cable_id TEXT NOT NULL,
+    cable_type TEXT,
+    src_device TEXT,
+    src_port TEXT,
+    dst_device TEXT,
+    dst_port TEXT,
+    patch_panel TEXT,
+    length_m REAL,
+    status TEXT DEFAULT 'active',
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_versions (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    version_num INTEGER NOT NULL,
+    label TEXT,
+    phase TEXT,
+    graph_json TEXT NOT NULL,
+    created_by TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_compliance_checks (
+    id TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    check_type TEXT NOT NULL,
+    passed INTEGER DEFAULT 0,
+    failed INTEGER DEFAULT 0,
+    findings_json TEXT DEFAULT '[]',
+    ran_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Topology compliance profile (target regime + declared classification)
+CREATE TABLE IF NOT EXISTS nc_compliance_profiles (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT UNIQUE REFERENCES topologies(id),
+    regimes     TEXT DEFAULT '["fisma_high"]',  -- JSON array of active regime IDs
+    classification TEXT DEFAULT 'CUI',          -- CUI, SECRET, TOP SECRET, PUBLIC
+    environment TEXT DEFAULT 'IL4',             -- IL2, IL4, IL5, IL6
+    auto_audit  INTEGER DEFAULT 1,             -- run audit on every save
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Persistent findings (tracked over time for trend analysis)
+CREATE TABLE IF NOT EXISTS nc_compliance_findings (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    audit_id    TEXT REFERENCES nc_compliance_checks(id),
+    rule_id     TEXT NOT NULL,                 -- e.g. NET-ENC-001
+    regime      TEXT NOT NULL,                 -- fisma_high, stig, fips, zta, cjis, icd503, cnss1253
+    severity    TEXT DEFAULT 'CAT2',           -- CAT1, CAT2, CAT3
+    title       TEXT NOT NULL,
+    description TEXT,
+    affected_entity TEXT,                      -- node/edge ID or label
+    affected_type TEXT,                        -- node, edge, topology
+    status      TEXT DEFAULT 'open',           -- open, remediated, accepted_risk, false_positive
+    fix_action  TEXT,                          -- JSON: {action, params} for one-click fix
+    remediated_at TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Projects: group multiple topologies, circuits, IPAM under one engagement
+CREATE TABLE IF NOT EXISTS nc_projects (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    customer_id TEXT REFERENCES nc_customers(id),
+    description TEXT,
+    status      TEXT DEFAULT 'draft',  -- draft, in_review, approved, deployed, archived
+    owner       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Link topologies to projects (many-to-many)
+CREATE TABLE IF NOT EXISTS nc_project_topologies (
+    project_id  TEXT REFERENCES nc_projects(id),
+    topology_id TEXT REFERENCES topologies(id),
+    PRIMARY KEY (project_id, topology_id)
+);
+
+-- CSP Group Containers (nestable visual containers)
+CREATE TABLE IF NOT EXISTS nc_groups (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    parent_id   TEXT,                   -- NULL = top-level, else nested inside parent group
+    csp         TEXT,                   -- aws, azure, gcp, oci, ibm, custom
+    group_type  TEXT DEFAULT 'full',    -- full (with components), outline (high-level only)
+    label       TEXT NOT NULL,
+    description TEXT,
+    auto_nodes_json TEXT DEFAULT '[]',  -- auto-populated node IDs when group_type=full
+    pos_x       REAL DEFAULT 0,
+    pos_y       REAL DEFAULT 0,
+    width       REAL DEFAULT 400,
+    height      REAL DEFAULT 300,
+    color       TEXT,                   -- override color (default from CSP)
+    collapsed   INTEGER DEFAULT 0,     -- 1 = collapsed (hide children)
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Monte Carlo simulation scenarios
+CREATE TABLE IF NOT EXISTS nc_mc_scenarios (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    name        TEXT NOT NULL,
+    scenario_type TEXT DEFAULT 'random', -- random, named, circuit_change
+    description TEXT,
+    config_json TEXT DEFAULT '{}',       -- iterations, failure_probs, named_failures, etc.
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Monte Carlo simulation runs (each run = N iterations)
+CREATE TABLE IF NOT EXISTS nc_mc_runs (
+    id          TEXT PRIMARY KEY,
+    scenario_id TEXT REFERENCES nc_mc_scenarios(id),
+    topology_id TEXT REFERENCES topologies(id),
+    iterations  INTEGER DEFAULT 1000,
+    result_json TEXT DEFAULT '{}',       -- risk_score, confidence_intervals, cascading_effects, etc.
+    ai_recommendations TEXT,             -- AI-generated resilience recommendations
+    ran_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Backup registry (point-in-time restore)
+CREATE TABLE IF NOT EXISTS nc_backups (
+    id          TEXT PRIMARY KEY,
+    backup_type TEXT DEFAULT 'manual',   -- manual, scheduled
+    file_path   TEXT NOT NULL,
+    file_size_bytes INTEGER DEFAULT 0,
+    includes_json TEXT DEFAULT '[]',      -- ["icdev.db", "network_canvas.db", "args/", ...]
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NC-GAP-001: User authentication
+CREATE TABLE IF NOT EXISTS nc_users (
+    id          TEXT PRIMARY KEY,
+    username    TEXT UNIQUE NOT NULL,
+    display_name TEXT,
+    password_hash TEXT NOT NULL,
+    role        TEXT DEFAULT 'editor',  -- viewer, editor, admin
+    is_active   INTEGER DEFAULT 1,
+    last_login  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NC-GAP-009: Classification on audit + immutability triggers
+-- (classification column added inline above)
+
+-- NC-GAP-013: Audit trail immutability triggers
+CREATE TRIGGER IF NOT EXISTS nc_audit_no_update
+BEFORE UPDATE ON nc_audit
+BEGIN
+    SELECT RAISE(ABORT, 'Audit records are immutable — NIST AU-6');
+END;
+
+CREATE TRIGGER IF NOT EXISTS nc_audit_no_delete
+BEFORE DELETE ON nc_audit
+BEGIN
+    SELECT RAISE(ABORT, 'Audit records cannot be deleted — NIST AU-6');
+END;
+"""
+
+# ── Template seeds ────────────────────────────────────────────────────────────
+
+def _node(nid, label, ntype, x, y, extra=None):
+    n = {"id": nid, "label": label, "type": ntype, "x": x, "y": y}
+    if extra:
+        n.update(extra)
+    return n
+
+
+def _edge(src, dst, label="", protocol=""):
+    return {"id": str(uuid.uuid4())[:8], "source": src, "target": dst,
+            "label": label, "protocol": protocol}
+
+
+TEMPLATES = [
+    # 1 ─ GRE over IPSec
+    {
+        "id": "tpl-gre-ipsec",
+        "name": "GRE over IPSec",
+        "category": "WAN / VPN",
+        "description": "Point-to-point GRE tunnel encapsulated inside IPSec ESP transport mode. Common for secure branch connectivity.",
+        "tags": json.dumps(["vpn", "ipsec", "gre", "wan"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("r1", "HQ Router", "router", 100, 200),
+                _node("fw1", "HQ Firewall", "firewall", 300, 200),
+                _node("isp1", "ISP Cloud", "cloud", 500, 200),
+                _node("fw2", "Branch FW", "firewall", 700, 200),
+                _node("r2", "Branch Router", "router", 900, 200),
+            ],
+            "edges": [
+                _edge("r1", "fw1", "LAN", ""),
+                _edge("fw1", "isp1", "WAN", "IPSec ESP"),
+                _edge("isp1", "fw2", "WAN", "IPSec ESP"),
+                _edge("fw2", "r2", "LAN", ""),
+                _edge("r1", "r2", "GRE Tunnel", "GRE/IPSec"),
+            ]
+        }),
+    },
+    # 2 ─ Three-Tier
+    {
+        "id": "tpl-three-tier",
+        "name": "Three-Tier (Core / Distribution / Access)",
+        "category": "Campus LAN",
+        "description": "Classic hierarchical campus network: core L3 switches, distribution switches with SVIs, and access layer PoE switches.",
+        "tags": json.dumps(["campus", "hierarchical", "stp", "hsrp"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("core1", "Core-SW-1", "switch-l3", 400, 80),
+                _node("core2", "Core-SW-2", "switch-l3", 600, 80),
+                _node("dist1", "Dist-SW-A", "switch-l3", 200, 240),
+                _node("dist2", "Dist-SW-B", "switch-l3", 500, 240),
+                _node("dist3", "Dist-SW-C", "switch-l3", 800, 240),
+                _node("acc1", "Access-1A", "switch-l2", 100, 400),
+                _node("acc2", "Access-1B", "switch-l2", 300, 400),
+                _node("acc3", "Access-2A", "switch-l2", 450, 400),
+                _node("acc4", "Access-2B", "switch-l2", 600, 400),
+                _node("acc5", "Access-3A", "switch-l2", 750, 400),
+                _node("acc6", "Access-3B", "switch-l2", 900, 400),
+            ],
+            "edges": [
+                _edge("core1", "core2", "ISL", "OSPF"),
+                _edge("core1", "dist1", "", "OSPF"),
+                _edge("core1", "dist2", "", "OSPF"),
+                _edge("core2", "dist2", "", "OSPF"),
+                _edge("core2", "dist3", "", "OSPF"),
+                _edge("dist1", "acc1", "", "STP"),
+                _edge("dist1", "acc2", "", "STP"),
+                _edge("dist2", "acc3", "", "STP"),
+                _edge("dist2", "acc4", "", "STP"),
+                _edge("dist3", "acc5", "", "STP"),
+                _edge("dist3", "acc6", "", "STP"),
+            ]
+        }),
+    },
+    # 3 ─ Spine-Leaf
+    {
+        "id": "tpl-spine-leaf",
+        "name": "Spine-Leaf (Clos) — BGP EVPN/VXLAN",
+        "category": "Data Center",
+        "description": "Two-tier Clos fabric with BGP EVPN/VXLAN overlay for multi-tenant DC workloads. Equal-cost multi-path (ECMP).",
+        "tags": json.dumps(["data-center", "vxlan", "evpn", "bgp", "ecmp"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("sp1", "Spine-1", "switch-l3", 300, 80),
+                _node("sp2", "Spine-2", "switch-l3", 600, 80),
+                _node("lf1", "Leaf-1", "switch-l3", 100, 280),
+                _node("lf2", "Leaf-2", "switch-l3", 300, 280),
+                _node("lf3", "Leaf-3", "switch-l3", 500, 280),
+                _node("lf4", "Leaf-4", "switch-l3", 700, 280),
+                _node("srv1", "Server Rack A", "server", 100, 440),
+                _node("srv2", "Server Rack B", "server", 300, 440),
+                _node("srv3", "Server Rack C", "server", 500, 440),
+                _node("srv4", "Server Rack D", "server", 700, 440),
+            ],
+            "edges": [
+                _edge("sp1", "lf1", "", "BGP EVPN"),
+                _edge("sp1", "lf2", "", "BGP EVPN"),
+                _edge("sp1", "lf3", "", "BGP EVPN"),
+                _edge("sp1", "lf4", "", "BGP EVPN"),
+                _edge("sp2", "lf1", "", "BGP EVPN"),
+                _edge("sp2", "lf2", "", "BGP EVPN"),
+                _edge("sp2", "lf3", "", "BGP EVPN"),
+                _edge("sp2", "lf4", "", "BGP EVPN"),
+                _edge("lf1", "srv1", "", "VXLAN"),
+                _edge("lf2", "srv2", "", "VXLAN"),
+                _edge("lf3", "srv3", "", "VXLAN"),
+                _edge("lf4", "srv4", "", "VXLAN"),
+            ]
+        }),
+    },
+    # 4 ─ SD-WAN
+    {
+        "id": "tpl-sdwan",
+        "name": "SD-WAN",
+        "category": "WAN / VPN",
+        "description": "Software-defined WAN with centralized orchestrator, vSmart controllers, and vEdge CPEs across MPLS + internet dual-homed branches.",
+        "tags": json.dumps(["sdwan", "viptela", "wan", "orchestration"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("orch", "vManage Orchestrator", "server", 500, 60),
+                _node("vsmart1", "vSmart-1", "server", 300, 180),
+                _node("vsmart2", "vSmart-2", "server", 700, 180),
+                _node("hub", "DC vEdge Hub", "router", 500, 300),
+                _node("br1", "Branch vEdge 1", "router", 200, 440),
+                _node("br2", "Branch vEdge 2", "router", 500, 440),
+                _node("br3", "Branch vEdge 3", "router", 800, 440),
+                _node("mpls", "MPLS Cloud", "cloud", 300, 360),
+                _node("inet", "Internet", "cloud", 700, 360),
+            ],
+            "edges": [
+                _edge("orch", "vsmart1", "OMP", "DTLS"),
+                _edge("orch", "vsmart2", "OMP", "DTLS"),
+                _edge("vsmart1", "hub", "OMP", "DTLS"),
+                _edge("vsmart2", "hub", "OMP", "DTLS"),
+                _edge("hub", "mpls", "", "MPLS"),
+                _edge("hub", "inet", "", "IPSec"),
+                _edge("mpls", "br1", "", "MPLS"),
+                _edge("inet", "br2", "", "IPSec"),
+                _edge("mpls", "br3", "", "MPLS"),
+                _edge("inet", "br3", "", "IPSec"),
+            ]
+        }),
+    },
+    # 5 ─ MPLS L3VPN
+    {
+        "id": "tpl-mpls-l3vpn",
+        "name": "MPLS L3VPN (RFC 4364)",
+        "category": "Service Provider",
+        "description": "RFC 4364 MPLS L3VPN with dedicated PE/P node types, route reflector, "
+                       "VRF customer separation, dual POP sites, and fiber patch panels.",
+        "tags": json.dumps(["mpls", "l3vpn", "vrf", "bgp", "service-provider", "pop"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Customer A site
+                _node("ce-a1", "CE Router A1", "router", 50, 200),
+                _node("ce-a2", "CE Router A2", "router", 50, 400),
+                # POP 1
+                _node("pop1", "POP-1 (West)", "pop", 200, 300),
+                _node("fpp1", "Fiber Patch POP-1", "patch-panel-fiber", 280, 220),
+                _node("pe1", "PE-1", "mpls-pe", 350, 300),
+                # Core
+                _node("p1", "P-Core-1", "mpls-p", 520, 160),
+                _node("p2", "P-Core-2", "mpls-p", 520, 440),
+                _node("rr", "Route Reflector", "route-reflector", 520, 300),
+                # POP 2
+                _node("pe2", "PE-2", "mpls-pe", 690, 300),
+                _node("fpp2", "Fiber Patch POP-2", "patch-panel-fiber", 760, 220),
+                _node("pop2", "POP-2 (East)", "pop", 840, 300),
+                # Customer B site
+                _node("ce-b1", "CE Router B1", "router", 950, 200),
+                _node("ce-b2", "CE Router B2", "router", 950, 400),
+                # VRFs
+                _node("vrf-a", "VRF: Cust-A", "vrf", 350, 100),
+                _node("vrf-b", "VRF: Cust-B", "vrf", 690, 100),
+            ],
+            "edges": [
+                # Customer A → POP 1
+                _edge("ce-a1", "pop1", "GbE", ""),
+                _edge("ce-a2", "pop1", "GbE", ""),
+                _edge("pop1", "fpp1", "Fiber Patch", ""),
+                _edge("fpp1", "pe1", "10G SM", ""),
+                _edge("ce-a1", "pe1", "CE-PE", "eBGP"),
+                _edge("ce-a2", "pe1", "CE-PE", "eBGP"),
+                # MPLS Core
+                _edge("pe1", "p1", "MPLS LSP", "LDP"),
+                _edge("pe1", "p2", "MPLS LSP", "LDP"),
+                _edge("p1", "pe2", "MPLS LSP", "LDP"),
+                _edge("p2", "pe2", "MPLS LSP", "LDP"),
+                _edge("p1", "p2", "MPLS Core", "LDP"),
+                # Route Reflector
+                _edge("pe1", "rr", "iBGP", "MP-BGP"),
+                _edge("pe2", "rr", "iBGP", "MP-BGP"),
+                # POP 2 → Customer B
+                _edge("pe2", "fpp2", "10G SM", ""),
+                _edge("fpp2", "pop2", "Fiber Patch", ""),
+                _edge("pop2", "ce-b1", "GbE", ""),
+                _edge("pop2", "ce-b2", "GbE", ""),
+                _edge("pe2", "ce-b1", "CE-PE", "eBGP"),
+                _edge("pe2", "ce-b2", "CE-PE", "eBGP"),
+                # VRF associations
+                _edge("pe1", "vrf-a", "VRF Import", ""),
+                _edge("pe2", "vrf-b", "VRF Import", ""),
+            ]
+        }),
+    },
+    # 6 ─ SONET/DWDM Ring
+    {
+        "id": "tpl-sonet-dwdm",
+        "name": "SONET/DWDM Ring (BLSR)",
+        "category": "Transport",
+        "description": "Professional SONET/DWDM bidirectional line-switched ring with ROADM, "
+                       "OADM, EDFA amplifiers, transponders, ODF frames, SONET ADMs, "
+                       "and POP sites. 40-channel C-band DWDM, OC-192/STM-64.",
+        "tags": json.dumps(["sonet", "dwdm", "optical", "ring", "transport", "roadm", "oadm", "edfa"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # POP A — Hub
+                _node("pop-a", "POP-A (Hub)", "pop", 480, 20),
+                _node("odf-a", "ODF-A", "odf", 480, 80),
+                _node("roadm-a", "ROADM-A", "roadm", 480, 160),
+                _node("txp-a1", "Transponder A-1", "transponder", 380, 80),
+                _node("txp-a2", "Transponder A-2", "transponder", 580, 80),
+                _node("adm-a", "SONET ADM-A", "sonet-adm", 480, 240),
+                # Span A→B (East)
+                _node("edfa-ab", "EDFA (A→B)", "edfa", 720, 160),
+                _node("fiber-ab", "40km SM Fiber", "media-fiber", 780, 230),
+                # POP B
+                _node("pop-b", "POP-B", "pop", 880, 300),
+                _node("odf-b", "ODF-B", "odf", 820, 300),
+                _node("oadm-b", "OADM-B", "oadm", 740, 300),
+                _node("fpp-b", "Fiber Patch B", "patch-panel-fiber", 880, 380),
+                _node("adm-b", "SONET ADM-B", "sonet-adm", 740, 380),
+                # Span B→C (South)
+                _node("edfa-bc", "EDFA (B→C)", "edfa", 780, 460),
+                # POP C
+                _node("pop-c", "POP-C", "pop", 620, 520),
+                _node("odf-c", "ODF-C", "odf", 550, 520),
+                _node("oadm-c", "OADM-C", "oadm", 480, 460),
+                _node("adm-c", "SONET ADM-C", "sonet-adm", 480, 540),
+                # Span C→D (West)
+                _node("edfa-cd", "EDFA (C→D)", "edfa", 320, 460),
+                # POP D
+                _node("pop-d", "POP-D", "pop", 180, 380),
+                _node("odf-d", "ODF-D", "odf", 180, 310),
+                _node("oadm-d", "OADM-D", "oadm", 250, 300),
+                _node("fpp-d", "Fiber Patch D", "patch-panel-fiber", 100, 380),
+                _node("adm-d", "SONET ADM-D", "sonet-adm", 250, 380),
+                # Span D→A (North) — closing the ring
+                _node("edfa-da", "EDFA (D→A)", "edfa", 250, 200),
+            ],
+            "edges": [
+                # POP A internal
+                _edge("pop-a", "odf-a", "Trunk", ""),
+                _edge("odf-a", "txp-a1", "λ1-20 (C-band)", ""),
+                _edge("odf-a", "txp-a2", "λ21-40 (C-band)", ""),
+                _edge("txp-a1", "roadm-a", "10G Client", ""),
+                _edge("txp-a2", "roadm-a", "10G Client", ""),
+                _edge("roadm-a", "adm-a", "OC-192", "SONET"),
+                # East span: A → B
+                _edge("roadm-a", "edfa-ab", "λ1+λ2 East", "OC-192"),
+                _edge("edfa-ab", "fiber-ab", "Amplified", ""),
+                _edge("fiber-ab", "oadm-b", "40km", ""),
+                # POP B internal
+                _edge("pop-b", "odf-b", "Trunk", ""),
+                _edge("odf-b", "oadm-b", "Patch", ""),
+                _edge("oadm-b", "adm-b", "OC-192", "SONET"),
+                _edge("oadm-b", "fpp-b", "Drop", ""),
+                # South span: B → C
+                _edge("oadm-b", "edfa-bc", "λ3+λ4 South", "OC-192"),
+                _edge("edfa-bc", "oadm-c", "Amplified", ""),
+                # POP C internal
+                _edge("pop-c", "odf-c", "Trunk", ""),
+                _edge("odf-c", "oadm-c", "Patch", ""),
+                _edge("oadm-c", "adm-c", "OC-192", "SONET"),
+                # West span: C → D
+                _edge("oadm-c", "edfa-cd", "λ5+λ6 West", "OC-192"),
+                _edge("edfa-cd", "oadm-d", "Amplified", ""),
+                # POP D internal
+                _edge("pop-d", "odf-d", "Trunk", ""),
+                _edge("odf-d", "oadm-d", "Patch", ""),
+                _edge("oadm-d", "adm-d", "OC-192", "SONET"),
+                _edge("oadm-d", "fpp-d", "Drop", ""),
+                # North span: D → A (ring closure)
+                _edge("oadm-d", "edfa-da", "λ7+λ8 North", "OC-192"),
+                _edge("edfa-da", "roadm-a", "Ring Close", ""),
+            ]
+        }),
+    },
+    # 7 ─ SDN OpenFlow
+    {
+        "id": "tpl-sdn-openflow",
+        "name": "SDN (OpenFlow)",
+        "category": "Data Center",
+        "description": "OpenFlow-based SDN with centralized controller cluster, southbound OpenFlow 1.3 to programmable switches.",
+        "tags": json.dumps(["sdn", "openflow", "controller", "programmable"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("ctrl1", "SDN Controller 1", "server", 350, 80),
+                _node("ctrl2", "SDN Controller 2", "server", 600, 80),
+                _node("of1", "OF Switch 1", "switch-l3", 150, 280),
+                _node("of2", "OF Switch 2", "switch-l3", 350, 280),
+                _node("of3", "OF Switch 3", "switch-l3", 550, 280),
+                _node("of4", "OF Switch 4", "switch-l3", 750, 280),
+                _node("h1", "Host 1", "server", 150, 440),
+                _node("h2", "Host 2", "server", 350, 440),
+                _node("h3", "Host 3", "server", 550, 440),
+                _node("h4", "Host 4", "server", 750, 440),
+            ],
+            "edges": [
+                _edge("ctrl1", "of1", "OF 1.3", "TLS"),
+                _edge("ctrl1", "of2", "OF 1.3", "TLS"),
+                _edge("ctrl2", "of3", "OF 1.3", "TLS"),
+                _edge("ctrl2", "of4", "OF 1.3", "TLS"),
+                _edge("of1", "of2", "Data Plane", ""),
+                _edge("of2", "of3", "Data Plane", ""),
+                _edge("of3", "of4", "Data Plane", ""),
+                _edge("of1", "h1", "", ""),
+                _edge("of2", "h2", "", ""),
+                _edge("of3", "h3", "", ""),
+                _edge("of4", "h4", "", ""),
+            ]
+        }),
+    },
+    # 8 ─ Zero Trust (NIST 800-207)
+    {
+        "id": "tpl-zero-trust",
+        "name": "Zero Trust Architecture (NIST 800-207)",
+        "category": "Security",
+        "description": "NIST SP 800-207 compliant ZTA with Policy Engine (PE), Policy Administrator (PA), and Policy Enforcement Points (PEP).",
+        "tags": json.dumps(["zero-trust", "nist", "pep", "iam", "microsegmentation"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("idp", "Identity Provider (IdP)", "server", 500, 60),
+                _node("pe", "Policy Engine (PE)", "server", 300, 180),
+                _node("pa", "Policy Admin (PA)", "server", 700, 180),
+                _node("pep1", "PEP — Corp Net", "firewall", 200, 340),
+                _node("pep2", "PEP — Cloud", "firewall", 500, 340),
+                _node("pep3", "PEP — Remote", "firewall", 800, 340),
+                _node("res1", "Corporate Resources", "server", 200, 480),
+                _node("res2", "Cloud Workloads", "server", 500, 480),
+                _node("usr1", "Remote Users", "server", 800, 480),
+                _node("siem", "SIEM / CDM", "server", 500, 200),
+            ],
+            "edges": [
+                _edge("idp", "pe", "AuthN", "SAML/OIDC"),
+                _edge("pe", "pa", "Policy", "mTLS"),
+                _edge("pa", "pep1", "Enforce", "gRPC"),
+                _edge("pa", "pep2", "Enforce", "gRPC"),
+                _edge("pa", "pep3", "Enforce", "gRPC"),
+                _edge("pep1", "res1", "Allow/Deny", ""),
+                _edge("pep2", "res2", "Allow/Deny", ""),
+                _edge("pep3", "usr1", "Allow/Deny", ""),
+                _edge("siem", "pe", "Telemetry", ""),
+            ]
+        }),
+    },
+    # 9 ─ QKD Point-to-Point
+    {
+        "id": "tpl-qkd-p2p",
+        "name": "QKD Point-to-Point",
+        "category": "Quantum",
+        "description": "BB84 QKD link between two sites using dedicated dark fiber. Key Management Stations (KMS) feed symmetric keys to classical encryption engines.",
+        "tags": json.dumps(["quantum", "qkd", "bb84", "encryption", "pqc"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("qkd1", "QKD Transmitter (Alice)", "server", 150, 240),
+                _node("qkd2", "QKD Receiver (Bob)", "server", 750, 240),
+                _node("kms1", "KMS Site A", "server", 150, 380),
+                _node("kms2", "KMS Site B", "server", 750, 380),
+                _node("enc1", "Crypto Engine A", "firewall", 150, 500),
+                _node("enc2", "Crypto Engine B", "firewall", 750, 500),
+                _node("fiber", "Dark Fiber (Quantum Channel)", "cloud", 450, 240),
+                _node("classic", "Classical Auth Channel", "cloud", 450, 380),
+            ],
+            "edges": [
+                _edge("qkd1", "fiber", "Photon stream", "BB84"),
+                _edge("fiber", "qkd2", "Photon stream", "BB84"),
+                _edge("qkd1", "classic", "Sifting/Reconcile", "TLS"),
+                _edge("qkd2", "classic", "Sifting/Reconcile", "TLS"),
+                _edge("qkd1", "kms1", "QKM", ""),
+                _edge("qkd2", "kms2", "QKM", ""),
+                _edge("kms1", "enc1", "Symmetric Key", ""),
+                _edge("kms2", "enc2", "Symmetric Key", ""),
+            ]
+        }),
+    },
+    # 10 ─ QKD Trusted-Node Relay
+    {
+        "id": "tpl-qkd-relay",
+        "name": "QKD Trusted-Node Relay",
+        "category": "Quantum",
+        "description": "Multi-hop QKD network using trusted relay nodes to extend range beyond single-fiber attenuation limits.",
+        "tags": json.dumps(["quantum", "qkd", "relay", "trusted-node"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("site_a", "Site A (Alice)", "server", 80, 280),
+                _node("tn1", "Trusted Node 1", "router", 280, 280),
+                _node("tn2", "Trusted Node 2", "router", 480, 280),
+                _node("tn3", "Trusted Node 3", "router", 680, 280),
+                _node("site_b", "Site B (Bob)", "server", 880, 280),
+                _node("kms_net", "QKD Key Mgmt Network", "cloud", 480, 120),
+            ],
+            "edges": [
+                _edge("site_a", "tn1", "QKD Link 1", "BB84"),
+                _edge("tn1", "tn2", "QKD Link 2", "BB84"),
+                _edge("tn2", "tn3", "QKD Link 3", "BB84"),
+                _edge("tn3", "site_b", "QKD Link 4", "BB84"),
+                _edge("tn1", "kms_net", "Key relay", ""),
+                _edge("tn2", "kms_net", "Key relay", ""),
+                _edge("tn3", "kms_net", "Key relay", ""),
+            ]
+        }),
+    },
+    # 11 ─ AI/ML Network Fabric
+    {
+        "id": "tpl-aiml-fabric",
+        "name": "AI/ML Network Fabric (RDMA/RoCE)",
+        "category": "Data Center",
+        "description": "High-performance compute cluster network for AI/ML training: RDMA over Converged Ethernet (RoCE v2), 400G spine, in-network computing.",
+        "tags": json.dumps(["ai-ml", "rdma", "roce", "infiniband", "gpu"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("sp400_1", "400G Spine 1", "switch-l3", 300, 80),
+                _node("sp400_2", "400G Spine 2", "switch-l3", 600, 80),
+                _node("lf1", "100G Leaf 1", "switch-l3", 100, 280),
+                _node("lf2", "100G Leaf 2", "switch-l3", 300, 280),
+                _node("lf3", "100G Leaf 3", "switch-l3", 500, 280),
+                _node("lf4", "100G Leaf 4", "switch-l3", 700, 280),
+                _node("gpu1", "GPU Node A (8×H100)", "server", 100, 460),
+                _node("gpu2", "GPU Node B (8×H100)", "server", 300, 460),
+                _node("gpu3", "GPU Node C (8×H100)", "server", 500, 460),
+                _node("gpu4", "GPU Node D (8×H100)", "server", 700, 460),
+                _node("stor", "All-Flash Storage (NVMe/TCP)", "server", 900, 280),
+            ],
+            "edges": [
+                _edge("sp400_1", "lf1", "", "RoCEv2"),
+                _edge("sp400_1", "lf2", "", "RoCEv2"),
+                _edge("sp400_2", "lf3", "", "RoCEv2"),
+                _edge("sp400_2", "lf4", "", "RoCEv2"),
+                _edge("sp400_1", "sp400_2", "ISL", "400G"),
+                _edge("lf1", "gpu1", "", "100G RDMA"),
+                _edge("lf2", "gpu2", "", "100G RDMA"),
+                _edge("lf3", "gpu3", "", "100G RDMA"),
+                _edge("lf4", "gpu4", "", "100G RDMA"),
+                _edge("sp400_2", "stor", "", "NVMe/TCP"),
+            ]
+        }),
+    },
+    # 12 ─ Crypto/Security Zones DMZ
+    {
+        "id": "tpl-security-zones",
+        "name": "Crypto/Security Zones (DMZ)",
+        "category": "Security",
+        "description": "Multi-zone security architecture: Internet → DMZ → Application → Data tiers, dual-firewall, IDS/IPS inline, WAF, and jump host.",
+        "tags": json.dumps(["dmz", "firewall", "ids", "waf", "zones", "nist"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("internet", "Internet", "cloud", 500, 40),
+                _node("waf", "WAF / DDoS Scrubber", "firewall", 500, 140),
+                _node("fw_outer", "Outer Firewall (Untrust→DMZ)", "firewall", 500, 240),
+                _node("dmz_web", "DMZ Web Servers", "server", 300, 360),
+                _node("dmz_dns", "DMZ DNS / Email", "server", 700, 360),
+                _node("ids", "IDS/IPS (Inline)", "firewall", 500, 360),
+                _node("fw_inner", "Inner Firewall (DMZ→App)", "firewall", 500, 460),
+                _node("app_tier", "App Tier (mTLS)", "server", 350, 560),
+                _node("db_tier", "Data Tier (Encrypted)", "server", 650, 560),
+                _node("jump", "Jump Host / PAM", "server", 900, 460),
+                _node("siem", "SIEM / SOAR", "server", 900, 360),
+            ],
+            "edges": [
+                _edge("internet", "waf", "", "HTTPS"),
+                _edge("waf", "fw_outer", "", ""),
+                _edge("fw_outer", "dmz_web", "HTTP/S", ""),
+                _edge("fw_outer", "dmz_dns", "DNS/25", ""),
+                _edge("fw_outer", "ids", "Span", ""),
+                _edge("ids", "fw_inner", "", ""),
+                _edge("fw_inner", "app_tier", "8443", "mTLS"),
+                _edge("app_tier", "db_tier", "5432", "TLS"),
+                _edge("jump", "fw_inner", "22/3389", ""),
+                _edge("ids", "siem", "Events", "Syslog"),
+            ]
+        }),
+    },
+    # 13 ─ Campus Area Network
+    {
+        "id": "tpl-campus-area",
+        "name": "Campus Area Network (CAN)",
+        "category": "Campus LAN",
+        "description": "Multi-building campus network with redundant core, distribution per building, access layer with PoE APs, centralized data center, and WAN edge. OSPF backbone, STP at access.",
+        "tags": json.dumps(["campus", "can", "multi-building", "ospf", "poe", "wap"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # WAN Edge
+                _node("wan-gw1", "WAN Gateway-1", "router", 450, 20),
+                _node("wan-gw2", "WAN Gateway-2", "router", 650, 20),
+                _node("fw-edge", "Edge Firewall", "firewall", 550, 100),
+                # Core
+                _node("core1", "Core-SW-1", "switch-l3", 400, 200),
+                _node("core2", "Core-SW-2", "switch-l3", 700, 200),
+                # Building A — Admin
+                _node("dist-a", "Bldg-A Dist", "switch-l3", 120, 340),
+                _node("acc-a1", "Bldg-A Acc-1", "switch-l2", 50, 480),
+                _node("acc-a2", "Bldg-A Acc-2", "switch-l2", 190, 480),
+                _node("wap-a", "Bldg-A WAP", "wap", 120, 580),
+                # Building B — Engineering
+                _node("dist-b", "Bldg-B Dist", "switch-l3", 400, 340),
+                _node("acc-b1", "Bldg-B Acc-1", "switch-l2", 330, 480),
+                _node("acc-b2", "Bldg-B Acc-2", "switch-l2", 470, 480),
+                _node("wap-b", "Bldg-B WAP", "wap", 400, 580),
+                # Building C — Operations
+                _node("dist-c", "Bldg-C Dist", "switch-l3", 700, 340),
+                _node("acc-c1", "Bldg-C Acc-1", "switch-l2", 630, 480),
+                _node("acc-c2", "Bldg-C Acc-2", "switch-l2", 770, 480),
+                _node("wap-c", "Bldg-C WAP", "wap", 700, 580),
+                # Data Center
+                _node("dc-sw", "DC Spine", "switch-l3", 950, 200),
+                _node("srv-cluster", "Server Cluster", "server", 950, 340),
+                _node("lb", "Load Balancer", "load-balancer", 950, 100),
+            ],
+            "edges": [
+                # WAN Edge
+                _edge("wan-gw1", "fw-edge", "ISP-A", "BGP"),
+                _edge("wan-gw2", "fw-edge", "ISP-B", "BGP"),
+                _edge("fw-edge", "core1", "Trunk", "OSPF"),
+                _edge("fw-edge", "core2", "Trunk", "OSPF"),
+                # Core ISL
+                _edge("core1", "core2", "ISL", "OSPF"),
+                # Core to Distribution
+                _edge("core1", "dist-a", "OSPF Area 1", "OSPF"),
+                _edge("core1", "dist-b", "OSPF Area 2", "OSPF"),
+                _edge("core2", "dist-b", "OSPF Area 2", "OSPF"),
+                _edge("core2", "dist-c", "OSPF Area 3", "OSPF"),
+                _edge("core1", "dist-c", "OSPF Area 3", "OSPF"),
+                _edge("core2", "dist-a", "OSPF Area 1", "OSPF"),
+                # Building A access
+                _edge("dist-a", "acc-a1", "", "STP"),
+                _edge("dist-a", "acc-a2", "", "STP"),
+                _edge("acc-a1", "wap-a", "PoE", ""),
+                # Building B access
+                _edge("dist-b", "acc-b1", "", "STP"),
+                _edge("dist-b", "acc-b2", "", "STP"),
+                _edge("acc-b1", "wap-b", "PoE", ""),
+                # Building C access
+                _edge("dist-c", "acc-c1", "", "STP"),
+                _edge("dist-c", "acc-c2", "", "STP"),
+                _edge("acc-c1", "wap-c", "PoE", ""),
+                # Data Center
+                _edge("core2", "dc-sw", "10G", "OSPF"),
+                _edge("core1", "dc-sw", "10G", "OSPF"),
+                _edge("dc-sw", "srv-cluster", "25G", ""),
+                _edge("lb", "dc-sw", "VIP", ""),
+            ]
+        }),
+    },
+    # 14 ─ Tactical Edge (DDIL)
+    {
+        "id": "tpl-tactical-ddil",
+        "name": "Tactical Edge (DDIL)",
+        "category": "Tactical / Military",
+        "description": "Denied, Disrupted, Intermittent, Limited (DDIL) tactical network. Mesh radio backbone, SATCOM uplink, TOC servers, sensor feeds, and disconnected operation capability. MANET/OLSR routing.",
+        "tags": json.dumps(["tactical", "ddil", "military", "manet", "satcom", "mesh", "edge"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # SATCOM uplink
+                _node("satcom", "SATCOM Terminal", "cloud", 500, 20),
+                _node("crypto-sat", "KG-175D (SATCOM)", "kg-175d", 500, 120),
+                # TOC (Tactical Operations Center)
+                _node("toc-rtr", "TOC Router", "router", 500, 230),
+                _node("toc-sw", "TOC Switch", "switch-l3", 500, 340),
+                _node("toc-srv", "TOC Server (C2)", "server", 350, 340),
+                _node("toc-fw", "TOC Firewall", "firewall", 650, 340),
+                _node("toc-kg", "KG-175G (TOC)", "kg-175g", 350, 230),
+                # Mesh radio backbone
+                _node("mesh-1", "Radio Node Alpha", "wap", 180, 460),
+                _node("mesh-2", "Radio Node Bravo", "wap", 400, 460),
+                _node("mesh-3", "Radio Node Charlie", "wap", 620, 460),
+                _node("mesh-4", "Radio Node Delta", "wap", 840, 460),
+                # Forward edge nodes with KG-245X
+                _node("fwd-1", "FWD Team 1", "server", 100, 600),
+                _node("kg-fwd1", "KG-245X (FWD-1)", "kg-245x", 100, 530),
+                _node("fwd-2", "FWD Team 2", "server", 300, 600),
+                _node("fwd-3", "FWD Team 3", "server", 520, 600),
+                _node("fwd-4", "FWD Team 4", "server", 740, 600),
+                # Sensor feeds
+                _node("sensor-uav", "UAV Sensor", "cloud", 920, 600),
+                _node("sensor-gnd", "Ground Sensor", "patch-panel", 920, 460),
+                # Store-and-forward relay
+                _node("relay", "Store-Fwd Relay", "router", 180, 340),
+            ],
+            "edges": [
+                # SATCOM to TOC
+                _edge("satcom", "crypto-sat", "Ku/Ka-band", ""),
+                _edge("crypto-sat", "toc-rtr", "Type 1 Encrypt", "IPSec"),
+                _edge("toc-rtr", "toc-kg", "Red Side", ""),
+                _edge("toc-kg", "toc-sw", "Black Side GbE", "OSPF"),
+                _edge("toc-sw", "toc-srv", "C2/SA", ""),
+                _edge("toc-sw", "toc-fw", "CROSS-DOMAIN", ""),
+                # TOC to mesh backbone
+                _edge("toc-fw", "mesh-3", "MANET", "OLSR"),
+                _edge("toc-sw", "mesh-2", "MANET", "OLSR"),
+                # Mesh interconnects (resilient)
+                _edge("mesh-1", "mesh-2", "RF Mesh", "OLSR"),
+                _edge("mesh-2", "mesh-3", "RF Mesh", "OLSR"),
+                _edge("mesh-3", "mesh-4", "RF Mesh", "OLSR"),
+                _edge("mesh-1", "mesh-3", "RF Mesh Alt", "OLSR"),
+                _edge("mesh-2", "mesh-4", "RF Mesh Alt", "OLSR"),
+                # Forward teams
+                _edge("mesh-1", "kg-fwd1", "Tactical Radio", ""),
+                _edge("kg-fwd1", "fwd-1", "Encrypted", "IPSec"),
+                _edge("mesh-2", "fwd-2", "Tactical Radio", ""),
+                _edge("mesh-3", "fwd-3", "Tactical Radio", ""),
+                _edge("mesh-4", "fwd-4", "Tactical Radio", ""),
+                # Sensors
+                _edge("mesh-4", "sensor-gnd", "Serial/IP", ""),
+                _edge("sensor-uav", "mesh-4", "Datalink", ""),
+                # Store-and-forward (DDIL resilience)
+                _edge("relay", "mesh-1", "Store-Fwd", ""),
+                _edge("relay", "toc-sw", "Delay-Tolerant", ""),
+            ]
+        }),
+    },
+    # 15 ─ Webscale East-West Fabric
+    {
+        "id": "tpl-east-west-fabric",
+        "name": "Webscale East-West Fabric",
+        "category": "Data Center",
+        "description": "Hyperscale data center optimized for east-west (server-to-server) traffic. "
+                       "5-stage Clos with super-spines, ECMP across all tiers, "
+                       "dedicated border-leaf pair for north-south. "
+                       "80%+ traffic stays within the fabric.",
+        "tags": json.dumps(["east-west", "webscale", "clos", "ecmp", "bgp", "hyperscale", "data-center"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # North-South border
+                _node("border-lf1", "Border-Leaf-1", "switch-l3", 50, 20),
+                _node("border-lf2", "Border-Leaf-2", "switch-l3", 200, 20),
+                _node("edge-fw", "Edge Firewall", "firewall", 125, 100),
+                _node("wan-rtr", "WAN Router", "router", 125, 180),
+                # Super-spine (stage 3 of 5-stage Clos)
+                _node("ss1", "Super-Spine-1", "switch-l3", 350, 20),
+                _node("ss2", "Super-Spine-2", "switch-l3", 550, 20),
+                _node("ss3", "Super-Spine-3", "switch-l3", 750, 20),
+                _node("ss4", "Super-Spine-4", "switch-l3", 950, 20),
+                # Pod A — Compute
+                _node("sp-a1", "Pod-A Spine-1", "switch-l3", 250, 160),
+                _node("sp-a2", "Pod-A Spine-2", "switch-l3", 450, 160),
+                _node("lf-a1", "Pod-A Leaf-1", "switch-l3", 170, 290),
+                _node("lf-a2", "Pod-A Leaf-2", "switch-l3", 310, 290),
+                _node("lf-a3", "Pod-A Leaf-3", "switch-l3", 450, 290),
+                _node("srv-a1", "Compute Rack A1", "server", 170, 400),
+                _node("srv-a2", "Compute Rack A2", "server", 310, 400),
+                _node("srv-a3", "Compute Rack A3", "server", 450, 400),
+                # Pod B — Storage / DB
+                _node("sp-b1", "Pod-B Spine-1", "switch-l3", 650, 160),
+                _node("sp-b2", "Pod-B Spine-2", "switch-l3", 850, 160),
+                _node("lf-b1", "Pod-B Leaf-1", "switch-l3", 570, 290),
+                _node("lf-b2", "Pod-B Leaf-2", "switch-l3", 720, 290),
+                _node("lf-b3", "Pod-B Leaf-3", "switch-l3", 870, 290),
+                _node("srv-b1", "Storage Rack B1", "server", 570, 400),
+                _node("srv-b2", "DB Rack B2", "server", 720, 400),
+                _node("srv-b3", "Cache Rack B3", "server", 870, 400),
+                # East-West indicator VRFs
+                _node("vrf-app", "VRF: App-Tier", "vrf", 240, 500),
+                _node("vrf-data", "VRF: Data-Tier", "vrf", 720, 500),
+            ],
+            "edges": [
+                # Border leaf → N/S path
+                _edge("wan-rtr", "edge-fw", "N-S Uplink", "BGP"),
+                _edge("edge-fw", "border-lf1", "N-S", ""),
+                _edge("edge-fw", "border-lf2", "N-S", ""),
+                _edge("border-lf1", "ss1", "100G", "eBGP"),
+                _edge("border-lf2", "ss2", "100G", "eBGP"),
+                # Super-spine ↔ Pod A spines (full mesh ECMP)
+                _edge("ss1", "sp-a1", "100G ECMP", "eBGP"),
+                _edge("ss2", "sp-a1", "100G ECMP", "eBGP"),
+                _edge("ss3", "sp-a2", "100G ECMP", "eBGP"),
+                _edge("ss4", "sp-a2", "100G ECMP", "eBGP"),
+                # Super-spine ↔ Pod B spines
+                _edge("ss1", "sp-b1", "100G ECMP", "eBGP"),
+                _edge("ss2", "sp-b1", "100G ECMP", "eBGP"),
+                _edge("ss3", "sp-b2", "100G ECMP", "eBGP"),
+                _edge("ss4", "sp-b2", "100G ECMP", "eBGP"),
+                # Pod A: spine ↔ leaf
+                _edge("sp-a1", "lf-a1", "25G", "eBGP"),
+                _edge("sp-a1", "lf-a2", "25G", "eBGP"),
+                _edge("sp-a2", "lf-a2", "25G", "eBGP"),
+                _edge("sp-a2", "lf-a3", "25G", "eBGP"),
+                _edge("sp-a1", "lf-a3", "25G", "eBGP"),
+                _edge("sp-a2", "lf-a1", "25G", "eBGP"),
+                # Pod B: spine ↔ leaf
+                _edge("sp-b1", "lf-b1", "25G", "eBGP"),
+                _edge("sp-b1", "lf-b2", "25G", "eBGP"),
+                _edge("sp-b2", "lf-b2", "25G", "eBGP"),
+                _edge("sp-b2", "lf-b3", "25G", "eBGP"),
+                _edge("sp-b1", "lf-b3", "25G", "eBGP"),
+                _edge("sp-b2", "lf-b1", "25G", "eBGP"),
+                # Leaf ↔ servers
+                _edge("lf-a1", "srv-a1", "25G", "VXLAN"),
+                _edge("lf-a2", "srv-a2", "25G", "VXLAN"),
+                _edge("lf-a3", "srv-a3", "25G", "VXLAN"),
+                _edge("lf-b1", "srv-b1", "25G NVMe-oF", "VXLAN"),
+                _edge("lf-b2", "srv-b2", "25G", "VXLAN"),
+                _edge("lf-b3", "srv-b3", "25G", "VXLAN"),
+                # East-West VRF groupings
+                _edge("srv-a1", "vrf-app", "E-W", ""),
+                _edge("srv-a2", "vrf-app", "E-W", ""),
+                _edge("srv-a3", "vrf-app", "E-W", ""),
+                _edge("srv-b1", "vrf-data", "E-W", ""),
+                _edge("srv-b2", "vrf-data", "E-W", ""),
+                _edge("srv-b3", "vrf-data", "E-W", ""),
+                # Cross-pod E-W (the key traffic path)
+                _edge("vrf-app", "vrf-data", "E-W Cross-Pod", "VXLAN"),
+            ]
+        }),
+    },
+    # 16 ─ Micro-Segmentation (NSX-style)
+    {
+        "id": "tpl-microseg",
+        "name": "Micro-Segmentation (Distributed Firewall)",
+        "category": "Security",
+        "description": "Workload-level segmentation with distributed firewalls. "
+                       "Each server/VM group gets its own security policy enforced at the vNIC, "
+                       "not at a chokepoint. Security zones isolate tiers; "
+                       "VLANs separate tenants within each zone. Zero lateral movement by default.",
+        "tags": json.dumps(["micro-segmentation", "nsx", "distributed-firewall", "zero-trust", "security-zone"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Spine fabric (simplified)
+                _node("spine1", "Spine-1", "switch-l3", 350, 20),
+                _node("spine2", "Spine-2", "switch-l3", 650, 20),
+                # Perimeter
+                _node("perim-fw", "Perimeter FW", "firewall", 500, 100),
+                # Leaf switches
+                _node("leaf-web", "Leaf-Web", "switch-l3", 150, 180),
+                _node("leaf-app", "Leaf-App", "switch-l3", 500, 180),
+                _node("leaf-db", "Leaf-DB", "switch-l3", 850, 180),
+                # Security Zones
+                _node("zone-web", "Zone: Web-DMZ", "security-zone", 150, 270),
+                _node("zone-app", "Zone: App-Tier", "security-zone", 500, 270),
+                _node("zone-db", "Zone: Data-Tier", "security-zone", 850, 270),
+                # Distributed Firewalls (per-zone enforcement)
+                _node("dfw-web", "DFW: Web Policy", "firewall", 150, 350),
+                _node("dfw-app", "DFW: App Policy", "firewall", 500, 350),
+                _node("dfw-db", "DFW: DB Policy", "firewall", 850, 350),
+                # Workloads — Web tier
+                _node("web-1", "Web-VM-1", "server", 50, 450),
+                _node("web-2", "Web-VM-2", "server", 250, 450),
+                _node("vlan-web-t1", "VLAN 100 Tenant-A", "vlan", 50, 540),
+                _node("vlan-web-t2", "VLAN 200 Tenant-B", "vlan", 250, 540),
+                # Workloads — App tier
+                _node("app-1", "App-VM-1", "server", 400, 450),
+                _node("app-2", "App-VM-2", "server", 600, 450),
+                _node("vlan-app-t1", "VLAN 110 Tenant-A", "vlan", 400, 540),
+                _node("vlan-app-t2", "VLAN 210 Tenant-B", "vlan", 600, 540),
+                # Workloads — DB tier
+                _node("db-1", "DB-VM-1", "server", 750, 450),
+                _node("db-2", "DB-VM-2", "server", 950, 450),
+                _node("vlan-db-t1", "VLAN 120 Tenant-A", "vlan", 750, 540),
+                _node("vlan-db-t2", "VLAN 220 Tenant-B", "vlan", 950, 540),
+            ],
+            "edges": [
+                # Spine to perimeter
+                _edge("spine1", "perim-fw", "N-S", "BGP"),
+                _edge("spine2", "perim-fw", "N-S", "BGP"),
+                # Spine to leaves (ECMP)
+                _edge("spine1", "leaf-web", "ECMP", "eBGP"),
+                _edge("spine2", "leaf-web", "ECMP", "eBGP"),
+                _edge("spine1", "leaf-app", "ECMP", "eBGP"),
+                _edge("spine2", "leaf-app", "ECMP", "eBGP"),
+                _edge("spine1", "leaf-db", "ECMP", "eBGP"),
+                _edge("spine2", "leaf-db", "ECMP", "eBGP"),
+                # Leaf → Security Zone
+                _edge("leaf-web", "zone-web", "Trunk", ""),
+                _edge("leaf-app", "zone-app", "Trunk", ""),
+                _edge("leaf-db", "zone-db", "Trunk", ""),
+                # Zone → DFW (policy enforcement point)
+                _edge("zone-web", "dfw-web", "Enforce", ""),
+                _edge("zone-app", "dfw-app", "Enforce", ""),
+                _edge("zone-db", "dfw-db", "Enforce", ""),
+                # DFW → workloads (per-vNIC policy)
+                _edge("dfw-web", "web-1", "Allow :443", ""),
+                _edge("dfw-web", "web-2", "Allow :443", ""),
+                _edge("dfw-app", "app-1", "Allow :8080", ""),
+                _edge("dfw-app", "app-2", "Allow :8080", ""),
+                _edge("dfw-db", "db-1", "Allow :5432", ""),
+                _edge("dfw-db", "db-2", "Allow :5432", ""),
+                # VLAN tenant isolation
+                _edge("web-1", "vlan-web-t1", "Tenant-A", ""),
+                _edge("web-2", "vlan-web-t2", "Tenant-B", ""),
+                _edge("app-1", "vlan-app-t1", "Tenant-A", ""),
+                _edge("app-2", "vlan-app-t2", "Tenant-B", ""),
+                _edge("db-1", "vlan-db-t1", "Tenant-A", ""),
+                _edge("db-2", "vlan-db-t2", "Tenant-B", ""),
+                # Allowed cross-zone flows (micro-seg: explicit allow only)
+                _edge("dfw-web", "dfw-app", "Allow Web→App", ""),
+                _edge("dfw-app", "dfw-db", "Allow App→DB", ""),
+                # DENY: web→db (no direct path = blocked by default)
+            ]
+        }),
+    },
+    # 17 ─ Hyper-Segmentation (Service Mesh + Identity)
+    {
+        "id": "tpl-hyperseg",
+        "name": "Hyper-Segmentation (Service Mesh / Identity)",
+        "category": "Security",
+        "description": "Per-process, per-API flow isolation using service mesh sidecars (Envoy), "
+                       "SPIFFE identity, and network policy enforcement at the pod level. "
+                       "Every flow is authenticated (mTLS), authorized (OPA), "
+                       "and encrypted end-to-end. Goes beyond micro-seg to per-call granularity.",
+        "tags": json.dumps(["hyper-segmentation", "service-mesh", "istio", "envoy", "spiffe", "mTLS",
+                            "zero-trust", "opa", "kubernetes"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Ingress layer
+                _node("ingress-gw", "Ingress Gateway", "load-balancer", 450, 20),
+                _node("waf", "WAF / API GW", "firewall", 450, 100),
+                # Control plane
+                _node("mesh-cp", "Mesh Control Plane", "server", 100, 100),
+                _node("spiffe", "SPIFFE CA (Identity)", "security-zone", 100, 200),
+                _node("opa", "OPA Policy Engine", "security-zone", 100, 300),
+                # Service A: Frontend
+                _node("ns-frontend", "NS: frontend", "subnet", 350, 200),
+                _node("svc-fe1", "frontend-v1", "server", 300, 290),
+                _node("sidecar-fe1", "Envoy Sidecar", "firewall", 420, 290),
+                # Service B: Order API
+                _node("ns-order", "NS: order-api", "subnet", 350, 390),
+                _node("svc-order1", "order-api-v1", "server", 300, 480),
+                _node("sidecar-order1", "Envoy Sidecar", "firewall", 420, 480),
+                # Service C: Payment
+                _node("ns-payment", "NS: payment", "subnet", 650, 200),
+                _node("svc-pay1", "payment-v1", "server", 600, 290),
+                _node("sidecar-pay1", "Envoy Sidecar", "firewall", 720, 290),
+                # Service D: Inventory
+                _node("ns-inventory", "NS: inventory", "subnet", 650, 390),
+                _node("svc-inv1", "inventory-v1", "server", 600, 480),
+                _node("sidecar-inv1", "Envoy Sidecar", "firewall", 720, 480),
+                # Data layer
+                _node("ns-data", "NS: data-stores", "subnet", 500, 570),
+                _node("db-orders", "orders-db", "server", 400, 640),
+                _node("sidecar-db-ord", "Envoy Sidecar", "firewall", 400, 720),
+                _node("db-inventory", "inventory-db", "server", 600, 640),
+                _node("sidecar-db-inv", "Envoy Sidecar", "firewall", 600, 720),
+                # Network policies
+                _node("netpol", "K8s NetworkPolicy", "security-zone", 850, 400),
+            ],
+            "edges": [
+                # Ingress
+                _edge("ingress-gw", "waf", "TLS Terminate", "HTTPS"),
+                _edge("waf", "sidecar-fe1", "mTLS", ""),
+                # Control plane → sidecars (config push)
+                _edge("mesh-cp", "sidecar-fe1", "xDS Config", "gRPC"),
+                _edge("mesh-cp", "sidecar-order1", "xDS Config", "gRPC"),
+                _edge("mesh-cp", "sidecar-pay1", "xDS Config", "gRPC"),
+                _edge("mesh-cp", "sidecar-inv1", "xDS Config", "gRPC"),
+                _edge("mesh-cp", "sidecar-db-ord", "xDS Config", "gRPC"),
+                _edge("mesh-cp", "sidecar-db-inv", "xDS Config", "gRPC"),
+                # Identity issuance
+                _edge("spiffe", "mesh-cp", "SVID Certs", ""),
+                # Policy push
+                _edge("opa", "mesh-cp", "AuthZ Policy", ""),
+                # Service ↔ sidecar (localhost)
+                _edge("svc-fe1", "sidecar-fe1", "localhost", ""),
+                _edge("svc-order1", "sidecar-order1", "localhost", ""),
+                _edge("svc-pay1", "sidecar-pay1", "localhost", ""),
+                _edge("svc-inv1", "sidecar-inv1", "localhost", ""),
+                _edge("db-orders", "sidecar-db-ord", "localhost", ""),
+                _edge("db-inventory", "sidecar-db-inv", "localhost", ""),
+                # Service-to-service flows (mTLS between sidecars)
+                _edge("sidecar-fe1", "sidecar-order1", "mTLS :8080", ""),
+                _edge("sidecar-fe1", "sidecar-pay1", "mTLS :8081", ""),
+                _edge("sidecar-order1", "sidecar-inv1", "mTLS :8082", ""),
+                _edge("sidecar-order1", "sidecar-db-ord", "mTLS :5432", ""),
+                _edge("sidecar-inv1", "sidecar-db-inv", "mTLS :5432", ""),
+                # Namespace boundaries
+                _edge("ns-frontend", "svc-fe1", "", ""),
+                _edge("ns-order", "svc-order1", "", ""),
+                _edge("ns-payment", "svc-pay1", "", ""),
+                _edge("ns-inventory", "svc-inv1", "", ""),
+                _edge("ns-data", "db-orders", "", ""),
+                _edge("ns-data", "db-inventory", "", ""),
+                # Network policy enforcement
+                _edge("netpol", "ns-frontend", "Deny All Default", ""),
+                _edge("netpol", "ns-order", "Deny All Default", ""),
+                _edge("netpol", "ns-payment", "Deny All Default", ""),
+                _edge("netpol", "ns-inventory", "Deny All Default", ""),
+                _edge("netpol", "ns-data", "Deny All Default", ""),
+            ]
+        }),
+    },
+    # 18 ─ Metropolitan Area Network (MAN)
+    {
+        "id": "tpl-man",
+        "name": "Metropolitan Area Network (MAN)",
+        "category": "Metropolitan",
+        "description": "Multi-site metro ring connecting campus locations, data centers, and "
+                       "a colocation facility over dark fiber and DWDM optical transport. "
+                       "FIPS 140-2 L2 encryption at each site handoff. MPLS/SR core with "
+                       "redundant ring topology for sub-50ms failover.",
+        "tags": json.dumps(["man", "metro", "dwdm", "dark-fiber", "fips", "mpls", "ring"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Metro Core Ring (optical)
+                _node("opt-1", "Metro DWDM Node-A", "media-optical", 300, 60),
+                _node("opt-2", "Metro DWDM Node-B", "media-optical", 700, 60),
+                _node("opt-3", "Metro DWDM Node-C", "media-optical", 700, 400),
+                _node("opt-4", "Metro DWDM Node-D", "media-optical", 300, 400),
+                # PE routers
+                _node("pe-hq", "PE-HQ", "router", 150, 160),
+                _node("pe-dc", "PE-DC", "router", 850, 160),
+                _node("pe-colo", "PE-Colo", "router", 850, 300),
+                _node("pe-branch", "PE-Branch", "router", 150, 300),
+                # FIPS encryptors at each handoff
+                _node("fips-hq", "KG-340 (HQ)", "kg-340", 250, 160),
+                _node("fips-dc", "KG-250 (DC)", "kg-250", 750, 160),
+                _node("fips-colo", "KG-340 (Colo)", "kg-340", 750, 300),
+                _node("fips-branch", "KG-175D (Branch)", "kg-175d", 250, 300),
+                # Fiber interconnects
+                _node("fiber-hq", "10G Fiber", "media-fiber", 200, 110),
+                _node("fiber-dc", "10G Fiber", "media-fiber", 800, 110),
+                _node("fiber-colo", "10G Fiber", "media-fiber", 800, 350),
+                _node("fiber-branch", "10G Fiber", "media-fiber", 200, 350),
+                # Sites
+                _node("hq-core", "HQ Core-SW", "switch-l3", 50, 160),
+                _node("dc-spine", "DC Spine-SW", "switch-l3", 950, 160),
+                _node("colo-sw", "Colo Switch", "switch-l3", 950, 300),
+                _node("branch-sw", "Branch-SW", "switch-l3", 50, 300),
+                # Services
+                _node("dc-srv", "DC Servers", "server", 950, 60),
+                _node("colo-cloud", "Cloud Onramp", "cloud", 950, 400),
+                _node("hq-users", "HQ Users", "server", 50, 60),
+                _node("branch-users", "Branch Users", "server", 50, 400),
+            ],
+            "edges": [
+                # Optical ring
+                _edge("opt-1", "opt-2", "DWDM Ring", ""),
+                _edge("opt-2", "opt-3", "DWDM Ring", ""),
+                _edge("opt-3", "opt-4", "DWDM Ring", ""),
+                _edge("opt-4", "opt-1", "DWDM Ring", ""),
+                # Fiber from optical to encryptor
+                _edge("opt-1", "fiber-hq", "Lambda", ""),
+                _edge("opt-2", "fiber-dc", "Lambda", ""),
+                _edge("opt-3", "fiber-colo", "Lambda", ""),
+                _edge("opt-4", "fiber-branch", "Lambda", ""),
+                _edge("fiber-hq", "fips-hq", "10G SM", ""),
+                _edge("fiber-dc", "fips-dc", "10G SM", ""),
+                _edge("fiber-colo", "fips-colo", "10G SM", ""),
+                _edge("fiber-branch", "fips-branch", "10G SM", ""),
+                # FIPS to PE
+                _edge("fips-hq", "pe-hq", "Encrypted", "MPLS"),
+                _edge("fips-dc", "pe-dc", "Encrypted", "MPLS"),
+                _edge("fips-colo", "pe-colo", "Encrypted", "MPLS"),
+                _edge("fips-branch", "pe-branch", "Encrypted", "MPLS"),
+                # PE to site switch
+                _edge("pe-hq", "hq-core", "GbE", "OSPF"),
+                _edge("pe-dc", "dc-spine", "10G", "OSPF"),
+                _edge("pe-colo", "colo-sw", "GbE", "BGP"),
+                _edge("pe-branch", "branch-sw", "GbE", "OSPF"),
+                # Site endpoints
+                _edge("hq-core", "hq-users", "", ""),
+                _edge("dc-spine", "dc-srv", "25G", ""),
+                _edge("colo-sw", "colo-cloud", "DCI", ""),
+                _edge("branch-sw", "branch-users", "", ""),
+            ]
+        }),
+    },
+    # 19 ─ Wide Area Network (WAN)
+    {
+        "id": "tpl-wan",
+        "name": "Wide Area Network (WAN) — Multi-Transport",
+        "category": "WAN / VPN",
+        "description": "Enterprise WAN with MPLS primary, broadband SD-WAN secondary, and "
+                       "LTE/5G tertiary. Hub-and-spoke with dual-hub redundancy. "
+                       "FIPS 140-3 L3 HSM at hubs, FIPS 140-2 L2 at branches. "
+                       "GE copper last-mile, fiber backhaul, optical long-haul.",
+        "tags": json.dumps(["wan", "sdwan", "mpls", "lte", "5g", "fips", "hsm", "multi-transport"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Hub A (Primary DC)
+                _node("hub-a-rtr", "Hub-A Router", "router", 300, 20),
+                _node("hub-a-fw", "Hub-A Firewall", "firewall", 300, 100),
+                _node("hub-a-hsm", "KG-250 (Hub-A)", "kg-250", 180, 60),
+                _node("hub-a-fips", "KG-340 (Hub-A)", "kg-340", 420, 60),
+                _node("hub-a-fiber", "100G Fiber", "media-fiber", 300, 170),
+                # Hub B (DR site)
+                _node("hub-b-rtr", "Hub-B Router", "router", 700, 20),
+                _node("hub-b-fw", "Hub-B Firewall", "firewall", 700, 100),
+                _node("hub-b-hsm", "KG-250 (Hub-B)", "kg-250", 580, 60),
+                _node("hub-b-fips", "KG-340 (Hub-B)", "kg-340", 820, 60),
+                _node("hub-b-fiber", "100G Fiber", "media-fiber", 700, 170),
+                # WAN Transport Core
+                _node("mpls-cloud", "MPLS Cloud (Carrier)", "cloud", 500, 240),
+                _node("inet-cloud", "Internet / SD-WAN", "cloud", 300, 320),
+                _node("lte-cloud", "LTE/5G Wireless", "cloud", 700, 320),
+                _node("optical-ll", "Optical Long-Haul", "media-optical", 500, 160),
+                # Branch A
+                _node("br-a-ce", "Branch-A CE Router", "router", 100, 430),
+                _node("br-a-fips", "KG-175D (Br-A)", "kg-175d", 100, 360),
+                _node("br-a-ge", "GbE Handoff", "media-ge", 100, 500),
+                _node("br-a-sw", "Branch-A Switch", "switch-l2", 100, 570),
+                # Branch B
+                _node("br-b-ce", "Branch-B CE Router", "router", 370, 430),
+                _node("br-b-fips", "KG-175D (Br-B)", "kg-175d", 370, 360),
+                _node("br-b-ge", "GbE Handoff", "media-ge", 370, 500),
+                _node("br-b-sw", "Branch-B Switch", "switch-l2", 370, 570),
+                # Branch C
+                _node("br-c-ce", "Branch-C CE Router", "router", 630, 430),
+                _node("br-c-fips", "KG-175D (Br-C)", "kg-175d", 630, 360),
+                _node("br-c-ge", "GbE Handoff", "media-ge", 630, 500),
+                _node("br-c-sw", "Branch-C Switch", "switch-l2", 630, 570),
+                # Remote/Tactical
+                _node("remote-ce", "Remote CE", "router", 900, 430),
+                _node("remote-fips", "KG-245X (Remote)", "kg-245x", 900, 360),
+                _node("remote-srv", "Remote Server", "server", 900, 570),
+            ],
+            "edges": [
+                # Hub A internal
+                _edge("hub-a-rtr", "hub-a-fw", "Inside", ""),
+                _edge("hub-a-rtr", "hub-a-hsm", "Key Mgmt", ""),
+                _edge("hub-a-rtr", "hub-a-fips", "WAN Encrypt", ""),
+                _edge("hub-a-fw", "hub-a-fiber", "DC Uplink", ""),
+                # Hub B internal
+                _edge("hub-b-rtr", "hub-b-fw", "Inside", ""),
+                _edge("hub-b-rtr", "hub-b-hsm", "Key Mgmt", ""),
+                _edge("hub-b-rtr", "hub-b-fips", "WAN Encrypt", ""),
+                _edge("hub-b-fw", "hub-b-fiber", "DR Uplink", ""),
+                # Hub-to-Hub
+                _edge("hub-a-fiber", "optical-ll", "100G LL", ""),
+                _edge("hub-b-fiber", "optical-ll", "100G LL", ""),
+                # Hub to WAN transports
+                _edge("hub-a-fips", "mpls-cloud", "MPLS PE", "BGP"),
+                _edge("hub-b-fips", "mpls-cloud", "MPLS PE", "BGP"),
+                _edge("hub-a-fips", "inet-cloud", "SD-WAN", "IPSec"),
+                _edge("hub-b-fips", "lte-cloud", "LTE Backup", ""),
+                # Branch A — dual transport
+                _edge("mpls-cloud", "br-a-fips", "MPLS Primary", ""),
+                _edge("inet-cloud", "br-a-fips", "SD-WAN Secondary", ""),
+                _edge("br-a-fips", "br-a-ce", "Decrypted", "OSPF"),
+                _edge("br-a-ce", "br-a-ge", "GbE", ""),
+                _edge("br-a-ge", "br-a-sw", "Copper", ""),
+                # Branch B — dual transport
+                _edge("mpls-cloud", "br-b-fips", "MPLS Primary", ""),
+                _edge("inet-cloud", "br-b-fips", "SD-WAN Secondary", ""),
+                _edge("br-b-fips", "br-b-ce", "Decrypted", "OSPF"),
+                _edge("br-b-ce", "br-b-ge", "GbE", ""),
+                _edge("br-b-ge", "br-b-sw", "Copper", ""),
+                # Branch C — MPLS + LTE
+                _edge("mpls-cloud", "br-c-fips", "MPLS Primary", ""),
+                _edge("lte-cloud", "br-c-fips", "LTE Tertiary", ""),
+                _edge("br-c-fips", "br-c-ce", "Decrypted", "OSPF"),
+                _edge("br-c-ce", "br-c-ge", "GbE", ""),
+                _edge("br-c-ge", "br-c-sw", "Copper", ""),
+                # Remote — LTE only
+                _edge("lte-cloud", "remote-fips", "LTE/5G Only", ""),
+                _edge("remote-fips", "remote-ce", "Decrypted", ""),
+                _edge("remote-ce", "remote-srv", "GbE", ""),
+            ]
+        }),
+    },
+    # 20 ─ Pure SONET Ring (UPSR + BLSR)
+    {
+        "id": "tpl-sonet-ring",
+        "name": "SONET Ring (UPSR / BLSR)",
+        "category": "Transport",
+        "description": "Pure SONET ring with 6 ADM nodes, dual-fiber BLSR protection, "
+                       "DS-3/OC-3 tributaries, and a SONET DCS at the hub. "
+                       "No DWDM — single lambda per fiber. Shows both working and protect paths "
+                       "with APS 1+1 on access rings and 2-fiber BLSR on backbone.",
+        "tags": json.dumps(["sonet", "blsr", "upsr", "adm", "oc-48", "oc-3", "aps", "ring", "transport"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Hub / CO
+                _node("dcs", "SONET DCS (Hub)", "sonet-adm", 450, 40),
+                _node("fpp-hub", "Fiber Patch (Hub)", "patch-panel-fiber", 330, 40),
+                _node("pop-hub", "Central Office", "pop", 570, 40),
+                # BLSR Backbone Ring — 4 ADMs
+                _node("adm-1", "ADM-1 (North)", "sonet-adm", 450, 160),
+                _node("adm-2", "ADM-2 (East)", "sonet-adm", 720, 300),
+                _node("adm-3", "ADM-3 (South)", "sonet-adm", 450, 460),
+                _node("adm-4", "ADM-4 (West)", "sonet-adm", 180, 300),
+                # Fiber spans
+                _node("fiber-ne", "OC-48 Fiber (NE)", "media-fiber", 600, 200),
+                _node("fiber-se", "OC-48 Fiber (SE)", "media-fiber", 600, 400),
+                _node("fiber-sw", "OC-48 Fiber (SW)", "media-fiber", 300, 400),
+                _node("fiber-nw", "OC-48 Fiber (NW)", "media-fiber", 300, 200),
+                # UPSR Access Ring A (off ADM-2)
+                _node("acc-a1", "Access ADM-A1", "sonet-adm", 900, 200),
+                _node("acc-a2", "Access ADM-A2", "sonet-adm", 900, 400),
+                _node("ge-a1", "GbE (Site A1)", "media-ge", 1000, 200),
+                _node("ge-a2", "GbE (Site A2)", "media-ge", 1000, 400),
+                # UPSR Access Ring B (off ADM-4)
+                _node("acc-b1", "Access ADM-B1", "sonet-adm", 50, 200),
+                _node("acc-b2", "Access ADM-B2", "sonet-adm", 50, 400),
+                _node("ge-b1", "GbE (Site B1)", "media-ge", -50, 200),
+                _node("ge-b2", "GbE (Site B2)", "media-ge", -50, 400),
+                # Tributary interfaces
+                _node("ds3-1", "DS-3 Trib (Hub)", "patch-panel", 330, 120),
+                _node("oc3-1", "OC-3 Trib (South)", "patch-panel", 330, 460),
+            ],
+            "edges": [
+                # Hub internal
+                _edge("pop-hub", "dcs", "Trunk", ""),
+                _edge("dcs", "fpp-hub", "OC-48", "SONET"),
+                _edge("fpp-hub", "adm-1", "Working", "SONET"),
+                _edge("dcs", "ds3-1", "DS-3 x28", ""),
+                # BLSR Backbone — Working ring (clockwise)
+                _edge("adm-1", "fiber-ne", "OC-48 W", "SONET"),
+                _edge("fiber-ne", "adm-2", "Working", ""),
+                _edge("adm-2", "fiber-se", "OC-48 W", "SONET"),
+                _edge("fiber-se", "adm-3", "Working", ""),
+                _edge("adm-3", "fiber-sw", "OC-48 W", "SONET"),
+                _edge("fiber-sw", "adm-4", "Working", ""),
+                _edge("adm-4", "fiber-nw", "OC-48 W", "SONET"),
+                _edge("fiber-nw", "adm-1", "Working", ""),
+                # BLSR Protect ring (counter-clockwise, dashed in real diagrams)
+                _edge("adm-1", "adm-4", "OC-48 Protect", "SONET"),
+                _edge("adm-4", "adm-3", "OC-48 Protect", "SONET"),
+                _edge("adm-3", "adm-2", "OC-48 Protect", "SONET"),
+                _edge("adm-2", "adm-1", "OC-48 Protect", "SONET"),
+                # Tributary at south
+                _edge("adm-3", "oc3-1", "OC-3 Drop", ""),
+                # UPSR Access Ring A (off ADM-2)
+                _edge("adm-2", "acc-a1", "OC-3 UPSR", "SONET"),
+                _edge("acc-a1", "acc-a2", "OC-3 UPSR", "SONET"),
+                _edge("acc-a2", "adm-2", "OC-3 UPSR", "SONET"),
+                _edge("acc-a1", "ge-a1", "GbE Drop", ""),
+                _edge("acc-a2", "ge-a2", "GbE Drop", ""),
+                # UPSR Access Ring B (off ADM-4)
+                _edge("adm-4", "acc-b1", "OC-3 UPSR", "SONET"),
+                _edge("acc-b1", "acc-b2", "OC-3 UPSR", "SONET"),
+                _edge("acc-b2", "adm-4", "OC-3 UPSR", "SONET"),
+                _edge("acc-b1", "ge-b1", "GbE Drop", ""),
+                _edge("acc-b2", "ge-b2", "GbE Drop", ""),
+            ]
+        }),
+    },
+    # ── AWS Multi-Home DX to CAN ──────────────────────────────────────────
+    {
+        "id": "tpl-aws-dx-can",
+        "name": "AWS Multi-Home Direct Connect to Campus (CAN)",
+        "category": "Hybrid Cloud",
+        "description": "AWS VPC with dual Direct Connect circuits (diverse paths) terminating at a campus area network with redundant border routers, Transit Gateway hub, and on-prem firewall pair.",
+        "tags": json.dumps(["aws", "direct-connect", "hybrid", "campus", "multi-home", "dx"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # AWS Cloud
+                _node("aws-tgw", "Transit Gateway", "aws-tgw", 500, 60),
+                _node("aws-vpc1", "Prod VPC", "aws-vpc", 350, 180),
+                _node("aws-vpc2", "Shared VPC", "aws-vpc", 650, 180),
+                _node("aws-sub1", "Prod Subnet", "aws-subnet", 350, 300),
+                _node("aws-sub2", "Shared Subnet", "aws-subnet", 650, 300),
+                _node("aws-nfw", "Network Firewall", "aws-nfw", 500, 300),
+                _node("aws-r53", "Route 53", "aws-r53", 800, 60),
+                # Direct Connect (dual)
+                _node("dx-a", "DX Circuit A", "aws-dx", 250, 450),
+                _node("dx-b", "DX Circuit B", "aws-dx", 750, 450),
+                # Campus border
+                _node("br1", "Border-RTR-1", "router", 250, 600,
+                      {"config": {"asn": "65001", "protocol": "BGP"}}),
+                _node("br2", "Border-RTR-2", "router", 750, 600,
+                      {"config": {"asn": "65001", "protocol": "BGP"}}),
+                _node("fw1", "Campus-FW-1", "firewall", 350, 750),
+                _node("fw2", "Campus-FW-2", "firewall", 650, 750),
+                # Campus core
+                _node("core1", "Core-SW-1", "switch-l3", 400, 900),
+                _node("core2", "Core-SW-2", "switch-l3", 600, 900),
+                # Distribution
+                _node("dist1", "Dist-A", "switch-l3", 300, 1050),
+                _node("dist2", "Dist-B", "switch-l3", 700, 1050),
+                # Access
+                _node("acc1", "Access-1", "switch-l2", 200, 1200),
+                _node("acc2", "Access-2", "switch-l2", 500, 1200),
+                _node("acc3", "Access-3", "switch-l2", 800, 1200),
+            ],
+            "edges": [
+                # AWS internal
+                _edge("aws-tgw", "aws-vpc1", "TGW Attach", ""),
+                _edge("aws-tgw", "aws-vpc2", "TGW Attach", ""),
+                _edge("aws-vpc1", "aws-sub1", "", ""),
+                _edge("aws-vpc2", "aws-sub2", "", ""),
+                _edge("aws-sub1", "aws-nfw", "", ""),
+                _edge("aws-sub2", "aws-nfw", "", ""),
+                _edge("aws-tgw", "aws-r53", "DNS", ""),
+                # DX connections (diverse paths)
+                _edge("aws-tgw", "dx-a", "DX 10G Primary", "BGP"),
+                _edge("aws-tgw", "dx-b", "DX 10G Secondary", "BGP"),
+                # DX to campus border
+                _edge("dx-a", "br1", "10GbE", "BGP"),
+                _edge("dx-b", "br2", "10GbE", "BGP"),
+                # Cross-connect for failover
+                _edge("dx-a", "br2", "10GbE Backup", "BGP"),
+                _edge("dx-b", "br1", "10GbE Backup", "BGP"),
+                # Border to firewalls
+                _edge("br1", "fw1", "10GbE", "OSPF"),
+                _edge("br2", "fw2", "10GbE", "OSPF"),
+                _edge("br1", "fw2", "10GbE Failover", "OSPF"),
+                _edge("br2", "fw1", "10GbE Failover", "OSPF"),
+                # Firewall to core
+                _edge("fw1", "core1", "10GbE", "OSPF"),
+                _edge("fw2", "core2", "10GbE", "OSPF"),
+                # Core ISL
+                _edge("core1", "core2", "40GbE ISL", "OSPF"),
+                # Core to dist
+                _edge("core1", "dist1", "10GbE", "OSPF"),
+                _edge("core1", "dist2", "10GbE", "OSPF"),
+                _edge("core2", "dist1", "10GbE", "OSPF"),
+                _edge("core2", "dist2", "10GbE", "OSPF"),
+                # Dist to access
+                _edge("dist1", "acc1", "1GbE", "STP"),
+                _edge("dist1", "acc2", "1GbE", "STP"),
+                _edge("dist2", "acc2", "1GbE", "STP"),
+                _edge("dist2", "acc3", "1GbE", "STP"),
+            ]
+        }),
+    },
+    # ── Azure Multi-Home ExpressRoute to MAN ──────────────────────────────
+    {
+        "id": "tpl-azure-er-man",
+        "name": "Azure Multi-Home ExpressRoute to Metro (MAN)",
+        "category": "Hybrid Cloud",
+        "description": "Azure Virtual WAN hub with dual ExpressRoute circuits from two peering locations, connecting to a metro area network with MPLS PE routers and multi-site distribution.",
+        "tags": json.dumps(["azure", "expressroute", "hybrid", "metro", "man", "multi-home"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Azure Cloud
+                _node("az-vwan", "Virtual WAN Hub", "az-vwan", 500, 60),
+                _node("az-vnet1", "Prod VNet", "az-vnet", 300, 200),
+                _node("az-vnet2", "DMZ VNet", "az-vnet", 700, 200),
+                _node("az-fw", "Azure Firewall", "az-fw", 500, 200),
+                _node("az-sub1", "App Subnet", "az-subnet", 300, 340),
+                _node("az-sub2", "DMZ Subnet", "az-subnet", 700, 340),
+                _node("az-fd", "Front Door", "az-front", 700, 60),
+                _node("az-dns", "Azure DNS", "az-dns", 300, 60),
+                # ExpressRoute (dual from different peering locs)
+                _node("er-a", "ER Circuit A (Equinix)", "az-er", 250, 480),
+                _node("er-b", "ER Circuit B (Megaport)", "az-er", 750, 480),
+                # Metro PE routers
+                _node("pe1", "MPLS-PE-1", "mpls-pe", 200, 640),
+                _node("pe2", "MPLS-PE-2", "mpls-pe", 800, 640),
+                # Metro core
+                _node("p1", "MPLS-P-Core", "mpls-p", 500, 640),
+                # Metro sites
+                _node("site-fw1", "Site-A FW", "firewall", 200, 800),
+                _node("site-fw2", "Site-B FW", "firewall", 500, 800),
+                _node("site-fw3", "Site-C FW", "firewall", 800, 800),
+                _node("sw-a", "Site-A Core", "switch-l3", 200, 950),
+                _node("sw-b", "Site-B Core", "switch-l3", 500, 950),
+                _node("sw-c", "Site-C Core", "switch-l3", 800, 950),
+            ],
+            "edges": [
+                # Azure internal
+                _edge("az-vwan", "az-vnet1", "VNet Peering", ""),
+                _edge("az-vwan", "az-vnet2", "VNet Peering", ""),
+                _edge("az-vnet1", "az-fw", "", ""),
+                _edge("az-vnet2", "az-fw", "", ""),
+                _edge("az-vnet1", "az-sub1", "", ""),
+                _edge("az-vnet2", "az-sub2", "", ""),
+                _edge("az-vwan", "az-fd", "CDN/WAF", ""),
+                _edge("az-vwan", "az-dns", "DNS", ""),
+                # ExpressRoute to VWAN
+                _edge("az-vwan", "er-a", "ER 10G Primary", "BGP"),
+                _edge("az-vwan", "er-b", "ER 10G Secondary", "BGP"),
+                # ER to PE (cross-connected)
+                _edge("er-a", "pe1", "10GbE", "BGP"),
+                _edge("er-b", "pe2", "10GbE", "BGP"),
+                _edge("er-a", "pe2", "10GbE Backup", "BGP"),
+                _edge("er-b", "pe1", "10GbE Backup", "BGP"),
+                # MPLS core
+                _edge("pe1", "p1", "100GbE", "MPLS"),
+                _edge("pe2", "p1", "100GbE", "MPLS"),
+                # PE/P to site firewalls
+                _edge("pe1", "site-fw1", "10GbE", "OSPF"),
+                _edge("p1", "site-fw2", "10GbE", "OSPF"),
+                _edge("pe2", "site-fw3", "10GbE", "OSPF"),
+                # Firewall to site core
+                _edge("site-fw1", "sw-a", "10GbE", "OSPF"),
+                _edge("site-fw2", "sw-b", "10GbE", "OSPF"),
+                _edge("site-fw3", "sw-c", "10GbE", "OSPF"),
+            ]
+        }),
+    },
+    # ── Multi-Cloud (AWS + Azure) Multi-Home to MAN with Dual POPs ───────
+    {
+        "id": "tpl-multicloud-dual-pop",
+        "name": "Multi-Cloud (AWS + Azure) Dual POP to Metro (MAN)",
+        "category": "Hybrid Cloud",
+        "description": "AWS and Azure multi-cloud with multi-home connectivity through two geographically diverse POPs (West Coast and East Coast), connecting to a metro area network via MPLS backbone.",
+        "tags": json.dumps(["multi-cloud", "aws", "azure", "dual-pop", "metro", "man", "multi-home"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # AWS Cloud
+                _node("aws-tgw", "AWS Transit GW", "aws-tgw", 200, 60),
+                _node("aws-vpc", "AWS Prod VPC", "aws-vpc", 100, 200),
+                _node("aws-nfw", "AWS Network FW", "aws-nfw", 300, 200),
+                _node("aws-dx-w", "DX West (LAX)", "aws-dx", 100, 380),
+                _node("aws-dx-e", "DX East (IAD)", "aws-dx", 300, 380),
+                # Azure Cloud
+                _node("az-vwan", "Azure VWAN Hub", "az-vwan", 800, 60),
+                _node("az-vnet", "Azure Prod VNet", "az-vnet", 700, 200),
+                _node("az-fw", "Azure Firewall", "az-fw", 900, 200),
+                _node("az-er-w", "ER West (LAX)", "az-er", 700, 380),
+                _node("az-er-e", "ER East (IAD)", "az-er", 900, 380),
+                # Cloud-to-cloud peering
+                _node("c2c", "Cloud Peering", "cloud-peering", 500, 200),
+                # West Coast POP (LAX)
+                _node("pop-w-rtr1", "POP-West RTR-1", "router", 150, 540,
+                      {"config": {"asn": "65100", "protocol": "BGP"}}),
+                _node("pop-w-rtr2", "POP-West RTR-2", "router", 350, 540,
+                      {"config": {"asn": "65100", "protocol": "BGP"}}),
+                _node("pop-w-fw", "POP-West FW", "firewall", 250, 540),
+                # East Coast POP (IAD)
+                _node("pop-e-rtr1", "POP-East RTR-1", "router", 650, 540,
+                      {"config": {"asn": "65200", "protocol": "BGP"}}),
+                _node("pop-e-rtr2", "POP-East RTR-2", "router", 850, 540,
+                      {"config": {"asn": "65200", "protocol": "BGP"}}),
+                _node("pop-e-fw", "POP-East FW", "firewall", 750, 540),
+                # MPLS Backbone
+                _node("mpls-pe-w", "MPLS-PE West", "mpls-pe", 250, 700),
+                _node("mpls-p1", "MPLS-P Core-1", "mpls-p", 400, 700),
+                _node("mpls-p2", "MPLS-P Core-2", "mpls-p", 600, 700),
+                _node("mpls-pe-e", "MPLS-PE East", "mpls-pe", 750, 700),
+                # Metro Sites
+                _node("man-fw1", "MAN Site-A FW", "firewall", 250, 860),
+                _node("man-fw2", "MAN Site-B FW", "firewall", 500, 860),
+                _node("man-fw3", "MAN Site-C FW", "firewall", 750, 860),
+                _node("man-sw1", "Site-A Core", "switch-l3", 250, 1000),
+                _node("man-sw2", "Site-B Core", "switch-l3", 500, 1000),
+                _node("man-sw3", "Site-C Core", "switch-l3", 750, 1000),
+            ],
+            "edges": [
+                # AWS internal
+                _edge("aws-tgw", "aws-vpc", "", ""),
+                _edge("aws-vpc", "aws-nfw", "", ""),
+                _edge("aws-tgw", "aws-dx-w", "DX 10G", "BGP"),
+                _edge("aws-tgw", "aws-dx-e", "DX 10G", "BGP"),
+                # Azure internal
+                _edge("az-vwan", "az-vnet", "", ""),
+                _edge("az-vnet", "az-fw", "", ""),
+                _edge("az-vwan", "az-er-w", "ER 10G", "BGP"),
+                _edge("az-vwan", "az-er-e", "ER 10G", "BGP"),
+                # Cloud peering
+                _edge("aws-tgw", "c2c", "Peering", "BGP"),
+                _edge("az-vwan", "c2c", "Peering", "BGP"),
+                # AWS DX to West/East POPs
+                _edge("aws-dx-w", "pop-w-rtr1", "10GbE", "BGP"),
+                _edge("aws-dx-e", "pop-e-rtr1", "10GbE", "BGP"),
+                # Azure ER to West/East POPs
+                _edge("az-er-w", "pop-w-rtr2", "10GbE", "BGP"),
+                _edge("az-er-e", "pop-e-rtr2", "10GbE", "BGP"),
+                # POP internal
+                _edge("pop-w-rtr1", "pop-w-fw", "10GbE", ""),
+                _edge("pop-w-rtr2", "pop-w-fw", "10GbE", ""),
+                _edge("pop-e-rtr1", "pop-e-fw", "10GbE", ""),
+                _edge("pop-e-rtr2", "pop-e-fw", "10GbE", ""),
+                # POP cross-connect (resilience)
+                _edge("pop-w-rtr1", "pop-w-rtr2", "ISL", "OSPF"),
+                _edge("pop-e-rtr1", "pop-e-rtr2", "ISL", "OSPF"),
+                # POP to MPLS backbone
+                _edge("pop-w-fw", "mpls-pe-w", "10GbE", "OSPF"),
+                _edge("pop-e-fw", "mpls-pe-e", "10GbE", "OSPF"),
+                # MPLS backbone
+                _edge("mpls-pe-w", "mpls-p1", "100GbE", "MPLS"),
+                _edge("mpls-p1", "mpls-p2", "100GbE", "MPLS"),
+                _edge("mpls-p2", "mpls-pe-e", "100GbE", "MPLS"),
+                _edge("mpls-pe-w", "mpls-p2", "100GbE Diverse", "MPLS"),
+                # MPLS to MAN sites
+                _edge("mpls-pe-w", "man-fw1", "10GbE", "OSPF"),
+                _edge("mpls-p1", "man-fw2", "10GbE", "OSPF"),
+                _edge("mpls-pe-e", "man-fw3", "10GbE", "OSPF"),
+                # MAN firewall to core
+                _edge("man-fw1", "man-sw1", "10GbE", "OSPF"),
+                _edge("man-fw2", "man-sw2", "10GbE", "OSPF"),
+                _edge("man-fw3", "man-sw3", "10GbE", "OSPF"),
+            ]
+        }),
+    },
+]
+
+
+def init_db():
+    conn = get_connection()
+    try:
+        conn.executescript(SCHEMA)
+        conn.commit()
+        print(f"[init_db] Schema created at {DB_PATH}")
+
+        # Migration: add columns to existing tables if missing
+        _migrations = [
+            ("nc_audit", "user_id", "TEXT DEFAULT ''"),
+            ("nc_audit", "classification", "TEXT DEFAULT 'CUI // SP-CTI'"),
+            ("nc_backups", "file_hash", "TEXT"),
+        ]
+        for table, col, coltype in _migrations:
+            try:
+                conn.execute(f"SELECT {col} FROM {table} LIMIT 1")
+            except Exception:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+                    conn.commit()
+                    print(f"[init_db] Migrated: added {col} to {table}")
+                except Exception:
+                    pass  # Column might already exist with different syntax
+
+        # Seed templates
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM nc_templates")
+        count = cur.fetchone()[0]
+        if count == 0:
+            for t in TEMPLATES:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_templates (id, name, category, description, graph_json, tags) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (t["id"], t["name"], t["category"], t["description"],
+                     t["graph_json"], t["tags"])
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(TEMPLATES)} templates.")
+        else:
+            print(f"[init_db] Templates already seeded ({count} rows).")
+
+        # Seed default admin user (password: admin — MUST change on first login)
+        import hashlib
+        admin_exists = conn.execute("SELECT COUNT(*) FROM nc_users WHERE username='admin'").fetchone()[0]
+        if not admin_exists:
+            pw_hash = hashlib.sha256("admin".encode()).hexdigest()
+            conn.execute(
+                "INSERT INTO nc_users (id, username, display_name, password_hash, role) VALUES (?,?,?,?,?)",
+                ("usr-admin", "admin", "Administrator", pw_hash, "admin")
+            )
+            conn.commit()
+            print("[init_db] Default admin user created (username: admin, password: admin).")
+
+        conn.execute(
+            "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
+            ("INIT", "database", f"Schema initialized at {datetime.now(timezone.utc).isoformat()}")
+        )
+        conn.commit()
+        print("[init_db] Done.")
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    init_db()
+    if "--json" in sys.argv:
+        import json as _json
+        print(_json.dumps({"status": "ok", "db": str(DB_PATH), "templates": len(TEMPLATES)}))
