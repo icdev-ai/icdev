@@ -186,15 +186,15 @@ const CISCO_STENCILS = {
     body: 'M24,4 a20,20 0 1,0 0.01,0 Z',
     detail: 'M24,14 v20 M14,24 h20 M17,17 l-7,-7 M16.5,10.5 l-6.5,1.5 M10.5,16.5 l1.5,-6.5 M31,17 l7,-7 M31.5,10.5 l6.5,1.5 M37.5,16.5 l-1.5,-6.5 M17,31 l-7,7 M10.5,31.5 l1.5,6.5 M16.5,37.5 l-6.5,-1.5 M31,31 l7,7 M37.5,31.5 l-1.5,6.5 M31.5,37.5 l6.5,-1.5',
   },
-  // Switch L2: rectangle with bidirectional arrows
+  // Switch L2: rectangle with small side arrows
   'switch-l2': {
-    body: 'M6,14 h36 v20 h-36 Z M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z',
-    detail: 'M14,24 h8 M28,24 h-8 M18,21 l-4,3 l4,3 M30,21 l4,3 l-4,3',
+    body: 'M8,16 h32 v16 h-32 Z M4,24 l4,-3 v6 Z M44,24 l-4,-3 v6 Z',
+    detail: 'M16,24 h16 M20,21 l-3,3 l3,3 M28,21 l3,3 l-3,3',
   },
-  // Switch L3: rectangle with arrows + vertical lines (taller)
+  // Switch L3: same with routing indicator
   'switch-l3': {
-    body: 'M6,14 h36 v20 h-36 Z M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z',
-    detail: 'M14,24 h8 M28,24 h-8 M18,21 l-4,3 l4,3 M30,21 l4,3 l-4,3 M24,10 v4 M24,34 v4',
+    body: 'M8,16 h32 v16 h-32 Z M4,24 l4,-3 v6 Z M44,24 l-4,-3 v6 Z',
+    detail: 'M16,24 h16 M20,21 l-3,3 l3,3 M28,21 l3,3 l-3,3 M24,12 v4 M24,32 v4',
   },
   // Firewall: brick wall with flame
   'firewall': {
@@ -216,9 +216,9 @@ const CISCO_STENCILS = {
     body: 'M16,38 h16 l-2,-4 h-12 Z',
     detail: 'M24,34 v-18 M24,16 l-3,-3 M24,16 l3,-3 M18,20 a10,10 0 0,1 12,0 M14,16 a16,16 0 0,1 20,0 M10,12 a22,22 0 0,1 28,0',
   },
-  // Cloud
+  // Cloud: classic rounded cloud shape
   'cloud': {
-    body: 'M12,34 a10,10 0 0,1 -2,-18 a12,12 0 0,1 20,-6 a10,10 0 0,1 12,8 a8,8 0 0,1 -4,16 Z',
+    body: 'M14,32 C6,32 4,26 8,22 C6,16 12,12 18,14 C20,8 30,8 34,12 C38,10 44,14 42,20 C46,22 44,30 38,32 Z',
     detail: '',
   },
   // Patch Panel: panel with ports
@@ -342,7 +342,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       cursor: 'pointer',
     },
     stencilGroup: {
-      transform: 'translate(15, 0) scale(1.67)',  // Scale 48→80px, centered in 110w
+      transform: 'translate(19, 4) scale(1.5)',  // Scale 48→72px, centered in 110w
     },
     stencilBody: {
       d: '',
@@ -738,7 +738,7 @@ function createNode(type, x, y, label, nodeId, configData) {
         rx: 6, ry: 6,
       },
       stencilGroup: stencil ? {
-        transform: 'translate(15, 2) scale(1.67)',
+        transform: 'translate(19, 4) scale(1.5)',
       } : { display: 'none' },
       stencilBody: stencil ? {
         d: stencil.body,
