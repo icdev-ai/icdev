@@ -304,6 +304,10 @@ function clearHighlights() {
     _failoverAnimTimers.forEach(t => clearTimeout(t));
     _failoverAnimTimers.length = 0;
   }
+  if (typeof _simAnimTimers !== 'undefined') {
+    _simAnimTimers.forEach(t => clearTimeout(t));
+    _simAnimTimers.length = 0;
+  }
   HIGHLIGHTED_CELLS.forEach(id => {
     const cell = graph.getCell(id);
     if (!cell) return;
@@ -553,29 +557,235 @@ function applyLoadHeatmap(utilization) {
 }
 
 function visualizeResult(simType, result) {
+  const simOutput = document.getElementById('sim-output');
+  function _simNarrate(msg) {
+    setStatus(msg);
+    if (simOutput) { simOutput.textContent += '\n\u25B6 ' + msg; simOutput.scrollTop = simOutput.scrollHeight; }
+  }
+
   switch (simType) {
     case 'ping':
-      if (result.hops?.length) highlightPath(result.hops);
+      _animatePing(result, _simNarrate);
       break;
     case 'traceroute':
-      if (result.trace?.length) {
-        const hopLabels = result.trace.map(h => h.node);
-        highlightPath(hopLabels);
-      }
+      _animateTraceroute(result, _simNarrate);
       break;
     case 'spof':
-      if (result.spof_nodes?.length) highlightSpof(result.spof_nodes);
+      _animateSpof(result, _simNarrate);
       break;
     case 'failover':
       highlightFailover(result);
       break;
     case 'load':
-      applyLoadHeatmap(result.utilization);
+      _animateLoadHeatmap(result, _simNarrate);
       break;
     case 'blast_radius':
       highlightBlastRadius(result);
       break;
+    case 'bgp_bestpath':
+      _animateBgpBestpath(result, _simNarrate);
+      break;
+    case 'bgp_propagation':
+      _animateBgpPropagation(result, _simNarrate);
+      break;
+    case 'ospf_spf':
+      _animateOspfSpf(result, _simNarrate);
+      break;
+    case 'ospf_cost':
+      _animateOspfCost(result, _simNarrate);
+      break;
+    case 'jumbo_mtu':
+      _animateJumboMtu(result, _simNarrate);
+      break;
   }
+}
+
+/* ── Animated Simulation Helpers ──────────────────────────────────────────── */
+let _simAnimTimers = [];
+function _clearSimTimers() { _simAnimTimers.forEach(t => clearTimeout(t)); _simAnimTimers = []; }
+
+function _labelToIdMap() {
+  const m = {}; const e = {};
+  graph.getElements().forEach(el => { const l = el.attr('label/text') || ''; m[l] = el.id; e[el.id] = el; });
+  return { labelToId: m, idToEl: e };
+}
+
+/* ── Ping: animated packet walk ──────────────────────────────────────────── */
+function _animatePing(result, narrate) {
+  _clearSimTimers();
+  const { labelToId } = _labelToIdMap();
+  const hops = result.hops || [];
+  if (!hops.length) return;
+  narrate('Ping: ' + result.source + ' \u2192 ' + result.destination + ' (' + (result.reachable ? 'REACHABLE' : 'UNREACHABLE') + ')');
+
+  hops.forEach((hop, i) => {
+    _simAnimTimers.push(setTimeout(() => {
+      const elId = labelToId[hop];
+      if (!elId) return;
+      const el = graph.getCell(elId);
+      if (el) {
+        el.attr('body/fill', i === 0 ? '#0f2b0f' : i === hops.length - 1 ? '#0f2b3a' : '#0f2b0f');
+        el.attr('body/stroke', i === hops.length - 1 ? '#3498db' : '#27ae60');
+        el.attr('body/strokeWidth', 3);
+        HIGHLIGHTED_CELLS.push(elId);
+        const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add('blast-blocked');
+      }
+      if (i < hops.length - 1) {
+        const nid = labelToId[hops[i + 1]];
+        if (elId && nid) graph.getLinks().forEach(lk => {
+          const s = lk.get('source')?.id, t = lk.get('target')?.id;
+          if ((s === elId && t === nid) || (s === nid && t === elId)) { lk.attr('line/stroke', '#27ae60'); lk.attr('line/strokeWidth', 3); HIGHLIGHTED_CELLS.push(lk.id); }
+        });
+      }
+      narrate('Hop ' + (i + 1) + ': ' + hop + (i === 0 ? ' (source)' : i === hops.length - 1 ? ' (destination)' : ''));
+    }, i * 400));
+  });
+  _simAnimTimers.push(setTimeout(() => narrate('Ping complete: ' + hops.length + ' hops, ' + (result.latency_ms || '?') + ' ms'), hops.length * 400 + 200));
+}
+
+/* ── Traceroute: animated hop-by-hop with latency ────────────────────────── */
+function _animateTraceroute(result, narrate) {
+  _clearSimTimers();
+  const { labelToId } = _labelToIdMap();
+  const trace = result.trace || [];
+  if (!trace.length) return;
+  narrate('Traceroute: ' + result.source + ' \u2192 ' + result.destination);
+
+  trace.forEach((hop, i) => {
+    _simAnimTimers.push(setTimeout(() => {
+      const elId = labelToId[hop.node];
+      if (elId) {
+        const el = graph.getCell(elId);
+        if (el) { el.attr('body/fill', '#0f2b0f'); el.attr('body/stroke', '#27ae60'); el.attr('body/strokeWidth', 3); HIGHLIGHTED_CELLS.push(elId); const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add('blast-blocked'); }
+      }
+      if (i > 0) {
+        const prevId = labelToId[trace[i - 1].node];
+        if (prevId && elId) graph.getLinks().forEach(lk => {
+          const s = lk.get('source')?.id, t = lk.get('target')?.id;
+          if ((s === prevId && t === elId) || (s === elId && t === prevId)) { lk.attr('line/stroke', '#27ae60'); lk.attr('line/strokeWidth', 3); HIGHLIGHTED_CELLS.push(lk.id); }
+        });
+      }
+      narrate('Hop ' + hop.hop + ': ' + hop.node + ' \u2014 ' + hop.latency_ms + ' ms');
+    }, i * 500));
+  });
+  _simAnimTimers.push(setTimeout(() => narrate('Traceroute complete: ' + trace.length + ' hops'), trace.length * 500 + 200));
+}
+
+/* ── SPOF: pulsing red reveal ────────────────────────────────────────────── */
+function _animateSpof(result, narrate) {
+  _clearSimTimers();
+  const spofNodes = result.spof_nodes || [];
+  narrate('SPOF Analysis: ' + spofNodes.length + ' single points of failure found');
+
+  spofNodes.forEach((nodeLabel, i) => {
+    _simAnimTimers.push(setTimeout(() => {
+      graph.getElements().forEach(el => {
+        if (el.attr('label/text') === nodeLabel) {
+          el.attr('body/fill', '#4a0000'); el.attr('body/stroke', '#ff1744'); el.attr('body/strokeWidth', 4);
+          HIGHLIGHTED_CELLS.push(el.id);
+          const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add('blast-source');
+        }
+      });
+      narrate('SPOF ' + (i + 1) + ': "' + nodeLabel + '" \u2014 single point of failure');
+    }, i * 800));
+  });
+  _simAnimTimers.push(setTimeout(() => narrate('\u2550\u2550\u2550 SPOF complete: ' + spofNodes.length + ' critical vulnerabilities \u2550\u2550\u2550'), spofNodes.length * 800 + 400));
+}
+
+/* ── Load Heatmap: with narrative ────────────────────────────────────────── */
+function _animateLoadHeatmap(result, narrate) {
+  applyLoadHeatmap(result.utilization);
+  const crit = (result.utilization || []).filter(u => u.status === 'critical');
+  const warn = (result.utilization || []).filter(u => u.status === 'warning');
+  narrate('Load Heatmap: avg ' + result.avg_utilization_pct + '%');
+  narrate(crit.length + ' critical (>75%), ' + warn.length + ' warning (>50%)');
+  if (crit.length) narrate('Critical: ' + crit.map(u => u.label || u.edge).join(', '));
+}
+
+/* ── BGP Best Path: highlight winning path green, alternatives gray ──────── */
+function _animateBgpBestpath(result, narrate) {
+  _clearSimTimers();
+  const { labelToId } = _labelToIdMap();
+  const paths = result.paths || [];
+  narrate('BGP Best Path: ' + result.source + ' \u2192 ' + result.destination);
+  narrate('Decision: ' + (result.decision_reason || 'standard BGP'));
+
+  paths.forEach((p, pi) => {
+    const best = pi === 0;
+    _simAnimTimers.push(setTimeout(() => {
+      const color = best ? '#27ae60' : '#636e72';
+      narrate((best ? '\u2605 BEST' : '  #' + (pi + 1)) + ': ' + p.path.join(' \u2192 ') + ' (LP=' + p.local_pref + ' MED=' + p.med + ')');
+      p.path.forEach((hop, hi) => {
+        const eid = labelToId[hop];
+        if (eid) { const el = graph.getCell(eid); if (el) { el.attr('body/stroke', color); el.attr('body/strokeWidth', best ? 3 : 1); if (best) el.attr('body/fill', '#0a180a'); HIGHLIGHTED_CELLS.push(eid); if (best) { const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add('blast-blocked'); } } }
+        if (hi < p.path.length - 1) { const nid = labelToId[p.path[hi + 1]]; if (eid && nid) graph.getLinks().forEach(lk => { const s = lk.get('source')?.id, t = lk.get('target')?.id; if ((s === eid && t === nid) || (s === nid && t === eid)) { lk.attr('line/stroke', color); lk.attr('line/strokeWidth', best ? 3 : 1); HIGHLIGHTED_CELLS.push(lk.id); } }); }
+      });
+    }, pi * 1000));
+  });
+}
+
+/* ── BGP Propagation: wave-by-wave ───────────────────────────────────────── */
+function _animateBgpPropagation(result, narrate) {
+  _clearSimTimers();
+  const { labelToId } = _labelToIdMap();
+  narrate('BGP Propagation from ' + result.originator + ': ' + result.nodes_reached + '/' + result.total_bgp_nodes + ' nodes');
+
+  (result.waves || []).forEach((wave, wi) => {
+    _simAnimTimers.push(setTimeout(() => {
+      narrate('Wave ' + wave.wave + ': ' + wave.action);
+      (wave.nodes || []).forEach(n => {
+        const eid = labelToId[n];
+        if (eid) { const el = graph.getCell(eid); if (el) { el.attr('body/stroke', '#5dade2'); el.attr('body/strokeWidth', 3); el.attr('body/fill', '#0a1628'); HIGHLIGHTED_CELLS.push(eid); const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add('blast-blocked'); } }
+      });
+    }, wi * 800));
+  });
+}
+
+/* ── OSPF SPF: animate shortest path tree ────────────────────────────────── */
+function _animateOspfSpf(result, narrate) {
+  _clearSimTimers();
+  const { labelToId } = _labelToIdMap();
+  narrate('OSPF SPF Tree from root: ' + result.root);
+
+  (result.spf_tree || []).forEach((node, i) => {
+    _simAnimTimers.push(setTimeout(() => {
+      const eid = labelToId[node.node];
+      if (eid) { const el = graph.getCell(eid); if (el) { el.attr('body/fill', '#0a180a'); el.attr('body/stroke', '#27ae60'); el.attr('body/strokeWidth', 3); HIGHLIGHTED_CELLS.push(eid); const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add('blast-blocked'); } }
+      narrate('Cost ' + node.cost + ': ' + node.node + ' via ' + node.path.join(' \u2192 '));
+    }, i * 400));
+  });
+  if (result.ecmp_nodes?.length) _simAnimTimers.push(setTimeout(() => narrate('ECMP: ' + result.ecmp_nodes.join(', ')), (result.spf_tree || []).length * 400 + 200));
+}
+
+/* ── OSPF Cost: color links by cost ──────────────────────────────────────── */
+function _animateOspfCost(result, narrate) {
+  narrate('OSPF Cost Analysis: ' + (result.link_costs || []).length + ' links');
+  (result.link_costs || []).forEach(lc => {
+    graph.getLinks().forEach(lk => {
+      const lkLabel = lk.labels()?.[0]?.attrs?.text?.text || '';
+      if (lk.id === lc.link || lkLabel === lc.label) {
+        const c = lc.cost <= 10 ? '#27ae60' : lc.cost <= 50 ? '#f39c12' : '#e74c3c';
+        lk.attr('line/stroke', c); lk.attr('line/strokeWidth', Math.max(2, 5 - Math.floor(lc.cost / 20))); HIGHLIGHTED_CELLS.push(lk.id);
+      }
+    });
+  });
+  if (result.abr_boundaries?.length) narrate('ABR boundaries: ' + result.abr_boundaries.join(', '));
+}
+
+/* ── Jumbo MTU: green=ok, red=bottleneck ─────────────────────────────────── */
+function _animateJumboMtu(result, narrate) {
+  _clearSimTimers();
+  const { labelToId } = _labelToIdMap();
+  narrate('MTU Check: desired ' + result.desired_mtu + ' bytes \u2014 ' + (result.jumbo_ready ? 'READY' : 'NOT READY'));
+  if (!result.jumbo_ready) narrate('Bottleneck: ' + (result.bottleneck || '?'));
+
+  (result.path_detail || []).forEach((p, i) => {
+    _simAnimTimers.push(setTimeout(() => {
+      const eid = labelToId[p.node];
+      if (eid) { const el = graph.getCell(eid); if (el) { const ok = p.status === 'ok'; el.attr('body/fill', ok ? '#0a180a' : '#4a0000'); el.attr('body/stroke', ok ? '#27ae60' : '#ff1744'); el.attr('body/strokeWidth', 3); HIGHLIGHTED_CELLS.push(eid); const v = paper.findViewByModel(el); if (v?.el) v.el.classList.add(ok ? 'blast-blocked' : 'blast-source'); } }
+      narrate((p.status === 'ok' ? '\u2713' : '\u2717') + ' ' + p.node + ': MTU=' + p.mtu);
+    }, i * 400));
+  });
 }
 
 /* ── Blast Radius Visualization (animated) ────────────────────────────────── */
@@ -2149,6 +2359,233 @@ function toggleRackView() {
 
 function closeRackView() {
   document.getElementById('nc-rack-panel').classList.add('hidden');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * PPS Matrix Generator — In-Canvas Panel
+ * Select two enclaves or a device pair, auto-generate PPS matrix from
+ * firewall rules and link annotations. Exportable as SSP table (CSV/MD).
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+var _ppsLastResult = null;
+var _ppsSelMode = 'zone';
+
+function openPpsPanel() {
+  if (!currentTopoId || currentTopoId === 'new') {
+    alert('Save the topology first before generating a PPS matrix.');
+    return;
+  }
+  document.getElementById('pps-overlay').classList.remove('hidden');
+  _ppsLoadEnclaves();
+}
+
+function closePpsPanel() {
+  document.getElementById('pps-overlay').classList.add('hidden');
+}
+
+function ppsOnModeChange(mode) {
+  _ppsSelMode = mode;
+  document.getElementById('pps-zone-selectors').style.display = mode === 'zone' ? 'flex' : 'none';
+  document.getElementById('pps-node-selectors').style.display = mode === 'node' ? 'flex' : 'none';
+}
+
+function _ppsLoadEnclaves() {
+  fetch(NC_BASE + '/api/pps/' + currentTopoId + '/enclaves')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      // Populate zone dropdowns
+      var srcZone = document.getElementById('pps-src-zone');
+      var dstZone = document.getElementById('pps-dst-zone');
+      srcZone.innerHTML = '<option value="">-- select --</option>';
+      dstZone.innerHTML = '<option value="">-- select --</option>';
+      (data.enclaves || []).forEach(function(e) {
+        var opt1 = '<option value="' + e.id + '">' + e.label + ' (' + e.node_count + ' nodes)</option>';
+        srcZone.insertAdjacentHTML('beforeend', opt1);
+        dstZone.insertAdjacentHTML('beforeend', opt1);
+      });
+
+      // Populate node dropdowns
+      var srcNode = document.getElementById('pps-src-node');
+      var dstNode = document.getElementById('pps-dst-node');
+      srcNode.innerHTML = '<option value="">-- select --</option>';
+      dstNode.innerHTML = '<option value="">-- select --</option>';
+      (data.nodes || []).forEach(function(n) {
+        var opt2 = '<option value="' + n.id + '">' + n.label + ' [' + n.type + '] \u2014 ' + n.zone + '</option>';
+        srcNode.insertAdjacentHTML('beforeend', opt2);
+        dstNode.insertAdjacentHTML('beforeend', opt2);
+      });
+    })
+    .catch(function(err) {
+      console.error('PPS: failed to load enclaves', err);
+    });
+}
+
+function ppsGenerate() {
+  var source = _ppsSelMode === 'zone'
+    ? document.getElementById('pps-src-zone').value
+    : document.getElementById('pps-src-node').value;
+  var dest = _ppsSelMode === 'zone'
+    ? document.getElementById('pps-dst-zone').value
+    : document.getElementById('pps-dst-node').value;
+
+  if (!source || !dest) {
+    alert('Please select both source and destination.');
+    return;
+  }
+  if (source === dest) {
+    alert('Source and destination must be different.');
+    return;
+  }
+
+  // Reset UI
+  document.getElementById('pps-matrix-section').style.display = 'none';
+  document.getElementById('pps-fw-section').style.display = 'none';
+  document.getElementById('pps-stats-bar').style.display = 'none';
+  document.getElementById('pps-empty').style.display = 'none';
+  document.getElementById('pps-export-csv-btn').style.display = 'none';
+  document.getElementById('pps-export-md-btn').style.display = 'none';
+  document.getElementById('pps-loading').style.display = '';
+
+  fetch(NC_BASE + '/api/pps/' + currentTopoId + '/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({source: source, dest: dest, selector_type: _ppsSelMode})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    document.getElementById('pps-loading').style.display = 'none';
+    if (data.error) { alert('Error: ' + data.error); return; }
+    _ppsLastResult = data;
+    _ppsRenderResults(data);
+  })
+  .catch(function(err) {
+    document.getElementById('pps-loading').style.display = 'none';
+    alert('PPS request failed: ' + err);
+  });
+}
+
+function _ppsRenderResults(data) {
+  var total = data.total_protocols + data.total_fw_rules;
+
+  // Summary stats bar
+  var statsBar = document.getElementById('pps-stats-bar');
+  var insecureColor = data.insecure_protocols > 0 ? '#e74c3c' : '#2ecc71';
+  statsBar.innerHTML =
+    '<div style="background:#1a2332;border:1px solid #334;border-radius:6px;padding:8px 14px;text-align:center;min-width:80px;">' +
+      '<div style="font-size:1.4rem;font-weight:700;color:#3498db;">' + data.total_protocols + '</div>' +
+      '<div style="font-size:10px;color:#95a5a6;">Protocols</div></div>' +
+    '<div style="background:#1a2332;border:1px solid #334;border-radius:6px;padding:8px 14px;text-align:center;min-width:80px;">' +
+      '<div style="font-size:1.4rem;font-weight:700;color:#2ecc71;">' + data.encrypted_protocols + '</div>' +
+      '<div style="font-size:10px;color:#95a5a6;">Encrypted</div></div>' +
+    '<div style="background:#1a2332;border:1px solid #334;border-radius:6px;padding:8px 14px;text-align:center;min-width:80px;">' +
+      '<div style="font-size:1.4rem;font-weight:700;color:' + insecureColor + ';">' + data.insecure_protocols + '</div>' +
+      '<div style="font-size:10px;color:#95a5a6;">Insecure</div></div>' +
+    '<div style="background:#1a2332;border:1px solid #334;border-radius:6px;padding:8px 14px;text-align:center;min-width:80px;">' +
+      '<div style="font-size:1.4rem;font-weight:700;color:#f39c12;">' + data.total_fw_rules + '</div>' +
+      '<div style="font-size:10px;color:#95a5a6;">FW Rules</div></div>' +
+    '<div style="background:#1a2332;border:1px solid #334;border-radius:6px;padding:8px 14px;text-align:center;min-width:100px;">' +
+      '<div style="font-size:0.9rem;font-weight:600;color:#dfe6e9;">' + data.source_label + '</div>' +
+      '<div style="font-size:10px;color:#95a5a6;">Source</div></div>' +
+    '<div style="background:#1a2332;border:1px solid #334;border-radius:6px;padding:8px 14px;text-align:center;min-width:100px;">' +
+      '<div style="font-size:0.9rem;font-weight:600;color:#dfe6e9;">' + data.dest_label + '</div>' +
+      '<div style="font-size:10px;color:#95a5a6;">Destination</div></div>';
+  statsBar.style.display = 'flex';
+
+  if (total === 0) {
+    document.getElementById('pps-empty').style.display = '';
+    return;
+  }
+
+  // Matrix title
+  document.getElementById('pps-matrix-title').textContent =
+    'PPS Matrix \u2014 ' + data.source_label + ' \u2194 ' + data.dest_label;
+
+  // Protocol rows
+  var tbody = document.getElementById('pps-matrix-tbody');
+  tbody.innerHTML = '';
+  (data.matrix || []).forEach(function(row, i) {
+    var riskColor = row.risk === 'HIGH' ? '#e74c3c' : row.risk === 'LOW' ? '#2ecc71' : '#f39c12';
+    var encIcon = row.encrypted ? '\uD83D\uDD12' : '\u26A0';
+    var fipsIcon = row.fips_validated ? '\u2713' : '\u2014';
+    var eps = (row.endpoints || []).slice(0, 3).join('<br>');
+    tbody.insertAdjacentHTML('beforeend',
+      '<tr class="pps-row" data-proto="' + row.protocol.toLowerCase() + '" style="border-bottom:1px solid #253040;">' +
+        '<td style="padding:5px 8px;">' + (i + 1) + '</td>' +
+        '<td style="padding:5px 8px;font-weight:600;">' + row.protocol + '</td>' +
+        '<td style="padding:5px 8px;font-family:Consolas,monospace;font-size:11px;">' + row.port + '</td>' +
+        '<td style="padding:5px 8px;">' + row.service + '</td>' +
+        '<td style="padding:5px 8px;font-size:11px;">' + row.direction + '</td>' +
+        '<td style="padding:5px 8px;text-align:center;">' + encIcon + '</td>' +
+        '<td style="padding:5px 8px;text-align:center;">' + fipsIcon + '</td>' +
+        '<td style="padding:5px 8px;"><span style="color:' + riskColor + ';">' + row.risk + '</span></td>' +
+        '<td style="padding:5px 8px;font-size:11px;max-width:240px;">' + row.justification + '</td>' +
+        '<td style="padding:5px 8px;font-size:10px;color:#95a5a6;">' + eps + '</td>' +
+      '</tr>');
+  });
+  document.getElementById('pps-matrix-section').style.display = '';
+
+  // Firewall rules
+  if (data.firewall_rules && data.firewall_rules.length > 0) {
+    var fwTbody = document.getElementById('pps-fw-tbody');
+    fwTbody.innerHTML = '';
+    data.firewall_rules.forEach(function(row, i) {
+      var fwRiskColor = row.risk === 'HIGH' ? '#e74c3c' : '#f39c12';
+      var fwEncIcon = row.encrypted ? '\uD83D\uDD12' : '\u2014';
+      fwTbody.insertAdjacentHTML('beforeend',
+        '<tr style="border-bottom:1px solid #253040;">' +
+          '<td style="padding:5px 8px;">' + (i + 1) + '</td>' +
+          '<td style="padding:5px 8px;font-weight:600;">' + row.protocol + '</td>' +
+          '<td style="padding:5px 8px;font-family:Consolas,monospace;font-size:11px;">' + row.port + '</td>' +
+          '<td style="padding:5px 8px;">' + row.service + '</td>' +
+          '<td style="padding:5px 8px;font-size:11px;">' + row.direction + '</td>' +
+          '<td style="padding:5px 8px;text-align:center;">' + fwEncIcon + '</td>' +
+          '<td style="padding:5px 8px;"><span style="color:' + fwRiskColor + ';">' + row.risk + '</span></td>' +
+          '<td style="padding:5px 8px;font-size:11px;">' + row.justification + '</td>' +
+        '</tr>');
+    });
+    document.getElementById('pps-fw-section').style.display = '';
+  }
+
+  // Show export buttons
+  document.getElementById('pps-export-csv-btn').style.display = '';
+  document.getElementById('pps-export-md-btn').style.display = '';
+}
+
+function ppsFilterTable() {
+  var q = document.getElementById('pps-filter').value.toLowerCase();
+  document.querySelectorAll('#pps-matrix-tbody tr.pps-row').forEach(function(tr) {
+    tr.style.display = tr.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function ppsExport(fmt) {
+  if (!_ppsLastResult) return;
+  var source = _ppsLastResult.source_selector;
+  var dest = _ppsLastResult.dest_selector;
+  fetch(NC_BASE + '/api/pps/' + currentTopoId + '/export', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      source: source,
+      dest: dest,
+      selector_type: _ppsLastResult.selector_type,
+      format: fmt
+    })
+  })
+  .then(function(r) {
+    var disposition = r.headers.get('Content-Disposition') || '';
+    var fnMatch = disposition.match(/filename="(.+?)"/);
+    var filename = fnMatch ? fnMatch[1] : ('pps_ssp.' + (fmt === 'csv' ? 'csv' : 'md'));
+    return r.blob().then(function(blob) {
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  })
+  .catch(function(err) { alert('Export failed: ' + err); });
 }
 
 function exportRackSVG() {

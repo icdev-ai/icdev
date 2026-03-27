@@ -1547,3 +1547,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Topology Styler | tools\network\topology_styler.py | Auto-registered: network/topology_styler.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Visio Export | tools\network\visio_export.py | Auto-registered: network/visio_export.py | --json | JSON |
