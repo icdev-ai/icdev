@@ -56,7 +56,7 @@ def list_traces():
                    project_id,
                    GROUP_CONCAT(DISTINCT name) as span_names
             FROM otel_spans {where}
-            GROUP BY trace_id
+            GROUP BY trace_id, project_id
             ORDER BY first_span DESC
             LIMIT ? OFFSET ?
         """,  # nosec B608 -- table/column names are internal constants, not user input

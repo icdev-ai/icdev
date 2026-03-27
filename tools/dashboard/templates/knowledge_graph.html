@@ -92,7 +92,7 @@
           <td style="padding:0.5rem;">{{ g.project_id or '--' }}</td>
           <td style="padding:0.5rem;">{{ g.entity_count }}</td>
           <td style="padding:0.5rem;">{{ g.edge_count }}</td>
-          <td style="padding:0.5rem;">{{ g.created_at[:10] if g.created_at else '--' }}</td>
+          <td style="padding:0.5rem;">{{ (g.created_at|string)[:10] if g.created_at else '--' }}</td>
           <td style="padding:0.5rem;">
             <button onclick="viewGraph('{{ g.id }}')" style="padding:0.2rem 0.6rem;background:#e3f2fd;border:1px solid #90caf9;border-radius:4px;cursor:pointer;font-size:0.85rem;">View</button>
             <button onclick="switchTab('insights');loadFullInsights('{{ g.id }}')" style="padding:0.2rem 0.6rem;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:4px;cursor:pointer;font-size:0.85rem;">Insights</button>
@@ -183,7 +183,7 @@
           <td style="padding:0.5rem;">{{ q.node_count }}</td>
           <td style="padding:0.5rem;">{{ q.top_score|round(3) if q.top_score else '--' }}</td>
           <td style="padding:0.5rem;">{{ q.duration_ms|round(0)|int if q.duration_ms else '--' }}ms</td>
-          <td style="padding:0.5rem;">{{ q.created_at[:16] if q.created_at else '--' }}</td>
+          <td style="padding:0.5rem;">{{ (q.created_at|string)[:16] if q.created_at else '--' }}</td>
         </tr>
         {% endfor %}
       </tbody>

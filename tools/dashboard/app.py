@@ -4249,6 +4249,11 @@ def create_app() -> Flask:
         log_entries = []
         conn = _get_db()
         try:
+            # Ensure indexes exist for sync_log queries (table can have millions of rows)
+            try:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_log_action ON sync_log(action)")
+            except Exception:
+                pass
             try:
                 row = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs").fetchone()
                 stats["total_jobs"] = row["cnt"]
@@ -4289,9 +4294,11 @@ def create_app() -> Flask:
                 stats["pending_conflicts"] = row["cnt"]
             except Exception:
                 pass
+            # Skip SUM(bytes_transferred) over full sync_log — too expensive on millions of rows.
+            # Use SUM from sync_jobs.bytes_transferred (per-job aggregate) as a fast proxy.
             try:
                 row = conn.execute(
-                    "SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_log"
+                    "SELECT COALESCE(SUM(bytes_transferred), 0) as total FROM sync_jobs"
                 ).fetchone()
                 total_bytes = row["total"]
                 stats["total_bytes"] = total_bytes
@@ -4307,7 +4314,7 @@ def create_app() -> Flask:
                 pass
             try:
                 rows = conn.execute(
-                    "SELECT * FROM sync_jobs ORDER BY created_at DESC"
+                    "SELECT * FROM sync_jobs ORDER BY created_at DESC LIMIT 50"
                 ).fetchall()
                 jobs = [dict(r) for r in rows]
             except Exception:

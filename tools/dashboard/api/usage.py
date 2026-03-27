@@ -119,10 +119,10 @@ def usage_time_series():
                    SUM(cost_estimate_usd) as cost,
                    COUNT(*) as requests
                FROM agent_token_usage
-               WHERE created_at >= datetime('now', ?)
+               WHERE created_at >= datetime('now', ? || ' days')
                GROUP BY DATE(created_at)
                ORDER BY day""",
-            (f"-{days} days",),
+            (f"-{days}",),
         ).fetchall()
 
         result = []

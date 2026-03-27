@@ -36,13 +36,28 @@ def _get_db():
     return conn
 
 
+def _is_pg(conn):
+    """Check if connection is PostgreSQL."""
+    return getattr(conn, '_backend', None) == 'postgresql'
+
+
 def _table_exists(conn, table_name):
-    """Check if a table exists in the database."""
-    row = conn.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
-        (table_name,),
-    ).fetchone()
-    return row[0] > 0
+    """Check if a table exists in the database (SQLite or PostgreSQL)."""
+    try:
+        if _is_pg(conn):
+            row = conn.execute(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                "WHERE table_schema='public' AND table_name=?",
+                (table_name,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,),
+            ).fetchone()
+        return row[0] > 0
+    except Exception:
+        return False
 
 
 def _safe_count(conn, sql, params=()):
