@@ -890,6 +890,33 @@ function selectCell(cell) {
     document.getElementById('cfg-ospf-area').value = config.ospf_area || '';
     document.getElementById('cfg-ospf-cost').value = config.ospf_cost || '';
     document.getElementById('cfg-notes').value = config.notes || '';
+    // Device Info
+    document.getElementById('cfg-hostname').value = config.hostname || '';
+    document.getElementById('cfg-model').value = config.model || '';
+    document.getElementById('cfg-serial').value = config.serial || '';
+    document.getElementById('cfg-asset-tag').value = config.asset_tag || '';
+    // Slot / Port
+    document.getElementById('cfg-slot').value = config.slot || '';
+    document.getElementById('cfg-port').value = config.port || '';
+    document.getElementById('cfg-port-type').value = config.port_type || '';
+    document.getElementById('cfg-bandwidth').value = config.bandwidth || '';
+    // Location
+    document.getElementById('cfg-site').value = config.site || '';
+    document.getElementById('cfg-location').value = config.location || '';
+    document.getElementById('cfg-rack').value = config.rack || '';
+    // Peering
+    document.getElementById('cfg-peer-asn').value = config.peer_asn || '';
+    document.getElementById('cfg-peer-ip').value = config.peer_ip || '';
+    document.getElementById('cfg-peering-type').value = config.peering_type || '';
+    // Linked Records
+    document.getElementById('cfg-project-id').value = config.project_id || '';
+    document.getElementById('cfg-circuit-id').value = config.circuit_id || '';
+    document.getElementById('cfg-customer-id').value = config.customer_id || '';
+    document.getElementById('cfg-ipam-id').value = config.ipam_block_id || '';
+    document.getElementById('cfg-cable-id').value = config.cable_id || '';
+    document.getElementById('cfg-xconn-id').value = config.xconn_id || '';
+    // Load linked record options
+    _loadLinkedRecordOptions(config);
 
     // Highlight on paper
     paper.findViewByModel(cell)?.highlight();
@@ -919,6 +946,39 @@ function updateConfig(key, val) {
   config[key] = val;
   selectedCell.set('configData', config);
   markDirty();
+}
+
+/* ── Load linked record dropdown options from API ─────────────────────────── */
+async function _loadLinkedRecordOptions(config) {
+  const endpoints = {
+    'cfg-project-id': {url: NC_BASE + '/api/projects', labelFn: d => d.name, valFn: d => d.id},
+    'cfg-circuit-id': {url: NC_BASE + '/api/circuits', labelFn: d => `${d.circuit_id || d.id} — ${d.provider || ''} ${d.bandwidth || ''}`.trim(), valFn: d => d.id},
+    'cfg-customer-id': {url: NC_BASE + '/api/customers', labelFn: d => d.name, valFn: d => d.id},
+    'cfg-ipam-id': {url: NC_BASE + '/api/ipam', labelFn: d => `${d.block || d.id} (${d.vlan || ''})`.trim(), valFn: d => d.id},
+    'cfg-cable-id': {url: NC_BASE + '/api/cables', labelFn: d => `${d.cable_id || d.id} — ${d.cable_type || ''} ${d.length_m ? d.length_m + 'm' : ''}`.trim(), valFn: d => d.id},
+    'cfg-xconn-id': {url: NC_BASE + '/api/cross-connects', labelFn: d => `${d.xconn_id || d.id} — ${d.provider || ''}`.trim(), valFn: d => d.id},
+  };
+  for (const [selectId, ep] of Object.entries(endpoints)) {
+    const sel = document.getElementById(selectId);
+    if (!sel) continue;
+    const configKey = sel.getAttribute('onchange').match(/updateConfig\('([^']+)'/)?.[1] || '';
+    const currentVal = config[configKey] || '';
+    try {
+      const r = await fetch(ep.url);
+      const items = await r.json();
+      const list = Array.isArray(items) ? items : (items.items || items.data || []);
+      sel.innerHTML = '<option value="">— None —</option>';
+      list.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = ep.valFn(d);
+        opt.textContent = ep.labelFn(d);
+        if (String(opt.value) === String(currentVal)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      // API not available — keep empty
+    }
+  }
 }
 
 function deleteSelected() {
@@ -1150,6 +1210,31 @@ async function exportAs(fmt) {
   }
   if (!currentTopoId || currentTopoId === 'new') {
     alert('Save the topology first before exporting.');
+    return;
+  }
+  // VSDX and CSV exports return binary ZIP — use dedicated endpoints
+  if (fmt === 'vsdx' || fmt === 'csv') {
+    const endpoint = fmt === 'vsdx'
+      ? NC_BASE + `/api/export/${currentTopoId}/vsdx`
+      : NC_BASE + `/api/export/${currentTopoId}/csv`;
+    try {
+      const r = await fetch(endpoint, { method: 'POST' });
+      const data = await r.json();
+      if (data.content_b64) {
+        const bin = atob(data.content_b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: 'application/octet-stream' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = data.filename;
+        a.click();
+      } else if (data.error) {
+        alert('Export error: ' + data.error);
+      }
+    } catch (e) {
+      alert('Export failed: ' + e.message);
+    }
     return;
   }
   const r = await fetch(NC_BASE + `/api/export/${currentTopoId}`, {

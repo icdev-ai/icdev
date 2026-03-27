@@ -55,6 +55,7 @@ from tools.network.ato_generator import (  # noqa: E402
 from tools.network.export_import import (  # noqa: E402
     to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
 )
+from tools.network.visio_export import export_vsdx, export_ops_csvs  # noqa: E402
 from tools.network.inventory_export import (  # noqa: E402
     to_ansible_inventory, to_terraform_hcl,
 )
@@ -917,6 +918,107 @@ def create_network_blueprint():
             graph = {"nodes": [], "edges": []}
         nodes = list_configurable_nodes(graph)
         return jsonify({"configurable_nodes": nodes, "count": len(nodes)})
+
+    @bp.route("/api/export/<topo_id>/vsdx", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_vsdx(topo_id):
+        """Export topology as modern Visio .vsdx file with embedded metadata."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        import base64
+        import re as _re
+        vsdx_bytes = export_vsdx(topo["name"], graph)
+        encoded = base64.b64encode(vsdx_bytes).decode("ascii")
+        safe_name = _re.sub(r'[^a-zA-Z0-9_-]', '_', topo["name"])
+        _audit("EXPORT", "topology", topo_id, "vsdx")
+        return jsonify({
+            "format": "vsdx",
+            "filename": f"{safe_name}.vsdx",
+            "content_b64": encoded,
+        })
+
+    @bp.route("/api/export/<topo_id>/csv", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_csv(topo_id):
+        """Export topology as Ops CSV bundle (device inventory, circuits, cables, IP, peering)."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        csv_files = export_ops_csvs(topo["name"], graph)
+        import base64
+        import io as _io
+        buf = _io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for fname, content in csv_files.items():
+                zf.writestr(fname, content)
+        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+        safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', topo["name"])
+        _audit("EXPORT", "topology", topo_id, "csv")
+        return jsonify({
+            "format": "csv",
+            "filename": f"{safe_name}_ops_csvs.zip",
+            "content_b64": encoded,
+        })
+
+    @bp.route("/api/export/<topo_id>/inventory", methods=["GET"])
+    @nc_login_required
+    def nc_api_export_inventory(topo_id):
+        """Return JSON inventory of all devices with full metadata."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        devices = []
+        for n in graph.get("nodes", []):
+            ntype = n.get("type", "")
+            if ntype in ("draw-rect", "zone", "boundary", "text-annotation"):
+                continue
+            cfg = n.get("config", {})
+            devices.append({
+                "id": n.get("id", ""),
+                "label": n.get("label", ""),
+                "type": ntype,
+                "hostname": cfg.get("hostname", ""),
+                "ip": cfg.get("ip", ""),
+                "model": cfg.get("model", ""),
+                "serial": cfg.get("serial", ""),
+                "asset_tag": cfg.get("asset_tag", ""),
+                "site": cfg.get("site", ""),
+                "location": cfg.get("location", ""),
+                "rack": cfg.get("rack", ""),
+                "slot": cfg.get("slot", ""),
+                "port": cfg.get("port", ""),
+                "port_type": cfg.get("port_type", ""),
+                "bandwidth": cfg.get("bandwidth", ""),
+                "vlan": cfg.get("vlan", ""),
+                "vrf": cfg.get("vrf", ""),
+                "asn": cfg.get("asn", ""),
+                "peer_asn": cfg.get("peer_asn", ""),
+                "peer_ip": cfg.get("peer_ip", ""),
+                "peering_type": cfg.get("peering_type", ""),
+            })
+        return jsonify({"topology": topo["name"], "device_count": len(devices), "devices": devices})
 
     @bp.route("/api/import", methods=["POST"])
     @nc_login_required

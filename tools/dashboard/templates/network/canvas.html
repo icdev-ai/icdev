@@ -47,6 +47,8 @@
       <button class="tb-btn" onclick="exportInventory('terraform')" title="Export Terraform HCL skeleton (VPC, subnet, security group)" style="color:#7b42bc;">⬇ Terraform</button>
       <button class="tb-btn" onclick="exportDeviceConfigs()" title="Export per-device configs (Cisco IOS / Arista EOS / Juniper JunOS) as ZIP" style="color:#00c896;">⬇ Dev Configs</button>
       <button class="tb-btn" onclick="exportCablePlantReport()" title="Export cable plant report (CSV) — all annotated cable runs with specs" style="color:#a29bfe;">⬇ Cable Plant</button>
+      <button class="tb-btn" onclick="exportAs('vsdx')" title="Export Visio (.vsdx)">⬇ Visio</button>
+      <button class="tb-btn" onclick="exportAs('csv')" title="Export Ops CSVs (device inventory, circuits, cables)">⬇ Ops CSV</button>
     </div>
     <div class="tb-group">
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
@@ -508,6 +510,128 @@
         <div class="form-group">
           <label>OSPF Cost</label>
           <input type="number" id="cfg-ospf-cost" class="form-control" placeholder="auto (ref_bw/bw)" oninput="updateConfig('ospf_cost', this.value)"/>
+        </div>
+        <!-- Device Info -->
+        <div class="form-group cfg-section-header">Device Info</div>
+        <div class="form-group">
+          <label>Hostname</label>
+          <input type="text" id="cfg-hostname" class="form-control" placeholder="e.g. rtr-core-01" oninput="updateConfig('hostname', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Vendor / Model</label>
+          <input type="text" id="cfg-model" class="form-control" placeholder="e.g. Cisco C9300-48T" oninput="updateConfig('model', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Serial Number</label>
+          <input type="text" id="cfg-serial" class="form-control" placeholder="e.g. FOC2334N1AB" oninput="updateConfig('serial', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Asset Tag</label>
+          <input type="text" id="cfg-asset-tag" class="form-control" placeholder="e.g. IT-NET-0042" oninput="updateConfig('asset_tag', this.value)"/>
+        </div>
+        <!-- Slot / Port -->
+        <div class="form-group cfg-section-header">Slot / Port</div>
+        <div class="form-group">
+          <label>Slot</label>
+          <input type="text" id="cfg-slot" class="form-control" placeholder="e.g. 0, 1/0" oninput="updateConfig('slot', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="text" id="cfg-port" class="form-control" placeholder="e.g. Gi0/0/1, Te1/1" oninput="updateConfig('port', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Port Type</label>
+          <select id="cfg-port-type" class="form-control" onchange="updateConfig('port_type', this.value)">
+            <option value="">— Select —</option>
+            <option value="GE">GbE (1G)</option>
+            <option value="10GE">10GbE</option>
+            <option value="25GE">25GbE</option>
+            <option value="40GE">40GbE</option>
+            <option value="100GE">100GbE</option>
+            <option value="400GE">400GbE</option>
+            <option value="SM-Fiber">SM Fiber</option>
+            <option value="MM-Fiber">MM Fiber</option>
+            <option value="Cat6A">Cat6A Copper</option>
+            <option value="Coax">Coaxial</option>
+            <option value="Console">Console</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Bandwidth</label>
+          <input type="text" id="cfg-bandwidth" class="form-control" placeholder="e.g. 10Gbps" oninput="updateConfig('bandwidth', this.value)"/>
+        </div>
+        <!-- Location -->
+        <div class="form-group cfg-section-header">Location</div>
+        <div class="form-group">
+          <label>Site</label>
+          <input type="text" id="cfg-site" class="form-control" placeholder="e.g. DC-East-1" oninput="updateConfig('site', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Building / Floor / Room</label>
+          <input type="text" id="cfg-location" class="form-control" placeholder="e.g. Bldg-A / Floor-2 / MDF" oninput="updateConfig('location', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Rack / U-Position</label>
+          <input type="text" id="cfg-rack" class="form-control" placeholder="e.g. Rack-12 / U22-U24" oninput="updateConfig('rack', this.value)"/>
+        </div>
+        <!-- Peering -->
+        <div class="form-group cfg-section-header">Peering</div>
+        <div class="form-group">
+          <label>Peer ASN</label>
+          <input type="number" id="cfg-peer-asn" class="form-control" placeholder="e.g. 15169" oninput="updateConfig('peer_asn', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Peer IP</label>
+          <input type="text" id="cfg-peer-ip" class="form-control" placeholder="e.g. 2001:db8::1" oninput="updateConfig('peer_ip', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Peering Type</label>
+          <select id="cfg-peering-type" class="form-control" onchange="updateConfig('peering_type', this.value)">
+            <option value="">— None —</option>
+            <option value="transit">Transit</option>
+            <option value="peer">Peer (Settlement-Free)</option>
+            <option value="customer">Customer</option>
+            <option value="private">Private Peering</option>
+            <option value="ixp">IXP / Public Peering</option>
+          </select>
+        </div>
+        <!-- Linked Records -->
+        <div class="form-group cfg-section-header">Linked Records</div>
+        <div class="form-group">
+          <label>Project</label>
+          <select id="cfg-project-id" class="form-control" onchange="updateConfig('project_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Circuit</label>
+          <select id="cfg-circuit-id" class="form-control" onchange="updateConfig('circuit_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Customer</label>
+          <select id="cfg-customer-id" class="form-control" onchange="updateConfig('customer_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IPAM Block</label>
+          <select id="cfg-ipam-id" class="form-control" onchange="updateConfig('ipam_block_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cable</label>
+          <select id="cfg-cable-id" class="form-control" onchange="updateConfig('cable_id', this.value)">
+            <option value="">— None —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cross-Connect</label>
+          <select id="cfg-xconn-id" class="form-control" onchange="updateConfig('xconn_id', this.value)">
+            <option value="">— None —</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Notes</label>
