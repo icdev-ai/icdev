@@ -177,34 +177,141 @@ function getStyle(type) {
   return NODE_STYLES[type] || { fill: '#1a1a2e', stroke: '#7a8cb0', label: type, symbol: '?' };
 }
 
-/* ── Cisco-style SVG icon paths (scaled to 48x48 viewBox) ──────────────────── */
-const CISCO_ICONS = {
-  // Router: classic Cisco cylinder with arrows
-  'router': 'M4,24 a20,12 0 1,0 40,0 a20,12 0 1,0 -40,0 M4,24 v0 M44,24 v0 M14,16 l-8,-8 M14,16 l-8,2 M14,16 l-2,-8 M34,16 l8,-8 M34,16 l8,2 M34,16 l2,-8',
-  // Switch: rectangle with arrows
-  'switch-l2': 'M6,14 h36 v20 h-36 z M2,24 l6,-4 v8 z M46,24 l-6,-4 v8 z',
-  'switch-l3': 'M6,14 h36 v20 h-36 z M2,24 l6,-4 v8 z M46,24 l-6,-4 v8 z M24,10 v4 M24,34 v4',
-  // Firewall: brick wall
-  'firewall': 'M6,10 h36 v28 h-36 z M6,18 h36 M6,26 h36 M18,10 v8 M30,10 v8 M12,18 v8 M24,18 v8 M36,18 v8 M18,26 v12 M30,26 v12',
-  // Server: rack server
-  'server': 'M10,6 h28 v36 h-28 z M10,14 h28 M10,22 h28 M10,30 h28 M32,9 a1.5,1.5 0 1,0 0,3 M32,17 a1.5,1.5 0 1,0 0,3 M32,25 a1.5,1.5 0 1,0 0,3',
-  // Load Balancer: diamond with arrows
-  'load-balancer': 'M24,6 l18,18 l-18,18 l-18,-18 z M6,24 h8 M34,24 h8',
-  // WAP: antenna
-  'wap': 'M24,38 v-20 M18,18 a10,10 0 0,1 12,0 M14,14 a16,16 0 0,1 20,0 M10,10 a22,22 0 0,1 28,0',
-  // Cloud: cloud shape
-  'cloud': 'M12,32 a8,8 0 0,1 -2,-16 a10,10 0 0,1 18,-6 a8,8 0 0,1 12,6 a7,7 0 0,1 -2,16 z',
-  // Patch Panel: rectangular with ports
-  'patch-panel': 'M4,16 h40 v16 h-40 z M10,20 v8 M16,20 v8 M22,20 v8 M28,20 v8 M34,20 v8 M38,20 v8',
-  // Meet-Me Room: building with door
-  'meet-me-room': 'M8,38 V16 L24,6 L40,16 V38 z M18,38 V26 h12 V38 M14,20 h4 v4 h-4 z M30,20 h4 v4 h-4 z',
-  // Cross-Connect: fiber patch with X connections
-  'cross-connect': 'M4,14 h40 v20 h-40 z M10,14 v20 M20,14 v20 M30,14 v20 M38,14 v20 M12,18 l6,12 M18,18 l-6,12 M32,18 l6,12 M38,18 l-6,12',
+/* ── Cisco Traditional Stencils — filled SVG shapes (48x48 viewBox) ────────── */
+// Each entry: { fill: body path, detail: white internal strokes/paths }
+// Rendered as: solid colored body shape + white detail lines on top
+const CISCO_STENCILS = {
+  // Router: classic Cisco circle with cross arrows
+  'router': {
+    body: 'M24,4 a20,20 0 1,0 0.01,0 Z',
+    detail: 'M24,14 v20 M14,24 h20 M17,17 l-7,-7 M16.5,10.5 l-6.5,1.5 M10.5,16.5 l1.5,-6.5 M31,17 l7,-7 M31.5,10.5 l6.5,1.5 M37.5,16.5 l-1.5,-6.5 M17,31 l-7,7 M10.5,31.5 l1.5,6.5 M16.5,37.5 l-6.5,-1.5 M31,31 l7,7 M37.5,31.5 l-1.5,6.5 M31.5,37.5 l6.5,-1.5',
+  },
+  // Switch L2: rectangle with bidirectional arrows
+  'switch-l2': {
+    body: 'M6,14 h36 v20 h-36 Z',
+    detail: 'M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z M14,24 h8 M28,24 h-8',
+  },
+  // Switch L3: rectangle with arrows + vertical lines
+  'switch-l3': {
+    body: 'M6,14 h36 v20 h-36 Z',
+    detail: 'M2,24 l6,-5 v10 Z M46,24 l-6,-5 v10 Z M14,24 h8 M28,24 h-8 M24,10 v4 M24,34 v4',
+  },
+  // Firewall: brick wall with flame
+  'firewall': {
+    body: 'M6,8 h36 v32 h-36 Z',
+    detail: 'M6,16 h36 M6,24 h36 M6,32 h36 M18,8 v8 M30,8 v8 M12,16 v8 M24,16 v8 M36,16 v8 M18,24 v8 M30,24 v8 M12,32 v8 M24,32 v8 M36,32 v8',
+  },
+  // Server: rack unit
+  'server': {
+    body: 'M10,6 h28 v36 h-28 Z',
+    detail: 'M10,14 h28 M10,22 h28 M10,30 h28 M32,9 a1.5,1.5 0 1,0 0.01,0 M32,17 a1.5,1.5 0 1,0 0.01,0 M32,25 a1.5,1.5 0 1,0 0.01,0 M32,33 a1.5,1.5 0 1,0 0.01,0',
+  },
+  // Load Balancer: circle with balance scales
+  'load-balancer': {
+    body: 'M24,4 a20,20 0 1,0 0.01,0 Z',
+    detail: 'M24,12 v22 M14,18 h20 M14,18 l-2,8 h8 l-2,-8 M34,18 l-2,8 h8 l-2,-8',
+  },
+  // WAP: antenna with waves
+  'wap': {
+    body: 'M16,38 h16 l-2,-4 h-12 Z',
+    detail: 'M24,34 v-18 M24,16 l-3,-3 M24,16 l3,-3 M18,20 a10,10 0 0,1 12,0 M14,16 a16,16 0 0,1 20,0 M10,12 a22,22 0 0,1 28,0',
+  },
+  // Cloud
+  'cloud': {
+    body: 'M12,34 a10,10 0 0,1 -2,-18 a12,12 0 0,1 20,-6 a10,10 0 0,1 12,8 a8,8 0 0,1 -4,16 Z',
+    detail: '',
+  },
+  // Patch Panel: panel with ports
+  'patch-panel': {
+    body: 'M4,16 h40 v16 h-40 Z',
+    detail: 'M10,20 v8 M16,20 v8 M22,20 v8 M28,20 v8 M34,20 v8 M40,20 v8',
+  },
+  // Meet-Me Room: building
+  'meet-me-room': {
+    body: 'M8,40 V16 L24,6 L40,16 V40 Z',
+    detail: 'M18,40 V26 h12 V40 M14,20 h4 v4 h-4 Z M30,20 h4 v4 h-4 Z',
+  },
+  // Cross-Connect: patch panel with X cables
+  'cross-connect': {
+    body: 'M4,14 h40 v20 h-40 Z',
+    detail: 'M12,14 v20 M22,14 v20 M32,14 v20 M8,18 l8,12 M16,18 l-8,12 M26,18 l8,12 M34,18 l-8,12',
+  },
+  // SIEM: monitor with eye
+  'siem': {
+    body: 'M6,8 h36 v28 h-36 Z M16,40 h16 M20,36 v4 M28,36 v4',
+    detail: 'M14,22 a10,6 0 1,1 20,0 a10,6 0 1,1 -20,0 M24,19 a3,3 0 1,0 0.01,0',
+  },
   // ROADM: hexagon
-  'roadm': 'M14,8 h20 l10,16 l-10,16 h-20 l-10,-16 z',
+  'roadm': {
+    body: 'M14,8 h20 l10,16 l-10,16 h-20 l-10,-16 Z',
+    detail: 'M18,24 h12 M24,18 v12',
+  },
   // Transponder: diamond
-  'transponder': 'M24,6 l18,18 l-18,18 l-18,-18 z',
+  'transponder': {
+    body: 'M24,6 l18,18 l-18,18 l-18,-18 Z',
+    detail: 'M18,24 h12 M24,18 v12',
+  },
+  // Endpoint PC: monitor
+  'endpoint-pc': {
+    body: 'M8,8 h32 v24 h-32 Z M18,36 h12 M16,32 v4 M32,32 v4 M14,40 h20',
+    detail: 'M12,12 h24 v16 h-24 Z',
+  },
+  // IP Phone
+  'endpoint-phone': {
+    body: 'M12,6 h24 v36 h-24 Z',
+    detail: 'M16,10 h16 v8 h-16 Z M16,22 h4 v3 h-4 Z M22,22 h4 v3 h-4 Z M28,22 h4 v3 h-4 Z M16,27 h4 v3 h-4 Z M22,27 h4 v3 h-4 Z M28,27 h4 v3 h-4 Z M16,32 h4 v3 h-4 Z M22,32 h4 v3 h-4 Z M28,32 h4 v3 h-4 Z',
+  },
+  // IoT Device: chip
+  'endpoint-iot': {
+    body: 'M14,14 h20 v20 h-20 Z',
+    detail: 'M18,14 v-6 M24,14 v-6 M30,14 v-6 M18,34 v6 M24,34 v6 M30,34 v6 M14,18 h-6 M14,24 h-6 M14,30 h-6 M34,18 h6 M34,24 h6 M34,30 h6 M20,20 h8 v8 h-8 Z',
+  },
+  // Camera
+  'endpoint-camera': {
+    body: 'M8,16 h32 v20 h-32 Z',
+    detail: 'M24,26 a6,6 0 1,0 0.01,0 M24,26 a2,2 0 1,0 0.01,0 M30,14 l6,-4 v6',
+  },
+  // SD-WAN Edge
+  'sdwan-edge': {
+    body: 'M4,24 a20,12 0 1,0 40,0 a20,12 0 1,0 -40,0 Z',
+    detail: 'M16,20 h16 M16,24 h16 M16,28 h16',
+  },
+  // POP
+  'pop': {
+    body: 'M8,38 V14 L24,6 L40,14 V38 Z',
+    detail: 'M8,14 L24,6 L40,14 M16,20 h16 v14 h-16 Z',
+  },
 };
+
+// Map device type to stencil (with fallback matching)
+function getCiscoStencil(type) {
+  if (CISCO_STENCILS[type]) return CISCO_STENCILS[type];
+  if (type.startsWith('switch-l3')) return CISCO_STENCILS['switch-l3'];
+  if (type.startsWith('switch')) return CISCO_STENCILS['switch-l2'];
+  if (type.includes('router') || type === 'mpls-pe' || type === 'mpls-p' || type === 'route-reflector') return CISCO_STENCILS['router'];
+  if (type.includes('firewall') || type.includes('fw') || type.includes('nfw')) return CISCO_STENCILS['firewall'];
+  if (type.includes('server') || type.includes('srv') || type.includes('historian')) return CISCO_STENCILS['server'];
+  if (type.includes('balancer') || type.includes('lb') || type.includes('alb') || type.includes('nlb')) return CISCO_STENCILS['load-balancer'];
+  if (type.includes('cloud') || type.includes('vpc') || type.includes('vnet') || type.includes('vcn')) return CISCO_STENCILS['cloud'];
+  if (type.includes('wap') || type === 'wlc') return CISCO_STENCILS['wap'];
+  if (type.includes('panel') || type.includes('odf')) return CISCO_STENCILS['patch-panel'];
+  if (type.includes('roadm') || type.includes('oadm')) return CISCO_STENCILS['roadm'];
+  if (type.includes('transponder') || type.includes('edfa')) return CISCO_STENCILS['transponder'];
+  if (type === 'meet-me-room') return CISCO_STENCILS['meet-me-room'];
+  if (type === 'cross-connect') return CISCO_STENCILS['cross-connect'];
+  if (type === 'siem') return CISCO_STENCILS['siem'];
+  if (type === 'sdwan-edge' || type === 'sase-pop') return CISCO_STENCILS['sdwan-edge'];
+  if (type === 'pop') return CISCO_STENCILS['pop'];
+  if (type.includes('endpoint-pc') || type.includes('workstation')) return CISCO_STENCILS['endpoint-pc'];
+  if (type.includes('endpoint-phone')) return CISCO_STENCILS['endpoint-phone'];
+  if (type.includes('endpoint-iot') || type.includes('plc') || type.includes('rtu')) return CISCO_STENCILS['endpoint-iot'];
+  if (type.includes('endpoint-camera') || type.includes('camera')) return CISCO_STENCILS['endpoint-camera'];
+  return null;
+}
+
+// Legacy compatibility
+const CISCO_ICONS = {};
+function getCiscoPath(type) { return null; }
 
 // Map device categories to icon paths (fallback to generic rectangle)
 function getCiscoPath(type) {
@@ -225,23 +332,29 @@ function getCiscoPath(type) {
   return null; // fallback to rect
 }
 
-/* ── JointJS custom shape — Cisco-style SVG icon ───────────────────────────── */
+/* ── JointJS custom shape — Cisco Traditional Stencil ──────────────────────── */
 const NetworkNode = joint.dia.Element.define('network.Node', {
   attrs: {
     body: {
       refWidth: '100%', refHeight: '100%',
-      rx: 6, ry: 6,
-      strokeWidth: 2,
-      magnet: true,  // Allow link creation by dragging from the body
+      fill: 'transparent', stroke: 'transparent', strokeWidth: 0,
+      magnet: true,
       cursor: 'pointer',
     },
-    iconGroup: {
-      transform: 'translate(31, 2) scale(1)',
+    stencilGroup: {
+      transform: 'translate(15, 0) scale(1.67)',  // Scale 48→80px, centered in 110w
     },
-    icon: {
+    stencilBody: {
+      d: '',
+      fill: '#1a7abf',  // Classic Cisco blue
+      stroke: 'none',
+      strokeWidth: 0,
+    },
+    stencilDetail: {
       d: '',
       fill: 'none',
-      strokeWidth: 2,
+      stroke: '#ffffff',
+      strokeWidth: 1.5,
       strokeLinecap: 'round',
       strokeLinejoin: 'round',
     },
@@ -253,8 +366,9 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
       fontFamily: 'Cascadia Code, Consolas, monospace',
     },
     label: {
-      refX: '50%', refY: '90%',
+      refX: '50%', refY: '100%',
       textAnchor: 'middle',
+      dy: 4,
       fontSize: 10,
       fontFamily: 'Segoe UI, system-ui, sans-serif',
       fill: '#eaeaea',
@@ -271,7 +385,7 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
             fill: '#e94560',
             stroke: '#e94560',
             strokeWidth: 1,
-            opacity: 0,  // hidden by default, show on hover via CSS
+            opacity: 0,
           }
         },
         markup: [{ tagName: 'circle', selector: 'portBody' }],
@@ -287,8 +401,9 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
 }, {
   markup: [
     { tagName: 'rect', selector: 'body' },
-    { tagName: 'g', selector: 'iconGroup', children: [
-      { tagName: 'path', selector: 'icon' },
+    { tagName: 'g', selector: 'stencilGroup', children: [
+      { tagName: 'path', selector: 'stencilBody' },
+      { tagName: 'path', selector: 'stencilDetail' },
     ]},
     { tagName: 'text', selector: 'symbol' },
     { tagName: 'text', selector: 'label' },
@@ -606,10 +721,10 @@ function createNode(type, x, y, label, nodeId, configData) {
   // Group/site containers are larger
   const isGroup = (type === 'group-site');
   const w = isGroup ? 300 : 110;
-  const h = isGroup ? 200 : 60;
+  const h = isGroup ? 200 : 70;
 
-  // Try Cisco-style SVG icon path
-  const iconPath = getCiscoPath(type);
+  // Try Cisco traditional stencil (filled shape + white detail)
+  const stencil = getCiscoStencil(type);
 
   const node = new NetworkNode({
     id: nodeId || joint.util.uuid(),
@@ -617,24 +732,25 @@ function createNode(type, x, y, label, nodeId, configData) {
     size: { width: w, height: h },
     attrs: {
       body: {
-        fill: config._fill || style.fill,
-        stroke: config._stroke || style.stroke,
-        strokeWidth: iconPath ? 1 : 2,
-        strokeOpacity: iconPath ? 0.3 : 1,
-        rx: iconPath ? 8 : 6,
-        ry: iconPath ? 8 : 6,
+        fill: isGroup ? (config._fill || style.fill) : 'transparent',
+        stroke: isGroup ? (config._stroke || style.stroke) : 'transparent',
+        strokeWidth: isGroup ? 2 : 0,
+        rx: 6, ry: 6,
       },
-      iconGroup: iconPath ? {
-        transform: 'translate(31, 2) scale(1)',
-      } : {},
-      icon: iconPath ? {
-        d: iconPath,
-        stroke: config._stroke || style.stroke,
-        fill: 'none',
-        strokeWidth: 2,
+      stencilGroup: stencil ? {
+        transform: 'translate(15, 2) scale(1.67)',
+      } : { display: 'none' },
+      stencilBody: stencil ? {
+        d: stencil.body,
+        fill: config._fill || style.stroke,  // Use stroke color as stencil fill
+      } : { d: '' },
+      stencilDetail: stencil ? {
+        d: stencil.detail || '',
+        stroke: '#ffffff',
+        strokeWidth: 1.5,
       } : { d: '' },
       symbol: {
-        text: iconPath ? '' : style.symbol,
+        text: stencil ? '' : style.symbol,
         fill: config._stroke || style.stroke,
       },
       label: {
@@ -825,14 +941,14 @@ function applyFillColor(color) {
   const config = selectedCell.get('configData') || {};
   config._fill = color;
   selectedCell.set('configData', config);
-  // Apply to the visual
   const type = selectedCell.get('nodeType') || '';
   if (type.startsWith('draw-')) {
     selectedCell.attr('shape/fill', color);
   } else if (type.startsWith('text-')) {
     selectedCell.attr('body/fill', color);
   } else {
-    selectedCell.attr('body/fill', color);
+    // Cisco stencil — fill is on stencilBody
+    selectedCell.attr('stencilBody/fill', color);
   }
   markDirty();
 }
@@ -849,9 +965,8 @@ function applyStrokeColor(color) {
   } else if (type.startsWith('text-')) {
     selectedCell.attr('body/stroke', color);
   } else {
-    selectedCell.attr('body/stroke', color);
-    if (selectedCell.attr('icon/d')) selectedCell.attr('icon/stroke', color);
-    if (selectedCell.attr('symbol/text')) selectedCell.attr('symbol/fill', color);
+    // Cisco stencil — detail stroke color
+    selectedCell.attr('stencilDetail/stroke', color);
   }
   markDirty();
 }
