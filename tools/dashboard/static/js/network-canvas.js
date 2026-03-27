@@ -347,7 +347,7 @@ const DrawingShape = joint.dia.Element.define('network.DrawingShape', {
   attrs: {
     body: { refWidth: '100%', refHeight: '100%', fill: 'transparent', stroke: 'transparent', strokeWidth: 0 },
     shape: { fill: '#1a2a3a', stroke: '#4a9eff', strokeWidth: 2, strokeLinejoin: 'round' },
-    label: { refX: '50%', refY: '105%', textAnchor: 'middle', fontSize: 10, fontFamily: 'Segoe UI, system-ui, sans-serif', fill: '#eaeaea' }
+    label: { x: 10, y: 16, textAnchor: 'start', fontSize: 11, fontWeight: '600', fontFamily: 'Segoe UI, system-ui, sans-serif', fill: '#eaeaea' }
   },
 }, {
   markup: [
@@ -525,6 +525,12 @@ function createNode(type, x, y, label, nodeId, configData) {
     const h = config._height || (isLine ? (style.shape === 'hline' || style.shape === 'arrow' ? 20 : 100) : (['circle','star'].includes(style.shape) ? 80 : 80));
     const shapePath = drawingShapePath(style.shape, w, h);
 
+    // Label position: inside top-left for large zones, centered for small shapes
+    const isLargeZone = w > 150 || h > 100;
+    const labelAttrs = isLargeZone
+      ? { x: 10, y: 18, textAnchor: 'start', fontSize: 11, fontWeight: '600' }
+      : { refX: '50%', refY: '50%', textAnchor: 'middle', textVerticalAnchor: 'middle', fontSize: 10, fontWeight: 'normal' };
+
     const node = new DrawingShape({
       id: nodeId || joint.util.uuid(),
       position: { x: x || 100, y: y || 100 },
@@ -539,7 +545,8 @@ function createNode(type, x, y, label, nodeId, configData) {
         },
         label: {
           text: isLine ? '' : (displayLabel === style.label ? '' : displayLabel),
-          fill: config._textColor || '#eaeaea',
+          fill: config._textColor || (config._stroke || style.stroke),
+          ...labelAttrs,
         }
       }
     });

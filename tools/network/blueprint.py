@@ -2037,7 +2037,7 @@ def create_network_blueprint():
     # Uses Ollama (scanner tier) for air-gap compatibility
     # ══════════════════════════════════════════════════════════════════════
 
-    _AI_TOPO_SYSTEM_PROMPT = """You are a network topology generator. Given a natural language description, output ONLY a valid JSON object with this exact structure — no markdown, no explanation, no code fences:
+    _AI_TOPO_SYSTEM_PROMPT = """You are a network topology generator for a dark-themed canvas (navy background #1a1a2e). Given a natural language description, output ONLY a valid JSON object — no markdown, no explanation, no code fences:
 
 {"nodes": [...], "edges": [...]}
 
@@ -2055,16 +2055,29 @@ Valid device types (use ONLY these):
 - media-fiber, media-ge, media-10ge, media-100ge
 - roadm, oadm, edfa, transponder, sonet-adm
 - meet-me-room, cross-connect
-- draw-rect (zone box — set config._fill, config._stroke, config._width, config._height)
-- text-heading (zone label — set config._textColor)
-- text-badge (tag — set config._fill, config._stroke)
+- draw-rect (zone boundary box)
+- text-heading (zone title label)
+- text-badge (pill-shaped tag)
 
-Layout guidelines:
+Zone color palette (dark fills, bright borders — ALWAYS use these for draw-rect):
+- Blue zone:   config: {"_fill": "#0a1628", "_stroke": "#3498db", "_width": W, "_height": H}
+- Green zone:  config: {"_fill": "#0a180a", "_stroke": "#27ae60", "_width": W, "_height": H}
+- Orange zone: config: {"_fill": "#1a1500", "_stroke": "#f39c12", "_width": W, "_height": H}
+- Red zone:    config: {"_fill": "#1a0a0a", "_stroke": "#e74c3c", "_width": W, "_height": H}
+- Purple zone: config: {"_fill": "#120a20", "_stroke": "#9b59b6", "_width": W, "_height": H}
+- Teal zone:   config: {"_fill": "#0a1a1a", "_stroke": "#00cec9", "_width": W, "_height": H}
+
+For text-heading: config: {"_textColor": "<matching zone stroke color>"}
+For text-badge:   config: {"_fill": "#0f3460", "_stroke": "#4a9eff"}
+
+Layout rules:
+- Zone boxes (draw-rect) MUST be placed FIRST in the nodes array (they render behind devices)
+- Text-heading labels go right after their zone box, positioned at the zone's top (y + 5)
+- Devices go inside their zone boxes
 - Space devices 150-200px apart horizontally, 120-150px vertically
-- Group related devices in zones using draw-rect with text-heading labels
-- Use realistic network protocols: OSPF, BGP, eBGP, iBGP, MPLS, IPSec, mTLS, STP, VXLAN, etc.
-- Start layout at x=40, y=80 to leave room for headings
-- Add a text-badge at the top with the topology type name
+- Zone boxes should be wide enough (300-600px) and tall enough (120-250px) to contain their devices with padding
+- Start layout at x=40, y=40
+- Use realistic protocols: OSPF, BGP, eBGP, iBGP, MPLS, IPSec, mTLS, STP, VXLAN, etc.
 
 Output ONLY the JSON object. No other text."""
 
