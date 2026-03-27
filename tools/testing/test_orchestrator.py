@@ -200,7 +200,7 @@ def run_sandbox_isolation(project_dir: str, logger) -> TestResult:
 
     # Lazy import to avoid circular dependency and handle missing package
     try:
-        from tools.security.sandbox_executor import SandboxExecutor, SandboxResult
+        from tools.security.sandbox_executor import SandboxExecutor, SandboxResult  # noqa: F401
     except ImportError:
         logger.info("SandboxExecutor not available — skipping sandbox isolation")
         return TestResult(

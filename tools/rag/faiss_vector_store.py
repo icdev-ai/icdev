@@ -65,7 +65,7 @@ class FAISSVectorStore(VectorStoreProvider):
         with open(self._meta_path, "w") as f:
             json.dump(self._metadata, f)
 
-    def _normalize(self, vec: List[float]) -> "np.ndarray":
+    def _normalize(self, vec: List[float]) -> "np.ndarray":  # noqa: F821
         """L2 normalize for cosine similarity via inner product."""
         import numpy as np
         v = np.array(vec, dtype=np.float32).reshape(1, -1)

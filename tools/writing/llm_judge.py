@@ -34,10 +34,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+import yaml
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
-
-import yaml
 
 logger = logging.getLogger(__name__)
 

@@ -45,8 +45,9 @@
 
             <!-- Compliance & ATO -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/oscal', '/prod-audit', '/ai-transparency', '/ai-accountability', '/sbd', '/evidence', '/lineage', '/cato', '/compliance-debt', '/ato-package', '/control-inheritance', '/mosa'] %}active{% endif %}">Compliance</a>
+                <a href="#" class="{% if request.path in ['/compliance', '/oscal', '/prod-audit', '/ai-transparency', '/ai-accountability', '/sbd', '/evidence', '/lineage', '/cato', '/compliance-debt', '/ato-package', '/control-inheritance', '/mosa'] %}active{% endif %}">Compliance</a>
                 <ul class="nav-dropdown-menu">
+                    <li><a href="/compliance">Compliance Hub</a></li>
                     <li><a href="/oscal">OSCAL</a></li>
                     <li><a href="/prod-audit">Production Audit</a></li>
                     <li><a href="/ai-transparency">AI Transparency</a></li>

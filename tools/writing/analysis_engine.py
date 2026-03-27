@@ -117,7 +117,7 @@ def _ai_detection(text: str) -> Dict[str, Any]:
 
     lengths = [len(s.split()) for s in sentences]
     mean_len = sum(lengths) / len(lengths)
-    variance = sum((l - mean_len) ** 2 for l in lengths) / len(lengths)
+    variance = sum((length - mean_len) ** 2 for length in lengths) / len(lengths)
     burstiness = (variance ** 0.5) / mean_len if mean_len > 0 else 0
 
     # Higher burstiness = more sentence length variation = more human-like

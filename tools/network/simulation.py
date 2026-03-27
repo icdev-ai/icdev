@@ -205,7 +205,7 @@ def _sim_bgp_bestpath(nodes, edges, params) -> dict:
         "paths": [{k: v for k, v in p.items() if k != "path_ids"} for p in scored_paths],
         "best_path": best["path"] if best else [],
         "decision_reason": decision_reason,
-        "summary": f"Best path: {' \u2192 '.join(best['path'])} ({decision_reason})" if best else "No paths found",
+        "summary": ("Best path: " + " \u2192 ".join(best["path"]) + f" ({decision_reason})") if best else "No paths found",
     }
 
 
@@ -1033,7 +1033,8 @@ def _add_narrative(result: dict) -> dict:
         margin = result.get("margin_db", 0)
         status = result.get("status", "")
         lines.append(f"Optical power budget: TX={result.get('tx_power_dbm', 0)}dBm, RX={result.get('rx_power_dbm', 0)}dBm.")
-        lines.append(f"Link margin: {margin}dB \u2014 {'Sufficient (>3dB recommended)' if margin > 3 else 'Marginal \u2014 risk of signal loss' if margin > 0 else 'INSUFFICIENT \u2014 link will not work'}.")
+        margin_desc = "Sufficient (>3dB recommended)" if margin > 3 else ("Marginal \u2014 risk of signal loss" if margin > 0 else "INSUFFICIENT \u2014 link will not work")
+        lines.append(f"Link margin: {margin}dB \u2014 {margin_desc}.")
 
     elif st == "jumbo_mtu":
         if result.get("jumbo_ready"):

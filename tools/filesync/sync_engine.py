@@ -745,7 +745,7 @@ def get_health(db_path=None) -> Dict:
 # WATCH MODE (D-SYNC-8 — real-time file watching)
 # =========================================================================
 # Track active watchers globally for stop/status
-_active_watchers: Dict[str, "FileWatcher"] = {}
+_active_watchers: Dict[str, "FileWatcher"] = {}  # noqa: F821
 
 
 def watch_job(job_id: str, db_path=None, blocking: bool = True) -> Dict:

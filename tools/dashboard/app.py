@@ -2216,6 +2216,68 @@ def create_app() -> Flask:
         """Migration Cost Estimator — 7R ROI calculator with compliance cost."""
         return render_template("migration_cost.html")
 
+    @app.route("/compliance")
+    def compliance_page():
+        """Compliance Hub — unified posture across all compliance modules."""
+        return render_template("compliance.html")
+
+    @app.route("/api/compliance/posture")
+    def api_compliance_posture():
+        """Return aggregate compliance posture for the hub page."""
+        conn = _get_db()
+        result = {
+            "controls_implemented": 0, "open_poams": 0,
+            "cat1_findings": 0, "ato_status": "--", "frameworks": []
+        }
+        try:
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM ssp_controls WHERE implementation_status = 'implemented'"
+                ).fetchone()
+                result["controls_implemented"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM poam_items WHERE status NOT IN ('completed', 'closed')"
+                ).fetchone()
+                result["open_poams"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT COUNT(*) as cnt FROM stig_findings WHERE severity = 'CAT I' AND status = 'Open'"
+                ).fetchone()
+                result["cat1_findings"] = row["cnt"]
+            except Exception:
+                pass
+            try:
+                row = conn.execute(
+                    "SELECT authorization_status FROM ato_packages ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                result["ato_status"] = row["authorization_status"] if row else "Not Started"
+            except Exception:
+                result["ato_status"] = "Not Started"
+            # Framework summaries
+            frameworks = [
+                ("NIST 800-53", "ssp_controls", "implementation_status", "implemented"),
+                ("FedRAMP", "ssp_controls", "implementation_status", "implemented"),
+            ]
+            for name, table, col, val in frameworks:
+                try:
+                    total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]
+                    impl = conn.execute(
+                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?", (val,)
+                    ).fetchone()["cnt"]
+                    result["frameworks"].append({
+                        "name": name, "total": total, "implemented": impl, "status": "Active"
+                    })
+                except Exception:
+                    pass
+        finally:
+            conn.close()
+        return jsonify(result)
+
     @app.route("/compliance-debt")
     def compliance_debt_page():
         """Compliance Debt Burndown — POAM, control, and STIG debt tracking."""

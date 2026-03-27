@@ -4,7 +4,6 @@
 
 Generates OSCAL JSON and CSV exports compatible with Xacta 360's
 import functionality. Used as fallback when API is unavailable or
-from tools.db.storage import get_connection
 for bulk data transfer.
 
 Formats:
@@ -21,12 +20,16 @@ Usage:
 import argparse
 import csv
 import json
+import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+from tools.db.storage import get_connection  # noqa: E402
 
 
 def _get_connection(db_path=None):
