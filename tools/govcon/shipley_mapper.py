@@ -353,7 +353,7 @@ def _safe_table_exists(conn, table_name):
     except Exception:
         # PostgreSQL or other backend
         try:
-            conn.execute(f"SELECT 1 FROM {table_name} LIMIT 0")  # noqa: S608
+            conn.execute(f"SELECT 1 FROM {table_name} LIMIT 0")  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
             return True
         except Exception:
             return False
@@ -613,7 +613,7 @@ def assess_maturity(project_id=None):
     # Check Level 2 indicators: basic processes exist
     opp_count = _safe_count(
         conn,
-        "SELECT COUNT(*) FROM proposal_opportunities"
+        "SELECT COUNT(*) FROM proposal_opportunities"  # nosec B608 -- table/column names are internal constants, not user input
         + (" WHERE id IS NOT NULL" if not project_id else ""),
     )
     if opp_count > 0:

@@ -34,7 +34,7 @@ logger = logging.getLogger("icdev.airgap.detector")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Hostnames / IP patterns that indicate a local/private endpoint
-_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1"}  # nosec B104 -- intentional bind-all for containerized/dev deployment
 _PRIVATE_IP_RE = re.compile(
     r"^(10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)$"
 )

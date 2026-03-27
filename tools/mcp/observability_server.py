@@ -84,7 +84,7 @@ def trace_query_handler(args: dict):
             where = "WHERE " + " AND ".join(clauses) if clauses else ""
             params.append(limit)
             rows = conn.execute(
-                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT ?",
+                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
 
@@ -105,23 +105,23 @@ def trace_summary_handler(args: dict):
 
         stats = {
             "total_spans": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where}", params
+                f"SELECT COUNT(*) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
             ).fetchone()[0],
             "total_traces": conn.execute(
-                f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params
+                f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
             ).fetchone()[0],
             "mcp_tool_calls": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} name = 'mcp.tool_call'",
+                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} name = 'mcp.tool_call'",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()[0],
             "error_spans": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} status_code = 'ERROR'",
+                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} status_code = 'ERROR'",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()[0],
         }
 
         avg = conn.execute(
-            f"SELECT AVG(duration_ms) FROM otel_spans {where}", params
+            f"SELECT AVG(duration_ms) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
         stats["avg_duration_ms"] = round(avg, 2) if avg else 0
 

@@ -274,7 +274,7 @@ class ToolChainValidator:
             cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM tool_chain_events "
+                    f"SELECT COUNT(*) FROM tool_chain_events "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE {where} AND severity = ? AND created_at >= ?",
                     params + [severity, cutoff],
                 ).fetchone()

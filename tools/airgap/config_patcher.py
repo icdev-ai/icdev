@@ -75,7 +75,7 @@ def _is_provider_local(provider_cfg: dict) -> bool:
         from urllib.parse import urlparse
         parsed = urlparse(base_url)
         host = (parsed.hostname or "").lower()
-        return host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")
+        return host in ("localhost", "127.0.0.1", "0.0.0.0", "::1")  # nosec B104 -- intentional bind-all for containerized/dev deployment
 
 
 def _get_local_models(config: dict) -> List[str]:

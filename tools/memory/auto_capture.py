@@ -222,7 +222,7 @@ def flush_buffer(db_path=None):
         if flushed_ids:
             placeholders = ",".join("?" * len(flushed_ids))
             conn.execute(
-                f"DELETE FROM memory_buffer WHERE id IN ({placeholders})",
+                f"DELETE FROM memory_buffer WHERE id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
                 flushed_ids,
             )
 

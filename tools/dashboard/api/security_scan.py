@@ -184,7 +184,7 @@ def scan_findings():
                 p.append(project_id)
             where_clause = (" WHERE " + " AND ".join(where_stig)) if where_stig else ""
             union_parts.append(
-                f"""SELECT id, project_id, stig_id AS vuln_id, title, severity,
+                f"""SELECT id, project_id, stig_id AS vuln_id, title, severity,  # nosec B608 -- table/column names are internal constants, not user input
                            status, 'stig' AS source, CAST(created_at AS TEXT) AS created_at
                     FROM stig_findings{where_clause}"""
             )
@@ -206,7 +206,7 @@ def scan_findings():
                 p.append(project_id)
             where_clause = (" WHERE " + " AND ".join(where_dep)) if where_dep else ""
             union_parts.append(
-                f"""SELECT id, project_id, cve_id AS vuln_id, title, severity,
+                f"""SELECT id, project_id, cve_id AS vuln_id, title, severity,  # nosec B608 -- table/column names are internal constants, not user input
                            status, 'dependency' AS source, CAST(created_at AS TEXT) AS created_at
                     FROM dependency_vulnerabilities{where_clause}"""
             )
@@ -220,7 +220,7 @@ def scan_findings():
 
         # Total count
         count_row = conn.execute(
-            f"SELECT COUNT(*) FROM ({union_sql})", params_count
+            f"SELECT COUNT(*) FROM ({union_sql})", params_count  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         total = count_row[0]
 
@@ -345,7 +345,7 @@ def scan_trends():
         # --- STIG findings by week ---
         if _table_exists(conn, "stig_findings"):
             rows = conn.execute(
-                f"""SELECT {week_expr} AS week, COUNT(*)
+                f"""SELECT {week_expr} AS week, COUNT(*)  # nosec B608 -- table/column names are internal constants, not user input
                    FROM stig_findings
                    WHERE created_at IS NOT NULL
                    GROUP BY week ORDER BY week"""
@@ -358,7 +358,7 @@ def scan_trends():
         # --- Dependency vulnerabilities by week ---
         if _table_exists(conn, "dependency_vulnerabilities"):
             rows = conn.execute(
-                f"""SELECT {week_expr} AS week, COUNT(*)
+                f"""SELECT {week_expr} AS week, COUNT(*)  # nosec B608 -- table/column names are internal constants, not user input
                    FROM dependency_vulnerabilities
                    WHERE created_at IS NOT NULL
                    GROUP BY week ORDER BY week"""

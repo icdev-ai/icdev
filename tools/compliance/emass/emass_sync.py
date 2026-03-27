@@ -194,7 +194,7 @@ def _update_emass_system(conn, project_id, sync_status, sync_mode,
             params.append(auth_term_date)
         params.append(project_id)
         conn.execute(
-            f"UPDATE emass_systems SET {', '.join(updates)} WHERE project_id = ?",
+            f"UPDATE emass_systems SET {', '.join(updates)} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         )
     else:

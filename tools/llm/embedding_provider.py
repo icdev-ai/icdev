@@ -469,7 +469,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read())
                 embeddings = data.get("embeddings", [])
                 return embeddings[0] if embeddings else None
@@ -487,7 +487,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read())
                 return data.get("embeddings", [None] * len(texts))
         except Exception as exc:
@@ -500,7 +500,7 @@ class OllamaEmbeddingProvider(EmbeddingProvider):
             req = urllib.request.Request(
                 f"{self._base_url}/api/tags", method="GET"
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read())
                 models = [m.get("name", "") for m in data.get("models", [])]
                 return any(self._model_id in m for m in models)

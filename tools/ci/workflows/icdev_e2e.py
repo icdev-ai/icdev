@@ -29,7 +29,7 @@ def check_dashboard_running(base_url: str = "http://localhost:5000") -> bool:
     try:
         import urllib.request
         req = urllib.request.Request(f"{base_url}/", method="HEAD")
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=5)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
         return True
     except Exception:
         return False

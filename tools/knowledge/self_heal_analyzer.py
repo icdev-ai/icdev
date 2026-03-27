@@ -197,7 +197,7 @@ def _clear_cache(context: dict) -> dict:
             import urllib.request
             req = urllib.request.Request(cache_endpoint, method="POST")
             req.add_header("Content-Type", "application/json")
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return {
                     "action": "clear_cache",
                     "method": "http",

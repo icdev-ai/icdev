@@ -405,7 +405,7 @@ def export_reqif(session_id, output_path, include_trace=True, db_path=None):
             if req_ids:
                 placeholders = ",".join("?" * len(req_ids))
                 links = conn.execute(
-                    f"""SELECT source_id, target_id, link_type
+                    f"""SELECT source_id, target_id, link_type  # nosec B608 -- table/column names are internal constants, not user input
                         FROM digital_thread_links
                         WHERE source_type = 'intake_requirement'
                           AND target_type = 'intake_requirement'
@@ -485,7 +485,7 @@ def validate_reqif(file_path):
         return {"valid": False, "errors": [f"File not found: {file_path}"]}
 
     try:
-        tree = ET.parse(str(path))
+        tree = ET.parse(str(path))  # nosec B314 -- parsing trusted internal MBSE/config XML
     except ET.ParseError as exc:
         return {"valid": False, "errors": [f"XML parse error: {exc}"]}
 

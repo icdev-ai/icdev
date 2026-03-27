@@ -47,7 +47,7 @@ def list_traces():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
 
-        traces = conn.execute(f"""
+        traces = conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
             SELECT trace_id,
                    COUNT(*) as span_count,
                    MIN(start_time) as first_span,
@@ -62,7 +62,7 @@ def list_traces():
         """, params + (limit, offset)).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params
+            f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -113,24 +113,24 @@ def trace_stats():
 
         stats = {
             "total_spans": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where}", params
+                f"SELECT COUNT(*) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
             ).fetchone()[0],
             "total_traces": conn.execute(
-                f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params
+                f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
             ).fetchone()[0],
             "mcp_tool_calls": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} name = 'mcp.tool_call'",
+                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} name = 'mcp.tool_call'",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()[0],
             "error_spans": conn.execute(
-                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} status_code = 'ERROR'",
+                f"SELECT COUNT(*) FROM otel_spans {where} {'AND' if where else 'WHERE'} status_code = 'ERROR'",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()[0],
         }
 
         # Avg duration
         avg = conn.execute(
-            f"SELECT AVG(duration_ms) FROM otel_spans {where}", params
+            f"SELECT AVG(duration_ms) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
         stats["avg_duration_ms"] = round(avg, 2) if avg else 0
 
@@ -157,12 +157,12 @@ def list_entities():
         params = (project_id,) if project_id else ()
 
         entities = conn.execute(
-            f"SELECT * FROM prov_entities {where} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM prov_entities {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit,),
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM prov_entities {where}", params
+            f"SELECT COUNT(*) FROM prov_entities {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -183,12 +183,12 @@ def list_activities():
         params = (project_id,) if project_id else ()
 
         activities = conn.execute(
-            f"SELECT * FROM prov_activities {where} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM prov_activities {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit,),
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM prov_activities {where}", params
+            f"SELECT COUNT(*) FROM prov_activities {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -209,7 +209,7 @@ def list_relations():
         params = (project_id,) if project_id else ()
 
         relations = conn.execute(
-            f"SELECT * FROM prov_relations {where} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM prov_relations {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit,),
         ).fetchall()
 
@@ -333,26 +333,26 @@ def xai_summary():
 
         # Trace stats
         summary["total_spans"] = conn.execute(
-            f"SELECT COUNT(*) FROM otel_spans {where}", params
+            f"SELECT COUNT(*) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
         summary["total_traces"] = conn.execute(
-            f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params
+            f"SELECT COUNT(DISTINCT trace_id) FROM otel_spans {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         # Provenance stats
         summary["prov_entities"] = conn.execute(
-            f"SELECT COUNT(*) FROM prov_entities {where}", params
+            f"SELECT COUNT(*) FROM prov_entities {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
         summary["prov_activities"] = conn.execute(
-            f"SELECT COUNT(*) FROM prov_activities {where}", params
+            f"SELECT COUNT(*) FROM prov_activities {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
         summary["prov_relations"] = conn.execute(
-            f"SELECT COUNT(*) FROM prov_relations {where}", params
+            f"SELECT COUNT(*) FROM prov_relations {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         # SHAP stats
         summary["shap_analyses"] = conn.execute(
-            f"SELECT COUNT(DISTINCT trace_id) FROM shap_attributions {where}", params
+            f"SELECT COUNT(DISTINCT trace_id) FROM shap_attributions {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()

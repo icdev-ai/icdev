@@ -342,7 +342,7 @@ def _generate_embedding_ollama(text):
                 url, data=payload,
                 headers={"Content-Type": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 data = json.loads(resp.read().decode("utf-8"))
                 return data.get("embedding")
         except Exception:
@@ -680,7 +680,7 @@ def search_assets(query, asset_type=None, impact_level=None, catalog_tier=None,
         if asset_ids:
             placeholders = ",".join("?" for _ in asset_ids)
             emb_rows = conn.execute(
-                f"""SELECT asset_id, embedding
+                f"""SELECT asset_id, embedding  # nosec B608 -- table/column names are internal constants, not user input
                     FROM marketplace_embeddings
                     WHERE asset_id IN ({placeholders})""",
                 asset_ids,

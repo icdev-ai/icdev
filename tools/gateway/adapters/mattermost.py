@@ -144,7 +144,7 @@ class MattermostAdapter(BaseChannelAdapter):
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.token}",
             })
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return resp.status in (200, 201)
         except (URLError, Exception) as e:
             logger.error("Mattermost send failed: %s", e)

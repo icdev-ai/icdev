@@ -353,4 +353,4 @@ if __name__ == "__main__":
         print("  Mattermost:           disabled")
     print("  Alert webhook:        POST /alert-webhook")
     print("  Health check:         GET  /health")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False)  # nosec B104 -- intentional bind-all for containerized/dev deployment

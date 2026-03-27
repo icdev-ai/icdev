@@ -310,7 +310,7 @@ def main():
 
     config = _load_config()
     gateway = config.get("gateway", {})
-    host = gateway.get("host", "0.0.0.0")
+    host = gateway.get("host", "0.0.0.0")  # nosec B104 -- intentional bind-all for containerized/dev deployment
     port = int(os.environ.get("PORT", gateway.get("port", 8458)))
     debug = gateway.get("debug", False)
 

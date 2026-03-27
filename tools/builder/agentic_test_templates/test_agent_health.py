@@ -123,7 +123,7 @@ class TestAgentHealth:
         mock_urlopen.return_value = mock_response
 
         import urllib.request
-        resp = urllib.request.urlopen("https://localhost:8443/health")
+        resp = urllib.request.urlopen("https://localhost:8443/health")  # nosec B310 -- URL scheme validated; internal/configured endpoints only
         data = json.loads(resp.read().decode())
         assert "status" in data, "Health response missing 'status' field"
         assert data["status"] == "healthy"

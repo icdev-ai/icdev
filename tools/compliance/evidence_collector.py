@@ -144,21 +144,21 @@ def _count_project_records(
     cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table_name})").fetchall()]
     if "project_id" not in cols:
         # Table without project_id — count all records
-        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         count = row[0]
         # Try to get latest timestamp
         latest = None
         for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
             if ts_col in cols:
                 ts_row = conn.execute(
-                    f"SELECT MAX({ts_col}) FROM {table_name}"
+                    f"SELECT MAX({ts_col}) FROM {table_name}"  # nosec B608 -- table/column names are internal constants, not user input
                 ).fetchone()
                 latest = ts_row[0] if ts_row else None
                 break
         return {"table": table_name, "exists": True, "count": count, "latest": latest}
 
     row = conn.execute(
-        f"SELECT COUNT(*) FROM {table_name} WHERE project_id = ?",
+        f"SELECT COUNT(*) FROM {table_name} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
         (project_id,),
     ).fetchone()
     count = row[0]
@@ -168,7 +168,7 @@ def _count_project_records(
     for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
         if ts_col in cols:
             ts_row = conn.execute(
-                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = ?",
+                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                 (project_id,),
             ).fetchone()
             latest = ts_row[0] if ts_row else None

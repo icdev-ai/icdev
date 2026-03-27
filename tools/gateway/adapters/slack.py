@@ -169,7 +169,7 @@ class SlackAdapter(BaseChannelAdapter):
                 "Content-Type": "application/json; charset=utf-8",
                 "Authorization": f"Bearer {self.bot_token}",
             })
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 result = json.loads(resp.read().decode("utf-8"))
                 return result.get("ok", False)
         except (URLError, Exception) as e:

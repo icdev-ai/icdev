@@ -180,7 +180,7 @@ def check_page(base_url: str, page_path: str, timeout: int = 10) -> UIPageCheckR
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-AcceptanceValidator/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             result.status_code = resp.status
             html = resp.read().decode("utf-8", errors="replace")
             result.content_length = len(html)

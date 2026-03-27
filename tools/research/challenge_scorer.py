@@ -832,7 +832,7 @@ def score_challenge(challenge_id, db_path=None):
             if isinstance(signal_ids, list) and signal_ids:
                 placeholders = ",".join("?" for _ in signal_ids)
                 sig_rows = conn.execute(
-                    f"SELECT * FROM research_signals WHERE id IN ({placeholders})",
+                    f"SELECT * FROM research_signals WHERE id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
                     signal_ids,
                 ).fetchall()
                 signals = [dict(sr) for sr in sig_rows]

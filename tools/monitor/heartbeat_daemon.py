@@ -236,7 +236,7 @@ def _notify(
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=3)  # noqa: S310
+        urllib.request.urlopen(req, timeout=3)  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
     except (urllib.error.URLError, OSError, ValueError):
         pass  # dashboard may not be running
 

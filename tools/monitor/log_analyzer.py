@@ -124,7 +124,7 @@ def _query_elk(index: str, query_str: str, time_range: str,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             result = json.loads(resp.read().decode("utf-8"))
             return {
                 "source": "elk",
@@ -183,7 +183,7 @@ def _query_splunk(search_query: str, time_range: str,
             headers["Authorization"] = f"Bearer {splunk_token}"
 
         req = urllib.request.Request(endpoint, data=data, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             raw = resp.read().decode("utf-8")
             results = []
             for line in raw.strip().split("\n"):

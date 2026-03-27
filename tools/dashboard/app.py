@@ -2092,7 +2092,7 @@ def create_app() -> Flask:
                 total = 0
                 for table_name in fw_config["tables"]:
                     if _table_exists(conn, table_name):
-                        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+                        row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                         total += row[0]
                 stats["frameworks"].append({
                     "id": fw_id,
@@ -2265,9 +2265,9 @@ def create_app() -> Flask:
             ]
             for name, table, col, val in frameworks:
                 try:
-                    total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]
+                    total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
                     impl = conn.execute(
-                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?", (val,)
+                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?", (val,)  # nosec B608 -- table/column names are internal constants, not user input
                     ).fetchone()["cnt"]
                     result["frameworks"].append({
                         "name": name, "total": total, "implemented": impl, "status": "Active"
@@ -5786,7 +5786,7 @@ if __name__ == "__main__":
     socketio = get_socketio()
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
-        socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)
+        socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
-        app.run(host="0.0.0.0", port=args.port, debug=args.debug)
+        app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment

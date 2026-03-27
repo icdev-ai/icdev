@@ -724,7 +724,7 @@ def scan_academic_papers(config, session_config=None):
                 continue
 
             try:
-                root = ET.fromstring(raw_text)
+                root = ET.fromstring(raw_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
             except ET.ParseError as e:
                 signals.append(_error_signal("academic_paper", f"arxiv {category} XML parse: {e}"))
                 time.sleep(delay)
@@ -1206,7 +1206,7 @@ def scan_news_blogs(config, session_config=None):
 
         # Parse RSS/Atom XML
         try:
-            root = ET.fromstring(raw_text)
+            root = ET.fromstring(raw_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
         except ET.ParseError:
             signals.append(_error_signal("news_blog", f"rss XML parse error: {feed_url}"))
             time.sleep(delay)

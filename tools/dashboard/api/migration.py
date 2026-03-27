@@ -141,11 +141,11 @@ def list_assessments():
         where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM migration_assessments{where_sql}", params
+            f"SELECT COUNT(*) FROM migration_assessments{where_sql}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         rows = conn.execute(
-            f"SELECT id, legacy_app_id, component_id, assessment_scope, "
+            f"SELECT id, legacy_app_id, component_id, assessment_scope, "  # nosec B608 -- table/column names are internal constants, not user input
             f"rehost_score, replatform_score, refactor_score, rearchitect_score, "
             f"repurchase_score, retire_score, retain_score, "
             f"recommended_strategy, cost_estimate_hours, risk_score, "
@@ -220,11 +220,11 @@ def list_plans():
         where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM migration_plans{where_sql}", params
+            f"SELECT COUNT(*) FROM migration_plans{where_sql}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         rows = conn.execute(
-            f"SELECT id, legacy_app_id, plan_name, strategy, target_language, "
+            f"SELECT id, legacy_app_id, plan_name, strategy, target_language, "  # nosec B608 -- table/column names are internal constants, not user input
             f"target_framework, target_database, target_architecture, "
             f"migration_approach, total_tasks, completed_tasks, status, "
             f"estimated_hours, actual_hours, start_date, target_date, "

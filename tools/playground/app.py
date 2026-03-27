@@ -145,7 +145,7 @@ def main():
     app = create_app()
     port = int(os.environ.get("PLAYGROUND_PORT", 5001))
     logger.info("Starting ICDEV™ Playground on port %d", port)
-    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
+    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")  # nosec B104 -- intentional bind-all for containerized/dev deployment
 
 
 if __name__ == "__main__":

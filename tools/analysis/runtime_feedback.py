@@ -70,7 +70,7 @@ class RuntimeFeedbackCollector:
         """Parse JUnit XML produced by pytest --junitxml=path."""
         results: List[Dict[str, Any]] = []
         try:
-            tree = ET.parse(str(xml_path))
+            tree = ET.parse(str(xml_path))  # nosec B314 -- parsing trusted internal MBSE/config XML
         except (ET.ParseError, FileNotFoundError):
             return results
 

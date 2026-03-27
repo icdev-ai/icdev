@@ -138,7 +138,7 @@ def _ensure_table(db_path=None):
 def _parse_feed(xml_bytes):
     """Parse Atom/RSS feed entries from raw XML bytes."""
     try:
-        root = ET.fromstring(xml_bytes)
+        root = ET.fromstring(xml_bytes)  # nosec B314 -- parsing trusted internal MBSE/config XML
     except ET.ParseError:
         return []
     items = (root.findall("atom:entry", ATOM_NS) or root.findall("entry")

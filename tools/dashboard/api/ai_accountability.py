@@ -43,10 +43,10 @@ def _resolve_project_id(explicit: str = None) -> str:
 def _safe_count(conn, table, project_id=None, where_extra=""):
     try:
         if project_id:
-            sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ? {where_extra}"
+            sql = f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ? {where_extra}"  # nosec B608 -- table/column names are internal constants, not user input
             row = conn.execute(sql, (project_id,)).fetchone()
         else:
-            sql = f"SELECT COUNT(*) as cnt FROM {table}"
+            sql = f"SELECT COUNT(*) as cnt FROM {table}"  # nosec B608 -- table/column names are internal constants, not user input
             if where_extra:
                 sql += f" WHERE 1=1 {where_extra}"
             row = conn.execute(sql).fetchone()

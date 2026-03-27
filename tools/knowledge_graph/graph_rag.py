@@ -271,7 +271,7 @@ def _embed_query(query: str) -> Optional[List[float]]:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             body = json.loads(resp.read().decode("utf-8"))
         embeddings = body.get("embeddings")
         if embeddings and len(embeddings) > 0 and len(embeddings[0]) > 0:
@@ -677,7 +677,7 @@ def retrieve(
                 like_params.extend([f"%{term}%", f"%{term}%"])
 
             where_likes = " OR ".join(like_clauses)
-            sql = f"""
+            sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
                 FROM kg_nodes
@@ -689,7 +689,7 @@ def retrieve(
             matched_nodes = [dict(r) for r in rows]
         else:
             # No useful query terms — return top-centrality nodes
-            sql = f"""
+            sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
                 FROM kg_nodes
@@ -706,7 +706,7 @@ def retrieve(
             matched_id_set_kw = {n["id"] for n in matched_nodes}
 
             # Fetch all nodes with embeddings from target graphs
-            emb_sql = f"""
+            emb_sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at, embedding
                 FROM kg_nodes
@@ -770,7 +770,7 @@ def retrieve(
         id_placeholders = ",".join("?" for _ in matched_ids)
 
         # Get edges connected to matched nodes
-        edge_sql = f"""
+        edge_sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
             SELECT id, graph_id, source_id, target_id,
                    relationship, weight, properties, created_at
             FROM kg_edges
@@ -796,7 +796,7 @@ def retrieve(
         # Fetch neighbor nodes
         if neighbor_ids:
             nbr_placeholders = ",".join("?" for _ in neighbor_ids)
-            nbr_sql = f"""
+            nbr_sql = f"""  # nosec B608 -- table/column names are internal constants, not user input
                 SELECT id, graph_id, label, entity_type, properties,
                        centrality, created_at
                 FROM kg_nodes

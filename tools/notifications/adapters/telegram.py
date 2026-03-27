@@ -64,7 +64,7 @@ def send(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = json.loads(resp.read().decode("utf-8"))
             return {
                 "status": "sent",

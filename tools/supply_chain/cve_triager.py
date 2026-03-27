@@ -290,7 +290,7 @@ def update_triage(triage_id, status, remediation_plan=None, assigned_to=None,
 
         params.append(triage_id)
         conn.execute(
-            f"UPDATE cve_triage SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE cve_triage SET {', '.join(updates)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         )
         conn.commit()

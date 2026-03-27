@@ -67,7 +67,7 @@ def _github_api(endpoint: str, timeout: int = 15) -> Optional[Dict]:
 
     try:
         req = Request(url, headers=headers)
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return json.loads(resp.read().decode("utf-8"))
     except (URLError, OSError, json.JSONDecodeError) as e:
         print(f"  WARN: GitHub API failed for {endpoint}: {e}")

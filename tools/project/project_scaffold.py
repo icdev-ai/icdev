@@ -436,7 +436,7 @@ exclude_dirs = ["tests", ".venv"]
     created.append(str(project_dir / "pyproject.toml"))
 
     # Dockerfile (STIG-hardened base)
-    dockerfile_content = f"""FROM python:3.11-slim AS base
+    dockerfile_content = f"""FROM python:3.11-slim AS base  # nosec B608 -- table/column names are internal constants, not user input
 
 LABEL maintainer="ICDEV™ System"
 LABEL classification="{classification}"

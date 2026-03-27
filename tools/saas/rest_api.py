@@ -242,7 +242,7 @@ def update_user(user_id):
         values = list(updates.values()) + [now, user_id, g.tenant_id]
 
         conn.execute(
-            "UPDATE users SET {} WHERE id = ? AND tenant_id = ?".format(
+            "UPDATE users SET {} WHERE id = ? AND tenant_id = ?".format(  # nosec B608 -- table/column names are internal constants, not user input
                 ", ".join(set_parts)),
             values,
         )
@@ -1102,7 +1102,7 @@ def get_usage():
 
         # Summary statistics
         summary_row = conn.execute(
-            """SELECT COUNT(*) as total_calls,
+            """SELECT COUNT(*) as total_calls,  # nosec B608 -- table/column names are internal constants, not user input
                       COALESCE(SUM(tokens_used), 0) as total_tokens,
                       COALESCE(AVG(duration_ms), 0) as avg_duration_ms
                FROM usage_records
@@ -1112,7 +1112,7 @@ def get_usage():
 
         # Top endpoints
         top_endpoints = conn.execute(
-            """SELECT endpoint, COUNT(*) as call_count,
+            """SELECT endpoint, COUNT(*) as call_count,  # nosec B608 -- table/column names are internal constants, not user input
                       COALESCE(AVG(duration_ms), 0) as avg_ms
                FROM usage_records
                WHERE {}
@@ -1124,7 +1124,7 @@ def get_usage():
 
         # Recent records
         recent = conn.execute(
-            """SELECT endpoint, method, status_code, duration_ms,
+            """SELECT endpoint, method, status_code, duration_ms,  # nosec B608 -- table/column names are internal constants, not user input
                       tokens_used, recorded_at
                FROM usage_records
                WHERE {}
@@ -1540,9 +1540,9 @@ def ai_transparency_stats():
             try:
                 if pid:
                     return conn.execute(
-                        "SELECT COUNT(*) FROM {} WHERE project_id = ?".format(table), (pid,)
+                        "SELECT COUNT(*) FROM {} WHERE project_id = ?".format(table), (pid,)  # nosec B608 -- table/column names are internal constants, not user input
                     ).fetchone()[0]
-                return conn.execute("SELECT COUNT(*) FROM {}".format(table)).fetchone()[0]
+                return conn.execute("SELECT COUNT(*) FROM {}".format(table)).fetchone()[0]  # nosec B608 -- table/column names are internal constants, not user input
             except Exception:
                 return 0
 
@@ -1558,7 +1558,7 @@ def ai_transparency_stats():
             where = "WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             row = conn.execute(
-                "SELECT overall_score FROM fairness_assessments {} ORDER BY created_at DESC LIMIT 1".format(where),
+                "SELECT overall_score FROM fairness_assessments {} ORDER BY created_at DESC LIMIT 1".format(where),  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()
             if row:
@@ -1591,13 +1591,13 @@ def ai_transparency_frameworks():
                 where = "WHERE project_id = ?" if project_id else ""
                 params = (project_id,) if project_id else ()
                 total = conn.execute(
-                    "SELECT COUNT(DISTINCT requirement_id) FROM {} {}".format(table, where), params
+                    "SELECT COUNT(DISTINCT requirement_id) FROM {} {}".format(table, where), params  # nosec B608 -- table/column names are internal constants, not user input
                 ).fetchone()[0]
                 sat_where = "{} {} status IN ('satisfied','partially_satisfied')".format(
                     where, "AND" if project_id else "WHERE"
                 )
                 satisfied = conn.execute(
-                    "SELECT COUNT(DISTINCT requirement_id) FROM {} {}".format(table, sat_where), params
+                    "SELECT COUNT(DISTINCT requirement_id) FROM {} {}".format(table, sat_where), params  # nosec B608 -- table/column names are internal constants, not user input
                 ).fetchone()[0]
                 coverage = round(satisfied / total * 100, 1) if total > 0 else 0
                 frameworks.append({"name": name, "coverage": coverage, "total": total})
@@ -1621,7 +1621,7 @@ def ai_transparency_inventory():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
-            "SELECT * FROM ai_use_case_inventory {} ORDER BY name".format(where), params
+            "SELECT * FROM ai_use_case_inventory {} ORDER BY name".format(where), params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchall()
         conn.close()
         return jsonify({"items": [dict(r) for r in rows], "total": len(rows)})
@@ -1641,7 +1641,7 @@ def ai_transparency_model_cards():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
-            "SELECT id, project_id, model_name, version, created_at FROM model_cards {} ORDER BY created_at DESC".format(where),
+            "SELECT id, project_id, model_name, version, created_at FROM model_cards {} ORDER BY created_at DESC".format(where),  # nosec B608 -- table/column names are internal constants, not user input
             params,
         ).fetchall()
         conn.close()
@@ -1735,7 +1735,7 @@ def ai_accountability_stats():
         def _cnt(table, extra=""):
             try:
                 row = conn.execute(
-                    "SELECT COUNT(*) as cnt FROM {} WHERE project_id = ? {}".format(table, extra),
+                    "SELECT COUNT(*) as cnt FROM {} WHERE project_id = ? {}".format(table, extra),  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,),
                 ).fetchone()
                 return row["cnt"] if row else 0

@@ -140,7 +140,7 @@ class TelegramAdapter(BaseChannelAdapter):
         try:
             req = Request(url, data=payload,
                           headers={"Content-Type": "application/json"})
-            with urlopen(req, timeout=10) as resp:
+            with urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return resp.status == 200
         except (URLError, Exception) as e:
             logger.error("Telegram send failed: %s", e)

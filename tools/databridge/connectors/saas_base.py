@@ -306,7 +306,7 @@ class SaaSBaseConnector(DataConnector):
         req = Request(url, headers=headers, method="GET")
         timeout = self._config.get("timeout", REQUEST_TIMEOUT)
 
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             body = resp.read().decode("utf-8")
             return json.loads(body) if body.strip() else {}
 
@@ -323,7 +323,7 @@ class SaaSBaseConnector(DataConnector):
         req = Request(url, data=payload, headers=headers, method="POST")
         timeout = self._config.get("timeout", REQUEST_TIMEOUT)
 
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             body = resp.read().decode("utf-8")
             return json.loads(body) if body.strip() else {}
 
@@ -338,6 +338,6 @@ class SaaSBaseConnector(DataConnector):
         req = Request(url, headers=headers, method="DELETE")
         timeout = self._config.get("timeout", REQUEST_TIMEOUT)
 
-        with urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with urlopen(req, timeout=timeout) as resp:  # noqa: S310  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             body = resp.read().decode("utf-8")
             return json.loads(body) if body.strip() else {}

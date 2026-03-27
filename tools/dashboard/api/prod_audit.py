@@ -103,7 +103,7 @@ def remediation_log():
         params = (check_id,) if check_id else ()
 
         rows = conn.execute(
-            f"SELECT id, source_audit_id, check_id, check_name, category, confidence, "
+            f"SELECT id, source_audit_id, check_id, check_name, category, confidence, "  # nosec B608 -- table/column names are internal constants, not user input
             f"tier, status, fix_strategy, message, duration_ms, "
             f"verification_status, dry_run, created_at "
             f"FROM remediation_audit_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
@@ -111,7 +111,7 @@ def remediation_log():
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM remediation_audit_log {where}", params
+            f"SELECT COUNT(*) FROM remediation_audit_log {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()

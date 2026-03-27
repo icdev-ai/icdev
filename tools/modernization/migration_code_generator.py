@@ -1093,7 +1093,7 @@ def generate_migration_tests(plan_id, output_dir="."):
         for trow in tables:
             tname = trow["table_name"]
             func = _safe_var_name(f"test_data_{tname}")
-            data_tests.append(textwrap.dedent(f"""\
+            data_tests.append(textwrap.dedent(f"""\  # nosec B608 -- table/column names are internal constants, not user input
                 def {func}(legacy_conn, modern_conn):
                     \"\"\"Verify row counts match for table {tname}.\"\"\"
                     legacy_count = legacy_conn.execute("SELECT COUNT(*) FROM {tname}").fetchone()[0]

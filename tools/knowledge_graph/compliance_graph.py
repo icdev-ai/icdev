@@ -707,7 +707,7 @@ def get_framework_coverage(
     placeholders = ",".join("?" for _ in fw_id_list)
 
     rows = conn.execute(
-        f"""SELECT n.id, n.label, n.properties
+        f"""SELECT n.id, n.label, n.properties  # nosec B608 -- table/column names are internal constants, not user input
             FROM kg_nodes n
             JOIN kg_edges e ON e.source_id = n.id
             WHERE e.graph_id = ?

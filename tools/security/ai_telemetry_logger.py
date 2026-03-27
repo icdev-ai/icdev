@@ -354,7 +354,7 @@ class AITelemetryLogger:
 
             # Overall summary
             row = conn.execute(
-                f"SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), "
+                f"SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), "  # nosec B608 -- table/column names are internal constants, not user input
                 f"COALESCE(SUM(thinking_tokens), 0), COALESCE(SUM(cost_usd), 0), "
                 f"COALESCE(AVG(latency_ms), 0) FROM ai_telemetry WHERE {where}",
                 params,
@@ -363,7 +363,7 @@ class AITelemetryLogger:
             # By provider
             by_provider = {}
             for prow in conn.execute(
-                f"SELECT provider, COUNT(*), COALESCE(SUM(cost_usd), 0), "
+                f"SELECT provider, COUNT(*), COALESCE(SUM(cost_usd), 0), "  # nosec B608 -- table/column names are internal constants, not user input
                 f"COALESCE(SUM(input_tokens + output_tokens), 0) "
                 f"FROM ai_telemetry WHERE {where} GROUP BY provider",
                 params,
@@ -377,7 +377,7 @@ class AITelemetryLogger:
             # By model
             by_model = {}
             for mrow in conn.execute(
-                f"SELECT model_id, COUNT(*), COALESCE(SUM(cost_usd), 0) "
+                f"SELECT model_id, COUNT(*), COALESCE(SUM(cost_usd), 0) "  # nosec B608 -- table/column names are internal constants, not user input
                 f"FROM ai_telemetry WHERE {where} GROUP BY model_id",
                 params,
             ):

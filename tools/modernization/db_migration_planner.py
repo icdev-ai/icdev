@@ -603,10 +603,10 @@ def generate_data_migration_scripts(app_id: str, target_db: str,
         # Row count validation
         validation_lines.append(f"-- Validate row counts: {qualified}")
         validation_lines.append(
-            f"SELECT 'source' AS side, COUNT(*) AS row_count FROM {source_qualified};"
+            f"SELECT 'source' AS side, COUNT(*) AS row_count FROM {source_qualified};"  # nosec B608 -- table/column names are internal constants, not user input
         )
         validation_lines.append(
-            f"SELECT 'target' AS side, COUNT(*) AS row_count FROM {qualified};"
+            f"SELECT 'target' AS side, COUNT(*) AS row_count FROM {qualified};"  # nosec B608 -- table/column names are internal constants, not user input
         )
         validation_lines.append("")
 
@@ -915,7 +915,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
 
         # 1. Row count comparison
         lines.append("-- Row count")
-        lines.append(f"SELECT '{qualified}' AS table_name, COUNT(*) AS row_count FROM {qualified};")
+        lines.append(f"SELECT '{qualified}' AS table_name, COUNT(*) AS row_count FROM {qualified};")  # nosec B608 -- table/column names are internal constants, not user input
         lines.append("")
 
         # 2. Checksum on primary key columns
@@ -927,7 +927,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
             )
             lines.append("-- Primary key checksum")
             lines.append(
-                f"SELECT '{qualified}' AS table_name, "
+                f"SELECT '{qualified}' AS table_name, "  # nosec B608 -- table/column names are internal constants, not user input
                 f"COUNT(DISTINCT ({pk_concat})) AS distinct_pk_count "
                 f"FROM {qualified};"
             )
@@ -944,7 +944,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
                     f"AS {col['column_name']}_nulls"
                 )
             lines.append(
-                f"SELECT '{qualified}' AS table_name,\n"
+                f"SELECT '{qualified}' AS table_name,\n"  # nosec B608 -- table/column names are internal constants, not user input
                 f"    {(',{}'.format(chr(10)) + '    ').join(null_selects)}\n"
                 f"FROM {qualified};"
             )
@@ -972,7 +972,7 @@ def generate_migration_validation(app_id: str, output_dir: str) -> str:
                 mm_selects.append(f"MIN({col['column_name']}) AS {col['column_name']}_min")
                 mm_selects.append(f"MAX({col['column_name']}) AS {col['column_name']}_max")
             lines.append(
-                f"SELECT '{qualified}' AS table_name,\n"
+                f"SELECT '{qualified}' AS table_name,\n"  # nosec B608 -- table/column names are internal constants, not user input
                 f"    {(',{}'.format(chr(10)) + '    ').join(mm_selects)}\n"
                 f"FROM {qualified};"
             )

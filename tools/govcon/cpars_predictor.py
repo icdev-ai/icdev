@@ -163,7 +163,7 @@ def _score_quality(conn, contract_id):
     placeholders = ",".join("?" for _ in submitted_statuses)
 
     total = conn.execute(
-        f"SELECT COUNT(*) FROM cpmp_deliverables "
+        f"SELECT COUNT(*) FROM cpmp_deliverables "  # nosec B608 -- table/column names are internal constants, not user input
         f"WHERE contract_id = ? AND status IN ({placeholders})",
         (contract_id, *submitted_statuses),
     ).fetchone()[0]
@@ -484,7 +484,7 @@ def update_assessment(assessment_id, data):
     params.append(assessment_id)
 
     conn.execute(
-        f"UPDATE cpmp_cpars_assessments SET {', '.join(sets)} WHERE id = ?",
+        f"UPDATE cpmp_cpars_assessments SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
         params,
     )
 

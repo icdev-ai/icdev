@@ -299,7 +299,7 @@ class AgentTrustScorer:
                 params = [project_id]
 
             rows = conn.execute(
-                f"SELECT agent_id, trust_score FROM agent_trust_scores "
+                f"SELECT agent_id, trust_score FROM agent_trust_scores "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE {where} AND (agent_id, created_at) IN ("
                 f"  SELECT agent_id, MAX(created_at) FROM agent_trust_scores "
                 f"  WHERE {where} GROUP BY agent_id"
@@ -331,7 +331,7 @@ class AgentTrustScorer:
         """Count events in a table for an agent since cutoff."""
         try:
             row = conn.execute(
-                f"SELECT COUNT(*) FROM {table} "
+                f"SELECT COUNT(*) FROM {table} "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE {agent_col} = ? AND {condition} AND created_at >= ?",
                 (agent_id, cutoff),
             ).fetchone()

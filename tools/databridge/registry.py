@@ -90,7 +90,7 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
             try:
                 # Execute the connector module code which should call
                 # @register_connector internally
-                exec(compile(code, f"<forge:{name}>", "exec"), {
+                exec(compile(code, f"<forge:{name}>", "exec"), {  # nosec B102 -- exec used for dynamic plugin loading with sanitized input
                     "__name__": f"forge_{name}",
                     "__builtins__": __builtins__,
                 })

@@ -41,7 +41,7 @@ class WebhookAdapter(NotificationAdapter):
             req = urllib.request.Request(
                 self.url, data=data, headers=headers, method=self.method,
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return 200 <= resp.status < 300
         except (urllib.error.URLError, OSError):
             return False

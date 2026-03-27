@@ -542,7 +542,7 @@ def get_status(db_path=None):
 
         for key, table in tables.items():
             try:
-                row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 status[f"total_{key}"] = row["cnt"] if row else 0
             except sqlite3.OperationalError:
                 status[f"total_{key}"] = 0

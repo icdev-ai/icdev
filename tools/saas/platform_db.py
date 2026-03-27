@@ -499,7 +499,7 @@ def verify_platform_db():
         counts = {}
         for table in tables:
             if table in EXPECTED_TABLES:
-                cursor.execute(f"SELECT COUNT(*) as cnt FROM {table}")
+                cursor.execute(f"SELECT COUNT(*) as cnt FROM {table}")  # nosec B608 -- table/column names are internal constants, not user input
                 row = cursor.fetchone()
                 counts[table] = row["cnt"] if row else 0
         cursor.close()

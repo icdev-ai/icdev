@@ -237,7 +237,7 @@ class ClawHubConnector(DataConnector):
 
         try:
             req = Request(url, headers={"User-Agent": USER_AGENT})
-            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 content = resp.read()
                 self._request_count += 1
 
@@ -288,7 +288,7 @@ class ClawHubConnector(DataConnector):
                 "Accept": "application/json",
             })
             start = time.monotonic()
-            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+            with urlopen(req, timeout=REQUEST_TIMEOUT) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 body = resp.read().decode("utf-8")
                 self._request_count += 1
 

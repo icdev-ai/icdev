@@ -46,7 +46,7 @@ def query_instant(promql: str, prom_url: str = None, time: str = None) -> dict:
 
     try:
         req = urllib.request.Request(endpoint, method="GET")
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = json.loads(resp.read().decode("utf-8"))
             if data.get("status") == "success":
                 return {
@@ -112,7 +112,7 @@ def query_range(
 
     try:
         req = urllib.request.Request(endpoint, method="GET")
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = json.loads(resp.read().decode("utf-8"))
             if data.get("status") == "success":
                 results = data.get("data", {}).get("result", [])

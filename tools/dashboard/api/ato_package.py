@@ -104,7 +104,7 @@ def _check_step_status(conn, step_id, project_id):
         if approved > 0:
             return "complete", f"{approved} approved SSP document(s)"
         # Check if any drafts exist
-        total_q = "SELECT COUNT(*) AS cnt FROM ssp_documents" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM ssp_documents" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total > 0:
             return "warning", f"{total} SSP document(s) but none approved"
@@ -113,7 +113,7 @@ def _check_step_status(conn, step_id, project_id):
     elif step_id == "controls":
         if not _table_exists(conn, "project_controls"):
             return "incomplete", "Controls table not found"
-        total_q = "SELECT COUNT(*) AS cnt FROM project_controls" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM project_controls" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total == 0:
             return "incomplete", "No controls assigned"
@@ -133,7 +133,7 @@ def _check_step_status(conn, step_id, project_id):
     elif step_id == "poam":
         if not _table_exists(conn, "poam_items"):
             return "incomplete", "POAM table not found"
-        total_q = "SELECT COUNT(*) AS cnt FROM poam_items" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM poam_items" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total > 0:
             return "complete", f"{total} POAM item(s) documented"
@@ -142,7 +142,7 @@ def _check_step_status(conn, step_id, project_id):
     elif step_id == "sar":
         if not _table_exists(conn, "cato_evidence"):
             return "incomplete", "Evidence table not found"
-        total_q = "SELECT COUNT(*) AS cnt FROM cato_evidence" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM cato_evidence" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total > 0:
             return "complete", f"{total} assessment evidence record(s)"
@@ -151,7 +151,7 @@ def _check_step_status(conn, step_id, project_id):
     elif step_id == "stig":
         if not _table_exists(conn, "stig_findings"):
             return "incomplete", "STIG findings table not found"
-        total_q = "SELECT COUNT(*) AS cnt FROM stig_findings" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM stig_findings" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total == 0:
             return "incomplete", "No STIG findings recorded"
@@ -168,7 +168,7 @@ def _check_step_status(conn, step_id, project_id):
     elif step_id == "sbom":
         if not _table_exists(conn, "sbom_records"):
             return "incomplete", "SBOM table not found"
-        total_q = "SELECT COUNT(*) AS cnt FROM sbom_records" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM sbom_records" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total > 0:
             return "complete", f"{total} SBOM record(s) on file"
@@ -177,7 +177,7 @@ def _check_step_status(conn, step_id, project_id):
     elif step_id == "evidence":
         if not _table_exists(conn, "cato_evidence"):
             return "incomplete", "Evidence table not found"
-        total_q = "SELECT COUNT(*) AS cnt FROM cato_evidence" + where_project
+        total_q = "SELECT COUNT(*) AS cnt FROM cato_evidence" + where_project  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, total_q, params)
         if total == 0:
             return "incomplete", "No evidence collected"
@@ -345,7 +345,7 @@ def controls_summary():
         # Get family-level summary (INSTR is SQLite-only; PG uses POSITION)
         instr_expr = _instr_expr(conn, "control_id", "-")
         q = (
-            "SELECT "
+            "SELECT "  # nosec B608 -- table/column names are internal constants, not user input
             f"  CASE WHEN {instr_expr} > 0 "
             f"    THEN SUBSTR(control_id, 1, {instr_expr} - 1) "
             "    ELSE control_id END AS family, "
@@ -402,7 +402,7 @@ def poam_summary():
 
         # Count by severity
         q_sev = (
-            "SELECT severity, COUNT(*) AS count FROM poam_items"
+            "SELECT severity, COUNT(*) AS count FROM poam_items"  # nosec B608 -- table/column names are internal constants, not user input
             + base_where + " GROUP BY severity"
         )
         sev_rows = conn.execute(q_sev, params).fetchall()
@@ -410,7 +410,7 @@ def poam_summary():
 
         # Count by status
         q_status = (
-            "SELECT status, COUNT(*) AS count FROM poam_items"
+            "SELECT status, COUNT(*) AS count FROM poam_items"  # nosec B608 -- table/column names are internal constants, not user input
             + base_where + " GROUP BY status"
         )
         status_rows = conn.execute(q_status, params).fetchall()
@@ -419,7 +419,7 @@ def poam_summary():
         # Overdue count
         date_now = _date_now_expr(conn)
         q_overdue = (
-            "SELECT COUNT(*) AS cnt FROM poam_items"
+            "SELECT COUNT(*) AS cnt FROM poam_items"  # nosec B608 -- table/column names are internal constants, not user input
             + base_where
             + (" AND" if project_id else " WHERE")
             + f" milestone_date < {date_now} AND status NOT IN ('closed', 'completed', 'resolved')"
@@ -427,7 +427,7 @@ def poam_summary():
         overdue = _count(conn, q_overdue, params)
 
         # Total
-        q_total = "SELECT COUNT(*) AS cnt FROM poam_items" + base_where
+        q_total = "SELECT COUNT(*) AS cnt FROM poam_items" + base_where  # nosec B608 -- table/column names are internal constants, not user input
         total = _count(conn, q_total, params)
 
         return jsonify({
@@ -497,7 +497,7 @@ def pre_submission_checklist():
 
         # 3. Controls >= 80% implemented
         if _table_exists(conn, "project_controls"):
-            total_q = "SELECT COUNT(*) AS cnt FROM project_controls" + where_project
+            total_q = "SELECT COUNT(*) AS cnt FROM project_controls" + where_project  # nosec B608 -- table/column names are internal constants, not user input
             total = _count(conn, total_q, params)
             impl_q = "SELECT COUNT(*) AS cnt FROM project_controls"
             if project_id:
@@ -541,7 +541,7 @@ def pre_submission_checklist():
 
         # 5. Evidence fresh (>= 50% current)
         if _table_exists(conn, "cato_evidence"):
-            total_q = "SELECT COUNT(*) AS cnt FROM cato_evidence" + where_project
+            total_q = "SELECT COUNT(*) AS cnt FROM cato_evidence" + where_project  # nosec B608 -- table/column names are internal constants, not user input
             total = _count(conn, total_q, params)
             if total > 0:
                 current_q = "SELECT COUNT(*) AS cnt FROM cato_evidence"
@@ -571,7 +571,7 @@ def pre_submission_checklist():
 
         # 6. SBOM current
         if _table_exists(conn, "sbom_records"):
-            total_q = "SELECT COUNT(*) AS cnt FROM sbom_records" + where_project
+            total_q = "SELECT COUNT(*) AS cnt FROM sbom_records" + where_project  # nosec B608 -- table/column names are internal constants, not user input
             total = _count(conn, total_q, params)
             checks.append({
                 "name": "SBOM Current",

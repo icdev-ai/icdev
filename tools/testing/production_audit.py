@@ -727,7 +727,7 @@ def check_ai_transparency_frameworks() -> AuditCheck:
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)
             ).fetchone()
             if exists:
-                cnt = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]
+                cnt = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]  # nosec B608 -- table/column names are internal constants, not user input
                 if cnt > 0:
                     found_tables.append({"table": tbl, "count": cnt})
                     total_records += cnt

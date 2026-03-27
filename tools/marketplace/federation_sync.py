@@ -163,7 +163,7 @@ def pull_available(tenant_id, consumer_il, db_path=None):
     try:
         placeholders = ",".join("?" for _ in compatible_ils)
         available = conn.execute(
-            f"""SELECT a.id, a.slug, a.name, a.asset_type, a.description,
+            f"""SELECT a.id, a.slug, a.name, a.asset_type, a.description,  # nosec B608 -- table/column names are internal constants, not user input
                        a.current_version, a.impact_level, a.classification,
                        a.avg_rating, a.rating_count, a.install_count,
                        a.publisher_org, a.tags

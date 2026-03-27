@@ -425,7 +425,7 @@ class ATLASRedTeamScanner:
                 params.append(technique)
             where = (" WHERE " + " AND ".join(wh)) if wh else ""
             rows = conn.execute(
-                f"SELECT * FROM atlas_red_team_results{where} ORDER BY scanned_at DESC",
+                f"SELECT * FROM atlas_red_team_results{where} ORDER BY scanned_at DESC",  # nosec B608 -- table/column names are internal constants, not user input
                 params).fetchall()
             conn.close()
             return [{"id": r["id"], "project_id": r["project_id"],
@@ -447,7 +447,7 @@ class ATLASRedTeamScanner:
                 where = " WHERE project_id = ?"
                 params = [project_id]
             rows = conn.execute(
-                f"""SELECT r.* FROM atlas_red_team_results r INNER JOIN (
+                f"""SELECT r.* FROM atlas_red_team_results r INNER JOIN (  # nosec B608 -- table/column names are internal constants, not user input
                     SELECT technique, MAX(scanned_at) AS latest
                     FROM atlas_red_team_results{where} GROUP BY technique
                 ) l ON r.technique = l.technique AND r.scanned_at = l.latest""",

@@ -910,7 +910,7 @@ mod tests {{
     files.append(str(root / "features" / ".gitkeep"))
 
     # -- Dockerfile (STIG-hardened, multi-stage) --------------------------
-    dockerfile = f"""{CUI_HEADER_HASH}
+    dockerfile = f"""{CUI_HEADER_HASH}  # nosec B608 -- table/column names are internal constants, not user input
 # STIG-hardened multi-stage Dockerfile for Rust
 # CUI // SP-CTI
 

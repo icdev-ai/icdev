@@ -150,7 +150,7 @@ def lineage_stats():
             ("sbom_records", "SBOM Components"),
         ]:
             if _table_exists(conn, table):
-                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 stats[table] = {"label": label, "count": row[0]}
             else:
                 stats[table] = {"label": label, "count": 0, "missing": True}

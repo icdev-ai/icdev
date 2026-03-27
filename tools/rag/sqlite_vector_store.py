@@ -242,7 +242,7 @@ class SQLiteVectorStore(VectorStoreProvider):
         conn = self._get_conn()
         placeholders = ",".join("?" for _ in chunk_ids)
         cur = conn.execute(
-            f"DELETE FROM rag_chunks WHERE id IN ({placeholders})", chunk_ids
+            f"DELETE FROM rag_chunks WHERE id IN ({placeholders})", chunk_ids  # nosec B608 -- table/column names are internal constants, not user input
         )
         deleted = cur.rowcount
         conn.commit()

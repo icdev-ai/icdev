@@ -169,7 +169,7 @@ def generate_deployment(project_path: str, app_config: dict = None) -> list:
                                 "periodSeconds": 10,
                             },
                             "volumeMounts": [
-                                {"name": "tmp", "mountPath": "/tmp"},
+                                {"name": "tmp", "mountPath": "/tmp"},  # nosec B108 -- temp path for ephemeral scratch files
                                 {"name": "config", "mountPath": "/etc/app/config", "readOnly": True},
                             ],
                             "env": [
@@ -655,7 +655,7 @@ def generate_agent_deployments(project_path: str, blueprint: dict = None) -> lis
                                     {"name": "TLS_CA_PATH", "value": "/etc/tls/ca.crt"},
                                 ],
                                 "volumeMounts": [
-                                    {"name": "tmp", "mountPath": "/tmp"},
+                                    {"name": "tmp", "mountPath": "/tmp"},  # nosec B108 -- temp path for ephemeral scratch files
                                     {"name": "tls-certs", "mountPath": "/etc/tls", "readOnly": True},
                                     {"name": "config", "mountPath": "/etc/agent/config", "readOnly": True},
                                 ],

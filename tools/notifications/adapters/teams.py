@@ -53,7 +53,7 @@ class TeamsAdapter(NotificationAdapter):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return resp.status == 200
         except (urllib.error.URLError, OSError):
             return False

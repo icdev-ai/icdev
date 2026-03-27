@@ -827,7 +827,7 @@ def get_trend_velocity(trend_id, db_path=None):
         if signal_ids:
             placeholders = ",".join("?" for _ in signal_ids)
             signal_rows = conn.execute(
-                f"""SELECT DATE(discovered_at) as day, COUNT(*) as cnt
+                f"""SELECT DATE(discovered_at) as day, COUNT(*) as cnt  # nosec B608 -- table/column names are internal constants, not user input
                     FROM innovation_signals
                     WHERE id IN ({placeholders})
                     GROUP BY day

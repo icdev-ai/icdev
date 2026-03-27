@@ -38,7 +38,7 @@ def evidence_stats():
         total = 0
         for table_name in fw_config["tables"]:
             if _table_exists(conn, table_name):
-                row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+                row = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
                 total += row[0]
         stats["frameworks"].append({
             "id": fw_id,

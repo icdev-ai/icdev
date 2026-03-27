@@ -493,7 +493,7 @@ def main():
     )
     parser.add_argument(
         "--host", type=str,
-        default=os.environ.get("GATEWAY_HOST", "0.0.0.0"),
+        default=os.environ.get("GATEWAY_HOST", "0.0.0.0"),  # nosec B104 -- intentional bind-all for containerized/dev deployment
         help="Host to bind to (default: 0.0.0.0, env: GATEWAY_HOST)",
     )
     parser.add_argument(

@@ -98,7 +98,7 @@ def extract_call_graph(app_id: str) -> dict:
     try:
         ph = ",".join("?" for _ in CALL_GRAPH_DEP_TYPES)
         edge_rows = conn.execute(
-            f"SELECT source_component_id, target_component_id, dependency_type, weight "
+            f"SELECT source_component_id, target_component_id, dependency_type, weight "  # nosec B608 -- table/column names are internal constants, not user input
             f"FROM legacy_dependencies WHERE legacy_app_id=? AND dependency_type IN ({ph}) "
             f"AND target_component_id IS NOT NULL", (app_id, *CALL_GRAPH_DEP_TYPES)).fetchall()
         cids = set()
@@ -108,7 +108,7 @@ def extract_call_graph(app_id: str) -> dict:
         nodes = []
         if cids:
             iph = ",".join("?" for _ in cids)
-            for c in conn.execute(f"SELECT id,name,component_type,loc,cyclomatic_complexity FROM legacy_components WHERE id IN ({iph})", list(cids)).fetchall():
+            for c in conn.execute(f"SELECT id,name,component_type,loc,cyclomatic_complexity FROM legacy_components WHERE id IN ({iph})", list(cids)).fetchall():  # nosec B608 -- table/column names are internal constants, not user input
                 nodes.append({"id": c["id"], "name": c["name"], "type": c["component_type"], "loc": c["loc"] or 0, "complexity": c["cyclomatic_complexity"] or 0.0})
         edges = [{"source": r["source_component_id"], "target": r["target_component_id"], "type": r["dependency_type"], "weight": r["weight"] or 1.0} for r in edge_rows]
         return {"nodes": nodes, "edges": edges}

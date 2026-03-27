@@ -461,7 +461,7 @@ def compute_coverage(project_id: str, db_path=None) -> dict:
 
                 # Any element in chain -> nist_control
                 c.execute(
-                    """SELECT 1 FROM digital_thread_links
+                    """SELECT 1 FROM digital_thread_links  # nosec B608 -- table/column names are internal constants, not user input
                        WHERE project_id = ?
                          AND target_type = 'nist_control'
                          AND (
@@ -1284,7 +1284,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if src_type in type_table_map:
             table, col = type_table_map[src_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (src_id,))
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (src_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
                     issues.append({
                         "severity": "warning",
@@ -1302,7 +1302,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if tgt_type in type_table_map:
             table, col = type_table_map[tgt_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (tgt_id,))
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (tgt_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
                     issues.append({
                         "severity": "warning",

@@ -218,7 +218,7 @@ def _get_latest_by_fingerprint(conn, table="creative_pain_points"):
     Returns dict mapping keyword_fingerprint -> row dict.
     """
     rows = conn.execute(
-        f"SELECT * FROM {table} ORDER BY last_seen ASC"  # noqa: S608 — table from hardcoded constant
+        f"SELECT * FROM {table} ORDER BY last_seen ASC"  # noqa: S608 — table from hardcoded constant  # nosec B608 -- table/column names are internal constants, not user input
     ).fetchall()
     latest = {}
     for row in rows:

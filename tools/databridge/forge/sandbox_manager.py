@@ -131,7 +131,7 @@ def _run_docker_sandbox(
             "--memory", "256m",
             "--cpus", "0.5",
             "--read-only",
-            "--tmpfs", "/tmp",
+            "--tmpfs", "/tmp",  # nosec B108 -- temp path for ephemeral scratch files
             "-v", f"{tmp_dir}:/sandbox:ro",
             "python:3.11-slim",
             "python", "/sandbox/harness.py", "/sandbox/connector.py",

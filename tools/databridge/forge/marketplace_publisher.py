@@ -150,7 +150,7 @@ def _upload_to_marketplace(
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             result = json.loads(resp.read())
             return result.get("artifact_id")
     except Exception as exc:

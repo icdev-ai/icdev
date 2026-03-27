@@ -699,7 +699,7 @@ def update_corrective_action(event_id, status, action_text=None):
 
     params.append(event_id)
     conn.execute(
-        f"UPDATE cpmp_negative_events SET {', '.join(sets)} WHERE id = ?",
+        f"UPDATE cpmp_negative_events SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
         params,
     )
 

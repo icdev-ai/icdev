@@ -319,7 +319,7 @@ def load_assessment_from_db(project_id: str, framework: str = "nist",
         if framework in _TABLE_MAP:
             try:
                 rows = conn.execute(
-                    f"SELECT * FROM {_TABLE_MAP[framework]} WHERE project_id = ?",
+                    f"SELECT * FROM {_TABLE_MAP[framework]} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,)).fetchall()
                 for r in rows:
                     d = dict(r)

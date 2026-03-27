@@ -148,7 +148,7 @@ def _resolve_graph_ids(
     if project_ids:
         placeholders = ",".join("?" for _ in project_ids)
         rows = conn.execute(
-            f"SELECT id, project_id, name, metadata FROM kg_graphs "
+            f"SELECT id, project_id, name, metadata FROM kg_graphs "  # nosec B608 -- table/column names are internal constants, not user input
             f"WHERE project_id IN ({placeholders})",
             project_ids,
         ).fetchall()
@@ -263,7 +263,7 @@ def federated_search(
                     like_params.extend([f"%{term}%", f"%{term}%"])
                 where_likes = " OR ".join(like_clauses)
                 sql = (
-                    f"SELECT n.id, n.graph_id, n.label, n.entity_type, "
+                    f"SELECT n.id, n.graph_id, n.label, n.entity_type, "  # nosec B608 -- table/column names are internal constants, not user input
                     f"n.properties, n.centrality, n.created_at, g.project_id "
                     f"FROM kg_nodes n JOIN kg_graphs g ON n.graph_id = g.id "
                     f"WHERE n.graph_id IN ({placeholders}) "
@@ -272,7 +272,7 @@ def federated_search(
                 params: list = list(gids) + like_params
             else:
                 sql = (
-                    f"SELECT n.id, n.graph_id, n.label, n.entity_type, "
+                    f"SELECT n.id, n.graph_id, n.label, n.entity_type, "  # nosec B608 -- table/column names are internal constants, not user input
                     f"n.properties, n.centrality, n.created_at, g.project_id "
                     f"FROM kg_nodes n JOIN kg_graphs g ON n.graph_id = g.id "
                     f"WHERE n.graph_id IN ({placeholders}) "
@@ -396,7 +396,7 @@ def find_shared_entities(
         def _fetch_nodes(gids: List[str]) -> List[Dict[str, Any]]:
             ph = ",".join("?" for _ in gids)
             rows = conn.execute(
-                f"SELECT id, graph_id, label, entity_type, properties, "
+                f"SELECT id, graph_id, label, entity_type, properties, "  # nosec B608 -- table/column names are internal constants, not user input
                 f"centrality FROM kg_nodes WHERE graph_id IN ({ph})",
                 gids,
             ).fetchall()
@@ -689,7 +689,7 @@ def cross_project_coverage(
         for pid, gids in project_graph_map.items():
             gid_ph = ",".join("?" for _ in gids)
             sql = (
-                f"SELECT n.id, n.label, n.entity_type, n.centrality, "
+                f"SELECT n.id, n.label, n.entity_type, n.centrality, "  # nosec B608 -- table/column names are internal constants, not user input
                 f"n.properties, g.project_id "
                 f"FROM kg_nodes n JOIN kg_graphs g ON n.graph_id = g.id "
                 f"WHERE n.graph_id IN ({gid_ph}) "

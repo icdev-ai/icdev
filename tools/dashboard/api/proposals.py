@@ -240,7 +240,7 @@ def update_opportunity(opp_id):
         sets.append("updated_at = ?")
         params.append(_now())
         params.append(opp_id)
-        conn.execute(f"UPDATE proposal_opportunities SET {', '.join(sets)} WHERE id = ?", params)
+        conn.execute(f"UPDATE proposal_opportunities SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": opp_id, "updated": True})
     finally:
@@ -336,7 +336,7 @@ def update_volume(vol_id):
         sets.append("updated_at = ?")
         params.append(_now())
         params.append(vol_id)
-        conn.execute(f"UPDATE proposal_volumes SET {', '.join(sets)} WHERE id = ?", params)
+        conn.execute(f"UPDATE proposal_volumes SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": vol_id, "updated": True})
     finally:
@@ -491,7 +491,7 @@ def update_section(sec_id):
         sets.append("updated_at = ?")
         params.append(_now())
         params.append(sec_id)
-        conn.execute(f"UPDATE proposal_sections SET {', '.join(sets)} WHERE id = ?", params)
+        conn.execute(f"UPDATE proposal_sections SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": sec_id, "updated": True})
     finally:
@@ -706,7 +706,7 @@ def update_compliance_item(item_id):
         sets.append("updated_at = ?")
         params.append(_now())
         params.append(item_id)
-        conn.execute(f"UPDATE proposal_compliance_matrix SET {', '.join(sets)} WHERE id = ?", params)
+        conn.execute(f"UPDATE proposal_compliance_matrix SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": item_id, "updated": True})
     finally:
@@ -822,7 +822,7 @@ def update_review(rev_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         params.append(rev_id)
-        conn.execute(f"UPDATE proposal_reviews SET {', '.join(sets)} WHERE id = ?", params)
+        conn.execute(f"UPDATE proposal_reviews SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
 
         if "status" in data and data["status"] != old["status"]:
             _record_status_change(conn, "review", rev_id, old["status"], data["status"], data.get("changed_by"))
@@ -906,7 +906,7 @@ def update_finding(find_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         params.append(find_id)
-        conn.execute(f"UPDATE proposal_review_findings SET {', '.join(sets)} WHERE id = ?", params)
+        conn.execute(f"UPDATE proposal_review_findings SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
 
         if "status" in data and data["status"] != old["status"]:
             _record_status_change(conn, "finding", find_id, old["status"], data["status"], data.get("changed_by"))

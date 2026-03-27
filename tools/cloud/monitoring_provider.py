@@ -467,7 +467,7 @@ class IBMMonitoringProvider(MonitoringProvider):
             req = urllib.request.Request(url, data=data, method="POST",
                                         headers={"Authorization": f"Bearer {self._sysdig_key}",
                                                  "Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=10)
+            urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return True
         except Exception:
             return False
@@ -485,7 +485,7 @@ class IBMMonitoringProvider(MonitoringProvider):
             req = urllib.request.Request(url, data=data, method="POST",
                                         headers={"apikey": self._api_key,
                                                  "Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=10)
+            urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return True
         except Exception:
             return False

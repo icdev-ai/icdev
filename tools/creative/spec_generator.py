@@ -368,7 +368,7 @@ def _build_quotes_section(signal_ids, config, db_path=None):
         # Build parameterized query for signal IDs
         ids_to_fetch = signal_ids[:max_quotes * 2]  # fetch extra in case some lack body
         placeholders = ",".join("?" for _ in ids_to_fetch)
-        query = (f"SELECT id, body, source, rating FROM creative_signals "
+        query = (f"SELECT id, body, source, rating FROM creative_signals "  # nosec B608 -- table/column names are internal constants, not user input
                  f"WHERE id IN ({placeholders}) ORDER BY discovered_at DESC")
         rows = conn.execute(query, ids_to_fetch).fetchall()
     finally:
@@ -624,7 +624,7 @@ def _build_sources_list(pain_point, db_path=None):
     conn = _get_db(db_path)
     try:
         placeholders = ",".join("?" for _ in signal_ids[:50])
-        query = f"SELECT DISTINCT source FROM creative_signals WHERE id IN ({placeholders})"
+        query = f"SELECT DISTINCT source FROM creative_signals WHERE id IN ({placeholders})"  # nosec B608 -- table/column names are internal constants, not user input
         rows = conn.execute(query, signal_ids[:50]).fetchall()
     finally:
         conn.close()

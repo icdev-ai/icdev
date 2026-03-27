@@ -763,7 +763,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
 
         # Cross-boundary outgoing deps
         outgoing = conn.execute(
-            f"SELECT d.source_component_id, d.target_component_id, "
+            f"SELECT d.source_component_id, d.target_component_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"d.dependency_type, d.weight, "
             f"cs.name AS source_name, ct.name AS target_name, "
             f"ct.qualified_name AS target_qualified "
@@ -778,7 +778,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
 
         # Cross-boundary incoming deps
         incoming = conn.execute(
-            f"SELECT d.source_component_id, d.target_component_id, "
+            f"SELECT d.source_component_id, d.target_component_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"d.dependency_type, d.weight, "
             f"cs.name AS source_name, ct.name AS target_name, "
             f"cs.qualified_name AS source_qualified "

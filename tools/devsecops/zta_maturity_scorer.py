@@ -84,7 +84,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
     if nist_controls:
         placeholders = ",".join("?" * len(nist_controls))
         rows = conn.execute(
-            f"""SELECT control_id, status FROM project_controls
+            f"""SELECT control_id, status FROM project_controls  # nosec B608 -- table/column names are internal constants, not user input
                 WHERE project_id = ? AND control_id IN ({placeholders})""",
             [project_id] + nist_controls
         ).fetchall()
@@ -102,7 +102,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
 
     # Check ZTA posture evidence
     rows = conn.execute(
-        """SELECT evidence_type, status FROM zta_posture_evidence
+        """SELECT evidence_type, status FROM zta_posture_evidence  # nosec B608 -- table/column names are internal constants, not user input
            WHERE project_id = ? AND evidence_type IN ({})""".format(
             ",".join("?" * len(evidence_types))),
         [project_id] + evidence_types

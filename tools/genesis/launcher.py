@@ -53,7 +53,7 @@ def _check_ollama(timeout: float = 3.0) -> bool:
     """Check if Ollama is reachable."""
     try:
         req = urllib.request.Request("http://localhost:11434/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=timeout):
+        with urllib.request.urlopen(req, timeout=timeout):  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return True
     except Exception:
         return False

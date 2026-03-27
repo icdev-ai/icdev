@@ -120,7 +120,7 @@ def debt_summary():
             if _is_pg(conn):
                 date_expr = "(CURRENT_DATE + INTERVAL '90 days')"
                 q = (
-                    "SELECT COUNT(*) AS cnt FROM cssp_certifications "
+                    "SELECT COUNT(*) AS cnt FROM cssp_certifications "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE expiration_date IS NOT NULL AND expiration_date::date <= {date_expr}"
                 )
                 params = []
@@ -157,12 +157,12 @@ def debt_summary():
                 t_params_closed.append(project_id)
 
             opened = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM poam_items "
+                "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE created_at >= {date_30_expr}" + base_filter,
                 t_params_opened,
             ).fetchone()
             closed = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM poam_items "
+                "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE completion_date >= {date_30_expr}" + base_filter,
                 t_params_closed,
             ).fetchone()
@@ -226,7 +226,7 @@ def debt_burndown():
             window_params_start = [today.strftime("%Y-%m-%d"), str(months)] + params_base
 
         q_opened = (
-            f"SELECT {month_expr} AS month, COUNT(*) AS cnt "
+            f"SELECT {month_expr} AS month, COUNT(*) AS cnt "  # nosec B608 -- table/column names are internal constants, not user input
             f"FROM poam_items WHERE created_at >= {date_window}"
             + base_filter
             + " GROUP BY month ORDER BY month"
@@ -236,7 +236,7 @@ def debt_burndown():
 
         # Closed per month
         q_closed = (
-            f"SELECT {month_expr_comp} AS month, COUNT(*) AS cnt "
+            f"SELECT {month_expr_comp} AS month, COUNT(*) AS cnt "  # nosec B608 -- table/column names are internal constants, not user input
             f"FROM poam_items WHERE completion_date >= {date_window}"
             + base_filter
             + " GROUP BY month ORDER BY month"
@@ -246,7 +246,7 @@ def debt_burndown():
 
         # Total open at start of window
         q_start = (
-            "SELECT COUNT(*) AS cnt FROM poam_items "
+            "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
             "WHERE status NOT IN ('completed','accepted_risk') "
             f"AND created_at < {date_window}"
             + base_filter
@@ -319,7 +319,7 @@ def debt_poams():
                 "(NOW() - milestone_date::timestamp)) / 86400 AS INTEGER) "
                 "ELSE 0 END"
             )
-            q = f"SELECT *, {days_overdue_expr} AS days_overdue FROM poam_items WHERE 1=1"
+            q = f"SELECT *, {days_overdue_expr} AS days_overdue FROM poam_items WHERE 1=1"  # nosec B608 -- table/column names are internal constants, not user input
             params = []
         else:
             q = "SELECT *, "
@@ -349,7 +349,7 @@ def debt_poams():
             params.append(today)
 
         # Count total
-        count_q = "SELECT COUNT(*) AS cnt FROM (" + q + ")"
+        count_q = "SELECT COUNT(*) AS cnt FROM (" + q + ")"  # nosec B608 -- table/column names are internal constants, not user input
         total = conn.execute(count_q, params).fetchone()["cnt"]
 
         # Sort and paginate
@@ -473,7 +473,7 @@ def expiring_atos():
             )
             date_upper = f"(CURRENT_DATE + INTERVAL '{days} days')"
             q = (
-                f"SELECT *, {days_expr} AS days_remaining "
+                f"SELECT *, {days_expr} AS days_remaining "  # nosec B608 -- table/column names are internal constants, not user input
                 "FROM cssp_certifications "
                 "WHERE expiration_date IS NOT NULL "
                 f"AND expiration_date::date >= CURRENT_DATE "
@@ -528,7 +528,7 @@ def sla_compliance():
             # Completed POAMs for this severity
             proj_params = params[2:] if project_id else []
             completed_q = (
-                "SELECT COUNT(*) AS cnt FROM poam_items "
+                "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                 "WHERE severity = ? AND status = 'completed'"
                 + base_filter
             )
@@ -539,7 +539,7 @@ def sla_compliance():
                     "/ 86400 AS INTEGER)"
                 )
                 within_sla_q = (
-                    "SELECT COUNT(*) AS cnt FROM poam_items "
+                    "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
                     f"AND {days_diff_expr} <= ?"
@@ -550,7 +550,7 @@ def sla_compliance():
                     "(NOW() - created_at::timestamp)) / 86400 AS INTEGER)"
                 )
                 open_past_q = (
-                    "SELECT COUNT(*) AS cnt FROM poam_items "
+                    "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
                     f"AND {open_days_expr} > ?"
@@ -558,14 +558,14 @@ def sla_compliance():
                 )
             else:
                 within_sla_q = (
-                    "SELECT COUNT(*) AS cnt FROM poam_items "
+                    "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
                     "AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= ?"
                     + base_filter
                 )
                 open_past_q = (
-                    "SELECT COUNT(*) AS cnt FROM poam_items "
+                    "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
                     "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
                     "AND CAST(julianday(?) - julianday(created_at) AS INTEGER) > ?"

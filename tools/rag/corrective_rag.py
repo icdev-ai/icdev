@@ -179,7 +179,7 @@ def _strategy_source_scan(
                     continue
 
                 sql = (  # nosec B608 — table/pk/content_cols from hardcoded SOURCE_REGISTRY, not user input
-                    f"SELECT {pk}, {', '.join(content_cols)} FROM {table} "
+                    f"SELECT {pk}, {', '.join(content_cols)} FROM {table} "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE {' AND '.join(where_clauses)} "
                     f"LIMIT ?"
                 )

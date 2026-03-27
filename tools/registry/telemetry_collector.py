@@ -175,7 +175,7 @@ class TelemetryCollector:
                 endpoint_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 response_time_ms = int((time.time() - start_time) * 1000)
                 raw = resp.read().decode("utf-8")
 

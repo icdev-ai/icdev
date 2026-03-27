@@ -112,7 +112,7 @@ def stats():
             since_expr = "datetime('now', '-30 days')"
             where_since = f"WHERE created_at >= {since_expr}"
         trend = conn.execute(
-            f"SELECT {date_expr} AS day, COUNT(*) AS cnt "
+            f"SELECT {date_expr} AS day, COUNT(*) AS cnt "  # nosec B608 -- table/column names are internal constants, not user input
             f"FROM pr_intelligence_reports "
             f"{where_since} "
             f"GROUP BY day ORDER BY day"
@@ -164,13 +164,13 @@ def list_reports():
         where = (" WHERE " + " AND ".join(conditions)) if conditions else ""
 
         count_row = conn.execute(
-            f"SELECT COUNT(*) AS cnt FROM pr_intelligence_reports{where}", params
+            f"SELECT COUNT(*) AS cnt FROM pr_intelligence_reports{where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()
         total = count_row["cnt"] if isinstance(count_row, dict) else count_row[0]
 
         offset = (page - 1) * per_page
         rows = conn.execute(
-            f"SELECT id, project_id, pr_reference, diff_summary, files_changed, "
+            f"SELECT id, project_id, pr_reference, diff_summary, files_changed, "  # nosec B608 -- table/column names are internal constants, not user input
             f"security_findings, compliance_impacts, overall_status, "
             f"classification, created_at "
             f"FROM pr_intelligence_reports{where} "

@@ -196,7 +196,7 @@ def query_time_range(
     where = " AND ".join(conditions) if conditions else "1=1"
 
     nodes = conn.execute(
-        f"SELECT n.id, n.graph_id, n.label, n.entity_type, n.centrality, "
+        f"SELECT n.id, n.graph_id, n.label, n.entity_type, n.centrality, "  # nosec B608 -- table/column names are internal constants, not user input
         f"n.created_at FROM kg_nodes n WHERE {where} ORDER BY n.created_at",
         params,
     ).fetchall()
@@ -208,7 +208,7 @@ def query_time_range(
     if node_ids:
         placeholders = ",".join("?" for _ in node_ids)
         edges = conn.execute(
-            f"SELECT id, graph_id, source_id, target_id, relationship, "
+            f"SELECT id, graph_id, source_id, target_id, relationship, "  # nosec B608 -- table/column names are internal constants, not user input
             f"weight, created_at FROM kg_edges "
             f"WHERE source_id IN ({placeholders}) OR target_id IN ({placeholders})",
             list(node_ids) + list(node_ids),
@@ -375,7 +375,7 @@ def recent_changes(
         node_params.append(graph_id)
 
     nodes = conn.execute(
-        f"SELECT n.id, n.graph_id, n.label, n.entity_type, n.centrality, "
+        f"SELECT n.id, n.graph_id, n.label, n.entity_type, n.centrality, "  # nosec B608 -- table/column names are internal constants, not user input
         f"n.created_at FROM kg_nodes n WHERE {node_where} ORDER BY n.created_at DESC",
         node_params,
     ).fetchall()
@@ -388,7 +388,7 @@ def recent_changes(
         edge_params.append(graph_id)
 
     edges = conn.execute(
-        f"SELECT e.id, e.graph_id, e.source_id, e.target_id, e.relationship, "
+        f"SELECT e.id, e.graph_id, e.source_id, e.target_id, e.relationship, "  # nosec B608 -- table/column names are internal constants, not user input
         f"e.weight, e.created_at FROM kg_edges e WHERE {edge_where} "
         f"ORDER BY e.created_at DESC",
         edge_params,
@@ -468,7 +468,7 @@ def find_stale_entities(
         params.append(graph_id)
 
     nodes = conn.execute(
-        f"SELECT n.id, n.graph_id, n.label, n.entity_type, n.centrality, "
+        f"SELECT n.id, n.graph_id, n.label, n.entity_type, n.centrality, "  # nosec B608 -- table/column names are internal constants, not user input
         f"n.created_at FROM kg_nodes n WHERE {where} ORDER BY n.created_at ASC",
         params,
     ).fetchall()

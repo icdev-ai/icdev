@@ -80,12 +80,12 @@ def list_validations():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM oscal_validation_log {where}", params
+            f"SELECT COUNT(*) FROM oscal_validation_log {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()
@@ -110,12 +110,12 @@ def list_artifacts():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 
         total = conn.execute(
-            f"SELECT COUNT(*) FROM oscal_artifacts {where}", params
+            f"SELECT COUNT(*) FROM oscal_artifacts {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         conn.close()

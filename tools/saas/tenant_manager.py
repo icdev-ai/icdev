@@ -509,7 +509,7 @@ def update_tenant(tenant_id, **kwargs):
         values = list(updates.values()) + [now, tenant_id]
 
         conn.execute(
-            "UPDATE tenants SET {} WHERE id = ?".format(set_clause),
+            "UPDATE tenants SET {} WHERE id = ?".format(set_clause),  # nosec B608 -- table/column names are internal constants, not user input
             values)
 
         _audit_platform(

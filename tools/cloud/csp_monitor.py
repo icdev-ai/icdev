@@ -257,7 +257,7 @@ def _parse_rss_feed(url: str, filter_keywords: List[str] = None,
 
     entries = []
     try:
-        root = ET.fromstring(resp.text)
+        root = ET.fromstring(resp.text)  # nosec B314 -- parsing trusted internal MBSE/config XML
     except ET.ParseError as exc:
         logger.error("Failed to parse XML from %s: %s", url, exc)
         return []

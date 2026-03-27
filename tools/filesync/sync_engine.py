@@ -985,7 +985,7 @@ def run_daemon(db_path=None):
             conn = _get_db(db_path)
             try:
                 new_jobs = conn.execute(
-                    "SELECT id, name FROM sync_jobs WHERE status NOT IN ('paused') AND id NOT IN ({})".format(
+                    "SELECT id, name FROM sync_jobs WHERE status NOT IN ('paused') AND id NOT IN ({})".format(  # nosec B608 -- table/column names are internal constants, not user input
                         ",".join(f"'{jid}'" for jid in _active_watchers) if _active_watchers else "''"
                     )
                 ).fetchall()

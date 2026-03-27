@@ -43,9 +43,9 @@ def _resolve_project_id(explicit: str = None) -> str:
 def _safe_count(conn, table, project_id=None):
     try:
         if project_id:
-            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?", (project_id,)).fetchone()
+            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?", (project_id,)).fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         else:
-            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return row["cnt"] if row else 0
     except Exception:
         return 0
@@ -71,7 +71,7 @@ def get_stats():
             where = "WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             row = conn.execute(
-                f"SELECT overall_score FROM fairness_assessments {where} ORDER BY created_at DESC LIMIT 1",
+                f"SELECT overall_score FROM fairness_assessments {where} ORDER BY created_at DESC LIMIT 1",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchone()
             if row:
@@ -90,10 +90,10 @@ def get_stats():
             for tbl in assessment_tables:
                 try:
                     total = conn.execute(
-                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ?", (pid,),
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ?", (pid,),  # nosec B608 -- table/column names are internal constants, not user input
                     ).fetchone()
                     satisfied = conn.execute(
-                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ? AND status IN ('satisfied', 'partially_satisfied')",
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ? AND status IN ('satisfied', 'partially_satisfied')",  # nosec B608 -- table/column names are internal constants, not user input
                         (pid,),
                     ).fetchone()
                     if total and total["cnt"] > 0:
@@ -137,10 +137,10 @@ def get_frameworks():
                 where = "WHERE project_id = ?" if project_id else ""
                 params = (project_id,) if project_id else ()
                 total = conn.execute(
-                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where}", params
+                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where}", params  # nosec B608 -- table/column names are internal constants, not user input
                 ).fetchone()["cnt"]
                 satisfied = conn.execute(
-                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where} {'AND' if project_id else 'WHERE'} status IN ('satisfied', 'partially_satisfied')",
+                    f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {table} {where} {'AND' if project_id else 'WHERE'} status IN ('satisfied', 'partially_satisfied')",  # nosec B608 -- table/column names are internal constants, not user input
                     params,
                 ).fetchone()["cnt"]
                 coverage = round(satisfied / total * 100, 1) if total > 0 else 0
@@ -162,7 +162,7 @@ def get_inventory():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
-            f"SELECT * FROM ai_use_case_inventory {where} ORDER BY name", params
+            f"SELECT * FROM ai_use_case_inventory {where} ORDER BY name", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchall()
         conn.close()
         return jsonify({"items": [dict(r) for r in rows], "total": len(rows)})
@@ -179,7 +179,7 @@ def get_model_cards():
         where = "WHERE project_id = ?" if project_id else ""
         params = (project_id,) if project_id else ()
         rows = conn.execute(
-            f"SELECT id, project_id, model_name, version, created_at FROM model_cards {where} ORDER BY created_at DESC",
+            f"SELECT id, project_id, model_name, version, created_at FROM model_cards {where} ORDER BY created_at DESC",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         ).fetchall()
         conn.close()

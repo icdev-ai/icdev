@@ -82,7 +82,7 @@ def iac_stats():
         if _table_exists(conn, "migration_artifacts"):
             placeholders = ",".join("?" for _ in IAC_ARTIFACT_TYPES)
             row = conn.execute(
-                f"SELECT COUNT(*) FROM migration_artifacts "
+                f"SELECT COUNT(*) FROM migration_artifacts "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE artifact_type IN ({placeholders})",
                 IAC_ARTIFACT_TYPES,
             ).fetchone()
@@ -90,7 +90,7 @@ def iac_stats():
 
             # Breakdown by type
             rows = conn.execute(
-                f"SELECT artifact_type, COUNT(*) FROM migration_artifacts "
+                f"SELECT artifact_type, COUNT(*) FROM migration_artifacts "  # nosec B608 -- table/column names are internal constants, not user input
                 f"WHERE artifact_type IN ({placeholders}) "
                 f"GROUP BY artifact_type",
                 IAC_ARTIFACT_TYPES,
@@ -99,7 +99,7 @@ def iac_stats():
 
             # CSP distribution — parse from description or file_path
             all_artifacts = conn.execute(
-                f"SELECT COALESCE(description, '') || ' ' || COALESCE(file_path, '') "
+                f"SELECT COALESCE(description, '') || ' ' || COALESCE(file_path, '') "  # nosec B608 -- table/column names are internal constants, not user input
                 f"FROM migration_artifacts "
                 f"WHERE artifact_type IN ({placeholders})",
                 IAC_ARTIFACT_TYPES,
@@ -166,7 +166,7 @@ def list_artifacts():
 
         # Total count
         count_row = conn.execute(
-            f"SELECT COUNT(*) FROM migration_artifacts WHERE {base_where}",
+            f"SELECT COUNT(*) FROM migration_artifacts WHERE {base_where}",  # nosec B608 -- table/column names are internal constants, not user input
             params,
         ).fetchone()
         total = count_row[0]
@@ -175,7 +175,7 @@ def list_artifacts():
         offset = (page - 1) * per_page
         query_params = params + [per_page, offset]
         rows = conn.execute(
-            f"SELECT id, plan_id, artifact_type, file_path, description, "
+            f"SELECT id, plan_id, artifact_type, file_path, description, "  # nosec B608 -- table/column names are internal constants, not user input
             f"created_at FROM migration_artifacts "
             f"WHERE {base_where} ORDER BY created_at DESC "
             f"LIMIT ? OFFSET ?",

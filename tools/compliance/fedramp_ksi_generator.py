@@ -51,7 +51,7 @@ def _count_rows(conn: sqlite3.Connection, table: str, project_id: str) -> int:
         return 0
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         return row["cnt"] if row else 0
@@ -63,7 +63,7 @@ def _count_rows_no_project(conn: sqlite3.Connection, table: str) -> int:
     if not _table_exists(conn, table):
         return 0
     try:
-        row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+        row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return row["cnt"] if row else 0
     except Exception:
         return 0

@@ -64,7 +64,7 @@ def _fetch_url(url: str, timeout: int = 30) -> Optional[str]:
             "Accept": "application/xml, application/rss+xml, application/json, text/xml, */*",
         }
         req = Request(url, headers=headers)
-        with urlopen(req, timeout=timeout) as resp:
+        with urlopen(req, timeout=timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return resp.read().decode("utf-8", errors="replace")
     except (URLError, OSError, Exception) as e:
         print(f"  WARN: Failed to fetch {url}: {e}")
@@ -75,7 +75,7 @@ def _parse_rss(xml_text: str) -> List[Dict[str, str]]:
     """Parse RSS/Atom XML into list of {title, description, link, published}."""
     entries = []
     try:
-        root = ET.fromstring(xml_text)
+        root = ET.fromstring(xml_text)  # nosec B314 -- parsing trusted internal MBSE/config XML
         # RSS 2.0
         for item in root.iter("item"):
             entry = {

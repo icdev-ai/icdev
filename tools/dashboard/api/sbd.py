@@ -171,12 +171,12 @@ def sbd_assessments():
 
         # Total matching
         total = conn.execute(
-            f"SELECT COUNT(*) FROM sbd_assessments {where}", params
+            f"SELECT COUNT(*) FROM sbd_assessments {where}", params  # nosec B608 -- table/column names are internal constants, not user input
         ).fetchone()[0]
 
         # Fetch page
         rows = conn.execute(
-            f"SELECT id, project_id, assessment_date, assessor, domain, requirement_id, "
+            f"SELECT id, project_id, assessment_date, assessor, domain, requirement_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"status, evidence_description, evidence_path, automation_result, "
             f"cisa_commitment, notes, created_at, updated_at "
             f"FROM sbd_assessments {where} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
@@ -286,7 +286,7 @@ def sbd_exceptions():
                 "AS INTEGER) AS days_since"
             )
         rows = conn.execute(
-            f"SELECT id, project_id, assessment_date, assessor, domain, requirement_id, "
+            f"SELECT id, project_id, assessment_date, assessor, domain, requirement_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"evidence_description, evidence_path, notes, created_at, updated_at, "
             f"{days_expr} "
             f"FROM sbd_assessments WHERE status = 'risk_accepted' "

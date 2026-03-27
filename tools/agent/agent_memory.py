@@ -375,7 +375,7 @@ def prune(agent_id: str = None, project_id: str = None,
         # Never prune high-importance memories by age
         where_clause += " AND NOT (importance >= 7 AND expires_at IS NULL)"
 
-        sql = f"DELETE FROM agent_memory WHERE {where_clause}"
+        sql = f"DELETE FROM agent_memory WHERE {where_clause}"  # nosec B608 -- table/column names are internal constants, not user input
 
         cursor = conn.execute(sql, params)
         conn.commit()

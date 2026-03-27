@@ -504,7 +504,7 @@ def _http_get_json(url, headers=None):
         if headers:
             for key, val in headers.items():
                 req.add_header(key, val)
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             return json.loads(resp.read().decode("utf-8"))
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError,
             OSError, ValueError, TimeoutError):

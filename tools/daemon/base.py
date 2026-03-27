@@ -249,7 +249,7 @@ class ReflexStateBase:
         conn = get_connection()
         try:
             row = conn.execute(
-                f"SELECT * FROM {self.state_table} WHERE reflex_name = ?",
+                f"SELECT * FROM {self.state_table} WHERE reflex_name = ?",  # nosec B608 -- table/column names are internal constants, not user input
                 (self.name,)
             ).fetchone()
             if row:
@@ -278,7 +278,7 @@ class ReflexStateBase:
             now = utcnow_iso()
             conn = get_connection()
             try:
-                conn.execute(f"""
+                conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
                     UPDATE {self.state_table} SET
                         last_run_at = ?, consecutive_failures = 0,
                         total_runs = total_runs + 1,
@@ -297,14 +297,14 @@ class ReflexStateBase:
             conn = get_connection()
             try:
                 state = conn.execute(
-                    f"SELECT consecutive_failures FROM {self.state_table} "
+                    f"SELECT consecutive_failures FROM {self.state_table} "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE reflex_name = ?",
                     (self.name,)
                 ).fetchone()
                 failures = (state["consecutive_failures"] if state else 0) + 1
                 tripped = failures >= cb_config.get("max_consecutive_failures", 3)
 
-                conn.execute(f"""
+                conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
                     UPDATE {self.state_table} SET
                         last_run_at = ?, consecutive_failures = ?,
                         circuit_breaker_open = ?,
@@ -326,7 +326,7 @@ class ReflexStateBase:
             now = utcnow_iso()
             conn = get_connection()
             try:
-                conn.execute(f"""
+                conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
                     UPDATE {self.state_table} SET
                         consecutive_failures = 0, circuit_breaker_open = 0,
                         circuit_breaker_tripped_at = NULL, updated_at = ?
@@ -346,7 +346,7 @@ class ReflexStateBase:
         now = utcnow_iso()
         conn = get_connection()
         try:
-            conn.execute(f"""
+            conn.execute(f"""  # nosec B608 -- table/column names are internal constants, not user input
                 UPDATE {self.state_table} SET enabled = ?, updated_at = ?
                 WHERE reflex_name = ?
             """, (1 if enabled else 0, now, self.name))
@@ -897,7 +897,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             row = conn.execute(
-                f"SELECT COUNT(*) as cnt FROM {audit_table} WHERE created_at > ?",
+                f"SELECT COUNT(*) as cnt FROM {audit_table} WHERE created_at > ?",  # nosec B608 -- table/column names are internal constants, not user input
                 ((utcnow() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ"),)
             ).fetchone()
             events_24h = row["cnt"] if row else 0

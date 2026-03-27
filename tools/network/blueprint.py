@@ -553,7 +553,7 @@ def create_network_blueprint():
             "nc_mc_runs", "nc_mc_scenarios",
         ]
         for tbl in child_tables:
-            conn.execute(f"DELETE FROM {tbl}")
+            conn.execute(f"DELETE FROM {tbl}")  # nosec B608 -- table/column names are internal constants, not user input
         conn.execute("DELETE FROM topologies")
         conn.commit()
         conn.close()
@@ -604,7 +604,7 @@ def create_network_blueprint():
         fields.append("updated_at=?")
         values.append(_now())
         values.append(topo_id)
-        conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "topology", topo_id)
@@ -740,7 +740,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields to update"}), 400
         values.append(tpl_id)
-        conn.execute(f"UPDATE nc_templates SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_templates SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE_TEMPLATE", "template", tpl_id, json.dumps(list(data.keys())))
@@ -1009,7 +1009,7 @@ def create_network_blueprint():
         fields.append("updated_at=?")
         values.append(_now())
         values.append(cid)
-        conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "circuit", cid)
@@ -1071,7 +1071,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(cid)
-        conn.execute(f"UPDATE nc_customers SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_customers SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "customer", cid)
@@ -1133,7 +1133,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(sid)
-        conn.execute(f"UPDATE nc_sites SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_sites SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "site", sid)
@@ -1195,7 +1195,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(bid)
-        conn.execute(f"UPDATE nc_ipam_blocks SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_ipam_blocks SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "ipam_block", bid)
@@ -1260,7 +1260,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(cid)
-        conn.execute(f"UPDATE nc_cables SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_cables SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "cable", cid)
@@ -1399,7 +1399,7 @@ def create_network_blueprint():
         fields.append("updated_at=?")
         values.append(_now())
         values.append(cid)
-        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "cross_connect", cid)
@@ -1653,7 +1653,7 @@ def create_network_blueprint():
             fields.append("updated_at=?")
             values.append(_now())
             values.append(profile["id"])
-            conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id=?", values)
+            conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
             conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -2045,7 +2045,7 @@ def create_network_blueprint():
         fields.append("updated_at=?")
         values.append(_now())
         values.append(pid)
-        conn.execute(f"UPDATE nc_projects SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_projects SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "project", pid)
@@ -2162,7 +2162,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(gid)
-        conn.execute(f"UPDATE nc_groups SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_groups SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -2360,7 +2360,7 @@ def create_network_blueprint():
         fields.append("updated_at=?")
         values.append(_now())
         values.append(bid)
-        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id=?", values)
+        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3440,7 +3440,7 @@ Output ONLY the JSON object. No other text."""
             fields.append("updated_at=?")
             values.append(_now())
             values.append(policy_id)
-            conn.execute(f"UPDATE nc_intent_policies SET {', '.join(fields)} WHERE id=?", values)
+            conn.execute(f"UPDATE nc_intent_policies SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
             conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -3884,7 +3884,7 @@ Output ONLY the JSON object. No other text."""
             params += [extra["submitted_at"], extra["submitter_name"]]
         params.append(cr_id)
         result = conn.execute(
-            f"UPDATE nc_change_requests SET {set_clauses} WHERE id=?", params
+            f"UPDATE nc_change_requests SET {set_clauses} WHERE id=?", params  # nosec B608 -- table/column names are internal constants, not user input
         )
         conn.commit()
         if result.rowcount == 0:

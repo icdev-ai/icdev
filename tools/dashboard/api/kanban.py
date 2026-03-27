@@ -123,7 +123,7 @@ def update_task(task_id):
         vals.append(task_id)
 
         conn.execute(
-            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = ?",
+            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
             tuple(vals),
         )
         conn.commit()

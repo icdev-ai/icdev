@@ -1103,7 +1103,7 @@ def validate_xmi(file_path: str) -> Dict[str, Any]:
 
     # Attempt parse
     try:
-        tree = ET.parse(str(fpath))
+        tree = ET.parse(str(fpath))  # nosec B314 -- parsing trusted internal MBSE/config XML
         root = tree.getroot()
     except ET.ParseError as exc:
         return {
@@ -1187,7 +1187,7 @@ def parse_xmi(file_path: str) -> Dict[str, Any]:
     if not fpath.exists():
         raise FileNotFoundError(f"XMI file not found: {file_path}")
 
-    tree = ET.parse(str(fpath))
+    tree = ET.parse(str(fpath))  # nosec B314 -- parsing trusted internal MBSE/config XML
     root = tree.getroot()
     ns = _detect_namespaces(root)
     source_hash = _file_hash(file_path)

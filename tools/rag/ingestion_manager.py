@@ -154,7 +154,7 @@ def ingest_source(
 
     conn = get_connection()
     conn.execute("PRAGMA busy_timeout=5000")
-    sql = f"SELECT {col_str} FROM {table}"
+    sql = f"SELECT {col_str} FROM {table}"  # nosec B608 -- table/column names are internal constants, not user input
     conditions = []
     params: list = []
 

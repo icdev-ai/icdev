@@ -239,7 +239,7 @@ class AgentOutputValidator:
 
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM agent_output_violations "
+                    f"SELECT COUNT(*) FROM agent_output_violations "  # nosec B608 -- table/column names are internal constants, not user input
                     f"WHERE {where} AND severity = ? AND created_at >= ?",
                     params + [severity, cutoff],
                 ).fetchone()

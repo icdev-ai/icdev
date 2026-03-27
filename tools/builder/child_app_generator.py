@@ -1415,7 +1415,7 @@ def step_05_db_init_script(child_root: Path, blueprint: dict) -> dict:
         r'[^a-z0-9_]', '_', app_name.lower().replace('-', '_'))
 
     script_content = (
-        '#!/usr/bin/env python3\n'
+        '#!/usr/bin/env python3\n'  # nosec B608 -- table/column names are internal constants, not user input
         '# CUI // SP-CTI\n'
         f'"""{app_name} database initialization."""\n'
         '\n'
@@ -1730,7 +1730,7 @@ def step_08_a2a_callback_client(child_root: Path, blueprint: dict) -> dict:
     default_url = parent_cb.get("url", "")
     auth_method = parent_cb.get("auth", "none")
 
-    client_content = f'''#!/usr/bin/env python3
+    client_content = f'''#!/usr/bin/env python3  # nosec B608 -- table/column names are internal constants, not user input
 # {cui_line}
 # Controlled by: Department of Defense
 # CUI Category: CTI

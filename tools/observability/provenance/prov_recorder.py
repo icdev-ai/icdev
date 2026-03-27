@@ -284,9 +284,9 @@ class ProvRecorder:
             where = "WHERE project_id = ?" if pid else ""
             params = (pid,) if pid else ()
 
-            entities = conn.execute(f"SELECT * FROM prov_entities {where}", params).fetchall()
-            activities = conn.execute(f"SELECT * FROM prov_activities {where}", params).fetchall()
-            relations = conn.execute(f"SELECT * FROM prov_relations {where}", params).fetchall()
+            entities = conn.execute(f"SELECT * FROM prov_entities {where}", params).fetchall()  # nosec B608 -- table/column names are internal constants, not user input
+            activities = conn.execute(f"SELECT * FROM prov_activities {where}", params).fetchall()  # nosec B608 -- table/column names are internal constants, not user input
+            relations = conn.execute(f"SELECT * FROM prov_relations {where}", params).fetchall()  # nosec B608 -- table/column names are internal constants, not user input
             conn.close()
 
             return {

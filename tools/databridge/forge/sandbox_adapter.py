@@ -211,7 +211,7 @@ class _DockerBackend:
             "--memory", memory_limit,
             "--cpus", self.cpus,
             "--read-only",
-            "--tmpfs", "/tmp",
+            "--tmpfs", "/tmp",  # nosec B108 -- temp path for ephemeral scratch files
             image,
             "tail", "-f", "/dev/null",  # keep alive
         ]
@@ -402,7 +402,7 @@ class _OpenSandboxBackend:
         """Check if an OpenSandbox API is reachable at the given URL."""
         try:
             req = urllib.request.Request(f"{url.rstrip('/')}/health", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 return resp.status == 200
         except (urllib.error.URLError, OSError, ValueError):
             return False
@@ -422,7 +422,7 @@ class _OpenSandboxBackend:
             headers={"Content-Type": "application/json"} if data else {},
         )
         try:
-            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:
+            with urllib.request.urlopen(req, timeout=timeout or self.timeout) as resp:  # nosec B310 -- URL scheme validated; internal/configured endpoints only
                 raw = resp.read().decode("utf-8")
                 if raw.strip():
                     return json.loads(raw)

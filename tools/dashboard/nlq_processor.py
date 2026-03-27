@@ -54,7 +54,7 @@ def extract_schema(db_path: Path = None) -> dict:
     for table_row in tables:
         table_name = table_row["name"]
         columns = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
-        row_count = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}").fetchone()["cnt"]
+        row_count = conn.execute(f"SELECT COUNT(*) as cnt FROM {table_name}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
 
         schema[table_name] = {
             "columns": [
@@ -194,7 +194,7 @@ def _generate_sql_fallback(query: str, schema: dict) -> Optional[str]:
     # Generic: try to find table name in query
     for table_name in schema:
         if table_name.replace("_", " ") in query_lower or table_name in query_lower:
-            return f"SELECT * FROM {table_name} ORDER BY ROWID DESC LIMIT 100"
+            return f"SELECT * FROM {table_name} ORDER BY ROWID DESC LIMIT 100"  # nosec B608 -- table/column names are internal constants, not user input
 
     return None
 

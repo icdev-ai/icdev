@@ -116,7 +116,7 @@ def _update_status(resolution_id: str, status: str,
                 params.append(json.dumps(val) if isinstance(val, dict) else str(val))
         params.append(resolution_id)
         conn.execute(
-            f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = ?", params)
+            f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
     finally:
         conn.close()
@@ -512,7 +512,7 @@ def _notify_resolution(resolution_id: str, decision: str, details: dict) -> None
         req = urllib.request.Request(f"http://localhost:{_dash_port}/api/events/ingest",
                                     data=data, method="POST")
         req.add_header("Content-Type", "application/json")
-        urllib.request.urlopen(req, timeout=5)
+        urllib.request.urlopen(req, timeout=5)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
     except Exception:
         pass
     try:

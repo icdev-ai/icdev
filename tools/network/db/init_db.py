@@ -2427,7 +2427,7 @@ def init_db():
         ]
         for table, col, coltype in _migrations:
             try:
-                conn.execute(f"SELECT {col} FROM {table} LIMIT 1")
+                conn.execute(f"SELECT {col} FROM {table} LIMIT 1")  # nosec B608 -- table/column names are internal constants, not user input
             except Exception:
                 try:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")

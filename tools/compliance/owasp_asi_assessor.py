@@ -113,7 +113,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     for table in ["ai_telemetry", "memory_consolidation_log"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:
@@ -138,7 +138,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     for table in ["agent_trust_scores", "atlas_red_team_results"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:

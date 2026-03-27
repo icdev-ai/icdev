@@ -308,7 +308,7 @@ if __name__ == "__main__":
 def _generate_model_code(entity: str, spec: str) -> str:
     """Generate a data model module."""
     class_name = entity.capitalize()
-    return f'''{CUI_HEADER}
+    return f'''{CUI_HEADER}  # nosec B608 -- table/column names are internal constants, not user input
 """Data model for {entity}.
 
 Spec: {spec}

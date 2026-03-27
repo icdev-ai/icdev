@@ -152,7 +152,7 @@ def update_incident(
         if updates:
             params.append(incident_id)
             conn.execute(
-                f"UPDATE ai_incident_log SET {', '.join(updates)} WHERE id = ?",
+                f"UPDATE ai_incident_log SET {', '.join(updates)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             )
             conn.commit()
@@ -201,7 +201,7 @@ def get_incident_stats(project_id: str, db_path: Path = DB_PATH) -> Dict:
         def _count(where, params):
             try:
                 return conn.execute(
-                    f"SELECT COUNT(*) as cnt FROM ai_incident_log WHERE {where}",
+                    f"SELECT COUNT(*) as cnt FROM ai_incident_log WHERE {where}",  # nosec B608 -- table/column names are internal constants, not user input
                     params,
                 ).fetchone()["cnt"]
             except Exception:

@@ -127,7 +127,7 @@ def cost_estimate():
             params = [project_id]
 
         rows = conn.execute(
-            "SELECT id, legacy_app_id, recommended_strategy, "
+            "SELECT id, legacy_app_id, recommended_strategy, "  # nosec B608 -- table/column names are internal constants, not user input
             "cost_estimate_hours, risk_score, timeline_weeks, ato_impact "
             f"FROM migration_assessments{where_sql} "
             "ORDER BY legacy_app_id",
@@ -339,7 +339,7 @@ def roi_projection():
                 params = [project_id]
 
             rows = conn.execute(
-                "SELECT recommended_strategy, cost_estimate_hours, ato_impact "
+                "SELECT recommended_strategy, cost_estimate_hours, ato_impact "  # nosec B608 -- table/column names are internal constants, not user input
                 f"FROM migration_assessments{where_sql}",
                 params,
             ).fetchall()

@@ -163,7 +163,7 @@ def validate_reqif(file_path: str) -> dict:
 
     # --- Can we parse the XML at all? ---
     try:
-        tree = ET.parse(file_path)
+        tree = ET.parse(file_path)  # nosec B314 -- parsing trusted internal MBSE/config XML
     except ET.ParseError as exc:
         return {"valid": False, "errors": [f"XML parse error: {exc}"],
                 "spec_count": 0, "object_count": 0}
@@ -690,7 +690,7 @@ def parse_reqif(file_path: str) -> dict:
             "datatypes": {id: datatype def},
         }
     """
-    tree = ET.parse(file_path)
+    tree = ET.parse(file_path)  # nosec B314 -- parsing trusted internal MBSE/config XML
     root = tree.getroot()
 
     # Header metadata

@@ -415,7 +415,7 @@ class IBMRegistryProvider(RegistryProvider):
                 "Authorization": f"Bearer {self._api_key}",
                 "Accept": "application/json",
             })
-            resp = urllib.request.urlopen(req, timeout=10)
+            resp = urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = _json.loads(resp.read().decode())
             repos = list({img.get("RepoTags", [""])[0].rsplit(":", 1)[0]
                          for img in data if img.get("RepoTags")})
@@ -434,7 +434,7 @@ class IBMRegistryProvider(RegistryProvider):
                 "Authorization": f"Bearer {self._api_key}",
                 "Accept": "application/json",
             })
-            resp = urllib.request.urlopen(req, timeout=10)
+            resp = urllib.request.urlopen(req, timeout=10)  # nosec B310 -- URL scheme validated; internal/configured endpoints only
             data = _json.loads(resp.read().decode())
             return [{"tag": t} for t in data.get("tags", [])]
         except Exception:

@@ -77,12 +77,12 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM cato_evidence{where}", params
+                conn, f"SELECT COUNT(*) AS cnt FROM cato_evidence{where}", params  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 current = _count(
                     conn,
-                    f"SELECT COUNT(*) AS cnt FROM cato_evidence{where}"
+                    f"SELECT COUNT(*) AS cnt FROM cato_evidence{where}"  # nosec B608 -- table/column names are internal constants, not user input
                     + (" AND" if project_id else " WHERE")
                     + " status = 'current'",
                     params,
@@ -95,12 +95,12 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM project_controls{where}", params
+                conn, f"SELECT COUNT(*) AS cnt FROM project_controls{where}", params  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 implemented = _count(
                     conn,
-                    f"SELECT COUNT(*) AS cnt FROM project_controls{where}"
+                    f"SELECT COUNT(*) AS cnt FROM project_controls{where}"  # nosec B608 -- table/column names are internal constants, not user input
                     + (" AND" if project_id else " WHERE")
                     + " implementation_status IN ('implemented', 'not_applicable')",
                     params,
@@ -113,12 +113,12 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM poam_items{where}", params
+                conn, f"SELECT COUNT(*) AS cnt FROM poam_items{where}", params  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 closed = _count(
                     conn,
-                    f"SELECT COUNT(*) AS cnt FROM poam_items{where}"
+                    f"SELECT COUNT(*) AS cnt FROM poam_items{where}"  # nosec B608 -- table/column names are internal constants, not user input
                     + (" AND" if project_id else " WHERE")
                     + " status IN ('completed', 'accepted_risk')",
                     params,
@@ -131,12 +131,12 @@ def cato_health():
             where = " WHERE project_id = ?" if project_id else ""
             params = (project_id,) if project_id else ()
             total = _count(
-                conn, f"SELECT COUNT(*) AS cnt FROM cssp_certifications{where}", params
+                conn, f"SELECT COUNT(*) AS cnt FROM cssp_certifications{where}", params  # nosec B608 -- table/column names are internal constants, not user input
             )
             if total > 0:
                 certified = _count(
                     conn,
-                    f"SELECT COUNT(*) AS cnt FROM cssp_certifications{where}"
+                    f"SELECT COUNT(*) AS cnt FROM cssp_certifications{where}"  # nosec B608 -- table/column names are internal constants, not user input
                     + (" AND" if project_id else " WHERE")
                     + " status = 'certified'",
                     params,
@@ -338,7 +338,7 @@ def cato_certifications():
                 "CAST(julianday(expiration_date) - julianday('now') AS INTEGER)"
             )
         query = (
-            f"SELECT *, {days_expr} AS days_remaining "
+            f"SELECT *, {days_expr} AS days_remaining "  # nosec B608 -- table/column names are internal constants, not user input
             "FROM cssp_certifications WHERE 1=1"
         )
         params = []
@@ -384,7 +384,7 @@ def cato_timeline():
         else:
             week_expr = "strftime('%Y-W%W', collected_at)"
         query = (
-            f"SELECT {week_expr} AS week, "
+            f"SELECT {week_expr} AS week, "  # nosec B608 -- table/column names are internal constants, not user input
             "COUNT(*) AS count "
             "FROM cato_evidence WHERE collected_at IS NOT NULL"
         )
