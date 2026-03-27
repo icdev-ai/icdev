@@ -337,6 +337,26 @@ CREATE TABLE IF NOT EXISTS nc_stig_imports (
     imported_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Security Boundary Auto-Fencing (enclave zones drawn around devices)
+CREATE TABLE IF NOT EXISTS nc_boundaries (
+    id              TEXT PRIMARY KEY,
+    topology_id     TEXT REFERENCES topologies(id),
+    label           TEXT NOT NULL DEFAULT 'Enclave',
+    classification  TEXT DEFAULT 'CUI',           -- CUI, SECRET, TOP SECRET, PUBLIC
+    color           TEXT DEFAULT '#e94560',        -- zone border/fill color
+    fill_opacity    REAL DEFAULT 0.08,
+    node_ids        TEXT DEFAULT '[]',             -- JSON array of contained node IDs
+    stig_tags       TEXT DEFAULT '[]',             -- JSON array of auto-generated STIG boundary tags
+    pos_x           REAL DEFAULT 0,
+    pos_y           REAL DEFAULT 0,
+    width           REAL DEFAULT 400,
+    height          REAL DEFAULT 300,
+    snap_grid       INTEGER DEFAULT 10,            -- snap-to-grid size
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- NC-GAP-009: Classification on audit + immutability triggers
 -- (classification column added inline above)
 

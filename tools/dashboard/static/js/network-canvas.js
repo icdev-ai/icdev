@@ -1202,6 +1202,300 @@ async function saveToTemplate() {
   }
 }
 
+/* ── Security Boundary Auto-Fencing ──────────────────────────────────────────── */
+let fenceMode = false;
+let fenceStart = null;
+let fenceRect = null;
+let boundaryZones = [];  // loaded from DB
+
+const FENCE_CLASSIFICATIONS = ['CUI', 'SECRET', 'TOP SECRET', 'PUBLIC'];
+const FENCE_CLS_COLORS = {
+  'CUI': '#f39c12', 'SECRET': '#e94560',
+  'TOP SECRET': '#9b59b6', 'PUBLIC': '#27ae60',
+};
+
+function toggleFenceMode() {
+  fenceMode = !fenceMode;
+  const btn = document.getElementById('tb-fence-btn');
+  if (btn) btn.classList.toggle('tb-btn-active', fenceMode);
+  if (fenceMode) {
+    setStatus('Fence mode ON — click and drag to select devices, then choose classification');
+    document.getElementById('canvas-container').style.cursor = 'crosshair';
+  } else {
+    setStatus('Fence mode OFF');
+    document.getElementById('canvas-container').style.cursor = '';
+    removeFenceRect();
+  }
+}
+
+function removeFenceRect() {
+  if (fenceRect) { fenceRect.remove(); fenceRect = null; }
+  fenceStart = null;
+}
+
+function initFenceSelection() {
+  const container = document.getElementById('canvas-container');
+  if (!container) return;
+
+  container.addEventListener('mousedown', (e) => {
+    if (!fenceMode || e.button !== 0) return;
+    const rect = container.getBoundingClientRect();
+    const sx = paper.scale().sx;
+    const tx = paper.translate().tx;
+    const ty = paper.translate().ty;
+    fenceStart = {
+      clientX: e.clientX, clientY: e.clientY,
+      x: (e.clientX - rect.left - tx) / sx,
+      y: (e.clientY - rect.top - ty) / sx,
+    };
+    // Create visual selection rectangle
+    removeFenceRect();
+    fenceRect = document.createElement('div');
+    fenceRect.className = 'fence-selection-rect';
+    fenceRect.style.left = (e.clientX - rect.left) + 'px';
+    fenceRect.style.top = (e.clientY - rect.top) + 'px';
+    fenceRect.style.width = '0';
+    fenceRect.style.height = '0';
+    container.appendChild(fenceRect);
+    e.preventDefault();
+  });
+
+  container.addEventListener('mousemove', (e) => {
+    if (!fenceMode || !fenceStart || !fenceRect) return;
+    const rect = container.getBoundingClientRect();
+    const x1 = fenceStart.clientX - rect.left;
+    const y1 = fenceStart.clientY - rect.top;
+    const x2 = e.clientX - rect.left;
+    const y2 = e.clientY - rect.top;
+    fenceRect.style.left = Math.min(x1, x2) + 'px';
+    fenceRect.style.top = Math.min(y1, y2) + 'px';
+    fenceRect.style.width = Math.abs(x2 - x1) + 'px';
+    fenceRect.style.height = Math.abs(y2 - y1) + 'px';
+  });
+
+  container.addEventListener('mouseup', (e) => {
+    if (!fenceMode || !fenceStart) return;
+    const rect = container.getBoundingClientRect();
+    const sx = paper.scale().sx;
+    const tx = paper.translate().tx;
+    const ty = paper.translate().ty;
+    const endX = (e.clientX - rect.left - tx) / sx;
+    const endY = (e.clientY - rect.top - ty) / sx;
+
+    const selX1 = Math.min(fenceStart.x, endX);
+    const selY1 = Math.min(fenceStart.y, endY);
+    const selX2 = Math.max(fenceStart.x, endX);
+    const selY2 = Math.max(fenceStart.y, endY);
+
+    // Find nodes inside selection rectangle
+    const selectedNodes = [];
+    graph.getElements().forEach(el => {
+      const pos = el.position();
+      const size = el.size();
+      const cx = pos.x + size.width / 2;
+      const cy = pos.y + size.height / 2;
+      if (cx >= selX1 && cx <= selX2 && cy >= selY1 && cy <= selY2) {
+        selectedNodes.push({
+          id: el.id,
+          type: el.get('nodeType') || 'unknown',
+          label: el.attr('label/text') || '',
+        });
+      }
+    });
+
+    removeFenceRect();
+
+    if (selectedNodes.length === 0) {
+      setStatus('No devices in selection area');
+      return;
+    }
+
+    // Show boundary creation dialog
+    showFenceDialog(selectedNodes);
+  });
+}
+
+function showFenceDialog(selectedNodes) {
+  const overlay = document.getElementById('fence-overlay');
+  if (!overlay) return;
+  overlay.classList.remove('hidden');
+
+  // Populate node list
+  const nodeList = document.getElementById('fence-node-list');
+  nodeList.innerHTML = selectedNodes.map(n =>
+    `<div class="fence-node-item"><span class="fence-node-type">${n.type}</span> ${n.label}</div>`
+  ).join('');
+  document.getElementById('fence-node-count').textContent = selectedNodes.length;
+
+  // Store selected node IDs for submission
+  overlay.dataset.nodeIds = JSON.stringify(selectedNodes.map(n => n.id));
+}
+
+function closeFenceDialog() {
+  document.getElementById('fence-overlay').classList.add('hidden');
+}
+
+async function createBoundaryFromFence() {
+  const overlay = document.getElementById('fence-overlay');
+  const nodeIds = JSON.parse(overlay.dataset.nodeIds || '[]');
+  const classification = document.getElementById('fence-classification').value;
+  const label = document.getElementById('fence-label').value.trim();
+  const notes = document.getElementById('fence-notes').value.trim();
+
+  if (!currentTopoId || currentTopoId === 'new') {
+    await saveTopology();
+  }
+
+  setStatus('Creating boundary...');
+  try {
+    const r = await fetch(NC_BASE + `/api/boundaries/${currentTopoId}/auto-fence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        node_ids: nodeIds,
+        classification,
+        label: label || undefined,
+        notes,
+        snap_grid: 10,
+        padding: 40,
+      }),
+    });
+    const data = await r.json();
+    if (r.ok) {
+      closeFenceDialog();
+      renderBoundaryZone(data);
+      boundaryZones.push(data);
+      updateBoundaryPanel();
+      setStatus(`Boundary created: ${data.label} (${data.stig_tags.length} STIG tags)`);
+    } else {
+      setStatus('Error: ' + (data.error || 'unknown'));
+    }
+  } catch (err) {
+    setStatus('Boundary creation failed: ' + err.message);
+  }
+}
+
+function renderBoundaryZone(b) {
+  const container = document.getElementById('canvas-container');
+  if (!container) return;
+
+  // Remove existing boundary visual if present
+  const existing = document.getElementById('boundary-' + b.id);
+  if (existing) existing.remove();
+
+  const sx = paper.scale().sx;
+  const tx = paper.translate().tx;
+  const ty = paper.translate().ty;
+
+  const zone = document.createElement('div');
+  zone.id = 'boundary-' + b.id;
+  zone.className = 'boundary-zone';
+  zone.style.left = (b.pos_x * sx + tx) + 'px';
+  zone.style.top = (b.pos_y * sx + ty) + 'px';
+  zone.style.width = (b.width * sx) + 'px';
+  zone.style.height = (b.height * sx) + 'px';
+  zone.style.borderColor = b.color;
+  zone.style.backgroundColor = b.color;
+  zone.style.setProperty('--fence-opacity', b.fill_opacity || 0.08);
+
+  // Classification label badge
+  const badge = document.createElement('div');
+  badge.className = 'boundary-label';
+  badge.style.backgroundColor = b.color;
+  badge.textContent = b.label || b.classification;
+  zone.appendChild(badge);
+
+  // STIG tag count badge
+  if (b.stig_tags && b.stig_tags.length > 0) {
+    const stigBadge = document.createElement('div');
+    stigBadge.className = 'boundary-stig-badge';
+    stigBadge.textContent = `${b.stig_tags.length} STIG`;
+    stigBadge.title = b.stig_tags.join('\n');
+    zone.appendChild(stigBadge);
+  }
+
+  zone.dataset.boundaryId = b.id;
+  zone.title = `${b.label} — ${b.classification}\n${(b.stig_tags || []).join('\n')}`;
+  container.appendChild(zone);
+}
+
+function renderAllBoundaries() {
+  // Remove existing boundary visuals
+  document.querySelectorAll('.boundary-zone').forEach(el => el.remove());
+  boundaryZones.forEach(b => renderBoundaryZone(b));
+}
+
+async function loadBoundaries() {
+  if (!currentTopoId || currentTopoId === 'new') return;
+  try {
+    const r = await fetch(NC_BASE + `/api/boundaries/${currentTopoId}`);
+    if (r.ok) {
+      boundaryZones = await r.json();
+      renderAllBoundaries();
+      updateBoundaryPanel();
+    }
+  } catch (_e) { /* silent */ }
+}
+
+async function deleteBoundary(bid) {
+  if (!confirm('Delete this security boundary?')) return;
+  try {
+    await fetch(NC_BASE + `/api/boundaries/${currentTopoId}/${bid}`, { method: 'DELETE' });
+    boundaryZones = boundaryZones.filter(b => b.id !== bid);
+    const el = document.getElementById('boundary-' + bid);
+    if (el) el.remove();
+    updateBoundaryPanel();
+    setStatus('Boundary deleted');
+  } catch (err) {
+    setStatus('Delete failed: ' + err.message);
+  }
+}
+
+function updateBoundaryPanel() {
+  const panel = document.getElementById('boundary-list');
+  if (!panel) return;
+  if (boundaryZones.length === 0) {
+    panel.innerHTML = '<div class="boundary-empty">No boundaries defined. Use fence tool to create.</div>';
+    return;
+  }
+  panel.innerHTML = boundaryZones.map(b => `
+    <div class="boundary-list-item" onmouseover="highlightBoundary('${b.id}')" onmouseout="unhighlightBoundary('${b.id}')">
+      <div class="boundary-list-color" style="background:${b.color}"></div>
+      <div class="boundary-list-info">
+        <div class="boundary-list-label">${b.label}</div>
+        <div class="boundary-list-meta">${b.classification} · ${(b.node_ids || []).length} devices · ${(b.stig_tags || []).length} STIG tags</div>
+      </div>
+      <button class="boundary-list-del" onclick="deleteBoundary('${b.id}')" title="Delete boundary">×</button>
+    </div>
+  `).join('');
+}
+
+function highlightBoundary(bid) {
+  const el = document.getElementById('boundary-' + bid);
+  if (el) el.classList.add('boundary-highlight');
+}
+
+function unhighlightBoundary(bid) {
+  const el = document.getElementById('boundary-' + bid);
+  if (el) el.classList.remove('boundary-highlight');
+}
+
+// Reposition boundary visuals on pan/zoom
+function repositionBoundaries() {
+  if (!paper) return;
+  const sx = paper.scale().sx;
+  const tx = paper.translate().tx;
+  const ty = paper.translate().ty;
+  boundaryZones.forEach(b => {
+    const el = document.getElementById('boundary-' + b.id);
+    if (!el) return;
+    el.style.left = (b.pos_x * sx + tx) + 'px';
+    el.style.top = (b.pos_y * sx + ty) + 'px';
+    el.style.width = (b.width * sx) + 'px';
+    el.style.height = (b.height * sx) + 'px';
+  });
+}
+
 /* ── Init ─────────────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   initCanvas();
@@ -1223,4 +1517,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setStatus('Editing template — modify design, then click "Save to Template"');
   }
+
+  // Initialize fence selection and load existing boundaries
+  initFenceSelection();
+  loadBoundaries();
 });

@@ -684,6 +684,8 @@ function zoomReset() {
 function updateZoomDisplay() {
   const el = document.getElementById('sb-zoom');
   if (el) el.textContent = `Zoom: ${Math.round(_zoomLevel * 100)}%`;
+  // Reposition boundary zones after zoom/pan
+  if (typeof repositionBoundaries === 'function') repositionBoundaries();
 }
 
 /* ── Mouse wheel zoom ─────────────────────────────────────────────────────────── */

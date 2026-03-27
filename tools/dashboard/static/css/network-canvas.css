@@ -953,5 +953,105 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .nc-chat-send-btn:hover { opacity: 0.9; }
 .nc-chat-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Security Boundary Auto-Fencing ────────────────────────────────────────── */
+
+/* Lasso selection rectangle */
+.fence-selection-rect {
+  position: absolute; border: 2px dashed #f39c12; background: rgba(243,156,18,0.08);
+  pointer-events: none; z-index: 500;
+}
+
+/* Boundary zone overlay on canvas */
+.boundary-zone {
+  position: absolute; border: 2px dashed; border-radius: 8px;
+  background-color: currentColor; opacity: 1;
+  pointer-events: none; z-index: 10;
+  transition: opacity 0.15s;
+}
+.boundary-zone { background-color: unset; }
+.boundary-zone::before {
+  content: ''; position: absolute; inset: 0; border-radius: 6px;
+  background: inherit; opacity: var(--fence-opacity, 0.08);
+}
+.boundary-highlight { border-style: solid !important; }
+.boundary-highlight::before { opacity: 0.15 !important; }
+
+/* Classification label badge */
+.boundary-label {
+  position: absolute; top: -12px; left: 12px; padding: 1px 10px;
+  font-size: 10px; font-weight: 700; color: #fff; border-radius: 3px;
+  letter-spacing: 0.5px; font-family: 'Cascadia Code', Consolas, monospace;
+  white-space: nowrap; pointer-events: auto;
+}
+
+/* STIG tag count badge */
+.boundary-stig-badge {
+  position: absolute; top: -12px; right: 12px; padding: 1px 8px;
+  font-size: 9px; font-weight: 600; color: #fff; border-radius: 3px;
+  background: #e74c3c; letter-spacing: 0.3px;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  pointer-events: auto; cursor: help;
+}
+
+/* Fence dialog overlay */
+.fence-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+}
+.fence-dialog {
+  background: var(--surface, #16213e); border: 1px solid var(--border, #2a3a5c);
+  border-radius: 12px; padding: 24px; width: 420px; max-height: 80vh; overflow-y: auto;
+  color: var(--text, #eaeaea);
+}
+.fence-dialog h3 { margin: 0 0 16px 0; font-size: 16px; color: #f39c12; }
+.fence-dialog label { display: block; font-size: 12px; color: #7a8cb0; margin: 10px 0 4px; font-weight: 600; }
+.fence-dialog select, .fence-dialog input, .fence-dialog textarea {
+  width: 100%; padding: 6px 10px; font-size: 13px;
+  background: var(--bg, #0a0e1a); border: 1px solid var(--border, #2a3a5c);
+  border-radius: 6px; color: var(--text, #eaeaea); outline: none;
+}
+.fence-dialog textarea { height: 60px; resize: vertical; }
+.fence-node-list {
+  max-height: 140px; overflow-y: auto; padding: 6px 0;
+  border: 1px solid var(--border, #2a3a5c); border-radius: 6px;
+  background: var(--bg, #0a0e1a); margin-top: 4px;
+}
+.fence-node-item { padding: 3px 10px; font-size: 11px; }
+.fence-node-type { color: #4a9eff; font-family: 'Cascadia Code', Consolas, monospace; margin-right: 6px; }
+.fence-actions { display: flex; gap: 8px; margin-top: 18px; justify-content: flex-end; }
+.fence-actions button {
+  padding: 8px 18px; font-size: 13px; font-weight: 600; border: none;
+  border-radius: 6px; cursor: pointer;
+}
+.fence-btn-create { background: #f39c12; color: #0a0e1a; }
+.fence-btn-create:hover { opacity: 0.9; }
+.fence-btn-cancel { background: var(--border, #2a3a5c); color: var(--text, #eaeaea); }
+
+/* Boundary list panel (right sidebar) */
+.boundary-panel { padding: 8px; }
+.boundary-panel-header {
+  font-size: 11px; font-weight: 700; color: #f39c12; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 8px; padding: 4px 0;
+  border-bottom: 1px solid var(--border, #2a3a5c);
+}
+.boundary-empty { font-size: 11px; color: #636e72; padding: 8px 0; }
+.boundary-list-item {
+  display: flex; align-items: center; gap: 8px; padding: 6px 4px;
+  border-radius: 6px; cursor: pointer; transition: background 0.1s;
+}
+.boundary-list-item:hover { background: rgba(74,158,255,0.06); }
+.boundary-list-color { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.boundary-list-info { flex: 1; min-width: 0; }
+.boundary-list-label { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.boundary-list-meta { font-size: 10px; color: #7a8cb0; }
+.boundary-list-del {
+  background: none; border: none; color: #636e72; font-size: 16px; cursor: pointer;
+  padding: 0 4px; line-height: 1;
+}
+.boundary-list-del:hover { color: #e94560; }
+
+/* Active fence mode button */
+.tb-btn-active { background: #2b1a0f !important; border-color: #f39c12 !important; color: #f39c12 !important; }
+
 /* ── Hidden utility ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

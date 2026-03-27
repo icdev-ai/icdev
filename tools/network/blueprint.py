@@ -1996,6 +1996,282 @@ def create_network_blueprint():
         return jsonify({"deleted": gid})
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: Security Boundary Auto-Fencing
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _auto_stig_tags(node_types: list[str]) -> list[str]:
+        """Derive STIG boundary tags from the device types inside a fence."""
+        tags = set()
+        type_set = set(node_types)
+        # Firewall present → perimeter boundary
+        fw_types = {"firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf"}
+        if type_set & fw_types:
+            tags.add("NET-BND-001: Perimeter Firewall Boundary")
+        # Encryption devices → FIPS boundary
+        enc_types = {
+            "fips-140-l1", "fips-140-l2", "fips-140-l3", "fips-140-l4",
+            "hsm", "type1-encryptor", "kg-175d", "kg-175g", "kg-250",
+            "kg-340", "kg-245x", "kg-255", "macsec",
+        }
+        if type_set & enc_types:
+            tags.add("NET-ENC-BND: FIPS 140 Encryption Boundary")
+        # Servers → server enclave STIG
+        if "server" in type_set:
+            tags.add("NET-SRV-BND: Server Enclave Boundary")
+        # User endpoints → user enclave
+        user_types = {"endpoint-pc", "endpoint-phone"}
+        if type_set & user_types:
+            tags.add("NET-USR-BND: User Enclave Boundary")
+        # IoT → IoT segment
+        iot_types = {"endpoint-iot", "endpoint-camera"}
+        if type_set & iot_types:
+            tags.add("NET-IOT-BND: IoT Segment Boundary")
+        # Management → NOC/management boundary
+        mgmt_types = {"siem", "network-tap", "wlc"}
+        if type_set & mgmt_types:
+            tags.add("NET-MGT-BND: Management / NOC Boundary")
+        # Wireless → wireless boundary
+        if "wap" in type_set:
+            tags.add("NET-WLS-BND: Wireless Access Boundary")
+        # Cloud resources → cloud enclave
+        cloud_prefixes = ("aws-", "az-", "gcp-", "oci-", "ibm-")
+        if any(t.startswith(cloud_prefixes) for t in type_set):
+            tags.add("NET-CLD-BND: Cloud Enclave Boundary")
+        # Cross-zone (mixed) → micro-segmentation required
+        if len(tags) >= 2:
+            tags.add("NET-BND-002: Micro-segmentation Required")
+        return sorted(tags)
+
+    @bp.route("/api/boundaries/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_boundaries(topo_id):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_boundaries WHERE topology_id=? ORDER BY created_at",
+            (topo_id,),
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = _row_to_dict(r)
+            for key in ("node_ids", "stig_tags"):
+                try:
+                    d[key] = json.loads(d.get(key) or "[]")
+                except Exception:
+                    d[key] = []
+            result.append(d)
+        return jsonify(result)
+
+    @bp.route("/api/boundaries/<topo_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_boundary(topo_id):
+        data = request.get_json(force=True, silent=True) or {}
+        bid = str(_uuid.uuid4())
+        node_ids = data.get("node_ids", [])
+        classification = data.get("classification", "CUI")
+        snap = data.get("snap_grid", 10)
+
+        # Snap position/size to grid
+        pos_x = round(data.get("pos_x", 0) / snap) * snap
+        pos_y = round(data.get("pos_y", 0) / snap) * snap
+        width = max(snap, round(data.get("width", 400) / snap) * snap)
+        height = max(snap, round(data.get("height", 300) / snap) * snap)
+
+        # Auto-derive STIG tags from contained node types
+        node_types = []
+        if node_ids:
+            conn = get_connection()
+            topo = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+            ).fetchone()
+            conn.close()
+            if topo:
+                try:
+                    graph = json.loads(topo["graph_json"])
+                except Exception:
+                    graph = {"nodes": []}
+                nid_set = set(node_ids)
+                node_types = [
+                    n["type"] for n in graph.get("nodes", []) if n["id"] in nid_set
+                ]
+
+        stig_tags = data.get("stig_tags") or _auto_stig_tags(node_types)
+
+        # Classification label mapping
+        _CLS_LABELS = {
+            "CUI": "CUI Enclave",
+            "SECRET": "SECRET VLAN",
+            "TOP SECRET": "TOP SECRET Enclave",
+            "PUBLIC": "Public Zone",
+        }
+        label = data.get("label") or _CLS_LABELS.get(classification, f"{classification} Enclave")
+
+        # Classification → color mapping
+        _CLS_COLORS = {
+            "CUI": "#f39c12",
+            "SECRET": "#e94560",
+            "TOP SECRET": "#9b59b6",
+            "PUBLIC": "#27ae60",
+        }
+        color = data.get("color") or _CLS_COLORS.get(classification, "#4a9eff")
+
+        now = _now()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_boundaries "
+            "(id, topology_id, label, classification, color, fill_opacity, "
+            "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
+            "created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (bid, topo_id, label, classification, color,
+             data.get("fill_opacity", 0.08),
+             json.dumps(node_ids), json.dumps(stig_tags),
+             pos_x, pos_y, width, height, snap,
+             data.get("notes", ""), now, now),
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "boundary", bid, f"{classification} — {label}")
+        return jsonify({
+            "id": bid, "label": label, "classification": classification,
+            "color": color, "stig_tags": stig_tags,
+            "pos_x": pos_x, "pos_y": pos_y, "width": width, "height": height,
+            "node_ids": node_ids,
+        }), 201
+
+    @bp.route("/api/boundaries/<topo_id>/<bid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_boundary(topo_id, bid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        allowed = [
+            "label", "classification", "color", "fill_opacity",
+            "node_ids", "stig_tags", "pos_x", "pos_y", "width", "height",
+            "snap_grid", "notes",
+        ]
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                v = data[k]
+                if k in ("node_ids", "stig_tags") and isinstance(v, list):
+                    v = json.dumps(v)
+                fields.append(f"{k}=?")
+                values.append(v)
+        if not fields:
+            conn.close()
+            return jsonify({"error": "No fields"}), 400
+        fields.append("updated_at=?")
+        values.append(_now())
+        values.append(bid)
+        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id=?", values)
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/boundaries/<topo_id>/<bid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_boundary(topo_id, bid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_boundaries WHERE id=? AND topology_id=?", (bid, topo_id))
+        conn.commit()
+        conn.close()
+        _audit("DELETE", "boundary", bid)
+        return jsonify({"deleted": bid})
+
+    @bp.route("/api/boundaries/<topo_id>/auto-fence", methods=["POST"])
+    @nc_login_required
+    def nc_api_auto_fence(topo_id):
+        """Auto-generate a boundary from a list of selected node IDs.
+
+        Calculates bounding box from node positions, snaps to grid, derives
+        classification label and STIG boundary tags automatically.
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        node_ids = data.get("node_ids", [])
+        if not node_ids:
+            return jsonify({"error": "node_ids required"}), 400
+
+        classification = data.get("classification", "CUI")
+        snap = data.get("snap_grid", 10)
+        padding = data.get("padding", 40)
+
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        conn.close()
+        if not topo:
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            return jsonify({"error": "Invalid graph JSON"}), 400
+
+        nid_set = set(node_ids)
+        matched = [n for n in graph.get("nodes", []) if n["id"] in nid_set]
+        if not matched:
+            return jsonify({"error": "No matching nodes found"}), 404
+
+        # Bounding box from node positions (assume 110x60 default node size)
+        xs = [n.get("x", 0) for n in matched]
+        ys = [n.get("y", 0) for n in matched]
+        node_w = 110
+        node_h = 60
+        min_x = min(xs) - padding
+        min_y = min(ys) - padding
+        max_x = max(xs) + node_w + padding
+        max_y = max(ys) + node_h + padding
+
+        # Snap to grid
+        pos_x = (min_x // snap) * snap
+        pos_y = (min_y // snap) * snap
+        width = max(snap, ((max_x - pos_x + snap - 1) // snap) * snap)
+        height = max(snap, ((max_y - pos_y + snap - 1) // snap) * snap)
+
+        node_types = [n.get("type", "") for n in matched]
+        stig_tags = _auto_stig_tags(node_types)
+
+        _CLS_LABELS = {
+            "CUI": "CUI Enclave",
+            "SECRET": "SECRET VLAN",
+            "TOP SECRET": "TOP SECRET Enclave",
+            "PUBLIC": "Public Zone",
+        }
+        _CLS_COLORS = {
+            "CUI": "#f39c12",
+            "SECRET": "#e94560",
+            "TOP SECRET": "#9b59b6",
+            "PUBLIC": "#27ae60",
+        }
+        label = data.get("label") or _CLS_LABELS.get(classification, f"{classification} Enclave")
+        color = data.get("color") or _CLS_COLORS.get(classification, "#4a9eff")
+
+        bid = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_boundaries "
+            "(id, topology_id, label, classification, color, fill_opacity, "
+            "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
+            "created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (bid, topo_id, label, classification, color, 0.08,
+             json.dumps(node_ids), json.dumps(stig_tags),
+             pos_x, pos_y, width, height, snap,
+             data.get("notes", ""), now, now),
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "boundary", bid, f"auto-fence {classification} — {len(matched)} nodes")
+        return jsonify({
+            "id": bid, "label": label, "classification": classification,
+            "color": color, "fill_opacity": 0.08, "stig_tags": stig_tags,
+            "pos_x": pos_x, "pos_y": pos_y, "width": width, "height": height,
+            "node_ids": node_ids, "node_count": len(matched),
+        }), 201
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Monte Carlo Simulation
     # ══════════════════════════════════════════════════════════════════════
 
