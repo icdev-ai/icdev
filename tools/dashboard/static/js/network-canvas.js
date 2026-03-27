@@ -161,6 +161,9 @@ const NODE_STYLES = {
   'ibm-vpn':          { fill: '#0f0f2b', stroke: '#4589ff', label: 'VPN Gateway',   symbol: 'VPN'},
   'ibm-lb':           { fill: '#0f0f2b', stroke: '#0f62fe', label: 'Load Balancer', symbol: 'ILB'},
   'ibm-tg':           { fill: '#0f0f2b', stroke: '#0f62fe', label: 'Transit GW',    symbol: 'TG'},
+  // Colocation / Cross-Connect
+  'meet-me-room':     { fill: '#1a0f2b', stroke: '#a29bfe', label: 'Meet-Me Room',  symbol: 'MMR'},
+  'cross-connect':    { fill: '#1a1a0f', stroke: '#fdcb6e', label: 'Cross-Connect', symbol: 'XX' },
   // Multi-cloud
   'cloud-peering':    { fill: '#1a0f2b', stroke: '#8b5cf6', label: 'Cloud Peering', symbol: 'PER'},
   'sdwan-overlay':    { fill: '#0f2b2b', stroke: '#00cec9', label: 'SD-WAN',        symbol: 'SDW'},
@@ -193,6 +196,10 @@ const CISCO_ICONS = {
   'cloud': 'M12,32 a8,8 0 0,1 -2,-16 a10,10 0 0,1 18,-6 a8,8 0 0,1 12,6 a7,7 0 0,1 -2,16 z',
   // Patch Panel: rectangular with ports
   'patch-panel': 'M4,16 h40 v16 h-40 z M10,20 v8 M16,20 v8 M22,20 v8 M28,20 v8 M34,20 v8 M38,20 v8',
+  // Meet-Me Room: building with door
+  'meet-me-room': 'M8,38 V16 L24,6 L40,16 V38 z M18,38 V26 h12 V38 M14,20 h4 v4 h-4 z M30,20 h4 v4 h-4 z',
+  // Cross-Connect: fiber patch with X connections
+  'cross-connect': 'M4,14 h40 v20 h-40 z M10,14 v20 M20,14 v20 M30,14 v20 M38,14 v20 M12,18 l6,12 M18,18 l-6,12 M32,18 l6,12 M38,18 l-6,12',
   // ROADM: hexagon
   'roadm': 'M14,8 h20 l10,16 l-10,16 h-20 l-10,-16 z',
   // Transponder: diamond
@@ -213,6 +220,8 @@ function getCiscoPath(type) {
   if (type.includes('panel') || type.includes('odf')) return CISCO_ICONS['patch-panel'];
   if (type.includes('roadm') || type.includes('oadm')) return CISCO_ICONS['roadm'];
   if (type.includes('transponder') || type.includes('edfa')) return CISCO_ICONS['transponder'];
+  if (type === 'meet-me-room' || type.includes('mmr')) return CISCO_ICONS['meet-me-room'];
+  if (type === 'cross-connect' || type.includes('xconn')) return CISCO_ICONS['cross-connect'];
   return null; // fallback to rect
 }
 

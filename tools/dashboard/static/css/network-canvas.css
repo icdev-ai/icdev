@@ -760,6 +760,13 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .util-fill.warning { background: var(--warning); }
 .util-fill.critical { background: var(--danger); }
 
+/* ── Colocation / Facility palette icons ───────────────────────────────────── */
+.pi-icon.mmr-icon  { background: #1a0f2b; border: 1px solid #a29bfe; color: #a29bfe; }
+.pi-icon.xx-icon   { background: #1a1a0f; border: 1px solid #fdcb6e; color: #fdcb6e; }
+.pi-icon.dm-icon   { background: #1a1a1a; border: 1px solid #b2bec3; color: #b2bec3; }
+.pi-icon.cage-icon { background: #0f1a2b; border: 1px solid #74b9ff; color: #74b9ff; }
+.pi-icon.cab-icon  { background: #1a1a1a; border: 1px solid #636e72; color: #636e72; }
+
 /* ── Cloud palette icons ───────────────────────────────────────────────────── */
 .pi-icon.aws-icon { background: #ff9900; color: #232f3e; }
 .pi-icon.azure-icon { background: #0078d4; color: #fff; }
