@@ -58,6 +58,9 @@ from tools.network.export_import import (  # noqa: E402
 from tools.network.inventory_export import (  # noqa: E402
     to_ansible_inventory, to_terraform_hcl,
 )
+from tools.network.config_generator import (  # noqa: E402
+    generate_device_configs, generate_device_configs_zip, list_configurable_nodes,
+)
 from tools.network.stig_import import import_stig_file  # noqa: E402
 from tools.network.intent_validator import (  # noqa: E402
     validate_intent_policy, CONSTRAINT_TYPES,
@@ -841,6 +844,75 @@ def create_network_blueprint():
             "filename": f"{safe_name}_main.tf",
             "content": content,
         })
+
+    @bp.route("/api/export/<topo_id>/device-configs", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_device_configs(topo_id):
+        """Export per-device configuration files (IOS/EOS/JunOS) as a ZIP archive.
+
+        Body (JSON, optional):
+          format: "zip" (default) | "json"
+            - "zip"  — base64-encoded ZIP bytes; client decodes and downloads.
+            - "json" — dict mapping filename -> config text for in-browser preview.
+
+        Each configurable node (router, switch, firewall) gets its own config file
+        rendered from a Jinja2 template using the node's assigned IPs, VLANs,
+        routing protocol settings, and connected edges.
+        """
+        import base64
+
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        data = request.get_json(force=True, silent=True) or {}
+        fmt = data.get("format", "zip")
+        safe_name = topo["name"].replace(" ", "_")
+
+        if fmt == "json":
+            configs = generate_device_configs(graph, topo["name"])
+            _audit("EXPORT", "topology", topo_id, f"device-configs json devices={len(configs)}")
+            return jsonify({
+                "format": "json",
+                "topo_name": topo["name"],
+                "device_count": len(configs),
+                "configs": configs,
+            })
+
+        # Default: ZIP
+        zip_bytes = generate_device_configs_zip(graph, topo["name"])
+        encoded = base64.b64encode(zip_bytes).decode("ascii")
+        device_count = len(list_configurable_nodes(graph))
+        _audit("EXPORT", "topology", topo_id, f"device-configs zip devices={device_count}")
+        return jsonify({
+            "format": "zip",
+            "filename": f"{safe_name}_device_configs.zip",
+            "content_b64": encoded,
+            "device_count": device_count,
+        })
+
+    @bp.route("/api/export/<topo_id>/device-configs/preview", methods=["GET"])
+    @nc_login_required
+    def nc_api_export_device_configs_preview(topo_id):
+        """Return a list of configurable nodes and their OS type for UI preview."""
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row[0] or '{"nodes":[],"edges":[]}')
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        nodes = list_configurable_nodes(graph)
+        return jsonify({"configurable_nodes": nodes, "count": len(nodes)})
 
     @bp.route("/api/import", methods=["POST"])
     @nc_login_required

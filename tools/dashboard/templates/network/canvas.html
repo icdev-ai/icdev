@@ -45,6 +45,7 @@
       <button class="tb-btn" onclick="exportAs('svg')" title="Export SVG">⬇ SVG</button>
       <button class="tb-btn" onclick="exportInventory('ansible')" title="Export Ansible Inventory (hosts grouped by role/enclave)" style="color:#ff6b35;">⬇ Ansible</button>
       <button class="tb-btn" onclick="exportInventory('terraform')" title="Export Terraform HCL skeleton (VPC, subnet, security group)" style="color:#7b42bc;">⬇ Terraform</button>
+      <button class="tb-btn" onclick="exportDeviceConfigs()" title="Export per-device configs (Cisco IOS / Arista EOS / Juniper JunOS) as ZIP" style="color:#00c896;">⬇ Dev Configs</button>
     </div>
     <div class="tb-group">
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
@@ -770,6 +771,40 @@
       setStatus((fmt === 'ansible' ? 'Ansible inventory' : 'Terraform HCL') + ' exported: ' + data.filename);
     } catch (e) {
       alert('Export error: ' + e.message);
+    }
+  }
+
+  async function exportDeviceConfigs() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    setStatus('Generating device configs…');
+    try {
+      const r = await fetch(NC_BASE + '/api/export/' + TOPOLOGY_ID + '/device-configs', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({format: 'zip'}),
+      });
+      const data = await r.json();
+      if (data.error) { alert('Export failed: ' + data.error); return; }
+      if (data.device_count === 0) {
+        alert('No configurable devices found (add routers, switches, or firewalls to the canvas).');
+        setStatus('No configurable devices.');
+        return;
+      }
+      // Decode base64 ZIP and trigger download
+      const raw = atob(data.content_b64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      const blob = new Blob([bytes], {type: 'application/zip'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus('Device configs exported: ' + data.filename + ' (' + data.device_count + ' devices)');
+    } catch (e) {
+      alert('Export error: ' + e.message);
+      setStatus('Device config export failed.');
     }
   }
 
