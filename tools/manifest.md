@@ -1498,3 +1498,12 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Govcon Scan | tools\genesis\reflexes\govcon_scan.py | Auto-registered: reflexes/govcon_scan.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Patcher | tools\airgap\config_patcher.py | Auto-registered: airgap/config_patcher.py | --json | JSON |
+| Hook Compat | tools\airgap\hook_compat.py | Auto-registered: airgap/hook_compat.py | --json | JSON |
+| Pdf Fallback | tools\airgap\pdf_fallback.py | Auto-registered: airgap/pdf_fallback.py | --json | JSON |
+| Session Compat | tools\airgap\session_compat.py | Auto-registered: airgap/session_compat.py | --json | JSON |

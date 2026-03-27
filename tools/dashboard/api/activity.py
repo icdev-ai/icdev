@@ -173,26 +173,20 @@ def activity_stats():
         audit_count = conn.execute("SELECT COUNT(*) as cnt FROM audit_trail").fetchone()["cnt"]
         hook_count = conn.execute("SELECT COUNT(*) as cnt FROM hook_events").fetchone()["cnt"]
 
-        # Today's events — use strftime to normalize both sides so
-        # ISO timestamps with timezone offsets (+00:00) compare correctly
-        # against SQLite's DATE('now') which returns UTC.
+        # Today's events
         audit_today = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail "
-            "WHERE SUBSTR(created_at, 1, 10) = STRFTIME('%Y-%m-%d', 'now')"
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE DATE(created_at) = DATE('now')"
         ).fetchone()["cnt"]
         hook_today = conn.execute(
-            "SELECT COUNT(*) as cnt FROM hook_events "
-            "WHERE SUBSTR(created_at, 1, 10) = STRFTIME('%Y-%m-%d', 'now')"
+            "SELECT COUNT(*) as cnt FROM hook_events WHERE DATE(created_at) = DATE('now')"
         ).fetchone()["cnt"]
 
-        # Last hour — compare raw strings; ISO format sorts correctly
+        # Last hour
         audit_hour = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail "
-            "WHERE created_at >= STRFTIME('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour')"
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE created_at >= datetime('now', '-1 hour')"
         ).fetchone()["cnt"]
         hook_hour = conn.execute(
-            "SELECT COUNT(*) as cnt FROM hook_events "
-            "WHERE created_at >= STRFTIME('%Y-%m-%dT%H:%M:%S', 'now', '-1 hour')"
+            "SELECT COUNT(*) as cnt FROM hook_events WHERE created_at >= datetime('now', '-1 hour')"
         ).fetchone()["cnt"]
 
         return jsonify({
