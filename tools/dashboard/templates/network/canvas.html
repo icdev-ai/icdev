@@ -761,6 +761,28 @@
   </div>
 </div>
 
+<!-- Blast Radius Context Menu -->
+<div id="blast-ctx-menu" style="
+  display:none;position:fixed;z-index:9999;
+  background:#1a1a2e;border:1px solid #e94560;border-radius:6px;
+  box-shadow:0 4px 20px rgba(233,69,96,0.4);min-width:220px;overflow:hidden;">
+  <div style="padding:8px 14px;background:#12122a;border-bottom:1px solid #2a2a4a;
+    font-size:11px;color:#7a8cb0;text-transform:uppercase;letter-spacing:1px;">Security Analysis</div>
+  <div id="blast-ctx-device-name" style="padding:8px 14px 4px;font-size:12px;color:#e94560;font-weight:600;"></div>
+  <button onclick="triggerBlastRadiusFromContext()" style="
+    display:block;width:100%;text-align:left;padding:10px 14px;
+    background:transparent;border:none;color:#e0e0e0;cursor:pointer;font-size:13px;">
+    &#x1F4A5; What if compromised?
+    <span style="display:block;font-size:11px;color:#7a8cb0;margin-top:2px;">Blast radius simulation</span>
+  </button>
+  <button onclick="triggerBlastRadiusFromContext(5)" style="
+    display:block;width:100%;text-align:left;padding:10px 14px;
+    background:transparent;border:none;color:#e0e0e0;cursor:pointer;font-size:13px;border-top:1px solid #2a2a4a;">
+    &#x1F6E1; Deep blast (5 hops)
+    <span style="display:block;font-size:11px;color:#7a8cb0;margin-top:2px;">Extended reachability analysis</span>
+  </button>
+</div>
+
 <!-- Templates Overlay -->
 <div id="tpl-overlay" class="sim-overlay hidden">
   <div class="sim-panel tpl-panel">

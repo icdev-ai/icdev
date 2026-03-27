@@ -556,7 +556,17 @@ function initCanvas() {
   // Selection
   paper.on('element:pointerclick', (view) => selectCell(view.model));
   paper.on('link:pointerclick', (view) => selectCell(view.model));
-  paper.on('blank:pointerclick', () => { if (!_isPanning) deselectAll(); });
+  paper.on('blank:pointerclick', () => { if (!_isPanning) { deselectAll(); hideBlastContextMenu(); } });
+
+  // Right-click on device → blast radius context menu
+  paper.on('element:contextmenu', (view, evt) => {
+    evt.preventDefault();
+    selectCell(view.model);
+    showBlastContextMenu(evt.clientX, evt.clientY, view.model);
+  });
+  paper.on('blank:contextmenu', (view, evt) => { evt.preventDefault(); hideBlastContextMenu(); });
+  document.addEventListener('click', () => hideBlastContextMenu(), true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideBlastContextMenu(); });
 
   // Double-click link to annotate cable run
   paper.on('link:pointerdblclick', (view) => {
