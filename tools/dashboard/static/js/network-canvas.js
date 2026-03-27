@@ -81,6 +81,22 @@ const NODE_STYLES = {
   'annotation':       { fill: '#1a1a2e', stroke: '#636e72',  label: 'Note',          symbol: '...' },
   // Group container
   'group-site':       { fill: 'rgba(15,25,60,0.4)', stroke: '#5f6e8e', label: 'Site Group', symbol: '' },
+  // Drawing shapes
+  'draw-rect':        { fill: '#1a2a3a', stroke: '#4a9eff',  label: 'Rectangle',     symbol: '',  shape: 'rect' },
+  'draw-rounded-rect':{ fill: '#1a2a3a', stroke: '#4a9eff',  label: 'Rounded Rect',  symbol: '',  shape: 'roundedrect' },
+  'draw-circle':      { fill: '#1a2a3a', stroke: '#e94560',  label: 'Circle',        symbol: '',  shape: 'circle' },
+  'draw-ellipse':     { fill: '#1a2a3a', stroke: '#9b59b6',  label: 'Ellipse',       symbol: '',  shape: 'ellipse' },
+  'draw-diamond':     { fill: '#1a2a3a', stroke: '#f39c12',  label: 'Diamond',       symbol: '',  shape: 'diamond' },
+  'draw-triangle':    { fill: '#1a2a3a', stroke: '#27ae60',  label: 'Triangle',      symbol: '',  shape: 'triangle' },
+  'draw-hexagon':     { fill: '#1a2a3a', stroke: '#e67e22',  label: 'Hexagon',       symbol: '',  shape: 'hexagon' },
+  'draw-star':        { fill: '#2b2b0f', stroke: '#f1c40f',  label: 'Star',          symbol: '',  shape: 'star' },
+  'draw-line-h':      { fill: 'transparent', stroke: '#7a8cb0', label: 'H-Line',     symbol: '',  shape: 'hline' },
+  'draw-line-v':      { fill: 'transparent', stroke: '#7a8cb0', label: 'V-Line',     symbol: '',  shape: 'vline' },
+  'draw-arrow':       { fill: 'transparent', stroke: '#e94560', label: 'Arrow',      symbol: '',  shape: 'arrow' },
+  // Text label
+  'text-label':       { fill: 'transparent', stroke: 'transparent', label: 'Text',   symbol: '',  shape: 'text' },
+  'text-heading':     { fill: 'transparent', stroke: 'transparent', label: 'Heading', symbol: '',  shape: 'heading' },
+  'text-badge':       { fill: '#0f3460',     stroke: '#4a9eff',    label: 'Badge',   symbol: '',  shape: 'badge' },
   // Logical
   'vrf':              { fill: '#0f1a2b', stroke: '#5dade2',  label: 'VRF',           symbol: 'VRF'},
   'vlan':             { fill: '#0f2b0f', stroke: '#58d68d',  label: 'VLAN',          symbol: 'VL' },
@@ -270,6 +286,86 @@ const NetworkNode = joint.dia.Element.define('network.Node', {
   ]
 });
 
+/* ── Drawing Shape — SVG path generators ───────────────────────────────────── */
+function drawingShapePath(shape, w, h) {
+  switch (shape) {
+    case 'rect':
+      return `M0,0 H${w} V${h} H0 Z`;
+    case 'roundedrect':
+      const r = Math.min(12, w/4, h/4);
+      return `M${r},0 H${w-r} Q${w},0 ${w},${r} V${h-r} Q${w},${h} ${w-r},${h} H${r} Q0,${h} 0,${h-r} V${r} Q0,0 ${r},0 Z`;
+    case 'circle': {
+      const cx = w/2, cy = h/2, rx = w/2, ry = h/2;
+      return `M${cx-rx},${cy} A${rx},${ry} 0 1,1 ${cx+rx},${cy} A${rx},${ry} 0 1,1 ${cx-rx},${cy} Z`;
+    }
+    case 'ellipse': {
+      const cx2 = w/2, cy2 = h/2, rx2 = w/2, ry2 = h/2;
+      return `M${cx2-rx2},${cy2} A${rx2},${ry2} 0 1,1 ${cx2+rx2},${cy2} A${rx2},${ry2} 0 1,1 ${cx2-rx2},${cy2} Z`;
+    }
+    case 'diamond':
+      return `M${w/2},0 L${w},${h/2} L${w/2},${h} L0,${h/2} Z`;
+    case 'triangle':
+      return `M${w/2},0 L${w},${h} L0,${h} Z`;
+    case 'hexagon': {
+      const hx = w * 0.25;
+      return `M${hx},0 H${w-hx} L${w},${h/2} L${w-hx},${h} H${hx} L0,${h/2} Z`;
+    }
+    case 'star': {
+      const cx3 = w/2, cy3 = h/2, or3 = Math.min(w,h)/2, ir = or3 * 0.4;
+      let d = '';
+      for (let i = 0; i < 10; i++) {
+        const angle = (Math.PI/2) + (i * Math.PI/5);
+        const rad = i % 2 === 0 ? or3 : ir;
+        const px = cx3 + rad * Math.cos(angle);
+        const py = cy3 - rad * Math.sin(angle);
+        d += (i === 0 ? 'M' : 'L') + px.toFixed(1) + ',' + py.toFixed(1);
+      }
+      return d + ' Z';
+    }
+    case 'hline':
+      return `M0,${h/2} H${w}`;
+    case 'vline':
+      return `M${w/2},0 V${h}`;
+    case 'arrow':
+      return `M0,${h/2} H${w-12} L${w-12},${h/2-6} L${w},${h/2} L${w-12},${h/2+6} L${w-12},${h/2}`;
+    default:
+      return `M0,0 H${w} V${h} H0 Z`;
+  }
+}
+
+/* ── Drawing Shape JointJS element ─────────────────────────────────────────── */
+const DrawingShape = joint.dia.Element.define('network.DrawingShape', {
+  attrs: {
+    body: { refWidth: '100%', refHeight: '100%', fill: 'transparent', stroke: 'transparent', strokeWidth: 0 },
+    shape: { fill: '#1a2a3a', stroke: '#4a9eff', strokeWidth: 2, strokeLinejoin: 'round' },
+    label: { refX: '50%', refY: '105%', textAnchor: 'middle', fontSize: 10, fontFamily: 'Segoe UI, system-ui, sans-serif', fill: '#eaeaea' }
+  },
+}, {
+  markup: [
+    { tagName: 'rect', selector: 'body' },
+    { tagName: 'path', selector: 'shape' },
+    { tagName: 'text', selector: 'label' },
+  ]
+});
+
+/* ── Text Label JointJS element ────────────────────────────────────────────── */
+const TextLabel = joint.dia.Element.define('network.TextLabel', {
+  attrs: {
+    body: { refWidth: '100%', refHeight: '100%', fill: 'transparent', stroke: 'transparent', strokeWidth: 0, rx: 4, ry: 4 },
+    label: {
+      refX: '50%', refY: '50%',
+      textAnchor: 'middle', textVerticalAnchor: 'middle',
+      fontSize: 14, fontFamily: 'Segoe UI, system-ui, sans-serif',
+      fill: '#eaeaea', fontWeight: 'normal',
+    }
+  },
+}, {
+  markup: [
+    { tagName: 'rect', selector: 'body' },
+    { tagName: 'text', selector: 'label' },
+  ]
+});
+
 /* ── Initialize JointJS ─────────────────────────────────────────────────────── */
 function initCanvas() {
   graph = new joint.dia.Graph();
@@ -342,6 +438,7 @@ function initCanvas() {
   initCanvasTooltips();
 
   updateStatusBar();
+  initColorPalettes();
   setStatus('Ready — drag objects from the palette to begin');
 }
 
@@ -410,6 +507,73 @@ function initCanvasTooltips() {
 function createNode(type, x, y, label, nodeId, configData) {
   const style = getStyle(type);
   const displayLabel = label || style.label;
+  const config = configData || {};
+
+  // Drawing shapes
+  if (style.shape && ['rect','roundedrect','circle','ellipse','diamond','triangle','hexagon','star','hline','vline','arrow'].includes(style.shape)) {
+    const isLine = ['hline','vline','arrow'].includes(style.shape);
+    const w = config._width || (isLine ? (style.shape === 'vline' ? 20 : 160) : (['circle','star'].includes(style.shape) ? 80 : 120));
+    const h = config._height || (isLine ? (style.shape === 'hline' || style.shape === 'arrow' ? 20 : 100) : (['circle','star'].includes(style.shape) ? 80 : 80));
+    const shapePath = drawingShapePath(style.shape, w, h);
+
+    const node = new DrawingShape({
+      id: nodeId || joint.util.uuid(),
+      position: { x: x || 100, y: y || 100 },
+      size: { width: w, height: h },
+      attrs: {
+        shape: {
+          d: shapePath,
+          fill: isLine ? 'none' : (config._fill || style.fill),
+          stroke: config._stroke || style.stroke,
+          strokeWidth: config._strokeWidth || 2,
+          fillOpacity: config._fillOpacity || 0.6,
+        },
+        label: {
+          text: isLine ? '' : (displayLabel === style.label ? '' : displayLabel),
+          fill: config._textColor || '#eaeaea',
+        }
+      }
+    });
+    node.set('nodeType', type);
+    node.set('configData', config);
+    graph.addCell(node);
+    return node;
+  }
+
+  // Text labels
+  if (style.shape && ['text','heading','badge'].includes(style.shape)) {
+    const isHeading = style.shape === 'heading';
+    const isBadge = style.shape === 'badge';
+    const defaultText = displayLabel === style.label ? 'Double-click to edit' : displayLabel;
+    const w = config._width || (isHeading ? 250 : isBadge ? 120 : 200);
+    const h = config._height || (isHeading ? 36 : isBadge ? 28 : 30);
+
+    const node = new TextLabel({
+      id: nodeId || joint.util.uuid(),
+      position: { x: x || 100, y: y || 100 },
+      size: { width: w, height: h },
+      attrs: {
+        body: {
+          fill: isBadge ? (config._fill || style.fill) : 'transparent',
+          stroke: isBadge ? (config._stroke || style.stroke) : 'transparent',
+          strokeWidth: isBadge ? 1 : 0,
+          rx: isBadge ? 12 : 0,
+          ry: isBadge ? 12 : 0,
+        },
+        label: {
+          text: defaultText,
+          fill: config._textColor || '#eaeaea',
+          fontSize: isHeading ? 20 : isBadge ? 11 : 14,
+          fontWeight: isHeading ? 'bold' : isBadge ? '600' : 'normal',
+          fontFamily: isHeading ? 'Segoe UI, system-ui, sans-serif' : isBadge ? 'Cascadia Code, Consolas, monospace' : 'Segoe UI, system-ui, sans-serif',
+        }
+      }
+    });
+    node.set('nodeType', type);
+    node.set('configData', config);
+    graph.addCell(node);
+    return node;
+  }
 
   // Group/site containers are larger
   const isGroup = (type === 'group-site');
@@ -425,8 +589,8 @@ function createNode(type, x, y, label, nodeId, configData) {
     size: { width: w, height: h },
     attrs: {
       body: {
-        fill: style.fill,
-        stroke: style.stroke,
+        fill: config._fill || style.fill,
+        stroke: config._stroke || style.stroke,
         strokeWidth: iconPath ? 1 : 2,
         strokeOpacity: iconPath ? 0.3 : 1,
         rx: iconPath ? 8 : 6,
@@ -437,23 +601,23 @@ function createNode(type, x, y, label, nodeId, configData) {
       } : {},
       icon: iconPath ? {
         d: iconPath,
-        stroke: style.stroke,
+        stroke: config._stroke || style.stroke,
         fill: 'none',
         strokeWidth: 2,
       } : { d: '' },
       symbol: {
         text: iconPath ? '' : style.symbol,
-        fill: style.stroke,
+        fill: config._stroke || style.stroke,
       },
       label: {
         text: displayLabel,
-        fill: '#eaeaea',
+        fill: config._textColor || '#eaeaea',
       }
     }
   });
 
   node.set('nodeType', type);
-  node.set('configData', configData || {});
+  node.set('configData', config);
   graph.addCell(node);
   return node;
 }
@@ -617,6 +781,90 @@ function deleteSelected() {
   deselectAll();
   updateStatusBar();
   markDirty();
+}
+
+/* ── Color Palette — apply fill/stroke/text colors ────────────────────────── */
+const COLOR_PRESETS = [
+  '#e94560', '#e74c3c', '#ff6b6b', '#f39c12', '#f1c40f', '#fdcb6e',
+  '#27ae60', '#2ecc71', '#00b894', '#3498db', '#4a9eff', '#74b9ff',
+  '#9b59b6', '#a29bfe', '#6c5ce7', '#0f3460', '#1a2a3a', '#1a1a2e',
+  '#2d3436', '#636e72', '#b2bec3', '#dfe6e9', '#ffffff', '#000000',
+];
+
+function applyFillColor(color) {
+  if (!selectedCell || !selectedCell.isElement()) return;
+  pushUndo();
+  const config = selectedCell.get('configData') || {};
+  config._fill = color;
+  selectedCell.set('configData', config);
+  // Apply to the visual
+  const type = selectedCell.get('nodeType') || '';
+  if (type.startsWith('draw-')) {
+    selectedCell.attr('shape/fill', color);
+  } else if (type.startsWith('text-')) {
+    selectedCell.attr('body/fill', color);
+  } else {
+    selectedCell.attr('body/fill', color);
+  }
+  markDirty();
+}
+
+function applyStrokeColor(color) {
+  if (!selectedCell || !selectedCell.isElement()) return;
+  pushUndo();
+  const config = selectedCell.get('configData') || {};
+  config._stroke = color;
+  selectedCell.set('configData', config);
+  const type = selectedCell.get('nodeType') || '';
+  if (type.startsWith('draw-')) {
+    selectedCell.attr('shape/stroke', color);
+  } else if (type.startsWith('text-')) {
+    selectedCell.attr('body/stroke', color);
+  } else {
+    selectedCell.attr('body/stroke', color);
+    if (selectedCell.attr('icon/d')) selectedCell.attr('icon/stroke', color);
+    if (selectedCell.attr('symbol/text')) selectedCell.attr('symbol/fill', color);
+  }
+  markDirty();
+}
+
+function applyTextColor(color) {
+  if (!selectedCell || !selectedCell.isElement()) return;
+  pushUndo();
+  const config = selectedCell.get('configData') || {};
+  config._textColor = color;
+  selectedCell.set('configData', config);
+  selectedCell.attr('label/fill', color);
+  markDirty();
+}
+
+function renderColorSwatches(containerId, callback) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  COLOR_PRESETS.forEach(c => {
+    const swatch = document.createElement('span');
+    swatch.className = 'color-swatch';
+    swatch.style.background = c;
+    if (c === '#ffffff') swatch.style.border = '1px solid #636e72';
+    swatch.title = c;
+    swatch.onclick = () => callback(c);
+    container.appendChild(swatch);
+  });
+  // Custom color input
+  const custom = document.createElement('input');
+  custom.type = 'color';
+  custom.className = 'color-swatch-custom';
+  custom.title = 'Custom color';
+  custom.value = '#4a9eff';
+  custom.onchange = () => callback(custom.value);
+  container.appendChild(custom);
+}
+
+function initColorPalettes() {
+  renderColorSwatches('fill-colors', applyFillColor);
+  renderColorSwatches('stroke-colors', applyStrokeColor);
+  renderColorSwatches('text-colors', applyTextColor);
 }
 
 /* ── Undo / Redo ─────────────────────────────────────────────────────────────── */

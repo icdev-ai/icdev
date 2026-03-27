@@ -288,6 +288,60 @@
       </div>
 
       <div class="palette-section">
+        <div class="palette-cat">Drawing Shapes</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="draw-rect" ondragstart="onDragStart(event)" title="Rectangle — basic box shape">
+            <div class="pi-icon draw-rect-icon">▬</div><span>Rectangle</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-rounded-rect" ondragstart="onDragStart(event)" title="Rounded rectangle — soft corners">
+            <div class="pi-icon draw-rrect-icon">▢</div><span>Rounded Rect</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-circle" ondragstart="onDragStart(event)" title="Circle">
+            <div class="pi-icon draw-circle-icon">●</div><span>Circle</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-ellipse" ondragstart="onDragStart(event)" title="Ellipse — oval shape">
+            <div class="pi-icon draw-ellipse-icon">⬭</div><span>Ellipse</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-diamond" ondragstart="onDragStart(event)" title="Diamond — decision/zone marker">
+            <div class="pi-icon draw-diamond-icon">◆</div><span>Diamond</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-triangle" ondragstart="onDragStart(event)" title="Triangle">
+            <div class="pi-icon draw-tri-icon">▲</div><span>Triangle</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-hexagon" ondragstart="onDragStart(event)" title="Hexagon — zone boundary">
+            <div class="pi-icon draw-hex-icon">⬡</div><span>Hexagon</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-star" ondragstart="onDragStart(event)" title="Star — highlight / key point">
+            <div class="pi-icon draw-star-icon">★</div><span>Star</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-line-h" ondragstart="onDragStart(event)" title="Horizontal line divider">
+            <div class="pi-icon draw-line-icon">―</div><span>H-Line</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-line-v" ondragstart="onDragStart(event)" title="Vertical line divider">
+            <div class="pi-icon draw-line-icon">│</div><span>V-Line</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="draw-arrow" ondragstart="onDragStart(event)" title="Arrow — directional indicator">
+            <div class="pi-icon draw-arrow-icon">→</div><span>Arrow</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Text / Labels</div>
+        <div class="palette-items">
+          <div class="palette-item" draggable="true" data-type="text-label" ondragstart="onDragStart(event)" title="Free text label — double-click to edit">
+            <div class="pi-icon text-label-icon">T</div><span>Text Label</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="text-heading" ondragstart="onDragStart(event)" title="Large heading text — section title">
+            <div class="pi-icon text-heading-icon">H</div><span>Heading</span>
+          </div>
+          <div class="palette-item" draggable="true" data-type="text-badge" ondragstart="onDragStart(event)" title="Badge label — pill-shaped tag">
+            <div class="pi-icon text-badge-icon">B</div><span>Badge</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
         <div class="palette-cat">Logical</div>
         <div class="palette-items">
           <div class="palette-item" draggable="true" data-type="vrf" ondragstart="onDragStart(event)">
@@ -414,6 +468,20 @@
         <div class="form-group">
           <label>Notes</label>
           <textarea id="cfg-notes" class="form-control" rows="3" oninput="updateConfig('notes', this.value)"></textarea>
+        </div>
+        <!-- Color Palette -->
+        <div class="form-group cfg-section-header">Colors</div>
+        <div class="form-group">
+          <label>Fill Color</label>
+          <div class="color-swatches" id="fill-colors"></div>
+        </div>
+        <div class="form-group">
+          <label>Border Color</label>
+          <div class="color-swatches" id="stroke-colors"></div>
+        </div>
+        <div class="form-group">
+          <label>Text Color</label>
+          <div class="color-swatches" id="text-colors"></div>
         </div>
         <div class="form-actions">
           <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Object</button>

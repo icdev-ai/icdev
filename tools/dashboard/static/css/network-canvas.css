@@ -774,5 +774,56 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .joint-cell:hover .joint-port-body { opacity: 0.8 !important; }
 .joint-port-body { transition: opacity 0.2s; cursor: crosshair; }
 
+/* ── Drawing Shapes palette icons ──────────────────────────────────────────── */
+.pi-icon.draw-rect-icon    { background: #1a2a3a; border: 1px solid #4a9eff; color: #4a9eff; }
+.pi-icon.draw-rrect-icon   { background: #1a2a3a; border: 1px solid #4a9eff; color: #4a9eff; border-radius: 6px; }
+.pi-icon.draw-circle-icon  { background: #1a2a3a; border: 1px solid #e94560; color: #e94560; border-radius: 50%; }
+.pi-icon.draw-ellipse-icon { background: #1a2a3a; border: 1px solid #9b59b6; color: #9b59b6; border-radius: 50%; }
+.pi-icon.draw-diamond-icon { background: #1a2a3a; border: 1px solid #f39c12; color: #f39c12; }
+.pi-icon.draw-tri-icon     { background: #1a2a3a; border: 1px solid #27ae60; color: #27ae60; }
+.pi-icon.draw-hex-icon     { background: #1a2a3a; border: 1px solid #e67e22; color: #e67e22; }
+.pi-icon.draw-star-icon    { background: #2b2b0f; border: 1px solid #f1c40f; color: #f1c40f; }
+.pi-icon.draw-line-icon    { background: transparent; border: 1px solid #7a8cb0; color: #7a8cb0; }
+.pi-icon.draw-arrow-icon   { background: transparent; border: 1px solid #e94560; color: #e94560; }
+
+/* ── Text / Label palette icons ───────────────────────────────────────────── */
+.pi-icon.text-label-icon   { background: transparent; border: 1px dashed #7a8cb0; color: #eaeaea; font-weight: bold; font-size: 14px; }
+.pi-icon.text-heading-icon { background: transparent; border: 1px dashed #7a8cb0; color: #eaeaea; font-weight: bold; font-size: 16px; }
+.pi-icon.text-badge-icon   { background: #0f3460; border: 1px solid #4a9eff; color: #4a9eff; border-radius: 10px; font-size: 11px; font-weight: 600; }
+
+/* ── Color Swatches ───────────────────────────────────────────────────────── */
+.color-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 2px 0;
+}
+.color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.1);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.color-swatch:hover {
+  transform: scale(1.3);
+  box-shadow: 0 0 6px rgba(255,255,255,0.3);
+  z-index: 1;
+}
+.color-swatch-custom {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px dashed var(--text-dim);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.color-swatch-custom::-webkit-color-swatch-wrapper { padding: 0; }
+.color-swatch-custom::-webkit-color-swatch { border: none; border-radius: 2px; }
+
 /* ── Hidden utility ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
