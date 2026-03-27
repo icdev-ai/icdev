@@ -163,7 +163,7 @@ def _invoke_llm(prompt, config, function_name="code_translation"):
 def _generate_mock(unit, target_language):
     """Generate a type-compatible mock/stub for a unit that failed translation (D256)."""
     name = unit.get("name", "unknown")
-    kind = unit.get("kind", "function")
+    unit.get("kind", "function")
     params = unit.get("params", [])
     return_type = unit.get("return_type", "")
     cui_header = CUI_HEADERS.get(target_language, "// CUI // SP-CTI")
@@ -306,8 +306,6 @@ def translate_units(ir_data, source_language, target_language,
     failed = []
     translated_deps = []  # accumulate for context
 
-    total_input_tokens = 0
-    total_output_tokens = 0
 
     for idx, unit in enumerate(ordered_units):
         unit_name = unit.get("name", "unknown")

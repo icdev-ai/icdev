@@ -261,7 +261,7 @@ def check_complexity(source_ir, translated_units):
         src_complexity = src.get("complexity", 1)
         # Estimate translated complexity from line count
         code = tu.get("translated_code", "")
-        tgt_lines = len([l for l in code.split("\n") if l.strip()])
+        tgt_lines = len([ln for ln in code.split("\n") if ln.strip()])
         src_lines = src.get("line_count", max(1, src_complexity))
 
         if src_lines > 0:
@@ -386,7 +386,6 @@ def validate_translation(source_ir, translated_data, source_language, target_lan
         overall_pass = False
 
     # 2. Lint check
-    lint_passed = True
     lint_findings = []
     if output_dir:
         out = Path(output_dir)

@@ -482,7 +482,7 @@ def draft_response(shall_id):
 
     # Try LLM draft, fall back to template
     cfg = _load_config().get("response_drafting", {})
-    confidence_threshold = cfg.get("confidence_threshold", 0.70)
+    cfg.get("confidence_threshold", 0.70)
 
     draft_text, method = _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain)
     if not draft_text:

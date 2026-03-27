@@ -226,7 +226,7 @@ class LLMRerankerProvider(RerankerProvider):
     def check_availability(self) -> bool:
         """LLM reranker is available if LLM router works."""
         try:
-            from tools.llm.router import LLMRouter
+            from tools.llm.router import LLMRouter  # noqa: F401
             return True
         except ImportError:
             return False
