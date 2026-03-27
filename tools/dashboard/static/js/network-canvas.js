@@ -2163,3 +2163,310 @@ document.addEventListener('DOMContentLoaded', () => {
   initFenceSelection();
   loadBoundaries();
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Heatmap Overlay — color nodes/links by metric (bandwidth, vuln, stig, age)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+let _heatmapOverlayActive = null;   // null | 'bandwidth' | 'vuln' | 'stig' | 'age'
+let _stigOverlayApplied   = false;  // true when STIG import colors are on canvas
+const _originalNodeColors = {};     // nodeId -> {stencilBodyFill, bodyFill}
+const _originalLinkColors = {};     // edgeId -> {stroke}
+
+/** Interpolate a 0..1 value to a green→yellow→red gradient color. */
+function _heatmapColor(val) {
+  const v = Math.max(0, Math.min(1, val));
+  if (v <= 0.5) {
+    // green (#2ecc71) → yellow (#f39c12)
+    const t = v * 2;
+    const r = Math.round(46  + (243 - 46)  * t);
+    const g = Math.round(204 + (156 - 204) * t);
+    const b = Math.round(113 + (18  - 113) * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  // yellow (#f39c12) → red (#e74c3c)
+  const t = (v - 0.5) * 2;
+  const r = Math.round(243 + (231 - 243) * t);
+  const g = Math.round(156 + (76  - 156) * t);
+  const b = Math.round(18  + (60  - 18)  * t);
+  return `rgb(${r},${g},${b})`;
+}
+
+/** Save current color and paint a node cell. */
+function _applyNodeColor(cell, fillColor) {
+  if (!cell || !cell.isElement()) return;
+  const nid = cell.id;
+  if (!_originalNodeColors[nid]) {
+    _originalNodeColors[nid] = {
+      stencilBodyFill: cell.attr('stencilBody/fill'),
+      bodyFill:        cell.attr('body/fill'),
+    };
+  }
+  // Stencil nodes use stencilBody/fill; generic rect nodes use body/fill
+  const stencilD = cell.attr('stencilBody/d');
+  if (stencilD && stencilD !== '') {
+    cell.attr('stencilBody/fill', fillColor);
+  } else {
+    cell.attr('body/fill', fillColor);
+  }
+}
+
+/** Restore a node cell to its saved original color. */
+function _restoreNodeColor(cell) {
+  if (!cell || !cell.isElement()) return;
+  const orig = _originalNodeColors[cell.id];
+  if (!orig) return;
+  if (orig.stencilBodyFill !== undefined) cell.attr('stencilBody/fill', orig.stencilBodyFill);
+  if (orig.bodyFill        !== undefined) cell.attr('body/fill',        orig.bodyFill);
+  delete _originalNodeColors[cell.id];
+}
+
+/** Remove all heatmap/STIG colors and restore originals. */
+function clearHeatmapOverlay() {
+  graph.getElements().forEach(cell => _restoreNodeColor(cell));
+  graph.getLinks().forEach(link => {
+    const orig = _originalLinkColors[link.id];
+    if (orig) {
+      link.attr('line/stroke', orig.stroke);
+      delete _originalLinkColors[link.id];
+    }
+  });
+  _heatmapOverlayActive = null;
+  _stigOverlayApplied   = false;
+  const btn = document.getElementById('tb-heatmap-btn');
+  if (btn) btn.classList.remove('tb-btn-active');
+  setStatus('Overlay cleared.');
+}
+
+/**
+ * Toggle a heatmap overlay by metric name.
+ * Called from canvas.html toolbar heatmap dropdown.
+ */
+function toggleHeatmap(metric) {
+  // If same metric is active, toggle off
+  if (_heatmapOverlayActive === metric) { clearHeatmapOverlay(); return; }
+  // Clear previous overlay (including STIG)
+  if (_heatmapOverlayActive || _stigOverlayApplied) clearHeatmapOverlay();
+
+  if (TOPOLOGY_ID === 'new') {
+    setStatus('Save the topology first to use heatmap overlays.');
+    return;
+  }
+
+  // STIG metric → open the STIG import dialog (data comes from last import)
+  if (metric === 'stig') {
+    openStigImportDialog();
+    // Also fetch heatmap data to color from stored import history
+    _fetchAndApplyHeatmap(metric);
+    return;
+  }
+
+  _fetchAndApplyHeatmap(metric);
+}
+
+function _fetchAndApplyHeatmap(metric) {
+  setStatus(`Loading ${metric} heatmap\u2026`);
+  fetch(`${NC_BASE}/api/heatmap/${TOPOLOGY_ID}?metric=${encodeURIComponent(metric)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { setStatus('Heatmap: ' + data.error); return; }
+      const nodeVals = data.node_values || {};
+      const linkVals = data.link_values || {};
+
+      // Color nodes
+      graph.getElements().forEach(cell => {
+        const val = nodeVals[cell.id];
+        if (val !== undefined) _applyNodeColor(cell, _heatmapColor(val));
+      });
+      // Color links
+      graph.getLinks().forEach(link => {
+        const val = linkVals[link.id];
+        if (val !== undefined) {
+          if (!_originalLinkColors[link.id]) {
+            _originalLinkColors[link.id] = { stroke: link.attr('line/stroke') };
+          }
+          link.attr('line/stroke', _heatmapColor(val));
+        }
+      });
+
+      _heatmapOverlayActive = metric;
+      const btn = document.getElementById('tb-heatmap-btn');
+      if (btn) btn.classList.add('tb-btn-active');
+      const n = Object.keys(nodeVals).length + Object.keys(linkVals).length;
+      setStatus(`${metric} heatmap — ${n} element(s) colored. Click Heatmap to clear.`);
+    })
+    .catch(err => setStatus('Heatmap error: ' + err.message));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * STIG XCCDF/CKL Import — upload, match, overlay
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+const _STIG_COLORS = { red: '#e74c3c', yellow: '#f39c12', green: '#2ecc71' };
+
+function openStigImportDialog() {
+  if (TOPOLOGY_ID === 'new') {
+    alert('Save the topology first before importing a STIG file.');
+    return;
+  }
+  document.getElementById('stig-import-overlay').classList.remove('hidden');
+  _loadStigHistory();
+}
+
+function closeStigImportDialog() {
+  document.getElementById('stig-import-overlay').classList.add('hidden');
+}
+
+function _loadStigHistory() {
+  const list = document.getElementById('stig-history-list');
+  if (!list) return;
+  list.innerHTML = '<div style="color:#7f8c8d;font-size:11px;">Loading\u2026</div>';
+  fetch(`${NC_BASE}/api/compliance/${TOPOLOGY_ID}/stig-imports`)
+    .then(r => r.json())
+    .then(rows => {
+      if (!rows.length) {
+        list.innerHTML = '<div style="color:#7f8c8d;font-size:11px;">No previous imports for this topology.</div>';
+        return;
+      }
+      list.innerHTML = rows.map(r =>
+        `<div style="padding:6px 0;border-bottom:1px solid #1a2a3a;">` +
+        `<div style="color:#ecf0f1;font-size:12px;font-weight:500;">${r.filename}</div>` +
+        `<div style="color:#95a5a6;font-size:11px;">${r.stig_name || '\u2014'} &bull; ` +
+        `${(r.format || '').toUpperCase()} &bull; ` +
+        `${r.matched_hosts}/${r.total_hosts} hosts matched &bull; ` +
+        `${(r.imported_at || '').split('T')[0]}</div>` +
+        `</div>`
+      ).join('');
+    })
+    .catch(() => {
+      list.innerHTML = '<div style="color:#e74c3c;font-size:11px;">Failed to load history.</div>';
+    });
+}
+
+function handleStigFileChange(input) {
+  const name = input.files[0] ? input.files[0].name : '';
+  document.getElementById('stig-file-name').textContent = name || 'No file selected';
+  document.getElementById('stig-upload-btn').disabled = !input.files[0];
+}
+
+function uploadStigFile() {
+  const input = document.getElementById('stig-file-input');
+  const file  = input.files[0];
+  if (!file) return;
+
+  const btn    = document.getElementById('stig-upload-btn');
+  const status = document.getElementById('stig-upload-status');
+  btn.disabled    = true;
+  btn.textContent = 'Importing\u2026';
+  status.innerHTML = '<span style="color:#3498db;font-size:12px;">Parsing file and matching hostnames\u2026</span>';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  fetch(`${NC_BASE}/api/compliance/${TOPOLOGY_ID}/stig-import`, {
+    method: 'POST',
+    body: formData,
+  })
+    .then(r => r.json())
+    .then(result => {
+      btn.disabled    = false;
+      btn.textContent = 'Import & Apply Overlay';
+      if (result.error) {
+        status.innerHTML = `<div style="color:#e74c3c;font-size:12px;padding:8px 0;">Error: ${result.error}</div>`;
+        return;
+      }
+      _renderStigResult(result);
+      applyStigOverlay(result);
+      _loadStigHistory();
+    })
+    .catch(err => {
+      btn.disabled    = false;
+      btn.textContent = 'Import & Apply Overlay';
+      status.innerHTML = `<div style="color:#e74c3c;font-size:12px;padding:8px 0;">Upload failed: ${err.message}</div>`;
+    });
+}
+
+function _renderStigResult(result) {
+  const status  = document.getElementById('stig-upload-status');
+  const matched = result.matched || [];
+  const unHosts = result.unmatched_hosts    || [];
+  const unDevs  = result.unmatched_devices  || [];
+
+  const red    = matched.filter(m => m.status === 'red').length;
+  const yellow = matched.filter(m => m.status === 'yellow').length;
+  const green  = matched.filter(m => m.status === 'green').length;
+
+  let html = `<div style="margin:10px 0;background:#0d0d1a;border-radius:6px;padding:12px;">`;
+  html += `<div style="font-size:12px;color:#ecf0f1;font-weight:600;margin-bottom:8px;">`;
+  html += `${result.stig_name || 'STIG Results'} &mdash; ${matched.length} / ${result.total_hosts} hosts matched</div>`;
+
+  // Summary badges
+  html += `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">`;
+  html += `<span style="background:#c0392b;color:#fff;padding:3px 10px;border-radius:3px;font-size:11px;">&#x1f534; CAT I: ${red}</span>`;
+  html += `<span style="background:#d68910;color:#fff;padding:3px 10px;border-radius:3px;font-size:11px;">&#x1f7e1; CAT II/III: ${yellow}</span>`;
+  html += `<span style="background:#1e8449;color:#fff;padding:3px 10px;border-radius:3px;font-size:11px;">&#x1f7e2; Clean: ${green}</span>`;
+  html += `</div>`;
+
+  // Per-device table
+  if (matched.length) {
+    html += `<table style="width:100%;font-size:11px;color:#bdc3c7;border-collapse:collapse;margin-bottom:8px;">`;
+    html += `<tr style="color:#95a5a6;border-bottom:1px solid #1a2a3a;">`;
+    html += `<th style="text-align:left;padding:4px;">Device</th>`;
+    html += `<th style="padding:4px;text-align:center;">CAT I</th>`;
+    html += `<th style="padding:4px;text-align:center;">CAT II/III</th>`;
+    html += `<th style="padding:4px;text-align:center;">Status</th>`;
+    html += `</tr>`;
+    matched.forEach(m => {
+      const dot  = m.status === 'red' ? '#e74c3c' : m.status === 'yellow' ? '#f39c12' : '#2ecc71';
+      const cat23 = (m.cat2_count || 0) + (m.cat3_count || 0);
+      html += `<tr style="border-bottom:1px solid #0d1a2e;">`;
+      html += `<td style="padding:4px;">${m.label}</td>`;
+      html += `<td style="padding:4px;text-align:center;">${m.cat1_count || 0}</td>`;
+      html += `<td style="padding:4px;text-align:center;">${cat23}</td>`;
+      html += `<td style="padding:4px;text-align:center;"><span style="color:${dot};font-size:14px;">&#9679;</span></td>`;
+      html += `</tr>`;
+    });
+    html += `</table>`;
+  }
+
+  if (unHosts.length) {
+    html += `<div style="font-size:11px;color:#7f8c8d;margin-top:4px;">Unmatched hosts: ${unHosts.join(', ')}</div>`;
+  }
+  if (unDevs.length) {
+    html += `<div style="font-size:11px;color:#7f8c8d;">Unmatched canvas devices: ${unDevs.map(d => d.label).join(', ')}</div>`;
+  }
+
+  html += `<div style="margin-top:10px;">`;
+  html += `<button onclick="clearStigOverlay()" style="background:#2c3e50;border:1px solid #34495e;color:#bdc3c7;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px;">Clear Overlay</button>`;
+  html += `</div></div>`;
+
+  status.innerHTML = html;
+}
+
+/**
+ * Color canvas nodes by STIG compliance status from an import result.
+ * Called automatically after a successful upload.
+ */
+function applyStigOverlay(result) {
+  // Clear any active heatmap first, then clear prior STIG overlay
+  if (_heatmapOverlayActive) clearHeatmapOverlay();
+  if (_stigOverlayApplied)   clearStigOverlay();
+
+  (result.matched || []).forEach(m => {
+    const cell = graph.getCell(m.node_id);
+    if (!cell) return;
+    _applyNodeColor(cell, _STIG_COLORS[m.status] || '#7f8c8d');
+  });
+
+  _stigOverlayApplied = true;
+  const n = (result.matched || []).length;
+  setStatus(`STIG overlay applied \u2014 ${n} device(s) colored. Click \u201cClear Overlay\u201d to remove.`);
+}
+
+/** Remove STIG compliance coloring and restore original node colors. */
+function clearStigOverlay() {
+  if (!_stigOverlayApplied) return;
+  graph.getElements().forEach(cell => _restoreNodeColor(cell));
+  _stigOverlayApplied = false;
+  setStatus('STIG overlay cleared.');
+}

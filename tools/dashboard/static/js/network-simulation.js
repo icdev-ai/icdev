@@ -93,16 +93,29 @@ function formatResult(simType, result) {
       (result.spof_nodes || []).forEach(n => lines.push(`  ✕ ${n}`));
       break;
 
-    case 'failover':
-      lines.push(`Resilience Score: ${result.resilience_score}%`);
+    case 'failover': {
+      const score = result.resilience_score || 0;
+      const scoreBar = score >= 80 ? '🟢' : score >= 50 ? '🟡' : '🔴';
+      lines.push(`${scoreBar} Resilience Score: ${score}%`);
+      lines.push(`   ${(result.risks||[]).length} risk(s) found`);
       lines.push('');
-      (result.risks || []).forEach(r => {
-        lines.push(`  Node: ${r.node}`);
-        lines.push(`  Impact: ${r.impact}`);
-        lines.push(`  Fix: ${r.recommendation}`);
+      lines.push('── NARRATIVE (watch the canvas) ──');
+      lines.push('');
+      (result.risks || []).forEach((r, i) => {
+        lines.push(`${i+1}. SCENARIO: What if "${r.node}" fails?`);
+        lines.push(`   Impact: ${r.impact}`);
+        lines.push(`   Neighbors with redundancy → GREEN (safe, alternate path exists)`);
+        lines.push(`   Neighbors without redundancy → AMBER (at risk, no failover)`);
+        lines.push(`   Recommendation: ${r.recommendation}`);
         lines.push('');
       });
+      lines.push('── LEGEND ──');
+      lines.push('  🔴 Pulsing red = failed device (simulated)');
+      lines.push('  --- Red dashed links = broken connections');
+      lines.push('  🟢 Green glow = redundant path available (safe)');
+      lines.push('  🟠 Amber glow = no redundancy (at risk)');
       break;
+    }
 
     case 'load':
       lines.push(`Avg Utilization: ${result.avg_utilization_pct}%`);
@@ -355,8 +368,17 @@ function highlightFailover(result) {
 
   const risks = result.risks || [];
   const score = result.resilience_score || 0;
+  const simOutput = document.getElementById('sim-output');
 
-  setStatus(`Failover analysis: resilience score ${score}% — simulating ${risks.length} failure scenarios...`);
+  function _narrate(msg) {
+    setStatus(msg);
+    if (simOutput) {
+      simOutput.textContent += '\n▶ ' + msg;
+      simOutput.scrollTop = simOutput.scrollHeight;
+    }
+  }
+
+  _narrate(`Failover analysis: resilience score ${score}% — simulating ${risks.length} failure scenarios...`);
 
   // Phase 1: Show overall resilience score color
   const scoreColor = score >= 80 ? '#00e676' : score >= 50 ? '#ffc107' : '#ff1744';
@@ -442,16 +464,34 @@ function highlightFailover(result) {
       }, 400);
       _failoverAnimTimers.push(redundantTimer);
 
-      // Status update
-      setStatus(`Failover: if ${nodeLabel} fails — impact: ${risk.impact || 'unknown'} | fix: ${risk.recommendation || 'add redundancy'}`);
+      // Narrate this scenario
+      _narrate(`Scenario ${idx+1}: if "${nodeLabel}" fails — impact: ${risk.impact || 'unknown'}`);
+
+      // Count redundant vs at-risk after animation
+      const countTimer = setTimeout(() => {
+        let safeCount = 0, riskCount = 0;
+        neighborIds.forEach(nid => {
+          const otherLinks = graph.getLinks().filter(lk => {
+            const s = lk.get('source')?.id;
+            const t = lk.get('target')?.id;
+            return (s === nid || t === nid) && s !== elId && t !== elId;
+          });
+          if (otherLinks.length > 0) safeCount++; else riskCount++;
+        });
+        _narrate(`  → ${safeCount} neighbors have redundant paths (GREEN), ${riskCount} at risk (AMBER)`);
+        if (risk.recommendation) _narrate(`  → Fix: ${risk.recommendation}`);
+      }, 600);
+      _failoverAnimTimers.push(countTimer);
     }, delay);
     _failoverAnimTimers.push(timer);
   });
 
   // Final summary
   const finalTimer = setTimeout(() => {
-    setStatus(`Failover complete: resilience ${score}% — ${risks.length} risks found (green=redundant, red=single point of failure)`);
-  }, (risks.length + 1) * 1200 + 500);
+    _narrate(`═══ COMPLETE ═══`);
+    _narrate(`Resilience: ${score}% — ${risks.length} failure scenarios analyzed`);
+    _narrate(`GREEN nodes = safe (redundant path) | RED nodes = single point of failure`);
+  }, (risks.length + 1) * 1200 + 800);
   _failoverAnimTimers.push(finalTimer);
 }
 
@@ -593,7 +633,16 @@ function highlightBlastRadius(result) {
     compromisedIds.add(srcElId);
   }
 
-  setStatus(`Blast radius: propagating from ${srcLabel}...`);
+  const simOutput = document.getElementById('sim-output');
+  function _blastNarrate(msg) {
+    setStatus(msg);
+    if (simOutput) {
+      simOutput.textContent += '\n▶ ' + msg;
+      simOutput.scrollTop = simOutput.scrollHeight;
+    }
+  }
+
+  _blastNarrate(`Blast radius: "${srcLabel}" compromised — propagating...`);
 
   // ── Phase 1+: Each hop layer reveals with delay ──
   const HOP_DELAY = 800; // ms between each hop wave
@@ -604,8 +653,11 @@ function highlightBlastRadius(result) {
     const delay = layer.hop * HOP_DELAY;
 
     const timer = setTimeout(() => {
-      // Flash status
-      setStatus(`Blast radius: hop ${layer.hop} — ${(layer.devices||[]).length} devices reached`);
+      // Narrate this hop
+      const devNames = (layer.devices||[]).map(d => d.label).join(', ');
+      const blocked = (layer.devices||[]).filter(d => d.status === 'blocked').length;
+      _blastNarrate(`Hop ${layer.hop}: ${(layer.devices||[]).length} devices reached — ${devNames}`);
+      if (blocked) _blastNarrate(`  → ${blocked} blocked by firewall/segmentation (GREEN)`);
 
       (layer.devices || []).forEach((d, di) => {
         const elId = labelToId[d.label];
@@ -657,12 +709,14 @@ function highlightBlastRadius(result) {
     _blastAnimTimers.push(timer);
   });
 
-  // Final status after all hops
+  // Final narrative after all hops
   const totalHops = (result.hop_layers || []).length;
   const finalTimer = setTimeout(() => {
     const total = result.total_compromised || 0;
     const blocked = result.total_blocked || 0;
-    setStatus(`Blast radius complete: ${total} compromised, ${blocked} blocked by firewalls/segmentation`);
+    _blastNarrate(`═══ BLAST RADIUS COMPLETE ═══`);
+    _blastNarrate(`${total} devices compromised, ${blocked} blocked by firewalls/segmentation`);
+    _blastNarrate(`RED = compromised | ORANGE/AMBER = reachable | GREEN = firewall held`);
   }, (totalHops + 1) * HOP_DELAY);
   _blastAnimTimers.push(finalTimer);
 }

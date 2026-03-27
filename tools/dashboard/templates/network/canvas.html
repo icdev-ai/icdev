@@ -56,6 +56,7 @@
       <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
       <button class="tb-btn" id="tb-stig-import-btn" onclick="openStigImportDialog()" title="Import STIG Viewer .ckl or XCCDF results — match hostnames to canvas devices and color by compliance status" style="color:#e74c3c;">&#x1f6e1; STIG</button>
       <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
+      <button class="tb-btn" id="tb-pps-btn" onclick="openPpsPanel()" title="PPS Matrix Generator — select enclave or device pair, auto-generate ports/protocols/services matrix" style="color:#00d4ff;">&#x1f4ca; PPS Matrix</button>
     </div>
     <div class="tb-group">
       <button class="tb-btn" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — draw selection around devices to create enclave boundary" style="color:#f39c12;">⬡ Fence</button>
@@ -1700,6 +1701,124 @@
         <button onclick="netboxLoadSyncLog()" style="background:none;border:none;color:#9b59b6;cursor:pointer;font-size:11px;float:right;padding:0;">↺ Refresh</button>
       </div>
       <div id="nb-sync-log" style="font-size:10px;color:#95a5a6;max-height:120px;overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PPS Matrix Generator Overlay -->
+<div id="pps-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:900px;max-height:90vh;overflow-y:auto;">
+    <div class="sim-panel-header">
+      <h3>Ports / Protocols / Services Matrix</h3>
+      <button class="close-btn" onclick="closePpsPanel()">&#x2715;</button>
+    </div>
+    <p style="color:#95a5a6;font-size:12px;margin:0 0 12px;">Select two enclaves or a device pair. Auto-generates PPS matrix by inspecting firewall rules and link annotations. Exportable as SSP table.</p>
+
+    <!-- Mode toggle -->
+    <div style="display:flex;gap:12px;margin-bottom:12px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#dfe6e9;font-size:13px;">
+        <input type="radio" name="pps-sel-mode" value="zone" checked onchange="ppsOnModeChange('zone')">
+        Enclave / Zone pair
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#dfe6e9;font-size:13px;">
+        <input type="radio" name="pps-sel-mode" value="node" onchange="ppsOnModeChange('node')">
+        Device pair
+      </label>
+    </div>
+
+    <!-- Zone selectors -->
+    <div id="pps-zone-selectors" style="display:flex;gap:12px;margin-bottom:12px;">
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Source Enclave</label>
+        <select id="pps-src-zone" class="form-control" style="width:100%;"></select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Destination Enclave</label>
+        <select id="pps-dst-zone" class="form-control" style="width:100%;"></select>
+      </div>
+    </div>
+
+    <!-- Node selectors (hidden by default) -->
+    <div id="pps-node-selectors" style="display:none;gap:12px;margin-bottom:12px;">
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Source Device</label>
+        <select id="pps-src-node" class="form-control" style="width:100%;"></select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size:12px;color:#95a5a6;display:block;margin-bottom:4px;">Destination Device</label>
+        <select id="pps-dst-node" class="form-control" style="width:100%;"></select>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button class="btn btn-primary" onclick="ppsGenerate()">Generate PPS Matrix</button>
+      <button class="btn btn-secondary" id="pps-export-csv-btn" onclick="ppsExport('csv')" style="display:none;">Export CSV</button>
+      <button class="btn btn-secondary" id="pps-export-md-btn" onclick="ppsExport('markdown')" style="display:none;">Export Markdown</button>
+    </div>
+
+    <!-- Summary stats -->
+    <div id="pps-stats-bar" style="display:none;display:none;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
+
+    <!-- PPS matrix table -->
+    <div id="pps-matrix-section" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+        <h4 id="pps-matrix-title" style="margin:0;color:#dfe6e9;font-size:14px;">PPS Matrix</h4>
+        <input type="text" id="pps-filter" placeholder="Filter protocols..." oninput="ppsFilterTable()"
+               style="padding:4px 8px;font-size:12px;background:#1e2a3a;border:1px solid #334;color:#dfe6e9;border-radius:4px;width:200px;">
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
+          <thead>
+            <tr style="background:#1a2332;border-bottom:2px solid #334;">
+              <th style="padding:6px 8px;text-align:left;">#</th>
+              <th style="padding:6px 8px;text-align:left;">Protocol</th>
+              <th style="padding:6px 8px;text-align:left;">Port</th>
+              <th style="padding:6px 8px;text-align:left;">Service</th>
+              <th style="padding:6px 8px;text-align:left;">Direction</th>
+              <th style="padding:6px 8px;text-align:center;">Encrypted</th>
+              <th style="padding:6px 8px;text-align:center;">FIPS</th>
+              <th style="padding:6px 8px;text-align:left;">Risk</th>
+              <th style="padding:6px 8px;text-align:left;">Justification</th>
+              <th style="padding:6px 8px;text-align:left;">Endpoints</th>
+            </tr>
+          </thead>
+          <tbody id="pps-matrix-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Firewall rules section -->
+    <div id="pps-fw-section" style="display:none;margin-top:16px;">
+      <h4 style="margin:0 0 8px;color:#dfe6e9;font-size:14px;">Firewall Rules (at boundary)</h4>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;color:#dfe6e9;">
+          <thead>
+            <tr style="background:#1a2332;border-bottom:2px solid #334;">
+              <th style="padding:6px 8px;text-align:left;">#</th>
+              <th style="padding:6px 8px;text-align:left;">Protocol</th>
+              <th style="padding:6px 8px;text-align:left;">Port</th>
+              <th style="padding:6px 8px;text-align:left;">Service</th>
+              <th style="padding:6px 8px;text-align:left;">Direction (src&#x2192;dst)</th>
+              <th style="padding:6px 8px;text-align:center;">Encrypted</th>
+              <th style="padding:6px 8px;text-align:left;">Risk</th>
+              <th style="padding:6px 8px;text-align:left;">Justification</th>
+            </tr>
+          </thead>
+          <tbody id="pps-fw-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="pps-empty" style="display:none;text-align:center;padding:2rem;color:#95a5a6;">
+      <div style="font-size:2rem;margin-bottom:0.5rem;">&#x2298;</div>
+      <p>No cross-boundary traffic found between the selected pair.</p>
+      <p style="font-size:11px;">Ensure the topology has links annotated with protocols between these enclaves.</p>
+    </div>
+
+    <!-- Loading -->
+    <div id="pps-loading" style="display:none;text-align:center;padding:1.5rem;color:#95a5a6;">
+      Generating PPS matrix...
     </div>
   </div>
 </div>
