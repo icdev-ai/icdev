@@ -126,6 +126,18 @@ class TestBotDetection:
     def test_bot_author_case_insensitive(self):
         assert EventEnvelope._check_bot("Hello", author="ICDEV™-BOT")
 
+    def test_bot_author_unicode_corrupted(self):
+        """Trademark symbol may get mangled to replacement char on Windows."""
+        assert EventEnvelope._check_bot("Hello", author="ICDEV\ufffd-BOT")
+
+    def test_bot_author_trademark_stripped(self):
+        """Trademark symbol may be stripped entirely by encoding roundtrip."""
+        assert EventEnvelope._check_bot("Hello", author="ICDEV-BOT")
+
+    def test_bot_text_trademark_stripped(self):
+        """Bot identifier in text with trademark stripped."""
+        assert EventEnvelope._check_bot("[ICDEV-BOT] Pipeline started")
+
     def test_not_bot_normal_text(self):
         assert not EventEnvelope._check_bot("Normal user comment")
 

@@ -19,6 +19,7 @@ Usage:
     result = router.route(envelope)
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -82,15 +83,20 @@ class EventEnvelope:
 
     @staticmethod
     def _check_bot(text: str, author: str = "") -> bool:
-        """Check if the message is from a bot."""
+        """Check if the message is from a bot.
+
+        Handles Unicode variance in the trademark symbol (™, \ufffd,
+        stripped, or mangled) so bot detection works regardless of
+        encoding/decoding artifacts on Windows or cross-platform.
+        """
         if BOT_IDENTIFIER in text:
             return True
+        # Also check with ™ stripped (handles encoding corruption)
+        if "[ICDEV-BOT]" in text.upper():
+            return True
         if author:
-            # Normalize: strip trademark/special symbols for matching
-            clean = "".join(
-                c for c in author.lower()
-                if c.isascii()
-            )
+            # Strip ALL non-alphanumeric except hyphen, then lowercase
+            clean = re.sub(r"[^a-zA-Z0-9-]", "", author).lower()
             if clean in ("icdev-bot", "icdev"):
                 return True
         return False
