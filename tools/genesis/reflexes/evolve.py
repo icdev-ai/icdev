@@ -828,7 +828,7 @@ def _log_strategy_switch(
     conn = get_connection()
     try:
         conn.execute("""
-            INSERT INTO genesis_audit (event_type, actor, details, created_at)
+            INSERT INTO genesis_audit (event_type, reflex_name, details, created_at)
             VALUES (?, ?, ?, ?)
         """, (
             "genesis.evolve.strategy_rotated",
