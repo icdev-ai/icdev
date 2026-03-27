@@ -911,6 +911,96 @@ function onSimTypeChange(val) {
   if (blastGrp) blastGrp.style.display = showBlast ? '' : 'none';
 }
 
+/* ── Blast Radius — Direct Device Trigger ─────────────────────────────────────
+ * Called from the right-click context menu on any canvas device.
+ * Opens the sim panel pre-configured for blast_radius and runs immediately.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Entry point from the right-click context menu.
+ * @param {number} [maxHops=3] - How many hops to expand the blast radius.
+ */
+async function triggerBlastRadiusFromContext(maxHops) {
+  if (typeof _blastCtxNodeId === 'undefined' || !_blastCtxNodeId) return;
+  hideBlastContextMenu();
+  await triggerBlastRadiusForNode(_blastCtxNodeId, maxHops || 3);
+}
+
+/**
+ * Run a blast radius simulation for a specific node ID without user needing
+ * to open the sim panel manually.
+ * @param {string} nodeId  - JointJS element id of the compromised device.
+ * @param {number} maxHops - BFS depth (default 3).
+ */
+async function triggerBlastRadiusForNode(nodeId, maxHops) {
+  maxHops = maxHops || 3;
+
+  // Open sim panel and switch type to blast_radius
+  openSimPanel();
+  const typeSelect = document.getElementById('sp-sim-type');
+  if (typeSelect) {
+    typeSelect.value = 'blast_radius';
+    onSimTypeChange('blast_radius');
+  }
+  const hopsEl = document.getElementById('sp-max-hops');
+  if (hopsEl) hopsEl.value = maxHops;
+
+  const output = document.getElementById('sim-output');
+
+  if (!currentTopoId || currentTopoId === 'new') {
+    await saveTopology();
+  }
+  if (!currentTopoId || currentTopoId === 'new') {
+    if (output) output.textContent = 'Error: Save the topology first.';
+    return;
+  }
+
+  // Find node label for display
+  const cell = graph.getCell(nodeId);
+  const label = cell ? (cell.attr('label/text') || nodeId) : nodeId;
+  if (output) output.textContent = `Running blast radius from "${label}"...`;
+
+  clearHighlights();
+  stopAnimations();
+  clearOutages();
+
+  try {
+    const r = await fetch(NC_BASE + `/api/topologies/${currentTopoId}/simulate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sim_type: 'blast_radius', source: nodeId, max_hops: maxHops })
+    });
+    const data = await r.json();
+    const result = data.result || {};
+
+    if (output) output.textContent = formatResult('blast_radius', result);
+    visualizeResult('blast_radius', result);
+
+    // Pulse the source node for visual emphasis
+    _pulseBlastSource(nodeId);
+
+  } catch (err) {
+    if (output) output.textContent = 'Blast radius error: ' + err.message;
+  }
+}
+
+/** Brief CSS pulse animation on the compromised source node. */
+function _pulseBlastSource(nodeId) {
+  const el = graph.getCell(nodeId);
+  if (!el || !el.isElement()) return;
+  let toggle = true;
+  const originalStroke = el.attr('body/stroke') || '#ff1744';
+  let count = 0;
+  const iv = setInterval(() => {
+    el.attr('body/strokeWidth', toggle ? 5 : 3);
+    toggle = !toggle;
+    if (++count >= 8) {
+      clearInterval(iv);
+      el.attr('body/strokeWidth', 3);
+    }
+  }, 220);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
  * FIPS 140 Encryption Coverage Visualizer
  * Highlights unprotected links in red, protected links in green.

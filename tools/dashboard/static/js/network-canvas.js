@@ -618,6 +618,32 @@ function initCanvas() {
   setStatus('Ready — drag objects from the palette to begin');
 }
 
+/* ── Blast Radius Context Menu ────────────────────────────────────────────────── */
+let _blastCtxNodeId = null;
+
+function showBlastContextMenu(x, y, cell) {
+  const menu = document.getElementById('blast-ctx-menu');
+  const nameEl = document.getElementById('blast-ctx-device-name');
+  if (!menu || !cell.isElement()) return;
+  _blastCtxNodeId = cell.id;
+  const label = cell.attr('label/text') || cell.id;
+  nameEl.textContent = label;
+
+  // Position menu — keep within viewport
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const mw = 224;
+  const mh = 150;
+  menu.style.left = (x + mw > vw ? vw - mw - 8 : x) + 'px';
+  menu.style.top  = (y + mh > vh ? vh - mh - 8 : y) + 'px';
+  menu.style.display = 'block';
+}
+
+function hideBlastContextMenu() {
+  const menu = document.getElementById('blast-ctx-menu');
+  if (menu) menu.style.display = 'none';
+}
+
 /* ── Canvas Tooltips ──────────────────────────────────────────────────────────── */
 function initCanvasTooltips() {
   // Create tooltip element
