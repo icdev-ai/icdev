@@ -840,5 +840,51 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .color-swatch-custom::-webkit-color-swatch-wrapper { padding: 0; }
 .color-swatch-custom::-webkit-color-swatch { border: none; border-radius: 2px; }
 
+/* ── FIPS overlay button ───────────────────────────────────────────────────── */
+.tb-btn-fips { color: #f1c40f !important; border-color: #7b6b00 !important; }
+.tb-btn-fips:hover { background: #2b2b0f !important; border-color: #f1c40f !important; }
+.tb-btn-fips.active { background: #2b2b0f !important; border-color: #27ae60 !important; color: #27ae60 !important; }
+
+/* ── Classification Banner ────────────────────────────────────────────────── */
+.canvas-classification-banner {
+  display: none;
+  background: #7b2d2d;
+  color: #fff;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding: 4px 0;
+  border-bottom: 2px solid #b03030;
+  user-select: none;
+}
+
+/* ── Banner input in toolbar ──────────────────────────────────────────────── */
+.tb-banner-group { flex-shrink: 1; }
+.tb-banner-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  width: 160px;
+  outline: none;
+  text-transform: uppercase;
+}
+.tb-banner-input:focus {
+  border-color: #7b2d2d;
+  color: var(--text);
+}
+.tb-banner-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.5;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 /* ── Hidden utility ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

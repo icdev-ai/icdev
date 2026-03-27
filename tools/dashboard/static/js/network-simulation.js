@@ -761,8 +761,245 @@ function onSimTypeChange(val) {
   if (mtuGrp) mtuGrp.style.display = showMtu ? '' : 'none';
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * FIPS 140 Encryption Coverage Visualizer
+ * Highlights unprotected links in red, protected links in green.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+const ENCRYPTION_TYPES = new Set([
+  'fips-140-l1','fips-140-l2','fips-140-l3','fips-140-l4',
+  'hsm','type1-encryptor',
+  'kg-175d','kg-175g','kg-250','kg-340','kg-245x','kg-255',
+  'macsec','qkd-device','tls-terminator',
+]);
+
+const ENCRYPTED_PROTOCOLS = new Set([
+  'IPSec','IPSec ESP','GRE/IPSec','mTLS','TLS','DTLS','MACsec','BB84',
+]);
+
+let _fipsOverlayActive = false;
+let _fipsOriginalStyles = new Map(); // linkId -> {stroke, strokeWidth, strokeDasharray}
+
+function toggleFipsOverlay() {
+  if (_fipsOverlayActive) {
+    clearFipsOverlay();
+  } else {
+    showFipsOverlay();
+  }
+}
+
+function showFipsOverlay() {
+  if (!graph) return;
+  _fipsOverlayActive = true;
+  _fipsOriginalStyles.clear();
+
+  const elements = graph.getElements();
+  const links = graph.getLinks();
+
+  // Build set of encryption device IDs
+  const encryptionDeviceIds = new Set();
+  elements.forEach(el => {
+    const ntype = el.get('nodeType') || '';
+    if (ENCRYPTION_TYPES.has(ntype)) encryptionDeviceIds.add(el.id);
+  });
+
+  // Build adjacency: which nodes are directly connected to encryption devices
+  const protectedNodes = new Set(encryptionDeviceIds);
+  links.forEach(link => {
+    const srcId = link.get('source')?.id;
+    const tgtId = link.get('target')?.id;
+    if (encryptionDeviceIds.has(srcId)) protectedNodes.add(tgtId);
+    if (encryptionDeviceIds.has(tgtId)) protectedNodes.add(srcId);
+  });
+
+  let protectedCount = 0;
+  let unprotectedCount = 0;
+
+  links.forEach(link => {
+    const srcId = link.get('source')?.id;
+    const tgtId = link.get('target')?.id;
+    const proto = link.get('protocol') || '';
+    const lineAttrs = link.attr('line') || {};
+
+    // Save original style
+    _fipsOriginalStyles.set(link.id, {
+      stroke: lineAttrs.stroke,
+      strokeWidth: lineAttrs.strokeWidth,
+      strokeDasharray: lineAttrs.strokeDasharray,
+    });
+
+    // Check if link is protected
+    const hasEncryptedProto = ENCRYPTED_PROTOCOLS.has(proto);
+    const srcIsEncDev = encryptionDeviceIds.has(srcId);
+    const tgtIsEncDev = encryptionDeviceIds.has(tgtId);
+    const srcProtected = protectedNodes.has(srcId);
+    const tgtProtected = protectedNodes.has(tgtId);
+
+    const isProtected = hasEncryptedProto || srcIsEncDev || tgtIsEncDev || (srcProtected && tgtProtected);
+
+    if (isProtected) {
+      link.attr('line/stroke', '#27ae60');
+      link.attr('line/strokeWidth', 3);
+      link.removeAttr('line/strokeDasharray');
+      protectedCount++;
+    } else {
+      link.attr('line/stroke', '#e74c3c');
+      link.attr('line/strokeWidth', 4);
+      link.attr('line/strokeDasharray', '8,4');
+      unprotectedCount++;
+    }
+  });
+
+  // Highlight encryption devices with glow
+  elements.forEach(el => {
+    const ntype = el.get('nodeType') || '';
+    if (ENCRYPTION_TYPES.has(ntype)) {
+      const view = paper.findViewByModel(el);
+      if (view) view.highlight();
+    }
+  });
+
+  const total = protectedCount + unprotectedCount;
+  const pct = total ? Math.round(protectedCount / total * 100) : 100;
+  const btn = document.getElementById('tb-fips-btn');
+  if (btn) { btn.classList.add('active'); btn.title = `${pct}% encrypted`; }
+  setStatus(`FIPS Coverage: ${protectedCount}/${total} links protected (${pct}%) — ${unprotectedCount} unprotected`);
+}
+
+function clearFipsOverlay() {
+  if (!graph) return;
+  _fipsOverlayActive = false;
+
+  graph.getLinks().forEach(link => {
+    const orig = _fipsOriginalStyles.get(link.id);
+    if (orig) {
+      link.attr('line/stroke', orig.stroke || '#e94560');
+      link.attr('line/strokeWidth', orig.strokeWidth || 2);
+      if (orig.strokeDasharray) {
+        link.attr('line/strokeDasharray', orig.strokeDasharray);
+      } else {
+        link.removeAttr('line/strokeDasharray');
+      }
+    }
+  });
+
+  // Remove highlights from encryption devices
+  graph.getElements().forEach(el => {
+    const ntype = el.get('nodeType') || '';
+    if (ENCRYPTION_TYPES.has(ntype)) {
+      const view = paper.findViewByModel(el);
+      if (view) view.unhighlight();
+    }
+  });
+
+  _fipsOriginalStyles.clear();
+  const btn = document.getElementById('tb-fips-btn');
+  if (btn) btn.classList.remove('active');
+  setStatus('FIPS overlay cleared');
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Classification Banner Overlay
+ * Blank by default. User can set text via toolbar input.
+ * Persists per-topology in configData._classificationBanner.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+let _bannerEl = null;
+
+function initClassificationBanner() {
+  // Create banner element if not exists
+  if (!_bannerEl) {
+    _bannerEl = document.createElement('div');
+    _bannerEl.id = 'canvas-classification-banner';
+    _bannerEl.className = 'canvas-classification-banner';
+    const layout = document.querySelector('.canvas-layout');
+    if (layout) layout.prepend(_bannerEl);
+  }
+  updateBannerDisplay();
+}
+
+function updateBannerDisplay() {
+  if (!_bannerEl) return;
+  const input = document.getElementById('banner-text-input');
+  const text = input ? input.value.trim() : '';
+  if (text) {
+    _bannerEl.textContent = text;
+    _bannerEl.style.display = 'block';
+  } else {
+    _bannerEl.textContent = '';
+    _bannerEl.style.display = 'none';
+  }
+}
+
+function onBannerTextChange() {
+  updateBannerDisplay();
+  // Save to topology metadata
+  if (typeof markDirty === 'function') markDirty();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Smart Auto-Layout (dagre)
+ * Uses JointJS built-in DirectedGraph layout with dagre.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+function autoLayout(direction) {
+  if (!graph || !joint.layout || !joint.layout.DirectedGraph) {
+    // dagre not available — try basic grid layout fallback
+    autoLayoutGrid();
+    return;
+  }
+
+  if (typeof pushUndo === 'function') pushUndo();
+
+  const dir = direction || 'TB'; // TB=top-bottom, LR=left-right
+
+  joint.layout.DirectedGraph.layout(graph, {
+    dagre: dagre,
+    graphlib: dagre.graphlib,
+    setVertices: false,
+    setLabels: false,
+    rankDir: dir,
+    rankSep: 80,
+    nodeSep: 60,
+    edgeSep: 40,
+    marginX: 40,
+    marginY: 40,
+  });
+
+  if (typeof markDirty === 'function') markDirty();
+  if (typeof updateStatusBar === 'function') updateStatusBar();
+  setStatus('Auto-layout applied (' + dir + ')');
+}
+
+function autoLayoutGrid() {
+  if (!graph) return;
+  if (typeof pushUndo === 'function') pushUndo();
+
+  const elements = graph.getElements();
+  // Separate zone/text nodes from devices
+  const devices = elements.filter(el => {
+    const t = el.get('nodeType') || '';
+    return !t.startsWith('draw-') && !t.startsWith('text-');
+  });
+
+  const cols = Math.ceil(Math.sqrt(devices.length));
+  const spacingX = 150;
+  const spacingY = 100;
+
+  devices.forEach((el, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    el.position(40 + col * spacingX, 40 + row * spacingY);
+  });
+
+  if (typeof markDirty === 'function') markDirty();
+  if (typeof updateStatusBar === 'function') updateStatusBar();
+  setStatus('Grid layout applied');
+}
+
 /* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   // Wait a tick for canvas.js to init paper
   setTimeout(initZoomWheel, 500);
+  setTimeout(initClassificationBanner, 600);
 });

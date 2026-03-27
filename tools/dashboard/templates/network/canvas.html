@@ -3,11 +3,13 @@
 
 {% block head %}
 <!-- JointJS + dependencies -->
-<link rel="stylesheet" href="https://unpkg.com/jointjs@3.7.7/dist/joint.css"/>
-<script src="https://unpkg.com/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
-<script src="https://unpkg.com/backbone@1.4.1/backbone-min.js"></script>
-<script src="https://unpkg.com/jointjs@3.7.7/dist/joint.js"></script>
+<!-- Vendored locally for air-gap / IL5-IL6 environments -->
+<link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
+<script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/lodash.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/dagre.min.js') }}"></script>
 <style>
   body { overflow: hidden; }
   .main-content { padding: 0; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -46,6 +48,14 @@
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
       <a class="tb-btn" id="tb-mc-link" href="#" title="Monte Carlo cascading simulation">Simulate MC</a>
       <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
+    </div>
+    <div class="tb-group">
+      <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
+      <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
+      <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
+    </div>
+    <div class="tb-group tb-banner-group">
+      <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
     </div>
     <div class="tb-center">
       <span class="topology-name-display" id="topo-name-display">{{ topology_name }}</span>
