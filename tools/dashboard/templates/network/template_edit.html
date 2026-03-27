@@ -72,12 +72,12 @@
 {% endblock %}
 
 {% block scripts %}
-<!-- JointJS for preview -->
-<script src="https://unpkg.com/jquery@3.7.1/dist/jquery.min.js"></script>
-<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
-<script src="https://unpkg.com/backbone@1.4.1/backbone-min.js"></script>
-<script src="https://unpkg.com/jointjs@3.7.7/dist/joint.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/jointjs@3.7.7/dist/joint.css"/>
+<!-- JointJS for preview — vendored locally for air-gap / IL5-IL6 -->
+<link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
+<script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/lodash.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
 <script>
 const TPL_ID = "{{ tpl.id }}";
 

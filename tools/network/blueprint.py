@@ -65,6 +65,10 @@ from tools.network.stig_import import import_stig_file  # noqa: E402
 from tools.network.intent_validator import (  # noqa: E402
     validate_intent_policy, CONSTRAINT_TYPES,
 )
+from tools.network.discovery import (  # noqa: E402
+    run_discovery, diff_topologies, build_graph_json, ping_sweep,
+    _HAS_PYSNMP, _HAS_NETMIKO,
+)
 
 
 def create_network_blueprint():
@@ -4493,6 +4497,275 @@ Output ONLY the JSON object."""
         except Exception as exc:
             logger.exception("AI review failed")
             return jsonify({"error": str(exc)}), 500
+
+    # ── Auto-Discovery ────────────────────────────────────────────────────
+
+    @bp.route("/discovery")
+    @nc_login_required
+    def nc_discovery_page():
+        """Discovery dashboard page."""
+        with get_connection() as conn:
+            scans = conn.execute(
+                "SELECT * FROM nc_discovery_scans ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+            topos = conn.execute(
+                "SELECT id, name FROM topologies ORDER BY name"
+            ).fetchall()
+        return render_template("network/discovery.html",
+                               scans=[_row_to_dict(s) for s in scans],
+                               topologies=[_row_to_dict(t) for t in topos],
+                               has_pysnmp=_HAS_PYSNMP,
+                               has_netmiko=_HAS_NETMIKO)
+
+    @bp.route("/api/discovery/scan", methods=["POST"])
+    @nc_login_required
+    def nc_api_discovery_scan():
+        """Launch a network discovery scan."""
+        data = request.get_json(force=True)
+        targets = data.get("targets", [])
+        if isinstance(targets, str):
+            targets = [t.strip() for t in targets.split(",") if t.strip()]
+        if not targets:
+            return jsonify({"error": "targets required"}), 400
+
+        method = data.get("method", "snmp")
+        scan_id = str(_uuid.uuid4())
+        name = data.get("name", f"Scan {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')}")
+        topology_id = data.get("topology_id")
+
+        config = {
+            "community": data.get("community", "public"),
+            "username": data.get("username", ""),
+            "device_type": data.get("device_type", "cisco_ios"),
+            "port": data.get("port", 0),
+            "timeout": data.get("timeout", 2.0),
+            "hop_limit": data.get("hop_limit", 2),
+            "layout": data.get("layout", "grid"),
+        }
+
+        # Save scan record as pending
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO nc_discovery_scans "
+                "(id, topology_id, name, method, targets, config_json, status, started_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (scan_id, topology_id, name, method,
+                 json.dumps(targets), json.dumps(config),
+                 "running", _now()),
+            )
+
+        # Run discovery (synchronous for now — small scans)
+        try:
+            result = run_discovery(
+                targets=targets,
+                method=method,
+                community=config["community"],
+                username=config["username"],
+                password=data.get("password", ""),
+                device_type=config["device_type"],
+                port=config["port"],
+                timeout=config["timeout"],
+                layout=config["layout"],
+                hop_limit=config["hop_limit"],
+            )
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE nc_discovery_scans SET status=?, devices_json=?, "
+                    "graph_json=?, stats_json=?, completed_at=? WHERE id=?",
+                    ("completed", json.dumps(result["devices"], default=str),
+                     json.dumps(result["graph_json"], default=str),
+                     json.dumps(result["stats"], default=str),
+                     _now(), scan_id),
+                )
+            _audit("DISCOVERY_SCAN", "scan", scan_id,
+                   f"{method} | {len(targets)} targets | "
+                   f"{result['stats']['devices_discovered']} devices found")
+            return jsonify({"scan_id": scan_id, **result})
+
+        except Exception as exc:
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE nc_discovery_scans SET status=?, error=?, completed_at=? WHERE id=?",
+                    ("failed", str(exc), _now(), scan_id),
+                )
+            logger.exception("Discovery scan failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/discovery/scans")
+    @nc_login_required
+    def nc_api_discovery_list():
+        """List all discovery scans."""
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, topology_id, name, method, targets, status, "
+                "stats_json, error, started_at, completed_at, created_at "
+                "FROM nc_discovery_scans ORDER BY created_at DESC"
+            ).fetchall()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/discovery/scans/<scan_id>")
+    @nc_login_required
+    def nc_api_discovery_get(scan_id):
+        """Get full scan result with devices and graph."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM nc_discovery_scans WHERE id=?", (scan_id,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Scan not found"}), 404
+        result = _row_to_dict(row)
+        # Parse JSON fields
+        for field in ("devices_json", "graph_json", "stats_json", "config_json", "targets"):
+            if field in result and isinstance(result[field], str):
+                try:
+                    result[field] = json.loads(result[field])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        return jsonify(result)
+
+    @bp.route("/api/discovery/scans/<scan_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_discovery_delete(scan_id):
+        """Delete a discovery scan."""
+        with get_connection() as conn:
+            conn.execute("DELETE FROM nc_discovery_diffs WHERE scan_id=?", (scan_id,))
+            conn.execute("DELETE FROM nc_discovery_scans WHERE id=?", (scan_id,))
+        _audit("DISCOVERY_DELETE", "scan", scan_id, "Scan deleted")
+        return jsonify({"deleted": scan_id})
+
+    @bp.route("/api/discovery/scans/<scan_id>/import/<topo_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_discovery_import(scan_id, topo_id):
+        """Import discovered graph into an existing topology (merge or replace)."""
+        data = request.get_json(force=True) if request.is_json else {}
+        mode = data.get("mode", "merge")  # merge | replace
+
+        with get_connection() as conn:
+            scan = conn.execute(
+                "SELECT graph_json FROM nc_discovery_scans WHERE id=?", (scan_id,)
+            ).fetchone()
+            if not scan:
+                return jsonify({"error": "Scan not found"}), 404
+
+            topo = conn.execute(
+                "SELECT id, graph_json FROM topologies WHERE id=?", (topo_id,)
+            ).fetchone()
+            if not topo:
+                return jsonify({"error": "Topology not found"}), 404
+
+            disc_graph = json.loads(scan["graph_json"])
+
+            if mode == "replace":
+                final_graph = disc_graph
+            else:
+                # Merge: add discovered nodes/edges not already present
+                existing_graph = json.loads(topo["graph_json"])
+                existing_labels = {
+                    n.get("label", "").lower()
+                    for n in existing_graph.get("nodes", [])
+                }
+                for node in disc_graph.get("nodes", []):
+                    if node.get("label", "").lower() not in existing_labels:
+                        existing_graph.setdefault("nodes", []).append(node)
+                        existing_labels.add(node.get("label", "").lower())
+                # Add edges for newly added nodes
+                existing_edge_pairs = {
+                    tuple(sorted([e["source"], e["target"]]))
+                    for e in existing_graph.get("edges", [])
+                }
+                for edge in disc_graph.get("edges", []):
+                    pair = tuple(sorted([edge["source"], edge["target"]]))
+                    if pair not in existing_edge_pairs:
+                        existing_graph.setdefault("edges", []).append(edge)
+                        existing_edge_pairs.add(pair)
+                final_graph = existing_graph
+
+            conn.execute(
+                "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
+                (json.dumps(final_graph, default=str), _now(), topo_id),
+            )
+
+        _audit("DISCOVERY_IMPORT", "topology", topo_id,
+               f"Imported scan {scan_id} ({mode})")
+        return jsonify({
+            "topology_id": topo_id,
+            "mode": mode,
+            "nodes": len(final_graph.get("nodes", [])),
+            "edges": len(final_graph.get("edges", [])),
+        })
+
+    @bp.route("/api/discovery/diff", methods=["POST"])
+    @nc_login_required
+    def nc_api_discovery_diff():
+        """Compare a discovery scan against a designed topology."""
+        data = request.get_json(force=True)
+        scan_id = data.get("scan_id")
+        topology_id = data.get("topology_id")
+        if not scan_id or not topology_id:
+            return jsonify({"error": "scan_id and topology_id required"}), 400
+
+        with get_connection() as conn:
+            scan = conn.execute(
+                "SELECT graph_json FROM nc_discovery_scans WHERE id=?", (scan_id,)
+            ).fetchone()
+            if not scan:
+                return jsonify({"error": "Scan not found"}), 404
+
+            topo = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (topology_id,)
+            ).fetchone()
+            if not topo:
+                return jsonify({"error": "Topology not found"}), 404
+
+            disc_graph = json.loads(scan["graph_json"])
+            designed_graph = json.loads(topo["graph_json"])
+
+            diff = diff_topologies(designed_graph, disc_graph)
+
+            diff_id = str(_uuid.uuid4())
+            s = diff["summary"]
+            conn.execute(
+                "INSERT INTO nc_discovery_diffs "
+                "(id, scan_id, topology_id, diff_json, drift_score, matched, "
+                "designed_only, discovered_only, with_drift) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (diff_id, scan_id, topology_id, json.dumps(diff, default=str),
+                 s["drift_score"], s["matched"], s["designed_only"],
+                 s["discovered_only"], s["with_drift"]),
+            )
+
+        _audit("DISCOVERY_DIFF", "diff", diff_id,
+               f"Drift {s['drift_score']}% | matched={s['matched']} "
+               f"designed_only={s['designed_only']} "
+               f"discovered_only={s['discovered_only']}")
+        return jsonify({"diff_id": diff_id, **diff})
+
+    @bp.route("/api/discovery/ping", methods=["POST"])
+    @nc_login_required
+    def nc_api_discovery_ping():
+        """Quick ping sweep of a subnet."""
+        data = request.get_json(force=True)
+        subnet = data.get("subnet", "")
+        if not subnet:
+            return jsonify({"error": "subnet required"}), 400
+        timeout = data.get("timeout", 1.0)
+        alive = ping_sweep(subnet, timeout=timeout)
+        return jsonify({"subnet": subnet, "alive": alive, "count": len(alive)})
+
+    @bp.route("/api/discovery/capabilities")
+    @nc_login_required
+    def nc_api_discovery_capabilities():
+        """Report which discovery protocols are available."""
+        return jsonify({
+            "snmp": _HAS_PYSNMP,
+            "ssh": _HAS_NETMIKO,
+            "ping": True,
+            "protocols": {
+                "snmp": "pysnmp (SNMP v2c/v3, LLDP-MIB, CDP-MIB)",
+                "ssh": "netmiko (CDP/LLDP via CLI)",
+                "ping": "ICMP sweep (stdlib subprocess)",
+            },
+        })
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",

@@ -474,6 +474,38 @@ CREATE TABLE IF NOT EXISTS nc_netbox_objects (
     canvas_node_id  TEXT,               -- NULL until placed on canvas
     last_synced     TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Auto-discovery scan results
+CREATE TABLE IF NOT EXISTS nc_discovery_scans (
+    id              TEXT PRIMARY KEY,
+    topology_id     TEXT REFERENCES topologies(id),  -- NULL if standalone scan
+    name            TEXT NOT NULL,
+    method          TEXT NOT NULL DEFAULT 'snmp',     -- snmp, ssh, ping
+    targets         TEXT NOT NULL DEFAULT '[]',       -- JSON array of IPs/CIDRs
+    config_json     TEXT DEFAULT '{}',                -- community, credentials ref, etc.
+    status          TEXT DEFAULT 'pending',           -- pending, running, completed, failed
+    devices_json    TEXT DEFAULT '[]',                -- full discovery records
+    graph_json      TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    stats_json      TEXT DEFAULT '{}',
+    error           TEXT,
+    started_at      TEXT,
+    completed_at    TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Discovery diff results (as-designed vs as-built)
+CREATE TABLE IF NOT EXISTS nc_discovery_diffs (
+    id              TEXT PRIMARY KEY,
+    scan_id         TEXT REFERENCES nc_discovery_scans(id),
+    topology_id     TEXT REFERENCES topologies(id),
+    diff_json       TEXT NOT NULL DEFAULT '{}',       -- full diff output
+    drift_score     REAL DEFAULT 0,                   -- 0-100 percentage
+    matched         INTEGER DEFAULT 0,
+    designed_only   INTEGER DEFAULT 0,
+    discovered_only INTEGER DEFAULT 0,
+    with_drift      INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
