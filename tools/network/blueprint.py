@@ -2071,62 +2071,30 @@ Output ONLY the JSON object. No other text."""
     @bp.route("/api/ai-generate", methods=["POST"])
     @nc_login_required
     def nc_api_ai_generate():
-        """Generate topology from natural language description using local LLM."""
+        """Generate topology from natural language description using Claude or Ollama."""
         data = request.get_json(force=True, silent=True) or {}
         description = data.get("description", "").strip()
         if not description:
             return jsonify({"error": "description required"}), 400
 
-        try:
-            import requests as _req
+        import re
+        import requests as _req
 
-            # Direct Ollama /api/chat — air-gap compatible, no cloud APIs
-            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
-            messages = [
-                {"role": "system", "content": _AI_TOPO_SYSTEM_PROMPT},
-                {"role": "user", "content": description},
-            ]
-            r = _req.post(
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": ollama_model,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {
-                        "num_predict": 4096,
-                        "temperature": 0.3,
-                    },
-                },
-                timeout=120,
-            )
-            r.raise_for_status()
-            resp_json = r.json()
-            content = resp_json.get("message", {}).get("content", "")
-
-            # Strip qwen3 thinking blocks
-            import re
+        def _parse_llm_response(content):
+            """Extract and validate JSON from LLM response text."""
             text = content.strip()
             text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
             if text.startswith("```"):
-                # Remove code fences
                 lines = text.split("\n")
                 lines = [l for l in lines if not l.strip().startswith("```")]
                 text = "\n".join(lines).strip()
-
-            # Find JSON object boundaries
             start = text.find("{")
             end = text.rfind("}") + 1
             if start < 0 or end <= start:
-                return jsonify({"error": "LLM did not return valid JSON", "raw": text[:500]}), 422
-
+                return None, text[:500]
             graph_json = json.loads(text[start:end])
-
-            # Validate structure
             if "nodes" not in graph_json or "edges" not in graph_json:
-                return jsonify({"error": "Missing nodes/edges in response", "raw": text[:500]}), 422
-
-            # Ensure all nodes have required fields
+                return None, text[:500]
             for n in graph_json["nodes"]:
                 n.setdefault("id", str(_uuid.uuid4())[:8])
                 n.setdefault("label", "")
@@ -2134,30 +2102,103 @@ Output ONLY the JSON object. No other text."""
                 n.setdefault("x", 100)
                 n.setdefault("y", 100)
                 n.setdefault("config", {})
-
             for e in graph_json["edges"]:
                 e.setdefault("id", str(_uuid.uuid4())[:8])
                 e.setdefault("source", "")
                 e.setdefault("target", "")
                 e.setdefault("label", "")
                 e.setdefault("protocol", "")
+            return graph_json, None
 
-            _audit("AI_GENERATE", "topology", "", f"Generated from: {description[:100]}")
+        def _call_claude(desc):
+            """Call Anthropic Claude API."""
+            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+            if not api_key:
+                return None, "No ANTHROPIC_API_KEY set"
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 4096,
+                    "temperature": 0.3,
+                    "system": _AI_TOPO_SYSTEM_PROMPT,
+                    "messages": [{"role": "user", "content": desc}],
+                },
+                timeout=60,
+            )
+            r.raise_for_status()
+            content = r.json().get("content", [{}])[0].get("text", "")
+            return content, None
+
+        def _call_ollama(desc):
+            """Call Ollama local LLM."""
+            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
+            r = _req.post(
+                f"{ollama_url}/api/chat",
+                json={
+                    "model": ollama_model,
+                    "messages": [
+                        {"role": "system", "content": _AI_TOPO_SYSTEM_PROMPT},
+                        {"role": "user", "content": desc},
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 4096, "temperature": 0.3},
+                },
+                timeout=120,
+            )
+            r.raise_for_status()
+            content = r.json().get("message", {}).get("content", "")
+            return content, None
+
+        try:
+            # Try Claude first (fast, reliable), fall back to Ollama (air-gap)
+            provider = os.environ.get("NC_AI_PROVIDER", "auto")  # auto | claude | ollama
+            content = None
+            used_provider = ""
+
+            if provider in ("auto", "claude"):
+                content, err = _call_claude(description)
+                if content:
+                    used_provider = "claude"
+                elif provider == "claude":
+                    return jsonify({"error": f"Claude API failed: {err}"}), 503
+
+            if not content and provider in ("auto", "ollama"):
+                content, err = _call_ollama(description)
+                if content:
+                    used_provider = "ollama"
+                elif provider == "ollama":
+                    return jsonify({"error": f"Ollama failed: {err}"}), 503
+
+            if not content:
+                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
+
+            graph_json, raw = _parse_llm_response(content)
+            if graph_json is None:
+                return jsonify({"error": "LLM did not return valid JSON", "raw": raw}), 422
+
+            _audit("AI_GENERATE", "topology", "", f"[{used_provider}] Generated from: {description[:100]}")
             return jsonify({
                 "graph_json": graph_json,
                 "description": description,
                 "node_count": len(graph_json["nodes"]),
                 "edge_count": len(graph_json["edges"]),
+                "provider": used_provider,
             })
 
-        except ImportError:
-            return jsonify({"error": "requests library not available"}), 503
         except _req.exceptions.ConnectionError:
-            return jsonify({"error": "Cannot connect to Ollama — is it running? (default: localhost:11434)"}), 503
+            return jsonify({"error": "Cannot connect to LLM provider"}), 503
         except _req.exceptions.Timeout:
-            return jsonify({"error": "Ollama timed out (120s) — try a simpler description or smaller model"}), 504
+            return jsonify({"error": "LLM timed out — try a simpler description"}), 504
         except json.JSONDecodeError as exc:
-            return jsonify({"error": f"Invalid JSON from LLM: {exc}", "raw": text[:500]}), 422
+            return jsonify({"error": f"Invalid JSON from LLM: {exc}"}), 422
         except Exception as exc:
             logger.exception("AI generate failed")
             return jsonify({"error": str(exc)}), 500
