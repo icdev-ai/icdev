@@ -1273,6 +1273,65 @@ def create_network_blueprint():
         return jsonify({"deleted": cid})
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: Cable Plant Report Export
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/cable-plant-report/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_cable_plant_report(topo_id):
+        """Export cable plant report as CSV from edge cableData annotations."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+
+        topo = _row_to_dict(row)
+        gj = topo.get("graph_json")
+        if isinstance(gj, str):
+            gj = json.loads(gj)
+
+        nodes_map = {}
+        for n in (gj or {}).get("nodes", []):
+            nodes_map[n.get("id", "")] = n.get("label", n.get("id", ""))
+
+        import io
+        import csv
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow([
+            "Link ID", "Source Device", "Target Device",
+            "Cable Type", "Distance (m)", "Conduit ID",
+            "Fiber Strands", "Pull Tension (lbs)", "Notes",
+        ])
+
+        edges = (gj or {}).get("edges", [])
+        cable_count = 0
+        for e in edges:
+            cable = e.get("cableData")
+            if not cable:
+                continue
+            cable_count += 1
+            writer.writerow([
+                e.get("id", ""),
+                nodes_map.get(e.get("source", ""), e.get("source", "")),
+                nodes_map.get(e.get("target", ""), e.get("target", "")),
+                cable.get("cable_type", ""),
+                cable.get("distance_m", ""),
+                cable.get("conduit_id", ""),
+                cable.get("fiber_strands", ""),
+                cable.get("pull_tension_lbs", ""),
+                cable.get("notes", ""),
+            ])
+
+        topo_name = (topo.get("name") or "topology").replace(" ", "_")
+        filename = f"cable-plant-{topo_name}.csv"
+        _audit("EXPORT", "cable_plant_report", topo_id, f"{cable_count} cable runs")
+        return jsonify({"csv": buf.getvalue(), "filename": filename, "cable_count": cable_count})
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Cross-Connects CRUD
     # ══════════════════════════════════════════════════════════════════════
 
