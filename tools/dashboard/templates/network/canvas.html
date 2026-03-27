@@ -51,6 +51,16 @@
       <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
     </div>
     <div class="tb-group">
+      <button class="tb-btn" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — draw selection around devices to create enclave boundary" style="color:#f39c12;">⬡ Fence</button>
+      <div class="tb-dropdown-wrap">
+        <button class="tb-btn tb-btn-heatmap" id="tb-heatmap-btn" onclick="document.getElementById('heatmap-dropdown').classList.toggle('hidden')" title="Heatmap Overlay — color by metric">🌡 Heatmap</button>
+        <div class="tb-dropdown hidden" id="heatmap-dropdown">
+          <button class="tb-dropdown-item" onclick="toggleHeatmap('bandwidth');document.getElementById('heatmap-dropdown').classList.add('hidden')">Bandwidth Utilization</button>
+          <button class="tb-dropdown-item" onclick="toggleHeatmap('vuln');document.getElementById('heatmap-dropdown').classList.add('hidden')">Vulnerability Severity</button>
+          <button class="tb-dropdown-item" onclick="toggleHeatmap('stig');document.getElementById('heatmap-dropdown').classList.add('hidden')">STIG Compliance %</button>
+          <button class="tb-dropdown-item" onclick="toggleHeatmap('age');document.getElementById('heatmap-dropdown').classList.add('hidden')">Equipment Age</button>
+        </div>
+      </div>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
       <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
@@ -515,6 +525,13 @@
           <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Object</button>
         </div>
       </div>
+      <!-- Security Boundaries panel -->
+      <div class="boundary-panel">
+        <div class="boundary-panel-header">Security Boundaries</div>
+        <div id="boundary-list">
+          <div class="boundary-empty">No boundaries defined. Use fence tool to create.</div>
+        </div>
+      </div>
     </div>
 
   </div><!-- end canvas-body -->
@@ -528,6 +545,30 @@
   </div>
 
 </div><!-- end canvas-layout -->
+
+<!-- Security Boundary Fence Dialog -->
+<div id="fence-overlay" class="fence-overlay hidden">
+  <div class="fence-dialog">
+    <h3>⬡ Create Security Boundary</h3>
+    <label>Selected Devices (<span id="fence-node-count">0</span>)</label>
+    <div id="fence-node-list" class="fence-node-list"></div>
+    <label>Classification Level</label>
+    <select id="fence-classification">
+      <option value="CUI" selected>CUI — Controlled Unclassified</option>
+      <option value="SECRET">SECRET</option>
+      <option value="TOP SECRET">TOP SECRET</option>
+      <option value="PUBLIC">PUBLIC</option>
+    </select>
+    <label>Boundary Label (optional)</label>
+    <input type="text" id="fence-label" placeholder="e.g., CUI Enclave, SECRET VLAN, Server Farm"/>
+    <label>Notes</label>
+    <textarea id="fence-notes" placeholder="Boundary justification or description..."></textarea>
+    <div class="fence-actions">
+      <button class="fence-btn-cancel" onclick="closeFenceDialog()">Cancel</button>
+      <button class="fence-btn-create" onclick="createBoundaryFromFence()">Create Boundary</button>
+    </div>
+  </div>
+</div>
 
 <!-- Simulation Overlay -->
 <div id="sim-overlay" class="sim-overlay hidden">

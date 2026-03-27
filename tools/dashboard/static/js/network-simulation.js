@@ -1414,6 +1414,203 @@ function _escHtml(s) {
   return d.innerHTML;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Heatmap Overlay — color nodes/links by selectable metric
+ * Metrics: bandwidth, vuln, stig, age
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+let _heatmapActive = false;
+let _heatmapMetric = 'bandwidth';
+let _heatmapOrigNodeStyles = new Map(); // nodeId -> {fill, stroke}
+let _heatmapOrigLinkStyles = new Map(); // linkId -> {stroke, strokeWidth, strokeDasharray}
+
+const HEATMAP_GRADIENT = [
+  { stop: 0.0, r: 39,  g: 174, b: 96  }, // green
+  { stop: 0.25, r: 241, g: 196, b: 15  }, // yellow
+  { stop: 0.5,  r: 243, g: 156, b: 18  }, // orange
+  { stop: 0.75, r: 231, g: 76,  b: 60  }, // red
+  { stop: 1.0,  r: 192, g: 57,  b: 43  }, // dark red
+];
+
+function _heatmapColor(value) {
+  const v = Math.max(0, Math.min(1, value));
+  let lower = HEATMAP_GRADIENT[0], upper = HEATMAP_GRADIENT[HEATMAP_GRADIENT.length - 1];
+  for (let i = 0; i < HEATMAP_GRADIENT.length - 1; i++) {
+    if (v >= HEATMAP_GRADIENT[i].stop && v <= HEATMAP_GRADIENT[i + 1].stop) {
+      lower = HEATMAP_GRADIENT[i];
+      upper = HEATMAP_GRADIENT[i + 1];
+      break;
+    }
+  }
+  const range = upper.stop - lower.stop || 1;
+  const t = (v - lower.stop) / range;
+  const r = Math.round(lower.r + t * (upper.r - lower.r));
+  const g = Math.round(lower.g + t * (upper.g - lower.g));
+  const b = Math.round(lower.b + t * (upper.b - lower.b));
+  return `rgb(${r},${g},${b})`;
+}
+
+function toggleHeatmap(metric) {
+  if (_heatmapActive && _heatmapMetric === metric) {
+    clearHeatmap();
+    return;
+  }
+  if (_heatmapActive) clearHeatmap();
+  _heatmapMetric = metric;
+  showHeatmap(metric);
+}
+
+async function showHeatmap(metric) {
+  if (!graph || !currentTopoId || currentTopoId === 'new') {
+    setStatus('Save topology before using heatmap'); return;
+  }
+  setStatus('Loading heatmap data...');
+  try {
+    const resp = await fetch(NC_BASE + '/api/heatmap/' + currentTopoId + '?metric=' + encodeURIComponent(metric));
+    if (!resp.ok) throw new Error('Failed to load heatmap data');
+    const data = await resp.json();
+    applyHeatmap(data);
+  } catch (err) {
+    setStatus('Heatmap error: ' + err.message);
+  }
+}
+
+function applyHeatmap(data) {
+  _heatmapActive = true;
+  _heatmapOrigNodeStyles.clear();
+  _heatmapOrigLinkStyles.clear();
+
+  const nodeVals = data.node_values || {};
+  const linkVals = data.link_values || {};
+  const metric = data.metric || _heatmapMetric;
+
+  const elements = graph.getElements();
+  const links = graph.getLinks();
+
+  // Apply node colours
+  elements.forEach(el => {
+    const ntype = el.get('nodeType') || '';
+    if (!ntype || ntype.startsWith('draw-') || ntype.startsWith('text-') || ntype === 'group-site' || ntype === 'annotation') return;
+
+    const bodyAttrs = el.attr('body') || {};
+    _heatmapOrigNodeStyles.set(el.id, {
+      fill: bodyAttrs.fill,
+      stroke: bodyAttrs.stroke,
+    });
+
+    const val = nodeVals[el.id];
+    if (val !== undefined && val !== null) {
+      const color = _heatmapColor(val);
+      el.attr('body/fill', color);
+      el.attr('body/stroke', color);
+      el.attr('body/fillOpacity', 0.7);
+    } else {
+      // Dim nodes with no data
+      el.attr('body/fillOpacity', 0.15);
+    }
+  });
+
+  // Apply link colours
+  links.forEach(link => {
+    const lineAttrs = link.attr('line') || {};
+    _heatmapOrigLinkStyles.set(link.id, {
+      stroke: lineAttrs.stroke,
+      strokeWidth: lineAttrs.strokeWidth,
+      strokeDasharray: lineAttrs.strokeDasharray,
+    });
+
+    const val = linkVals[link.id];
+    if (val !== undefined && val !== null) {
+      const color = _heatmapColor(val);
+      link.attr('line/stroke', color);
+      link.attr('line/strokeWidth', 3);
+      link.removeAttr('line/strokeDasharray');
+    } else {
+      // Dim links with no data
+      link.attr('line/stroke', '#333');
+      link.attr('line/strokeWidth', 1);
+    }
+  });
+
+  // Show legend
+  showHeatmapLegend(metric);
+
+  // Update toolbar button
+  const btn = document.getElementById('tb-heatmap-btn');
+  if (btn) btn.classList.add('active');
+
+  const METRIC_LABELS = {bandwidth: 'Bandwidth Utilization', vuln: 'Vulnerability Severity', stig: 'STIG Compliance', age: 'Equipment Age'};
+  setStatus('Heatmap: ' + (METRIC_LABELS[metric] || metric));
+}
+
+function clearHeatmap() {
+  if (!graph) return;
+  _heatmapActive = false;
+
+  graph.getElements().forEach(el => {
+    const orig = _heatmapOrigNodeStyles.get(el.id);
+    if (orig) {
+      el.attr('body/fill', orig.fill || '#1a1a2e');
+      el.attr('body/stroke', orig.stroke || '#7a8cb0');
+      el.removeAttr('body/fillOpacity');
+    }
+  });
+
+  graph.getLinks().forEach(link => {
+    const orig = _heatmapOrigLinkStyles.get(link.id);
+    if (orig) {
+      link.attr('line/stroke', orig.stroke || '#e94560');
+      link.attr('line/strokeWidth', orig.strokeWidth || 2);
+      if (orig.strokeDasharray) {
+        link.attr('line/strokeDasharray', orig.strokeDasharray);
+      } else {
+        link.removeAttr('line/strokeDasharray');
+      }
+    }
+  });
+
+  _heatmapOrigNodeStyles.clear();
+  _heatmapOrigLinkStyles.clear();
+  hideHeatmapLegend();
+
+  const btn = document.getElementById('tb-heatmap-btn');
+  if (btn) btn.classList.remove('active');
+  setStatus('Heatmap cleared');
+}
+
+function showHeatmapLegend(metric) {
+  let legend = document.getElementById('heatmap-legend');
+  if (!legend) {
+    legend = document.createElement('div');
+    legend.id = 'heatmap-legend';
+    legend.className = 'heatmap-legend';
+    const canvasArea = document.querySelector('.canvas-area') || document.querySelector('.canvas-body');
+    if (canvasArea) canvasArea.appendChild(legend);
+  }
+  const METRIC_INFO = {
+    bandwidth: { label: 'Bandwidth Utilization', low: '0%', high: '100%' },
+    vuln:      { label: 'Vulnerability Severity', low: 'None', high: 'CAT1' },
+    stig:      { label: 'STIG Compliance', low: '100%', high: '0%' },
+    age:       { label: 'Equipment Age', low: 'New', high: '10+ yr' },
+  };
+  const info = METRIC_INFO[metric] || { label: metric, low: 'Low', high: 'High' };
+  legend.innerHTML = `
+    <div class="heatmap-legend-title">${info.label}</div>
+    <div class="heatmap-legend-bar">
+      <span class="heatmap-legend-label">${info.low}</span>
+      <div class="heatmap-legend-gradient"></div>
+      <span class="heatmap-legend-label">${info.high}</span>
+    </div>
+    <button class="heatmap-legend-close" onclick="clearHeatmap()" title="Clear heatmap">&times;</button>
+  `;
+  legend.style.display = 'flex';
+}
+
+function hideHeatmapLegend() {
+  const legend = document.getElementById('heatmap-legend');
+  if (legend) legend.style.display = 'none';
+}
+
 /* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   // Wait a tick for canvas.js to init paper

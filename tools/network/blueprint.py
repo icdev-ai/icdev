@@ -2846,6 +2846,131 @@ Output ONLY the JSON object. No other text."""
         return jsonify({"ok": True})
 
     # ══════════════════════════════════════════════════════════════════════
+    # Heatmap Overlay — device/link metric data
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/heatmap/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_heatmap(topo_id):
+        """Return per-node and per-link metric values for heatmap overlay.
+
+        Query param ``metric`` selects which metric:
+          - bandwidth   — link utilisation %  (from configData.utilization)
+          - vuln        — vulnerability severity (from STIG imports / compliance)
+          - stig        — STIG compliance %  (from compliance findings)
+          - age         — equipment age in years (from configData.install_date)
+        """
+        metric = request.args.get("metric", "bandwidth")
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, graph_json FROM topologies WHERE id=?", (topo_id,),
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+
+        node_values = {}  # nodeId -> 0..1 normalised score
+        link_values = {}  # edgeId -> 0..1 normalised score
+
+        if metric == "bandwidth":
+            for e in edges:
+                cfg = e.get("configData") or {}
+                util = cfg.get("utilization")
+                if util is not None:
+                    try:
+                        link_values[e["id"]] = max(0.0, min(1.0, float(util) / 100.0))
+                    except (ValueError, TypeError):
+                        link_values[e["id"]] = 0.0
+                else:
+                    link_values[e["id"]] = 0.0
+
+        elif metric == "vuln":
+            # Pull latest compliance findings for this topology
+            rows = conn.execute(
+                "SELECT affected_entity, severity, status FROM nc_compliance_findings "
+                "WHERE topology_id=? AND status='open' "
+                "ORDER BY created_at DESC",
+                (topo_id,),
+            ).fetchall()
+            severity_weight = {"CAT1": 1.0, "CAT2": 0.6, "CAT3": 0.25}
+            entity_max = {}
+            for r in rows:
+                eid = r["affected_entity"]
+                w = severity_weight.get(r["severity"], 0.1)
+                if eid not in entity_max or w > entity_max[eid]:
+                    entity_max[eid] = w
+            for n in nodes:
+                nid = n["id"]
+                label = n.get("label", "")
+                val = entity_max.get(nid, entity_max.get(label, 0.0))
+                node_values[nid] = val
+            for e in edges:
+                eid = e["id"]
+                label = e.get("label", "")
+                val = entity_max.get(eid, entity_max.get(label, 0.0))
+                link_values[eid] = val
+
+        elif metric == "stig":
+            # STIG import results — per-host pass rate
+            stig_rows = conn.execute(
+                "SELECT result_json FROM nc_stig_imports "
+                "WHERE topology_id=? ORDER BY imported_at DESC LIMIT 1",
+                (topo_id,),
+            ).fetchone()
+            host_compliance = {}
+            if stig_rows and stig_rows["result_json"]:
+                try:
+                    stig_data = json.loads(stig_rows["result_json"])
+                    hosts = stig_data.get("hosts", {})
+                    for hostname, hdata in hosts.items():
+                        s = hdata.get("summary", {})
+                        total = s.get("pass", 0) + s.get("fail", 0) + s.get("nr", 0)
+                        if total > 0:
+                            host_compliance[hostname.lower()] = s.get("pass", 0) / total
+                        else:
+                            host_compliance[hostname.lower()] = 1.0
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+            for n in nodes:
+                nid = n["id"]
+                label = (n.get("label") or "").lower()
+                # 1.0 = fully compliant (green), 0.0 = no compliance (red)
+                # Invert so red=bad: heatmap value 1.0 = worst
+                compliance = host_compliance.get(label, 1.0)
+                node_values[nid] = 1.0 - compliance
+
+        elif metric == "age":
+            now = datetime.now(timezone.utc)
+            for n in nodes:
+                cfg = n.get("configData") or {}
+                install_date = cfg.get("install_date") or cfg.get("installDate")
+                if install_date:
+                    try:
+                        dt = datetime.fromisoformat(install_date.replace("Z", "+00:00"))
+                        age_years = (now - dt).days / 365.25
+                        # Normalise: 0 years = 0.0, 10+ years = 1.0
+                        node_values[n["id"]] = max(0.0, min(1.0, age_years / 10.0))
+                    except (ValueError, TypeError):
+                        node_values[n["id"]] = 0.0
+                else:
+                    node_values[n["id"]] = 0.0
+
+        conn.close()
+        return jsonify({
+            "metric": metric,
+            "node_values": node_values,
+            "link_values": link_values,
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
     # PPS Matrix Generator — Enclave / Device Pair
     # ══════════════════════════════════════════════════════════════════════
 

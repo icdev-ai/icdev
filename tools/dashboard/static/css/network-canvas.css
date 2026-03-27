@@ -1053,5 +1053,50 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 /* Active fence mode button */
 .tb-btn-active { background: #2b1a0f !important; border-color: #f39c12 !important; color: #f39c12 !important; }
 
+/* ── Heatmap Overlay ───────────────────────────────────────────────────────── */
+.tb-btn-heatmap { color: #e67e22 !important; }
+.tb-btn-heatmap.active { background: #2b1a0f !important; border-color: #e67e22 !important; }
+
+.tb-dropdown-wrap { position: relative; display: inline-block; }
+.tb-dropdown {
+  position: absolute; top: 100%; left: 0; z-index: 200;
+  background: var(--bg2, #16213e); border: 1px solid var(--border, #1e3a6e);
+  border-radius: 6px; padding: 4px 0; min-width: 180px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.tb-dropdown-item {
+  display: block; width: 100%; padding: 6px 14px;
+  background: none; border: none; color: var(--text, #eaeaea);
+  font-size: 12px; text-align: left; cursor: pointer; white-space: nowrap;
+}
+.tb-dropdown-item:hover { background: var(--accent, #0f3460); color: #fff; }
+
+.heatmap-legend {
+  position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; gap: 8px;
+  background: rgba(22,33,62,0.92); border: 1px solid var(--border, #1e3a6e);
+  border-radius: 8px; padding: 8px 16px; z-index: 150;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.heatmap-legend-title {
+  font-size: 11px; font-weight: 700; color: #e67e22;
+  text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px;
+}
+.heatmap-legend-bar {
+  display: flex; align-items: center; gap: 6px;
+}
+.heatmap-legend-gradient {
+  width: 140px; height: 12px; border-radius: 3px;
+  background: linear-gradient(to right, #27ae60, #f1c40f, #f39c12, #e74c3c, #c0392b);
+}
+.heatmap-legend-label {
+  font-size: 10px; color: var(--text-dim, #7a8cb0); white-space: nowrap;
+}
+.heatmap-legend-close {
+  background: none; border: none; color: #636e72; font-size: 18px;
+  cursor: pointer; padding: 0 2px; line-height: 1; margin-left: 4px;
+}
+.heatmap-legend-close:hover { color: #e94560; }
+
 /* ── Hidden utility ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
