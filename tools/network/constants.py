@@ -72,6 +72,13 @@ CLOUD_OBJECTS = {
         {"type": "internet-exchange", "label": "IXP", "icon": "IXP", "desc": "Internet Exchange Point"},
         {"type": "cloud-region", "label": "Region", "icon": "REG", "desc": "Cloud region/availability zone boundary"},
     ],
+    "colocation": [
+        {"type": "meet-me-room", "label": "Meet-Me Room", "icon": "MMR", "desc": "Carrier-neutral meet-me room — physical handoff between customer and CSP/carrier"},
+        {"type": "cross-connect", "label": "Cross-Connect", "icon": "XX", "desc": "Physical cross-connect cable between racks/cages in a colocation facility"},
+        {"type": "demarc", "label": "Demarc", "icon": "DM", "desc": "Demarcation point — boundary between carrier and customer responsibility"},
+        {"type": "cage", "label": "Cage/Suite", "icon": "CGE", "desc": "Colocation cage or private suite housing customer equipment"},
+        {"type": "cabinet", "label": "Cabinet", "icon": "CAB", "desc": "Equipment cabinet/rack in colocation facility"},
+    ],
 }
 
 # Default auto-populated components per CSP group (used when group_type="full")
@@ -269,5 +276,7 @@ BOM_COSTS = {
     "media-100ge": 1200, "media-400ge": 3500, "media-fiber": 80, "media-optical": 200,
     "sfp": 80, "sfp-plus": 200, "qsfp": 800, "qsfp-dd": 2000,
     "patch-panel-fiber": 400,
+    # Colocation facility objects
+    "meet-me-room": 0, "cross-connect": 300, "demarc": 0, "cage": 0, "cabinet": 2500,
     # Cloud objects are OpEx, not CapEx — zero hardware cost
 }
