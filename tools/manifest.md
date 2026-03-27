@@ -1507,3 +1507,10 @@
 | Hook Compat | tools\airgap\hook_compat.py | Auto-registered: airgap/hook_compat.py | --json | JSON |
 | Pdf Fallback | tools\airgap\pdf_fallback.py | Auto-registered: airgap/pdf_fallback.py | --json | JSON |
 | Session Compat | tools\airgap\session_compat.py | Auto-registered: airgap/session_compat.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Export Import | tools\network\export_import.py | Auto-registered: network/export_import.py | --json | JSON |
+| Montecarlo | tools\network\montecarlo.py | Auto-registered: network/montecarlo.py | --json | JSON |

@@ -481,6 +481,14 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .p-icon       { background: #2b1a0f; border: 1px solid #8a5a1a; color: #ffb74d; }
 .rr-icon      { background: #1a1a2e; border: 1px solid #3a3a8a; color: #7986cb; }
 .adm-icon     { background: #0f0f2b; border: 1px solid #2a2aaa; color: #536dfe; }
+/* Colocation / Facility */
+.mmr-icon     { background: #1a2b1a; border: 1px solid #4a8a4a; color: #81c784; }
+.xx-icon      { background: #2b1a2b; border: 1px solid #8a4a8a; color: #ce93d8; }
+.dm-icon      { background: #2b2b0f; border: 1px solid #8a8a1a; color: #fff176; }
+.cage-icon    { background: #1a1a2b; border: 1px solid #4a4a8a; color: #9fa8da; }
+.cab-icon     { background: #1a2b2b; border: 1px solid #4a8a8a; color: #80cbc4; }
+/* Colocation — CSP palette dynamic icons */
+.colo-icon    { background: #1a2b1a; border: 1px solid #4a8a4a; color: #81c784; }
 /* Annotation */
 .note-icon    { background: #1a1a2e; border: 1px solid #3a3a5e; color: #636e72; }
 .group-icon   { background: #0f1a3a; border: 1px dashed #5f6e8e; color: #5f6e8e; }
