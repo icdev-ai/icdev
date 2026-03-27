@@ -1513,6 +1513,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Export Import | tools\network\export_import.py | Auto-registered: network/export_import.py | --json | JSON |
+| Inventory Export | tools\network\inventory_export.py | Ansible inventory INI (hosts grouped by zone/role) and Terraform HCL skeleton (VPC, subnet, security group) derived from topology graph. Routes: POST /api/export/<topo_id>/ansible, POST /api/export/<topo_id>/terraform | graph dict | .ini / .tf text |
 | Montecarlo | tools\network\montecarlo.py | Auto-registered: network/montecarlo.py | --json | JSON |
 
 
@@ -1531,6 +1532,8 @@
 |------|------|-------------|-------|--------|
 | Stig Import | tools\network\stig_import.py | Auto-registered: network/stig_import.py | --json | JSON |
 | Intent Validator | tools\network\intent_validator.py | Network Canvas intent-based topology validation engine — bandwidth, redundancy, isolation, latency, encryption constraints | --json | JSON |
+| Change Request | tools\network\change_request.py | Network Canvas Change Request Markup engine — add/remove/modify markup (green/red/yellow), CAB review document with before/after diffs | --json | JSON |
+| NetBox Client | tools\network\netbox_client.py | NetBox REST API client — pull devices, IP allocations, VLANs, prefixes, racks, circuits; push canvas nodes back as NetBox devices. Stdlib only (no third-party deps). Blueprint routes: GET /api/netbox/status, POST /api/netbox/configure, GET/POST /api/netbox/pull/*, POST /api/netbox/import/<topo_id>, POST /api/netbox/push/<topo_id>, GET /api/netbox/sync-log | --url, --token, --pull, --site, --json, --gate | JSON / text |
 
 
 ## Auto-Registered (Coherence Fix)

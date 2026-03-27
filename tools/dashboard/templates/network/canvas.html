@@ -43,6 +43,8 @@
     <div class="tb-group">
       <button class="tb-btn" onclick="exportAs('drawio')" title="Export draw.io">⬇ draw.io</button>
       <button class="tb-btn" onclick="exportAs('svg')" title="Export SVG">⬇ SVG</button>
+      <button class="tb-btn" onclick="exportInventory('ansible')" title="Export Ansible Inventory (hosts grouped by role/enclave)" style="color:#ff6b35;">⬇ Ansible</button>
+      <button class="tb-btn" onclick="exportInventory('terraform')" title="Export Terraform HCL skeleton (VPC, subnet, security group)" style="color:#7b42bc;">⬇ Terraform</button>
     </div>
     <div class="tb-group">
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
@@ -66,6 +68,7 @@
       <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
       <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
+      <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
@@ -750,6 +753,26 @@
   }
   function closeAtoDialog() { document.getElementById('ato-overlay').classList.add('hidden'); }
 
+  async function exportInventory(fmt) {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const endpoint = NC_BASE + '/api/export/' + TOPOLOGY_ID + '/' + fmt;
+    try {
+      const r = await fetch(endpoint, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+      const data = await r.json();
+      if (data.error) { alert('Export failed: ' + data.error); return; }
+      const blob = new Blob([data.content], {type: 'text/plain'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus((fmt === 'ansible' ? 'Ansible inventory' : 'Terraform HCL') + ' exported: ' + data.filename);
+    } catch (e) {
+      alert('Export error: ' + e.message);
+    }
+  }
+
   function exportFipsReport() {
     if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
     const btn = document.getElementById('tb-fips-report-btn');
@@ -852,6 +875,179 @@
       (groups || []).forEach(function(g) { sel.innerHTML += '<option value="' + g.id + '">' + g.label + (g.csp ? ' (' + g.csp.toUpperCase() + ')' : '') + '</option>'; });
     }).catch(function(){});
   }
+
+  // ── NetBox IPAM ────────────────────────────────────────────────────────────
+
+  function netboxToggle() {
+    const panel = document.getElementById('netbox-panel');
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      netboxLoadConfig();
+      netboxLoadSyncLog();
+    }
+  }
+
+  function netboxLoadConfig() {
+    fetch(NC_BASE + '/api/netbox/config').then(r => r.ok ? r.json() : {}).then(cfg => {
+      if (cfg.configured) {
+        document.getElementById('nb-url-input').value = cfg.url || '';
+        document.getElementById('nb-site-input').value = cfg.site_filter || '';
+        const line = document.getElementById('nb-status-line');
+        line.textContent = cfg.last_tested ? 'Last tested: ' + cfg.last_tested.substring(0,19) : 'Config loaded. Click Test to verify.';
+        line.style.color = '#2ecc71';
+      }
+    }).catch(function(){});
+  }
+
+  function netboxSaveConfig() {
+    const url = document.getElementById('nb-url-input').value.trim();
+    const token = document.getElementById('nb-token-input').value.trim();
+    const site = document.getElementById('nb-site-input').value.trim();
+    if (!url || !token) {
+      document.getElementById('nb-status-line').textContent = 'URL and token required.';
+      document.getElementById('nb-status-line').style.color = '#e74c3c';
+      return;
+    }
+    document.getElementById('nb-status-line').textContent = 'Saving...';
+    fetch(NC_BASE + '/api/netbox/configure', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({url, token, site_filter: site})
+    }).then(r => r.json()).then(d => {
+      const line = document.getElementById('nb-status-line');
+      if (d.ok) {
+        line.textContent = 'Saved: ' + d.url;
+        line.style.color = '#2ecc71';
+      } else {
+        line.textContent = 'Error: ' + (d.error || 'unknown');
+        line.style.color = '#e74c3c';
+      }
+    }).catch(err => {
+      document.getElementById('nb-status-line').textContent = 'Request failed: ' + err;
+      document.getElementById('nb-status-line').style.color = '#e74c3c';
+    });
+  }
+
+  function netboxTestConnection() {
+    const line = document.getElementById('nb-status-line');
+    line.textContent = 'Testing...';
+    line.style.color = '#f39c12';
+    fetch(NC_BASE + '/api/netbox/status').then(r => r.json()).then(d => {
+      if (d.ok) {
+        line.textContent = 'Connected — NetBox ' + (d.netbox_version || '');
+        line.style.color = '#2ecc71';
+      } else {
+        line.textContent = 'Failed: ' + (d.error || 'unknown');
+        line.style.color = '#e74c3c';
+      }
+    }).catch(err => {
+      line.textContent = 'Error: ' + err;
+      line.style.color = '#e74c3c';
+    });
+  }
+
+  function netboxPull(resource) {
+    const out = document.getElementById('nb-pull-results');
+    out.textContent = 'Pulling ' + resource + '...';
+    const endpointMap = {
+      devices: 'devices', ips: 'ips', vlans: 'vlans',
+      prefixes: 'prefixes', racks: 'racks', circuits: 'circuits'
+    };
+    fetch(NC_BASE + '/api/netbox/pull/' + (endpointMap[resource] || resource))
+      .then(r => r.json()).then(d => {
+        if (d.error) {
+          out.innerHTML = '<span style="color:#e74c3c;">Error: ' + d.error + '</span>';
+          return;
+        }
+        const key = Object.keys(d).find(k => k !== 'count') || resource;
+        const items = d[key] || [];
+        let html = '<strong style="color:#2ecc71;">' + d.count + ' ' + resource + ' pulled</strong><br/>';
+        items.slice(0,5).forEach(item => {
+          const label = item.label || item.name || item.address || item.circuit_id || item.prefix || ('ID '+item.netbox_id);
+          html += '<span style="color:#7f8c8d;">• ' + label + '</span><br/>';
+        });
+        if (items.length > 5) html += '<span style="color:#7f8c8d;">…and ' + (items.length-5) + ' more</span>';
+        out.innerHTML = html;
+      }).catch(err => {
+        out.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err + '</span>';
+      });
+  }
+
+  function netboxImport(resource, merge) {
+    if (TOPOLOGY_ID === 'new') {
+      alert('Save the topology first before importing from NetBox.');
+      return;
+    }
+    const out = document.getElementById('nb-pull-results');
+    out.textContent = 'Importing ' + resource + ' into canvas...';
+    fetch(NC_BASE + '/api/netbox/import/' + TOPOLOGY_ID, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({resource: resource, merge: !!merge})
+    }).then(r => r.json()).then(d => {
+      if (d.error) {
+        out.innerHTML = '<span style="color:#e74c3c;">Error: ' + d.error + '</span>';
+        return;
+      }
+      out.innerHTML = '<strong style="color:#2ecc71;">Import complete</strong><br/>' +
+        '<span style="color:#7f8c8d;">Nodes added: ' + d.nodes_added + '</span><br/>' +
+        '<span style="color:#7f8c8d;">IPAM blocks: ' + d.ipam_blocks + '</span><br/>' +
+        '<span style="color:#7f8c8d;">Circuits: ' + d.circuits + '</span>';
+      // Reload canvas graph so imported nodes appear
+      if (typeof loadGraph === 'function') {
+        loadGraph(d.graph);
+      } else if (typeof renderGraph === 'function') {
+        renderGraph(d.graph);
+      }
+      netboxLoadSyncLog();
+    }).catch(err => {
+      out.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err + '</span>';
+    });
+  }
+
+  function netboxPush(pushAll) {
+    if (TOPOLOGY_ID === 'new') {
+      alert('Save the topology first before pushing to NetBox.');
+      return;
+    }
+    const siteId = document.getElementById('nb-site-id-input').value.trim();
+    const out = document.getElementById('nb-pull-results');
+    out.textContent = 'Pushing canvas to NetBox...';
+    fetch(NC_BASE + '/api/netbox/push/' + TOPOLOGY_ID, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({push_all: !!pushAll, site_id: siteId ? parseInt(siteId) : null})
+    }).then(r => r.json()).then(d => {
+      if (!d.ok && !d.pushed) {
+        out.innerHTML = '<span style="color:#e74c3c;">Error: ' + (d.errors||[]).map(e=>e.error).join(', ') + '</span>';
+        return;
+      }
+      out.innerHTML = '<strong style="color:#2ecc71;">Pushed ' + d.pushed.length + ' device(s)</strong>' +
+        (d.errors.length ? '<br/><span style="color:#f39c12;">' + d.errors.length + ' error(s)</span>' : '');
+      netboxLoadSyncLog();
+    }).catch(err => {
+      out.innerHTML = '<span style="color:#e74c3c;">Request failed: ' + err + '</span>';
+    });
+  }
+
+  function netboxLoadSyncLog() {
+    fetch(NC_BASE + '/api/netbox/sync-log?limit=10').then(r => r.json()).then(d => {
+      const el = document.getElementById('nb-sync-log');
+      if (!el) return;
+      const log = d.log || [];
+      if (!log.length) { el.textContent = 'No sync history yet.'; return; }
+      el.innerHTML = log.map(row => {
+        const color = row.status === 'ok' ? '#2ecc71' : '#e74c3c';
+        const ts = (row.ran_at || '').substring(0, 16);
+        const dir = row.direction === 'pull' ? '⬇' : '⬆';
+        return '<div style="border-bottom:1px solid #1a1a2e;padding:3px 0;">' +
+          '<span style="color:' + color + ';">' + dir + ' ' + row.resource + '</span> ' +
+          '<span style="color:#7f8c8d;">' + row.records_out + ' records · ' + ts + '</span>' +
+          (row.error_msg ? '<br/><span style="color:#e74c3c;">' + row.error_msg.substring(0,60) + '</span>' : '') +
+          '</div>';
+      }).join('');
+    }).catch(function(){});
+  }
 </script>
 <!-- ATO Package Generator Dialog -->
 <div id="ato-overlay" class="sim-overlay hidden">
@@ -878,6 +1074,85 @@
     <div id="ato-gen-output" class="sim-output" style="display:none;max-height:450px;overflow-y:auto;"></div>
   </div>
 </div>
+<!-- NetBox IPAM Integration Panel -->
+<div id="netbox-panel" class="nc-chat-panel hidden" style="right:0;left:auto;width:380px;display:flex;flex-direction:column;">
+  <div class="sim-panel-header" style="padding:12px 16px;display:flex;align-items:center;justify-content:space-between;">
+    <h3 style="margin:0;font-size:14px;color:#9b59b6;">⬡ NetBox IPAM</h3>
+    <button class="close-btn" onclick="netboxToggle()">&#x2715;</button>
+  </div>
+  <div style="padding:12px 16px;overflow-y:auto;flex:1;">
+    <!-- Connection config -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Connection</div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">NetBox URL</label>
+        <input type="text" id="nb-url-input" class="form-control" style="font-size:12px;" placeholder="http://netbox:8000"/>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">API Token</label>
+        <input type="password" id="nb-token-input" class="form-control" style="font-size:12px;" placeholder="Token abc123..."/>
+      </div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">Site Filter (optional)</label>
+        <input type="text" id="nb-site-input" class="form-control" style="font-size:12px;" placeholder="site-slug"/>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary" style="flex:1;font-size:11px;padding:5px 8px;" onclick="netboxSaveConfig()">Save Config</button>
+        <button class="btn btn-secondary" style="flex:1;font-size:11px;padding:5px 8px;" onclick="netboxTestConnection()">Test</button>
+      </div>
+      <div id="nb-status-line" style="margin-top:8px;font-size:11px;color:#95a5a6;min-height:16px;"></div>
+    </div>
+
+    <!-- Pull resources -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Pull from NetBox</div>
+      <div id="nb-pull-results" style="font-size:11px;color:#95a5a6;margin-bottom:8px;min-height:20px;"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('devices')">Devices</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('ips')">IP Addresses</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('vlans')">VLANs</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('prefixes')">Prefixes</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('racks')">Racks</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxPull('circuits')">Circuits</button>
+      </div>
+      <button class="btn btn-primary" style="width:100%;font-size:12px;margin-top:8px;background:#9b59b6;border-color:#8e44ad;" onclick="netboxImport('all', true)">⬇ Import All into Canvas</button>
+    </div>
+
+    <!-- Import options -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Import Options</div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:#95a5a6;cursor:pointer;margin-bottom:8px;">
+        <input type="checkbox" id="nb-merge-chk" checked style="accent-color:#9b59b6;"/> Merge (keep existing nodes)
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxImport('devices', document.getElementById('nb-merge-chk').checked)">Import Devices</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxImport('circuits', document.getElementById('nb-merge-chk').checked)">Import Circuits</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:5px 8px;" onclick="netboxImport('prefixes', document.getElementById('nb-merge-chk').checked)">Import Prefixes</button>
+      </div>
+    </div>
+
+    <!-- Push to NetBox -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;margin-bottom:12px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">Push to NetBox</div>
+      <div style="font-size:11px;color:#95a5a6;margin-bottom:8px;">Push canvas nodes (new devices only) back to NetBox as device records.</div>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:11px;color:#95a5a6;">NetBox Site ID (optional)</label>
+        <input type="number" id="nb-site-id-input" class="form-control" style="font-size:12px;" placeholder="e.g. 3"/>
+      </div>
+      <button class="btn btn-secondary" style="width:100%;font-size:12px;" onclick="netboxPush(false)">⬆ Push New Nodes</button>
+    </div>
+
+    <!-- Sync log -->
+    <div style="background:#0d0d1a;border-radius:6px;padding:10px;">
+      <div style="font-size:11px;color:#9b59b6;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:8px;">
+        Sync Log
+        <button onclick="netboxLoadSyncLog()" style="background:none;border:none;color:#9b59b6;cursor:pointer;font-size:11px;float:right;padding:0;">↺ Refresh</button>
+      </div>
+      <div id="nb-sync-log" style="font-size:10px;color:#95a5a6;max-height:120px;overflow-y:auto;"></div>
+    </div>
+  </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/network-canvas.js') }}"></script>
 <script src="{{ url_for('static', filename='js/network-simulation.js') }}"></script>
 <script>

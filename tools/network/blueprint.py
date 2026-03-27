@@ -55,6 +55,9 @@ from tools.network.ato_generator import (  # noqa: E402
 from tools.network.export_import import (  # noqa: E402
     to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
 )
+from tools.network.inventory_export import (  # noqa: E402
+    to_ansible_inventory, to_terraform_hcl,
+)
 from tools.network.stig_import import import_stig_file  # noqa: E402
 from tools.network.intent_validator import (  # noqa: E402
     validate_intent_policy, CONSTRAINT_TYPES,
@@ -782,6 +785,62 @@ def create_network_blueprint():
             graph = {"nodes": [], "edges": []}
         vdx_xml = to_vdx(graph, topo["name"])
         return jsonify({"format": "vdx", "filename": f"{topo['name']}.vdx", "content": vdx_xml})
+
+    @bp.route("/api/export/<topo_id>/ansible", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_ansible(topo_id):
+        """Export topology as an Ansible inventory INI file.
+
+        Hosts are grouped by security zone/role derived from node type.
+        Cloud-infrastructure nodes (VPCs, subnets, etc.) are emitted as
+        comments for reference only.
+        """
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        content = to_ansible_inventory(graph, topo["name"])
+        safe_name = topo["name"].replace(" ", "_")
+        _audit("EXPORT", "topology", topo_id, "ansible")
+        return jsonify({
+            "format": "ansible",
+            "filename": f"{safe_name}_inventory.ini",
+            "content": content,
+        })
+
+    @bp.route("/api/export/<topo_id>/terraform", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_terraform(topo_id):
+        """Export topology as a Terraform HCL skeleton (main.tf).
+
+        Generates provider blocks, resource stubs for every cloud node, and a
+        locals block mapping diagram edges to conceptual connectivity rules
+        (security-group / NACL / firewall policy inputs).
+        """
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        topo = _row_to_dict(row)
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        content = to_terraform_hcl(graph, topo["name"])
+        safe_name = topo["name"].replace(" ", "_")
+        _audit("EXPORT", "topology", topo_id, "terraform")
+        return jsonify({
+            "format": "terraform",
+            "filename": f"{safe_name}_main.tf",
+            "content": content,
+        })
 
     @bp.route("/api/import", methods=["POST"])
     @nc_login_required
@@ -3432,6 +3491,665 @@ Output ONLY the JSON object. No other text."""
     @nc_login_required
     def nc_api_intent_constraint_types():
         return jsonify({"constraint_types": CONSTRAINT_TYPES})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # CHANGE REQUEST MARKUP MODE
+    # ══════════════════════════════════════════════════════════════════════
+    from tools.network.change_request import (  # noqa: E402
+        generate_cr_document, validate_markup_item, ACTION_TYPES, CR_STATUSES,
+    )
+
+    @bp.route("/change-request/<topo_id>")
+    @nc_login_required
+    def nc_change_request_page(topo_id):
+        conn = get_connection()
+        topo = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not topo:
+            conn.close()
+            abort(404)
+        topo = _row_to_dict(topo)
+        try:
+            graph = json.loads(topo.get("graph_json") or '{"nodes":[],"edges":[]}')
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+        crs = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, title, status, submitter_name, created_at, updated_at FROM nc_change_requests "
+            "WHERE topology_id=? ORDER BY updated_at DESC",
+            (topo_id,)
+        ).fetchall()]
+        conn.close()
+        return render_template(
+            "network/change_request.html",
+            topology_id=topo_id,
+            topology_name=topo["name"],
+            topology_classification=topo.get("classification", "CUI // SP-CTI"),
+            graph_nodes=graph.get("nodes", []),
+            graph_edges=graph.get("edges", []),
+            change_requests=crs,
+            action_types=ACTION_TYPES,
+            cr_statuses=list(CR_STATUSES),
+        )
+
+    @bp.route("/api/change-request/<topo_id>/list", methods=["GET"])
+    @nc_login_required
+    def nc_api_cr_list(topo_id):
+        conn = get_connection()
+        rows = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, title, status, submitter_name, created_at, updated_at FROM nc_change_requests "
+            "WHERE topology_id=? ORDER BY updated_at DESC",
+            (topo_id,)
+        ).fetchall()]
+        conn.close()
+        return jsonify({"change_requests": rows})
+
+    @bp.route("/api/change-request/<topo_id>/create", methods=["POST"])
+    @nc_login_required
+    def nc_api_cr_create(topo_id):
+        data = request.get_json() or {}
+        title = (data.get("title") or "").strip()
+        if not title:
+            return jsonify({"error": "title is required"}), 400
+        conn = get_connection()
+        topo = conn.execute("SELECT id FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "topology not found"}), 404
+        cr_id = "cr-" + str(_uuid.uuid4())[:8]
+        now = _now()
+        conn.execute(
+            "INSERT INTO nc_change_requests (id, topology_id, title, description, status, "
+            "submitter_name, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (cr_id, topo_id, title, data.get("description", ""),
+             "draft", session.get("username", ""), now, now),
+        )
+        conn.commit()
+        _audit("CR_CREATE", "nc_change_requests", cr_id, f"topology={topo_id}")
+        conn.close()
+        return jsonify({"id": cr_id, "title": title, "status": "draft"}), 201
+
+    @bp.route("/api/change-request/<cr_id>/items", methods=["GET"])
+    @nc_login_required
+    def nc_api_cr_items(cr_id):
+        conn = get_connection()
+        items = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_change_request_items WHERE cr_id=? ORDER BY created_at",
+            (cr_id,)
+        ).fetchall()]
+        conn.close()
+        return jsonify({"items": items})
+
+    @bp.route("/api/change-request/<cr_id>/markup", methods=["POST"])
+    @nc_login_required
+    def nc_api_cr_markup(cr_id):
+        """Add or update a markup item on a change request."""
+        conn = get_connection()
+        cr = conn.execute("SELECT * FROM nc_change_requests WHERE id=?", (cr_id,)).fetchone()
+        if not cr:
+            conn.close()
+            return jsonify({"error": "change request not found"}), 404
+        cr = _row_to_dict(cr)
+        if cr["status"] not in ("draft",):
+            conn.close()
+            return jsonify({"error": f"Cannot add markup to a CR in '{cr['status']}' status"}), 409
+
+        data = request.get_json() or {}
+        errors = validate_markup_item(data)
+        if errors:
+            conn.close()
+            return jsonify({"error": "validation failed", "details": errors}), 400
+
+        item_id = data.get("item_id")
+        now = _now()
+        if item_id:
+            # Update existing item
+            existing = conn.execute(
+                "SELECT id FROM nc_change_request_items WHERE id=? AND cr_id=?",
+                (item_id, cr_id)
+            ).fetchone()
+            if not existing:
+                conn.close()
+                return jsonify({"error": "item not found"}), 404
+            conn.execute(
+                "UPDATE nc_change_request_items SET action_type=?, entity_label=?, "
+                "before_json=?, after_json=?, justification=? WHERE id=?",
+                (
+                    data["action_type"],
+                    data.get("entity_label", ""),
+                    json.dumps(data.get("before_json") or {}),
+                    json.dumps(data.get("after_json") or {}),
+                    data.get("justification", ""),
+                    item_id,
+                ),
+            )
+        else:
+            item_id = "cri-" + str(_uuid.uuid4())[:8]
+            conn.execute(
+                "INSERT INTO nc_change_request_items "
+                "(id, cr_id, topology_id, action_type, entity_id, entity_type, entity_label, "
+                "before_json, after_json, justification, created_by, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    item_id, cr_id, cr["topology_id"],
+                    data["action_type"],
+                    data["entity_id"],
+                    data.get("entity_type", "node"),
+                    data.get("entity_label", data["entity_id"]),
+                    json.dumps(data.get("before_json") or {}),
+                    json.dumps(data.get("after_json") or {}),
+                    data.get("justification", ""),
+                    session.get("username", ""),
+                    now,
+                ),
+            )
+        # Bump CR updated_at
+        conn.execute(
+            "UPDATE nc_change_requests SET updated_at=? WHERE id=?", (now, cr_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": item_id, "action_type": data["action_type"]}), 201
+
+    @bp.route("/api/change-request/item/<item_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_cr_item_delete(item_id):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT cri.id, cri.cr_id, cr.status FROM nc_change_request_items cri "
+            "JOIN nc_change_requests cr ON cr.id=cri.cr_id WHERE cri.id=?",
+            (item_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "item not found"}), 404
+        row = _row_to_dict(row)
+        if row["status"] != "draft":
+            conn.close()
+            return jsonify({"error": "Cannot delete item from a non-draft CR"}), 409
+        conn.execute("DELETE FROM nc_change_request_items WHERE id=?", (item_id,))
+        conn.execute(
+            "UPDATE nc_change_requests SET updated_at=? WHERE id=?", (_now(), row["cr_id"])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"deleted": item_id})
+
+    @bp.route("/api/change-request/<cr_id>/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_cr_generate(cr_id):
+        """Generate the CAB review document for a change request."""
+        conn = get_connection()
+        cr = conn.execute("SELECT * FROM nc_change_requests WHERE id=?", (cr_id,)).fetchone()
+        if not cr:
+            conn.close()
+            return jsonify({"error": "change request not found"}), 404
+        cr = _row_to_dict(cr)
+        topo = conn.execute(
+            "SELECT name, classification FROM topologies WHERE id=?", (cr["topology_id"],)
+        ).fetchone()
+        topo = _row_to_dict(topo) if topo else {"name": "Unknown", "classification": "CUI // SP-CTI"}
+        items = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_change_request_items WHERE cr_id=? ORDER BY action_type, created_at",
+            (cr_id,)
+        ).fetchall()]
+        conn.close()
+
+        doc = generate_cr_document(
+            cr=cr,
+            items=items,
+            topology_name=topo["name"],
+            topology_classification=topo.get("classification") or "CUI // SP-CTI",
+        )
+
+        # Persist document JSON back to CR row
+        conn = get_connection()
+        conn.execute(
+            "UPDATE nc_change_requests SET document_json=?, updated_at=? WHERE id=?",
+            (json.dumps(doc), _now(), cr_id),
+        )
+        conn.commit()
+        _audit("CR_GENERATE", "nc_change_requests", cr_id, f"items={len(items)}")
+        conn.close()
+        return jsonify(doc)
+
+    @bp.route("/api/change-request/<cr_id>/document", methods=["GET"])
+    @nc_login_required
+    def nc_api_cr_document(cr_id):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT document_json FROM nc_change_requests WHERE id=?", (cr_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "change request not found"}), 404
+        try:
+            doc = json.loads(row[0] or "{}")
+        except Exception:
+            doc = {}
+        if not doc:
+            return jsonify({"error": "Document not yet generated. Call /generate first."}), 404
+        return jsonify(doc)
+
+    @bp.route("/api/change-request/<cr_id>/status", methods=["PUT"])
+    @nc_login_required
+    def nc_api_cr_status(cr_id):
+        data = request.get_json() or {}
+        new_status = data.get("status", "").lower()
+        if new_status not in CR_STATUSES:
+            return jsonify({"error": f"status must be one of: {', '.join(CR_STATUSES)}"}), 400
+        conn = get_connection()
+        now = _now()
+        extra = {}
+        if new_status == "submitted":
+            extra["submitted_at"] = now
+            extra["submitter_name"] = data.get("submitter_name") or session.get("username", "")
+        set_clauses = "status=?, updated_at=?"
+        params: list = [new_status, now]
+        if extra.get("submitted_at"):
+            set_clauses += ", submitted_at=?, submitter_name=?"
+            params += [extra["submitted_at"], extra["submitter_name"]]
+        params.append(cr_id)
+        result = conn.execute(
+            f"UPDATE nc_change_requests SET {set_clauses} WHERE id=?", params
+        )
+        conn.commit()
+        if result.rowcount == 0:
+            conn.close()
+            return jsonify({"error": "change request not found"}), 404
+        _audit("CR_STATUS", "nc_change_requests", cr_id, f"new_status={new_status}")
+        conn.close()
+        return jsonify({"id": cr_id, "status": new_status})
+
+    @bp.route("/api/change-request/<cr_id>/delete", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_cr_delete(cr_id):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id, status FROM nc_change_requests WHERE id=?", (cr_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "change request not found"}), 404
+        if _row_to_dict(row)["status"] not in ("draft", "withdrawn"):
+            conn.close()
+            return jsonify({"error": "Only draft or withdrawn CRs can be deleted"}), 409
+        conn.execute("DELETE FROM nc_change_request_items WHERE cr_id=?", (cr_id,))
+        conn.execute("DELETE FROM nc_change_requests WHERE id=?", (cr_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"deleted": cr_id})
+
+    # ── NetBox IPAM Integration ────────────────────────────────────────────
+
+    def _netbox_client_from_db():
+        """Build a NetBoxClient from stored config. Raises ValueError if not configured."""
+        from tools.network.netbox_client import NetBoxClient
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT url, token, site_filter, timeout_sec FROM nc_netbox_config WHERE id='default'"
+        ).fetchone()
+        conn.close()
+        if not row or not row[0] or not row[1]:
+            raise ValueError("NetBox not configured. POST /api/netbox/configure first.")
+        cfg = _row_to_dict(row)
+        return NetBoxClient(url=cfg["url"], token=cfg["token"], timeout=cfg.get("timeout_sec") or 15), cfg.get("site_filter") or None
+
+    def _log_netbox_sync(direction, resource, topology_id, status, records_in, records_out, error_msg=None):
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_netbox_sync_log (id, direction, resource, topology_id, status, records_in, records_out, error_msg) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (_uuid.uuid4().hex, direction, resource, topology_id, status, records_in, records_out, error_msg),
+        )
+        conn.commit()
+        conn.close()
+
+    @bp.route("/api/netbox/configure", methods=["POST"])
+    @nc_login_required
+    def nc_api_netbox_configure():
+        """Save NetBox connection settings."""
+        data = request.get_json() or {}
+        url = (data.get("url") or "").rstrip("/")
+        token = data.get("token") or ""
+        if not url or not token:
+            return jsonify({"error": "url and token are required"}), 400
+        site_filter = data.get("site_filter", "")
+        timeout_sec = int(data.get("timeout_sec") or 15)
+        auto_sync = 1 if data.get("auto_sync") else 0
+        conn = get_connection()
+        conn.execute(
+            "INSERT OR REPLACE INTO nc_netbox_config (id, url, token, site_filter, timeout_sec, auto_sync, updated_at) "
+            "VALUES ('default',?,?,?,?,?,?)",
+            (url, token, site_filter, timeout_sec, auto_sync, _now()),
+        )
+        conn.commit()
+        _audit("NETBOX_CONFIGURE", "nc_netbox_config", "default", f"url={url}")
+        conn.close()
+        return jsonify({"ok": True, "url": url})
+
+    @bp.route("/api/netbox/config", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_config_get():
+        """Return current NetBox config (token redacted)."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT url, site_filter, timeout_sec, auto_sync, last_tested FROM nc_netbox_config WHERE id='default'"
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"configured": False})
+        cfg = _row_to_dict(row)
+        cfg["configured"] = bool(cfg.get("url"))
+        return jsonify(cfg)
+
+    @bp.route("/api/netbox/status", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_status():
+        """Test NetBox connectivity and return version info."""
+        try:
+            client, _ = _netbox_client_from_db()
+            result = client.test_connection()
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({"ok": False, "error": str(exc)}), 502
+        # Record last successful test timestamp
+        conn = get_connection()
+        conn.execute("UPDATE nc_netbox_config SET last_tested=? WHERE id='default'", (_now(),))
+        conn.commit()
+        conn.close()
+        return jsonify(result)
+
+    @bp.route("/api/netbox/pull/devices", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_pull_devices():
+        """Pull device inventory from NetBox."""
+        try:
+            client, site = _netbox_client_from_db()
+            devices = client.get_devices(site=site)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", "devices", None, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+        _log_netbox_sync("pull", "devices", None, "ok", len(devices), len(devices))
+        return jsonify({"devices": devices, "count": len(devices)})
+
+    @bp.route("/api/netbox/pull/ips", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_pull_ips():
+        """Pull IP address allocations from NetBox."""
+        try:
+            client, _ = _netbox_client_from_db()
+            ips = client.get_ip_addresses()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", "ip-addresses", None, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+        _log_netbox_sync("pull", "ip-addresses", None, "ok", len(ips), len(ips))
+        return jsonify({"ip_addresses": ips, "count": len(ips)})
+
+    @bp.route("/api/netbox/pull/vlans", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_pull_vlans():
+        """Pull VLANs from NetBox."""
+        try:
+            client, site = _netbox_client_from_db()
+            vlans = client.get_vlans(site=site)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", "vlans", None, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+        _log_netbox_sync("pull", "vlans", None, "ok", len(vlans), len(vlans))
+        return jsonify({"vlans": vlans, "count": len(vlans)})
+
+    @bp.route("/api/netbox/pull/prefixes", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_pull_prefixes():
+        """Pull IP prefixes/subnets from NetBox."""
+        try:
+            client, _ = _netbox_client_from_db()
+            prefixes = client.get_prefixes()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", "prefixes", None, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+        _log_netbox_sync("pull", "prefixes", None, "ok", len(prefixes), len(prefixes))
+        return jsonify({"prefixes": prefixes, "count": len(prefixes)})
+
+    @bp.route("/api/netbox/pull/racks", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_pull_racks():
+        """Pull rack layouts from NetBox."""
+        try:
+            client, site = _netbox_client_from_db()
+            racks = client.get_racks(site=site)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", "racks", None, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+        _log_netbox_sync("pull", "racks", None, "ok", len(racks), len(racks))
+        return jsonify({"racks": racks, "count": len(racks)})
+
+    @bp.route("/api/netbox/pull/circuits", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_pull_circuits():
+        """Pull circuits from NetBox."""
+        try:
+            client, _ = _netbox_client_from_db()
+            circuits = client.get_circuits()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", "circuits", None, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+        _log_netbox_sync("pull", "circuits", None, "ok", len(circuits), len(circuits))
+        return jsonify({"circuits": circuits, "count": len(circuits)})
+
+    @bp.route("/api/netbox/import/<topo_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_netbox_import(topo_id):
+        """Full NetBox import: pull all resources and merge into topology graph.
+
+        Body (JSON, all optional):
+          resource: "devices" | "ips" | "vlans" | "racks" | "circuits" | "all" (default "all")
+          merge: true | false — if false, replaces existing graph (default true)
+        """
+        from tools.network.netbox_client import (
+            devices_to_canvas_nodes, prefixes_to_ipam_blocks, circuits_to_nc_circuits,
+        )
+        data = request.get_json() or {}
+        resource = data.get("resource", "all")
+        merge = data.get("merge", True)
+
+        conn = get_connection()
+        topo_row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not topo_row:
+            return jsonify({"error": "topology not found"}), 404
+
+        try:
+            client, site = _netbox_client_from_db()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        try:
+            if resource == "all":
+                pulled = client.pull_all(site=site)
+            elif resource == "devices":
+                pulled = {"devices": client.get_devices(site=site)}
+            elif resource == "ips":
+                pulled = {"ip_addresses": client.get_ip_addresses()}
+            elif resource == "vlans":
+                pulled = {"vlans": client.get_vlans(site=site)}
+            elif resource == "prefixes":
+                pulled = {"prefixes": client.get_prefixes()}
+            elif resource == "racks":
+                pulled = {"racks": client.get_racks(site=site)}
+            elif resource == "circuits":
+                pulled = {"circuits": client.get_circuits()}
+            else:
+                return jsonify({"error": f"unknown resource: {resource}"}), 400
+        except Exception as exc:  # noqa: BLE001
+            _log_netbox_sync("pull", resource, topo_id, "error", 0, 0, str(exc))
+            return jsonify({"error": str(exc)}), 502
+
+        # Merge/replace graph nodes
+        existing_graph = json.loads(topo_row[0] or '{"nodes":[],"edges":[]}')
+        new_nodes = devices_to_canvas_nodes(pulled.get("devices", []))
+        if merge:
+            # Keep existing nodes that are NOT from NetBox; append new ones
+            existing_nb_ids = {n.get("netbox_id") for n in existing_graph.get("nodes", []) if n.get("netbox_id")}
+            filtered_existing = [n for n in existing_graph.get("nodes", []) if not n.get("netbox_id")]
+            deduped_new = [n for n in new_nodes if n.get("netbox_id") not in existing_nb_ids]
+            merged_nodes = filtered_existing + [n for n in existing_graph.get("nodes", []) if n.get("netbox_id")] + deduped_new
+            existing_graph["nodes"] = merged_nodes
+        else:
+            existing_graph["nodes"] = new_nodes
+            existing_graph["edges"] = []
+
+        # Persist updated graph
+        conn = get_connection()
+        conn.execute(
+            "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
+            (json.dumps(existing_graph), _now(), topo_id),
+        )
+
+        # Persist IPAM blocks from prefixes
+        prefixes = pulled.get("prefixes", [])
+        if prefixes:
+            blocks = prefixes_to_ipam_blocks(prefixes)
+            for blk in blocks:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_ipam_blocks (id, topology_id, network, vlan_id, vrf, description) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (blk["id"], topo_id, blk["network"], blk.get("vlan_id"), blk.get("vrf", "global"), blk.get("description", "")),
+                )
+
+        # Persist circuits
+        circuits = pulled.get("circuits", [])
+        if circuits:
+            nc_circs = circuits_to_nc_circuits(circuits, topo_id)
+            for c in nc_circs:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_circuits (id, topology_id, circuit_id, carrier, circuit_type, bandwidth, handoff_a, handoff_z, install_status) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (c["id"], c["topology_id"], c["circuit_id"], c.get("carrier", ""), c.get("circuit_type", ""),
+                     c.get("bandwidth", ""), c.get("handoff_a", ""), c.get("handoff_z", ""), c.get("install_status", "active")),
+                )
+
+        # Record object ID mappings
+        for node in new_nodes:
+            nb_id = node.get("netbox_id")
+            if nb_id:
+                existing_map = conn.execute(
+                    "SELECT id FROM nc_netbox_objects WHERE topology_id=? AND netbox_id=? AND netbox_resource='device'",
+                    (topo_id, nb_id),
+                ).fetchone()
+                if not existing_map:
+                    conn.execute(
+                        "INSERT INTO nc_netbox_objects (id, topology_id, netbox_id, netbox_resource, canvas_node_id) "
+                        "VALUES (?,?,?,?,?)",
+                        (_uuid.uuid4().hex, topo_id, nb_id, "device", node["id"]),
+                    )
+
+        conn.commit()
+        _audit("NETBOX_IMPORT", "topologies", topo_id, f"resource={resource} nodes={len(new_nodes)}")
+        records_out = len(new_nodes) + len(prefixes) + len(circuits)
+        records_in = sum(len(v) for v in pulled.values() if isinstance(v, list))
+        conn.close()
+        _log_netbox_sync("pull", resource, topo_id, "ok", records_in, records_out)
+
+        return jsonify({
+            "ok": True,
+            "topology_id": topo_id,
+            "nodes_added": len(new_nodes),
+            "ipam_blocks": len(prefixes),
+            "circuits": len(circuits),
+            "graph": existing_graph,
+        })
+
+    @bp.route("/api/netbox/push/<topo_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_netbox_push(topo_id):
+        """Push canvas topology nodes back to NetBox as devices.
+
+        Only pushes nodes that were NOT originally imported from NetBox
+        (no netbox_id) or where the user explicitly requests a push.
+        """
+        data = request.get_json() or {}
+        site_id = data.get("site_id")  # NetBox site numeric ID for new devices
+        push_all = data.get("push_all", False)  # also push existing NetBox nodes
+
+        conn = get_connection()
+        topo_row = conn.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+        conn.close()
+        if not topo_row:
+            return jsonify({"error": "topology not found"}), 404
+
+        try:
+            client, _ = _netbox_client_from_db()
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        graph = json.loads(topo_row[0] or '{"nodes":[],"edges":[]}')
+        nodes_to_push = [
+            n for n in graph.get("nodes", [])
+            if push_all or not n.get("netbox_id")
+        ]
+
+        pushed, errors = [], []
+        for node in nodes_to_push:
+            try:
+                result = client.push_device(node, site_id=site_id)
+                nb_id = result.get("id")
+                if nb_id:
+                    # Update node in graph with new NetBox ID
+                    for n in graph["nodes"]:
+                        if n["id"] == node["id"]:
+                            n["netbox_id"] = nb_id
+                            n["netbox_url"] = result.get("url", "")
+                    pushed.append({"canvas_id": node["id"], "netbox_id": nb_id, "label": node.get("label")})
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"canvas_id": node["id"], "label": node.get("label"), "error": str(exc)})
+
+        # Persist updated graph with new netbox_ids
+        if pushed:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE topologies SET graph_json=?, updated_at=? WHERE id=?",
+                (json.dumps(graph), _now(), topo_id),
+            )
+            conn.commit()
+            conn.close()
+
+        _audit("NETBOX_PUSH", "topologies", topo_id, f"pushed={len(pushed)} errors={len(errors)}")
+        _log_netbox_sync("push", "devices", topo_id,
+                         "ok" if not errors else "error",
+                         len(nodes_to_push), len(pushed),
+                         "; ".join(e["error"] for e in errors[:3]) if errors else None)
+
+        return jsonify({
+            "ok": len(errors) == 0,
+            "pushed": pushed,
+            "errors": errors,
+            "topology_id": topo_id,
+        })
+
+    @bp.route("/api/netbox/sync-log", methods=["GET"])
+    @nc_login_required
+    def nc_api_netbox_sync_log():
+        """Return recent NetBox sync history."""
+        limit = int(request.args.get("limit", 50))
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_netbox_sync_log ORDER BY ran_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        conn.close()
+        return jsonify({"log": [_row_to_dict(r) for r in rows]})
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",

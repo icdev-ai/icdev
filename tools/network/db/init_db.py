@@ -392,6 +392,35 @@ CREATE TABLE IF NOT EXISTS nc_intent_validations (
     ran_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Change Request Markup Mode — CAB review workflow
+CREATE TABLE IF NOT EXISTS nc_change_requests (
+    id              TEXT PRIMARY KEY,
+    topology_id     TEXT REFERENCES topologies(id),
+    title           TEXT NOT NULL,
+    description     TEXT,
+    status          TEXT DEFAULT 'draft',  -- draft|submitted|approved|rejected|withdrawn
+    submitter_name  TEXT,
+    submitted_at    TEXT,
+    document_json   TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_change_request_items (
+    id              TEXT PRIMARY KEY,
+    cr_id           TEXT REFERENCES nc_change_requests(id) ON DELETE CASCADE,
+    topology_id     TEXT REFERENCES topologies(id),
+    action_type     TEXT NOT NULL,  -- add|remove|modify
+    entity_id       TEXT NOT NULL,  -- node/edge ID on canvas
+    entity_type     TEXT DEFAULT 'node',  -- node|edge|group|boundary
+    entity_label    TEXT,
+    before_json     TEXT DEFAULT '{}',
+    after_json      TEXT DEFAULT '{}',
+    justification   TEXT,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- NC-GAP-009: Classification on audit + immutability triggers
 -- (classification column added inline above)
 
@@ -407,6 +436,44 @@ BEFORE DELETE ON nc_audit
 BEGIN
     SELECT RAISE(ABORT, 'Audit records cannot be deleted — NIST AU-6');
 END;
+
+-- ── NetBox IPAM Integration ────────────────────────────────────────────────
+
+-- NetBox connection configuration (one row per canvas instance)
+CREATE TABLE IF NOT EXISTS nc_netbox_config (
+    id          TEXT PRIMARY KEY DEFAULT 'default',
+    url         TEXT NOT NULL DEFAULT '',
+    token       TEXT NOT NULL DEFAULT '',
+    site_filter TEXT DEFAULT '',        -- optional site slug to limit pulls
+    timeout_sec INTEGER DEFAULT 15,
+    auto_sync   INTEGER DEFAULT 0,      -- 1 = sync on canvas load
+    last_tested TEXT,                   -- ISO timestamp of last successful test
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Sync run history
+CREATE TABLE IF NOT EXISTS nc_netbox_sync_log (
+    id          TEXT PRIMARY KEY,
+    direction   TEXT NOT NULL,          -- pull | push
+    resource    TEXT NOT NULL,          -- devices | ips | vlans | racks | circuits | all
+    topology_id TEXT REFERENCES topologies(id),
+    status      TEXT DEFAULT 'ok',      -- ok | error
+    records_in  INTEGER DEFAULT 0,      -- records received from NetBox
+    records_out INTEGER DEFAULT 0,      -- records written to canvas
+    error_msg   TEXT,
+    ran_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Object ID mapping: NetBox ID ↔ canvas node ID
+CREATE TABLE IF NOT EXISTS nc_netbox_objects (
+    id              TEXT PRIMARY KEY,
+    topology_id     TEXT REFERENCES topologies(id),
+    netbox_id       INTEGER NOT NULL,
+    netbox_resource TEXT NOT NULL,      -- device | ip-address | vlan | rack | circuit
+    canvas_node_id  TEXT,               -- NULL until placed on canvas
+    last_synced     TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -2324,6 +2391,7 @@ def init_db():
             ("nc_audit", "user_id", "TEXT DEFAULT ''"),
             ("nc_audit", "classification", "TEXT DEFAULT 'CUI // SP-CTI'"),
             ("nc_backups", "file_hash", "TEXT"),
+            # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
         ]
         for table, col, coltype in _migrations:
             try:

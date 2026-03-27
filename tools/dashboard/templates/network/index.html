@@ -164,6 +164,8 @@
       <select id="export-format" class="form-control">
         <option value="drawio">draw.io XML (.drawio)</option>
         <option value="svg">SVG Image (.svg)</option>
+        <option value="ansible">Ansible Inventory (.ini)</option>
+        <option value="terraform">Terraform HCL (.tf)</option>
       </select>
     </div>
     <div class="modal-actions">
@@ -210,12 +212,18 @@ function exportTopology(id) {
 async function runExport() {
   const id = document.getElementById('export-topo-id').value;
   const fmt = document.getElementById('export-format').value;
-  const r = await fetch(NC_BASE + `/api/export/${id}`, {
+  // Ansible and Terraform use dedicated endpoints
+  const url = (fmt === 'ansible' || fmt === 'terraform')
+    ? NC_BASE + `/api/export/${id}/${fmt}`
+    : NC_BASE + `/api/export/${id}`;
+  const body = (fmt === 'ansible' || fmt === 'terraform') ? '{}' : JSON.stringify({format: fmt});
+  const r = await fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({format: fmt})
+    body
   });
   const data = await r.json();
+  if (data.error) { alert('Export failed: ' + data.error); return; }
   const blob = new Blob([data.content], {type: 'text/plain'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
