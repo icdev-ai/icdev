@@ -602,6 +602,9 @@ function initCanvas() {
 
   updateStatusBar();
   initColorPalettes();
+  _startPeriodicBackup();
+  // Check for crash recovery after topology loads
+  setTimeout(() => _checkLocalRecovery(), 2000);
   setStatus('Ready — drag objects from the palette to begin');
 }
 
@@ -1410,7 +1413,8 @@ function newCanvas() {
 function markDirty() {
   isDirty = true;
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveTopology, 3000); // autosave after 3s idle
+  saveTimer = setTimeout(saveTopology, 3000); // autosave to server after 3s idle
+  _localBackup(); // immediate localStorage backup (crash recovery)
   updateStatusBar();
 }
 
@@ -1424,6 +1428,121 @@ function updateStatusBar() {
   const links = graph.getLinks().length;
   document.getElementById('sb-objects').textContent = `Objects: ${elements}`;
   document.getElementById('sb-links').textContent = `Links: ${links}`;
+}
+
+/* ── Local Backup (localStorage) — crash recovery ────────────────────────────── */
+const _LS_KEY_PREFIX = 'nc-backup-';
+const _LS_MAX_BACKUPS = 10; // keep last 10 snapshots per topology
+
+function _localBackup() {
+  if (!graph) return;
+  try {
+    const gj = graphToJSON();
+    const topoId = currentTopoId || 'new';
+    const key = _LS_KEY_PREFIX + topoId;
+    const entry = {
+      timestamp: new Date().toISOString(),
+      topoId: topoId,
+      name: document.getElementById('topo-name-display')?.textContent || 'Untitled',
+      nodeCount: gj.nodes.length,
+      edgeCount: gj.edges.length,
+      graph_json: gj,
+    };
+    // Save current snapshot
+    localStorage.setItem(key, JSON.stringify(entry));
+    // Also maintain a rolling history
+    const histKey = key + '-history';
+    let history = [];
+    try { history = JSON.parse(localStorage.getItem(histKey) || '[]'); } catch(e) {}
+    history.unshift({ timestamp: entry.timestamp, nodeCount: entry.nodeCount, edgeCount: entry.edgeCount });
+    if (history.length > _LS_MAX_BACKUPS) history = history.slice(0, _LS_MAX_BACKUPS);
+    localStorage.setItem(histKey, JSON.stringify(history));
+    // Update status bar backup indicator
+    const sbSaved = document.getElementById('sb-saved');
+    if (sbSaved) {
+      const t = new Date().toLocaleTimeString();
+      sbSaved.textContent = `Local backup: ${t}`;
+    }
+  } catch (e) {
+    // localStorage full or unavailable — non-fatal
+    console.warn('Local backup failed:', e);
+  }
+}
+
+function _checkLocalRecovery() {
+  // On page load, check if there's a more recent local backup than what's on the server
+  const topoId = currentTopoId || 'new';
+  const key = _LS_KEY_PREFIX + topoId;
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return;
+    const entry = JSON.parse(saved);
+    if (!entry.graph_json || !entry.graph_json.nodes) return;
+    // Only offer recovery if the backup has content and is recent (< 24h)
+    const backupAge = Date.now() - new Date(entry.timestamp).getTime();
+    if (backupAge > 24 * 60 * 60 * 1000) return; // older than 24h, skip
+    if (entry.nodeCount === 0) return; // empty backup, skip
+    // Show recovery banner
+    const banner = document.createElement('div');
+    banner.id = 'recovery-banner';
+    banner.style.cssText = 'position:fixed;top:90px;left:50%;transform:translateX(-50%);z-index:300;background:#2b1a0f;border:1px solid #f39c12;border-radius:8px;padding:12px 20px;color:#eaeaea;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,0.4);';
+    banner.innerHTML = `
+      <span style="color:#f39c12;font-size:16px;">&#9888;</span>
+      <span>Local backup found (${entry.nodeCount} nodes, ${new Date(entry.timestamp).toLocaleString()})</span>
+      <button onclick="restoreFromLocal()" style="padding:4px 12px;background:#f39c12;color:#000;border:none;border-radius:4px;font-weight:600;cursor:pointer;">Restore</button>
+      <button onclick="dismissRecovery()" style="padding:4px 12px;background:transparent;color:#7a8cb0;border:1px solid #7a8cb0;border-radius:4px;cursor:pointer;">Dismiss</button>
+    `;
+    document.body.appendChild(banner);
+  } catch(e) {}
+}
+
+function restoreFromLocal() {
+  const topoId = currentTopoId || 'new';
+  const key = _LS_KEY_PREFIX + topoId;
+  try {
+    const entry = JSON.parse(localStorage.getItem(key));
+    if (entry && entry.graph_json) {
+      pushUndo();
+      loadGraphJSON(entry.graph_json);
+      updateStatusBar();
+      markDirty();
+      setStatus('Restored from local backup (' + entry.nodeCount + ' nodes)');
+    }
+  } catch(e) {
+    setStatus('Recovery failed: ' + e.message);
+  }
+  dismissRecovery();
+}
+
+function dismissRecovery() {
+  const banner = document.getElementById('recovery-banner');
+  if (banner) banner.remove();
+}
+
+/* ── Periodic Server Backup (every 30 minutes) ───────────────────────────────── */
+let _backupTimer = null;
+
+function _startPeriodicBackup() {
+  // Trigger a server-side backup every 30 minutes
+  _backupTimer = setInterval(async () => {
+    if (!currentTopoId || currentTopoId === 'new') return;
+    try {
+      const r = await fetch(NC_BASE + '/api/backups', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({notes: 'auto-periodic', topology_id: currentTopoId}),
+      });
+      if (r.ok) {
+        console.log('Periodic backup completed');
+      }
+    } catch(e) {
+      console.warn('Periodic backup failed:', e);
+    }
+  }, 30 * 60 * 1000); // 30 minutes
+}
+
+function _stopPeriodicBackup() {
+  if (_backupTimer) { clearInterval(_backupTimer); _backupTimer = null; }
 }
 
 /* ── Custom Device Creator ─────────────────────────────────────────────────── */
