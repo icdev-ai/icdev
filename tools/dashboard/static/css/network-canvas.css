@@ -1098,5 +1098,46 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 }
 .heatmap-legend-close:hover { color: #e94560; }
 
+/* ── Cable Annotation Dialog ────────────────────────────────────────────────── */
+.cable-annotation-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.6); z-index: 10000;
+  display: flex; align-items: center; justify-content: center;
+}
+.cable-annotation-dialog {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+  width: 380px; max-height: 80vh; overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+}
+.cable-dialog-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: 13px; color: var(--red);
+}
+.cable-dialog-close {
+  background: none; border: none; color: var(--text-dim); font-size: 20px;
+  cursor: pointer; line-height: 1; padding: 0 4px;
+}
+.cable-dialog-close:hover { color: var(--red); }
+.cable-dialog-body { padding: 12px 16px; }
+.cable-dialog-body .form-group { margin-bottom: 10px; }
+.cable-dialog-body label { font-size: 11px; font-weight: 600; color: var(--text-dim); display: block; margin-bottom: 3px; }
+.cable-dialog-body .form-control {
+  width: 100%; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 8px; border-radius: 4px; font-size: 12px;
+  font-family: var(--mono);
+}
+.cable-dialog-body .form-control:focus { border-color: var(--red); outline: none; }
+.cable-dialog-body textarea.form-control { resize: vertical; }
+.cable-dialog-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 10px 16px; border-top: 1px solid var(--border);
+}
+.cable-btn-save { background: #0a3d2e !important; border-color: var(--success) !important; color: var(--success) !important; }
+.cable-btn-save:hover { background: #0d4f3a !important; }
+.cable-btn-clear { background: #2b1a0f !important; border-color: var(--warning) !important; color: var(--warning) !important; }
+.cable-btn-clear:hover { background: #3a220f !important; }
+.canvas-tooltip .tt-cable-label { color: #a29bfe; font-weight: 600; }
+
 /* ── Hidden utility ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

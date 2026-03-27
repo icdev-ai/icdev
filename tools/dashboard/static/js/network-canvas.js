@@ -409,6 +409,11 @@ function initCanvas() {
   paper.on('link:pointerclick', (view) => selectCell(view.model));
   paper.on('blank:pointerclick', () => deselectAll());
 
+  // Double-click link to annotate cable run
+  paper.on('link:pointerdblclick', (view) => {
+    openCableAnnotationDialog(view.model);
+  });
+
   // Double-click to rename
   paper.on('element:pointerdblclick', (view) => {
     const cell = view.model;
@@ -500,6 +505,13 @@ function initCanvasTooltips() {
     let html = `<strong>${srcLabel} → ${tgtLabel}</strong>`;
     if (linkLabel) html += `<br>Label: ${linkLabel}`;
     if (protocol) html += `<br>Protocol: ${protocol}`;
+
+    // Cable run annotation
+    const cable = link.get('cableData') || {};
+    if (cable.cable_type) html += `<br><span class="tt-cable-label">Cable:</span> ${cable.cable_type}`;
+    if (cable.distance_m) html += `<br><span class="tt-cable-label">Distance:</span> ${cable.distance_m}m`;
+    if (cable.conduit_id) html += `<br><span class="tt-cable-label">Conduit:</span> ${cable.conduit_id}`;
+    if (cable.fiber_strands) html += `<br><span class="tt-cable-label">Strands:</span> ${cable.fiber_strands}`;
 
     tooltip.innerHTML = html;
     tooltip.style.display = 'block';
@@ -925,13 +937,18 @@ function graphToJSON() {
         config: cell.get('configData') || {}
       });
     } else if (cell.isLink()) {
-      edges.push({
+      const edgeObj = {
         id: cell.id,
         source: cell.get('source').id || '',
         target: cell.get('target').id || '',
         label: cell.labels().length ? cell.labels()[0].attrs?.text?.text || '' : '',
         protocol: cell.get('protocol') || ''
-      });
+      };
+      const cableData = cell.get('cableData');
+      if (cableData && Object.keys(cableData).length) {
+        edgeObj.cableData = cableData;
+      }
+      edges.push(edgeObj);
     }
   });
 
@@ -948,7 +965,10 @@ function loadGraphJSON(data) {
   });
   edges.forEach(e => {
     if (e.source && e.target) {
-      createLink(e.source, e.target, e.label, e.protocol, e.id);
+      const link = createLink(e.source, e.target, e.label, e.protocol, e.id);
+      if (e.cableData && link) {
+        link.set('cableData', e.cableData);
+      }
     }
   });
   updateStatusBar();
@@ -1497,6 +1517,169 @@ function repositionBoundaries() {
 }
 
 /* ── Init ─────────────────────────────────────────────────────────────────────── */
+/* ── Cable Run Annotation Dialog ──────────────────────────────────────────── */
+function openCableAnnotationDialog(link) {
+  // Remove existing dialog if any
+  closeCableAnnotationDialog();
+
+  const cable = link.get('cableData') || {};
+  const src = graph.getCell(link.get('source')?.id);
+  const tgt = graph.getCell(link.get('target')?.id);
+  const srcLabel = src?.attr?.('label/text') || '?';
+  const tgtLabel = tgt?.attr?.('label/text') || '?';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'cable-annotation-overlay';
+  overlay.className = 'cable-annotation-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeCableAnnotationDialog(); };
+
+  overlay.innerHTML = `
+    <div class="cable-annotation-dialog">
+      <div class="cable-dialog-header">
+        <span>Cable Run: ${srcLabel} → ${tgtLabel}</span>
+        <button class="cable-dialog-close" onclick="closeCableAnnotationDialog()">&times;</button>
+      </div>
+      <div class="cable-dialog-body">
+        <div class="form-group">
+          <label>Cable Type</label>
+          <select id="cable-type" class="form-control">
+            <option value="">— Select —</option>
+            <option value="SMF" ${cable.cable_type === 'SMF' ? 'selected' : ''}>SMF (Single-Mode Fiber)</option>
+            <option value="MMF-OM3" ${cable.cable_type === 'MMF-OM3' ? 'selected' : ''}>MMF OM3 (Multi-Mode Fiber)</option>
+            <option value="MMF-OM4" ${cable.cable_type === 'MMF-OM4' ? 'selected' : ''}>MMF OM4 (Multi-Mode Fiber)</option>
+            <option value="MMF-OM5" ${cable.cable_type === 'MMF-OM5' ? 'selected' : ''}>MMF OM5 (Multi-Mode Fiber)</option>
+            <option value="Cat5e" ${cable.cable_type === 'Cat5e' ? 'selected' : ''}>Cat5e (Copper)</option>
+            <option value="Cat6" ${cable.cable_type === 'Cat6' ? 'selected' : ''}>Cat6 (Copper)</option>
+            <option value="Cat6A" ${cable.cable_type === 'Cat6A' ? 'selected' : ''}>Cat6A (Copper)</option>
+            <option value="Cat8" ${cable.cable_type === 'Cat8' ? 'selected' : ''}>Cat8 (Copper)</option>
+            <option value="Coax-RG6" ${cable.cable_type === 'Coax-RG6' ? 'selected' : ''}>Coax RG-6</option>
+            <option value="Coax-RG11" ${cable.cable_type === 'Coax-RG11' ? 'selected' : ''}>Coax RG-11</option>
+            <option value="DAC" ${cable.cable_type === 'DAC' ? 'selected' : ''}>DAC (Direct Attach Copper)</option>
+            <option value="AOC" ${cable.cable_type === 'AOC' ? 'selected' : ''}>AOC (Active Optical Cable)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Distance (meters)</label>
+          <input type="number" id="cable-distance" class="form-control" placeholder="e.g. 150" value="${cable.distance_m || ''}" min="0" step="0.1"/>
+        </div>
+        <div class="form-group">
+          <label>Conduit ID</label>
+          <input type="text" id="cable-conduit" class="form-control" placeholder="e.g. CDT-A-001" value="${cable.conduit_id || ''}"/>
+        </div>
+        <div class="form-group">
+          <label>Fiber Strand Assignment</label>
+          <input type="text" id="cable-strands" class="form-control" placeholder="e.g. 1-2, 3-4" value="${cable.fiber_strands || ''}"/>
+        </div>
+        <div class="form-group">
+          <label>Pull Tension (lbs)</label>
+          <input type="number" id="cable-tension" class="form-control" placeholder="e.g. 25" value="${cable.pull_tension_lbs || ''}" min="0" step="0.1"/>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="cable-notes" class="form-control" rows="2" placeholder="e.g. routed through ceiling plenum">${cable.notes || ''}</textarea>
+        </div>
+      </div>
+      <div class="cable-dialog-footer">
+        <button class="tb-btn" onclick="closeCableAnnotationDialog()">Cancel</button>
+        <button class="tb-btn cable-btn-clear" onclick="clearCableAnnotation()">Clear</button>
+        <button class="tb-btn cable-btn-save" onclick="saveCableAnnotation()">Save</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+  // Store reference to the link being edited
+  overlay._editingLink = link;
+}
+
+function closeCableAnnotationDialog() {
+  const overlay = document.getElementById('cable-annotation-overlay');
+  if (overlay) overlay.remove();
+}
+
+function saveCableAnnotation() {
+  const overlay = document.getElementById('cable-annotation-overlay');
+  if (!overlay || !overlay._editingLink) return;
+
+  const link = overlay._editingLink;
+  pushUndo();
+
+  const cableData = {};
+  const cableType = document.getElementById('cable-type').value;
+  const distance = document.getElementById('cable-distance').value;
+  const conduit = document.getElementById('cable-conduit').value;
+  const strands = document.getElementById('cable-strands').value;
+  const tension = document.getElementById('cable-tension').value;
+  const notes = document.getElementById('cable-notes').value;
+
+  if (cableType) cableData.cable_type = cableType;
+  if (distance) cableData.distance_m = parseFloat(distance);
+  if (conduit) cableData.conduit_id = conduit;
+  if (strands) cableData.fiber_strands = strands;
+  if (tension) cableData.pull_tension_lbs = parseFloat(tension);
+  if (notes) cableData.notes = notes;
+
+  link.set('cableData', Object.keys(cableData).length ? cableData : undefined);
+
+  // Update link label with cable type abbreviation if set
+  if (cableType) {
+    const existingLabels = link.labels();
+    const shortLabel = cableType + (distance ? ` ${distance}m` : '');
+    if (existingLabels.length > 0) {
+      link.label(0, {
+        attrs: { text: { text: shortLabel, fill: '#a29bfe', fontSize: 9, fontFamily: 'Cascadia Code, Consolas, monospace' } },
+        position: 0.5
+      });
+    } else {
+      link.appendLabel({
+        attrs: { text: { text: shortLabel, fill: '#a29bfe', fontSize: 9, fontFamily: 'Cascadia Code, Consolas, monospace' } },
+        position: 0.5
+      });
+    }
+  }
+
+  markDirty();
+  closeCableAnnotationDialog();
+}
+
+function clearCableAnnotation() {
+  const overlay = document.getElementById('cable-annotation-overlay');
+  if (!overlay || !overlay._editingLink) return;
+
+  pushUndo();
+  overlay._editingLink.set('cableData', undefined);
+  markDirty();
+  closeCableAnnotationDialog();
+}
+
+/* ── Cable Plant Report Export ───────────────────────────────────────────── */
+async function exportCablePlantReport() {
+  if (!currentTopoId || currentTopoId === 'new') {
+    await saveTopology();
+  }
+  if (!currentTopoId || currentTopoId === 'new') {
+    alert('Save the topology first before exporting.');
+    return;
+  }
+
+  setStatus('Generating cable plant report...');
+  try {
+    const r = await fetch(NC_BASE + `/api/cable-plant-report/${currentTopoId}`);
+    if (!r.ok) throw new Error('Export failed');
+    const data = await r.json();
+    if (data.csv) {
+      const blob = new Blob([data.csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = data.filename || 'cable-plant-report.csv';
+      a.click();
+      setStatus('Cable plant report exported');
+    }
+  } catch (err) {
+    setStatus('Cable plant export failed: ' + err.message);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   initCanvas();
 
