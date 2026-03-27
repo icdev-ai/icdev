@@ -1139,5 +1139,44 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .cable-btn-clear:hover { background: #3a220f !important; }
 .canvas-tooltip .tt-cable-label { color: #a29bfe; font-weight: 600; }
 
+/* ── Rack Elevation Panel ─────────────────────────────────────────────────── */
+.nc-rack-panel {
+  position: fixed;
+  right: 0; top: 100px; bottom: 40px;
+  width: 340px;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 200;
+  box-shadow: -4px 0 20px rgba(0,0,0,0.3);
+}
+.nc-rack-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.nc-rack-title { font-weight: 700; font-size: 13px; color: var(--text); }
+.nc-rack-header-actions { display: flex; gap: 6px; align-items: center; }
+.nc-rack-select {
+  padding: 2px 6px; font-size: 11px; background: var(--bg); border: 1px solid var(--border);
+  color: var(--text); border-radius: 4px;
+}
+.nc-rack-info {
+  padding: 8px 14px; font-size: 12px; color: var(--text-dim);
+  border-bottom: 1px solid var(--border); background: var(--bg3);
+}
+.nc-rack-body {
+  flex: 1; overflow-y: auto; padding: 12px;
+  display: flex; justify-content: center;
+}
+.nc-rack-stats {
+  display: flex; justify-content: space-between; padding: 8px 14px;
+  font-size: 11px; color: var(--text-dim);
+  border-top: 1px solid var(--border); background: var(--bg3);
+}
+
 /* ── Hidden utility ─────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }

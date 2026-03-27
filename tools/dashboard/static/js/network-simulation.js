@@ -1220,6 +1220,8 @@ let _ncChatPollTimer = null;
 let _ncChatLastTurn = 0;
 
 function ncChatToggle() {
+  // Close rack panel if open
+  if (typeof closeRackView === 'function') closeRackView();
   const panel = document.getElementById('nc-chat-panel');
   if (!panel) return;
   panel.classList.toggle('hidden');
@@ -1643,6 +1645,152 @@ function initPaletteStencils() {
     piIcon.style.width = '32px';
     piIcon.style.height = '24px';
   });
+}
+
+/* ── Rack Elevation View ──────────────────────────────────────────────────────── */
+
+function renderRackView() {
+  if (!graph) return;
+
+  const panel = document.getElementById('nc-rack-panel');
+  if (panel.classList.contains('hidden')) return;
+
+  const uSize = parseInt(document.getElementById('rack-u-size').value) || 42;
+  const svg = document.getElementById('rack-svg');
+
+  // Find the rack context — what rack are we viewing?
+  let rackFilter = '';
+  let siteLabel = 'All Devices with Rack Info';
+
+  if (selectedCell && selectedCell.isElement && selectedCell.isElement()) {
+    const config = selectedCell.get('configData') || {};
+    if (config.rack) {
+      rackFilter = config.rack.split('/')[0].trim();
+      siteLabel = (config.site || 'Site') + ' \u2014 ' + rackFilter;
+      if (config.location) siteLabel += ' (' + config.location + ')';
+    }
+  }
+
+  document.getElementById('rack-site-label').textContent = siteLabel;
+
+  // Collect all devices that belong to this rack
+  const elements = graph.getElements();
+  const rackDevices = [];
+
+  elements.forEach(function(el) {
+    const nodeType = el.get('nodeType') || '';
+    if (nodeType.startsWith('draw-') || nodeType.startsWith('text-')) return;
+    const config = el.get('configData') || {};
+    if (!config.rack) return;
+
+    const rackName = config.rack.split('/')[0].trim();
+    if (rackFilter && rackName !== rackFilter) return;
+
+    // Parse U-position: "Rack-12 / U22-U24" or "Rack-12 / U22"
+    var uStart = 1, uEnd = 1;
+    var uMatch = config.rack.match(/U(\d+)(?:\s*-\s*U?(\d+))?/i);
+    if (uMatch) {
+      uStart = parseInt(uMatch[1]);
+      uEnd = uMatch[2] ? parseInt(uMatch[2]) : uStart;
+    }
+
+    var style = (typeof getStyle === 'function') ? getStyle(nodeType) : {stroke: '#3498db'};
+    rackDevices.push({
+      id: el.id,
+      label: config.hostname || el.attr('label/text') || nodeType,
+      type: nodeType,
+      uStart: Math.min(uStart, uEnd),
+      uEnd: Math.max(uStart, uEnd),
+      color: config._fill || style.stroke || '#3498db',
+      model: config.model || '',
+      isSelected: selectedCell && selectedCell.id === el.id,
+    });
+  });
+
+  // SVG dimensions
+  var padTop = 30;
+  var padLeft = 35;
+  var rackWidth = 220;
+  var uHeight = 18;
+  var totalHeight = padTop + (uSize * uHeight) + 20;
+
+  svg.setAttribute('height', totalHeight);
+  svg.setAttribute('width', 300);
+
+  var svgContent = '';
+
+  // Rack frame
+  svgContent += '<rect x="' + (padLeft-4) + '" y="' + (padTop-4) + '" width="' + (rackWidth+8) + '" height="' + (uSize*uHeight+8) + '" rx="3" fill="#1a1a1a" stroke="#636e72" stroke-width="2"/>';
+
+  // Rails
+  svgContent += '<rect x="' + padLeft + '" y="' + padTop + '" width="8" height="' + (uSize*uHeight) + '" fill="#2d3436"/>';
+  svgContent += '<rect x="' + (padLeft+rackWidth-8) + '" y="' + padTop + '" width="8" height="' + (uSize*uHeight) + '" fill="#2d3436"/>';
+
+  // U-position lines and numbers (bottom-up: U1 at bottom)
+  for (var u = 1; u <= uSize; u++) {
+    var y = padTop + (uSize - u) * uHeight;
+    svgContent += '<line x1="' + (padLeft+8) + '" y1="' + y + '" x2="' + (padLeft+rackWidth-8) + '" y2="' + y + '" stroke="#2d3436" stroke-width="0.5"/>';
+    if (u % 3 === 1 || u === 1) {
+      svgContent += '<text x="' + (padLeft-6) + '" y="' + (y+uHeight-4) + '" text-anchor="end" fill="#636e72" font-size="9" font-family="Consolas,monospace">' + u + '</text>';
+    }
+  }
+
+  // Draw devices
+  rackDevices.forEach(function(dev) {
+    var yTop = padTop + (uSize - dev.uEnd) * uHeight;
+    var height = (dev.uEnd - dev.uStart + 1) * uHeight;
+    var x = padLeft + 10;
+    var w = rackWidth - 20;
+
+    var borderColor = dev.isSelected ? '#e94560' : '#444';
+    var borderWidth = dev.isSelected ? 2 : 1;
+
+    svgContent += '<rect x="' + x + '" y="' + (yTop+1) + '" width="' + w + '" height="' + (height-2) + '" rx="2" fill="' + dev.color + '" fill-opacity="0.7" stroke="' + borderColor + '" stroke-width="' + borderWidth + '" cursor="pointer"/>';
+    svgContent += '<text x="' + (x+6) + '" y="' + (yTop+height/2+4) + '" fill="#fff" font-size="10" font-family="Segoe UI,sans-serif" font-weight="600">' + dev.label + '</text>';
+    if (dev.model) {
+      svgContent += '<text x="' + (x+w-4) + '" y="' + (yTop+height/2+4) + '" text-anchor="end" fill="rgba(255,255,255,0.6)" font-size="8" font-family="Consolas,monospace">' + dev.model + '</text>';
+    }
+    // U-range label on the right rail
+    var uLabel = dev.uStart === dev.uEnd ? 'U' + dev.uStart : 'U' + dev.uStart + '-' + dev.uEnd;
+    svgContent += '<text x="' + (padLeft+rackWidth+4) + '" y="' + (yTop+height/2+4) + '" fill="#636e72" font-size="8" font-family="Consolas,monospace">' + uLabel + '</text>';
+  });
+
+  svg.innerHTML = svgContent;
+
+  // Update stats
+  var usedU = 0;
+  rackDevices.forEach(function(d) { usedU += (d.uEnd - d.uStart + 1); });
+  document.getElementById('rack-stat-used').textContent = 'Used: ' + usedU + 'U';
+  document.getElementById('rack-stat-free').textContent = 'Free: ' + (uSize - usedU) + 'U';
+  document.getElementById('rack-stat-power').textContent = 'Devices: ' + rackDevices.length;
+}
+
+function toggleRackView() {
+  var panel = document.getElementById('nc-rack-panel');
+  if (!panel) return;
+  // Close chat panel if open
+  var chatPanel = document.getElementById('nc-chat-panel');
+  if (chatPanel && !chatPanel.classList.contains('hidden')) chatPanel.classList.add('hidden');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    renderRackView();
+  }
+}
+
+function closeRackView() {
+  document.getElementById('nc-rack-panel').classList.add('hidden');
+}
+
+function exportRackSVG() {
+  var svg = document.getElementById('rack-svg');
+  if (!svg) return;
+  var svgData = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<svg xmlns="http://www.w3.org/2000/svg" ' + svg.outerHTML.slice(4);
+  var blob = new Blob([svgData], {type: 'image/svg+xml'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'rack-elevation.svg';
+  a.click();
 }
 
 /* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */

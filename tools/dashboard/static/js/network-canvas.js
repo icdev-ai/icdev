@@ -920,6 +920,8 @@ function selectCell(cell) {
 
     // Highlight on paper
     paper.findViewByModel(cell)?.highlight();
+    // Update rack view if open
+    if (typeof renderRackView === 'function') renderRackView();
   } else {
     // Link selected
     document.getElementById('config-empty').classList.remove('hidden');

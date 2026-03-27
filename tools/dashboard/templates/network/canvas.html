@@ -72,6 +72,7 @@
       <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
       <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
+      <button class="tb-btn" onclick="toggleRackView()" title="Rack Elevation View — shows rack layout for selected device">&#x229e; Rack</button>
       <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
       <button class="tb-btn" id="tb-ai-review-btn" onclick="openAiReviewPanel()" title="AI Topology Reviewer — LLM analysis of SPOF, redundancy gaps, STIG violations, and suggestions" style="color:#00d4ff;">&#x1f50d; AI Review</button>
     </div>
@@ -831,6 +832,33 @@
   <div class="nc-chat-input-area">
     <textarea id="nc-chat-input" class="nc-chat-input" rows="2" placeholder="Describe your network..." onkeydown="ncChatKeydown(event)"></textarea>
     <button class="nc-chat-send-btn" id="nc-chat-send-btn" onclick="ncChatSend()">Send</button>
+  </div>
+</div>
+<!-- Rack Elevation View Panel -->
+<div id="nc-rack-panel" class="nc-rack-panel hidden">
+  <div class="nc-rack-header">
+    <span class="nc-rack-title">Rack Elevation</span>
+    <div class="nc-rack-header-actions">
+      <select id="rack-u-size" class="nc-rack-select" onchange="renderRackView()">
+        <option value="42">42U</option>
+        <option value="48">48U</option>
+        <option value="24">24U</option>
+        <option value="12">12U</option>
+      </select>
+      <button class="nc-chat-btn-sm" onclick="exportRackSVG()" title="Export rack as SVG">Export</button>
+      <button class="close-btn" onclick="closeRackView()">&#x2715;</button>
+    </div>
+  </div>
+  <div class="nc-rack-info" id="rack-info">
+    <span id="rack-site-label">No rack selected</span>
+  </div>
+  <div class="nc-rack-body" id="nc-rack-body">
+    <svg id="rack-svg" width="300" height="900"></svg>
+  </div>
+  <div class="nc-rack-stats" id="rack-stats">
+    <span id="rack-stat-used">Used: 0U</span>
+    <span id="rack-stat-free">Free: 42U</span>
+    <span id="rack-stat-power">Devices: 0</span>
   </div>
 </div>
 {% endblock %}

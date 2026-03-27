@@ -289,21 +289,22 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         f"3. Delete prompt file: {prompt_path}\n"
     )
 
+    # Output log for this task
+    task_log = PROMPT_DIR / f"{task_id}.log"
+
     try:
+        log_fh = open(str(task_log), "w", encoding="utf-8", errors="replace")
         proc = subprocess.Popen(
             [
                 CLAUDE_CLI,
-                "--print",
                 "--dangerously-skip-permissions",
                 "--max-turns", "50",
+                "--output-format", "text",
                 "-p", instruction,
             ],
             cwd=str(BASE_DIR),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
         )
         _running[task_id] = proc
         print(f"  Kanban: dispatched {task_id} to claude (PID {proc.pid})")
@@ -311,6 +312,49 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         print(f"  Kanban: claude CLI not found at {CLAUDE_CLI}")
     except Exception as e:
         print(f"  Kanban: dispatch error for {task_id}: {e}")
+
+
+def _verify_task_completed(task_id, claude_output):
+    """Verify that a task actually produced results before marking done.
+
+    Checks:
+    1. Git has new commits since task was dispatched
+    2. Claude output is non-trivial (>100 chars, not just an error)
+    3. No obvious failure indicators in output
+
+    Returns: (verified: bool, reason: str)
+    """
+    # Check 1: Claude output must be substantial
+    if not claude_output or len(claude_output) < 100:
+        return False, "Output too short — likely no work done"
+
+    # Check 2: Look for failure indicators
+    fail_markers = [
+        "I cannot", "I'm unable", "I don't have access",
+        "Permission denied", "No such file", "FileNotFoundError",
+        "I was unable to", "Error:", "failed to",
+    ]
+    output_lower = claude_output.lower()
+    for marker in fail_markers:
+        if marker.lower() in output_lower[:500]:
+            return False, f"Output contains failure indicator: {marker}"
+
+    # Check 3: Git commit check — did any new commits appear?
+    try:
+        import subprocess as _sp
+        result = _sp.run(
+            ["git", "log", "--oneline", "--since=30 minutes ago"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(BASE_DIR), timeout=10,
+        )
+        recent_commits = result.stdout.strip()
+        if not recent_commits:
+            # No commits but output looks ok — mark as "needs review" not "done"
+            return False, "No git commits found — work may not have been saved"
+    except Exception:
+        pass  # Git check failed — don't block on this
+
+    return True, "Verified"
 
 
 def _check_completed():
@@ -322,16 +366,32 @@ def _check_completed():
             completed.append(task_id)
             prompt_path = PROMPT_DIR / f"{task_id}.md"
             if ret == 0:
-                # Claude completed successfully — capture output, mark done, notify
+                # Claude completed — read output log and VERIFY before marking done
                 claude_output = ""
+                task_log = PROMPT_DIR / f"{task_id}.log"
                 try:
-                    claude_output = (proc.stdout.read() or "").strip()
+                    if task_log.exists():
+                        claude_output = task_log.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).strip()
                 except Exception:
                     pass
-                try:
-                    _move_task(task_id, "done")
-                except Exception:
-                    pass
+
+                # VERIFICATION GATE — prevent false positives
+                verified, reason = _verify_task_completed(task_id, claude_output)
+
+                if verified:
+                    try:
+                        _move_task(task_id, "done")
+                    except Exception:
+                        pass
+                else:
+                    # NOT VERIFIED — move back to backlog, notify as unverified
+                    print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
+                    try:
+                        _move_task(task_id, "backlog")
+                    except Exception:
+                        pass
                 # Build task dict with title from DB or fallback
                 task_dict = {"id": task_id, "title": task_id}
                 try:
@@ -350,12 +410,27 @@ def _check_completed():
                         }
                 except Exception:
                     pass
-                _send_notification(task_dict, event="done")
-                # Send Claude's actual answer back via Telegram
-                if claude_output:
+
+                if verified:
+                    _send_notification(task_dict, event="done")
+                    print(f"  Kanban: {task_id} VERIFIED done (exit {ret})")
+                else:
+                    _send_notification(task_dict, event="failed")
                     try:
                         from tools.notifications.adapters.telegram import send
-                        # Telegram has 4096 char limit — truncate if needed
+                        send(
+                            f"UNVERIFIED: {task_dict.get('title', task_id)[:60]}",
+                            f"Task returned to backlog. Reason: {reason}",
+                            severity="warning",
+                        )
+                    except Exception:
+                        pass
+                    print(f"  Kanban: {task_id} returned to backlog: {reason}")
+
+                # Send Claude's actual answer back via Telegram
+                if claude_output and verified:
+                    try:
+                        from tools.notifications.adapters.telegram import send
                         answer = claude_output[:3800]
                         send(
                             f"Answer: {task_dict.get('title', task_id)[:60]}",
@@ -366,13 +441,20 @@ def _check_completed():
                         logger.warning("Failed to relay Claude output to Telegram: %s", tg_exc)
                 if prompt_path.exists():
                     prompt_path.unlink()
-                print(f"  Kanban: {task_id} completed (exit {ret})")
+                print(f"  Kanban: {task_id} completed (exit {ret}, verified={verified})")
             else:
                 # Claude failed — move task back to backlog for retry
-                stderr = proc.stderr.read() if proc.stderr else ""
+                task_log = PROMPT_DIR / f"{task_id}.log"
+                error_tail = ""
+                try:
+                    if task_log.exists():
+                        lines = task_log.read_text(encoding="utf-8", errors="replace").strip().split("\n")
+                        error_tail = "\n".join(lines[-5:])
+                except Exception:
+                    pass
                 print(
                     f"  Kanban: {task_id} failed (exit {ret})"
-                    f"{': ' + stderr[:200] if stderr else ''}"
+                    f"{': ' + error_tail[:200] if error_tail else ''}"
                 )
                 try:
                     _move_task(task_id, "backlog")
