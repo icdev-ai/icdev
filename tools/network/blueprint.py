@@ -45,7 +45,12 @@ from tools.network.compliance import (  # noqa: E402
     run_compliance_audit, apply_compliance_fix, generate_xacta_export,
 )
 from tools.network.montecarlo import run_monte_carlo  # noqa: E402
-from tools.network.ato_generator import generate_ato_package  # noqa: E402
+from tools.network.ato_generator import (  # noqa: E402
+    generate_ato_package,
+    generate_pps_matrix_for_pair,
+    get_topology_enclaves,
+    export_pps_as_ssp_table,
+)
 from tools.network.export_import import (  # noqa: E402
     to_drawio, to_svg, to_vdx, import_drawio, import_vdx, import_svg,
 )
@@ -2497,6 +2502,188 @@ Output ONLY the JSON object. No other text."""
         conn.close()
         _audit("ATO_DELETE", "ato_package", pkg_id, f"topology={topo_id}")
         return jsonify({"ok": True})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # PPS Matrix Generator — Enclave / Device Pair
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/pps/<topo_id>")
+    @nc_login_required
+    def nc_pps_page(topo_id):
+        """PPS Matrix Generator page — select two enclaves or device pair."""
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, name, graph_json, classification FROM topologies WHERE id=?",
+            (topo_id,),
+        ).fetchone()
+        if not topo:
+            conn.close()
+            abort(404)
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        groups = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
+        ).fetchall()]
+        conn.close()
+
+        meta = get_topology_enclaves(graph, groups)
+        classification_banner = (topo["classification"] or "").upper()
+
+        return render_template(
+            "network/pps_matrix.html",
+            topology=_row_to_dict(topo),
+            enclaves=meta["enclaves"],
+            nodes=meta["nodes"],
+            classification_banner=classification_banner,
+        )
+
+    @bp.route("/api/pps/<topo_id>/enclaves", methods=["GET"])
+    @nc_login_required
+    def nc_api_pps_enclaves(topo_id):
+        """Return enclaves and nodes available for pair selection."""
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        groups = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
+        ).fetchall()]
+        conn.close()
+
+        return jsonify(get_topology_enclaves(graph, groups))
+
+    @bp.route("/api/pps/<topo_id>/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_pps_generate(topo_id):
+        """Generate PPS matrix for a selected enclave or device pair.
+
+        Body JSON:
+          {
+            "source": "<zone_name | node_id>",
+            "dest": "<zone_name | node_id>",
+            "selector_type": "zone" | "node"   // default "zone"
+          }
+        """
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        data = request.get_json(force=True, silent=True) or {}
+        source = (data.get("source") or "").strip()
+        dest = (data.get("dest") or "").strip()
+        selector_type = data.get("selector_type", "zone")
+
+        if not source or not dest:
+            conn.close()
+            return jsonify({"error": "source and dest are required"}), 400
+        if source == dest:
+            conn.close()
+            return jsonify({"error": "source and dest must be different"}), 400
+        if selector_type not in ("zone", "node"):
+            selector_type = "zone"
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph JSON"}), 500
+
+        groups = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
+        ).fetchall()]
+        conn.close()
+
+        result = generate_pps_matrix_for_pair(
+            graph=graph,
+            source_selector=source,
+            dest_selector=dest,
+            selector_type=selector_type,
+            groups=groups,
+        )
+        _audit("PPS_GENERATE", "topology", topo_id,
+               f"pair={source}<->{dest} type={selector_type} "
+               f"protocols={result['total_protocols']}")
+        return jsonify(result)
+
+    @bp.route("/api/pps/<topo_id>/export", methods=["POST"])
+    @nc_login_required
+    def nc_api_pps_export(topo_id):
+        """Export a PPS matrix as SSP table (CSV or Markdown).
+
+        Body JSON: same as /api/pps/<topo_id>/generate plus:
+          {
+            "format": "csv" | "markdown"   // default "csv"
+          }
+        """
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return jsonify({"error": "Topology not found"}), 404
+
+        data = request.get_json(force=True, silent=True) or {}
+        source = (data.get("source") or "").strip()
+        dest = (data.get("dest") or "").strip()
+        selector_type = data.get("selector_type", "zone")
+        fmt = data.get("format", "csv")
+
+        if not source or not dest:
+            conn.close()
+            return jsonify({"error": "source and dest are required"}), 400
+        if selector_type not in ("zone", "node"):
+            selector_type = "zone"
+        if fmt not in ("csv", "markdown"):
+            fmt = "csv"
+
+        try:
+            graph = json.loads(topo["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph JSON"}), 500
+
+        groups = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_groups WHERE topology_id=?", (topo_id,)
+        ).fetchall()]
+        conn.close()
+
+        result = generate_pps_matrix_for_pair(
+            graph=graph,
+            source_selector=source,
+            dest_selector=dest,
+            selector_type=selector_type,
+            groups=groups,
+        )
+        content = export_pps_as_ssp_table(result, fmt=fmt)
+        src_slug = source.replace(" ", "_").replace("/", "-")
+        dst_slug = dest.replace(" ", "_").replace("/", "-")
+        filename = f"pps_ssp_{src_slug}_to_{dst_slug}.{'csv' if fmt == 'csv' else 'md'}"
+
+        from flask import Response
+        mime = "text/csv" if fmt == "csv" else "text/markdown"
+        return Response(
+            content,
+            mimetype=mime,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",
