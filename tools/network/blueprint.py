@@ -523,11 +523,16 @@ def create_network_blueprint():
     @nc_login_required
     def nc_api_clear_all_topologies():
         conn = get_connection()
-        conn.execute("DELETE FROM simulation_results")
-        conn.execute("DELETE FROM nc_project_topologies")
-        conn.execute("DELETE FROM nc_versions")
-        conn.execute("DELETE FROM nc_groups")
-        conn.execute("DELETE FROM nc_compliance_checks")
+        # Delete child tables first (FK constraints require this order)
+        child_tables = [
+            "simulation_results", "nc_objects", "nc_circuits", "nc_cables",
+            "nc_cross_connects", "nc_versions", "nc_compliance_findings",
+            "nc_compliance_checks", "nc_compliance_profiles",
+            "nc_ipam_blocks", "nc_project_topologies", "nc_groups",
+            "nc_mc_runs", "nc_mc_scenarios",
+        ]
+        for tbl in child_tables:
+            conn.execute(f"DELETE FROM {tbl}")
         conn.execute("DELETE FROM topologies")
         conn.commit()
         conn.close()

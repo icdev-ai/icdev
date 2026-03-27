@@ -1479,23 +1479,29 @@ TEMPLATES = [
                 # Direct Connect (dual)
                 _node("dx-a", "DX Circuit A", "aws-dx", 250, 450),
                 _node("dx-b", "DX Circuit B", "aws-dx", 750, 450),
+                # Meet-Me Rooms at colocation facilities
+                _node("mmr-a", "MMR Equinix DC5", "meet-me-room", 250, 570),
+                _node("mmr-b", "MMR CoreSite VA1", "meet-me-room", 750, 570),
+                # Cross-connects (physical fiber in MMR)
+                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 660),
+                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 660),
                 # Campus border
-                _node("br1", "Border-RTR-1", "router", 250, 600,
+                _node("br1", "Border-RTR-1", "router", 250, 780,
                       {"config": {"asn": "65001", "protocol": "BGP"}}),
-                _node("br2", "Border-RTR-2", "router", 750, 600,
+                _node("br2", "Border-RTR-2", "router", 750, 780,
                       {"config": {"asn": "65001", "protocol": "BGP"}}),
-                _node("fw1", "Campus-FW-1", "firewall", 350, 750),
-                _node("fw2", "Campus-FW-2", "firewall", 650, 750),
+                _node("fw1", "Campus-FW-1", "firewall", 350, 930),
+                _node("fw2", "Campus-FW-2", "firewall", 650, 930),
                 # Campus core
-                _node("core1", "Core-SW-1", "switch-l3", 400, 900),
-                _node("core2", "Core-SW-2", "switch-l3", 600, 900),
+                _node("core1", "Core-SW-1", "switch-l3", 400, 1080),
+                _node("core2", "Core-SW-2", "switch-l3", 600, 1080),
                 # Distribution
-                _node("dist1", "Dist-A", "switch-l3", 300, 1050),
-                _node("dist2", "Dist-B", "switch-l3", 700, 1050),
+                _node("dist1", "Dist-A", "switch-l3", 300, 1230),
+                _node("dist2", "Dist-B", "switch-l3", 700, 1230),
                 # Access
-                _node("acc1", "Access-1", "switch-l2", 200, 1200),
-                _node("acc2", "Access-2", "switch-l2", 500, 1200),
-                _node("acc3", "Access-3", "switch-l2", 800, 1200),
+                _node("acc1", "Access-1", "switch-l2", 200, 1380),
+                _node("acc2", "Access-2", "switch-l2", 500, 1380),
+                _node("acc3", "Access-3", "switch-l2", 800, 1380),
             ],
             "edges": [
                 # AWS internal
@@ -1509,12 +1515,18 @@ TEMPLATES = [
                 # DX connections (diverse paths)
                 _edge("aws-tgw", "dx-a", "DX 10G Primary", "BGP"),
                 _edge("aws-tgw", "dx-b", "DX 10G Secondary", "BGP"),
-                # DX to campus border
-                _edge("dx-a", "br1", "10GbE", "BGP"),
-                _edge("dx-b", "br2", "10GbE", "BGP"),
-                # Cross-connect for failover
-                _edge("dx-a", "br2", "10GbE Backup", "BGP"),
-                _edge("dx-b", "br1", "10GbE Backup", "BGP"),
+                # DX to Meet-Me Rooms
+                _edge("dx-a", "mmr-a", "DX Handoff", ""),
+                _edge("dx-b", "mmr-b", "DX Handoff", ""),
+                # Cross-connects in MMR (physical fiber)
+                _edge("mmr-a", "xx-a", "SMF XConn", ""),
+                _edge("mmr-b", "xx-b", "SMF XConn", ""),
+                # Cross-connects to border routers
+                _edge("xx-a", "br1", "10GbE", "BGP"),
+                _edge("xx-b", "br2", "10GbE", "BGP"),
+                # Cross-connect failover (diverse MMR paths)
+                _edge("xx-a", "br2", "10GbE Backup", "BGP"),
+                _edge("xx-b", "br1", "10GbE Backup", "BGP"),
                 # Border to firewalls
                 _edge("br1", "fw1", "10GbE", "OSPF"),
                 _edge("br2", "fw2", "10GbE", "OSPF"),
@@ -1559,18 +1571,24 @@ TEMPLATES = [
                 # ExpressRoute (dual from different peering locs)
                 _node("er-a", "ER Circuit A (Equinix)", "az-er", 250, 480),
                 _node("er-b", "ER Circuit B (Megaport)", "az-er", 750, 480),
+                # Meet-Me Rooms
+                _node("mmr-a", "MMR Equinix CH1", "meet-me-room", 250, 560),
+                _node("mmr-b", "MMR Megaport SYD", "meet-me-room", 750, 560),
+                # Cross-connects
+                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 640),
+                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 640),
                 # Metro PE routers
-                _node("pe1", "MPLS-PE-1", "mpls-pe", 200, 640),
-                _node("pe2", "MPLS-PE-2", "mpls-pe", 800, 640),
+                _node("pe1", "MPLS-PE-1", "mpls-pe", 200, 740),
+                _node("pe2", "MPLS-PE-2", "mpls-pe", 800, 740),
                 # Metro core
-                _node("p1", "MPLS-P-Core", "mpls-p", 500, 640),
+                _node("p1", "MPLS-P-Core", "mpls-p", 500, 740),
                 # Metro sites
-                _node("site-fw1", "Site-A FW", "firewall", 200, 800),
-                _node("site-fw2", "Site-B FW", "firewall", 500, 800),
-                _node("site-fw3", "Site-C FW", "firewall", 800, 800),
-                _node("sw-a", "Site-A Core", "switch-l3", 200, 950),
-                _node("sw-b", "Site-B Core", "switch-l3", 500, 950),
-                _node("sw-c", "Site-C Core", "switch-l3", 800, 950),
+                _node("site-fw1", "Site-A FW", "firewall", 200, 900),
+                _node("site-fw2", "Site-B FW", "firewall", 500, 900),
+                _node("site-fw3", "Site-C FW", "firewall", 800, 900),
+                _node("sw-a", "Site-A Core", "switch-l3", 200, 1050),
+                _node("sw-b", "Site-B Core", "switch-l3", 500, 1050),
+                _node("sw-c", "Site-C Core", "switch-l3", 800, 1050),
             ],
             "edges": [
                 # Azure internal
@@ -1585,11 +1603,17 @@ TEMPLATES = [
                 # ExpressRoute to VWAN
                 _edge("az-vwan", "er-a", "ER 10G Primary", "BGP"),
                 _edge("az-vwan", "er-b", "ER 10G Secondary", "BGP"),
-                # ER to PE (cross-connected)
-                _edge("er-a", "pe1", "10GbE", "BGP"),
-                _edge("er-b", "pe2", "10GbE", "BGP"),
-                _edge("er-a", "pe2", "10GbE Backup", "BGP"),
-                _edge("er-b", "pe1", "10GbE Backup", "BGP"),
+                # ER to Meet-Me Rooms
+                _edge("er-a", "mmr-a", "ER Handoff", ""),
+                _edge("er-b", "mmr-b", "ER Handoff", ""),
+                # Cross-connects in MMR
+                _edge("mmr-a", "xx-a", "SMF XConn", ""),
+                _edge("mmr-b", "xx-b", "SMF XConn", ""),
+                # Cross-connect to PE (wired through)
+                _edge("xx-a", "pe1", "10GbE", "BGP"),
+                _edge("xx-b", "pe2", "10GbE", "BGP"),
+                _edge("xx-a", "pe2", "10GbE Backup", "BGP"),
+                _edge("xx-b", "pe1", "10GbE Backup", "BGP"),
                 # MPLS core
                 _edge("pe1", "p1", "100GbE", "MPLS"),
                 _edge("pe2", "p1", "100GbE", "MPLS"),
@@ -1610,7 +1634,7 @@ TEMPLATES = [
         "name": "Multi-Cloud (AWS + Azure) Dual POP to Metro (MAN)",
         "category": "Hybrid Cloud",
         "description": "AWS and Azure multi-cloud with multi-home connectivity through two geographically diverse POPs (West Coast and East Coast), connecting to a metro area network via MPLS backbone.",
-        "tags": json.dumps(["multi-cloud", "aws", "azure", "dual-pop", "metro", "man", "multi-home"]),
+        "tags": json.dumps(["multi-cloud", "aws", "azure", "dual-pop", "metro", "man", "multi-home", "meet-me-room", "cross-connect"]),
         "graph_json": json.dumps({
             "nodes": [
                 # AWS Cloud
@@ -1627,30 +1651,39 @@ TEMPLATES = [
                 _node("az-er-e", "ER East (IAD)", "az-er", 900, 380),
                 # Cloud-to-cloud peering
                 _node("c2c", "Cloud Peering", "cloud-peering", 500, 200),
+                # West Coast Meet-Me Room (LAX colo)
+                _node("mmr-w", "MMR West (Equinix LA1)", "meet-me-room", 250, 480),
+                # East Coast Meet-Me Room (IAD colo)
+                _node("mmr-e", "MMR East (Equinix DC5)", "meet-me-room", 750, 480),
+                # Cross-connects at each POP
+                _node("xx-w-aws", "XConn AWS-W", "cross-connect", 100, 540),
+                _node("xx-w-az", "XConn AZ-W", "cross-connect", 400, 540),
+                _node("xx-e-aws", "XConn AWS-E", "cross-connect", 600, 540),
+                _node("xx-e-az", "XConn AZ-E", "cross-connect", 900, 540),
                 # West Coast POP (LAX)
-                _node("pop-w-rtr1", "POP-West RTR-1", "router", 150, 540,
+                _node("pop-w-rtr1", "POP-West RTR-1", "router", 150, 660,
                       {"config": {"asn": "65100", "protocol": "BGP"}}),
-                _node("pop-w-rtr2", "POP-West RTR-2", "router", 350, 540,
+                _node("pop-w-rtr2", "POP-West RTR-2", "router", 350, 660,
                       {"config": {"asn": "65100", "protocol": "BGP"}}),
-                _node("pop-w-fw", "POP-West FW", "firewall", 250, 540),
+                _node("pop-w-fw", "POP-West FW", "firewall", 250, 660),
                 # East Coast POP (IAD)
-                _node("pop-e-rtr1", "POP-East RTR-1", "router", 650, 540,
+                _node("pop-e-rtr1", "POP-East RTR-1", "router", 650, 660,
                       {"config": {"asn": "65200", "protocol": "BGP"}}),
-                _node("pop-e-rtr2", "POP-East RTR-2", "router", 850, 540,
+                _node("pop-e-rtr2", "POP-East RTR-2", "router", 850, 660,
                       {"config": {"asn": "65200", "protocol": "BGP"}}),
-                _node("pop-e-fw", "POP-East FW", "firewall", 750, 540),
+                _node("pop-e-fw", "POP-East FW", "firewall", 750, 660),
                 # MPLS Backbone
-                _node("mpls-pe-w", "MPLS-PE West", "mpls-pe", 250, 700),
-                _node("mpls-p1", "MPLS-P Core-1", "mpls-p", 400, 700),
-                _node("mpls-p2", "MPLS-P Core-2", "mpls-p", 600, 700),
-                _node("mpls-pe-e", "MPLS-PE East", "mpls-pe", 750, 700),
+                _node("mpls-pe-w", "MPLS-PE West", "mpls-pe", 250, 820),
+                _node("mpls-p1", "MPLS-P Core-1", "mpls-p", 400, 820),
+                _node("mpls-p2", "MPLS-P Core-2", "mpls-p", 600, 820),
+                _node("mpls-pe-e", "MPLS-PE East", "mpls-pe", 750, 820),
                 # Metro Sites
-                _node("man-fw1", "MAN Site-A FW", "firewall", 250, 860),
-                _node("man-fw2", "MAN Site-B FW", "firewall", 500, 860),
-                _node("man-fw3", "MAN Site-C FW", "firewall", 750, 860),
-                _node("man-sw1", "Site-A Core", "switch-l3", 250, 1000),
-                _node("man-sw2", "Site-B Core", "switch-l3", 500, 1000),
-                _node("man-sw3", "Site-C Core", "switch-l3", 750, 1000),
+                _node("man-fw1", "MAN Site-A FW", "firewall", 250, 980),
+                _node("man-fw2", "MAN Site-B FW", "firewall", 500, 980),
+                _node("man-fw3", "MAN Site-C FW", "firewall", 750, 980),
+                _node("man-sw1", "Site-A Core", "switch-l3", 250, 1120),
+                _node("man-sw2", "Site-B Core", "switch-l3", 500, 1120),
+                _node("man-sw3", "Site-C Core", "switch-l3", 750, 1120),
             ],
             "edges": [
                 # AWS internal
@@ -1666,12 +1699,21 @@ TEMPLATES = [
                 # Cloud peering
                 _edge("aws-tgw", "c2c", "Peering", "BGP"),
                 _edge("az-vwan", "c2c", "Peering", "BGP"),
-                # AWS DX to West/East POPs
-                _edge("aws-dx-w", "pop-w-rtr1", "10GbE", "BGP"),
-                _edge("aws-dx-e", "pop-e-rtr1", "10GbE", "BGP"),
-                # Azure ER to West/East POPs
-                _edge("az-er-w", "pop-w-rtr2", "10GbE", "BGP"),
-                _edge("az-er-e", "pop-e-rtr2", "10GbE", "BGP"),
+                # CSP circuits to Meet-Me Rooms
+                _edge("aws-dx-w", "mmr-w", "DX Handoff", ""),
+                _edge("aws-dx-e", "mmr-e", "DX Handoff", ""),
+                _edge("az-er-w", "mmr-w", "ER Handoff", ""),
+                _edge("az-er-e", "mmr-e", "ER Handoff", ""),
+                # Cross-connects from MMR to customer side
+                _edge("mmr-w", "xx-w-aws", "SMF XConn", ""),
+                _edge("mmr-w", "xx-w-az", "SMF XConn", ""),
+                _edge("mmr-e", "xx-e-aws", "SMF XConn", ""),
+                _edge("mmr-e", "xx-e-az", "SMF XConn", ""),
+                # Cross-connects to POP routers
+                _edge("xx-w-aws", "pop-w-rtr1", "10GbE", "BGP"),
+                _edge("xx-w-az", "pop-w-rtr2", "10GbE", "BGP"),
+                _edge("xx-e-aws", "pop-e-rtr1", "10GbE", "BGP"),
+                _edge("xx-e-az", "pop-e-rtr2", "10GbE", "BGP"),
                 # POP internal
                 _edge("pop-w-rtr1", "pop-w-fw", "10GbE", ""),
                 _edge("pop-w-rtr2", "pop-w-fw", "10GbE", ""),
