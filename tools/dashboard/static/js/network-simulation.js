@@ -1021,7 +1021,7 @@ async function runAiGenerate() {
   btn.disabled = true;
   btn.textContent = 'Generating...';
   statusEl.style.display = 'block';
-  statusEl.innerHTML = '<span style="color:#f39c12;">Sending to local LLM (Ollama)... this may take 15-30 seconds.</span>';
+  statusEl.innerHTML = '<span style="color:#f39c12;">Generating topology... this may take a few seconds.</span>';
 
   try {
     const r = await fetch(NC_BASE + '/api/ai-generate', {
@@ -1045,8 +1045,9 @@ async function runAiGenerate() {
     if (typeof updateStatusBar === 'function') updateStatusBar();
     if (typeof markDirty === 'function') markDirty();
 
-    statusEl.innerHTML = '<span style="color:#27ae60;">Generated ' + data.node_count + ' nodes, ' + data.edge_count + ' edges.</span>';
-    setStatus('AI generated: ' + data.node_count + ' nodes, ' + data.edge_count + ' edges');
+    const prov = data.provider ? ' via ' + data.provider : '';
+    statusEl.innerHTML = '<span style="color:#27ae60;">Generated ' + data.node_count + ' nodes, ' + data.edge_count + ' edges' + prov + '.</span>';
+    setStatus('AI generated: ' + data.node_count + ' nodes, ' + data.edge_count + ' edges' + prov);
 
     // Auto-close after a short delay
     setTimeout(() => closeAiGenerateDialog(), 1500);
