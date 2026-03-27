@@ -54,7 +54,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context
+from flask import Blueprint, Response, current_app, g, jsonify, request, stream_with_context  # noqa: E402
 
 logger = logging.getLogger("saas.rest_api")
 

@@ -528,7 +528,7 @@ class ATLASReportGenerator:
         based on the mitigation status from assessments.
         """
         mitigations_catalog = self._load_catalog("atlas_mitigations.json")
-        catalog_by_id = {
+        {
             m["id"]: m for m in mitigations_catalog if "id" in m
         }
 

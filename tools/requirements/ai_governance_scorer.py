@@ -69,7 +69,7 @@ def score_ai_governance_readiness(project_id: str, conn: sqlite3.Connection = No
     """
     close_conn = False
     if conn is None:
-        path = db_path or (BASE_DIR / "data" / "icdev.db")
+        db_path or (BASE_DIR / "data" / "icdev.db")
         conn = get_connection()
         close_conn = True
 

@@ -40,12 +40,12 @@ from typing import List, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.testing.data_types import (
+from tools.testing.data_types import (  # noqa: E402
     AcceptanceCriterionResult,
     UIPageCheckResult,
     AcceptanceReport,
 )
-from tools.testing.utils import timestamp_iso
+from tools.testing.utils import timestamp_iso  # noqa: E402
 
 # --- DOM Error Patterns (deterministic, no LLM) ---
 # These patterns indicate a page is rendering with errors.

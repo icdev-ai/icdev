@@ -241,7 +241,7 @@ def _log_event(
     duration_ms: int = 0,
 ) -> None:
     """Append sandbox event to db_forge_sandbox_log."""
-    db = db_path or str(DB_PATH)
+    db_path or str(DB_PATH)
     try:
         conn = get_connection()
         conn.execute(

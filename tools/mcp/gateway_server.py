@@ -190,7 +190,7 @@ def handle_gateway_status(params):
 
     # Recent commands
     recent = []
-    db_path = BASE_DIR / "data" / "icdev.db"
+    BASE_DIR / "data" / "icdev.db"
     try:
         conn = get_connection()
         rows = conn.execute(

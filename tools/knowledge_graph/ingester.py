@@ -37,7 +37,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 def _get_db() -> sqlite3.Connection:
     """Return a sqlite3 connection to icdev.db with Row factory."""
-    db_path = os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB))
+    os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB))
     conn = get_connection()
     conn.execute("PRAGMA busy_timeout=5000")
     return conn

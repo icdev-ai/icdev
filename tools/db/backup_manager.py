@@ -269,7 +269,7 @@ class BackupManager:
         backup_path = dest_dir / backup_name
 
         cmd = ["pg_dump", "--no-owner", "--no-acl", "-f", str(backup_path), db_url]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, check=True)
 
         checksum = _compute_sha256(backup_path)
         _write_sha256_sidecar(backup_path, checksum)

@@ -124,7 +124,7 @@ class AITelemetryLogger:
             ).fetchone()
             volume = row[0] if row else 0
             total_cost = row[1] if row else 0.0
-            total_tokens = row[2] if row else 0
+            row[2] if row else 0
 
             # Hourly average (from all-time data, excluding current window)
             row_all = conn.execute(

@@ -22,10 +22,10 @@ from typing import Tuple, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 
-from tools.ci.modules.agent import execute_template, BOT_IDENTIFIER
-from tools.ci.modules.state import ICDevState
-from tools.testing.data_types import AgentTemplateRequest, AgentPromptResponse
-from tools.testing.utils import parse_json
+from tools.ci.modules.agent import execute_template, BOT_IDENTIFIER  # noqa: E402
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.testing.data_types import AgentTemplateRequest, AgentPromptResponse  # noqa: E402
+from tools.testing.utils import parse_json  # noqa: E402
 
 # Agent name constants (adapted from ADW)
 AGENT_PLANNER = "icdev_planner"

@@ -205,7 +205,6 @@ def get_forward_trace(project_id: str, source_type: str, source_id: str,
          "confidence": float, "children": [...]}
     ]}
     """
-    path = db_path or DB_PATH
     conn = get_connection()
 
     source_name = _resolve_element_name(source_type, source_id, conn)
@@ -262,7 +261,6 @@ def get_forward_trace(project_id: str, source_type: str, source_id: str,
 def get_backward_trace(project_id: str, target_type: str, target_id: str,
                        max_depth: int = 10, db_path=None) -> dict:
     """Trace backward from a target element. Same tree structure but reversed."""
-    path = db_path or DB_PATH
     conn = get_connection()
 
     target_name = _resolve_element_name(target_type, target_id, conn)

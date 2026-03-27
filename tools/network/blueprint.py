@@ -66,7 +66,7 @@ from tools.network.intent_validator import (  # noqa: E402
     validate_intent_policy, CONSTRAINT_TYPES,
 )
 from tools.network.discovery import (  # noqa: E402
-    run_discovery, diff_topologies, build_graph_json, ping_sweep,
+    run_discovery, diff_topologies, ping_sweep,
     _HAS_PYSNMP, _HAS_NETMIKO,
 )
 
@@ -4376,7 +4376,7 @@ Output ONLY the JSON object."""
             encrypted = e.get("_encrypted") or e.get("config", {}).get("_encrypted", False)
             line = (
                 f'  {{"id":"{e["id"]}","src":"{e.get("source","")}","dst":"{e.get("target","")}","proto":"{proto}"'
-                + (f',"encrypted":true' if encrypted else "")
+                + (',"encrypted":true' if encrypted else "")
                 + "}"
             )
             edge_lines.append(line)

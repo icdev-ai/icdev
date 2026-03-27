@@ -3570,9 +3570,8 @@ def generate_from_spec(
         List of paths to generated files.
     """
     # Phase 34: Build profile context for LLM-aware generation
-    profile_context = ""
     if project_id:
-        profile_context = _build_profile_context(project_id, "code_generation")
+        _build_profile_context(project_id, "code_generation")
     project = Path(project_path)
     src_dir = Path(output_dir) if output_dir else project / "src"
     src_dir.mkdir(parents=True, exist_ok=True)

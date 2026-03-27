@@ -1611,9 +1611,44 @@ function hideHeatmapLegend() {
   if (legend) legend.style.display = 'none';
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Palette Stencil Icons — replace text icons with mini Cisco SVG stencils
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+function initPaletteStencils() {
+  if (typeof CISCO_STENCILS === 'undefined' || typeof NODE_STYLES === 'undefined') return;
+
+  document.querySelectorAll('.palette-item[data-type]').forEach(item => {
+    const type = item.dataset.type;
+    if (!type) return;
+    // Skip drawing shapes and text labels — they keep their CSS icons
+    if (type.startsWith('draw-') || type.startsWith('text-')) return;
+
+    const stencil = (typeof getCiscoStencil === 'function') ? getCiscoStencil(type) : null;
+    if (!stencil) return;
+
+    const style = (typeof getStyle === 'function') ? getStyle(type) : null;
+    const fillColor = style ? style.stroke : '#3498db';
+
+    const piIcon = item.querySelector('.pi-icon');
+    if (!piIcon) return;
+
+    // Replace the text content with a mini SVG
+    piIcon.innerHTML = `<svg viewBox="0 0 48 48" width="28" height="22" style="display:block;">
+      <path d="${stencil.body}" fill="${fillColor}" stroke="none"/>
+      ${stencil.detail ? `<path d="${stencil.detail}" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>` : ''}
+    </svg>`;
+    piIcon.style.background = 'transparent';
+    piIcon.style.border = 'none';
+    piIcon.style.width = '32px';
+    piIcon.style.height = '24px';
+  });
+}
+
 /* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   // Wait a tick for canvas.js to init paper
   setTimeout(initZoomWheel, 500);
   setTimeout(initClassificationBanner, 600);
+  setTimeout(initPaletteStencils, 300);
 });

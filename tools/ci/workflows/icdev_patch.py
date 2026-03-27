@@ -23,11 +23,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.agent import execute_template
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.agent import execute_template  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     classify_issue,
     generate_branch_name,
     create_commit,
@@ -35,8 +35,8 @@ from tools.ci.modules.workflow_ops import (
     format_issue_message,
     ensure_run_id,
 )
-from tools.testing.data_types import AgentTemplateRequest
-from tools.testing.utils import setup_logger
+from tools.testing.data_types import AgentTemplateRequest  # noqa: E402
+from tools.testing.utils import setup_logger  # noqa: E402
 
 AGENT_PATCH_PLANNER = "patch_planner"
 AGENT_PATCH_IMPLEMENTOR = "patch_implementor"

@@ -94,7 +94,7 @@ class FAISSVectorStore(VectorStoreProvider):
 
             vec = self._normalize(chunk.embedding)
             self._index.add(vec)
-            idx = len(self._id_list)
+            len(self._id_list)
             self._id_list.append(chunk.chunk_id)
             self._metadata[chunk.chunk_id] = {
                 "content": chunk.content,

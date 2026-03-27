@@ -577,7 +577,7 @@ class CapabilityEvaluator:
         score = 0.7  # Default baseline
 
         description = str(data.get("description", "")).lower()
-        source_type = data.get("source", "")
+        data.get("source", "")
         trust_level = data.get("trust_level", "child")
         injection_scan = data.get("injection_scan_result")
 

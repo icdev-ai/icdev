@@ -111,7 +111,7 @@ def _store_validation(
     db_path: Optional[str],
 ) -> None:
     """Write integration test result to db_forge_validations."""
-    db = db_path or str(DB_PATH)
+    db_path or str(DB_PATH)
     try:
         conn = get_connection()
         conn.execute(

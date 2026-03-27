@@ -29,8 +29,8 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.redaction.detector import RedactionDetector, DetectionResult
-from tools.redaction.registry import RedactionRegistry
+from tools.redaction.detector import RedactionDetector, DetectionResult  # noqa: E402
+from tools.redaction.registry import RedactionRegistry  # noqa: E402
 
 logger = logging.getLogger("icdev.redaction.anonymizer")
 

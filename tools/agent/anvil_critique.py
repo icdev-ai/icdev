@@ -36,7 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.compat.datetime_utils import utc_now_iso
+from tools.compat.datetime_utils import utc_now_iso  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "anvil_critique_config.yaml"

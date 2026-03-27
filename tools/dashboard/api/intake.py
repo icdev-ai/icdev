@@ -673,7 +673,7 @@ def unselect_session_coa(session_id):
 
 # Shared state uses builtins to guarantee a single dict instance even if this
 # module is imported under two different sys.path entries by Flask/werkzeug.
-import builtins as _builtins
+import builtins as _builtins  # noqa: E402
 if not hasattr(_builtins, '_ICDEV_BUILD_JOBS'):
     _builtins._ICDEV_BUILD_JOBS = {}
     _builtins._ICDEV_BUILD_LOCK = threading.Lock()

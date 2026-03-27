@@ -63,8 +63,6 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
         lines = fh.readlines()
 
     current_key: Optional[str] = None
-    current_dict: Optional[Dict] = None
-    indent_stack: list = []
 
     for line in lines:
         stripped = line.rstrip()
@@ -83,7 +81,7 @@ def _load_yaml_simple(path: Path) -> Dict[str, Any]:
             else:
                 result[key] = {}
                 current_key = key
-                current_dict = result[key]
+                result[key]
             continue
 
         # List item

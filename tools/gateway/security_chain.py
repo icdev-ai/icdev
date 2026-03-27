@@ -35,7 +35,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.event_envelope import CommandEnvelope
+from tools.gateway.event_envelope import CommandEnvelope  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.security_chain")
 

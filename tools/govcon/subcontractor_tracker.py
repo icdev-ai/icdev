@@ -392,7 +392,7 @@ def check_cybersecurity(contract_id):
     Returns:
         Dict with non-compliant subcontractor list.
     """
-    threshold = _CFG.get("negative_events", {}).get("auto_detect", {}).get(
+    _CFG.get("negative_events", {}).get("auto_detect", {}).get(
         "flowdown_failure", {}
     )
     # Extract numeric threshold from trigger string if available, else use default

@@ -388,7 +388,7 @@ def cluster_patterns(db_path=None, config=None):
     req_config = config.get("requirement_extraction", {})
     cluster_config = req_config.get("clustering", {})
     min_shared = cluster_config.get("min_shared_keywords", 3)
-    min_freq = req_config.get("min_pattern_frequency", 3)
+    req_config.get("min_pattern_frequency", 3)
 
     try:
         conn = _get_db(db_path)

@@ -19,8 +19,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.gateway.adapters.base import BaseChannelAdapter
-from tools.gateway.event_envelope import CommandEnvelope, parse_command_text
+from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
+from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.adapters.internal")
 
@@ -90,7 +90,7 @@ class InternalChatAdapter(BaseChannelAdapter):
         This method stores the response for the chat UI to pick up.
         """
 
-        db_path = BASE_DIR / "data" / "icdev.db"
+        BASE_DIR / "data" / "icdev.db"
         try:
             conn = get_connection()
             # Store as a chat turn in the agent_chat_turns table if it exists

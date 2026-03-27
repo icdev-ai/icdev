@@ -31,7 +31,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.proposal_genesis.reflexes.engage import (
+from tools.proposal_genesis.reflexes.engage import (  # noqa: E402
     create_account,
     create_contact,
     delete_contact,

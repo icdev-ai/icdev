@@ -88,7 +88,7 @@ def list_contracts():
     try:
         from tools.govcon.contract_manager import list_contracts as _list
         status = request.args.get("status")
-        agency = request.args.get("agency")
+        request.args.get("agency")
         limit = int(request.args.get("limit", 50))
         result = _list(status=status, limit=limit)
         return jsonify(result)

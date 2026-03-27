@@ -157,7 +157,6 @@ def load_verticals_to_db(verticals_dir=None, db_path=None):
     conn = _get_db(db_path)
     loaded = 0
     skipped = 0
-    errors = []
 
     try:
         for vert in verticals:

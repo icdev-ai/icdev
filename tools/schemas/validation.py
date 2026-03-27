@@ -38,12 +38,11 @@ def validate_output(
         return data
 
     known_fields = {f.name: f for f in dc_fields(schema_class)}
-    missing_required = []
 
     for name, f in known_fields.items():
         if name not in data:
             # Check if field has a default
-            has_default = (
+            (
                 f.default is not f.default_factory  # type: ignore[attr-defined]
                 if hasattr(f, "default_factory") and f.default_factory is not None  # type: ignore[attr-defined]
                 else f.default is not f.default.__class__  # always has default via dataclass

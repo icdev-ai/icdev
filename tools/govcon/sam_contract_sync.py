@@ -106,7 +106,6 @@ def sync_awards(lookback_days=None):
             "message": f"SAM.gov API key not found. Set {API_KEY_ENV} environment variable.",
         }
 
-    days = lookback_days or LOOKBACK_DAYS
 
     params = {
         "api_key": api_key,

@@ -26,10 +26,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.state import ICDevState
-from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations
-from tools.ci.modules.vcs import VCS
-from tools.ci.modules.workflow_ops import (
+from tools.ci.modules.state import ICDevState  # noqa: E402
+from tools.ci.modules.git_ops import create_branch, commit_changes, finalize_git_operations  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
+from tools.ci.modules.workflow_ops import (  # noqa: E402
     classify_issue,
     build_plan,
     generate_branch_name,
@@ -38,7 +38,7 @@ from tools.ci.modules.workflow_ops import (
     ensure_run_id,
     AGENT_PLANNER,
 )
-from tools.testing.utils import setup_logger
+from tools.testing.utils import setup_logger  # noqa: E402
 
 
 def check_env_vars(logger: logging.Logger) -> None:

@@ -650,7 +650,7 @@ def install(
         json.dump(registry_data, fh, indent=2, default=str)
 
     # Step 4: Update CUI markings
-    cui_result = _update_cui_markings(effective_cui)
+    _update_cui_markings(effective_cui)
 
     # Build module summary
     module_summary: List[Dict[str, str]] = []

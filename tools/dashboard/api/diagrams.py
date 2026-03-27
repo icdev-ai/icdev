@@ -21,9 +21,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, jsonify, request as flask_request
+from flask import Blueprint, jsonify, request as flask_request  # noqa: E402
 
-from tools.dashboard.diagram_definitions import get_catalog_for_role, get_diagram
+from tools.dashboard.diagram_definitions import get_catalog_for_role, get_diagram  # noqa: E402
 
 diagrams_api = Blueprint("diagrams_api", __name__, url_prefix="/api/diagrams")
 

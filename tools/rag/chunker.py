@@ -102,7 +102,7 @@ def chunk_content(
         return []
 
     cfg = chunk_config or _load_chunk_config()
-    short_threshold = cfg.get("short_threshold_tokens", 500)
+    cfg.get("short_threshold_tokens", 500)
     chunk_size = cfg.get("chunk_size_tokens", 2000)
     overlap_pct = cfg.get("overlap_pct", 0.10)
 
@@ -130,7 +130,7 @@ def chunk_content(
     # Long content: sliding window with overlap
     chunk_chars = chunk_size * CHARS_PER_TOKEN
     overlap_chars = int(chunk_chars * overlap_pct)
-    stride = chunk_chars - overlap_chars
+    chunk_chars - overlap_chars
 
     chunks: list[VectorChunk] = []
     pos = 0

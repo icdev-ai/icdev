@@ -30,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from tools.mcp.base_server import MCPServer
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 def _import_tool(module_path, func_name):

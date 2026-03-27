@@ -36,7 +36,7 @@ DB_PATH = PROJECT_ROOT / "data" / "icdev.db"
 
 # Import from production_audit.py
 sys.path.insert(0, str(PROJECT_ROOT))
-from tools.testing.production_audit import (
+from tools.testing.production_audit import (  # noqa: E402
     AuditCheck,
     CHECK_REGISTRY,
     run_audit,

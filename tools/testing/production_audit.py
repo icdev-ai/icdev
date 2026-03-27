@@ -501,7 +501,7 @@ def check_claude_governance() -> AuditCheck:
 def check_append_only_tables() -> AuditCheck:
     """CMP-003: Append-only table coverage in hooks."""
     hook_file = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
-    init_file = PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
+    PROJECT_ROOT / "tools" / "db" / "init_icdev_db.py"
     if not hook_file.exists():
         return AuditCheck(
             check_id="CMP-003", check_name="Append-Only Table Coverage",

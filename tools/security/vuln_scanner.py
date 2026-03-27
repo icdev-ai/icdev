@@ -25,14 +25,14 @@ GATES_PATH = BASE_DIR / "args" / "security_gates.yaml"
 
 # Import sibling scanners
 sys.path.insert(0, str(BASE_DIR))
-from tools.security.sast_runner import run_bandit, evaluate_gate as sast_gate
-from tools.security.dependency_auditor import (
+from tools.security.sast_runner import run_bandit, evaluate_gate as sast_gate  # noqa: E402
+from tools.security.dependency_auditor import (  # noqa: E402
     audit_python,
     audit_javascript,
     evaluate_gate as dep_gate,
 )
-from tools.security.secret_detector import scan as scan_secrets, evaluate_gate as secret_gate
-from tools.security.container_scanner import (
+from tools.security.secret_detector import scan as scan_secrets, evaluate_gate as secret_gate  # noqa: E402
+from tools.security.container_scanner import (  # noqa: E402
     scan_image,
     scan_dockerfile,
     evaluate_gate as container_gate,

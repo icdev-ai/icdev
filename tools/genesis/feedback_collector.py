@@ -23,7 +23,7 @@ from typing import Any, Dict, List
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 FEEDBACK_DIR = BASE_DIR / "data" / "genesis" / "feedback"
 

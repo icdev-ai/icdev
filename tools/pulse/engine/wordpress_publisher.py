@@ -48,7 +48,7 @@ if _env_path.exists() and not os.getenv("WP_PASSWORD"):
             _k, _, _v = _line.partition("=")
             os.environ.setdefault(_k.strip(), _v.strip())
 
-from tools.pulse.db import get_row, query_rows, update_row
+from tools.pulse.db import get_row, query_rows, update_row  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration

@@ -12,7 +12,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.modules.workflow_ops import ensure_run_id
+from tools.ci.modules.workflow_ops import ensure_run_id  # noqa: E402
 
 
 def main():

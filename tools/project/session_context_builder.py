@@ -35,7 +35,7 @@ DB_PATH = BASE_DIR / "data" / "icdev.db"
 
 # Import sibling tools
 sys.path.insert(0, str(BASE_DIR))
-from tools.project.manifest_loader import (
+from tools.project.manifest_loader import (  # noqa: E402
     load_manifest,
     _apply_defaults,
 )
@@ -643,7 +643,7 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
         return result
 
     # Create project record
-    project_id = project.get("id", f"proj-{name.lower().replace(' ', '-')}")
+    project.get("id", f"proj-{name.lower().replace(' ', '-')}")
     db_id = str(uuid.uuid4())
 
     try:

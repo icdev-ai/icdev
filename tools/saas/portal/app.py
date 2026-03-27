@@ -663,7 +663,7 @@ def profile():
     tenant = _get_tenant_info(tenant_id)
     tenant_name = tenant.get("name", "Unknown") if tenant else "Unknown"
 
-    user_email = session.get("portal_user_email", "")
+    session.get("portal_user_email", "")
     user_name = session.get("portal_user_name", "User")
     user_role = session.get("portal_user_role", "viewer")
     user_id = session.get("portal_user_id", "")

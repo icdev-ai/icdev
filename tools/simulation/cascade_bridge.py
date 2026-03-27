@@ -31,7 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -426,7 +426,8 @@ def _build_mermaid(
 ) -> str:
     """Build a Mermaid flowchart from cascade levels."""
     lines = ["graph TD"]
-    safe = lambda s: re.sub(r'[^a-zA-Z0-9_]', '_', str(s))[:30]
+    def safe(s):
+        return re.sub(r'[^a-zA-Z0-9_]', '_', str(s))[:30]
 
     # Import re at function scope
     import re

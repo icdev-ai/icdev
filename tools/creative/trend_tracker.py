@@ -269,7 +269,7 @@ def detect_trends(days=30, min_signals=3, db_path=None):
     trends_cfg = config.get("trends", {})
     detection_window = trends_cfg.get("detection_window_days", days)
     min_sigs = trends_cfg.get("min_signals_for_trend", min_signals)
-    velocity_window = trends_cfg.get("velocity_window_days", 7)
+    trends_cfg.get("velocity_window_days", 7)
     stale_after = trends_cfg.get("stale_after_days", 60)
 
     # CLI args override config defaults

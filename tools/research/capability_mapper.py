@@ -595,7 +595,7 @@ def _print_human(result, action):
         print(f"  Total mappings: {result.get('total_mappings', 0)}")
         for r in result.get("results", []):
             title = r.get("challenge_title", "")[:45]
-            count = r.get("mappings_count", 0)
+            r.get("mappings_count", 0)
             print(f"\n    [{r.get('challenge_id', '')[:20]}] {title}")
             for m in r.get("mappings", []):
                 enh = " (enhancement needed)" if m.get("enhancement_needed") else ""

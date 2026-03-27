@@ -80,9 +80,9 @@ def export_to_gguf(
         )
         if proc.returncode == 0:
             try:
-                result = json.loads(proc.stdout.strip())
+                json.loads(proc.stdout.strip())
             except json.JSONDecodeError:
-                result = {"gguf_path": gguf_path}
+                pass
 
             file_size = Path(gguf_path).stat().st_size if Path(gguf_path).exists() else 0
             return {

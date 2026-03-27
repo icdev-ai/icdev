@@ -54,7 +54,6 @@ def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
     # Run iterations
     reachability_scores = []
     cascade_counts = []
-    impacted_services = {}
     node_failure_freq = {n["id"]: 0 for n in nodes}
     edge_failure_freq = {e.get("id", ""): 0 for e in edges}
 

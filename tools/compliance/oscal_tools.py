@@ -37,7 +37,7 @@ from pathlib import Path
 _BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_BASE))
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

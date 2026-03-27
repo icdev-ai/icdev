@@ -24,22 +24,22 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-import yaml
-from flask import Flask, request, jsonify
+import yaml  # noqa: E402
+from flask import Flask, request, jsonify  # noqa: E402
 
-from tools.gateway.security_chain import run_security_chain
-from tools.gateway.command_router import (
+from tools.gateway.security_chain import run_security_chain  # noqa: E402
+from tools.gateway.command_router import (  # noqa: E402
     execute_command, is_command_allowed, requires_confirmation
 )
-from tools.gateway.user_binder import (
+from tools.gateway.user_binder import (  # noqa: E402
     create_challenge, verify_challenge, list_bindings, revoke_binding
 )
 
 # Channel adapter imports
-from tools.gateway.adapters.internal import InternalChatAdapter
-from tools.gateway.adapters.telegram import TelegramAdapter
-from tools.gateway.adapters.slack import SlackAdapter
-from tools.gateway.adapters.mattermost import MattermostAdapter
+from tools.gateway.adapters.internal import InternalChatAdapter  # noqa: E402
+from tools.gateway.adapters.telegram import TelegramAdapter  # noqa: E402
+from tools.gateway.adapters.slack import SlackAdapter  # noqa: E402
+from tools.gateway.adapters.mattermost import MattermostAdapter  # noqa: E402
 
 logger = logging.getLogger("icdev.gateway.agent")
 

@@ -72,7 +72,7 @@ def load_forge_connectors(db_path: Optional[str] = None) -> int:
     status='published' and dynamically registers them.  Returns the
     count of connectors loaded.
     """
-    db = db_path or str(DB_PATH)
+    db_path or str(DB_PATH)
     loaded = 0
     try:
         conn = get_connection(db_path=str(db_path))

@@ -16,7 +16,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.creative.competitor_discoverer import (
+from tools.creative.competitor_discoverer import (  # noqa: E402
     confirm_competitor,
     get_competitors,
     store_competitors,

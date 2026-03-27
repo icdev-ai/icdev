@@ -1031,7 +1031,7 @@ def _add_narrative(result: dict) -> dict:
 
     elif st == "fiber_budget":
         margin = result.get("margin_db", 0)
-        status = result.get("status", "")
+        result.get("status", "")
         lines.append(f"Optical power budget: TX={result.get('tx_power_dbm', 0)}dBm, RX={result.get('rx_power_dbm', 0)}dBm.")
         margin_desc = "Sufficient (>3dB recommended)" if margin > 3 else ("Marginal \u2014 risk of signal loss" if margin > 0 else "INSUFFICIENT \u2014 link will not work")
         lines.append(f"Link margin: {margin}dB \u2014 {margin_desc}.")

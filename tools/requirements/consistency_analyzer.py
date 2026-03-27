@@ -375,7 +375,7 @@ def _check_nist_vs_ato(sections: dict) -> list:
 
     # Check: NIST section lists controls but ATO says "None"
     ato_lower = ato_content.lower() if ato_content else ""
-    nist_lower = nist_content.lower() if nist_content else ""
+    nist_content.lower() if nist_content else ""
 
     if nist_controls and re.search(r"\bnone\b", ato_lower):
         results.append(ConsistencyResult(

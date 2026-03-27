@@ -50,14 +50,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, g, jsonify, request  # noqa: E402
 
 logger = logging.getLogger("saas.mcp_http")
 
 # ---------------------------------------------------------------------------
 # OAuth 2.1 / Elicitation / Tasks — Phase 55, D345-D346
 # ---------------------------------------------------------------------------
-from tools.saas.mcp_oauth import MCPElicitationHandler, MCPOAuthVerifier, MCPTaskManager
+from tools.saas.mcp_oauth import MCPElicitationHandler, MCPOAuthVerifier, MCPTaskManager  # noqa: E402
 
 _oauth_verifier: Optional[MCPOAuthVerifier] = None
 _elicitation_handler = MCPElicitationHandler()

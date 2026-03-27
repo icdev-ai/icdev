@@ -34,9 +34,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify  # noqa: E402
 
-from tools.saas.openapi_spec import generate_openapi_spec
+from tools.saas.openapi_spec import generate_openapi_spec  # noqa: E402
 
 swagger_bp = Blueprint("swagger_ui", __name__, url_prefix="/api/v1")
 

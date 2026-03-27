@@ -21,7 +21,7 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_DIR))
-from tools.db.init_db import get_connection, DB_PATH
+from tools.db.init_db import get_connection, DB_PATH  # noqa: E402
 
 ICDEV_DB = Path("c:/Users/schuo/Downloads/ICDev/data/icdev.db")
 BACKUP_DIR = APP_DIR / "backups"

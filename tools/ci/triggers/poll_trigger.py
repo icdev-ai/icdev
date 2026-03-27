@@ -32,9 +32,9 @@ from typing import Dict, Set, Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.core.event_envelope import EventEnvelope
-from tools.ci.core.event_router import EventRouter
-from tools.ci.modules.vcs import VCS
+from tools.ci.core.event_envelope import EventEnvelope  # noqa: E402
+from tools.ci.core.event_router import EventRouter  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
 
 # Configuration
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "20"))

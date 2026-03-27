@@ -265,7 +265,7 @@ def select_skills(
     config = load_config(config_path)
     categories = config.get("categories", {})
     threshold = config.get("confidence_threshold", 0.3)
-    min_matches = config.get("min_keyword_matches", 1)
+    config.get("min_keyword_matches", 1)
 
     # Score categories
     keyword_scores: Dict[str, float] = {}

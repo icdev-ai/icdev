@@ -31,7 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
 sys.path.insert(0, str(BASE_DIR))
-from tools.mcp.base_server import MCPServer
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 
 def _import_tool(module_path, func_name):
@@ -145,7 +145,7 @@ def handle_research_list_verticals(args: dict) -> dict:
 def handle_research_get_challenges(args: dict) -> dict:
     """Get scored challenges for a session."""
     session_id = args.get("session_id")
-    severity = args.get("severity")
+    args.get("severity")
     limit = args.get("limit", 50)
     if not session_id:
         return {"error": "session_id is required"}

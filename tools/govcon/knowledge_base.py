@@ -331,7 +331,7 @@ def seed_from_catalog():
     capabilities = catalog.get("capabilities", [])
 
     for cap in capabilities:
-        cap_id = cap["id"]
+        cap["id"]
         name = cap["name"]
         category = cap.get("category", "general")
         description = cap.get("description", "")

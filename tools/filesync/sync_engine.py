@@ -46,16 +46,16 @@ try:
 except ImportError:
     _HAS_AUDIT = False
 
-from tools.filesync.change_detector import (
+from tools.filesync.change_detector import (  # noqa: E402
     detect_changes_bidirectional,
     detect_changes_push,
     summarize_actions,
 )
-from tools.filesync.conflict_resolver import resolve_conflicts
-from tools.filesync.providers.local import LocalSyncProvider
-from tools.filesync.scanner import compute_file_hash, configure_hash, scan_directory
-from tools.filesync.transfer import execute_actions
-from tools.filesync.versioner import FileVersioner
+from tools.filesync.conflict_resolver import resolve_conflicts  # noqa: E402
+from tools.filesync.providers.local import LocalSyncProvider  # noqa: E402
+from tools.filesync.scanner import compute_file_hash, configure_hash, scan_directory  # noqa: E402
+from tools.filesync.transfer import execute_actions  # noqa: E402
+from tools.filesync.versioner import FileVersioner  # noqa: E402
 
 
 # =========================================================================
@@ -914,7 +914,7 @@ def get_watch_status(db_path=None) -> Dict:
 # =========================================================================
 # DAEMON MODE (D-SYNC-9 — scheduled + watcher)
 # =========================================================================
-import threading
+import threading  # noqa: E402
 
 
 def run_daemon(db_path=None):

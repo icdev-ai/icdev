@@ -30,7 +30,7 @@ except ImportError:
     get_db_connection = None
 
 sys.path.insert(0, str(BASE_DIR))
-from tools.mcp.base_server import MCPServer
+from tools.mcp.base_server import MCPServer  # noqa: E402
 
 try:
     from tools.audit.audit_logger import log_event as audit_log_event

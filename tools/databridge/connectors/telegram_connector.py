@@ -27,17 +27,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.databridge.connector import (
+from tools.databridge.connector import (  # noqa: E402
     ConnectorCapabilities,
     ConnectorRequest,
     ConnectorResponse,
     SchemaDefinition,
     SchemaField,
 )
-from tools.databridge.connectors.saas_base import (
+from tools.databridge.connectors.saas_base import (  # noqa: E402
     SaaSBaseConnector,
 )
-from tools.databridge.registry import register_connector
+from tools.databridge.registry import register_connector  # noqa: E402
 
 logger = logging.getLogger("databridge.telegram")
 

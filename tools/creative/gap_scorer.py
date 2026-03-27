@@ -318,7 +318,7 @@ def _score_gap_uniqueness(pain_point, conn):
             "SELECT id, features FROM creative_competitors WHERE status='confirmed'"
         ).fetchall()
         for comp in confirmed:
-            comp_id = comp["id"]
+            comp["id"]
             try:
                 features_raw = comp["features"] or "[]"
                 features = json.loads(features_raw)
@@ -760,7 +760,7 @@ def identify_feature_gaps(db_path=None):
             except (json.JSONDecodeError, TypeError):
                 keywords = []
 
-            pain_text = f"{(pp.get('title') or '').lower()} {(pp.get('description') or '').lower()}"
+            f"{(pp.get('title') or '').lower()} {(pp.get('description') or '').lower()}"
 
             # Check each confirmed competitor
             try:

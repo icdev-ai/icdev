@@ -43,7 +43,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.pulse.db import get_row, query_rows, update_row
+from tools.pulse.db import get_row, query_rows, update_row  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Configuration

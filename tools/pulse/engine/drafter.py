@@ -27,7 +27,7 @@ from slugify import slugify
 PULSE_PROJECT_ID = os.environ.get("ICDEV_PULSE_PROJECT_ID",
                                    os.environ.get("ICDEV_PROJECT_ID", "pulse"))
 
-from tools.pulse.config import (
+from tools.pulse.config import (  # noqa: E402
     ARTICLE_TEMPLATES,
     GITHUB_REPO_URL,
     SITE_URL,

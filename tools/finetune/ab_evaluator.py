@@ -91,7 +91,6 @@ def _t_cdf(t: float, df: int) -> float:
     if df < 1:
         return 0.5
     # Cornish-Fisher approximation
-    g1 = 0
     g2 = 1 / (4 * max(df, 1))
     z = t * (1 - g2)
     return _normal_cdf(z)

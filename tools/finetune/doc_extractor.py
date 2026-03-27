@@ -258,7 +258,7 @@ def extract_document(
         conn = _get_db(db_path)
         try:
             # Record in a lightweight way (reuse ingestion_log pattern)
-            file_hash = _file_hash(file_path)
+            _file_hash(file_path)
             conn.execute(
                 """INSERT OR IGNORE INTO rag_ingestion_log
                    (source_table, source_id, chunk_count, status, started_at, completed_at)

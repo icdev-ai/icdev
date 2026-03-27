@@ -657,7 +657,6 @@ def main():
     args = parser.parse_args()
 
     # Resolve stage from positional or named arg
-    stage = args.run_stage or args.stage
 
     try:
         if args.run:

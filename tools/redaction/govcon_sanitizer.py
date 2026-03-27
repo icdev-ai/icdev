@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional, Tuple
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
-from tools.redaction.anonymizer import RedactionAnonymizer
+from tools.redaction.anonymizer import RedactionAnonymizer  # noqa: E402
 
 logger = logging.getLogger("icdev.redaction.govcon_sanitizer")
 

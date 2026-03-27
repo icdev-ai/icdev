@@ -844,7 +844,7 @@ def process_turn(
     mosa_signals = _detect_mosa_signals(customer_message, session_data)
 
     # --- Dev profile signals (Phase 34, D184-D188) ---
-    dev_profile_signals = _detect_dev_profile_signals(customer_message, session_data)
+    _detect_dev_profile_signals(customer_message, session_data)
 
     # --- AI governance signals (Phase 50, D322) ---
     ai_governance_signals = _detect_ai_governance_signals(customer_message, session_data)
@@ -1982,7 +1982,7 @@ def _quick_readiness_estimate(session_id, conn):
         (session_id,),
     ).fetchone()
     sess_dict = dict(sess_row) if sess_row else {}
-    amb_count = sess_dict.get("ambiguity_count", 0)
+    sess_dict.get("ambiguity_count", 0)
     ctx = {}
     try:
         ctx = json.loads(sess_dict.get("context_summary") or "{}")

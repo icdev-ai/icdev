@@ -333,7 +333,7 @@ def approve(post_id, reviewer):
         console.print(f"[red]Post not found: {post_id}[/red]")
         return
 
-    now = datetime.now(timezone.utc).isoformat()
+    datetime.now(timezone.utc).isoformat()
     update_row("posts", post_id, {
         "status": "approved",
         "reviewer_id": reviewer,

@@ -134,7 +134,7 @@ def _in_quiet_hours(config):
 
     start_str = quiet.get("start", "02:00")
     end_str = quiet.get("end", "06:00")
-    tz_name = quiet.get("timezone", "UTC")
+    quiet.get("timezone", "UTC")
 
     now = datetime.now(timezone.utc)
     current_time = now.strftime("%H:%M")

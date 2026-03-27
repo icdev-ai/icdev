@@ -42,9 +42,9 @@ from flask import Flask, request, jsonify
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER
-from tools.ci.core.event_router import EventRouter
-from tools.ci.modules.vcs import VCS
+from tools.ci.core.event_envelope import EventEnvelope, BOT_IDENTIFIER  # noqa: E402
+from tools.ci.core.event_router import EventRouter  # noqa: E402
+from tools.ci.modules.vcs import VCS  # noqa: E402
 
 # Configuration
 PORT = int(os.getenv("PORT", "8001"))

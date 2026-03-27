@@ -1326,10 +1326,9 @@ def scan_patents(config, session_config=None):
     cpc_classes = patent_config.get("cpc_classes", [])
     patent_keywords = patent_config.get("keywords", [])
 
-    max_results = 30
     for platform in source_cfg.get("platforms", []):
         if platform.get("name") == "google_patents":
-            max_results = platform.get("max_results", 30)
+            platform.get("max_results", 30)
             break
 
     # Build search queries from CPC classes and keywords

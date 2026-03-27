@@ -24,7 +24,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 sys.path.insert(0, str(BASE_DIR))
-from tools.project.manifest_loader import load_manifest, detect_vcs_platform
+from tools.project.manifest_loader import load_manifest, detect_vcs_platform  # noqa: E402
 
 
 # ── CUI Header ──────────────────────────────────────────────────────────
@@ -406,7 +406,7 @@ def _generate_gitlab_ci(
         check = CHECK_REGISTRY.get(check_name)
         if not check:
             continue
-        job_name = check_name.replace("_", "-")
+        check_name.replace("_", "-")
         lines.append(f"{check_name}:")
         lines.append("  <<: *icdev-setup")
         lines.append(f"  stage: {check['stage']}")
@@ -469,10 +469,9 @@ def _build_gate_evaluation_script(gates: dict, platform: str) -> str:
     if not gates:
         return ""
 
-    checks = []
     stig_max_cat1 = gates.get("stig_max_cat1", 0)
     stig_max_cat2 = gates.get("stig_max_cat2", 0)
-    min_coverage = gates.get("min_coverage", 80)
+    gates.get("min_coverage", 80)
     max_critical_vulns = gates.get("max_critical_vulns", 0)
 
     script_lines = [

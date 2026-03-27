@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
+from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse  # noqa: E402
 
 logger = logging.getLogger("icdev.llm.ibm_watsonx")
 

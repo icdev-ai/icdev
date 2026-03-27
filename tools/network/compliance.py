@@ -170,7 +170,7 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
     """
     nodes = graph.get("nodes", [])
     edges = graph.get("edges", [])
-    node_map = {n["id"]: n for n in nodes}
+    {n["id"]: n for n in nodes}
     label_map = {n["id"]: n.get("label", n["id"]) for n in nodes}
 
     # Build adjacency and node type sets
