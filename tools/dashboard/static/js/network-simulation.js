@@ -1060,6 +1060,232 @@ async function runAiGenerate() {
   btn.textContent = 'Generate Topology';
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ * Embedded Chat Panel — multi-stream chat for topology generation
+ * Uses /api/chat endpoints (same as main dashboard chat)
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+let _ncChatContextId = null;
+let _ncChatPollTimer = null;
+let _ncChatLastTurn = 0;
+
+function ncChatToggle() {
+  const panel = document.getElementById('nc-chat-panel');
+  if (!panel) return;
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    document.getElementById('nc-chat-input').focus();
+  }
+}
+
+function ncChatClose() {
+  const panel = document.getElementById('nc-chat-panel');
+  if (panel) panel.classList.add('hidden');
+  if (_ncChatPollTimer) { clearInterval(_ncChatPollTimer); _ncChatPollTimer = null; }
+}
+
+function ncChatClear() {
+  _ncChatContextId = null;
+  _ncChatLastTurn = 0;
+  if (_ncChatPollTimer) { clearInterval(_ncChatPollTimer); _ncChatPollTimer = null; }
+  const msgs = document.getElementById('nc-chat-messages');
+  if (msgs) msgs.innerHTML = `<div class="nc-chat-welcome">
+    <div style="font-size:20px;margin-bottom:6px;">✦</div>
+    <p>Describe a network topology and I'll generate it on the canvas.</p>
+    <p style="color:var(--text-dim);font-size:11px;">Try: "3-tier campus with DMZ" or "MPLS L3VPN with dual PE routers"</p>
+  </div>`;
+}
+
+function ncChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ncChatSend(); }
+}
+
+function _ncChatAppendMsg(role, html) {
+  const msgs = document.getElementById('nc-chat-messages');
+  if (!msgs) return;
+  // Remove welcome on first message
+  const welcome = msgs.querySelector('.nc-chat-welcome');
+  if (welcome) welcome.remove();
+  const div = document.createElement('div');
+  div.className = 'nc-chat-msg nc-chat-msg-' + role;
+  div.innerHTML = html;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+async function _ncChatEnsureContext() {
+  if (_ncChatContextId) return _ncChatContextId;
+  try {
+    const r = await fetch('/api/chat/contexts', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        user_id: 'nc-designer',
+        title: 'Network Canvas Assistant',
+        system_prompt: `You are a network topology design assistant integrated into a canvas editor.
+When the user describes a network, generate a topology as a JSON object with {"nodes":[...],"edges":[...]}.
+Use this EXACT format — each node: {"id":"unique","label":"Name","type":"device-type","x":N,"y":N,"config":{}}
+Each edge: {"id":"unique","source":"node-id","target":"node-id","label":"","protocol":""}
+Valid types: router, switch-l2, switch-l3, firewall, load-balancer, server, cloud, wap, endpoint-pc, endpoint-iot, siem, sdwan-edge, mpls-pe, pop, draw-rect, text-heading, text-badge.
+For draw-rect zones use config: {"_fill":"#0a1628","_stroke":"#74b9ff","_width":N,"_height":N}
+For text-heading use config: {"_textColor":"#74b9ff"}
+Wrap JSON in a code fence tagged \`\`\`topology so the UI can extract it.
+For non-topology questions, answer normally without JSON.`
+      }),
+    });
+    const data = await r.json();
+    if (data.context_id) { _ncChatContextId = data.context_id; return _ncChatContextId; }
+    if (data.error) throw new Error(data.error);
+  } catch (err) {
+    // Chat system unavailable — fall back to direct AI generate
+    return null;
+  }
+  return null;
+}
+
+async function ncChatSend() {
+  const input = document.getElementById('nc-chat-input');
+  const sendBtn = document.getElementById('nc-chat-send-btn');
+  const text = input.value.trim();
+  if (!text) return;
+
+  // Show user message
+  _ncChatAppendMsg('user', _escHtml(text));
+  input.value = '';
+  sendBtn.disabled = true;
+  sendBtn.textContent = '...';
+
+  // Try chat system first
+  const ctxId = await _ncChatEnsureContext();
+  if (ctxId) {
+    // Send via multi-stream chat
+    try {
+      const r = await fetch(`/api/chat/${ctxId}/send`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({content: text}),
+      });
+      const data = await r.json();
+      if (data.error) throw new Error(data.error);
+
+      // Poll for response
+      _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Thinking...</span>');
+      _ncChatPollForResponse();
+    } catch (err) {
+      _ncChatAppendMsg('system', 'Chat error: ' + _escHtml(err.message) + '. Falling back to direct AI generate...');
+      await _ncChatDirectGenerate(text);
+    }
+  } else {
+    // Fallback: direct AI generate (no chat system)
+    _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Generating...</span>');
+    await _ncChatDirectGenerate(text);
+  }
+
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send';
+}
+
+async function _ncChatDirectGenerate(description) {
+  try {
+    const r = await fetch(NC_BASE + '/api/ai-generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({description}),
+    });
+    const data = await r.json();
+
+    // Remove thinking indicator
+    const msgs = document.getElementById('nc-chat-messages');
+    const thinking = msgs.querySelector('.nc-chat-thinking');
+    if (thinking) thinking.closest('.nc-chat-msg').remove();
+
+    if (!r.ok || data.error) {
+      _ncChatAppendMsg('system', 'Error: ' + (data.error || 'Unknown'));
+      return;
+    }
+
+    // Load topology onto canvas
+    if (typeof pushUndo === 'function') pushUndo();
+    if (typeof loadGraphJSON === 'function') loadGraphJSON(data.graph_json);
+    if (typeof updateStatusBar === 'function') updateStatusBar();
+    if (typeof markDirty === 'function') markDirty();
+
+    const prov = data.provider ? ' via ' + data.provider : '';
+    _ncChatAppendMsg('assistant',
+      `Generated <strong>${data.node_count} nodes</strong> and <strong>${data.edge_count} edges</strong>${prov}. Loaded onto canvas.` +
+      `<button class="nc-chat-action-btn" onclick="if(typeof undoAction==='function')undoAction()">Undo</button>`
+    );
+    setStatus('AI generated: ' + data.node_count + ' nodes, ' + data.edge_count + ' edges');
+  } catch (err) {
+    _ncChatAppendMsg('system', 'Request failed: ' + _escHtml(err.message));
+  }
+}
+
+function _ncChatPollForResponse() {
+  if (_ncChatPollTimer) clearInterval(_ncChatPollTimer);
+  let attempts = 0;
+  _ncChatPollTimer = setInterval(async () => {
+    attempts++;
+    if (attempts > 60) { // 30s max
+      clearInterval(_ncChatPollTimer); _ncChatPollTimer = null;
+      return;
+    }
+    try {
+      const r = await fetch(`/api/chat/${_ncChatContextId}/messages?since=${_ncChatLastTurn}&limit=10`);
+      const data = await r.json();
+      if (data.messages && data.messages.length > 0) {
+        // Remove thinking indicator
+        const msgs = document.getElementById('nc-chat-messages');
+        const thinking = msgs.querySelector('.nc-chat-thinking');
+        if (thinking) thinking.closest('.nc-chat-msg').remove();
+
+        for (const msg of data.messages) {
+          if (msg.turn > _ncChatLastTurn) {
+            _ncChatLastTurn = msg.turn;
+            if (msg.role === 'assistant' || msg.role === 'agent') {
+              let content = msg.content || '';
+              // Check for topology JSON in ```topology fences
+              const topoMatch = content.match(/```topology\s*\n?([\s\S]*?)```/);
+              if (topoMatch) {
+                try {
+                  const gj = JSON.parse(topoMatch[1].trim());
+                  if (gj.nodes && gj.edges) {
+                    if (typeof pushUndo === 'function') pushUndo();
+                    if (typeof loadGraphJSON === 'function') loadGraphJSON(gj);
+                    if (typeof updateStatusBar === 'function') updateStatusBar();
+                    if (typeof markDirty === 'function') markDirty();
+                    content = content.replace(/```topology[\s\S]*?```/, '');
+                    _ncChatAppendMsg('assistant',
+                      (content.trim() ? _escHtml(content.trim()) + '<br>' : '') +
+                      `Loaded <strong>${gj.nodes.length} nodes</strong>, <strong>${gj.edges.length} edges</strong> onto canvas.` +
+                      `<button class="nc-chat-action-btn" onclick="if(typeof undoAction==='function')undoAction()">Undo</button>`
+                    );
+                    setStatus('Chat generated: ' + gj.nodes.length + ' nodes');
+                    continue;
+                  }
+                } catch (_) { /* not valid JSON, show as text */ }
+              }
+              _ncChatAppendMsg('assistant', _escHtml(content));
+            }
+          }
+        }
+        // Check if still processing
+        const stateR = await fetch(`/api/chat/${_ncChatContextId}/state`);
+        const state = await stateR.json();
+        if (state.status !== 'processing') {
+          clearInterval(_ncChatPollTimer); _ncChatPollTimer = null;
+        }
+      }
+    } catch (_) { /* ignore poll errors */ }
+  }, 500);
+}
+
+function _escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
 /* ── Init zoom on DOMContentLoaded ────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   // Wait a tick for canvas.js to init paper

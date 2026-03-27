@@ -53,7 +53,7 @@
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
       <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
       <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
-      <button class="tb-btn tb-btn-ai" onclick="openAiGenerateDialog()" title="AI Topology Generator — describe your network in plain text">✦ AI Generate</button>
+      <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
@@ -615,7 +615,7 @@
     <button class="btn btn-primary" onclick="createCustomDevice()" style="width:100%;">Add to Palette</button>
   </div>
 </div>
-<!-- AI Topology Generator Dialog -->
+<!-- AI Topology Generator Dialog (legacy — still works) -->
 <div id="ai-generate-overlay" class="sim-overlay hidden">
   <div class="sim-panel" style="max-width:520px;">
     <div class="sim-panel-header">
@@ -631,6 +631,27 @@
       <button class="btn btn-secondary" onclick="closeAiGenerateDialog()">Cancel</button>
     </div>
     <div id="ai-gen-status" class="sim-output" style="display:none;"></div>
+  </div>
+</div>
+<!-- Embedded Chat Panel (slide-out) -->
+<div id="nc-chat-panel" class="nc-chat-panel hidden">
+  <div class="nc-chat-header">
+    <span class="nc-chat-title">Network Assistant</span>
+    <div class="nc-chat-header-actions">
+      <button class="nc-chat-btn-sm" onclick="ncChatClear()" title="Clear chat">Clear</button>
+      <button class="close-btn" onclick="ncChatClose()">✕</button>
+    </div>
+  </div>
+  <div class="nc-chat-messages" id="nc-chat-messages">
+    <div class="nc-chat-welcome">
+      <div style="font-size:20px;margin-bottom:6px;">✦</div>
+      <p>Describe a network topology and I'll generate it on the canvas.</p>
+      <p style="color:var(--text-dim);font-size:11px;">Try: "3-tier campus with DMZ" or "MPLS L3VPN with dual PE routers"</p>
+    </div>
+  </div>
+  <div class="nc-chat-input-area">
+    <textarea id="nc-chat-input" class="nc-chat-input" rows="2" placeholder="Describe your network..." onkeydown="ncChatKeydown(event)"></textarea>
+    <button class="nc-chat-send-btn" id="nc-chat-send-btn" onclick="ncChatSend()">Send</button>
   </div>
 </div>
 {% endblock %}
