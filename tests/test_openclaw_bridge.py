@@ -9,6 +9,7 @@ import sqlite3
 import sys
 import textwrap
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -35,6 +36,21 @@ from tools.marketplace.openclaw_bridge import (  # noqa: E402
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def mock_sandboxed_run():
+    """Mock Docker sandbox to avoid container execution in tests.
+
+    The _sandboxed_run function requires Docker and can hang if containers
+    are slow to start. Tests verify logic, not container behavior.
+    """
+    with patch(
+        "tools.marketplace.openclaw_bridge._sandboxed_run",
+        return_value={"status": "pass", "returncode": 0, "stdout": "", "stderr": ""},
+    ):
+        yield
+
+
 @pytest.fixture
 def openclaw_env(tmp_path, monkeypatch):
     """Set up OpenClaw environment with feature flag and test DB."""

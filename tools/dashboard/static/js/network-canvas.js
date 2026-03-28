@@ -1091,6 +1091,13 @@ function selectCell(cell) {
     document.getElementById('cfg-model').value = config.model || '';
     document.getElementById('cfg-serial').value = config.serial || '';
     document.getElementById('cfg-asset-tag').value = config.asset_tag || '';
+    // Lifecycle & Tech Debt
+    document.getElementById('cfg-install-date').value = config.install_date || '';
+    document.getElementById('cfg-eos-date').value = config.eos_date || '';
+    document.getElementById('cfg-eol-date').value = config.eol_date || '';
+    document.getElementById('cfg-eosup-date').value = config.eosup_date || '';
+    document.getElementById('cfg-sw-version').value = config.sw_version || '';
+    document.getElementById('cfg-hw-revision').value = config.hw_revision || '';
     // Slot / Port
     document.getElementById('cfg-slot').value = config.slot || '';
     document.getElementById('cfg-port').value = config.port || '';

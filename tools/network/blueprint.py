@@ -7217,24 +7217,204 @@ Output ONLY the JSON object. No other text."""
         elif metric == "age":
             now = datetime.now(timezone.utc)
             for n in nodes:
-                cfg = n.get("configData") or {}
-                install_date = cfg.get("install_date") or cfg.get("installDate")
-                if install_date:
-                    try:
-                        dt = datetime.fromisoformat(install_date.replace("Z", "+00:00"))
-                        age_years = (now - dt).days / 365.25
-                        # Normalise: 0 years = 0.0, 10+ years = 1.0
-                        node_values[n["id"]] = max(0.0, min(1.0, age_years / 10.0))
-                    except (ValueError, TypeError):
-                        node_values[n["id"]] = 0.0
-                else:
-                    node_values[n["id"]] = 0.0
+                cfg = n.get("config") or n.get("configData") or {}
+                score = 0.0
+
+                # Check EOL/EOS/EoSup dates first (most impactful)
+                for date_key, weight in [
+                    ("eol_date", 1.0),
+                    ("eosup_date", 0.9),
+                    ("eos_date", 0.7),
+                ]:
+                    dval = cfg.get(date_key)
+                    if dval:
+                        try:
+                            dt = datetime.fromisoformat(
+                                dval + "T00:00:00+00:00"
+                                if "T" not in dval else
+                                dval.replace("Z", "+00:00"))
+                            if now >= dt:
+                                score = max(score, weight)
+                                pass  # past EOL/EOS/EoSup
+                            else:
+                                months_left = (dt - now).days / 30.44
+                                if months_left < 6:
+                                    score = max(
+                                        score, weight * 0.8)
+                                elif months_left < 12:
+                                    score = max(
+                                        score, weight * 0.5)
+                                elif months_left < 24:
+                                    score = max(
+                                        score, weight * 0.2)
+                        except (ValueError, TypeError):
+                            pass
+
+                # Fall back to install_date age
+                if score == 0.0:
+                    install_date = (cfg.get("install_date")
+                                    or cfg.get("installDate"))
+                    if install_date:
+                        try:
+                            dt = datetime.fromisoformat(
+                                install_date + "T00:00:00+00:00"
+                                if "T" not in install_date else
+                                install_date.replace("Z", "+00:00"))
+                            age_years = (now - dt).days / 365.25
+                            score = max(
+                                0.0, min(1.0, age_years / 10.0))
+                            pass  # age computed
+                        except (ValueError, TypeError):
+                            pass
+
+                node_values[n["id"]] = round(score, 3)
 
         conn.close()
         return jsonify({
             "metric": metric,
             "node_values": node_values,
             "link_values": link_values,
+        })
+
+    # ── Tech Debt Analysis ──────────────────────────────────────────────
+    @bp.route("/api/tech-debt/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_tech_debt(topo_id):
+        """Analyze lifecycle/tech debt across all devices in a topology."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?",
+            (topo_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        now = datetime.now(timezone.utc)
+        devices = []
+        past_eol = 0
+        past_eos = 0
+        past_eosup = 0
+        approaching_eol = 0
+        no_lifecycle = 0
+
+        for n in graph.get("nodes", []):
+            cfg = n.get("config") or n.get("configData") or {}
+            ntype = n.get("type", "")
+            # Skip drawing shapes and text
+            if ntype in ("rect", "circle", "text", "heading",
+                         "badge", "hline", "vline", "arrow",
+                         "diamond", "ellipse", "triangle",
+                         "hexagon", "star", "roundedrect"):
+                continue
+
+            device = {
+                "id": n.get("id"),
+                "label": n.get("label", ""),
+                "type": ntype,
+                "model": cfg.get("model", ""),
+                "serial": cfg.get("serial", ""),
+                "sw_version": cfg.get("sw_version", ""),
+                "install_date": cfg.get("install_date", ""),
+                "eos_date": cfg.get("eos_date", ""),
+                "eol_date": cfg.get("eol_date", ""),
+                "eosup_date": cfg.get("eosup_date", ""),
+                "risk_level": "unknown",
+                "issues": [],
+            }
+
+            has_lifecycle = False
+            for dkey, label in [
+                ("eol_date", "End of Life"),
+                ("eosup_date", "End of Support"),
+                ("eos_date", "End of Sale"),
+            ]:
+                dval = cfg.get(dkey)
+                if dval:
+                    has_lifecycle = True
+                    try:
+                        dt = datetime.fromisoformat(
+                            dval + "T00:00:00+00:00"
+                            if "T" not in dval else
+                            dval.replace("Z", "+00:00"))
+                        if now >= dt:
+                            device["issues"].append(
+                                f"PAST {label}: {dval}")
+                            if dkey == "eol_date":
+                                past_eol += 1
+                            elif dkey == "eos_date":
+                                past_eos += 1
+                            elif dkey == "eosup_date":
+                                past_eosup += 1
+                        else:
+                            months = (dt - now).days / 30.44
+                            if months < 12:
+                                device["issues"].append(
+                                    f"{label} in {int(months)} months: "
+                                    f"{dval}")
+                                if dkey == "eol_date":
+                                    approaching_eol += 1
+                    except (ValueError, TypeError):
+                        pass
+
+            install = cfg.get("install_date")
+            if install:
+                has_lifecycle = True
+                try:
+                    dt = datetime.fromisoformat(
+                        install + "T00:00:00+00:00"
+                        if "T" not in install else
+                        install.replace("Z", "+00:00"))
+                    age = (now - dt).days / 365.25
+                    if age > 7:
+                        device["issues"].append(
+                            f"Equipment age: {age:.1f} years (>7yr)")
+                except (ValueError, TypeError):
+                    pass
+
+            if not has_lifecycle:
+                no_lifecycle += 1
+                device["issues"].append("No lifecycle data configured")
+
+            # Risk level
+            if any("PAST End of Life" in i for i in device["issues"]):
+                device["risk_level"] = "critical"
+            elif any("PAST" in i for i in device["issues"]):
+                device["risk_level"] = "high"
+            elif any("months" in i for i in device["issues"]):
+                device["risk_level"] = "medium"
+            elif device["issues"]:
+                device["risk_level"] = "low"
+            else:
+                device["risk_level"] = "healthy"
+
+            devices.append(device)
+
+        total = len(devices)
+        critical = sum(1 for d in devices if d["risk_level"] == "critical")
+        high = sum(1 for d in devices if d["risk_level"] == "high")
+
+        return jsonify({
+            "topology": row["name"],
+            "total_devices": total,
+            "devices": devices,
+            "summary": {
+                "past_eol": past_eol,
+                "past_eos": past_eos,
+                "past_eosup": past_eosup,
+                "approaching_eol_12mo": approaching_eol,
+                "no_lifecycle_data": no_lifecycle,
+                "critical_risk": critical,
+                "high_risk": high,
+                "tech_debt_score": round(
+                    (critical * 4 + high * 2 + approaching_eol) /
+                    max(total, 1) * 25, 1
+                ),
+            },
         })
 
     # ══════════════════════════════════════════════════════════════════════

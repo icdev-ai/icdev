@@ -13,6 +13,7 @@ import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -603,7 +604,10 @@ class TestInnovationManager:
         """stage_discover runs web scanner stage."""
         from icdev.tools.innovation.innovation_manager import stage_discover
 
-        result = stage_discover(db_path=innovation_db)
+        # Mock web_scanner.run_scan to avoid live network requests
+        with patch("icdev.tools.innovation.web_scanner.run_scan",
+                   return_value={"signals_stored": 0, "source": "mock"}):
+            result = stage_discover(db_path=innovation_db)
         assert "stage" in result
         assert result["stage"] == "discover"
 

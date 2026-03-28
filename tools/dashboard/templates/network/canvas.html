@@ -576,6 +576,32 @@
           <label>Asset Tag</label>
           <input type="text" id="cfg-asset-tag" class="form-control" placeholder="e.g. IT-NET-0042" oninput="updateConfig('asset_tag', this.value)"/>
         </div>
+        <!-- Lifecycle & Tech Debt -->
+        <div class="form-group cfg-section-header">Lifecycle &amp; Tech Debt</div>
+        <div class="form-group">
+          <label>Install Date</label>
+          <input type="date" id="cfg-install-date" class="form-control" oninput="updateConfig('install_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>End of Sale (EOS)</label>
+          <input type="date" id="cfg-eos-date" class="form-control" oninput="updateConfig('eos_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>End of Life (EOL)</label>
+          <input type="date" id="cfg-eol-date" class="form-control" oninput="updateConfig('eol_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>End of Support (EoSup)</label>
+          <input type="date" id="cfg-eosup-date" class="form-control" oninput="updateConfig('eosup_date', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Software / Firmware Version</label>
+          <input type="text" id="cfg-sw-version" class="form-control" placeholder="e.g. IOS-XE 17.9.4a" oninput="updateConfig('sw_version', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Hardware Revision</label>
+          <input type="text" id="cfg-hw-revision" class="form-control" placeholder="e.g. V02" oninput="updateConfig('hw_revision', this.value)"/>
+        </div>
         <!-- Slot / Port -->
         <div class="form-group cfg-section-header">Slot / Port</div>
         <div class="form-group">
