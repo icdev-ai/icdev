@@ -68,6 +68,7 @@
       <div class="board-header">
         <span class="board-short">{{ board.short_name }}</span>
         <span class="board-name">{{ board.name }}</span>
+        {% if board.is_optional %}<span class="health-pill pill-blue" style="font-size:9px;">Optional</span>{% endif %}
       </div>
       {% set ns = namespace(found=false) %}
       {% for br in board_reviews if br.board_id == board.id %}
