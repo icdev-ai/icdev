@@ -131,6 +131,19 @@ def create_network_blueprint():
     def _row_to_dict(row):
         return dict(row) if row else {}
 
+    def _notify(conn, project_id, event_type, title, body=""):
+        """Create an in-app notification for a project event."""
+        try:
+            conn.execute(
+                "INSERT INTO nc_notifications "
+                "(id, project_id, event_type, title, body, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), project_id, event_type,
+                 title, body, _now())
+            )
+        except Exception:
+            pass  # notifications are best-effort
+
     # ── P3: Status transition gate checks ─────────────────────────────────
     # Transitions requiring gates: -> in_review, -> approved, -> deployed
     _STATUS_GATES = {
@@ -3246,6 +3259,16 @@ def create_network_blueprint():
              json.dumps(package), now, now)
         )
         conn.commit()
+        # Notification
+        board_row = conn.execute(
+            "SELECT short_name FROM nc_review_boards WHERE id=?",
+            (board_id,)
+        ).fetchone()
+        bname = board_row[0] if board_row else board_id
+        _notify(conn, pid, "review_submitted",
+                f"{bname} Review Submitted (Phase {data.get('phase', 1)})",
+                f"Review package generated with {package.get('total_devices', 0)} devices")
+        conn.commit()
         conn.close()
         _audit("CREATE", "board_review", rid,
                f"board={board_id} phase={data.get('phase', 1)}")
@@ -3269,6 +3292,17 @@ def create_network_blueprint():
              json.dumps(data.get("conditions", [])),
              decision, now, now, rid)
         )
+        # Notification
+        rev_row = conn.execute(
+            "SELECT br.project_id, rb.short_name "
+            "FROM nc_board_reviews br "
+            "JOIN nc_review_boards rb ON rb.id=br.board_id "
+            "WHERE br.id=?", (rid,)
+        ).fetchone()
+        if rev_row:
+            _notify(conn, rev_row[0], "review_decided",
+                    f"{rev_row[1]} Review: {decision.upper()}",
+                    data.get("notes", ""))
         conn.commit()
         conn.close()
         _audit("REVIEW_DECISION", "board_review", rid,

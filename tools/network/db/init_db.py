@@ -613,6 +613,17 @@ CREATE TABLE IF NOT EXISTS nc_interconnects (
     notes           TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Phase C+: Notifications ───────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_notifications (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    event_type  TEXT NOT NULL,        -- review_submitted, review_decided, gate_blocked, phase_changed
+    title       TEXT NOT NULL,
+    body        TEXT,
+    is_read     INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
