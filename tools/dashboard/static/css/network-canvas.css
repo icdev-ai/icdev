@@ -1116,6 +1116,7 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
   font-size: 12px; text-align: left; cursor: pointer; white-space: nowrap;
 }
 .tb-dropdown-item:hover { background: var(--accent, #0f3460); color: #fff; }
+.tb-dropdown-item-active { background: var(--accent, #0f3460) !important; color: #e67e22 !important; font-weight: 700; }
 
 .heatmap-legend {
   position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);

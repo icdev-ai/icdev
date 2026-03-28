@@ -63,10 +63,10 @@
       <div class="tb-dropdown-wrap">
         <button class="tb-btn tb-btn-heatmap" id="tb-heatmap-btn" onclick="document.getElementById('heatmap-dropdown').classList.toggle('hidden')" title="Heatmap Overlay — color by metric">🌡 Heatmap</button>
         <div class="tb-dropdown hidden" id="heatmap-dropdown">
-          <button class="tb-dropdown-item" onclick="toggleHeatmap('bandwidth');document.getElementById('heatmap-dropdown').classList.add('hidden')">Bandwidth Utilization</button>
-          <button class="tb-dropdown-item" onclick="toggleHeatmap('vuln');document.getElementById('heatmap-dropdown').classList.add('hidden')">Vulnerability Severity</button>
-          <button class="tb-dropdown-item" onclick="toggleHeatmap('stig');document.getElementById('heatmap-dropdown').classList.add('hidden')">STIG Compliance %</button>
-          <button class="tb-dropdown-item" onclick="toggleHeatmap('age');document.getElementById('heatmap-dropdown').classList.add('hidden')">Equipment Age</button>
+          <button class="tb-dropdown-item" id="hm-opt-bandwidth" onclick="toggleHeatmap('bandwidth');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x1f4ca; Bandwidth Utilization</button>
+          <button class="tb-dropdown-item" id="hm-opt-vuln" onclick="toggleHeatmap('vuln');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x26a0; Vulnerability Severity</button>
+          <button class="tb-dropdown-item" id="hm-opt-stig" onclick="toggleHeatmap('stig');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x1f6e1; STIG Compliance %</button>
+          <button class="tb-dropdown-item" id="hm-opt-age" onclick="toggleHeatmap('age');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x23f3; Equipment Age</button>
         </div>
       </div>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
@@ -434,6 +434,22 @@
          ondragover="event.preventDefault()"
          ondrop="onDrop(event)">
       <div id="canvas-container"></div>
+
+      <!-- Heatmap Legend (floating, shown when overlay active) -->
+      <div class="heatmap-legend" id="heatmap-legend">
+        <span class="heatmap-legend-title" id="heatmap-legend-title">Bandwidth</span>
+        <div class="heatmap-legend-bar">
+          <span class="heatmap-legend-label" id="heatmap-legend-lo">Low</span>
+          <div class="heatmap-legend-gradient"></div>
+          <span class="heatmap-legend-label" id="heatmap-legend-hi">High</span>
+        </div>
+        <button class="heatmap-legend-close" onclick="clearHeatmapOverlay()" title="Clear overlay">&times;</button>
+      </div>
+
+      <!-- Heatmap Tooltip (follows cursor on hover) -->
+      <div id="heatmap-tooltip" style="display:none;position:fixed;z-index:300;pointer-events:none;
+           background:rgba(22,33,62,0.95);border:1px solid #e67e22;border-radius:6px;padding:6px 10px;
+           font-size:11px;color:#ecf0f1;box-shadow:0 4px 12px rgba(0,0,0,0.5);white-space:nowrap;"></div>
     </div>
 
     <!-- Right Config Panel -->

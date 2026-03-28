@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}MCP Wrapper Generator - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">MCP Wrapper Generator</span>
+    </nav>
+
+    <h1>MCP Wrapper Generator</h1>
+    <p class="text-muted">Scan ICDEV™ CLI tools and generate MCP-compatible wrappers for any MCP client.</p>
+
+    <!-- Stats Grid -->
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-discovered" class="stat-value" style="font-size:2rem;font-weight:bold;">--</div>
+            <div class="stat-label" style="color:#666;">Tools Discovered</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-json" class="stat-value" style="font-size:2rem;font-weight:bold;color:#388e3c;">--</div>
+            <div class="stat-label" style="color:#666;">With --json Flag</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-wrapped" class="stat-value" style="font-size:2rem;font-weight:bold;color:#1976d2;">--</div>
+            <div class="stat-label" style="color:#666;">Wrappers Generated</div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div style="margin:1.5rem 0;display:flex;gap:1rem;flex-wrap:wrap;">
+        <button id="btn-scan" onclick="scanTools()" style="padding:0.6rem 1.2rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Scan Tools</button>
+        <button id="btn-wrap-all" onclick="wrapAll()" style="padding:0.6rem 1.2rem;background:#388e3c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Wrap All Eligible</button>
+        <button id="btn-wrap-all-dry" onclick="wrapAll(true)" style="padding:0.6rem 1.2rem;background:#f57c00;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.95rem;">Dry Run (All)</button>
+    </div>
+
+    <!-- Status -->
+    <div id="status-msg" style="display:none;padding:0.75rem 1rem;margin:1rem 0;border-radius:4px;font-size:0.9rem;"></div>
+
+    <!-- Discovered Tools Table -->
+    <h2 style="margin-top:2rem;">Discovered Tools</h2>
+    <div style="overflow-x:auto;">
+        <table id="tools-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+                <tr style="background:#f5f5f5;text-align:left;">
+                    <th style="padding:0.6rem 0.8rem;border-bottom:2px solid #ddd;">Tool Path</th>
+                    <th style="padding:0.6rem 0.8rem;border-bottom:2px solid #ddd;">--json</th>
+                    <th style="padding:0.6rem 0.8rem;border-bottom:2px solid #ddd;">Action</th>
+                </tr>
+            </thead>
+            <tbody id="tools-body">
+                <tr><td colspan="3" style="padding:1rem;color:#999;text-align:center;">Click "Scan Tools" to discover eligible tools.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Existing Wrappers Table -->
+    <h2 style="margin-top:2rem;">Generated Wrappers</h2>
+    <div style="overflow-x:auto;">
+        <table id="wrappers-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+                <tr style="background:#f5f5f5;text-align:left;">
+                    <th style="padding:0.6rem 0.8rem;border-bottom:2px solid #ddd;">Wrapper</th>
+                    <th style="padding:0.6rem 0.8rem;border-bottom:2px solid #ddd;">Source Tool</th>
+                </tr>
+            </thead>
+            <tbody id="wrappers-body">
+                <tr><td colspan="2" style="padding:1rem;color:#999;text-align:center;">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+function showStatus(msg, type) {
+    const el = document.getElementById('status-msg');
+    el.textContent = msg;
+    el.style.display = 'block';
+    el.style.background = type === 'error' ? '#ffebee' : type === 'success' ? '#e8f5e9' : '#e3f2fd';
+    el.style.color = type === 'error' ? '#c62828' : type === 'success' ? '#2e7d32' : '#1565c0';
+}
+
+function scanTools() {
+    document.getElementById('btn-scan').disabled = true;
+    showStatus('Scanning tools...', 'info');
+    fetch('/api/mcp-wrapper/scan')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-discovered').textContent = data.total || 0;
+            document.getElementById('stat-json').textContent = data.with_json_flag || 0;
+            const tbody = document.getElementById('tools-body');
+            const tools = data.discovered || [];
+            if (!tools.length) {
+                tbody.innerHTML = '<tr><td colspan="3" style="padding:1rem;color:#999;text-align:center;">No tools discovered.</td></tr>';
+            } else {
+                tbody.innerHTML = tools.map(t => `<tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:0.5rem 0.8rem;font-family:monospace;font-size:0.85rem;">${t.path || t}</td>
+                    <td style="padding:0.5rem 0.8rem;">${t.has_json ? '<span style="color:#388e3c;">Yes</span>' : '<span style="color:#999;">No</span>'}</td>
+                    <td style="padding:0.5rem 0.8rem;">
+                        ${t.has_json ? `<button onclick="wrapOne('${(t.path || t).replace(/'/g, "\\'")}')" style="padding:0.3rem 0.8rem;background:#1976d2;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:0.85rem;">Wrap</button>` : ''}
+                    </td>
+                </tr>`).join('');
+            }
+            showStatus(`Scan complete: ${data.total} tools found, ${data.with_json_flag} with --json flag.`, 'success');
+            document.getElementById('btn-scan').disabled = false;
+        })
+        .catch(e => {
+            showStatus('Scan failed: ' + e, 'error');
+            document.getElementById('btn-scan').disabled = false;
+        });
+}
+
+function wrapOne(toolPath) {
+    showStatus('Wrapping ' + toolPath + '...', 'info');
+    fetch('/api/mcp-wrapper/wrap', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tool_path: toolPath})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'error') {
+            showStatus('Wrap failed: ' + data.error, 'error');
+        } else {
+            showStatus('Wrapped: ' + toolPath, 'success');
+            loadWrappers();
+        }
+    })
+    .catch(e => showStatus('Wrap failed: ' + e, 'error'));
+}
+
+function wrapAll(dryRun) {
+    const label = dryRun ? 'Dry run' : 'Wrapping all';
+    showStatus(label + '...', 'info');
+    fetch('/api/mcp-wrapper/wrap-all', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({dry_run: !!dryRun})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === 'error') {
+            showStatus('Failed: ' + data.error, 'error');
+        } else {
+            const count = data.wrapped || data.would_wrap || 0;
+            showStatus(`${dryRun ? 'Dry run' : 'Wrap all'} complete: ${count} tools ${dryRun ? 'would be' : ''} wrapped.`, 'success');
+            if (!dryRun) loadWrappers();
+        }
+    })
+    .catch(e => showStatus('Failed: ' + e, 'error'));
+}
+
+function loadWrappers() {
+    fetch('/api/mcp-wrapper/list')
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('stat-wrapped').textContent = data.count || 0;
+            const tbody = document.getElementById('wrappers-body');
+            const wrappers = data.wrappers || [];
+            if (!wrappers.length) {
+                tbody.innerHTML = '<tr><td colspan="2" style="padding:1rem;color:#999;text-align:center;">No wrappers generated yet.</td></tr>';
+            } else {
+                tbody.innerHTML = wrappers.map(w => `<tr style="border-bottom:1px solid #eee;">
+                    <td style="padding:0.5rem 0.8rem;font-family:monospace;font-size:0.85rem;">${w.name || w.path || w}</td>
+                    <td style="padding:0.5rem 0.8rem;font-family:monospace;font-size:0.85rem;">${w.source || ''}</td>
+                </tr>`).join('');
+            }
+        })
+        .catch(() => {});
+}
+
+// Load wrappers on page init
+document.addEventListener('DOMContentLoaded', loadWrappers);
+</script>
+{% endblock %}

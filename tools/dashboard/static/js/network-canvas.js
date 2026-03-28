@@ -2171,7 +2171,16 @@ document.addEventListener('DOMContentLoaded', () => {
 let _heatmapOverlayActive = null;   // null | 'bandwidth' | 'vuln' | 'stig' | 'age'
 let _stigOverlayApplied   = false;  // true when STIG import colors are on canvas
 const _originalNodeColors = {};     // nodeId -> {stencilBodyFill, bodyFill}
-const _originalLinkColors = {};     // edgeId -> {stroke}
+const _originalLinkColors = {};     // edgeId -> {stroke, strokeWidth}
+const _heatmapValues      = {};     // cellId -> {metric, value, label}
+
+/** Metric display config: title, low label, high label, value formatter. */
+const _HEATMAP_META = {
+  bandwidth: { title: 'Bandwidth Utilization', lo: '0%',    hi: '100%',  fmt: v => `${(v * 100).toFixed(0)}% utilization` },
+  vuln:      { title: 'Vulnerability Severity', lo: 'None',  hi: 'CAT I', fmt: v => v >= 0.9 ? 'CAT I (Critical)' : v >= 0.5 ? 'CAT II (High)' : v >= 0.2 ? 'CAT III (Medium)' : 'No findings' },
+  stig:      { title: 'STIG Compliance',        lo: '100%',  hi: '0%',    fmt: v => `${((1 - v) * 100).toFixed(0)}% compliant` },
+  age:       { title: 'Equipment Age',          lo: 'New',   hi: '10+ yr', fmt: v => `${(v * 10).toFixed(1)} years` },
+};
 
 /** Interpolate a 0..1 value to a green→yellow→red gradient color. */
 function _heatmapColor(val) {
@@ -2221,6 +2230,41 @@ function _restoreNodeColor(cell) {
   delete _originalNodeColors[cell.id];
 }
 
+/** Show the floating legend panel with metric-specific labels. */
+function _showHeatmapLegend(metric) {
+  const meta = _HEATMAP_META[metric] || { title: metric, lo: 'Low', hi: 'High' };
+  const legend = document.getElementById('heatmap-legend');
+  const title  = document.getElementById('heatmap-legend-title');
+  const lo     = document.getElementById('heatmap-legend-lo');
+  const hi     = document.getElementById('heatmap-legend-hi');
+  if (legend) { title.textContent = meta.title; lo.textContent = meta.lo; hi.textContent = meta.hi; legend.style.display = 'flex'; }
+}
+
+/** Hide the floating legend panel. */
+function _hideHeatmapLegend() {
+  const legend = document.getElementById('heatmap-legend');
+  if (legend) legend.style.display = 'none';
+}
+
+/** Mark the active metric in the dropdown and update button label. */
+function _setHeatmapDropdownActive(metric) {
+  ['bandwidth', 'vuln', 'stig', 'age'].forEach(m => {
+    const el = document.getElementById('hm-opt-' + m);
+    if (el) el.style.background = (m === metric) ? 'var(--accent, #0f3460)' : '';
+  });
+  const btn = document.getElementById('tb-heatmap-btn');
+  if (btn) {
+    if (metric) {
+      const meta = _HEATMAP_META[metric] || { title: metric };
+      btn.innerHTML = '\uD83C\uDF21 ' + meta.title;
+      btn.classList.add('tb-btn-active');
+    } else {
+      btn.innerHTML = '\uD83C\uDF21 Heatmap';
+      btn.classList.remove('tb-btn-active');
+    }
+  }
+}
+
 /** Remove all heatmap/STIG colors and restore originals. */
 function clearHeatmapOverlay() {
   graph.getElements().forEach(cell => _restoreNodeColor(cell));
@@ -2228,13 +2272,16 @@ function clearHeatmapOverlay() {
     const orig = _originalLinkColors[link.id];
     if (orig) {
       link.attr('line/stroke', orig.stroke);
+      if (orig.strokeWidth !== undefined) link.attr('line/strokeWidth', orig.strokeWidth);
       delete _originalLinkColors[link.id];
     }
   });
+  // Clear stored metric values
+  Object.keys(_heatmapValues).forEach(k => delete _heatmapValues[k]);
   _heatmapOverlayActive = null;
   _stigOverlayApplied   = false;
-  const btn = document.getElementById('tb-heatmap-btn');
-  if (btn) btn.classList.remove('tb-btn-active');
+  _setHeatmapDropdownActive(null);
+  _hideHeatmapLegend();
   setStatus('Overlay cleared.');
 }
 
@@ -2272,31 +2319,76 @@ function _fetchAndApplyHeatmap(metric) {
       if (data.error) { setStatus('Heatmap: ' + data.error); return; }
       const nodeVals = data.node_values || {};
       const linkVals = data.link_values || {};
+      const meta = _HEATMAP_META[metric] || { fmt: v => v.toFixed(2) };
 
-      // Color nodes
+      // Color nodes and store values for tooltips
       graph.getElements().forEach(cell => {
         const val = nodeVals[cell.id];
-        if (val !== undefined) _applyNodeColor(cell, _heatmapColor(val));
+        if (val !== undefined) {
+          _applyNodeColor(cell, _heatmapColor(val));
+          const label = cell.attr('label/text') || cell.attr('headerLabel/text') || cell.id;
+          _heatmapValues[cell.id] = { metric, value: val, label, formatted: meta.fmt(val) };
+        }
       });
-      // Color links
+      // Color links and scale stroke width (2px base → up to 6px for severity)
       graph.getLinks().forEach(link => {
         const val = linkVals[link.id];
         if (val !== undefined) {
           if (!_originalLinkColors[link.id]) {
-            _originalLinkColors[link.id] = { stroke: link.attr('line/stroke') };
+            _originalLinkColors[link.id] = {
+              stroke: link.attr('line/stroke'),
+              strokeWidth: link.attr('line/strokeWidth'),
+            };
           }
           link.attr('line/stroke', _heatmapColor(val));
+          link.attr('line/strokeWidth', 2 + val * 4);  // 2px–6px
+          const srcLabel = (link.getSourceCell() && (link.getSourceCell().attr('label/text') || '')) || '';
+          const tgtLabel = (link.getTargetCell() && (link.getTargetCell().attr('label/text') || '')) || '';
+          const linkLabel = srcLabel && tgtLabel ? `${srcLabel} → ${tgtLabel}` : link.id;
+          _heatmapValues[link.id] = { metric, value: val, label: linkLabel, formatted: meta.fmt(val) };
         }
       });
 
       _heatmapOverlayActive = metric;
-      const btn = document.getElementById('tb-heatmap-btn');
-      if (btn) btn.classList.add('tb-btn-active');
+      _setHeatmapDropdownActive(metric);
+      _showHeatmapLegend(metric);
       const n = Object.keys(nodeVals).length + Object.keys(linkVals).length;
-      setStatus(`${metric} heatmap — ${n} element(s) colored. Click Heatmap to clear.`);
+      setStatus(`${meta.fmt === _HEATMAP_META[metric].fmt ? _HEATMAP_META[metric].title : metric} heatmap — ${n} element(s) colored.`);
     })
     .catch(err => setStatus('Heatmap error: ' + err.message));
 }
+
+/* ── Heatmap Tooltip on hover ──────────────────────────────────────────────── */
+(function _initHeatmapTooltip() {
+  const tip = document.getElementById('heatmap-tooltip');
+  if (!tip) return;
+
+  document.addEventListener('mousemove', function(e) {
+    if (tip.style.display === 'block') {
+      tip.style.left = (e.clientX + 12) + 'px';
+      tip.style.top  = (e.clientY - 8)  + 'px';
+    }
+  });
+
+  // Wait for paper to be initialized, then hook cell:mouseenter/mouseleave
+  const _hookInterval = setInterval(function() {
+    if (typeof paper === 'undefined' || !paper) return;
+    clearInterval(_hookInterval);
+
+    paper.on('cell:mouseenter', function(cellView) {
+      if (!_heatmapOverlayActive) return;
+      const hv = _heatmapValues[cellView.model.id];
+      if (!hv) return;
+      const color = _heatmapColor(hv.value);
+      tip.innerHTML = `<span style="color:${color};">\u25CF</span> <strong>${hv.label}</strong><br>${hv.formatted}`;
+      tip.style.display = 'block';
+    });
+
+    paper.on('cell:mouseleave', function() {
+      tip.style.display = 'none';
+    });
+  }, 200);
+})();
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * STIG XCCDF/CKL Import — upload, match, overlay
