@@ -5973,6 +5973,26 @@ def create_network_blueprint():
     def nc_whatif_page():
         return render_template("network/whatif.html")
 
+    @bp.route("/design-rules")
+    @nc_login_required
+    def nc_design_rules_page():
+        return render_template("network/design_rules.html")
+
+    @bp.route("/design-patterns")
+    @nc_login_required
+    def nc_design_patterns_page():
+        return render_template("network/design_patterns.html")
+
+    @bp.route("/replacements")
+    @nc_login_required
+    def nc_replacements_page():
+        return render_template("network/replacement_map.html")
+
+    @bp.route("/budget")
+    @nc_login_required
+    def nc_budget_page():
+        return render_template("network/budget_forecast.html")
+
     # ══════════════════════════════════════════════════════════════════════
     # Network Design Rulebook (Phase 1)
     # ══════════════════════════════════════════════════════════════════════

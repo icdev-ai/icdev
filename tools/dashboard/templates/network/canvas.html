@@ -74,6 +74,9 @@
       <button class="tb-btn" id="tb-stig-import-btn" onclick="openStigImportDialog()" title="Import STIG Viewer .ckl or XCCDF results — match hostnames to canvas devices and color by compliance status" style="color:#e74c3c;">&#x1f6e1; STIG</button>
       <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
       <button class="tb-btn" id="tb-pps-btn" onclick="openPpsPanel()" title="PPS Matrix Generator — select enclave or device pair, auto-generate ports/protocols/services matrix" style="color:#00d4ff;">&#x1f4ca; PPS Matrix</button>
+      <button class="tb-btn" onclick="openScorecard()" title="Design Scorecard — check design completeness (routing, redundancy, security)" style="color:#27ae60;">&#x2705; Scorecard</button>
+      <button class="tb-btn" onclick="openTechDebt()" title="Tech Debt — EOL/EOS analysis + lifecycle risk" style="color:#e67e22;">&#x23f3; Tech Debt</button>
+      <button class="tb-btn" onclick="openIpv6Readiness()" title="IPv6 Readiness — device capability + migration plan" style="color:#3498db;">v6 IPv6</button>
     </div>
     <div class="tb-group">
       <button class="tb-btn" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — draw selection around devices to create enclave boundary" style="color:#f39c12;">⬡ Fence</button>
@@ -1162,6 +1165,79 @@
   }
 
   // ── ATO Package Auto-Generator ─────────────────────────────────────────
+  // ── Scorecard / Tech Debt / IPv6 Readiness overlays ──────────────────────
+  async function openScorecard() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const d = await fetch(NC_BASE + '/api/design-scorecard/' + TOPOLOGY_ID).then(r => r.json());
+    if (d.error) { alert(d.error); return; }
+    let html = '<h3 style="color:#27ae60;">Design Scorecard — ' + d.overall_score + '%</h3>';
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px;">';
+    Object.entries(d.categories || {}).forEach(([cat, v]) => {
+      const color = v.pct >= 80 ? '#27ae60' : v.pct >= 50 ? '#f39c12' : '#e74c3c';
+      html += '<div style="flex:1;text-align:center;padding:8px;background:#0f2040;border-radius:6px;border-top:3px solid ' + color + ';"><div style="font-size:20px;font-weight:700;color:' + color + ';">' + v.pct + '%</div><div style="font-size:10px;color:#7a8cb0;text-transform:capitalize;">' + cat.replace(/_/g,' ') + '</div></div>';
+    });
+    html += '</div><table style="width:100%;font-size:11px;color:#eaeaea;border-collapse:collapse;"><thead><tr><th style="text-align:left;padding:4px;border-bottom:1px solid #1e3a6e;">Check</th><th style="padding:4px;border-bottom:1px solid #1e3a6e;">Status</th><th style="text-align:left;padding:4px;border-bottom:1px solid #1e3a6e;">Detail</th></tr></thead><tbody>';
+    (d.checks || []).forEach(c => {
+      html += '<tr><td style="padding:3px 4px;">' + c.name + '</td><td style="padding:3px 4px;text-align:center;">' + (c.passed ? '<span style="color:#27ae60;">PASS</span>' : '<span style="color:#e74c3c;">FAIL</span>') + '</td><td style="padding:3px 4px;color:#7a8cb0;">' + (c.detail || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    _showInfoOverlay(html);
+  }
+
+  async function openTechDebt() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const d = await fetch(NC_BASE + '/api/tech-debt/' + TOPOLOGY_ID).then(r => r.json());
+    if (d.error) { alert(d.error); return; }
+    const s = d.summary || {};
+    let html = '<h3 style="color:#e67e22;">Tech Debt Analysis — Score: ' + s.tech_debt_score + '</h3>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:12px;font-size:12px;">';
+    html += '<span style="color:#e74c3c;">Past EOL: ' + s.past_eol + '</span>';
+    html += '<span style="color:#f39c12;">Past EOS: ' + s.past_eos + '</span>';
+    html += '<span style="color:#3498db;">Approaching: ' + s.approaching_eol_12mo + '</span>';
+    html += '<span style="color:#7a8cb0;">No data: ' + s.no_lifecycle_data + '</span>';
+    html += '</div>';
+    (d.devices || []).forEach(dev => {
+      if (dev.issues.length === 0) return;
+      const color = dev.risk_level === 'critical' ? '#e74c3c' : dev.risk_level === 'high' ? '#f39c12' : '#7a8cb0';
+      html += '<div style="padding:4px 0;border-bottom:1px solid #1e3a6e;font-size:11px;"><strong style="color:' + color + ';">' + dev.label + '</strong> (' + dev.type + ') — ' + dev.issues.join('; ') + '</div>';
+    });
+    if (d.devices.every(dev => dev.issues.length === 0)) html += '<div style="color:#27ae60;font-size:12px;">No tech debt issues detected. Configure EOL/EOS dates in device properties for tracking.</div>';
+    _showInfoOverlay(html);
+  }
+
+  async function openIpv6Readiness() {
+    if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    const d = await fetch(NC_BASE + '/api/ipv6-readiness/' + TOPOLOGY_ID).then(r => r.json());
+    if (d.error) { alert(d.error); return; }
+    const s = d.summary || {};
+    let html = '<h3 style="color:#3498db;">IPv6 Readiness — ' + s.readiness_pct + '% Ready</h3>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:12px;font-size:12px;">';
+    html += '<span style="color:#27ae60;">Capable: ' + s.capable_yes + '</span>';
+    html += '<span style="color:#e74c3c;">Not capable: ' + s.capable_no + '</span>';
+    html += '<span style="color:#f39c12;">Partial: ' + s.capable_partial + '</span>';
+    html += '<span style="color:#7a8cb0;">Unknown: ' + s.capable_unknown + '</span>';
+    html += '<span style="color:#3498db;">Dual-stack: ' + s.dual_stack_count + '</span>';
+    html += '</div>';
+    html += '<div style="padding:8px;background:#0f2040;border-radius:6px;font-size:12px;margin-bottom:12px;"><strong>Recommendation:</strong> ' + (d.recommendation || 'N/A') + '</div>';
+    (d.devices || []).forEach(dev => {
+      if (dev.issues.length === 0) return;
+      html += '<div style="padding:3px 0;border-bottom:1px solid #1e3a6e;font-size:11px;"><strong>' + dev.label + '</strong> — ' + dev.issues.join('; ') + '</div>';
+    });
+    _showInfoOverlay(html);
+  }
+
+  function _showInfoOverlay(html) {
+    let overlay = document.getElementById('info-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'info-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+      document.body.appendChild(overlay);
+    }
+    overlay.innerHTML = '<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:10px;padding:20px;max-width:800px;width:90%;max-height:80vh;overflow-y:auto;">' + html + '<div style="text-align:right;margin-top:12px;"><button onclick="document.getElementById(\'info-overlay\').remove()" style="background:#e94560;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;">Close</button></div></div>';
+  }
+
   function generateAtoPackage() {
     if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
     // Check if canvas has nodes
