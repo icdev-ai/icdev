@@ -2495,6 +2495,11 @@ def create_network_blueprint():
     # Phase 7: Innovation Flywheel
     # ══════════════════════════════════════════════════════════════════════
 
+    @bp.route("/innovation")
+    @nc_login_required
+    def nc_innovation_hub():
+        return render_template("network/innovation.html")
+
     # ── Ideas ─────────────────────────────────────────────────────────────
     @bp.route("/api/innovation-ideas", methods=["GET"])
     @nc_login_required
@@ -5667,6 +5672,16 @@ def create_network_blueprint():
     @nc_login_required
     def nc_enterprise_dashboard():
         return render_template("network/enterprise.html")
+
+    @bp.route("/device-profiles")
+    @nc_login_required
+    def nc_device_profiles_page():
+        return render_template("network/device_profiles.html")
+
+    @bp.route("/what-if")
+    @nc_login_required
+    def nc_whatif_page():
+        return render_template("network/whatif.html")
 
     # ══════════════════════════════════════════════════════════════════════
     # Network Design Rulebook (Phase 1)

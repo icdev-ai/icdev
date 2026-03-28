@@ -5,6 +5,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -41,6 +42,14 @@ from icdev.tools.translation.type_checker import (
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _patch_db_path(tmp_path):
+    """Redirect DB_PATH to a non-existent temp path to avoid locking the real DB."""
+    fake_db = tmp_path / "translation_test.db"
+    with patch("icdev.tools.translation.translation_manager.DB_PATH", fake_db):
+        yield
+
 
 @pytest.fixture
 def python_project(tmp_path):

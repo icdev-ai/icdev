@@ -826,6 +826,25 @@ a:hover { text-decoration: underline; }
 .tpl-cat { font-size: 10px; color: var(--text-dim); min-width: 70px; }
 .tpl-name { flex: 1; font-size: 12px; color: var(--text); }
 
+/* ── Innovation Hub ─────────────────────────────────────────────────────────── */
+.idea-card { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.idea-card:last-child { border-bottom: none; }
+.idea-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.idea-icon { font-size: 16px; }
+.idea-title { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+.idea-desc { font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+.idea-footer { display: flex; align-items: center; gap: 10px; font-size: 10px; color: var(--text-dim); }
+.radar-ring { background: var(--bg3); border-radius: 6px; padding: 8px 10px; }
+.radar-ring-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+.radar-item { display: flex; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; color: var(--text); border-bottom: 1px solid var(--border); }
+.radar-item:last-child { border-bottom: none; }
+.lesson-item { padding: 8px 0; border-bottom: 1px solid var(--border); position: relative; }
+.lesson-item:last-child { border-bottom: none; }
+.lesson-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.lesson-meta { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
+.lesson-body { font-size: 11px; color: var(--text); margin-top: 2px; }
+.lesson-item .action-btn { position: absolute; top: 8px; right: 0; }
+
 /* ── Sim List ────────────────────────────────────────────────────────────────── */
 .sim-list { padding: 8px 16px; display: flex; flex-direction: column; gap: 8px; }
 .sim-item { background: var(--bg3); border-radius: 6px; padding: 10px; border-left: 3px solid var(--accent); }
