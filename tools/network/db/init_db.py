@@ -598,6 +598,19 @@ CREATE TABLE IF NOT EXISTS nc_project_phases (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Design Pattern Library (Phase 2) ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_design_patterns (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    category    TEXT NOT NULL,         -- routing, redundancy, security, cloud, wan, campus, custom
+    description TEXT,
+    graph_json  TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    is_builtin  INTEGER DEFAULT 0,     -- 1 = shipped with ICDEV, 0 = user-created
+    tags        TEXT DEFAULT '[]',
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Phase B: Global Connectivity (Interconnects) ──────────────────────────
 CREATE TABLE IF NOT EXISTS nc_interconnects (
     id              TEXT PRIMARY KEY,
