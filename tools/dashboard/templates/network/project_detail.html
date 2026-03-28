@@ -10,6 +10,7 @@
     <button class="btn btn-secondary" onclick="document.getElementById('link-modal').style.display='flex'">+ Link Topology</button>
     <button class="btn btn-secondary" onclick="updateStatus()">Change Status</button>
     <button class="btn btn-secondary" onclick="cloneProject()">Clone Project</button>
+    <a href="/network/projects/{{ project.id }}/presentation" class="btn btn-secondary">Presentation</a>
     <a href="/network/?project={{ project.id }}" class="btn btn-secondary">Filter Dashboard</a>
     <a href="/network/projects" class="btn btn-secondary">All Projects</a>
   </div>

@@ -688,6 +688,46 @@ a:hover { text-decoration: underline; }
 .roi-label { font-weight: 600; color: var(--text-dim); }
 @media (max-width: 900px) { .roi-summary { grid-template-columns: repeat(2, 1fr); } }
 
+/* ── Global Connectivity ───────────────────────────────────────────────────── */
+.global-projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+.global-project-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.gpc-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.gpc-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.gpc-topos { font-size: 12px; }
+.gpc-topo { padding: 2px 0; }
+.gpc-topo a { color: var(--red); }
+
+/* ── Conflict Items ────────────────────────────────────────────────────────── */
+.conflict-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.conflict-item:last-child { border-bottom: none; }
+.ci-high { border-left: 3px solid var(--danger); }
+.ci-medium { border-left: 3px solid var(--warning); }
+
+/* ── Presentation Sections ─────────────────────────────────────────────────── */
+.pres-section { margin-bottom: 16px; }
+@media print {
+  .navbar, .footer, .page-actions, .cui-banner { display: none !important; }
+  .main-content { padding: 0; }
+  .pres-section { break-inside: avoid; }
+}
+
 /* ── Mini Template Grid ─────────────────────────────────────────────────────── */
 .template-grid-mini { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .template-card-mini {
