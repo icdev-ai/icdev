@@ -4469,15 +4469,19 @@ def create_network_blueprint():
 
     _NDC_LIFECYCLE = {
         "states": [
-            "concept", "requirements", "design", "peer_review",
+            "concept", "requirements", "ssp_review",
+            "design", "peer_review", "security_approval",
             "lab_test", "change_approval", "implementation",
             "verification", "handoff", "operate",
         ],
+        "optional_states": ["ssp_review", "security_approval"],
         "transitions": {
             "concept": ["requirements"],
-            "requirements": ["design", "concept"],
+            "requirements": ["ssp_review", "design", "concept"],
+            "ssp_review": ["design", "requirements"],
             "design": ["peer_review", "requirements"],
-            "peer_review": ["lab_test", "design"],
+            "peer_review": ["security_approval", "lab_test", "design"],
+            "security_approval": ["lab_test", "peer_review"],
             "lab_test": ["change_approval", "design"],
             "change_approval": ["implementation", "design"],
             "implementation": ["verification"],
@@ -4497,6 +4501,14 @@ def create_network_blueprint():
                 "Security classification determined",
                 "SLA targets documented",
             ],
+            "ssp_review": [
+                "System Security Plan (SSP) drafted or updated",
+                "Security boundary defined and documented",
+                "Authorization Boundary Diagram included",
+                "Information types and data flows documented",
+                "SSP submitted to ISSO/ISSM for review",
+                "SSP approval obtained (or waiver documented)",
+            ],
             "design": [
                 "Detailed topology completed",
                 "Routing protocol selected and documented",
@@ -4509,6 +4521,14 @@ def create_network_blueprint():
                 "Compliance audit passed (80%+)",
                 "SPOF analysis completed",
                 "Design pattern alignment verified",
+            ],
+            "security_approval": [
+                "Firewall rule change request submitted to security team",
+                "IDS/IPS policy updates documented",
+                "ACL changes reviewed by security analyst",
+                "Network segmentation verified per security policy",
+                "Security team sign-off obtained",
+                "Separation of duty verified (network vs security team)",
             ],
             "lab_test": [
                 "Lab environment provisioned",
