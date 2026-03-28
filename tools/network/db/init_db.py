@@ -554,6 +554,7 @@ CREATE TABLE IF NOT EXISTS nc_review_boards (
     short_name  TEXT NOT NULL,
     description TEXT,
     required_for_status TEXT,
+    is_optional INTEGER DEFAULT 0,    -- 0 = required, 1 = optional (team decides)
     sort_order  INTEGER DEFAULT 0,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -2576,6 +2577,7 @@ def init_db():
             ("nc_backups", "file_hash", "TEXT"),
             # P3: per-topology assignment
             ("nc_project_topologies", "assignee", "TEXT DEFAULT ''"),
+            ("nc_review_boards", "is_optional", "INTEGER DEFAULT 0"),
             # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
         ]
         for table, col, coltype in _migrations:
@@ -2624,19 +2626,25 @@ def init_db():
             for b in [
                 ("board-arb", "Architecture Review Board", "ARB",
                  "Reviews design decisions, protocol choices, enclave alignment",
-                 "in_review", 1),
+                 "in_review", 0, 1),
                 ("board-erb", "Engineering Review Board", "ERB",
                  "Reviews feasibility, BOM, capacity, timeline",
-                 "approved", 2),
+                 "approved", 0, 2),
                 ("board-ccb", "Change Control Board", "CCB",
                  "Reviews blast radius, risk to production, rollback plan",
-                 "deployed", 3),
+                 "deployed", 0, 3),
+                ("board-ssp", "System Security Plan Review", "SSP",
+                 "Reviews SSP documentation before project can proceed — required by some teams, optional for others",
+                 "design", 1, 4),
+                ("board-secappr", "Security Policy Approval", "SEC",
+                 "Security team approves firewall rules, IDS/IPS policies, ACLs — separation of duty for security-impacting changes",
+                 "implementation", 1, 5),
             ]:
                 conn.execute(
                     "INSERT OR IGNORE INTO nc_review_boards "
                     "(id, name, short_name, description, "
-                    " required_for_status, sort_order) "
-                    "VALUES (?,?,?,?,?,?)", b
+                    " required_for_status, is_optional, sort_order) "
+                    "VALUES (?,?,?,?,?,?,?)", b
                 )
             conn.commit()
             print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).")
