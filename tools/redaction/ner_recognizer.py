@@ -139,7 +139,7 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
                 "stream": False,
                 "options": {"num_predict": 512, "temperature": 0.1},
             },
-            timeout=30,
+            timeout=3,
         )
 
         if resp.status_code != 200:
@@ -263,7 +263,12 @@ _OLLAMA_CACHE_TTL = 60.0  # Re-check every 60 seconds
 
 
 def _check_ollama_cached() -> bool:
-    """Check Ollama availability with module-level TTL cache."""
+    """Check Ollama availability with module-level TTL cache.
+
+    Uses a minimal inference probe (not just /api/tags) to verify that the
+    model is actually able to respond to chat requests, not just listing tags.
+    This prevents false positives when Ollama is running but overloaded/stuck.
+    """
     import time as _t
     now = _t.time()
     if (_OLLAMA_CACHE["available"] is not None
@@ -271,7 +276,17 @@ def _check_ollama_cached() -> bool:
         return _OLLAMA_CACHE["available"]
     try:
         import requests
-        resp = requests.get("http://localhost:11434/api/tags", timeout=1.5)
+        # Use a short inference probe to verify actual chat capability
+        resp = requests.post(
+            "http://localhost:11434/api/chat",
+            json={
+                "model": "gemma3:latest",
+                "messages": [{"role": "user", "content": "hi"}],
+                "stream": False,
+                "options": {"num_predict": 1},
+            },
+            timeout=3,
+        )
         _OLLAMA_CACHE["available"] = resp.status_code == 200
     except Exception:
         _OLLAMA_CACHE["available"] = False

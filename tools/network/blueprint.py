@@ -4162,6 +4162,476 @@ def create_network_blueprint():
         return jsonify(_design_rules.get("best_practices", {}))
 
     # ══════════════════════════════════════════════════════════════════════
+    # ARB/ERB Documentation APIs
+    # ══════════════════════════════════════════════════════════════════════
+
+    _PROB_SCORE = {"low": 1, "medium": 2, "high": 3}
+    _IMPACT_SCORE = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+
+    def _crud_list(table, pid, order="created_at"):
+        conn = get_connection()
+        rows = conn.execute(
+            f"SELECT * FROM {table} WHERE project_id=? "  # nosec B608
+            f"ORDER BY {order}", (pid,)
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    def _crud_create(table, pid, data, fields):
+        rid = str(_uuid.uuid4())
+        conn = get_connection()
+        cols = ["id", "project_id"] + fields
+        vals = [rid, pid] + [data.get(f, "") for f in fields]
+        placeholders = ",".join("?" for _ in cols)
+        conn.execute(
+            f"INSERT INTO {table} ({','.join(cols)}) "  # nosec B608
+            f"VALUES ({placeholders})", vals
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": rid}), 201
+
+    def _crud_delete(table, rid):
+        conn = get_connection()
+        conn.execute(f"DELETE FROM {table} WHERE id=?", (rid,))  # nosec B608
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Alternatives Analysis ─────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/alternatives", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_alternatives(pid):
+        conn = get_connection()
+        criteria = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_alt_criteria WHERE project_id=? "
+            "ORDER BY sort_order", (pid,)
+        ).fetchall()]
+        options = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_alternatives WHERE project_id=? "
+            "ORDER BY total_score DESC", (pid,)
+        ).fetchall()]
+        for o in options:
+            try:
+                o["scores"] = json.loads(o.get("scores_json") or "{}")
+            except Exception:
+                o["scores"] = {}
+        conn.close()
+        return jsonify({"criteria": criteria, "options": options})
+
+    @bp.route("/api/projects/<pid>/alternatives/criteria",
+              methods=["POST"])
+    @nc_login_required
+    def nc_api_add_criterion(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        return _crud_create("nc_alt_criteria", pid, data,
+                            ["name", "weight_pct", "sort_order"])
+
+    @bp.route("/api/projects/<pid>/alternatives/options",
+              methods=["POST"])
+    @nc_login_required
+    def nc_api_add_alternative(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        scores = data.get("scores", {})
+        # Compute weighted total
+        conn = get_connection()
+        criteria = {r[0]: r[1] for r in conn.execute(
+            "SELECT name, weight_pct FROM nc_alt_criteria "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()}
+        conn.close()
+        total = 0
+        for cname, weight in criteria.items():
+            s = scores.get(cname, {})
+            total += (s.get("score", 0) * weight / 100)
+        rid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_alternatives "
+            "(id, project_id, option_name, description, "
+            " is_recommended, scores_json, total_score, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (rid, pid, data.get("option_name", ""),
+             data.get("description", ""),
+             1 if data.get("is_recommended") else 0,
+             json.dumps(scores), round(total, 2), _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": rid, "total_score": round(total, 2)}), 201
+
+    @bp.route("/api/alternatives/<aid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_alternative(aid):
+        return _crud_delete("nc_alternatives", aid)
+
+    @bp.route("/api/alt-criteria/<cid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_criterion(cid):
+        return _crud_delete("nc_alt_criteria", cid)
+
+    # ── Risk Register ─────────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/risks", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_risks(pid):
+        return _crud_list("nc_risks", pid, "risk_score DESC")
+
+    @bp.route("/api/projects/<pid>/risks", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_risk(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        prob = _PROB_SCORE.get(data.get("probability", "medium"), 2)
+        imp = _IMPACT_SCORE.get(data.get("impact", "medium"), 2)
+        data["risk_score"] = str(prob * imp)
+        return _crud_create("nc_risks", pid, data,
+                            ["title", "category", "probability", "impact",
+                             "risk_score", "mitigation", "owner", "status"])
+
+    @bp.route("/api/risks/<rid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_risk(rid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        allowed = ["title", "category", "probability", "impact",
+                   "mitigation", "owner", "status"]
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if "probability" in data or "impact" in data:
+            row = conn.execute(
+                "SELECT probability, impact FROM nc_risks WHERE id=?",
+                (rid,)
+            ).fetchone()
+            p = data.get("probability", row[0] if row else "medium")
+            i = data.get("impact", row[1] if row else "medium")
+            score = _PROB_SCORE.get(p, 2) * _IMPACT_SCORE.get(i, 2)
+            fields.append("risk_score=?")
+            values.append(score)
+        if fields:
+            values.append(rid)
+            conn.execute(
+                f"UPDATE nc_risks SET {', '.join(fields)} "  # nosec B608
+                f"WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/risks/<rid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_risk(rid):
+        return _crud_delete("nc_risks", rid)
+
+    # ── Enhanced BOM ──────────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/bom-items", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_bom_items(pid):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_bom_items WHERE project_id=? "
+            "ORDER BY category, vendor, model", (pid,)
+        ).fetchall()
+        items = [_row_to_dict(r) for r in rows]
+        totals = {
+            "hardware": 0, "software": 0, "circuit": 0,
+            "labor": 0, "other": 0, "annual_maint": 0,
+            "license": 0, "grand_total": 0,
+        }
+        for it in items:
+            cat = it.get("category", "other")
+            ext = it.get("extended_cost", 0) or 0
+            totals[cat] = totals.get(cat, 0) + ext
+            totals["grand_total"] += ext
+            totals["annual_maint"] += it.get("annual_maint", 0) or 0
+            totals["license"] += it.get("license_cost", 0) or 0
+        conn.close()
+        return jsonify({"items": items, "totals": totals})
+
+    @bp.route("/api/projects/<pid>/bom-items", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_bom_item(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        qty = int(data.get("quantity", 1) or 1)
+        unit = float(data.get("unit_cost", 0) or 0)
+        data["extended_cost"] = str(round(qty * unit, 2))
+        data["quantity"] = str(qty)
+        data["unit_cost"] = str(unit)
+        data["annual_maint"] = str(data.get("annual_maint", 0) or 0)
+        data["license_cost"] = str(data.get("license_cost", 0) or 0)
+        data["lead_time_days"] = str(data.get("lead_time_days", 0) or 0)
+        return _crud_create("nc_bom_items", pid, data,
+                            ["category", "vendor", "model", "part_number",
+                             "description", "quantity", "unit_cost",
+                             "extended_cost", "annual_maint",
+                             "license_cost", "lead_time_days",
+                             "contract_vehicle", "notes"])
+
+    @bp.route("/api/bom-items/<bid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_bom_item(bid):
+        return _crud_delete("nc_bom_items", bid)
+
+    # ── Lab Test Results ──────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/lab-tests", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_lab_tests(pid):
+        return _crud_list("nc_lab_tests", pid)
+
+    @bp.route("/api/projects/<pid>/lab-tests", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_lab_test(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        m = data.get("measurements", {})
+        if isinstance(m, dict):
+            data["measurements"] = json.dumps(m)
+        fv = data.get("firmware_versions", {})
+        if isinstance(fv, dict):
+            data["firmware_versions"] = json.dumps(fv)
+        return _crud_create("nc_lab_tests", pid, data,
+                            ["test_name", "category", "methodology",
+                             "result", "measurements",
+                             "firmware_versions", "notes",
+                             "tested_by", "tested_at"])
+
+    @bp.route("/api/lab-tests/<tid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_lab_test(tid):
+        return _crud_delete("nc_lab_tests", tid)
+
+    # ── Migration/Cutover Plan ────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/migration-phases", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_migration_phases(pid):
+        return _crud_list("nc_migration_phases", pid, "phase_num")
+
+    @bp.route("/api/projects/<pid>/migration-phases", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_migration_phase(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        deps = data.get("dependencies", [])
+        if isinstance(deps, list):
+            data["dependencies"] = json.dumps(deps)
+        data["duration_days"] = str(data.get("duration_days", 0) or 0)
+        data["parallel_run"] = str(
+            1 if data.get("parallel_run") else 0)
+        return _crud_create("nc_migration_phases", pid, data,
+                            ["phase_num", "title", "description",
+                             "duration_days", "parallel_run",
+                             "rollback_criteria", "maintenance_window",
+                             "dependencies", "status"])
+
+    @bp.route("/api/migration-phases/<mid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_migration_phase(mid):
+        return _crud_delete("nc_migration_phases", mid)
+
+    # ── Capacity Growth Projections ───────────────────────────────────────
+    @bp.route("/api/projects/<pid>/capacity-projections",
+              methods=["GET"])
+    @nc_login_required
+    def nc_api_list_capacity_projections(pid):
+        return _crud_list("nc_capacity_projections", pid)
+
+    @bp.route("/api/projects/<pid>/capacity-projections",
+              methods=["POST"])
+    @nc_login_required
+    def nc_api_create_capacity_projection(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        cur = float(data.get("current_value", 0) or 0)
+        rate = float(data.get("growth_rate_pct", 20) or 20)
+        data["current_value"] = str(cur)
+        data["year1_value"] = str(round(cur * (1 + rate / 100), 2))
+        data["year3_value"] = str(
+            round(cur * (1 + rate / 100) ** 3, 2))
+        data["year5_value"] = str(
+            round(cur * (1 + rate / 100) ** 5, 2))
+        data["growth_rate_pct"] = str(rate)
+        data["threshold_pct"] = str(
+            data.get("threshold_pct", 80) or 80)
+        return _crud_create("nc_capacity_projections", pid, data,
+                            ["metric_name", "current_value",
+                             "year1_value", "year3_value",
+                             "year5_value", "growth_rate_pct",
+                             "threshold_pct", "notes"])
+
+    @bp.route("/api/capacity-projections/<cid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_capacity_projection(cid):
+        return _crud_delete("nc_capacity_projections", cid)
+
+    # ── Standards Alignment ───────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/standards-checks", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_standards_checks(pid):
+        return _crud_list("nc_standards_checks", pid)
+
+    @bp.route("/api/projects/<pid>/standards-checks", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_standards_check(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        return _crud_create("nc_standards_checks", pid, data,
+                            ["standard", "check_item", "status",
+                             "deviation_reason", "waiver_ref"])
+
+    @bp.route("/api/standards-checks/<sid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_standards_check(sid):
+        return _crud_delete("nc_standards_checks", sid)
+
+    # ── Resource Plan ─────────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/resource-plan", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_resource_plan(pid):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_resource_plan WHERE project_id=? "
+            "ORDER BY phase, role", (pid,)
+        ).fetchall()
+        items = [_row_to_dict(r) for r in rows]
+        total_hours = sum(it.get("hours", 0) or 0 for it in items)
+        total_cost = sum(
+            (it.get("hours", 0) or 0) * (it.get("rate_per_hour", 0) or 0)
+            for it in items
+        )
+        conn.close()
+        return jsonify({
+            "resources": items,
+            "total_hours": total_hours,
+            "total_labor_cost": round(total_cost, 2),
+        })
+
+    @bp.route("/api/projects/<pid>/resource-plan", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_resource(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        data["hours"] = str(data.get("hours", 0) or 0)
+        data["rate_per_hour"] = str(
+            data.get("rate_per_hour", 0) or 0)
+        data["is_contractor"] = str(
+            1 if data.get("is_contractor") else 0)
+        return _crud_create("nc_resource_plan", pid, data,
+                            ["phase", "role", "name", "hours",
+                             "rate_per_hour", "is_contractor",
+                             "skill_requirements", "notes"])
+
+    @bp.route("/api/resource-plan/<rid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_resource(rid):
+        return _crud_delete("nc_resource_plan", rid)
+
+    # ── Business Case Document Generator ──────────────────────────────────
+    @bp.route("/api/projects/<pid>/business-case", methods=["GET"])
+    @nc_login_required
+    def nc_api_business_case(pid):
+        """Generate complete business case pulling all ARB/ERB data."""
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        proj = _row_to_dict(proj)
+        package = _build_review_package(conn, pid)
+
+        # Alternatives
+        alt_criteria = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_alt_criteria WHERE project_id=? "
+            "ORDER BY sort_order", (pid,)
+        ).fetchall()]
+        alt_options = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_alternatives WHERE project_id=? "
+            "ORDER BY total_score DESC", (pid,)
+        ).fetchall()]
+        for o in alt_options:
+            try:
+                o["scores"] = json.loads(o.get("scores_json") or "{}")
+            except Exception:
+                o["scores"] = {}
+
+        # Risks
+        risks = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_risks WHERE project_id=? "
+            "ORDER BY risk_score DESC", (pid,)
+        ).fetchall()]
+
+        # BOM
+        bom_items = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_bom_items WHERE project_id=? "
+            "ORDER BY category", (pid,)
+        ).fetchall()]
+        bom_total = sum(
+            (it.get("extended_cost") or 0) for it in bom_items)
+        maint_total = sum(
+            (it.get("annual_maint") or 0) for it in bom_items)
+
+        # Capacity
+        capacity = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_capacity_projections "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()]
+
+        # Migration
+        migration = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_migration_phases WHERE project_id=? "
+            "ORDER BY phase_num", (pid,)
+        ).fetchall()]
+
+        # Lab tests
+        lab_tests = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_lab_tests WHERE project_id=? "
+            "ORDER BY created_at", (pid,)
+        ).fetchall()]
+
+        # Standards
+        standards = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_standards_checks WHERE project_id=?",
+            (pid,)
+        ).fetchall()]
+
+        # Resources
+        resources = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_resource_plan WHERE project_id=? "
+            "ORDER BY phase", (pid,)
+        ).fetchall()]
+        labor_cost = sum(
+            (r.get("hours") or 0) * (r.get("rate_per_hour") or 0)
+            for r in resources
+        )
+
+        conn.close()
+        return jsonify({
+            "project": {
+                "name": proj.get("name"),
+                "owner": proj.get("owner"),
+                "status": proj.get("status"),
+                "description": proj.get("description"),
+            },
+            "executive_summary": package,
+            "alternatives_analysis": {
+                "criteria": alt_criteria,
+                "options": alt_options,
+            },
+            "risk_register": risks,
+            "detailed_bom": {
+                "items": bom_items,
+                "hardware_total": bom_total,
+                "annual_maintenance": maint_total,
+            },
+            "capacity_projections": capacity,
+            "migration_plan": migration,
+            "lab_test_results": lab_tests,
+            "standards_alignment": standards,
+            "resource_plan": {
+                "resources": resources,
+                "total_labor_cost": round(labor_cost, 2),
+            },
+            "generated_at": _now(),
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
     # Design Pattern Library (Phase 2)
     # ══════════════════════════════════════════════════════════════════════
 

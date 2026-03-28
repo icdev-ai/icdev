@@ -514,6 +514,7 @@ CREATE TABLE IF NOT EXISTS nc_project_milestones (
     title       TEXT NOT NULL,
     due_date    TEXT,              -- ISO date (YYYY-MM-DD)
     status      TEXT DEFAULT 'pending',  -- pending, in_progress, completed, missed
+    predecessor_id TEXT,           -- dependency: must complete before this one
     notes       TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -617,6 +618,137 @@ CREATE TABLE IF NOT EXISTS nc_case_history (
     changed_by  TEXT,
     comment     TEXT,
     changed_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── ARB/ERB Documentation (Architect Workbench) ──────────────────────────
+-- Alternatives Analysis Matrix
+CREATE TABLE IF NOT EXISTS nc_alternatives (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    option_name TEXT NOT NULL,
+    description TEXT,
+    is_recommended INTEGER DEFAULT 0,
+    scores_json TEXT DEFAULT '{}',      -- {criterion_name: {score: 1-10, notes: ""}}
+    total_score REAL DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_alt_criteria (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    weight_pct  INTEGER DEFAULT 20,     -- percentage weight (all should sum to 100)
+    sort_order  INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Risk Register
+CREATE TABLE IF NOT EXISTS nc_risks (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    category    TEXT DEFAULT 'technical', -- technical, schedule, cost, operational, security
+    probability TEXT DEFAULT 'medium',    -- low, medium, high
+    impact      TEXT DEFAULT 'medium',    -- low, medium, high, critical
+    risk_score  INTEGER DEFAULT 0,        -- auto-computed: prob * impact
+    mitigation  TEXT,
+    owner       TEXT,
+    status      TEXT DEFAULT 'open',      -- open, mitigated, accepted, closed
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Enhanced BOM line items
+CREATE TABLE IF NOT EXISTS nc_bom_items (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    category    TEXT DEFAULT 'hardware',  -- hardware, software, circuit, labor, other
+    vendor      TEXT,
+    model       TEXT,
+    part_number TEXT,
+    description TEXT,
+    quantity    INTEGER DEFAULT 1,
+    unit_cost   REAL DEFAULT 0,
+    extended_cost REAL DEFAULT 0,
+    annual_maint REAL DEFAULT 0,         -- SmartNet/TAC/support
+    license_cost REAL DEFAULT 0,         -- software licensing
+    lead_time_days INTEGER DEFAULT 0,
+    contract_vehicle TEXT,               -- GSA, SEWP, BPA, direct
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Lab Test Results
+CREATE TABLE IF NOT EXISTS nc_lab_tests (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    test_name   TEXT NOT NULL,
+    category    TEXT DEFAULT 'functional', -- functional, failover, performance, security, interop
+    methodology TEXT,
+    result      TEXT DEFAULT 'pending',    -- pending, pass, fail, partial
+    measurements TEXT DEFAULT '{}',        -- JSON: {convergence_ms, throughput_mbps, etc.}
+    firmware_versions TEXT DEFAULT '{}',   -- JSON: {device: version}
+    notes       TEXT,
+    tested_by   TEXT,
+    tested_at   TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Migration/Cutover Plan
+CREATE TABLE IF NOT EXISTS nc_migration_phases (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    phase_num   INTEGER NOT NULL,
+    title       TEXT NOT NULL,
+    description TEXT,
+    duration_days INTEGER DEFAULT 0,
+    parallel_run INTEGER DEFAULT 0,       -- 1 = parallel operation with old system
+    rollback_criteria TEXT,
+    maintenance_window TEXT,
+    dependencies TEXT DEFAULT '[]',       -- JSON array of predecessor phase IDs
+    status      TEXT DEFAULT 'planned',   -- planned, in_progress, completed, rolled_back
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Capacity Growth Projections
+CREATE TABLE IF NOT EXISTS nc_capacity_projections (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    metric_name TEXT NOT NULL,            -- bandwidth_gbps, users, devices, circuits
+    current_value REAL DEFAULT 0,
+    year1_value REAL DEFAULT 0,
+    year3_value REAL DEFAULT 0,
+    year5_value REAL DEFAULT 0,
+    growth_rate_pct REAL DEFAULT 20,
+    threshold_pct REAL DEFAULT 80,        -- upgrade trigger
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Standards Alignment Checklist
+CREATE TABLE IF NOT EXISTS nc_standards_checks (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    standard    TEXT NOT NULL,            -- e.g., "Enterprise Ref Arch", "Vendor Approved List"
+    check_item  TEXT NOT NULL,
+    status      TEXT DEFAULT 'pending',   -- pending, compliant, deviation, waiver
+    deviation_reason TEXT,
+    waiver_ref  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Resource Plan
+CREATE TABLE IF NOT EXISTS nc_resource_plan (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    phase       TEXT,                     -- lifecycle phase this resource is needed
+    role        TEXT NOT NULL,            -- Network Engineer, Security Analyst, PM, etc.
+    name        TEXT,
+    hours       REAL DEFAULT 0,
+    rate_per_hour REAL DEFAULT 0,
+    is_contractor INTEGER DEFAULT 0,
+    skill_requirements TEXT,
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ── Design Pattern Library (Phase 2) ──────────────────────────────────────
@@ -2578,6 +2710,7 @@ def init_db():
             # P3: per-topology assignment
             ("nc_project_topologies", "assignee", "TEXT DEFAULT ''"),
             ("nc_review_boards", "is_optional", "INTEGER DEFAULT 0"),
+            ("nc_project_milestones", "predecessor_id", "TEXT"),
             # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
         ]
         for table, col, coltype in _migrations:

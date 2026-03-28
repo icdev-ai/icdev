@@ -5,6 +5,7 @@
 import json
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -205,9 +206,11 @@ class TestQuestionTypeClassification:
 
     def test_classify_simple(self, scorer: CRAGScorer) -> None:
         """Simple factual question must NOT be classified via regex (falls to LLM/default)."""
-        result = scorer.classify_question_type("What is the capital of France?")
-        # Regex has no positive signal for 'simple' — result is either 'simple' via
-        # LLM/default, or another type.  The important thing is the returned type is valid.
+        # Mock the LLM classifier to avoid a live API call — the test only verifies
+        # that the returned question_type is a valid QUESTION_TYPES value.
+        with patch.object(scorer, "_classify_via_llm", return_value=None):
+            result = scorer.classify_question_type("What is the capital of France?")
+        # Regex has no positive signal for 'simple' — result falls to 'simple' default.
         assert result["question_type"] in QUESTION_TYPES
 
     def test_classify_versus(self, scorer: CRAGScorer) -> None:
