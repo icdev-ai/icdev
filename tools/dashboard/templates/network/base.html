@@ -23,7 +23,8 @@
     <div class="nav-links">
       <a href="/network/" class="nav-link {% if request.path == '/network/' %}active{% endif %}">Dashboard</a>
       <a href="/network/templates" class="nav-link {% if '/network/templates' in request.path %}active{% endif %}">Templates</a>
-      <a href="/network/projects" class="nav-link {% if '/network/projects' in request.path %}active{% endif %}">Projects</a>
+      <a href="/network/projects" class="nav-link {% if request.path == '/network/projects' %}active{% endif %}">Projects</a>
+      <a href="/network/projects/compare" class="nav-link {% if '/network/projects/compare' in request.path %}active{% endif %}">Compare</a>
       <a href="/network/circuits" class="nav-link {% if '/network/circuits' in request.path %}active{% endif %}">Circuits</a>
       <a href="/network/customers" class="nav-link {% if '/network/customers' in request.path %}active{% endif %}">Customers</a>
       <a href="/network/ipam" class="nav-link {% if '/network/ipam' in request.path %}active{% endif %}">IPAM</a>

@@ -438,7 +438,7 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
     for r in active_regimes:
         total = total_rules_per_regime.get(r, 1)
         failed = len(failed_rules_per_regime.get(r, set()))
-        passed = total - failed
+        passed = max(0, total - failed)
         scores[r] = {
             "regime": COMPLIANCE_REGIMES.get(r, {}).get("name", r),
             "total_rules": total,

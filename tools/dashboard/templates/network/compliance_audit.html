@@ -128,7 +128,7 @@
         <td>{{ a.check_type }}</td>
         <td style="color:#27ae60;">{{ a.passed }}</td>
         <td style="color:#e74c3c;">{{ a.failed }}</td>
-        <td>{{ "%.0f"|format(a.passed / (a.passed + a.failed) * 100 if (a.passed + a.failed) > 0 else 0) }}%</td>
+        <td>{{ (a.passed / (a.passed + a.failed) * 100 if (a.passed + a.failed) > 0 else 0)|round(0)|int }}%</td>
       </tr>
     {% endfor %}
     </tbody>

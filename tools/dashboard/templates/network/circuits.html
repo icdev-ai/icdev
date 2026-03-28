@@ -32,7 +32,7 @@
   <div class="stat-card"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Total Circuits</div></div>
   <div class="stat-card"><div class="stat-value">{{ stats.installed }}</div><div class="stat-label">Installed</div></div>
   <div class="stat-card"><div class="stat-value">{{ stats.planned }}</div><div class="stat-label">Planned</div></div>
-  <div class="stat-card"><div class="stat-value">${{ "%.0f"|format(stats.monthly_cost) }}/mo</div><div class="stat-label">Monthly Cost</div></div>
+  <div class="stat-card"><div class="stat-value">${{ stats.monthly_cost|round(0)|int }}/mo</div><div class="stat-label">Monthly Cost</div></div>
 </div>
 
 <section class="panel panel-wide">
@@ -53,7 +53,7 @@
         <td>{{ c.handoff_a }}</td>
         <td>{{ c.handoff_z }}</td>
         <td><span class="badge badge-{{ 'public' if c.install_status == 'installed' else 'warning' }}">{{ c.install_status }}</span></td>
-        <td>${{ "%.0f"|format(c.monthly_cost_usd or 0) }}</td>
+        <td>${{ (c.monthly_cost_usd or 0)|round(0)|int }}</td>
         <td>{{ (c.contract_end or '')[:10] }}</td>
         <td class="actions">
           <button class="action-btn" onclick="editCircuit('{{ c.id }}','{{ c.circuit_id }}','{{ c.carrier }}','{{ c.circuit_type }}','{{ c.bandwidth }}','{{ c.install_status }}')" title="Edit">✏</button>

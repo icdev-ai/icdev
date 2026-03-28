@@ -733,6 +733,279 @@ def create_network_blueprint():
                                activity=activity)
 
     # ══════════════════════════════════════════════════════════════════════
+    # P2: Cross-Project Comparison
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/projects/compare")
+    @nc_login_required
+    def nc_project_compare():
+        conn = get_connection()
+        projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT p.*, c.name AS customer_name, "
+            "(SELECT COUNT(*) FROM nc_project_topologies pt "
+            " WHERE pt.project_id=p.id) AS topo_count "
+            "FROM nc_projects p "
+            "LEFT JOIN nc_customers c ON c.id=p.customer_id "
+            "ORDER BY p.name"
+        ).fetchall()]
+
+        comparison = []
+        for p in projects:
+            pid = p["id"]
+            topo_ids = [r[0] for r in conn.execute(
+                "SELECT topology_id FROM nc_project_topologies "
+                "WHERE project_id=?", (pid,)
+            ).fetchall()]
+
+            # Compliance aggregate
+            total_passed = total_failed = 0
+            open_findings = cat1 = cat2 = cat3 = 0
+            for tid in topo_ids:
+                row = conn.execute(
+                    "SELECT passed, failed FROM nc_compliance_checks "
+                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,)
+                ).fetchone()
+                if row:
+                    total_passed += row[0] or 0
+                    total_failed += row[1] or 0
+                sev_rows = conn.execute(
+                    "SELECT severity, COUNT(*) FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND status='open' "
+                    "GROUP BY severity", (tid,)
+                ).fetchall()
+                for sr in sev_rows:
+                    if sr[0] == "CAT1":
+                        cat1 += sr[1]
+                    elif sr[0] == "CAT2":
+                        cat2 += sr[1]
+                    elif sr[0] == "CAT3":
+                        cat3 += sr[1]
+                    open_findings += sr[1]
+
+            total_checks = total_passed + total_failed
+            comp_pct = round(
+                total_passed * 100 / total_checks
+            ) if total_checks else None
+
+            # Cost
+            cost_row = conn.execute(
+                "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
+                "FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies "
+                " WHERE project_id=?)", (pid,)
+            ).fetchone()
+            circuit_cost = cost_row[0] if cost_row else 0
+
+            # BOM CapEx
+            capex = 0
+            total_devices = 0
+            for tid in topo_ids:
+                trow = conn.execute(
+                    "SELECT graph_json FROM topologies WHERE id=?",
+                    (tid,)
+                ).fetchone()
+                if trow:
+                    try:
+                        g = json.loads(trow["graph_json"])
+                    except Exception:
+                        g = {"nodes": []}
+                    for n in g.get("nodes", []):
+                        nt = n.get("type", "unknown")
+                        capex += BOM_COSTS.get(nt, 0)
+                        total_devices += 1
+
+            # Node/edge totals
+            ne = conn.execute(
+                "SELECT "
+                "COALESCE(SUM(json_array_length("
+                "  json_extract(t.graph_json,'$.nodes'))),0), "
+                "COALESCE(SUM(json_array_length("
+                "  json_extract(t.graph_json,'$.edges'))),0) "
+                "FROM topologies t "
+                "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                "WHERE pt.project_id=?", (pid,)
+            ).fetchone()
+
+            # Last MC resilience score
+            mc_row = conn.execute(
+                "SELECT result_json FROM nc_mc_runs "
+                "WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies "
+                " WHERE project_id=?) "
+                "ORDER BY ran_at DESC LIMIT 1", (pid,)
+            ).fetchone()
+            mc_score = None
+            if mc_row:
+                try:
+                    mc_data = json.loads(mc_row["result_json"])
+                    mc_score = mc_data.get("risk_score")
+                except Exception:
+                    pass
+
+            comparison.append({
+                "id": pid,
+                "name": p["name"],
+                "status": p["status"],
+                "customer": p.get("customer_name", ""),
+                "topo_count": p["topo_count"],
+                "nodes": ne[0] if ne else 0,
+                "edges": ne[1] if ne else 0,
+                "compliance_pct": comp_pct,
+                "open_findings": open_findings,
+                "cat1": cat1,
+                "cat2": cat2,
+                "cat3": cat3,
+                "circuit_cost": circuit_cost,
+                "capex": capex,
+                "devices": total_devices,
+                "mc_resilience": mc_score,
+            })
+        conn.close()
+        return render_template("network/compare.html",
+                               comparison=comparison)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # P2: Clone Project API
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/projects/<pid>/clone", methods=["POST"])
+    @nc_login_required
+    def nc_api_clone_project(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        new_name = data.get("name", "")
+        conn = get_connection()
+        orig = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        if not orig:
+            conn.close()
+            return jsonify({"error": "Project not found"}), 404
+        orig = _row_to_dict(orig)
+
+        now = _now()
+        new_pid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_projects "
+            "(id, name, customer_id, description, status, owner, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (new_pid,
+             new_name or f"{orig['name']} (Copy)",
+             orig.get("customer_id"),
+             orig.get("description", ""),
+             "draft", orig.get("owner", ""), now, now)
+        )
+
+        # Deep-copy topologies
+        topo_map = {}  # old_id -> new_id
+        orig_topos = conn.execute(
+            "SELECT topology_id FROM nc_project_topologies "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()
+        for row in orig_topos:
+            old_tid = row[0]
+            topo = conn.execute(
+                "SELECT * FROM topologies WHERE id=?", (old_tid,)
+            ).fetchone()
+            if not topo:
+                continue
+            topo = _row_to_dict(topo)
+            new_tid = str(_uuid.uuid4())
+            topo_map[old_tid] = new_tid
+            conn.execute(
+                "INSERT INTO topologies "
+                "(id, name, description, graph_json, template_id, "
+                " classification, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (new_tid, f"{topo['name']} (Copy)",
+                 topo.get("description", ""),
+                 topo.get("graph_json", '{"nodes":[],"edges":[]}'),
+                 topo.get("template_id"),
+                 topo.get("classification", "public"), now, now)
+            )
+            conn.execute(
+                "INSERT INTO nc_project_topologies "
+                "(project_id, topology_id) VALUES (?,?)",
+                (new_pid, new_tid)
+            )
+
+            # Copy compliance profile
+            profile = conn.execute(
+                "SELECT * FROM nc_compliance_profiles "
+                "WHERE topology_id=?", (old_tid,)
+            ).fetchone()
+            if profile:
+                conn.execute(
+                    "INSERT INTO nc_compliance_profiles "
+                    "(id, topology_id, regimes, classification, "
+                    " environment, auto_audit, created_at, updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), new_tid,
+                     profile["regimes"], profile["classification"],
+                     profile["environment"], profile["auto_audit"],
+                     now, now)
+                )
+
+            # Copy circuits
+            circuits = conn.execute(
+                "SELECT * FROM nc_circuits WHERE topology_id=?",
+                (old_tid,)
+            ).fetchall()
+            for c in circuits:
+                c = _row_to_dict(c)
+                conn.execute(
+                    "INSERT INTO nc_circuits "
+                    "(id, topology_id, circuit_id, carrier, "
+                    " circuit_type, bandwidth, handoff_a, handoff_z, "
+                    " customer, site, monthly_cost_usd, "
+                    " contract_start, contract_end, sla_uptime_pct, "
+                    " install_status, notes, created_at, updated_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), new_tid,
+                     c["circuit_id"], c.get("carrier"),
+                     c.get("circuit_type"), c.get("bandwidth"),
+                     c.get("handoff_a"), c.get("handoff_z"),
+                     c.get("customer"), c.get("site"),
+                     c.get("monthly_cost_usd", 0),
+                     c.get("contract_start"), c.get("contract_end"),
+                     c.get("sla_uptime_pct", 99.9),
+                     c.get("install_status", "planned"),
+                     c.get("notes"), now, now)
+                )
+
+            # Copy IPAM blocks
+            blocks = conn.execute(
+                "SELECT * FROM nc_ipam_blocks WHERE topology_id=?",
+                (old_tid,)
+            ).fetchall()
+            for b in blocks:
+                b = _row_to_dict(b)
+                conn.execute(
+                    "INSERT INTO nc_ipam_blocks "
+                    "(id, topology_id, network, vlan_id, vrf, "
+                    " description, site_id, gateway, "
+                    " utilization_pct, created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), new_tid,
+                     b["network"], b.get("vlan_id"),
+                     b.get("vrf", "global"),
+                     b.get("description"), b.get("site_id"),
+                     b.get("gateway"),
+                     b.get("utilization_pct", 0), now)
+                )
+
+        conn.commit()
+        conn.close()
+        _audit("CLONE", "project", new_pid,
+               f"Cloned from {orig['name']} ({pid})")
+        return jsonify({
+            "id": new_pid,
+            "name": new_name or f"{orig['name']} (Copy)",
+            "topologies_cloned": len(topo_map),
+            "source_id": pid,
+        }), 201
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Health
     # ══════════════════════════════════════════════════════════════════════
 

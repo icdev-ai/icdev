@@ -18,7 +18,7 @@
   <div class="stat-card"><div class="stat-value">{{ portfolio.total_projects }}</div><div class="stat-label">Projects</div></div>
   <div class="stat-card"><div class="stat-value">{{ portfolio.by_status.get('deployed', 0) }}</div><div class="stat-label">Deployed</div></div>
   <div class="stat-card"><div class="stat-value">{{ portfolio.by_status.get('in_review', 0) }}</div><div class="stat-label">In Review</div></div>
-  <div class="stat-card"><div class="stat-value">${{ "%.0f"|format(portfolio.total_cost) }}/mo</div><div class="stat-label">Total Circuit Cost</div></div>
+  <div class="stat-card"><div class="stat-value">${{ portfolio.total_cost|round(0)|int }}/mo</div><div class="stat-label">Total Circuit Cost</div></div>
   <div class="stat-card"><div class="stat-value {% if portfolio.total_findings > 0 %}text-danger{% endif %}">{{ portfolio.total_findings }}</div><div class="stat-label">Open Findings</div></div>
 </div>
 
@@ -54,7 +54,7 @@
           <span class="health-pill pill-red" title="Open findings">{{ p.open_findings }} findings</span>
           {% endif %}
           {% if p.monthly_cost > 0 %}
-          <span class="health-pill pill-blue" title="Monthly circuit cost">${{ "%.0f"|format(p.monthly_cost) }}/mo</span>
+          <span class="health-pill pill-blue" title="Monthly circuit cost">${{ p.monthly_cost|round(0)|int }}/mo</span>
           {% endif %}
         </div>
         {% if p.owner %}<div class="kanban-card-owner">{{ p.owner }}</div>{% endif %}
@@ -96,7 +96,7 @@
           {% else %}—{% endif %}
         </td>
         <td>{% if p.open_findings > 0 %}<span class="health-pill pill-red">{{ p.open_findings }}</span>{% else %}0{% endif %}</td>
-        <td>{% if p.monthly_cost > 0 %}${{ "%.0f"|format(p.monthly_cost) }}{% else %}—{% endif %}</td>
+        <td>{% if p.monthly_cost > 0 %}${{ p.monthly_cost|round(0)|int }}{% else %}—{% endif %}</td>
         <td>{{ p.owner or '—' }}</td>
         <td class="ts">{{ (p.last_sim or '')[:16] }}</td>
         <td class="actions">

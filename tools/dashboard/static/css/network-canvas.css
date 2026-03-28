@@ -409,6 +409,64 @@ a:hover { text-decoration: underline; }
 
 .btn.active { background: var(--red); color: #fff; }
 
+/* ── Comparison Bar ────────────────────────────────────────────────────────── */
+.compare-bar {
+  position: relative;
+  width: 80px;
+  height: 18px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+.compare-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .3s;
+}
+.fill-green  { background: #27ae60; }
+.fill-yellow { background: #f39c12; }
+.fill-red    { background: #e74c3c; }
+.compare-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0,0,0,.6);
+}
+
+/* ── Risk Heatmap ──────────────────────────────────────────────────────────── */
+.heatmap-grid {
+  padding: 12px;
+  overflow-x: auto;
+}
+.heatmap-header, .heatmap-row {
+  display: grid;
+  grid-template-columns: 180px repeat(5, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.hm-cell {
+  padding: 8px 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+.hm-corner { background: transparent; }
+.hm-col-label { background: var(--bg3); color: var(--text-dim); font-size: 11px; }
+.hm-row-label { background: var(--bg3); color: var(--text); text-align: left; }
+.hm-green  { background: #1b3a1b; color: #27ae60; }
+.hm-yellow { background: #3a2e00; color: #f39c12; }
+.hm-red    { background: #3a1010; color: #e74c3c; }
+.hm-gray   { background: var(--bg3); color: var(--text-dim); }
+
 /* ── Mini Template Grid ─────────────────────────────────────────────────────── */
 .template-grid-mini { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .template-card-mini {
