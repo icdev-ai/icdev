@@ -162,22 +162,55 @@ def _detect_providers(nodes: list[dict]) -> list[str]:
 # 1. Ansible Inventory (INI format)
 # ---------------------------------------------------------------------------
 
-def to_ansible_inventory(graph: dict, name: str) -> str:
+def _build_enclave_map(boundaries: list[dict]) -> dict[str, str]:
+    """Return {node_id: enclave_group_name} from nc_boundaries rows.
+
+    Each boundary row has a ``node_ids`` field (JSON array) and a ``label``
+    plus optional ``classification`` (CUI, SECRET, PUBLIC, …).  The Ansible
+    group name is derived from the label, sanitised to a valid identifier.
+    """
+    import json as _json
+
+    node_to_enclave: dict[str, str] = {}
+    for b in boundaries:
+        label = (b.get("label") or "enclave").strip()
+        cls = (b.get("classification") or "").strip()
+        group = _safe_id(f"{label}_{cls}" if cls else label)
+        if not group:
+            group = "enclave"
+        raw_ids = b.get("node_ids", "[]")
+        try:
+            ids = _json.loads(raw_ids) if isinstance(raw_ids, str) else raw_ids
+        except Exception:
+            ids = []
+        for nid in ids:
+            node_to_enclave[nid] = group
+    return node_to_enclave
+
+
+def to_ansible_inventory(graph: dict, name: str, boundaries: list[dict] | None = None) -> str:
     """Generate an Ansible inventory INI file from a topology graph.
 
-    Hosts are grouped by security zone/role derived from node type and label.
+    Hosts are grouped first by enclave boundary (if ``boundaries`` data from
+    ``nc_boundaries`` is supplied) and then by security zone/role derived from
+    node type and label.  Nodes that belong to a named enclave are placed in a
+    ``[enclave_<name>]`` group; remaining hosts fall back to type-based groups.
+
     Only addressable nodes (routers, firewalls, servers, endpoints, etc.) are
     included; pure network-infrastructure nodes (VPCs, subnets, cloud services)
     are emitted as comments for reference.
 
     Args:
-        graph: Dict with "nodes" and "edges" lists.
-        name:  Topology name — used in the header comment.
+        graph:      Dict with "nodes" and "edges" lists.
+        name:       Topology name — used in the header comment.
+        boundaries: Optional list of nc_boundaries row dicts.  Each must have
+                    ``label``, ``classification``, and ``node_ids`` (JSON str).
 
     Returns:
         Ansible inventory INI string.
     """
     nodes = graph.get("nodes", [])
+    enclave_map: dict[str, str] = _build_enclave_map(boundaries or [])
 
     # Separate host nodes from cloud-infra nodes
     host_nodes: list[dict] = []
@@ -189,16 +222,28 @@ def to_ansible_inventory(graph: dict, name: str) -> str:
         else:
             infra_nodes.append(n)
 
-    # Group hosts by zone
+    # Group hosts — enclave takes priority over type-based zone
     groups: dict[str, list[dict]] = {}
     for n in host_nodes:
-        zone = _classify_zone(n)
-        groups.setdefault(zone, []).append(n)
+        nid = n.get("id", "")
+        if nid in enclave_map:
+            group = enclave_map[nid]
+        else:
+            group = _classify_zone(n)
+        groups.setdefault(group, []).append(n)
+
+    # Collect enclave metadata for header
+    enclave_names: list[str] = sorted({
+        enclave_map[nid] for nid in enclave_map
+        if any(n.get("id") == nid for n in host_nodes)
+    })
 
     lines: list[str] = []
     lines.append(f"# Ansible Inventory — {name}")
     lines.append(f"# Generated: {_now_utc()} by ICDEV™ Network Canvas")
     lines.append(f"# Topology nodes: {len(nodes)}  |  Addressable hosts: {len(host_nodes)}")
+    if enclave_names:
+        lines.append(f"# Security enclaves: {', '.join(enclave_names)}")
     lines.append("")
 
     # [all:vars] block
@@ -211,16 +256,35 @@ def to_ansible_inventory(graph: dict, name: str) -> str:
     # Per-group sections
     for group_name in sorted(groups.keys()):
         group_hosts = groups[group_name]
+        # Annotate enclave groups with classification comment
+        enclave_cls = next(
+            (
+                b.get("classification", "")
+                for b in (boundaries or [])
+                if _safe_id(
+                    f"{b.get('label', '')}_{b.get('classification', '')}"
+                    if b.get("classification") else b.get("label", "")
+                ) == group_name
+            ),
+            None,
+        )
+        if enclave_cls:
+            lines.append(f"# Enclave — classification: {enclave_cls}")
         lines.append(f"[{group_name}]")
         for n in group_hosts:
             label = n.get("label", n["id"])
             hostname = _safe_id(label)
             ip = n.get("ip") or n.get("ip_address") or ""
+            cfg = n.get("config") or {}
             vars_parts: list[str] = []
             if ip:
                 vars_parts.append(f"ansible_host={ip}")
             vars_parts.append(f"node_id={n['id']}")
             vars_parts.append(f"node_type={n.get('type', 'unknown')}")
+            if cfg.get("hostname"):
+                vars_parts.append(f"hostname={cfg['hostname']}")
+            if cfg.get("site"):
+                vars_parts.append(f"site={cfg['site']}")
             vars_str = "  " + "  ".join(vars_parts) if vars_parts else ""
             lines.append(f"{hostname}{vars_str}")
         lines.append("")
@@ -571,19 +635,162 @@ _RESOURCE_TEMPLATES: dict[str, str] = {
 }
 
 
-def to_terraform_hcl(graph: dict, name: str) -> str:
+_ENCLAVE_SG_TEMPLATES: dict[str, str] = {
+    # AWS security group per enclave
+    "aws": textwrap.dedent("""\
+        resource "aws_security_group" "{sg_id}" {{
+          name        = "{label}"
+          description = "Enclave: {enclave_label} ({classification})"
+          vpc_id      = aws_vpc.<vpc_id>.id  # TODO: reference correct VPC
+
+          # Allow all traffic within this enclave
+          ingress {{
+            from_port   = 0
+            to_port     = 0
+            protocol    = "-1"
+            self        = true
+            description = "Intra-enclave traffic"
+          }}
+
+          egress {{
+            from_port   = 0
+            to_port     = 0
+            protocol    = "-1"
+            cidr_blocks = ["0.0.0.0/0"]
+            description = "Default egress — restrict as needed"
+          }}
+
+          tags = {{
+            Name           = "{label}"
+            Enclave        = "{enclave_label}"
+            Classification = "{classification}"
+          }}
+        }}
+    """),
+    # Azure NSG per enclave
+    "azurerm": textwrap.dedent("""\
+        resource "azurerm_network_security_group" "{sg_id}" {{
+          name                = "{label}"
+          resource_group_name = var.azure_resource_group
+          location            = var.azure_location
+
+          # Allow intra-enclave traffic (adjust priority/ports as needed)
+          security_rule {{
+            name                       = "allow-intra-enclave"
+            priority                   = 100
+            direction                  = "Inbound"
+            access                     = "Allow"
+            protocol                   = "*"
+            source_port_range          = "*"
+            destination_port_range     = "*"
+            source_address_prefix      = "VirtualNetwork"
+            destination_address_prefix = "VirtualNetwork"
+          }}
+
+          tags = {{
+            enclave        = "{enclave_label}"
+            classification = "{classification}"
+          }}
+        }}
+    """),
+    # GCP firewall rule per enclave
+    "google": textwrap.dedent("""\
+        resource "google_compute_firewall" "{sg_id}" {{
+          name    = "{label}"
+          network = google_compute_network.<vpc_name>.id  # TODO
+
+          # Allow all internal traffic within the enclave tag
+          allow {{
+            protocol = "all"
+          }}
+
+          source_tags = ["{enclave_label}"]
+          target_tags = ["{enclave_label}"]
+
+          description = "Enclave: {enclave_label} ({classification})"
+        }}
+    """),
+}
+
+# Classification → ingress restriction hint
+_CLS_NOTES: dict[str, str] = {
+    "PUBLIC":       "Public zone — review egress rules, restrict ingress",
+    "CUI":          "CUI enclave — restrict ingress to authorised CUI systems only",
+    "SECRET":       "SECRET enclave — no internet egress; IL5/IL6 VPC only",
+    "TOP SECRET":   "TOP SECRET enclave — air-gap required; no cloud egress",
+}
+
+
+def _generate_enclave_sgs(boundaries: list[dict], providers: list[str], lines: list[str]) -> None:
+    """Append Terraform security-group / firewall resources for each enclave boundary.
+
+    One resource is emitted per boundary per detected cloud provider (AWS SG,
+    Azure NSG, GCP firewall rule).  On-prem-only topologies get a comment block.
+    """
+    import json as _json
+
+    if not boundaries:
+        return
+
+    lines.append(
+        "# ── Enclave-derived Security Groups / Firewall Rules ─────────────────"
+    )
+    lines.append(
+        "# Each security enclave boundary from the canvas maps to one SG/NSG/firewall resource."
+    )
+    lines.append("")
+
+    cloud_providers = [p for p in providers if p in _ENCLAVE_SG_TEMPLATES]
+
+    for b in boundaries:
+        enc_label = (b.get("label") or "enclave").strip()
+        cls = (b.get("classification") or "CUI").strip()
+        sg_id = _safe_id(f"sg_{enc_label}_{cls}")
+        tf_label = _safe_id(enc_label)
+        note = _CLS_NOTES.get(cls, f"{cls} enclave")
+        raw_ids = b.get("node_ids", "[]")
+        try:
+            contained_ids = _json.loads(raw_ids) if isinstance(raw_ids, str) else raw_ids
+        except Exception:
+            contained_ids = []
+
+        lines.append(f"# Enclave: {enc_label} | Classification: {cls} | {note}")
+        lines.append(f"# Contains {len(contained_ids)} node(s): {', '.join(contained_ids[:5])}"
+                     + (" …" if len(contained_ids) > 5 else ""))
+
+        if not cloud_providers:
+            lines.append(f"# No cloud provider detected — configure on-prem ACLs for enclave '{enc_label}' manually.")
+            lines.append("")
+            continue
+
+        for prov in cloud_providers:
+            tmpl = _ENCLAVE_SG_TEMPLATES[prov]
+            block = tmpl.format(
+                sg_id=f"{sg_id}_{prov}" if len(cloud_providers) > 1 else sg_id,
+                label=f"{tf_label}-sg",
+                enclave_label=enc_label,
+                classification=cls,
+            )
+            lines.append(block)
+
+
+def to_terraform_hcl(graph: dict, name: str, boundaries: list[dict] | None = None) -> str:
     """Generate a Terraform HCL skeleton from a topology graph.
 
     The skeleton includes:
     - terraform {} block with required providers
     - provider blocks for each detected cloud (AWS, Azure, GCP, OCI, IBM)
     - resource blocks for each cloud node in the topology
+    - security-group / NSG / firewall resources for each enclave boundary
+      (when ``boundaries`` data from ``nc_boundaries`` is supplied)
     - a locals block mapping edges to conceptual security-group rules
     - variable stubs for CIDRs and region overrides
 
     Args:
-        graph: Dict with "nodes" and "edges" lists.
-        name:  Topology name — used in the file header comment.
+        graph:      Dict with "nodes" and "edges" lists.
+        name:       Topology name — used in the file header comment.
+        boundaries: Optional list of nc_boundaries row dicts.  Each must have
+                    ``label``, ``classification``, and ``node_ids`` (JSON str).
 
     Returns:
         Terraform HCL string (main.tf equivalent).
@@ -595,7 +802,8 @@ def to_terraform_hcl(graph: dict, name: str) -> str:
     lines: list[str] = []
     lines.append(f"# Terraform HCL Skeleton — {name}")
     lines.append(f"# Generated: {_now_utc()} by ICDEV™ Network Canvas")
-    lines.append(f"# Topology: {len(nodes)} nodes, {len(edges)} edges")
+    lines.append(f"# Topology: {len(nodes)} nodes, {len(edges)} edges"
+                 + (f", {len(boundaries)} enclave(s)" if boundaries else ""))
     lines.append("#")
     lines.append("# IMPORTANT: This is a skeleton — review all TODO comments before applying.")
     lines.append("# Run: terraform init && terraform plan")
@@ -657,6 +865,10 @@ def to_terraform_hcl(graph: dict, name: str) -> str:
             lines.append("")
         else:
             unknown_nodes.append(n)
+
+    # Enclave-derived security groups
+    if boundaries:
+        _generate_enclave_sgs(boundaries, providers, lines)
 
     # Edge-derived security group rules (locals block)
     sg_rules: list[str] = []

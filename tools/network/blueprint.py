@@ -1447,27 +1447,35 @@ def create_network_blueprint():
     def nc_api_export_ansible(topo_id):
         """Export topology as an Ansible inventory INI file.
 
-        Hosts are grouped by security zone/role derived from node type.
+        Hosts are grouped first by security enclave boundary (from
+        nc_boundaries) and then by zone/role derived from node type.
         Cloud-infrastructure nodes (VPCs, subnets, etc.) are emitted as
         comments for reference only.
         """
         conn = get_connection()
         row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
-        conn.close()
         if not row:
+            conn.close()
             return jsonify({"error": "Not found"}), 404
         topo = _row_to_dict(row)
+        boundary_rows = conn.execute(
+            "SELECT label, classification, node_ids FROM nc_boundaries WHERE topology_id=?",
+            (topo_id,),
+        ).fetchall()
+        conn.close()
         try:
             graph = json.loads(topo["graph_json"])
         except Exception:
             graph = {"nodes": [], "edges": []}
-        content = to_ansible_inventory(graph, topo["name"])
+        boundaries = [dict(r) for r in boundary_rows]
+        content = to_ansible_inventory(graph, topo["name"], boundaries=boundaries)
         safe_name = topo["name"].replace(" ", "_")
         _audit("EXPORT", "topology", topo_id, "ansible")
         return jsonify({
             "format": "ansible",
             "filename": f"{safe_name}_inventory.ini",
             "content": content,
+            "enclave_count": len(boundaries),
         })
 
     @bp.route("/api/export/<topo_id>/terraform", methods=["POST"])
@@ -1475,27 +1483,35 @@ def create_network_blueprint():
     def nc_api_export_terraform(topo_id):
         """Export topology as a Terraform HCL skeleton (main.tf).
 
-        Generates provider blocks, resource stubs for every cloud node, and a
-        locals block mapping diagram edges to conceptual connectivity rules
-        (security-group / NACL / firewall policy inputs).
+        Generates provider blocks, resource stubs for every cloud node,
+        security-group / NSG / firewall resources for each enclave boundary,
+        and a locals block mapping diagram edges to conceptual connectivity
+        rules (security-group / NACL / firewall policy inputs).
         """
         conn = get_connection()
         row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
-        conn.close()
         if not row:
+            conn.close()
             return jsonify({"error": "Not found"}), 404
         topo = _row_to_dict(row)
+        boundary_rows = conn.execute(
+            "SELECT label, classification, node_ids FROM nc_boundaries WHERE topology_id=?",
+            (topo_id,),
+        ).fetchall()
+        conn.close()
         try:
             graph = json.loads(topo["graph_json"])
         except Exception:
             graph = {"nodes": [], "edges": []}
-        content = to_terraform_hcl(graph, topo["name"])
+        boundaries = [dict(r) for r in boundary_rows]
+        content = to_terraform_hcl(graph, topo["name"], boundaries=boundaries)
         safe_name = topo["name"].replace(" ", "_")
         _audit("EXPORT", "topology", topo_id, "terraform")
         return jsonify({
             "format": "terraform",
             "filename": f"{safe_name}_main.tf",
             "content": content,
+            "enclave_count": len(boundaries),
         })
 
     @bp.route("/api/export/<topo_id>/device-configs", methods=["POST"])
