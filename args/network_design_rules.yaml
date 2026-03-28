@@ -273,6 +273,107 @@ on_node_add:
         required: true
         hint: "vManage/vSmart for Cisco, Orchestrator for others"
 
+# ── IPv6 / Dual-Stack ─────────────────────────────────────────────────────
+# These rules apply across all device types when IPv6 is enabled
+
+ipv6_rules:
+  readiness_checklist:
+    - "Verify all equipment supports IPv6 (check ipv6_capable property)"
+    - "Plan IPv6 addressing: /48 per site, /64 per VLAN/subnet"
+    - "Enable dual-stack on all infrastructure devices before endpoints"
+    - "Configure OSPFv3 or MP-BGP for IPv6 routing (not separate process)"
+    - "Enable RA Guard on all access ports to prevent rogue RAs"
+    - "Enable DHCPv6 snooping alongside DHCP snooping"
+    - "Configure IPv6 ACLs — do NOT rely on IPv4 ACLs to cover IPv6"
+    - "Enable NDP (Neighbor Discovery Protocol) inspection"
+    - "Plan DNS: AAAA records + reverse PTR for all infrastructure"
+    - "Test IPv6 failover independently — VRRP/HSRPv3 for IPv6 gateways"
+
+  migration_phases:
+    phase1_assessment:
+      name: "Assessment & Inventory"
+      tasks:
+        - "Audit all devices for IPv6 capability (HW + SW version)"
+        - "Identify devices requiring upgrade or replacement"
+        - "Document current IPv4 addressing plan"
+        - "Design IPv6 addressing plan (/48 per site, /64 per subnet)"
+        - "Identify applications that need IPv6 support"
+        - "Assess DNS infrastructure (split-horizon, AAAA records)"
+
+    phase2_infrastructure:
+      name: "Core Infrastructure (Dual-Stack)"
+      tasks:
+        - "Enable ipv6 unicast-routing on all routers"
+        - "Configure OSPFv3 / MP-BGP address-family ipv6"
+        - "Assign IPv6 addresses to loopbacks and infrastructure links"
+        - "Configure dual-stack on core and distribution routers first"
+        - "Enable HSRPv3/VRRPv3 with IPv6 virtual addresses"
+        - "Update ACLs and firewall rules for IPv6 traffic"
+
+    phase3_services:
+      name: "Network Services"
+      tasks:
+        - "Configure DHCPv6 server/relay"
+        - "Enable SLAAC or DHCPv6 per VLAN policy"
+        - "Update DNS with AAAA records for all services"
+        - "Configure NAT64/DNS64 for IPv4-only endpoints (if needed)"
+        - "Enable IPv6 on load balancers (dual-stack VIPs)"
+        - "Update monitoring (SNMP over IPv6, flow export)"
+
+    phase4_access:
+      name: "Access Layer & Endpoints"
+      tasks:
+        - "Enable dual-stack on access switches"
+        - "Configure RA Guard and DHCPv6 snooping on all access ports"
+        - "Enable NDP inspection"
+        - "Roll out IPv6 to endpoint VLANs (SLAAC or DHCPv6)"
+        - "Test endpoint connectivity and application access"
+        - "Monitor dual-stack coexistence for issues"
+
+    phase5_optimization:
+      name: "Optimization & IPv4 Sunset Planning"
+      tasks:
+        - "Measure IPv6 vs IPv4 traffic ratios"
+        - "Identify remaining IPv4-only dependencies"
+        - "Plan IPv4 sunset timeline (if applicable)"
+        - "Document lessons learned and update runbooks"
+        - "Configure IPv6-preferred policies where ready"
+
+  transition_mechanisms:
+    dual_stack:
+      description: "Run IPv4 and IPv6 simultaneously on all interfaces"
+      use_when: "Default approach — recommended for most enterprise networks"
+      pros: ["No translation overhead", "Gradual migration", "Full feature parity"]
+      cons: ["Double the address management", "Double the routing tables", "Double the ACLs"]
+
+    nat64_dns64:
+      description: "Translate between IPv6-only clients and IPv4-only servers"
+      use_when: "IPv6-only segments need to reach legacy IPv4 services"
+      pros: ["Enables IPv6-only endpoints", "Reduces IPv4 dependency"]
+      cons: ["Translation overhead", "Some applications break", "Stateful NAT complexity"]
+
+    6to4_tunnels:
+      description: "Encapsulate IPv6 in IPv4 tunnels across IPv4-only segments"
+      use_when: "IPv6 islands separated by IPv4-only backbone (AVOID if possible)"
+      pros: ["Quick connectivity"]
+      cons: ["Deprecated (RFC 7526)", "Security risks", "Unreliable"]
+
+    map_t:
+      description: "MAP-T (Mapping of Address and Port using Translation)"
+      use_when: "Service provider IPv6 transition with stateless translation"
+      pros: ["Stateless", "Scalable"]
+      cons: ["Complex", "Limited vendor support"]
+
+  security:
+    - "RA Guard: Prevent rogue Router Advertisement attacks on all access ports"
+    - "DHCPv6 snooping: Prevent rogue DHCPv6 servers"
+    - "NDP inspection: Prevent NDP spoofing (IPv6 equivalent of ARP spoofing)"
+    - "IPv6 ACLs: MUST be configured independently — IPv4 ACLs do NOT filter IPv6"
+    - "Disable IPv6 on interfaces where not needed (prevents shadow IPv6 attacks)"
+    - "Enable IPv6 First Hop Security (FHS) suite on all L2 switches"
+    - "ICMPv6: Do NOT block — required for PMTUD, NDP, SLAAC"
+    - "Firewall: Must inspect IPv6 traffic separately — dual-stack = dual rules"
+
 # ── Best Practices (category-grouped) ─────────────────────────────────────
 best_practices:
   routing:
@@ -321,3 +422,16 @@ best_practices:
     - "UPS runtime minimum 15 minutes for graceful shutdown"
     - "Cable management: structured cabling with clear labeling"
     - "Environmental monitoring: temperature, humidity in all closets"
+
+  ipv6:
+    - "Design IPv6-first for new greenfield deployments"
+    - "Use /48 per site, /64 per VLAN — never subnet smaller than /64"
+    - "Enable dual-stack on infrastructure before endpoints"
+    - "OSPFv3 for IPv6 IGP, MP-BGP for multi-protocol (preferred over separate processes)"
+    - "HSRPv3/VRRPv3 supports both IPv4 and IPv6 in a single group"
+    - "RA Guard + DHCPv6 snooping + NDP inspection on ALL access ports"
+    - "IPv6 ACLs are independent of IPv4 — configure BOTH or traffic leaks"
+    - "Do NOT block ICMPv6 — it breaks PMTUD, NDP, and SLAAC"
+    - "Plan NAT64/DNS64 only for legacy IPv4-only services, not as primary strategy"
+    - "Monitor IPv6 traffic ratios to track migration progress"
+    - "Document IPv6 capability per device (ipv6_capable field in device properties)"

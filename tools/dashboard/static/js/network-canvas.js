@@ -1091,6 +1091,11 @@ function selectCell(cell) {
     document.getElementById('cfg-model').value = config.model || '';
     document.getElementById('cfg-serial').value = config.serial || '';
     document.getElementById('cfg-asset-tag').value = config.asset_tag || '';
+    // IPv6
+    document.getElementById('cfg-ipv6').value = config.ipv6 || '';
+    document.getElementById('cfg-ipv6-ll').value = config.ipv6_link_local || '';
+    document.getElementById('cfg-addr-family').value = config.address_family || '';
+    document.getElementById('cfg-ipv6-capable').value = config.ipv6_capable || '';
     // Lifecycle & Tech Debt
     document.getElementById('cfg-install-date').value = config.install_date || '';
     document.getElementById('cfg-eos-date').value = config.eos_date || '';

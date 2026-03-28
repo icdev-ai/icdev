@@ -7417,6 +7417,147 @@ Output ONLY the JSON object. No other text."""
             },
         })
 
+    # ── IPv6 Readiness Assessment ───────────────────────────────────────
+    @bp.route("/api/ipv6-readiness/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_ipv6_readiness(topo_id):
+        """Assess IPv6 readiness of a topology: device capability,
+        addressing gaps, migration status."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?",
+            (topo_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        nodes = graph.get("nodes", [])
+        devices = []
+        capable_yes = capable_no = capable_partial = capable_unknown = 0
+        has_v6_addr = 0
+        has_v4_only = 0
+        dual_stack = 0
+        infra_types = {"router", "switch-l3", "switch-l2", "firewall",
+                       "mpls-pe", "mpls-p", "route-reflector",
+                       "load-balancer", "sdwan-edge", "wlc"}
+
+        for n in nodes:
+            ntype = n.get("type", "")
+            if ntype not in infra_types:
+                continue
+            cfg = n.get("config") or n.get("configData") or {}
+            cap = cfg.get("ipv6_capable", "")
+            af = cfg.get("address_family", "")
+            has_v6 = bool(cfg.get("ipv6"))
+            has_v4 = bool(cfg.get("ip"))
+
+            if cap == "yes":
+                capable_yes += 1
+            elif cap == "no":
+                capable_no += 1
+            elif cap == "partial":
+                capable_partial += 1
+            else:
+                capable_unknown += 1
+
+            if has_v6 and has_v4:
+                dual_stack += 1
+            elif has_v6:
+                has_v6_addr += 1
+            elif has_v4:
+                has_v4_only += 1
+
+            issues = []
+            if cap == "no":
+                issues.append("Device does NOT support IPv6 — "
+                              "requires hardware/software upgrade")
+            elif cap == "partial":
+                issues.append("Limited IPv6 support — "
+                              "verify feature set")
+            elif cap == "":
+                issues.append("IPv6 capability unknown — "
+                              "verify and update device properties")
+            if has_v4 and not has_v6 and af != "ipv4":
+                issues.append("IPv4 configured but no IPv6 address — "
+                              "add IPv6 for dual-stack")
+
+            devices.append({
+                "id": n.get("id"),
+                "label": n.get("label", ""),
+                "type": ntype,
+                "ipv6_capable": cap or "unknown",
+                "address_family": af or ("dual-stack" if has_v6 and has_v4
+                                         else "ipv6" if has_v6
+                                         else "ipv4" if has_v4
+                                         else "none"),
+                "has_ipv4": has_v4,
+                "has_ipv6": has_v6,
+                "issues": issues,
+            })
+
+        total = len(devices)
+        ready_pct = round(
+            capable_yes * 100 / max(total, 1)
+        )
+        dual_pct = round(
+            dual_stack * 100 / max(total, 1)
+        )
+
+        # Migration recommendation
+        if capable_no > 0:
+            recommendation = (
+                f"{capable_no} device(s) do not support IPv6 and "
+                f"must be upgraded/replaced before migration. "
+                f"Start with Phase 1: Assessment & Inventory."
+            )
+        elif capable_unknown > total / 2:
+            recommendation = (
+                f"{capable_unknown} device(s) have unknown IPv6 capability. "
+                f"Audit all equipment and update the 'IPv6 Capable' "
+                f"property before planning migration."
+            )
+        elif dual_stack < total:
+            recommendation = (
+                f"{total - dual_stack} device(s) not yet dual-stack. "
+                f"Proceed with Phase 2: Enable dual-stack on core/distribution first."
+            )
+        else:
+            recommendation = (
+                "All infrastructure devices are dual-stack. "
+                "Proceed to Phase 4: Access layer and endpoint rollout."
+            )
+
+        # Load IPv6 rules from design rules
+        ipv6_rules = _design_rules.get("ipv6_rules", {})
+
+        return jsonify({
+            "topology": row["name"],
+            "total_devices": total,
+            "devices": devices,
+            "summary": {
+                "capable_yes": capable_yes,
+                "capable_no": capable_no,
+                "capable_partial": capable_partial,
+                "capable_unknown": capable_unknown,
+                "readiness_pct": ready_pct,
+                "dual_stack_count": dual_stack,
+                "dual_stack_pct": dual_pct,
+                "ipv4_only_count": has_v4_only,
+                "ipv6_only_count": has_v6_addr,
+            },
+            "recommendation": recommendation,
+            "migration_phases": ipv6_rules.get(
+                "migration_phases", {}),
+            "transition_mechanisms": ipv6_rules.get(
+                "transition_mechanisms", {}),
+            "security_checklist": ipv6_rules.get("security", []),
+        })
+
     # ══════════════════════════════════════════════════════════════════════
     # PPS Matrix Generator — Enclave / Device Pair
     # ══════════════════════════════════════════════════════════════════════

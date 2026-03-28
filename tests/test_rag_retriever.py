@@ -311,8 +311,10 @@ class TestReranker:
             SearchResult(content=f"result {i}", score=0.5 - i * 0.1, final_score=0.5 - i * 0.1)
             for i in range(10)
         ]
-        # LLM router will fail in test env — should fallback gracefully
-        reranked = rerank_results("test query", results, top_k=3)
+        # Mock LLM router to avoid live inference calls — test verifies graceful fallback
+        with patch("tools.llm.router.LLMRouter") as mock_router_cls:
+            mock_router_cls.return_value.invoke.side_effect = RuntimeError("LLM unavailable")
+            reranked = rerank_results("test query", results, top_k=3)
         assert len(reranked) <= 3
 
     def test_rerank_weight_config(self):
@@ -323,5 +325,8 @@ class TestReranker:
             for i in range(10)
         ]
         config = {"rerank_weight": 0.7}
-        reranked = rerank_results("test query", results, top_k=3, config=config)
+        # Mock LLM router to avoid live inference calls
+        with patch("tools.llm.router.LLMRouter") as mock_router_cls:
+            mock_router_cls.return_value.invoke.side_effect = RuntimeError("LLM unavailable")
+            reranked = rerank_results("test query", results, top_k=3, config=config)
         assert len(reranked) <= 3

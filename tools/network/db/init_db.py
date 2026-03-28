@@ -123,11 +123,13 @@ CREATE TABLE IF NOT EXISTS nc_ipam_blocks (
     id TEXT PRIMARY KEY,
     topology_id TEXT REFERENCES topologies(id),
     network TEXT NOT NULL,
+    address_family TEXT DEFAULT 'ipv4',   -- ipv4, ipv6
     vlan_id INTEGER,
     vrf TEXT DEFAULT 'global',
     description TEXT,
     site_id TEXT,
     gateway TEXT,
+    gateway_v6 TEXT,                      -- IPv6 gateway
     utilization_pct REAL DEFAULT 0,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -2711,6 +2713,8 @@ def init_db():
             ("nc_project_topologies", "assignee", "TEXT DEFAULT ''"),
             ("nc_review_boards", "is_optional", "INTEGER DEFAULT 0"),
             ("nc_project_milestones", "predecessor_id", "TEXT"),
+            ("nc_ipam_blocks", "address_family", "TEXT DEFAULT 'ipv4'"),
+            ("nc_ipam_blocks", "gateway_v6", "TEXT"),
             # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
         ]
         for table, col, coltype in _migrations:

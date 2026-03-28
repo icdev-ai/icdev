@@ -487,8 +487,34 @@
           <input type="text" id="cfg-label" class="form-control" oninput="updateSelectedLabel(this.value)"/>
         </div>
         <div class="form-group">
-          <label>IP Address</label>
+          <label>IPv4 Address</label>
           <input type="text" id="cfg-ip" class="form-control" placeholder="e.g. 10.0.0.1/24" oninput="updateConfig('ip', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>IPv6 Address</label>
+          <input type="text" id="cfg-ipv6" class="form-control" placeholder="e.g. 2001:db8::1/64" oninput="updateConfig('ipv6', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>IPv6 Link-Local</label>
+          <input type="text" id="cfg-ipv6-ll" class="form-control" placeholder="e.g. fe80::1" oninput="updateConfig('ipv6_link_local', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>Address Family</label>
+          <select id="cfg-addr-family" class="form-control" onchange="updateConfig('address_family', this.value)">
+            <option value="">— Not Set —</option>
+            <option value="ipv4">IPv4 Only</option>
+            <option value="ipv6">IPv6 Only</option>
+            <option value="dual-stack">Dual-Stack (IPv4 + IPv6)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>IPv6 Capable</label>
+          <select id="cfg-ipv6-capable" class="form-control" onchange="updateConfig('ipv6_capable', this.value)">
+            <option value="">— Unknown —</option>
+            <option value="yes">Yes — Hardware/software supports IPv6</option>
+            <option value="no">No — Requires upgrade for IPv6</option>
+            <option value="partial">Partial — Limited IPv6 support</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Protocol</label>
