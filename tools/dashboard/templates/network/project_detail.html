@@ -91,12 +91,13 @@
       <div class="panel-header"><h2 class="panel-title">Topologies</h2></div>
       {% if topologies %}
       <table class="data-table">
-        <thead><tr><th>Name</th><th>Nodes</th><th>Links</th><th>Updated</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Nodes</th><th>Links</th><th>Assignee</th><th>Updated</th><th>Actions</th></tr></thead>
         <tbody>
         {% for t in topologies %}
           <tr>
             <td><a href="/network/canvas/{{ t.id }}" class="table-link">{{ t.name }}</a></td>
             <td>{{ t.node_count }}</td><td>{{ t.edge_count }}</td>
+            <td><span class="assignee-cell" onclick="setAssignee('{{ t.id }}')">{{ topo_assignees.get(t.id, '—') }}</span></td>
             <td class="ts">{{ (t.updated_at or '')[:16] }}</td>
             <td class="actions">
               <a href="/network/canvas/{{ t.id }}" class="action-btn">&#x270F;</a>
@@ -156,10 +157,84 @@
       </table>
     </section>
     {% endif %}
+
+    <!-- ═══════════════ MILESTONES ═══════════════ -->
+    <section class="panel panel-wide" id="milestones-section">
+      <div class="panel-header">
+        <h2 class="panel-title">Milestones</h2>
+        <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="addMilestone()">+ Add</button>
+      </div>
+      <div id="milestones-list">
+      {% if milestones %}
+        {% for m in milestones %}
+        <div class="milestone-item" data-id="{{ m.id }}">
+          <div class="ms-status ms-{{ m.status }}"></div>
+          <div class="ms-body">
+            <div class="ms-title">{{ m.title }}</div>
+            {% if m.due_date %}<div class="ms-due">Due: {{ m.due_date }}</div>{% endif %}
+            {% if m.notes %}<div class="ms-notes">{{ m.notes }}</div>{% endif %}
+          </div>
+          <div class="ms-actions">
+            <select onchange="updateMilestone('{{ m.id }}',this.value)" style="font-size:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:3px;">
+              <option {% if m.status == 'pending' %}selected{% endif %}>pending</option>
+              <option {% if m.status == 'in_progress' %}selected{% endif %}>in_progress</option>
+              <option {% if m.status == 'completed' %}selected{% endif %}>completed</option>
+              <option {% if m.status == 'missed' %}selected{% endif %}>missed</option>
+            </select>
+            <button class="action-btn danger" onclick="deleteMilestone('{{ m.id }}')">&#x2715;</button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="padding:8px 12px;color:var(--text-dim);font-size:13px;">No milestones. Click "+ Add" to track deadlines.</p>
+      {% endif %}
+      </div>
+    </section>
   </div>
 
-  <!-- Right Column: Activity Feed -->
+  <!-- Right Column -->
   <div class="panel-stack">
+
+    <!-- ═══════════════ TAGS ═══════════════ -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Tags</h2></div>
+      <div class="tags-container" id="tags-container">
+        {% for tag in project_tags %}
+        <span class="tag-pill">{{ tag }} <button class="tag-remove" onclick="removeTag('{{ tag }}')">&times;</button></span>
+        {% endfor %}
+        <input class="tag-input" id="tag-input" placeholder="Add tag..." onkeydown="if(event.key==='Enter'){event.preventDefault();addTag();}">
+      </div>
+    </section>
+
+    <!-- ═══════════════ GATE STATUS ═══════════════ -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Status Gates</h2></div>
+      <div style="padding:8px 12px;">
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text-dim);">Check readiness before changing status:</div>
+        <button class="btn btn-secondary" style="font-size:12px;margin:2px;" onclick="checkGate('in_review')">In Review</button>
+        <button class="btn btn-secondary" style="font-size:12px;margin:2px;" onclick="checkGate('approved')">Approved</button>
+        <button class="btn btn-secondary" style="font-size:12px;margin:2px;" onclick="checkGate('deployed')">Deployed</button>
+        <div id="gate-result" style="margin-top:8px;"></div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ NOTES ═══════════════ -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Notes</h2></div>
+      <div id="notes-container" style="padding:8px 12px;">
+        <div style="margin-bottom:8px;">
+          <textarea id="note-input" rows="2" placeholder="Add a note..." style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px;font-size:12px;resize:vertical;"></textarea>
+          <button class="btn btn-secondary" style="font-size:11px;margin-top:4px;" onclick="addNote()">Post Note</button>
+        </div>
+        {% for n in notes %}
+        <div class="note-item">
+          <div class="note-meta">{{ n.author or 'Anonymous' }} &middot; {{ (n.created_at or '')[:16] }}</div>
+          <div class="note-body">{{ n.body }}</div>
+          <button class="action-btn danger" style="font-size:10px;" onclick="deleteNote('{{ n.id }}')">&#x2715;</button>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
     <section class="panel">
       <div class="panel-header"><h2 class="panel-title">Activity Feed</h2></div>
       {% if activity %}
@@ -211,5 +286,26 @@ function updateStatus(){const s=prompt('New status (draft, in_review, approved, 
 function cloneProject(){const name=prompt('New project name:','{{ project.name }} (Copy)');if(!name)return;
   fetch(NC_BASE+`/api/projects/${PID}/clone`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
     .then(r=>r.json()).then(d=>{if(d.id){alert('Cloned! '+d.topologies_cloned+' topologies copied.');window.location.href=NC_BASE+'/projects/'+d.id;}else{alert('Failed: '+(d.error||''));}});}
+// P3: Milestones
+function addMilestone(){const t=prompt('Milestone title:');if(!t)return;const d=prompt('Due date (YYYY-MM-DD):','');
+  fetch(NC_BASE+`/api/projects/${PID}/milestones`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,due_date:d||null})}).then(()=>location.reload());}
+function updateMilestone(mid,status){fetch(NC_BASE+`/api/milestones/${mid}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});}
+function deleteMilestone(mid){if(!confirm('Delete milestone?'))return;fetch(NC_BASE+`/api/milestones/${mid}`,{method:'DELETE'}).then(()=>location.reload());}
+// P3: Notes
+function addNote(){const body=document.getElementById('note-input').value.trim();if(!body)return;
+  fetch(NC_BASE+`/api/projects/${PID}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:body})}).then(()=>location.reload());}
+function deleteNote(nid){if(!confirm('Delete note?'))return;fetch(NC_BASE+`/api/notes/${nid}`,{method:'DELETE'}).then(()=>location.reload());}
+// P3: Tags
+function addTag(){const inp=document.getElementById('tag-input');const tag=inp.value.trim();if(!tag)return;
+  fetch(NC_BASE+`/api/tags/project/${PID}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tag:tag})}).then(()=>location.reload());}
+function removeTag(tag){fetch(NC_BASE+`/api/tags/project/${PID}/${encodeURIComponent(tag)}`,{method:'DELETE'}).then(()=>location.reload());}
+// P3: Assignee
+function setAssignee(tid){const a=prompt('Assignee name:','');if(a===null)return;
+  fetch(NC_BASE+`/api/projects/${PID}/topologies/${tid}/assignee`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignee:a})}).then(()=>location.reload());}
+// P3: Gate check
+function checkGate(target){fetch(NC_BASE+`/api/projects/${PID}/gate-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_status:target})})
+  .then(r=>r.json()).then(d=>{const el=document.getElementById('gate-result');
+    if(d.blocked){el.innerHTML='<div style="color:var(--danger);font-size:12px;"><strong>BLOCKED:</strong> '+d.failures.map(f=>'<div style="margin:2px 0;">- '+f+'</div>').join('')+'</div>';}
+    else{el.innerHTML='<div style="color:var(--success);font-size:12px;">READY for '+target+'</div>';}});}
 </script>
 {% endblock %}

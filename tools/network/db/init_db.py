@@ -506,6 +506,46 @@ CREATE TABLE IF NOT EXISTS nc_discovery_diffs (
     with_drift      INTEGER DEFAULT 0,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── P3: Project Milestones ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_project_milestones (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    due_date    TEXT,              -- ISO date (YYYY-MM-DD)
+    status      TEXT DEFAULT 'pending',  -- pending, in_progress, completed, missed
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── P3: Project Notes / Comments ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_project_notes (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    author      TEXT,
+    body        TEXT NOT NULL,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── P3: Tags (polymorphic — projects and topologies) ──────────────────────
+CREATE TABLE IF NOT EXISTS nc_tags (
+    id          TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,     -- project, topology
+    entity_id   TEXT NOT NULL,
+    tag         TEXT NOT NULL,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(entity_type, entity_id, tag)
+);
+
+-- ── P3: Project Templates (save reusable project structures) ──────────────
+CREATE TABLE IF NOT EXISTS nc_project_templates (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    structure_json TEXT NOT NULL DEFAULT '{}',  -- snapshot of project + topos
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -2423,6 +2463,8 @@ def init_db():
             ("nc_audit", "user_id", "TEXT DEFAULT ''"),
             ("nc_audit", "classification", "TEXT DEFAULT 'CUI // SP-CTI'"),
             ("nc_backups", "file_hash", "TEXT"),
+            # P3: per-topology assignment
+            ("nc_project_topologies", "assignee", "TEXT DEFAULT ''"),
             # NetBox integration tables (added via schema above; migrations cover pre-existing DBs)
         ]
         for table, col, coltype in _migrations:

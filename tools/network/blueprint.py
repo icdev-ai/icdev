@@ -131,6 +131,71 @@ def create_network_blueprint():
     def _row_to_dict(row):
         return dict(row) if row else {}
 
+    # ── P3: Status transition gate checks ─────────────────────────────────
+    # Transitions requiring gates: -> in_review, -> approved, -> deployed
+    _STATUS_GATES = {
+        "in_review": {"min_topos": 1},
+        "approved": {"min_compliance_pct": 80, "max_cat1": 0},
+        "deployed": {"min_compliance_pct": 80, "max_cat1": 0,
+                      "require_approved": True},
+    }
+
+    def _check_status_gate(conn, pid, old_status, new_status):
+        """Check if status transition is allowed. Returns gate result dict."""
+        gate = _STATUS_GATES.get(new_status)
+        if not gate:
+            return {"blocked": False}
+        topo_ids = [r[0] for r in conn.execute(
+            "SELECT topology_id FROM nc_project_topologies "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()]
+        failures = []
+        # Min topologies
+        if gate.get("min_topos") and len(topo_ids) < gate["min_topos"]:
+            failures.append(
+                f"Need {gate['min_topos']}+ topologies, have {len(topo_ids)}"
+            )
+        # Compliance checks
+        if gate.get("min_compliance_pct") is not None and topo_ids:
+            total_p = total_f = 0
+            cat1_count = 0
+            for tid in topo_ids:
+                row = conn.execute(
+                    "SELECT passed, failed FROM nc_compliance_checks "
+                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,)
+                ).fetchone()
+                if row:
+                    total_p += row[0] or 0
+                    total_f += row[1] or 0
+                c1 = conn.execute(
+                    "SELECT COUNT(*) FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND status='open' "
+                    "AND severity='CAT1'", (tid,)
+                ).fetchone()
+                cat1_count += c1[0] if c1 else 0
+            total = total_p + total_f
+            pct = round(total_p * 100 / total) if total else 0
+            if pct < gate["min_compliance_pct"]:
+                failures.append(
+                    f"Compliance {pct}% < required "
+                    f"{gate['min_compliance_pct']}%"
+                )
+            if gate.get("max_cat1") is not None and cat1_count > gate["max_cat1"]:
+                failures.append(
+                    f"{cat1_count} CAT1 findings open (max {gate['max_cat1']})"
+                )
+        # Require previous status
+        if gate.get("require_approved") and old_status != "approved":
+            failures.append(
+                f"Must be 'approved' before deploying (currently '{old_status}')"
+            )
+        if failures:
+            return {"blocked": True, "gate": new_status,
+                    "failures": failures,
+                    "error": "; ".join(failures)}
+        return {"blocked": False}
+
     # ── Load config ────────────────────────────────────────────────────────
     try:
         import yaml
@@ -720,6 +785,28 @@ def create_network_blueprint():
         for t in topos:
             t.pop("graph_json", None)
 
+        # P3: Milestones, Notes, Tags, Assignees
+        milestones = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_project_milestones "
+            "WHERE project_id=? ORDER BY due_date", (proj_id,)
+        ).fetchall()]
+        notes = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_project_notes "
+            "WHERE project_id=? ORDER BY created_at DESC", (proj_id,)
+        ).fetchall()]
+        project_tags = [r[0] for r in conn.execute(
+            "SELECT tag FROM nc_tags "
+            "WHERE entity_type='project' AND entity_id=? ORDER BY tag",
+            (proj_id,)
+        ).fetchall()]
+        # Assignees per topology
+        topo_assignees = {}
+        for r in conn.execute(
+            "SELECT topology_id, assignee FROM nc_project_topologies "
+            "WHERE project_id=? AND assignee != ''", (proj_id,)
+        ).fetchall():
+            topo_assignees[r[0]] = r[1]
+
         conn.close()
         return render_template("network/project_detail.html",
                                project=proj, topologies=topos,
@@ -730,7 +817,11 @@ def create_network_blueprint():
                                topo_bom=topo_bom,
                                total_capex=total_capex,
                                total_circuit_cost=total_circuit_cost,
-                               activity=activity)
+                               activity=activity,
+                               milestones=milestones,
+                               notes=notes,
+                               project_tags=project_tags,
+                               topo_assignees=topo_assignees)
 
     # ══════════════════════════════════════════════════════════════════════
     # P2: Cross-Project Comparison
@@ -2651,6 +2742,21 @@ def create_network_blueprint():
     def nc_api_update_project(pid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+
+        # P3: Gate-checked status transitions
+        new_status = data.get("status")
+        if new_status:
+            old_row = conn.execute(
+                "SELECT status FROM nc_projects WHERE id=?", (pid,)
+            ).fetchone()
+            old_status = old_row[0] if old_row else "draft"
+            gate_result = _check_status_gate(
+                conn, pid, old_status, new_status
+            )
+            if gate_result.get("blocked"):
+                conn.close()
+                return jsonify(gate_result), 422
+
         allowed = ["name", "customer_id", "description", "status", "owner"]
         fields, values = [], []
         for k in allowed:
@@ -2702,6 +2808,356 @@ def create_network_blueprint():
     def nc_api_unlink_topology(pid, topo_id):
         conn = get_connection()
         conn.execute("DELETE FROM nc_project_topologies WHERE project_id=? AND topology_id=?", (pid, topo_id))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # P3: Milestones, Notes, Tags, Assignee, Search, Templates
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── Milestones ────────────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/milestones", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_milestones(pid):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_project_milestones "
+            "WHERE project_id=? ORDER BY due_date", (pid,)
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/projects/<pid>/milestones", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_milestone(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        mid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_project_milestones "
+            "(id, project_id, title, due_date, status, notes, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (mid, pid, data.get("title", "Milestone"),
+             data.get("due_date"), data.get("status", "pending"),
+             data.get("notes", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "milestone", mid, data.get("title", ""))
+        return jsonify({"id": mid}), 201
+
+    @bp.route("/api/milestones/<mid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_milestone(mid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        allowed = ["title", "due_date", "status", "notes"]
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if fields:
+            values.append(mid)
+            conn.execute(
+                f"UPDATE nc_project_milestones "  # nosec B608
+                f"SET {', '.join(fields)} WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/milestones/<mid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_milestone(mid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_project_milestones WHERE id=?", (mid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Notes / Comments ──────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/notes", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_notes(pid):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_project_notes "
+            "WHERE project_id=? ORDER BY created_at DESC", (pid,)
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/projects/<pid>/notes", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_note(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        nid = str(_uuid.uuid4())
+        author = data.get("author", "")
+        try:
+            author = author or session.get("user_id", "")
+        except RuntimeError:
+            pass
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_project_notes "
+            "(id, project_id, author, body, created_at) VALUES (?,?,?,?,?)",
+            (nid, pid, author, data.get("body", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "note", nid)
+        return jsonify({"id": nid}), 201
+
+    @bp.route("/api/notes/<nid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_note(nid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_project_notes WHERE id=?", (nid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Tags ──────────────────────────────────────────────────────────────
+    @bp.route("/api/tags/<entity_type>/<entity_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_tags(entity_type, entity_id):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT tag FROM nc_tags "
+            "WHERE entity_type=? AND entity_id=? ORDER BY tag",
+            (entity_type, entity_id)
+        ).fetchall()
+        conn.close()
+        return jsonify([r[0] for r in rows])
+
+    @bp.route("/api/tags/<entity_type>/<entity_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_tag(entity_type, entity_id):
+        data = request.get_json(force=True, silent=True) or {}
+        tag = (data.get("tag") or "").strip().lower()
+        if not tag:
+            return jsonify({"error": "tag required"}), 400
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO nc_tags "
+                "(id, entity_type, entity_id, tag, created_at) "
+                "VALUES (?,?,?,?,?)",
+                (str(_uuid.uuid4()), entity_type, entity_id, tag, _now())
+            )
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+        return jsonify({"ok": True}), 201
+
+    @bp.route("/api/tags/<entity_type>/<entity_id>/<tag>",
+              methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_tag(entity_type, entity_id, tag):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_tags "
+            "WHERE entity_type=? AND entity_id=? AND tag=?",
+            (entity_type, entity_id, tag)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Global Search ─────────────────────────────────────────────────────
+    @bp.route("/api/search", methods=["GET"])
+    @nc_login_required
+    def nc_api_search():
+        q = request.args.get("q", "").strip()
+        if not q or len(q) < 2:
+            return jsonify({"results": []})
+        like = f"%{q}%"
+        conn = get_connection()
+        results = []
+        # Projects
+        for r in conn.execute(
+            "SELECT id, name, 'project' AS type FROM nc_projects "
+            "WHERE name LIKE ?", (like,)
+        ).fetchall():
+            results.append(_row_to_dict(r))
+        # Topologies
+        for r in conn.execute(
+            "SELECT id, name, 'topology' AS type FROM topologies "
+            "WHERE name LIKE ?", (like,)
+        ).fetchall():
+            results.append(_row_to_dict(r))
+        # Circuits
+        for r in conn.execute(
+            "SELECT id, circuit_id AS name, 'circuit' AS type "
+            "FROM nc_circuits WHERE circuit_id LIKE ? OR carrier LIKE ?",
+            (like, like)
+        ).fetchall():
+            results.append(_row_to_dict(r))
+        # Tags
+        for r in conn.execute(
+            "SELECT DISTINCT entity_type, entity_id, tag AS name "
+            "FROM nc_tags WHERE tag LIKE ?", (like,)
+        ).fetchall():
+            results.append({
+                "type": f"tag:{r[0]}", "id": r[1], "name": r[2]
+            })
+        conn.close()
+        return jsonify({"results": results[:50], "query": q})
+
+    # ── Per-topology assignee ─────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/topologies/<topo_id>/assignee",
+              methods=["PUT"])
+    @nc_login_required
+    def nc_api_set_assignee(pid, topo_id):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        conn.execute(
+            "UPDATE nc_project_topologies SET assignee=? "
+            "WHERE project_id=? AND topology_id=?",
+            (data.get("assignee", ""), pid, topo_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Status gate check (dry run) ───────────────────────────────────────
+    @bp.route("/api/projects/<pid>/gate-check", methods=["POST"])
+    @nc_login_required
+    def nc_api_gate_check(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        target = data.get("target_status", "approved")
+        conn = get_connection()
+        old_row = conn.execute(
+            "SELECT status FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        old_status = old_row[0] if old_row else "draft"
+        result = _check_status_gate(conn, pid, old_status, target)
+        conn.close()
+        return jsonify(result)
+
+    # ── Project Templates (save/load) ─────────────────────────────────────
+    @bp.route("/api/project-templates", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_project_templates():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, name, description, created_by, created_at "
+            "FROM nc_project_templates ORDER BY name"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/project-templates", methods=["POST"])
+    @nc_login_required
+    def nc_api_save_project_template():
+        """Save current project structure as reusable template."""
+        data = request.get_json(force=True, silent=True) or {}
+        pid = data.get("project_id")
+        tpl_name = data.get("name", "Untitled Template")
+        if not pid:
+            return jsonify({"error": "project_id required"}), 400
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Project not found"}), 404
+        proj = _row_to_dict(proj)
+        topos = []
+        for r in conn.execute(
+            "SELECT t.name, t.description, t.classification, "
+            "t.graph_json FROM topologies t "
+            "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+            "WHERE pt.project_id=?", (pid,)
+        ).fetchall():
+            topos.append(_row_to_dict(r))
+        structure = {
+            "project_name": proj["name"],
+            "description": proj.get("description", ""),
+            "topologies": topos,
+        }
+        tid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_project_templates "
+            "(id, name, description, structure_json, created_by, "
+            " created_at) VALUES (?,?,?,?,?,?)",
+            (tid, tpl_name, data.get("description", ""),
+             json.dumps(structure), data.get("created_by", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "project_template", tid, tpl_name)
+        return jsonify({"id": tid}), 201
+
+    @bp.route("/api/project-templates/<tid>/load", methods=["POST"])
+    @nc_login_required
+    def nc_api_load_project_template(tid):
+        """Create a new project from a saved template."""
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        tpl = conn.execute(
+            "SELECT * FROM nc_project_templates WHERE id=?", (tid,)
+        ).fetchone()
+        if not tpl:
+            conn.close()
+            return jsonify({"error": "Template not found"}), 404
+        tpl = _row_to_dict(tpl)
+        try:
+            structure = json.loads(tpl["structure_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad template data"}), 500
+        now = _now()
+        new_pid = str(_uuid.uuid4())
+        proj_name = data.get("name") or structure.get(
+            "project_name", "From Template"
+        )
+        conn.execute(
+            "INSERT INTO nc_projects "
+            "(id, name, description, status, owner, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (new_pid, proj_name,
+             structure.get("description", ""), "draft",
+             data.get("owner", ""), now, now)
+        )
+        topo_count = 0
+        for t in structure.get("topologies", []):
+            new_tid = str(_uuid.uuid4())
+            conn.execute(
+                "INSERT INTO topologies "
+                "(id, name, description, graph_json, classification, "
+                " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+                (new_tid, t.get("name", "Untitled"),
+                 t.get("description", ""),
+                 t.get("graph_json", '{"nodes":[],"edges":[]}'),
+                 t.get("classification", "public"), now, now)
+            )
+            conn.execute(
+                "INSERT INTO nc_project_topologies "
+                "(project_id, topology_id) VALUES (?,?)",
+                (new_pid, new_tid)
+            )
+            topo_count += 1
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "project", new_pid,
+               f"From template {tpl['name']}")
+        return jsonify({
+            "id": new_pid, "name": proj_name,
+            "topologies_created": topo_count
+        }), 201
+
+    @bp.route("/api/project-templates/<tid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_project_template(tid):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_project_templates WHERE id=?", (tid,)
+        )
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
