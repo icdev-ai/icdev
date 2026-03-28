@@ -2492,6 +2492,190 @@ def create_network_blueprint():
         return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Phase 5: Discovered Data -> Simulation/Impact/What-If Bridge
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/what-if/link-failure", methods=["POST"])
+    @nc_login_required
+    def nc_api_whatif_link_failure():
+        """Simulate a link failure using real routing table data.
+        Shows which prefixes lose reachability and alternate paths."""
+        data = request.get_json(force=True, silent=True) or {}
+        failed_link_src = data.get("source_device", "")
+        failed_link_dst = data.get("target_device", "")
+        if not failed_link_src or not failed_link_dst:
+            return jsonify({"error": "source_device and target_device required"}), 400
+
+        conn = get_connection()
+        # Get all routing entries
+        all_routes = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_routing_entries ORDER BY device_ip"
+        ).fetchall()]
+        conn.close()
+
+        # Build forwarding table per device
+        fwd = {}  # device_ip -> [{prefix, next_hop, protocol}]
+        for r in all_routes:
+            fwd.setdefault(r["device_ip"], []).append(r)
+
+        # Find routes that use the failed link
+        affected_prefixes = []
+        surviving_prefixes = []
+        for r in all_routes:
+            if r["device_ip"] == failed_link_src and r["next_hop"] == failed_link_dst:
+                # This route goes through the failed link
+                # Check if there's an alternate path
+                alternates = [
+                    alt for alt in fwd.get(r["device_ip"], [])
+                    if alt["prefix"] == r["prefix"]
+                    and alt["next_hop"] != failed_link_dst
+                    and alt["next_hop"] != "0.0.0.0"
+                ]
+                entry = {
+                    "prefix": r["prefix"],
+                    "protocol": r["protocol"],
+                    "failed_next_hop": failed_link_dst,
+                    "alternate_paths": len(alternates),
+                    "alternates": [
+                        {"next_hop": a["next_hop"],
+                         "protocol": a["protocol"],
+                         "metric": a.get("metric", 0)}
+                        for a in alternates
+                    ],
+                }
+                if alternates:
+                    surviving_prefixes.append(entry)
+                else:
+                    affected_prefixes.append(entry)
+
+        return jsonify({
+            "scenario": f"Link failure: {failed_link_src} -> {failed_link_dst}",
+            "affected_prefixes": affected_prefixes,
+            "surviving_prefixes": surviving_prefixes,
+            "total_affected": len(affected_prefixes),
+            "total_surviving": len(surviving_prefixes),
+            "has_full_redundancy": len(affected_prefixes) == 0,
+        })
+
+    @bp.route("/api/what-if/device-failure", methods=["POST"])
+    @nc_login_required
+    def nc_api_whatif_device_failure():
+        """Simulate a device going offline. Shows impact on all
+        devices that route through it."""
+        data = request.get_json(force=True, silent=True) or {}
+        failed_device = data.get("device_ip", "")
+        if not failed_device:
+            return jsonify({"error": "device_ip required"}), 400
+
+        conn = get_connection()
+        all_routes = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_routing_entries ORDER BY device_ip"
+        ).fetchall()]
+        conn.close()
+
+        # Find all routes whose next_hop is the failed device
+        impacted_devices = {}
+        for r in all_routes:
+            if r["next_hop"] == failed_device and r["device_ip"] != failed_device:
+                dip = r["device_ip"]
+                if dip not in impacted_devices:
+                    impacted_devices[dip] = {
+                        "hostname": r.get("hostname", dip),
+                        "lost_prefixes": [],
+                    }
+                impacted_devices[dip]["lost_prefixes"].append({
+                    "prefix": r["prefix"],
+                    "protocol": r["protocol"],
+                })
+
+        # Prefixes hosted by the failed device (connected routes)
+        hosted_prefixes = [
+            r["prefix"] for r in all_routes
+            if r["device_ip"] == failed_device
+            and r.get("protocol") == "connected"
+        ]
+
+        return jsonify({
+            "scenario": f"Device failure: {failed_device}",
+            "impacted_devices": [
+                {"device_ip": k, **v}
+                for k, v in impacted_devices.items()
+            ],
+            "total_impacted_devices": len(impacted_devices),
+            "hosted_prefixes_lost": hosted_prefixes,
+            "total_hosted_lost": len(hosted_prefixes),
+        })
+
+    @bp.route("/api/what-if/add-link", methods=["POST"])
+    @nc_login_required
+    def nc_api_whatif_add_link():
+        """Simulate adding a new link — predict how routing would
+        change based on protocol and metric."""
+        data = request.get_json(force=True, silent=True) or {}
+        src = data.get("source_device", "")
+        dst = data.get("target_device", "")
+        protocol = data.get("protocol", "ospf")
+        metric = data.get("metric", 10)
+
+        conn = get_connection()
+        # Get current routes from src device
+        src_routes = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_routing_entries WHERE device_ip=?",
+            (src,)
+        ).fetchall()]
+        dst_routes = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_routing_entries WHERE device_ip=?",
+            (dst,)
+        ).fetchall()]
+        conn.close()
+
+        # Prefixes reachable via new link (dst's connected/local prefixes)
+        new_reachable = []
+        for r in dst_routes:
+            if r.get("protocol") in ("connected", "local"):
+                # Check if src already has a route to this prefix
+                existing = [
+                    e for e in src_routes if e["prefix"] == r["prefix"]
+                ]
+                if existing:
+                    best = min(existing, key=lambda x: x.get("metric", 999))
+                    if metric < best.get("metric", 999):
+                        new_reachable.append({
+                            "prefix": r["prefix"],
+                            "improvement": "better_metric",
+                            "old_metric": best.get("metric", 0),
+                            "new_metric": metric,
+                        })
+                    else:
+                        new_reachable.append({
+                            "prefix": r["prefix"],
+                            "improvement": "redundant_path",
+                            "old_metric": best.get("metric", 0),
+                            "new_metric": metric,
+                        })
+                else:
+                    new_reachable.append({
+                        "prefix": r["prefix"],
+                        "improvement": "new_reachability",
+                        "new_metric": metric,
+                    })
+
+        return jsonify({
+            "scenario": f"Add link: {src} -> {dst} ({protocol}, metric {metric})",
+            "new_reachable_prefixes": new_reachable,
+            "total_improvements": len(new_reachable),
+            "new_reachability": sum(
+                1 for p in new_reachable
+                if p["improvement"] == "new_reachability"),
+            "better_metric": sum(
+                1 for p in new_reachable
+                if p["improvement"] == "better_metric"),
+            "redundant_paths": sum(
+                1 for p in new_reachable
+                if p["improvement"] == "redundant_path"),
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
     # Phase 3: Routing Table Topology + Config-to-Canvas Sync
     # ══════════════════════════════════════════════════════════════════════
 
