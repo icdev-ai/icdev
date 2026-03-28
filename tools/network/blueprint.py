@@ -1754,10 +1754,328 @@ def create_network_blueprint():
         )
         conn.commit()
         conn.close()
+        # Phase 1: auto-classify imported nodes
+        graph = _classify_imported_nodes(graph)
+        conn = get_connection()
+        conn.execute(
+            "UPDATE topologies SET graph_json=? WHERE id=?",
+            (json.dumps(graph), topo_id)
+        )
+        conn.commit()
+        conn.close()
         _audit("IMPORT", "topology", topo_id, fmt)
         return jsonify({"id": topo_id, "name": name,
                          "nodes": len(graph.get("nodes", [])),
                          "edges": len(graph.get("edges", []))}), 201
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 1: Intelligent Import & Stitching
+    # ══════════════════════════════════════════════════════════════════════
+
+    # Semantic node classifier — maps labels to device types
+    _NODE_CLASSIFY_PATTERNS = [
+        (r"(?i)(core|edge|border|wan|pe|ce|p\b).*r(outer|tr)", "router"),
+        (r"(?i)r(outer|tr)", "router"),
+        (r"(?i)(fw|firewall|palo|forti|asa|checkpoint)", "firewall"),
+        (r"(?i)(sw|switch).*l3|layer.?3.*sw|dist.*sw|core.*sw", "switch-l3"),
+        (r"(?i)(sw|switch|access)", "switch-l2"),
+        (r"(?i)(lb|load.?bal|f5|netscaler|a10)", "load-balancer"),
+        (r"(?i)(wap|access.?point|ap\d|wifi|wireless)", "wap"),
+        (r"(?i)(wlc|wireless.*control)", "wlc"),
+        (r"(?i)(srv|server|host|vm\b|esxi|hypervisor)", "server"),
+        (r"(?i)(pc|workstation|desktop|laptop|endpoint)", "endpoint-pc"),
+        (r"(?i)(phone|voip|sip)", "ip-phone"),
+        (r"(?i)(sdwan|sd-wan|vmanage|vedge)", "sdwan-edge"),
+        (r"(?i)(mpls.*pe|pe.*router)", "mpls-pe"),
+        (r"(?i)(mpls.*p\b|p.*router|provider)", "mpls-p"),
+        (r"(?i)(route.?reflect|rr\b)", "route-reflector"),
+        (r"(?i)(encrypt|kg-|type.?1|nsa)", "type1-encryptor"),
+        (r"(?i)(fips|hsm)", "fips-140-l2"),
+        (r"(?i)(siem|splunk|qradar|arcsight)", "siem"),
+        (r"(?i)(tap|span|mirror)", "network-tap"),
+        (r"(?i)(vpc|aws)", "aws-vpc"),
+        (r"(?i)(vnet|azure)", "az-vnet"),
+        (r"(?i)(gcp|google.?cloud)", "gcp-vpc"),
+        (r"(?i)(internet|cloud|wan|isp)", "cloud"),
+        (r"(?i)(patch.?panel|pp\b|mdf|idf)", "patch-panel"),
+        (r"(?i)(ups|pdu|power)", "server"),
+        (r"(?i)(demarc|demarcation)", "demarc"),
+        (r"(?i)(meet.?me|mmr|colo)", "meet-me-room"),
+    ]
+
+    def _classify_imported_nodes(graph):
+        """Auto-classify imported nodes from generic 'imported' type
+        to specific device types using label pattern matching."""
+        import re as _re
+        for n in graph.get("nodes", []):
+            if n.get("type") not in ("imported", "", None):
+                continue
+            label = n.get("label", "")
+            matched = False
+            for pattern, dtype in _NODE_CLASSIFY_PATTERNS:
+                if _re.search(pattern, label):
+                    n["type"] = dtype
+                    matched = True
+                    break
+            if not matched:
+                n["type"] = "server"  # safe default
+        return graph
+
+    @bp.route("/api/import/bulk", methods=["POST"])
+    @nc_login_required
+    def nc_api_bulk_import():
+        """Import multiple diagram files at once.
+        Each file becomes a separate topology.
+        Optionally group under a project."""
+        data = request.get_json(force=True, silent=True) or {}
+        files = data.get("files", [])
+        project_id = data.get("project_id")
+        if not files:
+            return jsonify({"error": "files array required"}), 400
+
+        conn = get_connection()
+        now = _now()
+        results = []
+        for f in files:
+            fmt = f.get("format", "drawio")
+            content = f.get("content", "")
+            name = f.get("name", "Imported")
+            if not content:
+                results.append({"name": name, "error": "empty"})
+                continue
+            if fmt == "drawio":
+                graph = import_drawio(content)
+            elif fmt in ("vdx", "visio"):
+                graph = import_vdx(content)
+            elif fmt == "svg":
+                graph = import_svg(content)
+            else:
+                results.append({"name": name, "error": f"bad format: {fmt}"})
+                continue
+            graph = _classify_imported_nodes(graph)
+            topo_id = str(_uuid.uuid4())
+            conn.execute(
+                "INSERT INTO topologies "
+                "(id, name, description, graph_json, "
+                " classification, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (topo_id, name, f"Bulk import ({fmt})",
+                 json.dumps(graph), "public", now, now)
+            )
+            if project_id:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_project_topologies "
+                    "(project_id, topology_id) VALUES (?,?)",
+                    (project_id, topo_id)
+                )
+            results.append({
+                "id": topo_id, "name": name,
+                "nodes": len(graph.get("nodes", [])),
+                "edges": len(graph.get("edges", [])),
+            })
+        conn.commit()
+        conn.close()
+        _audit("BULK_IMPORT", "topology", "",
+               f"{len(results)} files imported")
+        return jsonify({
+            "imported": len([r for r in results if "id" in r]),
+            "failed": len([r for r in results if "error" in r]),
+            "results": results,
+        }), 201
+
+    @bp.route("/api/import/stitch", methods=["POST"])
+    @nc_login_required
+    def nc_api_stitch_topologies():
+        """Merge multiple topologies into one, with user-defined
+        interconnect points between them."""
+        data = request.get_json(force=True, silent=True) or {}
+        topo_ids = data.get("topology_ids", [])
+        interconnects = data.get("interconnects", [])
+        name = data.get("name", "Stitched Topology")
+        if len(topo_ids) < 2:
+            return jsonify({"error": "Need 2+ topology_ids"}), 400
+
+        conn = get_connection()
+        merged_nodes = []
+        merged_edges = []
+        offset_x = 0
+
+        for tid in topo_ids:
+            row = conn.execute(
+                "SELECT name, graph_json FROM topologies WHERE id=?",
+                (tid,)
+            ).fetchone()
+            if not row:
+                continue
+            try:
+                g = json.loads(row["graph_json"])
+            except Exception:
+                continue
+            prefix = tid[:8]
+            topo_name = row["name"]
+            # Offset nodes horizontally and namespace IDs
+            for n in g.get("nodes", []):
+                new_id = f"{prefix}_{n['id']}"
+                merged_nodes.append({
+                    **n, "id": new_id,
+                    "x": (n.get("x") or 0) + offset_x,
+                    "config": {
+                        **(n.get("config") or n.get("configData") or {}),
+                        "_source_topology": topo_name,
+                        "_source_id": n["id"],
+                    },
+                })
+            for e in g.get("edges", []):
+                merged_edges.append({
+                    **e, "id": f"{prefix}_{e.get('id', '')}",
+                    "source": f"{prefix}_{e['source']}",
+                    "target": f"{prefix}_{e['target']}",
+                })
+            offset_x += 700
+
+        # Add user-defined interconnect edges
+        for ic in interconnects:
+            merged_edges.append({
+                "id": str(_uuid.uuid4())[:8],
+                "source": ic.get("source_node_id", ""),
+                "target": ic.get("target_node_id", ""),
+                "label": ic.get("label", "Interconnect"),
+                "protocol": ic.get("protocol", ""),
+            })
+
+        merged_graph = {"nodes": merged_nodes, "edges": merged_edges}
+        topo_id = str(_uuid.uuid4())
+        now = _now()
+        conn.execute(
+            "INSERT INTO topologies "
+            "(id, name, description, graph_json, "
+            " classification, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (topo_id, name,
+             f"Stitched from {len(topo_ids)} topologies",
+             json.dumps(merged_graph), "public", now, now)
+        )
+        conn.commit()
+        conn.close()
+        _audit("STITCH", "topology", topo_id,
+               f"Merged {len(topo_ids)} topologies")
+        return jsonify({
+            "id": topo_id, "name": name,
+            "nodes": len(merged_nodes),
+            "edges": len(merged_edges),
+            "source_topologies": len(topo_ids),
+        }), 201
+
+    @bp.route("/api/import/audit", methods=["POST"])
+    @nc_login_required
+    def nc_api_import_and_audit():
+        """Import a diagram AND immediately run compliance audit,
+        design scorecard, and tech debt analysis."""
+        data = request.get_json(force=True, silent=True) or {}
+        fmt = data.get("format", "drawio")
+        content = data.get("content", "")
+        name = data.get("name", "Audit Import")
+        if not content:
+            return jsonify({"error": "content required"}), 400
+
+        # Import
+        if fmt == "drawio":
+            graph = import_drawio(content)
+        elif fmt in ("vdx", "visio"):
+            graph = import_vdx(content)
+        elif fmt == "svg":
+            graph = import_svg(content)
+        else:
+            return jsonify({"error": f"Unsupported: {fmt}"}), 400
+        graph = _classify_imported_nodes(graph)
+        topo_id = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO topologies "
+            "(id, name, description, graph_json, "
+            " classification, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (topo_id, name, f"Audit import ({fmt})",
+             json.dumps(graph), "CUI", now, now)
+        )
+        conn.commit()
+
+        # Run compliance audit
+        audit_result = run_compliance_audit(
+            topo_id, graph, ["fisma_high", "stig"], "CUI")
+        total_p = sum(s["passed"] for s in audit_result["scores"].values())
+        total_f = sum(s["failed"] for s in audit_result["scores"].values())
+        audit_id = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_compliance_checks "
+            "(id, topology_id, check_type, passed, failed, "
+            " findings_json, ran_at) VALUES (?,?,?,?,?,?,?)",
+            (audit_id, topo_id, "fisma_high,stig",
+             total_p, total_f,
+             json.dumps(audit_result["findings"]), now)
+        )
+        conn.commit()
+        conn.close()
+
+        _audit("IMPORT_AUDIT", "topology", topo_id, fmt)
+
+        return jsonify({
+            "id": topo_id, "name": name,
+            "nodes": len(graph.get("nodes", [])),
+            "edges": len(graph.get("edges", [])),
+            "compliance": {
+                "passed": total_p, "failed": total_f,
+                "findings": len(audit_result["findings"]),
+                "scores": audit_result["scores"],
+            },
+            "classified_types": dict(
+                sorted(
+                    {n["type"]: sum(1 for m in graph["nodes"]
+                                    if m["type"] == n["type"])
+                     for n in graph["nodes"]}.items()
+                )
+            ),
+        }), 201
+
+    @bp.route("/api/classify-nodes", methods=["POST"])
+    @nc_login_required
+    def nc_api_classify_nodes():
+        """Re-classify nodes in an existing topology.
+        Useful after manual edits or to fix imported types."""
+        data = request.get_json(force=True, silent=True) or {}
+        topo_id = data.get("topology_id")
+        if not topo_id:
+            return jsonify({"error": "topology_id required"}), 400
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph"}), 500
+        # Only classify nodes that are still "imported" type
+        changed = 0
+        for n in graph.get("nodes", []):
+            old_type = n.get("type", "")
+            if old_type in ("imported", ""):
+                _classify_imported_nodes({"nodes": [n]})
+                if n["type"] != old_type:
+                    changed += 1
+        conn.execute(
+            "UPDATE topologies SET graph_json=?, updated_at=? "
+            "WHERE id=?",
+            (json.dumps(graph), _now(), topo_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"reclassified": changed,
+                         "total_nodes": len(graph.get("nodes", []))})
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Circuits CRUD
