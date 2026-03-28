@@ -4155,6 +4155,665 @@ def create_network_blueprint():
         return jsonify(_design_rules.get("best_practices", {}))
 
     # ══════════════════════════════════════════════════════════════════════
+    # Design Pattern Library (Phase 2)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/design-patterns", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_design_patterns():
+        category = request.args.get("category", "")
+        conn = get_connection()
+        if category:
+            rows = conn.execute(
+                "SELECT id, name, category, description, is_builtin, "
+                "tags, created_by, created_at "
+                "FROM nc_design_patterns WHERE category=? "
+                "ORDER BY is_builtin DESC, name", (category,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, name, category, description, is_builtin, "
+                "tags, created_by, created_at "
+                "FROM nc_design_patterns "
+                "ORDER BY category, is_builtin DESC, name"
+            ).fetchall()
+        conn.close()
+        patterns = []
+        for r in rows:
+            p = _row_to_dict(r)
+            try:
+                p["tags"] = json.loads(p.get("tags") or "[]")
+            except Exception:
+                p["tags"] = []
+            patterns.append(p)
+        return jsonify(patterns)
+
+    @bp.route("/api/design-patterns/<pat_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_design_pattern(pat_id):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_design_patterns WHERE id=?", (pat_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        p = _row_to_dict(row)
+        try:
+            p["tags"] = json.loads(p.get("tags") or "[]")
+            p["graph_json"] = json.loads(
+                p.get("graph_json") or '{"nodes":[],"edges":[]}')
+        except Exception:
+            pass
+        return jsonify(p)
+
+    @bp.route("/api/design-patterns", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_design_pattern():
+        """Create a user-defined design pattern."""
+        data = request.get_json(force=True, silent=True) or {}
+        pid = str(_uuid.uuid4())
+        conn = get_connection()
+        graph = data.get("graph_json")
+        if isinstance(graph, dict):
+            graph = json.dumps(graph)
+        elif not graph:
+            graph = '{"nodes":[],"edges":[]}'
+        tags = data.get("tags", [])
+        if isinstance(tags, list):
+            tags = json.dumps(tags)
+        conn.execute(
+            "INSERT INTO nc_design_patterns "
+            "(id, name, category, description, graph_json, "
+            " is_builtin, tags, created_by, created_at) "
+            "VALUES (?,?,?,?,?,0,?,?,?)",
+            (pid, data.get("name", "Custom Pattern"),
+             data.get("category", "custom"),
+             data.get("description", ""), graph, tags,
+             data.get("created_by", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "design_pattern", pid,
+               data.get("name", ""))
+        return jsonify({"id": pid}), 201
+
+    @bp.route("/api/design-patterns/<pat_id>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_design_pattern(pat_id):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT is_builtin FROM nc_design_patterns WHERE id=?",
+            (pat_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        allowed = ["name", "category", "description", "tags"]
+        if not row[0]:  # user-created can also update graph
+            allowed.append("graph_json")
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                v = data[k]
+                if k == "tags" and isinstance(v, list):
+                    v = json.dumps(v)
+                if k == "graph_json" and isinstance(v, dict):
+                    v = json.dumps(v)
+                fields.append(f"{k}=?")
+                values.append(v)
+        if fields:
+            values.append(pat_id)
+            conn.execute(
+                f"UPDATE nc_design_patterns "  # nosec B608
+                f"SET {', '.join(fields)} WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/design-patterns/<pat_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_design_pattern(pat_id):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT is_builtin FROM nc_design_patterns WHERE id=?",
+            (pat_id,)
+        ).fetchone()
+        if row and row[0]:
+            conn.close()
+            return jsonify(
+                {"error": "Cannot delete built-in pattern"}), 403
+        conn.execute(
+            "DELETE FROM nc_design_patterns WHERE id=?", (pat_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/design-patterns/save-from-selection",
+              methods=["POST"])
+    @nc_login_required
+    def nc_api_save_pattern_from_selection():
+        """Save selected canvas nodes/edges as a user-defined pattern."""
+        data = request.get_json(force=True, silent=True) or {}
+        graph_json = data.get("graph_json")
+        if not graph_json or not graph_json.get("nodes"):
+            return jsonify(
+                {"error": "Select nodes on canvas first"}), 400
+        pid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_design_patterns "
+            "(id, name, category, description, graph_json, "
+            " is_builtin, tags, created_by, created_at) "
+            "VALUES (?,?,?,?,?,0,?,?,?)",
+            (pid, data.get("name", "My Pattern"),
+             data.get("category", "custom"),
+             data.get("description", ""),
+             json.dumps(graph_json),
+             json.dumps(data.get("tags", [])),
+             data.get("created_by", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "design_pattern", pid, "from selection")
+        return jsonify({"id": pid}), 201
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Proactive Guidance Engine (Phase 3)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/design-scorecard/<topo_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_design_scorecard(topo_id):
+        """Analyze topology and return design completeness scorecard."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            graph = {"nodes": [], "edges": []}
+
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        types = [n.get("type", "") for n in nodes]
+        type_set = set(types)
+
+        # Build adjacency for analysis
+        adj = {}
+        for e in edges:
+            adj.setdefault(e.get("source"), set()).add(e.get("target"))
+            adj.setdefault(e.get("target"), set()).add(e.get("source"))
+
+        checks = []
+
+        def check(cat, name, passed, detail=""):
+            checks.append({
+                "category": cat, "name": name,
+                "passed": passed, "detail": detail,
+            })
+
+        # ── Routing ───────────────────────────────────────────────────
+        has_router = bool(type_set & {"router", "mpls-pe", "mpls-p"})
+        check("routing", "At least one router present",
+              has_router)
+        has_routing_proto = any(
+            n.get("config", {}).get("protocol") or
+            any(e.get("protocol") in ("ospf", "bgp", "eigrp", "isis")
+                for e in edges
+                if e.get("source") == n.get("id") or
+                e.get("target") == n.get("id"))
+            for n in nodes if n.get("type") in ("router", "mpls-pe")
+        ) if has_router else False
+        check("routing", "Routing protocol configured",
+              has_routing_proto,
+              "OSPF/BGP/EIGRP on at least one router")
+
+        # ── Redundancy ────────────────────────────────────────────────
+        router_count = sum(1 for t in types if t in (
+            "router", "mpls-pe"))
+        check("redundancy", "Redundant routers (2+)",
+              router_count >= 2, f"{router_count} routers")
+        fw_count = sum(1 for t in types if t == "firewall")
+        check("redundancy", "Firewall HA pair",
+              fw_count >= 2, f"{fw_count} firewalls")
+        # Check for nodes with single connection
+        single_conn = []
+        for n in nodes:
+            if n.get("type") in ("router", "switch-l3", "firewall"):
+                conns = len(adj.get(n.get("id"), set()))
+                if conns <= 1:
+                    single_conn.append(n.get("label", n.get("id")))
+        check("redundancy", "No single-uplink critical devices",
+              len(single_conn) == 0,
+              f"SPOF: {', '.join(single_conn[:3])}" if single_conn
+              else "All critical devices have 2+ links")
+
+        # ── Security ──────────────────────────────────────────────────
+        has_fw = "firewall" in type_set
+        check("security", "Firewall present", has_fw)
+        enc_types = {"type1-encryptor", "fips-140-l2", "fips-140-l3",
+                     "macsec", "hsm"}
+        has_enc = bool(type_set & enc_types)
+        wan_types = {"cloud", "aws-dx", "az-er", "gcp-ic"}
+        has_wan = bool(type_set & wan_types)
+        check("security", "WAN encryption present",
+              has_enc or not has_wan,
+              "Encrypted" if has_enc else
+              "No WAN links" if not has_wan else "Missing encryption")
+        check("security", "Management plane separation",
+              any(n.get("type") == "siem" for n in nodes) or
+              any(n.get("config", {}).get("vrf") == "mgmt"
+                  for n in nodes),
+              "SIEM or mgmt VRF detected")
+
+        # ── Capacity ──────────────────────────────────────────────────
+        check("capacity", "Sufficient device count",
+              len(nodes) >= 3,
+              f"{len(nodes)} devices")
+        check("capacity", "Link diversity",
+              len(edges) >= len(nodes),
+              f"{len(edges)} links for {len(nodes)} nodes")
+
+        # ── Fault tolerance ───────────────────────────────────────────
+        check("fault_tolerance", "Monitoring device present",
+              bool(type_set & {"siem", "network-tap", "wlc"}))
+        check("fault_tolerance", "Power redundancy considered",
+              any(n.get("label", "").lower() in (
+                  "ups", "pdu", "pdu-a", "pdu-b", "generator")
+                  for n in nodes) or len(nodes) < 5,
+              "UPS/PDU found" if any(
+                  "ups" in n.get("label", "").lower() or
+                  "pdu" in n.get("label", "").lower()
+                  for n in nodes) else "Consider adding")
+
+        # Score per category
+        categories = {}
+        for c in checks:
+            cat = c["category"]
+            if cat not in categories:
+                categories[cat] = {"total": 0, "passed": 0}
+            categories[cat]["total"] += 1
+            if c["passed"]:
+                categories[cat]["passed"] += 1
+
+        overall_total = sum(v["total"] for v in categories.values())
+        overall_passed = sum(v["passed"] for v in categories.values())
+        overall_pct = round(
+            overall_passed * 100 / overall_total
+        ) if overall_total else 0
+
+        return jsonify({
+            "topology_id": topo_id,
+            "checks": checks,
+            "categories": {
+                k: {**v, "pct": round(
+                    v["passed"] * 100 / v["total"]
+                ) if v["total"] else 0}
+                for k, v in categories.items()
+            },
+            "overall_score": overall_pct,
+            "overall_passed": overall_passed,
+            "overall_total": overall_total,
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
+    # NDC Case Workflow (Phase 4)
+    # ══════════════════════════════════════════════════════════════════════
+
+    _NDC_LIFECYCLE = {
+        "states": [
+            "concept", "requirements", "design", "peer_review",
+            "lab_test", "change_approval", "implementation",
+            "verification", "handoff", "operate",
+        ],
+        "transitions": {
+            "concept": ["requirements"],
+            "requirements": ["design", "concept"],
+            "design": ["peer_review", "requirements"],
+            "peer_review": ["lab_test", "design"],
+            "lab_test": ["change_approval", "design"],
+            "change_approval": ["implementation", "design"],
+            "implementation": ["verification"],
+            "verification": ["handoff", "implementation"],
+            "handoff": ["operate"],
+            "operate": [],
+        },
+        "checklists": {
+            "concept": [
+                "Business justification documented",
+                "Stakeholders identified",
+                "High-level topology sketched",
+            ],
+            "requirements": [
+                "Bandwidth requirements defined",
+                "Redundancy requirements specified",
+                "Security classification determined",
+                "SLA targets documented",
+            ],
+            "design": [
+                "Detailed topology completed",
+                "Routing protocol selected and documented",
+                "IP addressing plan (IPAM) allocated",
+                "Equipment BOM finalized",
+                "Circuit orders identified",
+            ],
+            "peer_review": [
+                "Design reviewed by network architect",
+                "Compliance audit passed (80%+)",
+                "SPOF analysis completed",
+                "Design pattern alignment verified",
+            ],
+            "lab_test": [
+                "Lab environment provisioned",
+                "Routing convergence tested",
+                "Failover scenarios validated",
+                "Traffic engineering verified",
+            ],
+            "change_approval": [
+                "CCB change request submitted",
+                "Rollback plan documented",
+                "Maintenance window scheduled",
+                "Stakeholder sign-off obtained",
+            ],
+            "implementation": [
+                "Device configurations applied",
+                "Circuits activated",
+                "Routing adjacencies established",
+                "Monitoring enabled",
+            ],
+            "verification": [
+                "End-to-end connectivity verified",
+                "Performance benchmarks met",
+                "Security scan passed",
+                "As-built diagram updated",
+            ],
+            "handoff": [
+                "Operations team briefed",
+                "Runbook documented",
+                "Monitoring dashboards configured",
+                "Escalation procedures defined",
+            ],
+        },
+    }
+
+    @bp.route("/api/projects/<pid>/case-workflow", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_case_workflow(pid):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_case_workflows WHERE project_id=?",
+            (pid,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"exists": False,
+                            "lifecycle": _NDC_LIFECYCLE})
+        wf = _row_to_dict(row)
+        history = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_case_history WHERE workflow_id=? "
+            "ORDER BY changed_at", (wf["id"],)
+        ).fetchall()]
+        conn.close()
+        try:
+            wf["lifecycle"] = json.loads(wf.get("lifecycle_json", "{}"))
+        except Exception:
+            wf["lifecycle"] = _NDC_LIFECYCLE
+        checklist = wf["lifecycle"].get(
+            "checklists", {}).get(wf["current_state"], [])
+        allowed = wf["lifecycle"].get(
+            "transitions", {}).get(wf["current_state"], [])
+        return jsonify({
+            "exists": True,
+            "workflow_id": wf["id"],
+            "current_state": wf["current_state"],
+            "checklist": checklist,
+            "allowed_transitions": allowed,
+            "history": history,
+            "lifecycle": wf["lifecycle"],
+        })
+
+    @bp.route("/api/projects/<pid>/case-workflow", methods=["POST"])
+    @nc_login_required
+    def nc_api_init_case_workflow(pid):
+        conn = get_connection()
+        existing = conn.execute(
+            "SELECT id FROM nc_case_workflows WHERE project_id=?",
+            (pid,)
+        ).fetchone()
+        if existing:
+            conn.close()
+            return jsonify({"error": "Workflow already exists"}), 409
+        wid = str(_uuid.uuid4())
+        now = _now()
+        conn.execute(
+            "INSERT INTO nc_case_workflows "
+            "(id, project_id, current_state, lifecycle_json, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (wid, pid, "concept",
+             json.dumps(_NDC_LIFECYCLE), now, now)
+        )
+        conn.execute(
+            "INSERT INTO nc_case_history "
+            "(workflow_id, from_state, to_state, comment, changed_at) "
+            "VALUES (?,?,?,?,?)",
+            (wid, "", "concept", "Workflow initialized", now)
+        )
+        conn.commit()
+        conn.close()
+        _audit("INIT_WORKFLOW", "project", pid)
+        return jsonify({"workflow_id": wid,
+                        "current_state": "concept"}), 201
+
+    @bp.route("/api/projects/<pid>/case-transition", methods=["POST"])
+    @nc_login_required
+    def nc_api_case_transition(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        to_state = data.get("to_state")
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_case_workflows WHERE project_id=?",
+            (pid,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "No workflow"}), 404
+        wf = _row_to_dict(row)
+        try:
+            lifecycle = json.loads(wf.get("lifecycle_json", "{}"))
+        except Exception:
+            lifecycle = _NDC_LIFECYCLE
+        current = wf["current_state"]
+        allowed = lifecycle.get("transitions", {}).get(current, [])
+        if to_state not in allowed:
+            conn.close()
+            return jsonify({
+                "error": f"Cannot transition from '{current}' "
+                         f"to '{to_state}'",
+                "allowed": allowed,
+            }), 422
+        now = _now()
+        conn.execute(
+            "UPDATE nc_case_workflows SET current_state=?, "
+            "updated_at=? WHERE project_id=?",
+            (to_state, now, pid)
+        )
+        conn.execute(
+            "INSERT INTO nc_case_history "
+            "(workflow_id, from_state, to_state, changed_by, "
+            " comment, changed_at) VALUES (?,?,?,?,?,?)",
+            (wf["id"], current, to_state,
+             data.get("changed_by", ""),
+             data.get("comment", ""), now)
+        )
+        conn.commit()
+        _notify(conn, pid, "phase_changed",
+                f"Workflow: {current} -> {to_state}",
+                data.get("comment", ""))
+        conn.commit()
+        conn.close()
+        _audit("CASE_TRANSITION", "project", pid,
+               f"{current} -> {to_state}")
+        checklist = lifecycle.get("checklists", {}).get(to_state, [])
+        return jsonify({
+            "from": current, "to": to_state,
+            "checklist": checklist,
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Deterministic Chat Assistant (Phase 5)
+    # ══════════════════════════════════════════════════════════════════════
+
+    _CHAT_INTENTS = [
+        {"keywords": ["cross-connect", "cross connect", "xconn", "colo"],
+         "template": "pat-cross-connect",
+         "response": "For a cross-connect, I recommend starting with the "
+                     "Cross-Connect pattern (patch panel + meet-me room + "
+                     "demarc). Load this pattern and add your carrier "
+                     "handoff details."},
+        {"keywords": ["bgp", "peering", "partner", "ix", "exchange"],
+         "template": "pat-bgp-peering",
+         "response": "For BGP peering, start with the BGP Peering pattern. "
+                     "Configure eBGP between your PE and the partner PE. "
+                     "Add prefix filters and set local-pref/MED."},
+        {"keywords": ["wan", "site-to-site", "branch", "remote"],
+         "template": "pat-wan-edge",
+         "response": "For WAN connectivity, use the WAN Edge pattern. "
+                     "Add an encryptor for classified traffic and "
+                     "configure IPSec/GRE tunnels to the carrier handoff."},
+        {"keywords": ["sdwan", "sd-wan", "overlay", "vmanage"],
+         "template": "pat-sdwan-overlay",
+         "response": "For SD-WAN, start with the SD-WAN Overlay pattern. "
+                     "Ensure at least 2 WAN transports for path diversity "
+                     "and configure application-aware routing."},
+        {"keywords": ["redundan", "ha", "high availability", "failover"],
+         "template": "pat-redundant-core",
+         "response": "For redundancy, use the Redundant Core pattern. "
+                     "Add VRRP/HSRP for gateway redundancy and LACP "
+                     "for link aggregation. Target zero SPOF."},
+        {"keywords": ["dmz", "public", "web server", "internet"],
+         "template": "pat-dmz-sandwich",
+         "response": "For DMZ/public services, use the DMZ Sandwich "
+                     "pattern. Place services between external and "
+                     "internal firewalls with default-deny policies."},
+        {"keywords": ["mpls", "provider", "carrier", "label"],
+         "template": "pat-mpls-pe",
+         "response": "For MPLS, start with the MPLS PE Node pattern. "
+                     "Configure VRFs per customer and connect to a "
+                     "route reflector for iBGP scale."},
+        {"keywords": ["campus", "distribution", "access", "building"],
+         "template": "pat-dist-block",
+         "response": "For campus design, use the Distribution Block "
+                     "pattern. Configure STP root/secondary and LACP "
+                     "uplinks. Add access switches below."},
+        {"keywords": ["encrypt", "classified", "secret", "type 1"],
+         "template": "pat-wan-edge",
+         "response": "For classified networks, encryption is mandatory. "
+                     "Use Type 1 NSA encryptors (KG-175D/KG-250) for "
+                     "SECRET+. The WAN Edge pattern includes encryption."},
+        {"keywords": ["power", "ups", "pdu", "backup power"],
+         "template": "pat-backup-power",
+         "response": "For power redundancy, use the Backup Power pattern. "
+                     "Dual A/B PDU feeds from separate UPS units. "
+                     "Target 15-minute UPS runtime minimum."},
+        {"keywords": ["aws", "vpc", "cloud", "azure", "gcp"],
+         "template": None,
+         "response": "For cloud connectivity, create a VPC/VNet group "
+                     "container on the canvas and add subnets. Use "
+                     "Direct Connect/ExpressRoute for dedicated links "
+                     "to on-prem. Check the Templates gallery for "
+                     "cloud-specific starter topologies."},
+        {"keywords": ["ospf", "routing", "igp"],
+         "template": None,
+         "response": "OSPF best practices: Use area 0 for backbone. "
+                     "Summarize at area boundaries. Enable BFD for "
+                     "sub-second failover. Configure passive-interface "
+                     "default and activate only needed interfaces."},
+        {"keywords": ["firewall", "security", "zone"],
+         "template": "pat-dmz-sandwich",
+         "response": "For firewalls, always deploy in HA pairs. "
+                     "Default-deny policy, log all denies. Place "
+                     "between trust zones. The DMZ Sandwich pattern "
+                     "is a good starting point."},
+    ]
+
+    @bp.route("/api/chat-assist", methods=["POST"])
+    @nc_login_required
+    def nc_api_chat_assist():
+        """Deterministic chat: keyword match -> template + guidance.
+        No LLM required — works fully air-gapped."""
+        data = request.get_json(force=True, silent=True) or {}
+        message = (data.get("message") or "").lower().strip()
+        if not message:
+            return jsonify({"response": "How can I help with your "
+                            "network design? Try asking about "
+                            "cross-connects, BGP peering, WAN, "
+                            "SD-WAN, redundancy, or security.",
+                            "template_id": None})
+
+        best_match = None
+        best_score = 0
+        for intent in _CHAT_INTENTS:
+            score = sum(
+                1 for kw in intent["keywords"] if kw in message
+            )
+            if score > best_score:
+                best_score = score
+                best_match = intent
+
+        if best_match and best_score > 0:
+            return jsonify({
+                "response": best_match["response"],
+                "template_id": best_match.get("template"),
+                "matched_keywords": [
+                    kw for kw in best_match["keywords"]
+                    if kw in message
+                ],
+                "confidence": min(best_score / 2, 1.0),
+            })
+
+        # Fallback: check best practices
+        bp_cats = _design_rules.get("best_practices", {})
+        for cat, practices in bp_cats.items():
+            if cat in message:
+                return jsonify({
+                    "response": f"Best practices for {cat}:\n" +
+                                "\n".join(f"- {p}" for p in practices[:5]),
+                    "template_id": None,
+                    "confidence": 0.5,
+                })
+
+        return jsonify({
+            "response": "I can help with network design. Try asking "
+                        "about: cross-connects, BGP peering, WAN "
+                        "design, SD-WAN, redundancy, DMZ, MPLS, "
+                        "campus networks, encryption, or routing "
+                        "best practices.",
+            "template_id": None,
+            "confidence": 0.0,
+        })
+
+    @bp.route("/api/design-patterns/categories", methods=["GET"])
+    @nc_login_required
+    def nc_api_pattern_categories():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT DISTINCT category, COUNT(*) AS cnt "
+            "FROM nc_design_patterns GROUP BY category "
+            "ORDER BY category"
+        ).fetchall()
+        conn.close()
+        return jsonify([
+            {"category": r[0], "count": r[1]} for r in rows
+        ])
+
+    # ══════════════════════════════════════════════════════════════════════
     # Extended: Notifications, Topology Diff, Auto-Decompose, Global Canvas
     # ══════════════════════════════════════════════════════════════════════
 

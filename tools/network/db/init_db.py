@@ -598,6 +598,26 @@ CREATE TABLE IF NOT EXISTS nc_project_phases (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── NDC Case Workflow (Phase 4) ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_case_workflows (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    current_state TEXT DEFAULT 'concept',
+    lifecycle_json TEXT NOT NULL,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_case_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    workflow_id TEXT REFERENCES nc_case_workflows(id),
+    from_state  TEXT NOT NULL,
+    to_state    TEXT NOT NULL,
+    changed_by  TEXT,
+    comment     TEXT,
+    changed_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Design Pattern Library (Phase 2) ──────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nc_design_patterns (
     id          TEXT PRIMARY KEY,
@@ -2620,6 +2640,102 @@ def init_db():
                 )
             conn.commit()
             print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).")
+
+        # Seed design patterns
+        pattern_count = conn.execute("SELECT COUNT(*) FROM nc_design_patterns").fetchone()[0]
+        if pattern_count == 0:
+            _patterns = [
+                ("pat-redundant-core", "Redundant Core", "redundancy",
+                 "2x core routers with VRRP, LACP uplinks, OSPF area 0",
+                 json.dumps({"nodes": [
+                     _node("cr1", "Core-R1", "router", 100, 100),
+                     _node("cr2", "Core-R2", "router", 300, 100),
+                 ], "edges": [
+                     _edge("cr1", "cr2", "VRRP/OSPF", "ospf"),
+                 ]}), 1, '["core","vrrp","ospf","lacp"]'),
+                ("pat-dist-block", "Distribution Block", "campus",
+                 "2x L3 distribution switches with STP root/secondary",
+                 json.dumps({"nodes": [
+                     _node("ds1", "Dist-SW1", "switch-l3", 100, 100),
+                     _node("ds2", "Dist-SW2", "switch-l3", 300, 100),
+                 ], "edges": [
+                     _edge("ds1", "ds2", "LACP Trunk", "lacp"),
+                 ]}), 1, '["campus","stp","distribution"]'),
+                ("pat-dmz-sandwich", "DMZ Sandwich", "security",
+                 "2x firewalls + DMZ switch for public-facing services",
+                 json.dumps({"nodes": [
+                     _node("fw-ext", "FW-External", "firewall", 200, 50),
+                     _node("dmz-sw", "DMZ-Switch", "switch-l2", 200, 200),
+                     _node("fw-int", "FW-Internal", "firewall", 200, 350),
+                 ], "edges": [
+                     _edge("fw-ext", "dmz-sw", "DMZ-Out", ""),
+                     _edge("dmz-sw", "fw-int", "DMZ-In", ""),
+                 ]}), 1, '["dmz","firewall","security"]'),
+                ("pat-wan-edge", "WAN Edge", "wan",
+                 "Router + encryptor + carrier handoff for site-to-site WAN",
+                 json.dumps({"nodes": [
+                     _node("wan-r", "WAN-Router", "router", 100, 100),
+                     _node("wan-enc", "Encryptor", "type1-encryptor", 300, 100),
+                     _node("wan-ho", "Carrier Handoff", "cloud", 500, 100),
+                 ], "edges": [
+                     _edge("wan-r", "wan-enc", "Encrypted", "ipsec"),
+                     _edge("wan-enc", "wan-ho", "WAN Circuit", ""),
+                 ]}), 1, '["wan","encryption","carrier"]'),
+                ("pat-sdwan-overlay", "SD-WAN Overlay", "wan",
+                 "SD-WAN edge with dual WAN transports and IPSec overlay",
+                 json.dumps({"nodes": [
+                     _node("sdw", "SD-WAN Edge", "sdwan-edge", 200, 100),
+                     _node("wan1", "MPLS Transport", "cloud", 100, 250),
+                     _node("wan2", "DIA Transport", "cloud", 300, 250),
+                 ], "edges": [
+                     _edge("sdw", "wan1", "MPLS", "mpls"),
+                     _edge("sdw", "wan2", "Internet", "ipsec"),
+                 ]}), 1, '["sdwan","overlay","dual-transport"]'),
+                ("pat-bgp-peering", "BGP Peering", "routing",
+                 "eBGP peering between two ASNs with prefix filtering",
+                 json.dumps({"nodes": [
+                     _node("pe1", "My-PE", "router", 100, 100),
+                     _node("pe2", "Partner-PE", "router", 400, 100),
+                 ], "edges": [
+                     _edge("pe1", "pe2", "eBGP", "bgp"),
+                 ]}), 1, '["bgp","peering","partner"]'),
+                ("pat-cross-connect", "Cross-Connect", "wan",
+                 "Colo cross-connect: patch panel + meet-me room + demarc",
+                 json.dumps({"nodes": [
+                     _node("pp", "Patch Panel", "patch-panel", 100, 100),
+                     _node("mmr", "Meet-Me Room", "meet-me-room", 300, 100),
+                     _node("dm", "Demarc", "demarc", 500, 100),
+                 ], "edges": [
+                     _edge("pp", "mmr", "Fiber", "smf"),
+                     _edge("mmr", "dm", "Cross-Connect", ""),
+                 ]}), 1, '["colo","cross-connect","facility"]'),
+                ("pat-mpls-pe", "MPLS PE Node", "routing",
+                 "MPLS PE router with VRF and route reflector connection",
+                 json.dumps({"nodes": [
+                     _node("pe", "MPLS-PE", "mpls-pe", 200, 100),
+                     _node("rr", "Route Reflector", "route-reflector", 200, 300),
+                 ], "edges": [
+                     _edge("pe", "rr", "iBGP/RR", "bgp"),
+                 ]}), 1, '["mpls","pe","route-reflector"]'),
+                ("pat-backup-power", "Backup Power", "reliability",
+                 "Dual PDU A/B feeds, UPS, generator for power redundancy",
+                 json.dumps({"nodes": [
+                     _node("pdu-a", "PDU-A", "server", 100, 100),
+                     _node("pdu-b", "PDU-B", "server", 300, 100),
+                     _node("ups", "UPS", "server", 200, 250),
+                 ], "edges": [
+                     _edge("pdu-a", "ups", "A-Feed", ""),
+                     _edge("pdu-b", "ups", "B-Feed", ""),
+                 ]}), 1, '["power","ups","redundancy"]'),
+            ]
+            for p in _patterns:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_design_patterns "
+                    "(id, name, category, description, graph_json, "
+                    " is_builtin, tags) VALUES (?,?,?,?,?,?,?)", p
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(_patterns)} design patterns.")
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
