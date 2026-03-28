@@ -586,9 +586,17 @@ def create_network_blueprint():
             s = p.get("status", "draft")
             portfolio_stats["by_status"][s] = portfolio_stats["by_status"].get(s, 0) + 1
 
+        # P1: Portfolio-wide activity feed (recent 20 events)
+        portfolio_activity = [_row_to_dict(r) for r in conn.execute(
+            "SELECT action, entity_type, entity_id, details, "
+            "user_id, ts FROM nc_audit "
+            "ORDER BY ts DESC LIMIT 20"
+        ).fetchall()]
+
         conn.close()
         return render_template("network/projects.html", projects=projects,
-                               customers=customers, portfolio=portfolio_stats)
+                               customers=customers, portfolio=portfolio_stats,
+                               activity=portfolio_activity)
 
     @bp.route("/projects/<proj_id>")
     @nc_login_required
@@ -603,7 +611,8 @@ def create_network_blueprint():
             abort(404)
         proj = _row_to_dict(proj)
         topos = [_row_to_dict(r) for r in conn.execute(
-            "SELECT t.id, t.name, t.description, t.classification, t.updated_at, "
+            "SELECT t.id, t.name, t.description, t.classification, "
+            "t.updated_at, t.graph_json, "
             "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
             "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
             "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
@@ -611,12 +620,117 @@ def create_network_blueprint():
         ).fetchall()]
         circuits = [_row_to_dict(r) for r in conn.execute(
             "SELECT * FROM nc_circuits WHERE topology_id IN "
-            "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) ORDER BY circuit_id", (proj_id,)
+            "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+            "ORDER BY circuit_id", (proj_id,)
         ).fetchall()]
-        all_topos = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM topologies ORDER BY name").fetchall()]
+        all_topos = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name FROM topologies ORDER BY name"
+        ).fetchall()]
+
+        # ── P1: Compliance rollup per topology ────────────────────────────
+        topo_compliance = []
+        agg_passed = agg_failed = 0
+        total_open_findings = 0
+        for t in topos:
+            tid = t["id"]
+            audit_row = conn.execute(
+                "SELECT passed, failed, ran_at FROM nc_compliance_checks "
+                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1", (tid,)
+            ).fetchone()
+            passed = (audit_row[0] or 0) if audit_row else 0
+            failed = (audit_row[1] or 0) if audit_row else 0
+            last_audit = audit_row[2] if audit_row else None
+            total = passed + failed
+            pct = round(passed * 100 / total) if total else None
+            agg_passed += passed
+            agg_failed += failed
+            of_row = conn.execute(
+                "SELECT COUNT(*) FROM nc_compliance_findings "
+                "WHERE topology_id=? AND status='open'", (tid,)
+            ).fetchone()
+            open_f = of_row[0] if of_row else 0
+            total_open_findings += open_f
+            # Findings by severity
+            sev_rows = conn.execute(
+                "SELECT severity, COUNT(*) FROM nc_compliance_findings "
+                "WHERE topology_id=? AND status='open' "
+                "GROUP BY severity", (tid,)
+            ).fetchall()
+            by_sev = {r[0]: r[1] for r in sev_rows}
+            topo_compliance.append({
+                "id": tid, "name": t["name"],
+                "passed": passed, "failed": failed,
+                "pct": pct, "open_findings": open_f,
+                "cat1": by_sev.get("CAT1", 0),
+                "cat2": by_sev.get("CAT2", 0),
+                "cat3": by_sev.get("CAT3", 0),
+                "last_audit": last_audit,
+            })
+        agg_total = agg_passed + agg_failed
+        agg_pct = round(agg_passed * 100 / agg_total) if agg_total else None
+
+        # ── P1: BOM cost rollup per topology ──────────────────────────────
+        topo_bom = []
+        total_capex = 0
+        total_circuit_cost = sum(
+            c.get("monthly_cost_usd") or 0 for c in circuits
+        )
+        for t in topos:
+            try:
+                graph = json.loads(t.get("graph_json") or '{"nodes":[]}')
+            except Exception:
+                graph = {"nodes": []}
+            type_counts = {}
+            for n in graph.get("nodes", []):
+                nt = n.get("type", "unknown")
+                type_counts[nt] = type_counts.get(nt, 0) + 1
+            capex = sum(
+                BOM_COSTS.get(dt, 0) * cnt
+                for dt, cnt in type_counts.items()
+            )
+            total_capex += capex
+            topo_bom.append({
+                "id": t["id"], "name": t["name"],
+                "devices": sum(type_counts.values()),
+                "unique_types": len(type_counts),
+                "capex": capex,
+            })
+
+        # ── P1: Activity feed from nc_audit ───────────────────────────────
+        topo_ids = [t["id"] for t in topos]
+        if topo_ids:
+            placeholders = ",".join("?" for _ in topo_ids)
+            activity = [_row_to_dict(r) for r in conn.execute(
+                "SELECT action, entity_type, entity_id, details, "
+                "user_id, ts FROM nc_audit "
+                "WHERE entity_id IN (" + placeholders + ") "  # nosec B608
+                "OR (entity_type='project' AND entity_id=?) "
+                "ORDER BY ts DESC LIMIT 30",
+                topo_ids + [proj_id]
+            ).fetchall()]
+        else:
+            activity = [_row_to_dict(r) for r in conn.execute(
+                "SELECT action, entity_type, entity_id, details, "
+                "user_id, ts FROM nc_audit "
+                "WHERE entity_type='project' AND entity_id=? "
+                "ORDER BY ts DESC LIMIT 30", (proj_id,)
+            ).fetchall()]
+
+        # Strip graph_json from topos (large, not needed in template)
+        for t in topos:
+            t.pop("graph_json", None)
+
         conn.close()
-        return render_template("network/project_detail.html", project=proj,
-                               topologies=topos, circuits=circuits, all_topos=all_topos)
+        return render_template("network/project_detail.html",
+                               project=proj, topologies=topos,
+                               circuits=circuits, all_topos=all_topos,
+                               topo_compliance=topo_compliance,
+                               agg_compliance_pct=agg_pct,
+                               total_open_findings=total_open_findings,
+                               topo_bom=topo_bom,
+                               total_capex=total_capex,
+                               total_circuit_cost=total_circuit_cost,
+                               activity=activity)
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Health

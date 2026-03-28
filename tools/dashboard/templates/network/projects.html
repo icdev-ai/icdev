@@ -111,6 +111,28 @@
   {% else %}<p style="padding:1rem;color:var(--text-dim);">No projects yet.</p>{% endif %}
 </section>
 
+<!-- ═══════════════ ACTIVITY FEED ═══════════════ -->
+{% if activity %}
+<section class="panel panel-wide" style="margin-top:20px;">
+  <div class="panel-header"><h2 class="panel-title">Recent Activity (All Projects)</h2></div>
+  <div class="activity-feed" id="portfolio-activity">
+    {% for a in activity %}
+    <div class="activity-item">
+      <div class="activity-action">
+        <span class="activity-badge ab-{{ a.action|lower }}">{{ a.action }}</span>
+        <span class="activity-entity">{{ a.entity_type }}</span>
+      </div>
+      {% if a.details %}<div class="activity-detail">{{ a.details[:80] }}</div>{% endif %}
+      <div class="activity-meta">
+        {% if a.user_id %}<span>{{ a.user_id[:20] }}</span>{% endif %}
+        <span class="activity-ts">{{ (a.ts or '')[:16] }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <!-- ═══════════════ CREATE MODAL ═══════════════ -->
 <div id="add-modal" class="modal" style="display:none;">
   <div class="modal-content">

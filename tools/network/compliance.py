@@ -425,19 +425,19 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
 
     # ── Score per regime ──────────────────────────────────────────────────
     total_rules_per_regime = {}
-    failed_per_regime = {}
+    failed_rules_per_regime = {}  # track unique rule IDs, not finding count
     for rule in COMPLIANCE_RULES:
         for r in rule["regimes"]:
             if r in active_regimes:
                 total_rules_per_regime[r] = total_rules_per_regime.get(r, 0) + 1
     for f in findings:
         for r in f["regimes"]:
-            failed_per_regime[r] = failed_per_regime.get(r, 0) + 1
+            failed_rules_per_regime.setdefault(r, set()).add(f["rule_id"])
 
     scores = {}
     for r in active_regimes:
         total = total_rules_per_regime.get(r, 1)
-        failed = failed_per_regime.get(r, 0)
+        failed = len(failed_rules_per_regime.get(r, set()))
         passed = total - failed
         scores[r] = {
             "regime": COMPLIANCE_REGIMES.get(r, {}).get("name", r),

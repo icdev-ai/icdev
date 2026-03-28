@@ -290,7 +290,53 @@ a:hover { text-decoration: underline; }
 .kanban-card-owner { font-size: 10px; color: var(--text-dim); margin-bottom: 4px; }
 .kanban-card-actions { display: flex; gap: 6px; }
 
-.text-danger { color: var(--danger) !important; }
+.text-danger  { color: var(--danger) !important; }
+.text-success { color: var(--success) !important; }
+.text-warning { color: var(--warning) !important; }
+
+/* ── Activity Feed ─────────────────────────────────────────────────────────── */
+.activity-feed {
+  padding: 8px 12px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.activity-item {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.activity-item:last-child { border-bottom: none; }
+.activity-action {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+.activity-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ab-create  { background: #1b3a1b; color: #27ae60; }
+.ab-update  { background: #0f1a2a; color: #3498db; }
+.ab-delete  { background: #3a1010; color: #e74c3c; }
+.ab-link    { background: #1a1a0f; color: #f39c12; }
+.ab-unlink  { background: #2a1a0f; color: #e67e22; }
+.ab-save    { background: #1b3a1b; color: #27ae60; }
+.ab-export  { background: #1a0f2a; color: #9b59b6; }
+.ab-import  { background: #0f2a1a; color: #1abc9c; }
+.ab-audit   { background: #3a2e00; color: #f39c12; }
+.activity-entity { font-size: 11px; color: var(--text-dim); }
+.activity-detail { font-size: 12px; color: var(--text); margin-bottom: 2px; }
+.activity-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.activity-ts { margin-left: auto; }
 
 /* ── Project Filter Bar ────────────────────────────────────────────────────── */
 .project-filter-bar {

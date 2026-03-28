@@ -4,62 +4,187 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">{{ project.name }}</h1>
-    <p class="page-subtitle">{{ project.description or 'No description' }} — <span class="badge badge-{% if project.status == 'approved' %}public{% elif project.status == 'deployed' %}public{% else %}warning{% endif %}">{{ project.status }}</span></p>
+    <p class="page-subtitle">{{ project.description or 'No description' }} — <span class="badge badge-{% if project.status == 'approved' or project.status == 'deployed' %}public{% elif project.status == 'in_review' %}warning{% else %}info{% endif %}">{{ project.status }}</span></p>
   </div>
   <div class="page-actions">
     <button class="btn btn-secondary" onclick="document.getElementById('link-modal').style.display='flex'">+ Link Topology</button>
     <button class="btn btn-secondary" onclick="updateStatus()">Change Status</button>
+    <a href="/network/?project={{ project.id }}" class="btn btn-secondary">Filter Dashboard</a>
     <a href="/network/projects" class="btn btn-secondary">All Projects</a>
   </div>
 </div>
 
+<!-- Stats Bar -->
 <div class="stats-bar">
   <div class="stat-card"><div class="stat-value">{{ topologies|length }}</div><div class="stat-label">Topologies</div></div>
   <div class="stat-card"><div class="stat-value">{{ circuits|length }}</div><div class="stat-label">Circuits</div></div>
-  <div class="stat-card"><div class="stat-value">{{ project.customer_name or '—' }}</div><div class="stat-label">Customer</div></div>
+  <div class="stat-card">
+    <div class="stat-value {% if agg_compliance_pct is not none %}{% if agg_compliance_pct >= 80 %}text-success{% elif agg_compliance_pct >= 50 %}text-warning{% else %}text-danger{% endif %}{% endif %}">
+      {{ agg_compliance_pct if agg_compliance_pct is not none else '—' }}{% if agg_compliance_pct is not none %}%{% endif %}
+    </div>
+    <div class="stat-label">Compliance Score</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value {% if total_open_findings > 0 %}text-danger{% endif %}">{{ total_open_findings }}</div>
+    <div class="stat-label">Open Findings</div>
+  </div>
+  <div class="stat-card"><div class="stat-value">${{ "%.0f"|format(total_capex) }}</div><div class="stat-label">Est. CapEx</div></div>
+  <div class="stat-card"><div class="stat-value">${{ "%.0f"|format(total_circuit_cost) }}/mo</div><div class="stat-label">Circuit OpEx</div></div>
   <div class="stat-card"><div class="stat-value">{{ project.owner or '—' }}</div><div class="stat-label">Owner</div></div>
 </div>
 
 <div class="dashboard-grid">
-  <section class="panel panel-wide">
-    <div class="panel-header"><h2 class="panel-title">Topologies</h2></div>
-    {% if topologies %}
-    <table class="data-table">
-      <thead><tr><th>Name</th><th>Nodes</th><th>Links</th><th>Updated</th><th>Actions</th></tr></thead>
-      <tbody>
-      {% for t in topologies %}
-        <tr>
-          <td><a href="/network/canvas/{{ t.id }}" class="table-link">{{ t.name }}</a></td>
-          <td>{{ t.node_count }}</td><td>{{ t.edge_count }}</td>
-          <td class="ts">{{ (t.updated_at or '')[:16] }}</td>
-          <td class="actions">
-            <a href="/network/canvas/{{ t.id }}" class="action-btn">✏</a>
-            <a href="/network/versions/{{ t.id }}" class="action-btn" title="Versions">V</a>
-            <button class="action-btn danger" onclick="unlinkTopo('{{ t.id }}')">✕</button>
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}<p style="padding:1rem;color:var(--text-muted);">No topologies linked. Click "+ Link Topology" to add one.</p>{% endif %}
-  </section>
+  <!-- Left Column: Main Content -->
+  <div>
+    <!-- ═══════════════ COMPLIANCE ROLLUP ═══════════════ -->
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Compliance Rollup</h2></div>
+      {% if topo_compliance %}
+      <table class="data-table" id="compliance-table">
+        <thead><tr>
+          <th>Topology</th><th>Score</th><th>Passed</th><th>Failed</th>
+          <th>CAT1</th><th>CAT2</th><th>CAT3</th><th>Open</th><th>Last Audit</th>
+        </tr></thead>
+        <tbody>
+        {% for tc in topo_compliance %}
+          <tr>
+            <td><a href="/network/compliance/{{ tc.id }}" class="table-link">{{ tc.name }}</a></td>
+            <td>
+              {% if tc.pct is not none %}
+              <span class="health-pill {% if tc.pct >= 80 %}pill-green{% elif tc.pct >= 50 %}pill-yellow{% else %}pill-red{% endif %}">{{ tc.pct }}%</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ tc.passed }}</td>
+            <td>{{ tc.failed }}</td>
+            <td>{% if tc.cat1 > 0 %}<span class="health-pill pill-red">{{ tc.cat1 }}</span>{% else %}0{% endif %}</td>
+            <td>{% if tc.cat2 > 0 %}<span class="health-pill pill-yellow">{{ tc.cat2 }}</span>{% else %}0{% endif %}</td>
+            <td>{{ tc.cat3 }}</td>
+            <td>{% if tc.open_findings > 0 %}<span class="health-pill pill-red">{{ tc.open_findings }}</span>{% else %}0{% endif %}</td>
+            <td class="ts">{{ (tc.last_audit or '')[:16] }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border);">
+            <td>AGGREGATE</td>
+            <td>
+              {% if agg_compliance_pct is not none %}
+              <span class="health-pill {% if agg_compliance_pct >= 80 %}pill-green{% elif agg_compliance_pct >= 50 %}pill-yellow{% else %}pill-red{% endif %}">{{ agg_compliance_pct }}%</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ topo_compliance|sum(attribute='passed') }}</td>
+            <td>{{ topo_compliance|sum(attribute='failed') }}</td>
+            <td>{{ topo_compliance|sum(attribute='cat1') }}</td>
+            <td>{{ topo_compliance|sum(attribute='cat2') }}</td>
+            <td>{{ topo_compliance|sum(attribute='cat3') }}</td>
+            <td>{{ total_open_findings }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      {% else %}<p style="padding:1rem;color:var(--text-dim);">No compliance audits run yet. Open a topology and run a compliance audit.</p>{% endif %}
+    </section>
 
-  {% if circuits %}
-  <section class="panel panel-wide">
-    <div class="panel-header"><h2 class="panel-title">Related Circuits</h2></div>
-    <table class="data-table">
-      <thead><tr><th>Circuit ID</th><th>Carrier</th><th>Type</th><th>BW</th><th>Status</th><th>Cost/mo</th></tr></thead>
-      <tbody>
-      {% for c in circuits %}
-        <tr><td>{{ c.circuit_id }}</td><td>{{ c.carrier }}</td><td>{{ c.circuit_type }}</td><td>{{ c.bandwidth }}</td>
-        <td><span class="badge">{{ c.install_status }}</span></td><td>${{ "%.0f"|format(c.monthly_cost_usd or 0) }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </section>
-  {% endif %}
+    <!-- ═══════════════ TOPOLOGIES ═══════════════ -->
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Topologies</h2></div>
+      {% if topologies %}
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Nodes</th><th>Links</th><th>Updated</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for t in topologies %}
+          <tr>
+            <td><a href="/network/canvas/{{ t.id }}" class="table-link">{{ t.name }}</a></td>
+            <td>{{ t.node_count }}</td><td>{{ t.edge_count }}</td>
+            <td class="ts">{{ (t.updated_at or '')[:16] }}</td>
+            <td class="actions">
+              <a href="/network/canvas/{{ t.id }}" class="action-btn">&#x270F;</a>
+              <a href="/network/compliance/{{ t.id }}" class="action-btn" title="Compliance" style="color:#f39c12;">C</a>
+              <a href="/network/versions/{{ t.id }}" class="action-btn" title="Versions">V</a>
+              <button class="action-btn danger" onclick="unlinkTopo('{{ t.id }}')">&#x2715;</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p style="padding:1rem;color:var(--text-dim);">No topologies linked. Click "+ Link Topology" to add one.</p>{% endif %}
+    </section>
+
+    <!-- ═══════════════ BOM COST ROLLUP ═══════════════ -->
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Cost Rollup</h2></div>
+      <table class="data-table" id="cost-table">
+        <thead><tr>
+          <th>Topology</th><th>Devices</th><th>Unique Types</th><th>Est. CapEx</th>
+        </tr></thead>
+        <tbody>
+        {% for tb in topo_bom %}
+          <tr>
+            <td><a href="/network/canvas/{{ tb.id }}" class="table-link">{{ tb.name }}</a></td>
+            <td>{{ tb.devices }}</td>
+            <td>{{ tb.unique_types }}</td>
+            <td>${{ "%.0f"|format(tb.capex) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border);">
+            <td colspan="3">TOTAL</td>
+            <td>${{ "%.0f"|format(total_capex) }}</td>
+          </tr>
+          <tr style="color:var(--text-dim);">
+            <td colspan="3">Circuit OpEx (monthly)</td>
+            <td>${{ "%.0f"|format(total_circuit_cost) }}/mo</td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <!-- ═══════════════ CIRCUITS ═══════════════ -->
+    {% if circuits %}
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Circuits</h2></div>
+      <table class="data-table">
+        <thead><tr><th>Circuit ID</th><th>Carrier</th><th>Type</th><th>BW</th><th>Status</th><th>Cost/mo</th></tr></thead>
+        <tbody>
+        {% for c in circuits %}
+          <tr><td>{{ c.circuit_id }}</td><td>{{ c.carrier }}</td><td>{{ c.circuit_type }}</td><td>{{ c.bandwidth }}</td>
+          <td><span class="badge">{{ c.install_status }}</span></td><td>${{ "%.0f"|format(c.monthly_cost_usd or 0) }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+  </div>
+
+  <!-- Right Column: Activity Feed -->
+  <div class="panel-stack">
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Activity Feed</h2></div>
+      {% if activity %}
+      <div class="activity-feed" id="activity-feed">
+        {% for a in activity %}
+        <div class="activity-item">
+          <div class="activity-action">
+            <span class="activity-badge ab-{{ a.action|lower }}">{{ a.action }}</span>
+            <span class="activity-entity">{{ a.entity_type }}</span>
+          </div>
+          {% if a.details %}<div class="activity-detail">{{ a.details[:80] }}</div>{% endif %}
+          <div class="activity-meta">
+            {% if a.user_id %}<span>{{ a.user_id[:20] }}</span>{% endif %}
+            <span class="activity-ts">{{ (a.ts or '')[:16] }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="padding:1rem;color:var(--text-dim);">No activity recorded yet.</p>
+      {% endif %}
+    </section>
+  </div>
 </div>
 
+<!-- Link Topology Modal -->
 <div id="link-modal" class="modal" style="display:none;">
   <div class="modal-content">
     <h3>Link Topology to Project</h3>
