@@ -164,12 +164,23 @@ def create_network_blueprint():
     @nc_login_required
     def nc_index():
         conn = get_connection()
-        topologies = [_row_to_dict(r) for r in conn.execute(
-            "SELECT id, name, description, classification, created_at, updated_at, "
-            "json_array_length(json_extract(graph_json,'$.nodes')) AS node_count, "
-            "json_array_length(json_extract(graph_json,'$.edges')) AS edge_count "
-            "FROM topologies ORDER BY updated_at DESC LIMIT 20"
-        ).fetchall()]
+        # Project filter support
+        filter_project = request.args.get("project", "")
+        if filter_project:
+            topologies = [_row_to_dict(r) for r in conn.execute(
+                "SELECT t.id, t.name, t.description, t.classification, t.created_at, t.updated_at, "
+                "json_array_length(json_extract(t.graph_json,'$.nodes')) AS node_count, "
+                "json_array_length(json_extract(t.graph_json,'$.edges')) AS edge_count "
+                "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                "WHERE pt.project_id=? ORDER BY t.updated_at DESC LIMIT 20", (filter_project,)
+            ).fetchall()]
+        else:
+            topologies = [_row_to_dict(r) for r in conn.execute(
+                "SELECT id, name, description, classification, created_at, updated_at, "
+                "json_array_length(json_extract(graph_json,'$.nodes')) AS node_count, "
+                "json_array_length(json_extract(graph_json,'$.edges')) AS edge_count "
+                "FROM topologies ORDER BY updated_at DESC LIMIT 20"
+            ).fetchall()]
         templates = [_row_to_dict(r) for r in conn.execute(
             "SELECT id, name, category, description, tags FROM nc_templates ORDER BY category, name"
         ).fetchall()]
@@ -179,6 +190,15 @@ def create_network_blueprint():
             "ORDER BY sr.ran_at DESC LIMIT 10"
         ).fetchall()]
         total_sims = conn.execute("SELECT COUNT(*) FROM simulation_results").fetchone()[0]
+        # Load projects list for filter dropdown
+        all_projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name FROM nc_projects ORDER BY name"
+        ).fetchall()]
+        # Active project name for display
+        active_project = None
+        if filter_project:
+            ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
+            active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
 
         for t in templates:
@@ -196,6 +216,9 @@ def create_network_blueprint():
         return render_template("network/index.html",
                                topologies=topologies, templates=templates[:6],
                                simulations=sims,
+                               all_projects=all_projects,
+                               filter_project=filter_project,
+                               active_project=active_project,
                                stats={"topologies": len(topologies),
                                       "simulations": total_sims,
                                       "templates": len(templates)})
@@ -211,12 +234,24 @@ def create_network_blueprint():
     def nc_canvas_edit(topo_id):
         conn = get_connection()
         row = conn.execute("SELECT * FROM topologies WHERE id=?", (topo_id,)).fetchone()
-        conn.close()
         if not row:
+            conn.close()
             abort(404)
         topo = _row_to_dict(row)
+        # Find projects this topology belongs to
+        topo_projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT p.id, p.name, p.status FROM nc_projects p "
+            "JOIN nc_project_topologies pt ON pt.project_id=p.id "
+            "WHERE pt.topology_id=? ORDER BY p.name", (topo_id,)
+        ).fetchall()]
+        # All projects for quick-switch
+        all_projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name, status FROM nc_projects ORDER BY name"
+        ).fetchall()]
+        conn.close()
         return render_template("network/canvas.html",
-                               topology_id=topo_id, topology_name=topo["name"])
+                               topology_id=topo_id, topology_name=topo["name"],
+                               topo_projects=topo_projects, all_projects=all_projects)
 
     @bp.route("/templates")
     @nc_login_required
@@ -392,17 +427,34 @@ def create_network_blueprint():
     @nc_login_required
     def nc_circuits():
         conn = get_connection()
-        circuits = [_row_to_dict(r) for r in conn.execute(
-            "SELECT * FROM nc_circuits ORDER BY updated_at DESC"
-        ).fetchall()]
+        filter_project = request.args.get("project", "")
+        if filter_project:
+            circuits = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                "ORDER BY updated_at DESC", (filter_project,)
+            ).fetchall()]
+        else:
+            circuits = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_circuits ORDER BY updated_at DESC"
+            ).fetchall()]
         stats = {
             "total": len(circuits),
             "installed": sum(1 for c in circuits if c.get("install_status") == "installed"),
             "planned": sum(1 for c in circuits if c.get("install_status") == "planned"),
             "monthly_cost": sum(c.get("monthly_cost_usd") or 0 for c in circuits),
         }
+        all_projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name FROM nc_projects ORDER BY name"
+        ).fetchall()]
+        active_project = None
+        if filter_project:
+            ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
+            active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
-        return render_template("network/circuits.html", circuits=circuits, stats=stats)
+        return render_template("network/circuits.html", circuits=circuits, stats=stats,
+                               all_projects=all_projects, filter_project=filter_project,
+                               active_project=active_project)
 
     @bp.route("/customers")
     @nc_login_required
@@ -420,9 +472,26 @@ def create_network_blueprint():
     @nc_login_required
     def nc_ipam():
         conn = get_connection()
-        blocks = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_ipam_blocks ORDER BY network").fetchall()]
+        filter_project = request.args.get("project", "")
+        if filter_project:
+            blocks = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_ipam_blocks WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?) "
+                "ORDER BY network", (filter_project,)
+            ).fetchall()]
+        else:
+            blocks = [_row_to_dict(r) for r in conn.execute("SELECT * FROM nc_ipam_blocks ORDER BY network").fetchall()]
+        all_projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name FROM nc_projects ORDER BY name"
+        ).fetchall()]
+        active_project = None
+        if filter_project:
+            ap_row = conn.execute("SELECT id, name FROM nc_projects WHERE id=?", (filter_project,)).fetchone()
+            active_project = _row_to_dict(ap_row) if ap_row else None
         conn.close()
-        return render_template("network/ipam.html", blocks=blocks)
+        return render_template("network/ipam.html", blocks=blocks,
+                               all_projects=all_projects, filter_project=filter_project,
+                               active_project=active_project)
 
     @bp.route("/cables")
     @nc_login_required
@@ -459,8 +528,67 @@ def create_network_blueprint():
             "FROM nc_projects p LEFT JOIN nc_customers c ON c.id=p.customer_id ORDER BY p.updated_at DESC"
         ).fetchall()]
         customers = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_customers ORDER BY name").fetchall()]
+
+        # ── Portfolio health data per project ─────────────────────────────
+        for p in projects:
+            pid = p["id"]
+            topo_ids = [r[0] for r in conn.execute(
+                "SELECT topology_id FROM nc_project_topologies WHERE project_id=?", (pid,)
+            ).fetchall()]
+            # Compliance: latest audit pass/fail across topologies
+            total_passed = total_failed = 0
+            open_findings = 0
+            for tid in topo_ids:
+                row = conn.execute(
+                    "SELECT passed, failed FROM nc_compliance_checks WHERE topology_id=? "
+                    "ORDER BY ran_at DESC LIMIT 1", (tid,)
+                ).fetchone()
+                if row:
+                    total_passed += row[0] or 0
+                    total_failed += row[1] or 0
+                of = conn.execute(
+                    "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND status='open'", (tid,)
+                ).fetchone()
+                open_findings += of[0] if of else 0
+            total_checks = total_passed + total_failed
+            p["compliance_pct"] = round(total_passed * 100 / total_checks) if total_checks else None
+            p["open_findings"] = open_findings
+            # Cost: sum of circuit monthly costs
+            cost_row = conn.execute(
+                "SELECT COALESCE(SUM(monthly_cost_usd), 0) FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+            ).fetchone()
+            p["monthly_cost"] = cost_row[0] if cost_row else 0
+            # Node/edge totals
+            ne = conn.execute(
+                "SELECT COALESCE(SUM(json_array_length(json_extract(t.graph_json,'$.nodes'))),0), "
+                "COALESCE(SUM(json_array_length(json_extract(t.graph_json,'$.edges'))),0) "
+                "FROM topologies t JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+                "WHERE pt.project_id=?", (pid,)
+            ).fetchone()
+            p["total_nodes"] = ne[0] if ne else 0
+            p["total_edges"] = ne[1] if ne else 0
+            # Last simulation date
+            sim_row = conn.execute(
+                "SELECT MAX(ran_at) FROM simulation_results WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies WHERE project_id=?)", (pid,)
+            ).fetchone()
+            p["last_sim"] = sim_row[0] if sim_row and sim_row[0] else None
+
+        # Portfolio-level aggregates
+        portfolio_stats = {
+            "total_projects": len(projects),
+            "by_status": {},
+            "total_cost": sum(p.get("monthly_cost", 0) for p in projects),
+            "total_findings": sum(p.get("open_findings", 0) for p in projects),
+        }
+        for p in projects:
+            s = p.get("status", "draft")
+            portfolio_stats["by_status"][s] = portfolio_stats["by_status"].get(s, 0) + 1
+
         conn.close()
-        return render_template("network/projects.html", projects=projects, customers=customers)
+        return render_template("network/projects.html", projects=projects,
+                               customers=customers, portfolio=portfolio_stats)
 
     @bp.route("/projects/<proj_id>")
     @nc_login_required

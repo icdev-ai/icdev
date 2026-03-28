@@ -11,6 +11,23 @@
   </div>
 </div>
 
+<!-- Project Filter Bar -->
+{% if all_projects %}
+<div class="project-filter-bar">
+  <label>Project:</label>
+  <select onchange="filterByProject(this.value)">
+    <option value="">All Circuits</option>
+    {% for proj in all_projects %}
+    <option value="{{ proj.id }}" {% if filter_project == proj.id %}selected{% endif %}>{{ proj.name }}</option>
+    {% endfor %}
+  </select>
+  {% if active_project %}
+  <span class="filter-active">Showing: {{ active_project.name }}</span>
+  <button class="btn-clear-filter" onclick="filterByProject('')">Clear Filter</button>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="stats-bar">
   <div class="stat-card"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Total Circuits</div></div>
   <div class="stat-card"><div class="stat-value">{{ stats.installed }}</div><div class="stat-label">Installed</div></div>
@@ -104,6 +121,10 @@ function editCircuit(id,cid,carrier,ctype,bw,status){
 function deleteCircuit(id){
   if(!confirm('Delete this circuit?'))return;
   fetch(NC_BASE+'/api/circuits/'+id,{method:'DELETE'}).then(()=>location.reload());
+}
+function filterByProject(pid){
+  if(pid) window.location.href=NC_BASE+'/circuits?project='+pid;
+  else window.location.href=NC_BASE+'/circuits';
 }
 </script>
 {% endblock %}

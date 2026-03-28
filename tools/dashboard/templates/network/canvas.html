@@ -17,6 +17,23 @@
 {% endblock %}
 
 {% block content %}
+<!-- Project Context Bar -->
+{% if topo_projects %}
+<div class="project-context-bar">
+  <span class="pcb-label">Project:</span>
+  {% for pp in topo_projects %}
+  <a href="/network/projects/{{ pp.id }}" class="pcb-project">{{ pp.name }}</a>
+  {% endfor %}
+  <span style="margin-left:auto;">Quick switch:</span>
+  <select onchange="if(this.value) window.location.href='/network/?project='+this.value">
+    <option value="">—</option>
+    {% for ap in all_projects %}
+    <option value="{{ ap.id }}">{{ ap.name }} ({{ ap.status }})</option>
+    {% endfor %}
+  </select>
+</div>
+{% endif %}
+
 <div class="canvas-layout">
 
   <!-- Toolbar -->

@@ -11,6 +11,23 @@
   </div>
 </div>
 
+<!-- Project Filter Bar -->
+{% if all_projects %}
+<div class="project-filter-bar">
+  <label>Project:</label>
+  <select onchange="filterByProject(this.value)">
+    <option value="">All Blocks</option>
+    {% for proj in all_projects %}
+    <option value="{{ proj.id }}" {% if filter_project == proj.id %}selected{% endif %}>{{ proj.name }}</option>
+    {% endfor %}
+  </select>
+  {% if active_project %}
+  <span class="filter-active">Showing: {{ active_project.name }}</span>
+  <button class="btn-clear-filter" onclick="filterByProject('')">Clear Filter</button>
+  {% endif %}
+</div>
+{% endif %}
+
 <section class="panel panel-wide">
   <div class="panel-header"><h2 class="panel-title">Address Blocks ({{ blocks|length }})</h2></div>
   {% if blocks %}
@@ -74,5 +91,9 @@ function editBlock(id,net,vlan,vrf,gw,desc,util){
     body:JSON.stringify({network:n,vlan_id:parseInt(v)||null,gateway:g,description:d,utilization_pct:parseFloat(u)||0})}).then(()=>location.reload());
 }
 function delBlock(id){if(!confirm('Delete this address block?'))return;fetch(NC_BASE+'/api/ipam/'+id,{method:'DELETE'}).then(()=>location.reload());}
+function filterByProject(pid){
+  if(pid) window.location.href=NC_BASE+'/ipam?project='+pid;
+  else window.location.href=NC_BASE+'/ipam';
+}
 </script>
 {% endblock %}

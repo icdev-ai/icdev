@@ -212,6 +212,157 @@ a:hover { text-decoration: underline; }
 .badge-sim-failover { background: #1a0f2a; color: #9b59b6; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 .badge-sim-load { background: #0f1a2a; color: #3498db; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
 
+/* ── Kanban Board ──────────────────────────────────────────────────────────── */
+.kanban-board {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  margin-bottom: 24px;
+}
+.kanban-column {
+  min-width: 240px;
+  flex: 1;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.kanban-col-header {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.kanban-col-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.kanban-col-count {
+  font-size: 11px;
+  background: var(--accent);
+  color: var(--text-dim);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.kanban-col-body {
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 80px;
+}
+.kanban-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  transition: border-color .15s;
+}
+.kanban-card:hover { border-color: var(--red); }
+.kanban-card-header { margin-bottom: 4px; }
+.kanban-card-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.kanban-card-customer { font-size: 11px; color: var(--text-dim); margin-bottom: 6px; }
+.kanban-card-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.kanban-card-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+.health-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  display: inline-block;
+}
+.pill-green  { background: #1b3a1b; color: #27ae60; }
+.pill-yellow { background: #3a2e00; color: #f39c12; }
+.pill-red    { background: #3a1010; color: #e74c3c; }
+.pill-blue   { background: #0f1a2a; color: #3498db; }
+.kanban-card-owner { font-size: 10px; color: var(--text-dim); margin-bottom: 4px; }
+.kanban-card-actions { display: flex; gap: 6px; }
+
+.text-danger { color: var(--danger) !important; }
+
+/* ── Project Filter Bar ────────────────────────────────────────────────────── */
+.project-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 8px 14px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.project-filter-bar label { color: var(--text-dim); font-weight: 600; }
+.project-filter-bar select {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.project-filter-bar .filter-active {
+  background: var(--accent);
+  color: var(--red);
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.project-filter-bar .btn-clear-filter {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.project-filter-bar .btn-clear-filter:hover { color: var(--red); border-color: var(--red); }
+
+/* ── Project Context Bar (Canvas) ──────────────────────────────────────────── */
+.project-context-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  background: var(--accent);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.project-context-bar .pcb-label { font-weight: 600; color: var(--text); }
+.project-context-bar .pcb-project {
+  background: var(--bg3);
+  color: var(--red);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.project-context-bar .pcb-project:hover { text-decoration: underline; }
+.project-context-bar select {
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.btn.active { background: var(--red); color: #fff; }
+
 /* ── Mini Template Grid ─────────────────────────────────────────────────────── */
 .template-grid-mini { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .template-card-mini {
