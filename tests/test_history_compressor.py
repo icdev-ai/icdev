@@ -203,10 +203,11 @@ class TestSummarization:
         assert result == ""
 
     def test_summarize_short_content(self, compressor):
-        # Mock LLM router to avoid live API calls — test verifies fallback works.
+        # Mock LLM router invoke to avoid live API calls — test verifies fallback works.
+        # Patch at the class level so all instances use the mock.
         messages = [_msg(1, "Hello"), _msg(2, "World")]
-        with patch("tools.llm.router.LLMRouter") as mock_router_cls:
-            mock_router_cls.return_value.invoke.side_effect = RuntimeError("LLM unavailable")
+        with patch("tools.llm.router.LLMRouter.invoke",
+                   side_effect=RuntimeError("LLM unavailable in test")):
             result = compressor._summarize_topic(messages, max_tokens=100)
         assert len(result) > 0
 

@@ -1112,6 +1112,13 @@
   // ── ATO Package Auto-Generator ─────────────────────────────────────────
   function generateAtoPackage() {
     if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+    // Check if canvas has nodes
+    const elements = graph.getElements();
+    const nodeCount = elements.filter(el => el.get('nodeType')).length;
+    if (nodeCount === 0) {
+      alert('The canvas is empty. Add network devices (routers, switches, firewalls, etc.) to the topology before generating an ATO package.\n\nTip: Drag devices from the palette on the left, or load a template from the Templates panel.');
+      return;
+    }
     document.getElementById('ato-overlay').classList.remove('hidden');
   }
   function closeAtoDialog() { document.getElementById('ato-overlay').classList.add('hidden'); }

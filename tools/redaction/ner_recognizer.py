@@ -139,7 +139,7 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
                 "stream": False,
                 "options": {"num_predict": 512, "temperature": 0.1},
             },
-            timeout=3,
+            timeout=(2, 8),  # (connect_timeout, read_timeout)
         )
 
         if resp.status_code != 200:
@@ -181,6 +181,10 @@ def _extract_via_ollama(text: str, model: str = "gemma3:latest") -> List[NERResu
 
     except Exception as e:
         logger.debug("Ollama NER extraction failed: %s", e)
+        # Mark Ollama as temporarily unavailable to skip future attempts
+        import requests as _req
+        if isinstance(e, (_req.exceptions.Timeout, _req.exceptions.ConnectionError)):
+            _OLLAMA_CACHE["available"] = False
         return []
 
 
