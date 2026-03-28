@@ -4631,6 +4631,485 @@ def create_network_blueprint():
             "generated_at": _now(),
         })
 
+    # ── Business Case Export (Markdown / HTML / DOCX) ─────────────────────
+    def _bc_to_markdown(bc):
+        """Convert business case dict to Markdown string."""
+        p = bc.get("project", {})
+        es = bc.get("executive_summary", {})
+        lines = [
+            f"# Business Case: {p.get('name', 'Untitled')}",
+            f"**Owner:** {p.get('owner', '—')} | "
+            f"**Status:** {p.get('status', '—')}",
+            "",
+            p.get("description", ""),
+            "",
+            "## Executive Summary",
+            f"- Topologies: {es.get('topology_count', 0)}",
+            f"- Total Devices: {es.get('total_devices', 0)}",
+            f"- Compliance: {es.get('compliance_pct', '—')}%"
+            if es.get('compliance_pct') is not None else
+            "- Compliance: No audits",
+            f"- CAT1 Findings: {es.get('cat1_findings', 0)}",
+            f"- Est. CapEx: ${es.get('total_capex', 0):,.0f}",
+            f"- Monthly Circuit: ${es.get('monthly_circuit_cost', 0):,.0f}/mo",
+        ]
+        roi = es.get("roi", {})
+        if roi.get("capex"):
+            lines += [
+                "",
+                "## ROI Analysis",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| CapEx | ${roi.get('capex', 0):,.0f} |",
+                f"| Annual OpEx | ${roi.get('opex_annual', 0):,.0f} |",
+                f"| Annual Savings | ${roi.get('savings_annual', 0):,.0f} |",
+                f"| Payback | {roi.get('payback_months', 0)} months |",
+                f"| 5-Year NPV | ${roi.get('npv_5yr', 0):,.0f} |",
+            ]
+        if es.get("justification"):
+            lines += ["", f"**Justification:** {es['justification']}"]
+        if es.get("alternatives"):
+            lines += [f"**Alternatives:** {es['alternatives']}"]
+
+        # Alternatives matrix
+        alt = bc.get("alternatives_analysis", {})
+        if alt.get("options"):
+            lines += ["", "## Alternatives Analysis"]
+            criteria = alt.get("criteria", [])
+            header = "| Option | " + " | ".join(
+                c.get("name", "") for c in criteria) + " | Total |"
+            sep = "|--------|" + "|".join(
+                "------" for _ in criteria) + "|-------|"
+            lines += [header, sep]
+            for o in alt["options"]:
+                scores = o.get("scores", {})
+                row = f"| {o.get('option_name', '')} "
+                for c in criteria:
+                    s = scores.get(c.get("name", ""), {})
+                    row += f"| {s.get('score', '—')} "
+                row += f"| **{o.get('total_score', 0)}** |"
+                lines.append(row)
+
+        # Risks
+        risks = bc.get("risk_register", [])
+        if risks:
+            lines += [
+                "", "## Risk Register",
+                "| Risk | Category | Prob | Impact | Score | Mitigation | Status |",
+                "|------|----------|------|--------|-------|------------|--------|",
+            ]
+            for r in risks:
+                lines.append(
+                    f"| {r.get('title', '')} | {r.get('category', '')} "
+                    f"| {r.get('probability', '')} | {r.get('impact', '')} "
+                    f"| {r.get('risk_score', 0)} | {r.get('mitigation', '')} "
+                    f"| {r.get('status', '')} |"
+                )
+
+        # BOM
+        bom = bc.get("detailed_bom", {})
+        if bom.get("items"):
+            lines += [
+                "", "## Bill of Materials",
+                "| Vendor | Model | Qty | Unit $ | Ext $ | Maint/yr | Lead Days |",
+                "|--------|-------|-----|--------|-------|----------|-----------|",
+            ]
+            for it in bom["items"]:
+                lines.append(
+                    f"| {it.get('vendor', '')} | {it.get('model', '')} "
+                    f"| {it.get('quantity', 0)} "
+                    f"| ${it.get('unit_cost', 0):,.0f} "
+                    f"| ${it.get('extended_cost', 0):,.0f} "
+                    f"| ${it.get('annual_maint', 0):,.0f} "
+                    f"| {it.get('lead_time_days', 0)} |"
+                )
+            lines.append(
+                f"\n**Total Hardware:** ${bom.get('hardware_total', 0):,.0f} "
+                f"| **Annual Maintenance:** ${bom.get('annual_maintenance', 0):,.0f}"
+            )
+
+        # Capacity
+        caps = bc.get("capacity_projections", [])
+        if caps:
+            lines += [
+                "", "## Capacity Projections",
+                "| Metric | Current | Year 1 | Year 3 | Year 5 | Growth % |",
+                "|--------|---------|--------|--------|--------|----------|",
+            ]
+            for c in caps:
+                lines.append(
+                    f"| {c.get('metric_name', '')} "
+                    f"| {c.get('current_value', 0)} "
+                    f"| {c.get('year1_value', 0)} "
+                    f"| {c.get('year3_value', 0)} "
+                    f"| {c.get('year5_value', 0)} "
+                    f"| {c.get('growth_rate_pct', 0)}% |"
+                )
+
+        # Migration
+        mig = bc.get("migration_plan", [])
+        if mig:
+            lines += [
+                "", "## Migration/Cutover Plan",
+                "| Phase | Title | Duration | Parallel | Rollback |",
+                "|-------|-------|----------|----------|----------|",
+            ]
+            for m in mig:
+                lines.append(
+                    f"| {m.get('phase_num', '')} | {m.get('title', '')} "
+                    f"| {m.get('duration_days', 0)} days "
+                    f"| {'Yes' if m.get('parallel_run') else 'No'} "
+                    f"| {m.get('rollback_criteria', '')} |"
+                )
+
+        # Lab tests
+        labs = bc.get("lab_test_results", [])
+        if labs:
+            lines += [
+                "", "## Lab Test Results",
+                "| Test | Category | Result | Tester |",
+                "|------|----------|--------|--------|",
+            ]
+            for t in labs:
+                lines.append(
+                    f"| {t.get('test_name', '')} | {t.get('category', '')} "
+                    f"| {t.get('result', '')} | {t.get('tested_by', '')} |"
+                )
+
+        # Standards
+        stds = bc.get("standards_alignment", [])
+        if stds:
+            lines += [
+                "", "## Standards Alignment",
+                "| Standard | Check | Status |",
+                "|----------|-------|--------|",
+            ]
+            for s in stds:
+                lines.append(
+                    f"| {s.get('standard', '')} | {s.get('check_item', '')} "
+                    f"| {s.get('status', '')} |"
+                )
+
+        # Resources
+        rp = bc.get("resource_plan", {})
+        if rp.get("resources"):
+            lines += [
+                "", "## Resource Plan",
+                "| Phase | Role | Name | Hours | Rate | Cost |",
+                "|-------|------|------|-------|------|------|",
+            ]
+            for r in rp["resources"]:
+                cost = (r.get("hours") or 0) * (r.get("rate_per_hour") or 0)
+                lines.append(
+                    f"| {r.get('phase', '')} | {r.get('role', '')} "
+                    f"| {r.get('name', '')} | {r.get('hours', 0)} "
+                    f"| ${r.get('rate_per_hour', 0):,.0f} "
+                    f"| ${cost:,.0f} |"
+                )
+            lines.append(
+                f"\n**Total Labor:** ${rp.get('total_labor_cost', 0):,.0f}"
+            )
+
+        lines += [
+            "", "---",
+            f"*Generated: {bc.get('generated_at', '')} — ICDEV™ Network Design Canvas*",
+        ]
+        return "\n".join(lines)
+
+    def _md_to_html(md_text):
+        """Simple Markdown to HTML conversion (tables + headers)."""
+        html = ["<!DOCTYPE html><html><head><meta charset='utf-8'>",
+                "<style>body{font-family:Segoe UI,sans-serif;max-width:900px;margin:40px auto;color:#222;line-height:1.6;}",
+                "table{border-collapse:collapse;width:100%;margin:12px 0;}",
+                "th,td{border:1px solid #ccc;padding:6px 10px;text-align:left;font-size:13px;}",
+                "th{background:#f5f5f5;font-weight:600;}",
+                "h1{color:#1a1a2e;border-bottom:2px solid #e94560;padding-bottom:8px;}",
+                "h2{color:#0f3460;margin-top:24px;}",
+                "strong{color:#333;}</style></head><body>"]
+        in_table = False
+        for line in md_text.split("\n"):
+            if line.startswith("# "):
+                html.append(f"<h1>{line[2:]}</h1>")
+            elif line.startswith("## "):
+                html.append(f"<h2>{line[3:]}</h2>")
+            elif line.startswith("|") and "---" in line:
+                continue  # skip separator
+            elif line.startswith("|"):
+                if not in_table:
+                    html.append("<table><tr>")
+                    in_table = True
+                    cells = [c.strip() for c in line.split("|")[1:-1]]
+                    html.append("".join(
+                        f"<th>{c}</th>" for c in cells))
+                    html.append("</tr>")
+                else:
+                    cells = [c.strip() for c in line.split("|")[1:-1]]
+                    html.append("<tr>" + "".join(
+                        f"<td>{c}</td>" for c in cells) + "</tr>")
+            else:
+                if in_table:
+                    html.append("</table>")
+                    in_table = False
+                if line.startswith("- "):
+                    html.append(f"<li>{line[2:]}</li>")
+                elif line.startswith("**") and line.endswith("**"):
+                    html.append(f"<p><strong>{line[2:-2]}</strong></p>")
+                elif line.strip():
+                    html.append(f"<p>{line}</p>")
+        if in_table:
+            html.append("</table>")
+        html.append("</body></html>")
+        return "\n".join(html)
+
+    def _bc_to_docx(bc):
+        """Generate DOCX bytes from business case dict."""
+        from docx import Document
+        from docx.shared import Pt
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        import io
+
+        doc = Document()
+        style = doc.styles['Normal']
+        style.font.name = 'Calibri'
+        style.font.size = Pt(11)
+
+        p = bc.get("project", {})
+        es = bc.get("executive_summary", {})
+
+        doc.add_heading(f"Business Case: {p.get('name', '')}", 0)
+        doc.add_paragraph(
+            f"Owner: {p.get('owner', '—')} | "
+            f"Status: {p.get('status', '—')}")
+        if p.get("description"):
+            doc.add_paragraph(p["description"])
+
+        # Executive Summary
+        doc.add_heading("Executive Summary", level=1)
+        tbl = doc.add_table(rows=1, cols=2)
+        tbl.style = 'Light Grid Accent 1'
+        for label, val in [
+            ("Topologies", es.get("topology_count", 0)),
+            ("Devices", es.get("total_devices", 0)),
+            ("Compliance", f"{es.get('compliance_pct', '—')}%"),
+            ("CAT1 Findings", es.get("cat1_findings", 0)),
+            ("Est. CapEx", f"${es.get('total_capex', 0):,.0f}"),
+            ("Circuit OpEx", f"${es.get('monthly_circuit_cost', 0):,.0f}/mo"),
+        ]:
+            row = tbl.add_row().cells
+            row[0].text = str(label)
+            row[1].text = str(val)
+
+        # ROI
+        roi = es.get("roi", {})
+        if roi.get("capex"):
+            doc.add_heading("ROI Analysis", level=1)
+            tbl = doc.add_table(rows=1, cols=2)
+            tbl.style = 'Light Grid Accent 1'
+            for label, val in [
+                ("CapEx", f"${roi.get('capex', 0):,.0f}"),
+                ("Annual OpEx", f"${roi.get('opex_annual', 0):,.0f}"),
+                ("Annual Savings", f"${roi.get('savings_annual', 0):,.0f}"),
+                ("Payback", f"{roi.get('payback_months', 0)} months"),
+                ("5-Year NPV", f"${roi.get('npv_5yr', 0):,.0f}"),
+            ]:
+                row = tbl.add_row().cells
+                row[0].text = str(label)
+                row[1].text = str(val)
+
+        # Alternatives
+        alt = bc.get("alternatives_analysis", {})
+        if alt.get("options"):
+            doc.add_heading("Alternatives Analysis", level=1)
+            criteria = alt.get("criteria", [])
+            cols = ["Option"] + [c.get("name", "") for c in criteria] + ["Total"]
+            tbl = doc.add_table(rows=1, cols=len(cols))
+            tbl.style = 'Light Grid Accent 1'
+            for i, h in enumerate(cols):
+                tbl.rows[0].cells[i].text = h
+            for o in alt["options"]:
+                row = tbl.add_row().cells
+                row[0].text = o.get("option_name", "")
+                scores = o.get("scores", {})
+                for j, c in enumerate(criteria):
+                    s = scores.get(c.get("name", ""), {})
+                    row[j + 1].text = str(s.get("score", "—"))
+                row[len(cols) - 1].text = str(o.get("total_score", 0))
+
+        # Risks
+        risks = bc.get("risk_register", [])
+        if risks:
+            doc.add_heading("Risk Register", level=1)
+            tbl = doc.add_table(rows=1, cols=5)
+            tbl.style = 'Light Grid Accent 1'
+            for i, h in enumerate(["Risk", "Prob", "Impact", "Score", "Mitigation"]):
+                tbl.rows[0].cells[i].text = h
+            for r in risks:
+                row = tbl.add_row().cells
+                row[0].text = r.get("title", "")
+                row[1].text = r.get("probability", "")
+                row[2].text = r.get("impact", "")
+                row[3].text = str(r.get("risk_score", 0))
+                row[4].text = r.get("mitigation", "")
+
+        # BOM
+        bom = bc.get("detailed_bom", {})
+        if bom.get("items"):
+            doc.add_heading("Bill of Materials", level=1)
+            tbl = doc.add_table(rows=1, cols=6)
+            tbl.style = 'Light Grid Accent 1'
+            for i, h in enumerate(["Vendor", "Model", "Qty", "Unit $", "Ext $", "Lead Days"]):
+                tbl.rows[0].cells[i].text = h
+            for it in bom["items"]:
+                row = tbl.add_row().cells
+                row[0].text = it.get("vendor", "")
+                row[1].text = it.get("model", "")
+                row[2].text = str(it.get("quantity", 0))
+                row[3].text = f"${it.get('unit_cost', 0):,.0f}"
+                row[4].text = f"${it.get('extended_cost', 0):,.0f}"
+                row[5].text = str(it.get("lead_time_days", 0))
+
+        # Capacity
+        caps = bc.get("capacity_projections", [])
+        if caps:
+            doc.add_heading("Capacity Projections", level=1)
+            tbl = doc.add_table(rows=1, cols=5)
+            tbl.style = 'Light Grid Accent 1'
+            for i, h in enumerate(["Metric", "Current", "Year 1", "Year 3", "Year 5"]):
+                tbl.rows[0].cells[i].text = h
+            for c in caps:
+                row = tbl.add_row().cells
+                row[0].text = c.get("metric_name", "")
+                row[1].text = str(c.get("current_value", 0))
+                row[2].text = str(c.get("year1_value", 0))
+                row[3].text = str(c.get("year3_value", 0))
+                row[4].text = str(c.get("year5_value", 0))
+
+        # Footer
+        doc.add_paragraph("")
+        footer = doc.add_paragraph()
+        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = footer.add_run(
+            f"Generated: {bc.get('generated_at', '')} — ICDEV™")
+        run.font.size = Pt(9)
+        run.font.italic = True
+
+        buf = io.BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    @bp.route("/api/projects/<pid>/business-case/export",
+              methods=["POST"])
+    @nc_login_required
+    def nc_api_export_business_case(pid):
+        """Export business case in markdown, html, or docx format."""
+        data = request.get_json(force=True, silent=True) or {}
+        fmt = data.get("format", "markdown")
+
+        # Reuse business case generator logic
+        conn = get_connection()
+        # Build the same data as business-case GET
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        proj = _row_to_dict(proj)
+        package = _build_review_package(conn, pid)
+        bc = {
+            "project": {
+                "name": proj.get("name"),
+                "owner": proj.get("owner"),
+                "status": proj.get("status"),
+                "description": proj.get("description"),
+            },
+            "executive_summary": package,
+            "alternatives_analysis": {
+                "criteria": [_row_to_dict(r) for r in conn.execute(
+                    "SELECT * FROM nc_alt_criteria WHERE project_id=? "
+                    "ORDER BY sort_order", (pid,)).fetchall()],
+                "options": [],
+            },
+            "risk_register": [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_risks WHERE project_id=? "
+                "ORDER BY risk_score DESC", (pid,)).fetchall()],
+            "detailed_bom": {"items": [], "hardware_total": 0,
+                             "annual_maintenance": 0},
+            "capacity_projections": [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_capacity_projections "
+                "WHERE project_id=?", (pid,)).fetchall()],
+            "migration_plan": [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE project_id=? "
+                "ORDER BY phase_num", (pid,)).fetchall()],
+            "lab_test_results": [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_lab_tests WHERE project_id=?",
+                (pid,)).fetchall()],
+            "standards_alignment": [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_standards_checks WHERE project_id=?",
+                (pid,)).fetchall()],
+            "resource_plan": {"resources": [], "total_labor_cost": 0},
+            "generated_at": _now(),
+        }
+        # Alternatives options
+        for o in conn.execute(
+            "SELECT * FROM nc_alternatives WHERE project_id=? "
+            "ORDER BY total_score DESC", (pid,)
+        ).fetchall():
+            od = _row_to_dict(o)
+            try:
+                od["scores"] = json.loads(od.get("scores_json") or "{}")
+            except Exception:
+                od["scores"] = {}
+            bc["alternatives_analysis"]["options"].append(od)
+        # BOM
+        bom_items = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_bom_items WHERE project_id=?",
+            (pid,)).fetchall()]
+        bc["detailed_bom"]["items"] = bom_items
+        bc["detailed_bom"]["hardware_total"] = sum(
+            it.get("extended_cost", 0) or 0 for it in bom_items)
+        bc["detailed_bom"]["annual_maintenance"] = sum(
+            it.get("annual_maint", 0) or 0 for it in bom_items)
+        # Resources
+        resources = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_resource_plan WHERE project_id=?",
+            (pid,)).fetchall()]
+        bc["resource_plan"]["resources"] = resources
+        bc["resource_plan"]["total_labor_cost"] = round(sum(
+            (r.get("hours") or 0) * (r.get("rate_per_hour") or 0)
+            for r in resources), 2)
+        conn.close()
+
+        proj_name = proj.get("name", "business-case").replace(" ", "-")
+
+        if fmt == "markdown":
+            md = _bc_to_markdown(bc)
+            return jsonify({
+                "format": "markdown",
+                "filename": f"{proj_name}.md",
+                "content": md,
+            })
+        elif fmt == "html":
+            md = _bc_to_markdown(bc)
+            html = _md_to_html(md)
+            return jsonify({
+                "format": "html",
+                "filename": f"{proj_name}.html",
+                "content": html,
+            })
+        elif fmt == "docx":
+            import base64
+            docx_bytes = _bc_to_docx(bc)
+            return jsonify({
+                "format": "docx",
+                "filename": f"{proj_name}.docx",
+                "content_b64": base64.b64encode(
+                    docx_bytes).decode("ascii"),
+                "size_bytes": len(docx_bytes),
+            })
+        else:
+            return jsonify({"error": f"Unknown format: {fmt}"}), 400
+
     # ══════════════════════════════════════════════════════════════════════
     # Design Pattern Library (Phase 2)
     # ══════════════════════════════════════════════════════════════════════

@@ -455,11 +455,15 @@ class TestEvaluateModel:
                 f.write(json.dumps(e) + "\n")
 
         from tools.finetune.evaluator import evaluate_model
-        result = evaluate_model(
-            "mv-test",
-            test_set_path=str(test_file),
-            db_path=ft_db,
-        )
+        # Mock LLM-dependent helpers to avoid live Ollama/API inference calls
+        with patch("tools.finetune.evaluator.compute_perplexity_estimate", return_value=0.0), \
+             patch("tools.finetune.evaluator._generate_predictions",
+                   side_effect=lambda _model, pairs: [p["expected_output"] for p in pairs]):
+            result = evaluate_model(
+                "mv-test",
+                test_set_path=str(test_file),
+                db_path=ft_db,
+            )
         assert result["success"]
         assert result["test_set_size"] == 2
         assert "bleu_score" in result
@@ -477,7 +481,11 @@ class TestEvaluateModel:
             f.write(json.dumps(entry) + "\n")
 
         from tools.finetune.evaluator import evaluate_model
-        result = evaluate_model("mv-test", test_set_path=str(test_file), db_path=ft_db)
+        # Mock LLM-dependent helpers to avoid live Ollama/API inference calls
+        with patch("tools.finetune.evaluator.compute_perplexity_estimate", return_value=0.0), \
+             patch("tools.finetune.evaluator._generate_predictions",
+                   side_effect=lambda _model, pairs: [p["expected_output"] for p in pairs]):
+            result = evaluate_model("mv-test", test_set_path=str(test_file), db_path=ft_db)
         assert result["success"]
 
         # Verify stored in ft_evaluations
@@ -632,11 +640,18 @@ class TestCompareModels:
                 f.write(json.dumps(e) + "\n")
 
         from tools.finetune.ab_evaluator import compare_models
-        result = compare_models(
-            "mv-a", "mv-b",
-            test_set_path=str(test_file),
-            db_path=ft_db,
-        )
+        # Mock LLM-dependent helpers to avoid live Ollama/API inference calls.
+        # ab_evaluator imports _generate_predictions directly so patch its own reference.
+        with patch("tools.finetune.evaluator.compute_perplexity_estimate", return_value=0.0), \
+             patch("tools.finetune.evaluator._generate_predictions",
+                   side_effect=lambda _model, pairs: [p["expected_output"] for p in pairs]), \
+             patch("tools.finetune.ab_evaluator._generate_predictions",
+                   side_effect=lambda _model, pairs: [p["expected_output"] for p in pairs]):
+            result = compare_models(
+                "mv-a", "mv-b",
+                test_set_path=str(test_file),
+                db_path=ft_db,
+            )
         assert result["success"]
         assert "winner" in result
         assert result["winner"] in ("model_a", "model_b", "tie")
