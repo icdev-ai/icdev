@@ -807,6 +807,31 @@ def create_network_blueprint():
         ).fetchall():
             topo_assignees[r[0]] = r[1]
 
+        # Phase A: Review board pipeline
+        review_boards = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_review_boards ORDER BY sort_order"
+        ).fetchall()]
+        board_reviews = [_row_to_dict(r) for r in conn.execute(
+            "SELECT br.*, rb.name AS board_name, rb.short_name "
+            "FROM nc_board_reviews br "
+            "JOIN nc_review_boards rb ON rb.id=br.board_id "
+            "WHERE br.project_id=? ORDER BY rb.sort_order, br.phase",
+            (proj_id,)
+        ).fetchall()]
+        project_phases = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_project_phases WHERE project_id=? "
+            "ORDER BY phase_num", (proj_id,)
+        ).fetchall()]
+        safe_bridge = conn.execute(
+            "SELECT * FROM nc_safe_bridge WHERE project_id=?", (proj_id,)
+        ).fetchone()
+        safe_bridge = _row_to_dict(safe_bridge) if safe_bridge else None
+        if safe_bridge and safe_bridge.get("roi_json"):
+            try:
+                safe_bridge["roi"] = json.loads(safe_bridge["roi_json"])
+            except Exception:
+                safe_bridge["roi"] = {}
+
         conn.close()
         return render_template("network/project_detail.html",
                                project=proj, topologies=topos,
@@ -821,7 +846,11 @@ def create_network_blueprint():
                                milestones=milestones,
                                notes=notes,
                                project_tags=project_tags,
-                               topo_assignees=topo_assignees)
+                               topo_assignees=topo_assignees,
+                               review_boards=review_boards,
+                               board_reviews=board_reviews,
+                               project_phases=project_phases,
+                               safe_bridge=safe_bridge)
 
     # ══════════════════════════════════════════════════════════════════════
     # P2: Cross-Project Comparison
@@ -3161,6 +3190,282 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase A: Review Board Pipeline + SAFe Bridge
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/review-boards", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_review_boards():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_review_boards ORDER BY sort_order"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/projects/<pid>/reviews", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_reviews(pid):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT br.*, rb.name AS board_name, rb.short_name "
+            "FROM nc_board_reviews br "
+            "JOIN nc_review_boards rb ON rb.id=br.board_id "
+            "WHERE br.project_id=? ORDER BY rb.sort_order, br.phase",
+            (pid,)
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/projects/<pid>/reviews", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_review(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        board_id = data.get("board_id")
+        if not board_id:
+            return jsonify({"error": "board_id required"}), 400
+        conn = get_connection()
+        rid = str(_uuid.uuid4())
+        now = _now()
+
+        # Auto-generate review package from project data
+        package = _build_review_package(conn, pid)
+
+        conn.execute(
+            "INSERT INTO nc_board_reviews "
+            "(id, project_id, board_id, phase, status, "
+            " scheduled_date, reviewer_names, package_json, "
+            " created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (rid, pid, board_id,
+             data.get("phase", 1), "pending",
+             data.get("scheduled_date"),
+             json.dumps(data.get("reviewers", [])),
+             json.dumps(package), now, now)
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "board_review", rid,
+               f"board={board_id} phase={data.get('phase', 1)}")
+        return jsonify({"id": rid, "package": package}), 201
+
+    @bp.route("/api/reviews/<rid>/decide", methods=["POST"])
+    @nc_login_required
+    def nc_api_review_decide(rid):
+        data = request.get_json(force=True, silent=True) or {}
+        decision = data.get("decision")
+        if decision not in ("approved", "rejected", "deferred",
+                            "conditional"):
+            return jsonify({"error": "Invalid decision"}), 400
+        conn = get_connection()
+        now = _now()
+        conn.execute(
+            "UPDATE nc_board_reviews SET decision=?, "
+            "decision_notes=?, conditions=?, status=?, "
+            "presented_date=?, updated_at=? WHERE id=?",
+            (decision, data.get("notes", ""),
+             json.dumps(data.get("conditions", [])),
+             decision, now, now, rid)
+        )
+        conn.commit()
+        conn.close()
+        _audit("REVIEW_DECISION", "board_review", rid,
+               f"decision={decision}")
+        return jsonify({"ok": True, "decision": decision})
+
+    @bp.route("/api/projects/<pid>/pipeline", methods=["GET"])
+    @nc_login_required
+    def nc_api_project_pipeline(pid):
+        """Full pipeline view: phases + board reviews + SAFe bridge."""
+        conn = get_connection()
+        boards = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_review_boards ORDER BY sort_order"
+        ).fetchall()]
+        reviews = [_row_to_dict(r) for r in conn.execute(
+            "SELECT br.*, rb.name AS board_name, rb.short_name "
+            "FROM nc_board_reviews br "
+            "JOIN nc_review_boards rb ON rb.id=br.board_id "
+            "WHERE br.project_id=? ORDER BY rb.sort_order, br.phase",
+            (pid,)
+        ).fetchall()]
+        phases = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_project_phases WHERE project_id=? "
+            "ORDER BY phase_num", (pid,)
+        ).fetchall()]
+        bridge = conn.execute(
+            "SELECT * FROM nc_safe_bridge WHERE project_id=?", (pid,)
+        ).fetchone()
+        bridge = _row_to_dict(bridge) if bridge else None
+        conn.close()
+        return jsonify({
+            "boards": boards, "reviews": reviews,
+            "phases": phases, "bridge": bridge,
+        })
+
+    # ── ROI Calculator ────────────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/roi", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_roi(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        bridge = conn.execute(
+            "SELECT id FROM nc_safe_bridge WHERE project_id=?", (pid,)
+        ).fetchone()
+        now = _now()
+        capex = data.get("capex", 0)
+        opex = data.get("opex_annual", 0)
+        savings = data.get("savings_annual", 0)
+        net_annual = savings - opex
+        payback = round(capex / net_annual * 12) if net_annual > 0 else 0
+        # Simple 5-year NPV at 7% discount
+        npv = -capex
+        for yr in range(1, 6):
+            npv += net_annual / (1.07 ** yr)
+        npv = round(npv)
+        roi_json = json.dumps({
+            "capex": capex, "opex_annual": opex,
+            "savings_annual": savings,
+            "payback_months": payback, "npv_5yr": npv,
+        })
+        if bridge:
+            conn.execute(
+                "UPDATE nc_safe_bridge SET roi_json=?, "
+                "justification=?, alternatives=?, updated_at=? "
+                "WHERE project_id=?",
+                (roi_json, data.get("justification", ""),
+                 data.get("alternatives", ""), now, pid)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO nc_safe_bridge "
+                "(id, project_id, roi_json, justification, "
+                " alternatives, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), pid, roi_json,
+                 data.get("justification", ""),
+                 data.get("alternatives", ""), now, now)
+            )
+        conn.commit()
+        conn.close()
+        return jsonify({"roi": json.loads(roi_json)})
+
+    # ── Auto-generate review package ──────────────────────────────────────
+    def _build_review_package(conn, pid):
+        """Build a snapshot of project data for board review."""
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        proj = _row_to_dict(proj) if proj else {}
+        topo_ids = [r[0] for r in conn.execute(
+            "SELECT topology_id FROM nc_project_topologies "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()]
+        # Compliance summary
+        total_p = total_f = cat1 = 0
+        for tid in topo_ids:
+            row = conn.execute(
+                "SELECT passed, failed FROM nc_compliance_checks "
+                "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                (tid,)
+            ).fetchone()
+            if row:
+                total_p += row[0] or 0
+                total_f += row[1] or 0
+            c1 = conn.execute(
+                "SELECT COUNT(*) FROM nc_compliance_findings "
+                "WHERE topology_id=? AND status='open' "
+                "AND severity='CAT1'", (tid,)
+            ).fetchone()
+            cat1 += c1[0] if c1 else 0
+        total = total_p + total_f
+        comp_pct = round(total_p * 100 / total) if total else None
+        # BOM
+        total_capex = 0
+        total_devices = 0
+        for tid in topo_ids:
+            trow = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (tid,)
+            ).fetchone()
+            if trow:
+                try:
+                    g = json.loads(trow["graph_json"])
+                except Exception:
+                    g = {"nodes": []}
+                for n in g.get("nodes", []):
+                    total_capex += BOM_COSTS.get(
+                        n.get("type", ""), 0)
+                    total_devices += 1
+        # Circuit cost
+        cost_row = conn.execute(
+            "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
+            "FROM nc_circuits WHERE topology_id IN "
+            "(SELECT topology_id FROM nc_project_topologies "
+            " WHERE project_id=?)", (pid,)
+        ).fetchone()
+        circuit_cost = cost_row[0] if cost_row else 0
+        # ROI
+        bridge = conn.execute(
+            "SELECT roi_json, justification, alternatives "
+            "FROM nc_safe_bridge WHERE project_id=?", (pid,)
+        ).fetchone()
+        roi = {}
+        justification = ""
+        alternatives = ""
+        if bridge:
+            try:
+                roi = json.loads(bridge["roi_json"] or "{}")
+            except Exception:
+                pass
+            justification = bridge["justification"] or ""
+            alternatives = bridge["alternatives"] or ""
+        return {
+            "project_name": proj.get("name", ""),
+            "status": proj.get("status", ""),
+            "owner": proj.get("owner", ""),
+            "topology_count": len(topo_ids),
+            "total_devices": total_devices,
+            "compliance_pct": comp_pct,
+            "cat1_findings": cat1,
+            "total_capex": total_capex,
+            "monthly_circuit_cost": circuit_cost,
+            "roi": roi,
+            "justification": justification,
+            "alternatives": alternatives,
+            "generated_at": _now(),
+        }
+
+    # ── Initialize project phases ─────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/init-phases", methods=["POST"])
+    @nc_login_required
+    def nc_api_init_phases(pid):
+        conn = get_connection()
+        existing = conn.execute(
+            "SELECT COUNT(*) FROM nc_project_phases WHERE project_id=?",
+            (pid,)
+        ).fetchone()[0]
+        if existing:
+            conn.close()
+            return jsonify({"error": "Phases already initialized"}), 409
+        now = _now()
+        phase_defs = [
+            (1, "Concept"), (2, "Design"),
+            (3, "Approval"), (4, "Post-Deploy"),
+        ]
+        for num, name in phase_defs:
+            conn.execute(
+                "INSERT INTO nc_project_phases "
+                "(id, project_id, phase_num, phase_name, status, "
+                " entered_at, created_at) VALUES (?,?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), pid, num, name,
+                 "active" if num == 1 else "pending",
+                 now if num == 1 else None, now)
+            )
+        conn.commit()
+        conn.close()
+        _audit("INIT_PHASES", "project", pid)
+        return jsonify({"ok": True, "phases": 4}), 201
 
     # ══════════════════════════════════════════════════════════════════════
     # API: CSP Groups

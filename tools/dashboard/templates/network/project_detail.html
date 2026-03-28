@@ -34,6 +34,115 @@
   <div class="stat-card"><div class="stat-value">{{ project.owner or '—' }}</div><div class="stat-label">Owner</div></div>
 </div>
 
+<!-- ═══════════════ REVIEW BOARD PIPELINE ═══════════════ -->
+<section class="panel panel-wide" id="pipeline-section" style="margin-bottom:20px;">
+  <div class="panel-header">
+    <h2 class="panel-title">Review Board Pipeline</h2>
+    <div style="display:flex;gap:6px;">
+      {% if not project_phases %}<button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="initPhases()">Initialize Phases</button>{% endif %}
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('review-modal').style.display='flex'">+ Submit Review</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('roi-modal').style.display='flex'">ROI Calculator</button>
+    </div>
+  </div>
+
+  <!-- Phase Progress Bar -->
+  {% if project_phases %}
+  <div class="phase-progress">
+    {% for ph in project_phases %}
+    <div class="phase-step phase-{{ ph.status }}">
+      <div class="phase-num">{{ ph.phase_num }}</div>
+      <div class="phase-name">{{ ph.phase_name }}</div>
+    </div>
+    {% if not loop.last %}<div class="phase-arrow">&#x25B6;</div>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Board Review Status -->
+  <div class="board-pipeline" id="board-pipeline">
+    {% for board in review_boards %}
+    <div class="board-card">
+      <div class="board-header">
+        <span class="board-short">{{ board.short_name }}</span>
+        <span class="board-name">{{ board.name }}</span>
+      </div>
+      {% set ns = namespace(found=false) %}
+      {% for br in board_reviews if br.board_id == board.id %}
+        {% set ns.found = true %}
+        <div class="board-review-item br-{{ br.status }}">
+          <div class="br-phase">Phase {{ br.phase }}</div>
+          <div class="br-status">
+            <span class="health-pill {% if br.status == 'approved' %}pill-green{% elif br.status == 'rejected' %}pill-red{% elif br.status == 'deferred' or br.status == 'conditional' %}pill-yellow{% else %}pill-blue{% endif %}">{{ br.status }}</span>
+          </div>
+          {% if br.decision_notes %}<div class="br-notes">{{ br.decision_notes[:60] }}</div>{% endif %}
+          {% if br.status == 'pending' %}
+          <div class="br-actions">
+            <button class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reviewDecide('{{ br.id }}','approved')">Approve</button>
+            <button class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reviewDecide('{{ br.id }}','rejected')">Reject</button>
+            <button class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reviewDecide('{{ br.id }}','deferred')">Defer</button>
+          </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+      {% if not ns.found %}
+        <div class="board-empty">No reviews submitted</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ROI Summary (if exists) -->
+  {% if safe_bridge and safe_bridge.roi %}
+  <div class="roi-summary" id="roi-summary">
+    <div class="roi-item"><span class="roi-label">CapEx:</span> ${{ (safe_bridge.roi.capex or 0)|round(0)|int }}</div>
+    <div class="roi-item"><span class="roi-label">Annual OpEx:</span> ${{ (safe_bridge.roi.opex_annual or 0)|round(0)|int }}</div>
+    <div class="roi-item"><span class="roi-label">Annual Savings:</span> ${{ (safe_bridge.roi.savings_annual or 0)|round(0)|int }}</div>
+    <div class="roi-item"><span class="roi-label">Payback:</span> {{ safe_bridge.roi.payback_months or 0 }} months</div>
+    <div class="roi-item"><span class="roi-label">5-Year NPV:</span> <span class="{% if (safe_bridge.roi.npv_5yr or 0) > 0 %}text-success{% else %}text-danger{% endif %}">${{ (safe_bridge.roi.npv_5yr or 0)|round(0)|int }}</span></div>
+    {% if safe_bridge.justification %}<div class="roi-item" style="grid-column:span 5;"><span class="roi-label">Justification:</span> {{ safe_bridge.justification[:200] }}</div>{% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<!-- Submit Review Modal -->
+<div id="review-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Submit for Board Review</h3>
+    <form onsubmit="return submitReview(event)">
+      <div class="form-grid">
+        <label>Board <select name="board_id">{% for b in review_boards %}<option value="{{ b.id }}">{{ b.short_name }} — {{ b.name }}</option>{% endfor %}</select></label>
+        <label>Phase <select name="phase"><option value="1">1 - Concept</option><option value="2">2 - Design</option><option value="3">3 - Approval</option><option value="4">4 - Post-Deploy</option></select></label>
+        <label>Scheduled Date <input name="scheduled_date" type="date"></label>
+        <label>Reviewers <input name="reviewers" placeholder="Names (comma-separated)"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Submit</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ROI Calculator Modal -->
+<div id="roi-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>ROI Calculator</h3>
+    <form onsubmit="return submitRoi(event)">
+      <div class="form-grid">
+        <label>Total CapEx ($) <input name="capex" type="number" value="{{ (safe_bridge.roi.capex or 0) if safe_bridge and safe_bridge.roi else 0 }}"></label>
+        <label>Annual OpEx ($) <input name="opex_annual" type="number" value="{{ (safe_bridge.roi.opex_annual or 0) if safe_bridge and safe_bridge.roi else 0 }}"></label>
+        <label>Annual Savings ($) <input name="savings_annual" type="number" value="{{ (safe_bridge.roi.savings_annual or 0) if safe_bridge and safe_bridge.roi else 0 }}"></label>
+        <label style="grid-column:span 2">Justification <input name="justification" value="{{ safe_bridge.justification or '' if safe_bridge else '' }}" placeholder="Business case"></label>
+        <label style="grid-column:span 2">Alternatives Considered <input name="alternatives" value="{{ safe_bridge.alternatives or '' if safe_bridge else '' }}" placeholder="What else was evaluated"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Calculate & Save</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="dashboard-grid">
   <!-- Left Column: Main Content -->
   <div>
@@ -303,6 +412,16 @@ function removeTag(tag){fetch(NC_BASE+`/api/tags/project/${PID}/${encodeURICompo
 function setAssignee(tid){const a=prompt('Assignee name:','');if(a===null)return;
   fetch(NC_BASE+`/api/projects/${PID}/topologies/${tid}/assignee`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignee:a})}).then(()=>location.reload());}
 // P3: Gate check
+// Phase A: Pipeline
+function initPhases(){fetch(NC_BASE+`/api/projects/${PID}/init-phases`,{method:'POST'}).then(r=>r.json()).then(d=>{if(d.ok)location.reload();else alert(d.error||'Failed');});}
+function submitReview(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  d.phase=parseInt(d.phase)||1;d.reviewers=d.reviewers?d.reviewers.split(',').map(s=>s.trim()):[];
+  fetch(NC_BASE+`/api/projects/${PID}/reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload());return false;}
+function reviewDecide(rid,decision){const notes=prompt('Decision notes:','');if(notes===null)return;
+  fetch(NC_BASE+`/api/reviews/${rid}/decide`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:decision,notes:notes})}).then(()=>location.reload());}
+function submitRoi(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  d.capex=parseFloat(d.capex)||0;d.opex_annual=parseFloat(d.opex_annual)||0;d.savings_annual=parseFloat(d.savings_annual)||0;
+  fetch(NC_BASE+`/api/projects/${PID}/roi`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload());return false;}
 function checkGate(target){fetch(NC_BASE+`/api/projects/${PID}/gate-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_status:target})})
   .then(r=>r.json()).then(d=>{const el=document.getElementById('gate-result');
     if(d.blocked){el.innerHTML='<div style="color:var(--danger);font-size:12px;"><strong>BLOCKED:</strong> '+d.failures.map(f=>'<div style="margin:2px 0;">- '+f+'</div>').join('')+'</div>';}

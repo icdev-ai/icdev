@@ -592,6 +592,102 @@ a:hover { text-decoration: underline; }
 .search-result-item:hover { background: var(--accent); }
 .search-result-type { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
 
+/* ── Phase Progress Bar ────────────────────────────────────────────────────── */
+.phase-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.phase-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px;
+  border-radius: 6px;
+}
+.phase-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+.phase-name { font-size: 11px; font-weight: 600; }
+.phase-arrow { color: var(--text-dim); font-size: 12px; margin: 0 4px; }
+.phase-pending .phase-num  { background: var(--bg3); color: var(--text-dim); border: 2px solid var(--border); }
+.phase-pending .phase-name { color: var(--text-dim); }
+.phase-active .phase-num   { background: var(--red); color: #fff; border: 2px solid var(--red); }
+.phase-active .phase-name  { color: var(--red); }
+.phase-completed .phase-num { background: var(--success); color: #fff; border: 2px solid var(--success); }
+.phase-completed .phase-name { color: var(--success); }
+
+/* ── Board Pipeline Cards ──────────────────────────────────────────────────── */
+.board-pipeline {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.board-card {
+  flex: 1;
+  min-width: 200px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+}
+.board-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.board-short {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--accent);
+  color: var(--red);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.board-name { font-size: 11px; color: var(--text-dim); }
+.board-review-item {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: var(--bg);
+  border-left: 3px solid var(--text-dim);
+}
+.br-approved { border-left-color: var(--success); }
+.br-rejected { border-left-color: var(--danger); }
+.br-pending  { border-left-color: #3498db; }
+.br-deferred, .br-conditional { border-left-color: var(--warning); }
+.br-phase { font-size: 10px; color: var(--text-dim); margin-bottom: 2px; }
+.br-status { margin-bottom: 2px; }
+.br-notes { font-size: 10px; color: var(--text-dim); }
+.br-actions { display: flex; gap: 4px; margin-top: 4px; }
+.board-empty { font-size: 11px; color: var(--text-dim); padding: 8px 0; }
+
+/* ── ROI Summary ───────────────────────────────────────────────────────────── */
+.roi-summary {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.roi-item { }
+.roi-label { font-weight: 600; color: var(--text-dim); }
+@media (max-width: 900px) { .roi-summary { grid-template-columns: repeat(2, 1fr); } }
+
 /* ── Mini Template Grid ─────────────────────────────────────────────────────── */
 .template-grid-mini { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .template-card-mini {
