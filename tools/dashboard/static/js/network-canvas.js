@@ -2588,7 +2588,7 @@ function clearStigOverlay() {
    Integrates with the CR API in blueprint.py.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const NC_BASE = '/network';
+// NC_BASE declared in base.html <head>
 const CR_COLORS = { add: '#27ae60', remove: '#e74c3c', modify: '#f39c12' };
 
 /** Toggle the CR Markup Mode panel and mode. */

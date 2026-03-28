@@ -44,6 +44,7 @@
       <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('review-modal').style.display='flex'">+ Submit Review</button>
       <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('roi-modal').style.display='flex'">ROI Calculator</button>
       <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="runImpactAnalysis()">Impact Analysis</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="decomposeSafe()">SAFe Decompose</button>
     </div>
   </div>
 
@@ -303,6 +304,17 @@
         <p style="padding:8px 12px;color:var(--text-dim);font-size:13px;">No milestones. Click "+ Add" to track deadlines.</p>
       {% endif %}
       </div>
+      <!-- Gantt Timeline -->
+      {% if milestones %}
+      <div class="gantt-timeline" id="gantt-timeline">
+        {% for m in milestones if m.due_date %}
+        <div class="gantt-bar gantt-{{ m.status }}" title="{{ m.title }} — {{ m.due_date }}">
+          <span class="gantt-label">{{ m.title[:20] }}</span>
+          <span class="gantt-date">{{ m.due_date }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </section>
   </div>
 
@@ -417,6 +429,13 @@ function removeTag(tag){fetch(NC_BASE+`/api/tags/project/${PID}/${encodeURICompo
 function setAssignee(tid){const a=prompt('Assignee name:','');if(a===null)return;
   fetch(NC_BASE+`/api/projects/${PID}/topologies/${tid}/assignee`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignee:a})}).then(()=>location.reload());}
 // P3: Gate check
+// SAFe Decompose
+function decomposeSafe(){
+  fetch(NC_BASE+`/api/projects/${PID}/decompose`,{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.error){alert(d.error);return;}
+    alert(`SAFe Decomposition:\n- 1 Feature (${d.feature.t_shirt_size}, WSJF=${d.feature.wsjf_score})\n- ${d.stories.length} Stories\n- ${d.enablers.length} Enablers\n\nTotal: ${d.total_items} items`);
+  });
+}
 // Phase C: Impact Analysis
 function runImpactAnalysis(){
   const el=document.getElementById('impact-results');el.style.display='block';el.innerHTML='Analyzing...';

@@ -767,6 +767,51 @@ a:hover { text-decoration: underline; }
 .impact-direct  { border-left: 3px solid var(--danger); }
 .impact-indirect { border-left: 3px solid var(--warning); }
 
+/* ── Gantt Timeline ────────────────────────────────────────────────────────── */
+.gantt-timeline {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+}
+.gantt-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.gantt-label { font-weight: 600; }
+.gantt-date { color: var(--text-dim); font-size: 10px; }
+.gantt-pending     { background: linear-gradient(90deg, var(--bg3) 0%, var(--accent) 100%); color: var(--text-dim); }
+.gantt-in_progress { background: linear-gradient(90deg, #3a2e00 0%, #f39c12 100%); color: #fff; }
+.gantt-completed   { background: linear-gradient(90deg, #1b3a1b 0%, #27ae60 100%); color: #fff; }
+.gantt-missed      { background: linear-gradient(90deg, #3a1010 0%, #e74c3c 100%); color: #fff; }
+
+/* ── Diff Nodes ────────────────────────────────────────────────────────────── */
+.diff-node {
+  padding: 4px 8px;
+  margin-bottom: 3px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.diff-removed { background: #3a1010; color: #e74c3c; border-left: 3px solid #e74c3c; }
+.diff-added   { background: #1b3a1b; color: #27ae60; border-left: 3px solid #27ae60; }
+
+/* ── Notification Bell ─────────────────────────────────────────────────────── */
+.notif-bell { position: relative; cursor: pointer; font-size: 16px; padding: 4px 8px; }
+.notif-badge { position: absolute; top: 0; right: 0; background: var(--red); color: #fff; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 8px; }
+.notif-dropdown { position: absolute; top: 100%; right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; width: 320px; max-height: 400px; overflow-y: auto; z-index: 200; display: none; }
+.notif-dropdown.active { display: block; }
+.notif-item { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.notif-item:last-child { border-bottom: none; }
+.notif-item.unread { background: var(--bg3); }
+.notif-title { font-weight: 600; color: var(--text); }
+.notif-body { color: var(--text-dim); font-size: 11px; }
+.notif-ts { color: var(--text-dim); font-size: 10px; }
+
 /* ── Mini Template Grid ─────────────────────────────────────────────────────── */
 .template-grid-mini { padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
 .template-card-mini {

@@ -3998,6 +3998,344 @@ def create_network_blueprint():
         return render_template("network/enterprise.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Extended: Notifications, Topology Diff, Auto-Decompose, Global Canvas
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── Notifications ─────────────────────────────────────────────────────
+    @bp.route("/api/notifications", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_notifications():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT n.*, p.name AS project_name "
+            "FROM nc_notifications n "
+            "LEFT JOIN nc_projects p ON p.id=n.project_id "
+            "ORDER BY n.created_at DESC LIMIT 50"
+        ).fetchall()
+        unread = conn.execute(
+            "SELECT COUNT(*) FROM nc_notifications WHERE is_read=0"
+        ).fetchone()[0]
+        conn.close()
+        return jsonify({
+            "notifications": [_row_to_dict(r) for r in rows],
+            "unread": unread,
+        })
+
+    @bp.route("/api/notifications/mark-read", methods=["POST"])
+    @nc_login_required
+    def nc_api_mark_notifications_read():
+        conn = get_connection()
+        conn.execute("UPDATE nc_notifications SET is_read=1 WHERE is_read=0")
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Topology Diff ─────────────────────────────────────────────────────
+    @bp.route("/api/topology-diff", methods=["POST"])
+    @nc_login_required
+    def nc_api_topology_diff():
+        """Compare two topologies side-by-side (node/edge delta)."""
+        data = request.get_json(force=True, silent=True) or {}
+        topo_a_id = data.get("topology_a")
+        topo_b_id = data.get("topology_b")
+        if not topo_a_id or not topo_b_id:
+            return jsonify({"error": "topology_a and topology_b required"}), 400
+        conn = get_connection()
+        a_row = conn.execute(
+            "SELECT name, graph_json FROM topologies WHERE id=?",
+            (topo_a_id,)
+        ).fetchone()
+        b_row = conn.execute(
+            "SELECT name, graph_json FROM topologies WHERE id=?",
+            (topo_b_id,)
+        ).fetchone()
+        conn.close()
+        if not a_row or not b_row:
+            return jsonify({"error": "Topology not found"}), 404
+
+        try:
+            ga = json.loads(a_row["graph_json"])
+        except Exception:
+            ga = {"nodes": [], "edges": []}
+        try:
+            gb = json.loads(b_row["graph_json"])
+        except Exception:
+            gb = {"nodes": [], "edges": []}
+
+        # Nodes diff by label+type
+        def node_key(n):
+            return f"{n.get('label', '')}|{n.get('type', '')}"
+
+        a_nodes = {node_key(n): n for n in ga.get("nodes", [])}
+        b_nodes = {node_key(n): n for n in gb.get("nodes", [])}
+        a_keys = set(a_nodes.keys())
+        b_keys = set(b_nodes.keys())
+
+        only_a = [{"label": a_nodes[k].get("label"),
+                    "type": a_nodes[k].get("type")}
+                   for k in sorted(a_keys - b_keys)]
+        only_b = [{"label": b_nodes[k].get("label"),
+                    "type": b_nodes[k].get("type")}
+                   for k in sorted(b_keys - a_keys)]
+        common = sorted(a_keys & b_keys)
+
+        # Edges diff
+        def edge_key(e):
+            return f"{e.get('source', '')}>{e.get('target', '')}"
+
+        a_edges = {edge_key(e): e for e in ga.get("edges", [])}
+        b_edges = {edge_key(e): e for e in gb.get("edges", [])}
+        a_ekeys = set(a_edges.keys())
+        b_ekeys = set(b_edges.keys())
+
+        # Type distribution
+        a_types = {}
+        for n in ga.get("nodes", []):
+            t = n.get("type", "unknown")
+            a_types[t] = a_types.get(t, 0) + 1
+        b_types = {}
+        for n in gb.get("nodes", []):
+            t = n.get("type", "unknown")
+            b_types[t] = b_types.get(t, 0) + 1
+
+        return jsonify({
+            "topology_a": {"id": topo_a_id, "name": a_row["name"],
+                           "nodes": len(ga.get("nodes", [])),
+                           "edges": len(ga.get("edges", [])),
+                           "types": a_types},
+            "topology_b": {"id": topo_b_id, "name": b_row["name"],
+                           "nodes": len(gb.get("nodes", [])),
+                           "edges": len(gb.get("edges", [])),
+                           "types": b_types},
+            "nodes_only_a": only_a,
+            "nodes_only_b": only_b,
+            "nodes_common": len(common),
+            "edges_only_a": len(a_ekeys - b_ekeys),
+            "edges_only_b": len(b_ekeys - a_ekeys),
+            "edges_common": len(a_ekeys & b_ekeys),
+            "similarity_pct": round(
+                len(common) * 100 / max(len(a_keys | b_keys), 1)
+            ),
+        })
+
+    @bp.route("/projects/diff")
+    @nc_login_required
+    def nc_topology_diff_page():
+        conn = get_connection()
+        topos = [_row_to_dict(r) for r in conn.execute(
+            "SELECT t.id, t.name, p.name AS project_name "
+            "FROM topologies t "
+            "LEFT JOIN nc_project_topologies pt "
+            "  ON pt.topology_id=t.id "
+            "LEFT JOIN nc_projects p ON p.id=pt.project_id "
+            "ORDER BY t.name"
+        ).fetchall()]
+        conn.close()
+        return render_template("network/diff.html", topologies=topos)
+
+    # ── Auto-decompose to SAFe ────────────────────────────────────────────
+    @bp.route("/api/projects/<pid>/decompose", methods=["POST"])
+    @nc_login_required
+    def nc_api_decompose_to_safe(pid):
+        """Auto-generate SAFe Feature + Stories from network project.
+        Stores in nc_safe_bridge and returns the decomposition."""
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        proj = _row_to_dict(proj)
+
+        topos = [_row_to_dict(r) for r in conn.execute(
+            "SELECT t.id, t.name, t.classification, "
+            "json_array_length(json_extract(t.graph_json,'$.nodes')) "
+            "  AS node_count "
+            "FROM topologies t "
+            "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+            "WHERE pt.project_id=?", (pid,)
+        ).fetchall()]
+        circuits = [_row_to_dict(r) for r in conn.execute(
+            "SELECT circuit_id, circuit_type, bandwidth "
+            "FROM nc_circuits WHERE topology_id IN "
+            "(SELECT topology_id FROM nc_project_topologies "
+            " WHERE project_id=?)", (pid,)
+        ).fetchall()]
+
+        # Build SAFe hierarchy
+        feature = {
+            "level": "feature",
+            "title": f"[Feature] {proj['name']}",
+            "description": proj.get("description", ""),
+            "t_shirt_size": "L" if len(topos) > 2 else "M"
+                            if len(topos) > 0 else "S",
+            "status": "draft",
+        }
+        stories = []
+        for t in topos:
+            size = "M" if (t.get("node_count") or 0) > 20 else "S"
+            stories.append({
+                "level": "story",
+                "title": f"[Story] Implement {t['name']}",
+                "description": f"Network topology: {t['name']} "
+                               f"({t.get('node_count', 0)} nodes, "
+                               f"{t.get('classification', 'public')})",
+                "t_shirt_size": size,
+                "source_topology_id": t["id"],
+                "status": "draft",
+            })
+        enablers = []
+        for c in circuits:
+            enablers.append({
+                "level": "enabler",
+                "title": f"[Enabler] Provision {c['circuit_id']}",
+                "description": f"{c.get('circuit_type', '')} "
+                               f"{c.get('bandwidth', '')}",
+                "t_shirt_size": "S",
+                "status": "draft",
+            })
+
+        # WSJF scoring (simplified)
+        tshirt_pts = {"XS": 1, "S": 2, "M": 3, "L": 5, "XL": 8}
+        feature["wsjf_score"] = round(
+            7 / tshirt_pts.get(feature["t_shirt_size"], 3), 1
+        )
+        for s in stories:
+            s["wsjf_score"] = round(
+                5 / tshirt_pts.get(s["t_shirt_size"], 2), 1
+            )
+        for e in enablers:
+            e["wsjf_score"] = round(
+                4 / tshirt_pts.get(e["t_shirt_size"], 2), 1
+            )
+
+        # Update SAFe bridge
+        bridge = conn.execute(
+            "SELECT id FROM nc_safe_bridge WHERE project_id=?", (pid,)
+        ).fetchone()
+        now = _now()
+        decomposition = {
+            "feature": feature,
+            "stories": stories,
+            "enablers": enablers,
+        }
+        decomp_json = json.dumps(decomposition)
+        if bridge:
+            conn.execute(
+                "UPDATE nc_safe_bridge SET safe_feature_id=?, "
+                "updated_at=? WHERE project_id=?",
+                (decomp_json, now, pid)
+            )
+        else:
+            conn.execute(
+                "INSERT INTO nc_safe_bridge "
+                "(id, project_id, safe_feature_id, created_at, "
+                " updated_at) VALUES (?,?,?,?,?)",
+                (str(_uuid.uuid4()), pid, decomp_json, now, now)
+            )
+        conn.commit()
+
+        _notify(conn, pid, "decomposition",
+                f"SAFe decomposition: 1 Feature, {len(stories)} Stories, "
+                f"{len(enablers)} Enablers",
+                f"WSJF={feature['wsjf_score']}")
+        conn.commit()
+        conn.close()
+        _audit("DECOMPOSE", "project", pid,
+               f"{len(stories)} stories, {len(enablers)} enablers")
+
+        return jsonify({
+            "feature": feature,
+            "stories": stories,
+            "enablers": enablers,
+            "total_items": 1 + len(stories) + len(enablers),
+        })
+
+    # ── Global Topology Canvas (JointJS read-only composite) ──────────────
+    @bp.route("/global/canvas")
+    @nc_login_required
+    def nc_global_canvas():
+        return render_template("network/global_canvas.html")
+
+    @bp.route("/api/global-canvas-data", methods=["GET"])
+    @nc_login_required
+    def nc_api_global_canvas_data():
+        """Return combined graph data for all approved/deployed projects."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT t.id, t.name, t.graph_json, "
+            "p.id AS project_id, p.name AS project_name "
+            "FROM topologies t "
+            "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+            "JOIN nc_projects p ON p.id=pt.project_id "
+            "WHERE p.status IN ('approved','deployed') "
+            "ORDER BY p.name, t.name"
+        ).fetchall()
+        interconnects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_interconnects"
+        ).fetchall()]
+        conn.close()
+
+        # Build composite graph with project-namespaced node IDs
+        all_nodes = []
+        all_edges = []
+        project_groups = []
+        offset_x = 0
+        for r in rows:
+            r = _row_to_dict(r)
+            try:
+                g = json.loads(r.get("graph_json") or "{}")
+            except Exception:
+                g = {"nodes": [], "edges": []}
+            prefix = r["id"][:8]
+            group_nodes = []
+            for n in g.get("nodes", []):
+                nid = f"{prefix}_{n['id']}"
+                all_nodes.append({
+                    "id": nid,
+                    "label": n.get("label", ""),
+                    "type": n.get("type", ""),
+                    "x": (n.get("x", 0) or 0) + offset_x,
+                    "y": n.get("y", 0) or 0,
+                    "project": r["project_name"],
+                    "topology": r["name"],
+                })
+                group_nodes.append(nid)
+            for e in g.get("edges", []):
+                all_edges.append({
+                    "source": f"{prefix}_{e['source']}",
+                    "target": f"{prefix}_{e['target']}",
+                    "label": e.get("label", ""),
+                    "protocol": e.get("protocol", ""),
+                })
+            project_groups.append({
+                "project": r["project_name"],
+                "topology": r["name"],
+                "node_ids": group_nodes,
+                "x": offset_x, "y": 0,
+            })
+            offset_x += 600
+
+        # Add interconnect edges
+        for ic in interconnects:
+            all_edges.append({
+                "source": f"ic_src_{ic['id'][:8]}",
+                "target": f"ic_dst_{ic['id'][:8]}",
+                "label": ic.get("circuit_id", ""),
+                "protocol": ic.get("protocol", ""),
+                "is_interconnect": True,
+            })
+
+        return jsonify({
+            "nodes": all_nodes,
+            "edges": all_edges,
+            "groups": project_groups,
+            "total_nodes": len(all_nodes),
+            "total_edges": len(all_edges),
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: CSP Groups
     # ══════════════════════════════════════════════════════════════════════
 
