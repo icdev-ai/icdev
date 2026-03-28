@@ -1230,6 +1230,7 @@ def create_network_blueprint():
         conn = get_connection()
         # Delete child tables first (FK constraints require this order)
         child_tables = [
+            "nc_routing_entries", "nc_collected_configs",
             "nc_intent_validations", "nc_intent_policies",
             "nc_change_request_items", "nc_change_requests",
             "nc_stig_imports", "nc_ato_packages",
@@ -2316,13 +2317,20 @@ def create_network_blueprint():
     @bp.route("/api/collected-configs", methods=["POST"])
     @nc_login_required
     def nc_api_store_collected_config():
-        """Store a manually captured config output."""
+        """Store a manually captured config output (deduped by device+command)."""
         data = request.get_json(force=True, silent=True) or {}
         cid = str(_uuid.uuid4())
         parsed = data.get("parsed_json", {})
         if isinstance(parsed, dict):
             parsed = json.dumps(parsed)
         conn = get_connection()
+        # Dedup: keep latest per device_ip + command_name
+        conn.execute(
+            "DELETE FROM nc_collected_configs "
+            "WHERE device_ip=? AND command_name=?",
+            (data.get("device_ip", ""),
+             data.get("command_name", "manual"))
+        )
         conn.execute(
             "INSERT INTO nc_collected_configs "
             "(id, device_ip, hostname, profile_id, command_name, "
@@ -2339,6 +2347,277 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         return jsonify({"id": cid}), 201
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 3: Routing Table Topology + Config-to-Canvas Sync
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/routing-entries", methods=["POST"])
+    @nc_login_required
+    def nc_api_store_routing_entries():
+        """Store parsed routing table entries for a device."""
+        data = request.get_json(force=True, silent=True) or {}
+        device_ip = data.get("device_ip", "")
+        hostname = data.get("hostname", "")
+        entries = data.get("entries", [])
+        topo_id = data.get("topology_id")
+        if not entries:
+            return jsonify({"error": "entries required"}), 400
+        conn = get_connection()
+        now = _now()
+        # Dedup: remove existing entries for this device before inserting
+        conn.execute(
+            "DELETE FROM nc_routing_entries WHERE device_ip=?",
+            (device_ip,)
+        )
+        count = 0
+        for e in entries:
+            conn.execute(
+                "INSERT INTO nc_routing_entries "
+                "(id, device_ip, hostname, prefix, next_hop, "
+                " protocol, metric, admin_distance, interface, "
+                " vrf, address_family, collected_at, topology_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), device_ip, hostname,
+                 e.get("prefix", ""), e.get("next_hop", ""),
+                 e.get("protocol", ""), e.get("metric", 0),
+                 e.get("admin_distance", 0),
+                 e.get("interface", ""),
+                 e.get("vrf", "default"),
+                 e.get("address_family", "ipv4"),
+                 now, topo_id)
+            )
+            count += 1
+        conn.commit()
+        conn.close()
+        return jsonify({"stored": count, "device": device_ip}), 201
+
+    @bp.route("/api/routing-entries", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_routing_entries():
+        device_ip = request.args.get("device_ip", "")
+        conn = get_connection()
+        if device_ip:
+            rows = conn.execute(
+                "SELECT * FROM nc_routing_entries "
+                "WHERE device_ip=? ORDER BY prefix",
+                (device_ip,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM nc_routing_entries "
+                "ORDER BY device_ip, prefix LIMIT 500"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/routing-topology", methods=["POST"])
+    @nc_login_required
+    def nc_api_generate_routing_topology():
+        """Generate a topology from stored routing entries.
+        Each unique device becomes a node; next-hop relationships
+        become edges showing actual forwarding paths."""
+        data = request.get_json(force=True, silent=True) or {}
+        device_ips = data.get("device_ips", [])
+        name = data.get("name", "Routing Topology")
+        conn = get_connection()
+
+        if device_ips:
+            placeholders = ",".join("?" for _ in device_ips)
+            rows = conn.execute(
+                f"SELECT * FROM nc_routing_entries "  # nosec B608
+                f"WHERE device_ip IN ({placeholders}) "
+                f"ORDER BY device_ip, prefix", device_ips
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM nc_routing_entries "
+                "ORDER BY device_ip, prefix"
+            ).fetchall()
+
+        # Build device set and next-hop relationships
+        devices = {}  # ip -> {hostname, protocols, prefixes}
+        links = {}  # (src_ip, dst_ip) -> {protocols, count}
+
+        for r in rows:
+            r = _row_to_dict(r)
+            dip = r["device_ip"]
+            if dip not in devices:
+                devices[dip] = {
+                    "hostname": r.get("hostname", dip),
+                    "protocols": set(),
+                    "prefix_count": 0,
+                }
+            devices[dip]["protocols"].add(r.get("protocol", ""))
+            devices[dip]["prefix_count"] += 1
+
+            nh = r.get("next_hop", "")
+            if nh and nh != "0.0.0.0" and nh != "::" and nh != dip:
+                key = (dip, nh)
+                if key not in links:
+                    links[key] = {"protocols": set(), "count": 0}
+                links[key]["protocols"].add(r.get("protocol", ""))
+                links[key]["count"] += 1
+                # Ensure next-hop device exists
+                if nh not in devices:
+                    devices[nh] = {
+                        "hostname": nh,
+                        "protocols": set(),
+                        "prefix_count": 0,
+                    }
+
+        # Generate graph JSON
+        nodes = []
+        x_pos = 0
+        ip_to_id = {}
+        for ip, info in sorted(devices.items()):
+            nid = str(_uuid.uuid4())[:8]
+            ip_to_id[ip] = nid
+            nodes.append({
+                "id": nid,
+                "label": info["hostname"],
+                "type": "router",
+                "x": x_pos % 800,
+                "y": (x_pos // 800) * 200,
+                "config": {
+                    "ip": ip,
+                    "protocol": ", ".join(
+                        sorted(info["protocols"] - {""})),
+                },
+            })
+            x_pos += 200
+
+        edges = []
+        for (src, dst), info in links.items():
+            src_id = ip_to_id.get(src)
+            dst_id = ip_to_id.get(dst)
+            if src_id and dst_id and src_id != dst_id:
+                edges.append({
+                    "id": str(_uuid.uuid4())[:8],
+                    "source": src_id,
+                    "target": dst_id,
+                    "label": ", ".join(
+                        sorted(info["protocols"] - {""})),
+                    "protocol": ", ".join(
+                        sorted(info["protocols"] - {""})),
+                })
+
+        graph = {"nodes": nodes, "edges": edges}
+        graph = _classify_imported_nodes(graph)
+
+        topo_id = str(_uuid.uuid4())
+        now = _now()
+        conn.execute(
+            "INSERT INTO topologies "
+            "(id, name, description, graph_json, "
+            " classification, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (topo_id, name,
+             f"Generated from {len(devices)} device routing tables",
+             json.dumps(graph), "public", now, now)
+        )
+        conn.commit()
+        conn.close()
+        _audit("ROUTING_TOPO", "topology", topo_id,
+               f"{len(nodes)} devices, {len(edges)} links")
+        return jsonify({
+            "id": topo_id, "name": name,
+            "nodes": len(nodes), "edges": len(edges),
+            "devices_discovered": len(devices),
+        }), 201
+
+    @bp.route("/api/config-to-canvas/<topo_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_config_to_canvas(topo_id):
+        """Sync collected config data into canvas device properties.
+        Matches by hostname or IP address."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            conn.close()
+            return jsonify({"error": "Bad graph"}), 500
+
+        # Get all collected configs
+        configs = conn.execute(
+            "SELECT device_ip, hostname, command_name, parsed_json "
+            "FROM nc_collected_configs "
+            "WHERE topology_id=? OR topology_id IS NULL "
+            "ORDER BY collected_at DESC", (topo_id,)
+        ).fetchall()
+
+        # Build lookup by hostname and IP
+        config_by_host = {}  # hostname -> {cmd: parsed}
+        config_by_ip = {}    # ip -> {cmd: parsed}
+        for c in configs:
+            c = _row_to_dict(c)
+            host = (c.get("hostname") or "").lower()
+            ip = c.get("device_ip", "")
+            cmd = c.get("command_name", "")
+            try:
+                parsed = json.loads(c.get("parsed_json") or "{}")
+            except Exception:
+                parsed = {}
+            if host:
+                config_by_host.setdefault(host, {})[cmd] = parsed
+            if ip:
+                config_by_ip.setdefault(ip, {})[cmd] = parsed
+
+        updated = 0
+        for n in graph.get("nodes", []):
+            cfg = n.get("config") or n.get("configData") or {}
+            label = (n.get("label") or "").lower()
+            ip = cfg.get("ip", "")
+
+            # Match by hostname then IP
+            device_data = config_by_host.get(label, {})
+            if not device_data and ip:
+                device_data = config_by_ip.get(ip, {})
+            if not device_data:
+                continue
+
+            # Merge parsed data into config
+            for cmd_name, parsed in device_data.items():
+                if cmd_name == "version" and parsed:
+                    if parsed.get("version"):
+                        cfg["sw_version"] = parsed["version"]
+                    if parsed.get("hostname"):
+                        n["label"] = parsed["hostname"]
+                    if parsed.get("model"):
+                        cfg["model"] = parsed["model"]
+                    if parsed.get("serial"):
+                        cfg["serial"] = parsed["serial"]
+                elif cmd_name == "interfaces" and parsed:
+                    if parsed.get("mgmt_ip"):
+                        cfg["ip"] = parsed["mgmt_ip"]
+                elif cmd_name in ("routing_table_v4",
+                                   "routing_table_v6") and parsed:
+                    if parsed.get("protocol"):
+                        cfg["protocol"] = parsed["protocol"]
+
+            n["config"] = cfg
+            if "configData" in n:
+                n["configData"] = cfg
+            updated += 1
+
+        now = _now()
+        conn.execute(
+            "UPDATE topologies SET graph_json=?, updated_at=? "
+            "WHERE id=?",
+            (json.dumps(graph), now, topo_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "updated_devices": updated,
+            "total_nodes": len(graph.get("nodes", [])),
+        })
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Circuits CRUD

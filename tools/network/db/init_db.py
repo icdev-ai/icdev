@@ -665,6 +665,23 @@ CREATE TABLE IF NOT EXISTS nc_collected_configs (
     topology_id TEXT REFERENCES topologies(id)
 );
 
+-- ── Routing Table Entries (Phase 3 Network Intelligence) ─────────────────
+CREATE TABLE IF NOT EXISTS nc_routing_entries (
+    id          TEXT PRIMARY KEY,
+    device_ip   TEXT NOT NULL,
+    hostname    TEXT,
+    prefix      TEXT NOT NULL,           -- e.g., 10.0.0.0/24 or 2001:db8::/32
+    next_hop    TEXT,
+    protocol    TEXT,                     -- connected, static, ospf, bgp, eigrp, isis
+    metric      INTEGER DEFAULT 0,
+    admin_distance INTEGER DEFAULT 0,
+    interface   TEXT,
+    vrf         TEXT DEFAULT 'default',
+    address_family TEXT DEFAULT 'ipv4',  -- ipv4 or ipv6
+    collected_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    topology_id TEXT REFERENCES topologies(id)
+);
+
 -- ── ARB/ERB Documentation (Architect Workbench) ──────────────────────────
 -- Alternatives Analysis Matrix
 CREATE TABLE IF NOT EXISTS nc_alternatives (
