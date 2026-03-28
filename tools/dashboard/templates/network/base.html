@@ -29,7 +29,8 @@
       <a href="/network/enterprise" class="nav-link {% if '/network/enterprise' in request.path %}active{% endif %}">Enterprise</a>
       <a href="/network/circuits" class="nav-link {% if '/network/circuits' in request.path %}active{% endif %}">Circuits</a>
       <a href="/network/customers" class="nav-link {% if '/network/customers' in request.path %}active{% endif %}">Customers</a>
-      <a href="/network/ipam" class="nav-link {% if '/network/ipam' in request.path %}active{% endif %}">IPAM</a>
+      <a href="/network/ipam" class="nav-link {% if '/network/ipam' in request.path and '/network/netbox' not in request.path %}active{% endif %}">IPAM</a>
+      <a href="/network/netbox" class="nav-link {% if '/network/netbox' in request.path %}active{% endif %}" style="{% if '/network/netbox' not in request.path %}color:#9b59b6;{% endif %}">&#x2B21; NetBox</a>
       <a href="/network/cables" class="nav-link {% if '/network/cables' in request.path %}active{% endif %}">Cables</a>
       <a href="/network/cross-connects" class="nav-link {% if '/network/cross-connects' in request.path %}active{% endif %}">Cross-Connects</a>
       <a href="/network/projects/diff" class="nav-link {% if '/network/projects/diff' in request.path %}active{% endif %}">Diff</a>

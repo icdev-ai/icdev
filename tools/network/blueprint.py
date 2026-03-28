@@ -596,6 +596,41 @@ def create_network_blueprint():
         conn.close()
         return render_template("network/cross_connects.html", cross_connects=xconns, stats=stats)
 
+    @bp.route("/netbox")
+    @nc_login_required
+    def nc_netbox():
+        """NetBox IPAM source-of-truth browser — connection config, cached objects, sync log."""
+        conn = get_connection()
+        # Config (token redacted)
+        cfg_row = conn.execute(
+            "SELECT url, site_filter, timeout_sec, auto_sync, last_tested FROM nc_netbox_config WHERE id='default'"
+        ).fetchone()
+        cfg = _row_to_dict(cfg_row) if cfg_row else {}
+        cfg["configured"] = bool(cfg.get("url"))
+        # Cached objects grouped by resource type
+        obj_rows = conn.execute(
+            "SELECT netbox_resource, COUNT(*) AS cnt FROM nc_netbox_objects GROUP BY netbox_resource"
+        ).fetchall()
+        cached_counts = {r[0]: r[1] for r in obj_rows}
+        # Recent sync log
+        log_rows = conn.execute(
+            "SELECT * FROM nc_netbox_sync_log ORDER BY ran_at DESC LIMIT 50"
+        ).fetchall()
+        sync_log = [_row_to_dict(r) for r in log_rows]
+        # Topologies for the import-to-canvas picker
+        topo_rows = conn.execute(
+            "SELECT id, name FROM topologies ORDER BY updated_at DESC LIMIT 100"
+        ).fetchall()
+        topologies = [_row_to_dict(r) for r in topo_rows]
+        conn.close()
+        return render_template(
+            "network/netbox.html",
+            cfg=cfg,
+            cached_counts=cached_counts,
+            sync_log=sync_log,
+            topologies=topologies,
+        )
+
     @bp.route("/projects")
     @nc_login_required
     def nc_projects():
