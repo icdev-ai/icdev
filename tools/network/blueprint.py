@@ -3500,7 +3500,7 @@ def create_network_blueprint():
             devices[dip]["prefix_count"] += 1
 
             nh = r.get("next_hop", "")
-            if nh and nh != "0.0.0.0" and nh != "::" and nh != dip:
+            if nh and nh != "0.0.0.0" and nh != "::" and nh != dip:  # nosec B104 — route filter, not socket bind
                 key = (dip, nh)
                 if key not in links:
                     links[key] = {"protocols": set(), "count": 0}
