@@ -665,6 +665,22 @@ CREATE TABLE IF NOT EXISTS nc_collected_configs (
     topology_id TEXT REFERENCES topologies(id)
 );
 
+-- ── Device Geolocation (Phase 4 Network Intelligence) ────────────────────
+CREATE TABLE IF NOT EXISTS nc_device_geo (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    node_id     TEXT,
+    label       TEXT,
+    site_name   TEXT,
+    latitude    REAL,
+    longitude   REAL,
+    city        TEXT,
+    state       TEXT,
+    country     TEXT DEFAULT 'US',
+    facility    TEXT,                     -- data center, colo, office
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Routing Table Entries (Phase 3 Network Intelligence) ─────────────────
 CREATE TABLE IF NOT EXISTS nc_routing_entries (
     id          TEXT PRIMARY KEY,

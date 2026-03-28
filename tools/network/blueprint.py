@@ -1230,6 +1230,7 @@ def create_network_blueprint():
         conn = get_connection()
         # Delete child tables first (FK constraints require this order)
         child_tables = [
+            "nc_device_geo",
             "nc_routing_entries", "nc_collected_configs",
             "nc_intent_validations", "nc_intent_policies",
             "nc_change_request_items", "nc_change_requests",
@@ -2347,6 +2348,148 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         return jsonify({"id": cid}), 201
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 4: Geolocation + Globe/Map View
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/device-geo", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_device_geo():
+        topo_id = request.args.get("topology_id", "")
+        conn = get_connection()
+        if topo_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_device_geo WHERE topology_id=? "
+                "ORDER BY site_name, label", (topo_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT dg.*, t.name AS topology_name "
+                "FROM nc_device_geo dg "
+                "LEFT JOIN topologies t ON t.id=dg.topology_id "
+                "ORDER BY dg.site_name, dg.label"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/device-geo", methods=["POST"])
+    @nc_login_required
+    def nc_api_set_device_geo():
+        """Set geolocation for a device (deduped by topology+node)."""
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        # Dedup
+        conn.execute(
+            "DELETE FROM nc_device_geo "
+            "WHERE topology_id=? AND node_id=?",
+            (data.get("topology_id"), data.get("node_id"))
+        )
+        gid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_device_geo "
+            "(id, topology_id, node_id, label, site_name, "
+            " latitude, longitude, city, state, country, "
+            " facility, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (gid, data.get("topology_id"),
+             data.get("node_id"), data.get("label", ""),
+             data.get("site_name", ""),
+             data.get("latitude", 0), data.get("longitude", 0),
+             data.get("city", ""), data.get("state", ""),
+             data.get("country", "US"),
+             data.get("facility", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": gid}), 201
+
+    @bp.route("/api/device-geo/bulk", methods=["POST"])
+    @nc_login_required
+    def nc_api_bulk_set_geo():
+        """Set geolocation for multiple devices at once."""
+        data = request.get_json(force=True, silent=True) or {}
+        devices = data.get("devices", [])
+        conn = get_connection()
+        count = 0
+        for d in devices:
+            conn.execute(
+                "DELETE FROM nc_device_geo "
+                "WHERE topology_id=? AND node_id=?",
+                (d.get("topology_id"), d.get("node_id"))
+            )
+            conn.execute(
+                "INSERT INTO nc_device_geo "
+                "(id, topology_id, node_id, label, site_name, "
+                " latitude, longitude, city, state, country, "
+                " facility, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), d.get("topology_id"),
+                 d.get("node_id"), d.get("label", ""),
+                 d.get("site_name", ""),
+                 d.get("latitude", 0), d.get("longitude", 0),
+                 d.get("city", ""), d.get("state", ""),
+                 d.get("country", "US"),
+                 d.get("facility", ""), _now())
+            )
+            count += 1
+        conn.commit()
+        conn.close()
+        return jsonify({"set": count}), 201
+
+    @bp.route("/api/device-geo/<gid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_device_geo(gid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_device_geo WHERE id=?", (gid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/geo-sites", methods=["GET"])
+    @nc_login_required
+    def nc_api_geo_sites():
+        """Aggregate devices by site for map clustering."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT site_name, latitude, longitude, city, state, "
+            "country, facility, COUNT(*) AS device_count "
+            "FROM nc_device_geo "
+            "WHERE latitude != 0 AND longitude != 0 "
+            "GROUP BY site_name, latitude, longitude "
+            "ORDER BY site_name"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/geo-links", methods=["GET"])
+    @nc_login_required
+    def nc_api_geo_links():
+        """Get interconnect links with geolocation for map arcs."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT ic.id, ic.circuit_id, ic.protocol, ic.bandwidth, "
+            "sg.latitude AS src_lat, sg.longitude AS src_lon, "
+            "sg.site_name AS src_site, "
+            "dg.latitude AS dst_lat, dg.longitude AS dst_lon, "
+            "dg.site_name AS dst_site "
+            "FROM nc_interconnects ic "
+            "LEFT JOIN nc_device_geo sg "
+            "  ON sg.topology_id=ic.src_topology_id "
+            "  AND sg.node_id=ic.src_node_id "
+            "LEFT JOIN nc_device_geo dg "
+            "  ON dg.topology_id=ic.dst_topology_id "
+            "  AND dg.node_id=ic.dst_node_id "
+            "WHERE sg.latitude IS NOT NULL "
+            "  AND dg.latitude IS NOT NULL"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/map")
+    @nc_login_required
+    def nc_map_view():
+        return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════
     # Phase 3: Routing Table Topology + Config-to-Canvas Sync

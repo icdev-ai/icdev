@@ -709,13 +709,16 @@ class TestPairGeneratorFromDocument:
             {"content": "Too short."},  # Should be skipped
         ]
 
-        result = generate_from_document(
-            dataset_id=dataset_id,
-            chunks=chunks,
-            purpose="general",
-            questions_per_chunk=2,
-            db_path=ft_db,
-        )
+        # Mock LLM router to avoid live Ollama inference calls
+        with patch("tools.llm.router.LLMRouter") as mock_router_cls:
+            mock_router_cls.return_value.invoke.side_effect = RuntimeError("LLM unavailable in test")
+            result = generate_from_document(
+                dataset_id=dataset_id,
+                chunks=chunks,
+                purpose="general",
+                questions_per_chunk=2,
+                db_path=ft_db,
+            )
         assert result["success"]
         assert result["chunks_processed"] == 2
         assert result["pairs_generated"] >= 0  # Template fallback may generate 0 if LLM unavailable
