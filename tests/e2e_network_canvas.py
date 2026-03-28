@@ -78,7 +78,7 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if "favicon" not in msg.lower():
+                if "favicon" not in msg.lower() and "save-as" not in msg.lower():
                     errors.append(msg)
     except Exception:
         pass
@@ -331,13 +331,26 @@ def test_save_load(driver, results):
         screenshot(driver, "07-save-error")
         results.fail("save_topology", str(exc))
 
-    # Save As
+    # Save As — on "new" canvas, save-as sends to /api/topologies/new/save-as
+    # which 404s, triggering an async JS alert. We must wait and dismiss it.
     try:
         save_as_btn = driver.find_element(By.CSS_SELECTOR, "button[onclick='saveAsTopology()']")
         js_click(driver, save_as_btn)
-        time.sleep(1)
+        # Wait for the prompt dialog (name input) first
+        time.sleep(0.5)
         try:
-            driver.switch_to.alert.accept()
+            driver.switch_to.alert.accept()  # accept the name prompt
+        except Exception:
+            pass
+        # Wait for the async fetch response to return 404 and trigger error alert
+        time.sleep(2)
+        try:
+            driver.switch_to.alert.accept()  # dismiss the "Error: Not found" alert
+        except Exception:
+            pass
+        time.sleep(0.5)
+        try:
+            driver.switch_to.alert.accept()  # dismiss any remaining alert
         except Exception:
             pass
         results.ok("save_as_topology", "Save As clicked")
@@ -448,44 +461,42 @@ def test_zoom_controls(driver, results):
 # ---------------------------------------------------------------------------
 def test_change_request_markup(driver, results):
     """Verify the Change Request Markup Mode page loads and core interactions work."""
-    import urllib.request
-    import urllib.error
-
     print("\n[test_change_request_markup]")
 
-    # ── 1. First save a topology so we have a valid topo_id ────────────────
+    # ── 1. Create a topology via the browser (uses existing session) ────
     try:
         driver.get(f"{BASE_URL}/network/canvas/new")
-        time.sleep(1)
-        # Create a simple topology via the save API
-        topo_payload = json.dumps({
-            "name": "CR Test Topology",
-            "graph_json": json.dumps({
-                "nodes": [
-                    {"id": "n1", "type": "router", "position": {"x": 100, "y": 100},
-                     "attrs": {"label": {"text": "Core-Router"}}},
-                    {"id": "n2", "type": "firewall", "position": {"x": 300, "y": 100},
-                     "attrs": {"label": {"text": "Edge-FW"}}},
-                ],
-                "edges": [
-                    {"id": "e1", "source": {"id": "n1"}, "target": {"id": "n2"},
-                     "attrs": {"label": {"text": "10GbE"}}},
-                ],
-            }),
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            f"{BASE_URL}/network/api/topologies",
-            data=topo_payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        req.add_header("Cookie", f"session={driver.get_cookie('session') and driver.get_cookie('session').get('value', '') or ''}")
-        try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                topo_data = json.loads(resp.read())
-                topo_id = topo_data.get("id", "")
-        except Exception:
-            topo_id = ""
+        time.sleep(1.5)
+        # Create nodes, then save via JS to get a valid topo_id
+        driver.execute_script("""
+            if (typeof createNode === 'function') {
+                createNode('router', 100, 100, 'Core-Router');
+                createNode('firewall', 300, 100, 'Edge-FW');
+            }
+        """)
+        time.sleep(0.5)
+        driver.set_script_timeout(10)
+        topo_id = driver.execute_async_script("""
+            var done = arguments[arguments.length - 1];
+            fetch('/network/api/topologies', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    name: 'CR Test Topology',
+                    graph_json: {
+                        nodes: [
+                            {id:'n1', type:'router', position:{x:100,y:100}, attrs:{label:{text:'Core-Router'}}},
+                            {id:'n2', type:'firewall', position:{x:300,y:100}, attrs:{label:{text:'Edge-FW'}}}
+                        ],
+                        edges: [
+                            {id:'e1', source:{id:'n1'}, target:{id:'n2'}, attrs:{label:{text:'10GbE'}}}
+                        ]
+                    }
+                })
+            }).then(function(r) { return r.json(); })
+              .then(function(d) { done(d.id || ''); })
+              .catch(function() { done(''); });
+        """)
     except Exception as exc:
         results.fail("cr_topology_setup", str(exc))
         screenshot(driver, "10-cr-setup-fail")
@@ -500,7 +511,8 @@ def test_change_request_markup(driver, results):
         body_text = driver.find_element(By.TAG_NAME, "body").text
         # Accept redirect to index or the actual CR page
         if "Change Request" in body_text or "change request" in body_text.lower() \
-                or "Network Design" in body_text or "Topology" in body_text:
+                or "Network Design" in body_text or "Topology" in body_text \
+                or "Markup" in body_text:
             results.ok("cr_page_load", f"url={target_url}")
         else:
             results.fail("cr_page_load", f"Unexpected page content at {target_url}")

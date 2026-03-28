@@ -3779,6 +3779,8 @@ Output ONLY the JSON object. No other text."""
         topo = _row_to_dict(topo)
         try:
             graph = json.loads(topo.get("graph_json") or '{"nodes":[],"edges":[]}')
+            if isinstance(graph, str):  # handle double-encoded JSON
+                graph = json.loads(graph)
         except Exception:
             graph = {"nodes": [], "edges": []}
         crs = [_row_to_dict(r) for r in conn.execute(
