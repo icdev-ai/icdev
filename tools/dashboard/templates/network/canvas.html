@@ -62,7 +62,7 @@
       <button class="tb-btn" onclick="exportAs('svg')" title="Export SVG">⬇ SVG</button>
       <button class="tb-btn" onclick="exportInventory('ansible')" title="Export Ansible Inventory (hosts grouped by role/enclave)" style="color:#ff6b35;">⬇ Ansible</button>
       <button class="tb-btn" onclick="exportInventory('terraform')" title="Export Terraform HCL skeleton (VPC, subnet, security group)" style="color:#7b42bc;">⬇ Terraform</button>
-      <button class="tb-btn" onclick="exportDeviceConfigs()" title="Export per-device configs (Cisco IOS / Arista EOS / Juniper JunOS) as ZIP" style="color:#00c896;">⬇ Dev Configs</button>
+      <button class="tb-btn" onclick="showDeviceConfigModal()" title="Preview &amp; export per-device configs (Cisco IOS / Arista EOS / Juniper JunOS)" style="color:#00c896;">⬇ Dev Configs</button>
       <button class="tb-btn" onclick="exportCablePlantReport()" title="Export cable plant report (CSV) — all annotated cable runs with specs" style="color:#a29bfe;">⬇ Cable Plant</button>
       <button class="tb-btn" onclick="exportAs('vsdx')" title="Export Visio (.vsdx)">⬇ Visio</button>
       <button class="tb-btn" onclick="exportAs('csv')" title="Export Ops CSVs (device inventory, circuits, cables)">⬇ Ops CSV</button>
@@ -1988,9 +1988,178 @@
   </div>
 </div>
 
+<!-- ── Device Config Preview Modal ─────────────────────────────────────────── -->
+<div id="cfg-preview-overlay" class="hidden" style="position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:3000;display:flex;align-items:center;justify-content:center;">
+  <div style="background:#0d1117;border:1px solid #2a3a50;border-radius:10px;width:880px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 8px 32px rgba(0,0,0,0.6);">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #1e2d3d;">
+      <h3 style="margin:0;font-size:14px;color:#00c896;font-weight:600;letter-spacing:0.04em;">&#x2699; Device Config Generator</h3>
+      <button onclick="cfgPreviewClose()" style="background:none;border:none;color:#7a8a99;font-size:18px;cursor:pointer;padding:2px 6px;border-radius:4px;" title="Close">&#x2715;</button>
+    </div>
+    <!-- Body: left list + right preview -->
+    <div style="display:flex;flex:1;overflow:hidden;min-height:0;">
+      <!-- Device list -->
+      <div style="width:260px;min-width:200px;border-right:1px solid #1e2d3d;overflow-y:auto;padding:10px 8px;">
+        <div style="font-size:10px;color:#4a5a6a;text-transform:uppercase;letter-spacing:0.06em;padding:4px 6px 8px;">Configurable Devices</div>
+        <div id="cfg-device-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+        <div id="cfg-no-devices" class="hidden" style="padding:20px 8px;text-align:center;color:#4a5a6a;font-size:12px;">
+          No routers, switches, or firewalls on canvas.<br><br>Add devices and assign IPs/VLANs in the Properties panel.
+        </div>
+      </div>
+      <!-- Config preview -->
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;">
+        <div id="cfg-preview-header" style="padding:10px 14px;border-bottom:1px solid #1a2535;font-size:12px;color:#7a8a99;display:flex;align-items:center;gap:10px;">
+          <span id="cfg-preview-device-name" style="color:#e8eaf0;font-weight:600;">Select a device →</span>
+          <span id="cfg-preview-os-badge" style="background:#1a2d40;color:#00c896;font-size:10px;padding:2px 7px;border-radius:10px;display:none;"></span>
+          <button id="cfg-dl-single-btn" onclick="cfgDownloadSingle()" class="hidden" style="margin-left:auto;background:#1a3a2a;color:#00c896;border:1px solid #1e5a3a;font-size:11px;padding:4px 10px;border-radius:5px;cursor:pointer;" title="Download this config as .txt">&#x2193; Download</button>
+        </div>
+        <div style="flex:1;overflow:auto;padding:12px 14px;">
+          <div id="cfg-preview-empty" style="text-align:center;padding:48px 20px;color:#2a3a50;">
+            <div style="font-size:32px;margin-bottom:8px;">&#x1f4bb;</div>
+            <p style="font-size:12px;margin:0;">Click a device on the left to preview its generated configuration.</p>
+          </div>
+          <pre id="cfg-preview-code" class="hidden" style="margin:0;font-family:'Courier New',Courier,monospace;font-size:11px;color:#c8d8e8;line-height:1.55;white-space:pre;background:none;border:none;padding:0;"></pre>
+        </div>
+      </div>
+    </div>
+    <!-- Footer -->
+    <div style="padding:10px 16px;border-top:1px solid #1e2d3d;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div id="cfg-preview-summary" style="font-size:11px;color:#4a6a8a;"></div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="cfgPreviewClose()" style="background:none;border:1px solid #2a3a50;color:#7a8a99;font-size:12px;padding:6px 14px;border-radius:5px;cursor:pointer;">Cancel</button>
+        <button id="cfg-dl-all-btn" onclick="cfgDownloadAll()" style="background:#0a2a1a;border:1px solid #00c896;color:#00c896;font-size:12px;padding:6px 16px;border-radius:5px;cursor:pointer;font-weight:600;" title="Download all configs as ZIP">&#x2193; Download All (ZIP)</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="{{ url_for('static', filename='js/network-canvas.js') }}"></script>
 <script src="{{ url_for('static', filename='js/network-simulation.js') }}"></script>
 <script>
+// ── Device Config Preview Modal ──────────────────────────────────────────────
+let _cfgConfigs = {};   // filename -> config text
+let _cfgActive  = null; // currently selected filename
+
+async function showDeviceConfigModal() {
+  if (TOPOLOGY_ID === 'new') { alert('Save the topology first.'); return; }
+  const overlay = document.getElementById('cfg-preview-overlay');
+  const listEl  = document.getElementById('cfg-device-list');
+  const noDevEl = document.getElementById('cfg-no-devices');
+  const summEl  = document.getElementById('cfg-preview-summary');
+  const dlAll   = document.getElementById('cfg-dl-all-btn');
+
+  // Reset state
+  listEl.innerHTML = '';
+  document.getElementById('cfg-preview-code').classList.add('hidden');
+  document.getElementById('cfg-preview-empty').classList.remove('hidden');
+  document.getElementById('cfg-preview-device-name').textContent = 'Loading…';
+  document.getElementById('cfg-preview-os-badge').style.display = 'none';
+  document.getElementById('cfg-dl-single-btn').classList.add('hidden');
+  summEl.textContent = 'Loading configs…';
+  dlAll.disabled = true;
+  _cfgConfigs = {};
+  _cfgActive = null;
+  overlay.classList.remove('hidden');
+
+  try {
+    const r = await fetch(NC_BASE + '/api/export/' + TOPOLOGY_ID + '/device-configs', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({format: 'json'}),
+    });
+    const data = await r.json();
+    if (data.error) { summEl.textContent = 'Error: ' + data.error; return; }
+
+    _cfgConfigs = data.configs || {};
+    const count = Object.keys(_cfgConfigs).length;
+
+    if (count === 0) {
+      noDevEl.classList.remove('hidden');
+      listEl.classList.add('hidden');
+      summEl.textContent = 'No configurable devices on this topology.';
+      document.getElementById('cfg-preview-device-name').textContent = 'No devices';
+      dlAll.disabled = true;
+      return;
+    }
+
+    noDevEl.classList.add('hidden');
+    listEl.classList.remove('hidden');
+    dlAll.disabled = false;
+    summEl.textContent = count + ' device' + (count !== 1 ? 's' : '') + ' · ' + (data.topo_name || '');
+
+    // Build device list from filename
+    Object.keys(_cfgConfigs).forEach(filename => {
+      const osMatch = filename.match(/_(ios|eos|junos)(_\d+)?\.txt$/i);
+      const osLabel = osMatch ? {ios:'Cisco IOS', eos:'Arista EOS', junos:'JunOS'}[osMatch[1].toLowerCase()] || osMatch[1] : 'IOS';
+      const hostname = filename.replace(/_ios(_\d+)?\.txt$|_eos(_\d+)?\.txt$|_junos(_\d+)?\.txt$/i, '').replace(/_/g, '-');
+
+      const btn = document.createElement('button');
+      btn.dataset.filename = filename;
+      btn.style.cssText = 'display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;background:#0a1520;border:1px solid #1e2d3d;border-radius:6px;padding:7px 9px;cursor:pointer;transition:border-color 0.15s;';
+      btn.innerHTML = `<span style="font-size:12px;color:#c8d8e8;font-weight:600;">${hostname}</span><span style="font-size:10px;color:#00c896;background:#0a2a1a;padding:1px 6px;border-radius:8px;">${osLabel}</span>`;
+      btn.addEventListener('click', () => cfgSelectDevice(filename, hostname, osLabel));
+      btn.addEventListener('mouseover', () => { if (btn.dataset.filename !== _cfgActive) btn.style.borderColor = '#2a4a60'; });
+      btn.addEventListener('mouseout', () => { if (btn.dataset.filename !== _cfgActive) btn.style.borderColor = '#1e2d3d'; });
+      listEl.appendChild(btn);
+    });
+
+    // Auto-select first
+    const firstFile = Object.keys(_cfgConfigs)[0];
+    if (firstFile) {
+      const osMatch = firstFile.match(/_(ios|eos|junos)(_\d+)?\.txt$/i);
+      const osLabel = osMatch ? {ios:'Cisco IOS', eos:'Arista EOS', junos:'JunOS'}[osMatch[1].toLowerCase()] || osMatch[1] : 'IOS';
+      const hostname = firstFile.replace(/_ios(_\d+)?\.txt$|_eos(_\d+)?\.txt$|_junos(_\d+)?\.txt$/i, '').replace(/_/g, '-');
+      cfgSelectDevice(firstFile, hostname, osLabel);
+    }
+  } catch (e) {
+    summEl.textContent = 'Error loading configs: ' + e.message;
+  }
+}
+
+function cfgSelectDevice(filename, hostname, osLabel) {
+  _cfgActive = filename;
+
+  // Highlight active button
+  document.querySelectorAll('#cfg-device-list button').forEach(b => {
+    const active = b.dataset.filename === filename;
+    b.style.borderColor = active ? '#00c896' : '#1e2d3d';
+    b.style.background  = active ? '#0a2520' : '#0a1520';
+  });
+
+  document.getElementById('cfg-preview-device-name').textContent = hostname;
+  const badge = document.getElementById('cfg-preview-os-badge');
+  badge.textContent = osLabel;
+  badge.style.display = 'inline';
+  document.getElementById('cfg-dl-single-btn').classList.remove('hidden');
+
+  const code = document.getElementById('cfg-preview-code');
+  code.textContent = _cfgConfigs[filename] || '';
+  code.classList.remove('hidden');
+  document.getElementById('cfg-preview-empty').classList.add('hidden');
+}
+
+function cfgPreviewClose() {
+  document.getElementById('cfg-preview-overlay').classList.add('hidden');
+  _cfgConfigs = {};
+  _cfgActive = null;
+}
+
+function cfgDownloadSingle() {
+  if (!_cfgActive || !_cfgConfigs[_cfgActive]) return;
+  const blob = new Blob([_cfgConfigs[_cfgActive]], {type: 'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = _cfgActive;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+async function cfgDownloadAll() {
+  cfgPreviewClose();
+  await exportDeviceConfigs();
+}
+
 // ── Load Cloud Networking palette from API ──────────────────────────────────
 (function(){
   const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon'};
