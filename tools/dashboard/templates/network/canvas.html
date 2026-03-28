@@ -94,6 +94,7 @@
       <button class="tb-btn" onclick="toggleRackView()" title="Rack Elevation View — shows rack layout for selected device">&#x229e; Rack</button>
       <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
       <button class="tb-btn" id="tb-ai-review-btn" onclick="openAiReviewPanel()" title="AI Topology Reviewer — LLM analysis of SPOF, redundancy gaps, STIG violations, and suggestions" style="color:#00d4ff;">&#x1f50d; AI Review</button>
+      <button class="tb-btn" id="tb-cr-btn" onclick="toggleCrMarkupMode()" title="Change Request Markup Mode — mark proposed adds (green), removes (red), and modifies (yellow) for CAB review" style="color:#8e44ad;">&#x270f; CR Markup</button>
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
@@ -889,6 +890,83 @@
     <div id="ai-gen-status" class="sim-output" style="display:none;"></div>
   </div>
 </div>
+<!-- CR Markup Mode Panel (slide-out left) -->
+<div id="nc-cr-panel" class="nc-cr-panel hidden">
+  <div class="nc-cr-header">
+    <span class="nc-cr-title">Change Request Markup</span>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <a id="cr-full-page-link" href="#" target="_blank" style="font-size:11px;color:var(--text-dim);text-decoration:none;" title="Open full CR editor">Full Editor</a>
+      <button class="close-btn" onclick="toggleCrMarkupMode()" title="Close">&#x2715;</button>
+    </div>
+  </div>
+  <div class="nc-cr-body">
+    <!-- CR selector -->
+    <div class="cr-select-row">
+      <select id="cr-select" onchange="crSelectChanged()">
+        <option value="">— Select Change Request —</option>
+      </select>
+      <button onclick="crCreateNew()" title="Create new CR">+ New</button>
+    </div>
+
+    <!-- Active CR info -->
+    <div id="cr-active-info" class="hidden" style="margin-bottom:10px;padding:8px;background:var(--bg3);border-radius:6px;font-size:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <strong id="cr-active-title"></strong>
+        <span id="cr-active-status" class="cr-status-badge cr-status-draft"></span>
+      </div>
+      <div id="cr-active-desc" style="color:var(--text-dim);margin-top:4px;font-size:11px;"></div>
+    </div>
+
+    <!-- Action mode selector -->
+    <div id="cr-action-section" class="hidden">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">Click an element on the canvas to mark it:</div>
+      <div class="cr-action-bar">
+        <button class="cr-action-btn cr-add" id="cr-btn-add" onclick="crSetAction('add')" title="Mark element for addition (green)">&#x2795; Add</button>
+        <button class="cr-action-btn cr-remove" id="cr-btn-remove" onclick="crSetAction('remove')" title="Mark element for removal (red)">&#x2796; Remove</button>
+        <button class="cr-action-btn cr-modify" id="cr-btn-modify" onclick="crSetAction('modify')" title="Mark element for modification (yellow)">&#x270f; Modify</button>
+        <button class="cr-action-btn cr-clear" onclick="crSetAction(null)" title="Exit markup selection">&#x2715; Clear</button>
+      </div>
+    </div>
+
+    <!-- Markup items list -->
+    <div id="cr-items-section" class="cr-items-section hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h4>Marked Changes (<span id="cr-items-count">0</span>)</h4>
+      </div>
+      <div id="cr-items-list"></div>
+      <button class="cr-gen-btn" id="cr-gen-btn" onclick="crGenerateDocument()" title="Generate CAB review document with diffs">Generate CAB Document</button>
+    </div>
+
+    <!-- Document preview (inline) -->
+    <div id="cr-doc-preview" class="hidden" style="margin-top:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <h4 style="margin:0;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-dim);">CAB Document Preview</h4>
+        <button style="font-size:11px;padding:2px 8px;border:1px solid var(--border);background:transparent;color:var(--text-dim);border-radius:4px;cursor:pointer;" onclick="crCopyDocument()" title="Copy document markdown">Copy</button>
+      </div>
+      <div id="cr-doc-body" style="font-family:var(--font-mono);font-size:11px;line-height:1.5;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;max-height:300px;overflow-y:auto;white-space:pre-wrap;color:var(--text);"></div>
+    </div>
+  </div>
+  <div class="nc-cr-footer">
+    <span id="cr-footer-status">Select or create a Change Request to begin markup.</span>
+  </div>
+</div>
+
+<!-- Justification dialog (floating, shown when marking an element) -->
+<div id="cr-just-dialog" class="cr-just-dialog hidden" style="top:50%;left:50%;transform:translate(-50%,-50%);">
+  <h4 id="cr-just-title">Mark Element</h4>
+  <div id="cr-just-entity" style="font-size:12px;color:var(--text-dim);margin-bottom:8px;"></div>
+  <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">Justification (optional):</label>
+  <textarea id="cr-just-text" placeholder="Why is this change needed?"></textarea>
+  <div id="cr-just-modify-fields" class="hidden" style="margin-top:8px;">
+    <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:4px;">After-state JSON (proposed changes):</label>
+    <textarea id="cr-just-after" style="height:50px;" placeholder='e.g. {"ip":"10.0.0.2/24","protocol":"BGP"}'></textarea>
+  </div>
+  <div class="cj-actions">
+    <button class="cj-btn" onclick="crJustCancel()">Cancel</button>
+    <button class="cj-btn cj-btn-primary" onclick="crJustConfirm()">Mark</button>
+  </div>
+</div>
+
 <!-- Embedded Chat Panel (slide-out) -->
 <div id="nc-chat-panel" class="nc-chat-panel hidden">
   <div class="nc-chat-header">

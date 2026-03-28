@@ -43,6 +43,7 @@
       {% if not project_phases %}<button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="initPhases()">Initialize Phases</button>{% endif %}
       <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('review-modal').style.display='flex'">+ Submit Review</button>
       <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('roi-modal').style.display='flex'">ROI Calculator</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="runImpactAnalysis()">Impact Analysis</button>
     </div>
   </div>
 
@@ -103,6 +104,9 @@
     {% if safe_bridge.justification %}<div class="roi-item" style="grid-column:span 5;"><span class="roi-label">Justification:</span> {{ safe_bridge.justification[:200] }}</div>{% endif %}
   </div>
   {% endif %}
+
+  <!-- Impact Analysis Results (populated by JS) -->
+  <div id="impact-results" style="display:none;padding:10px 16px;border-top:1px solid var(--border);"></div>
 </section>
 
 <!-- Submit Review Modal -->
@@ -413,6 +417,25 @@ function removeTag(tag){fetch(NC_BASE+`/api/tags/project/${PID}/${encodeURICompo
 function setAssignee(tid){const a=prompt('Assignee name:','');if(a===null)return;
   fetch(NC_BASE+`/api/projects/${PID}/topologies/${tid}/assignee`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignee:a})}).then(()=>location.reload());}
 // P3: Gate check
+// Phase C: Impact Analysis
+function runImpactAnalysis(){
+  const el=document.getElementById('impact-results');el.style.display='block';el.innerHTML='Analyzing...';
+  fetch(NC_BASE+`/api/projects/${PID}/impact`).then(r=>r.json()).then(d=>{
+    if(d.total_affected===0&&d.shared_resources.length===0){
+      el.innerHTML='<div style="color:var(--success);font-size:12px;font-weight:600;">No downstream impact detected. This project has no interconnects or shared resources with other projects.</div>';
+      return;
+    }
+    let html='<div style="font-size:12px;font-weight:600;margin-bottom:8px;">Impact Analysis: '+d.total_affected+' affected project(s) ('+d.direct+' direct, '+d.indirect+' indirect)</div>';
+    d.affected_projects.forEach(a=>{
+      html+=`<div class="impact-item impact-${a.impact}"><span class="health-pill ${a.impact==='direct'?'pill-red':'pill-yellow'}">${a.impact}</span><a href="${NC_BASE}/projects/${a.project_id}">${a.project_name}</a><span style="color:var(--text-dim);">via ${a.via_circuit||'link'} (${a.protocol||'—'}, ${a.bandwidth||'—'})</span></div>`;
+    });
+    if(d.shared_resources.length){
+      html+='<div style="font-size:11px;color:var(--text-dim);margin-top:8px;">Shared resources:</div>';
+      d.shared_resources.forEach(s=>{html+=`<div class="impact-item"><span class="health-pill pill-yellow">${s.type}</span>${s.resource} shared with <a href="${NC_BASE}/projects/${s.project_id}">${s.project_name}</a></div>`;});
+    }
+    el.innerHTML=html;
+  });
+}
 // Phase A: Pipeline
 function initPhases(){fetch(NC_BASE+`/api/projects/${PID}/init-phases`,{method:'POST'}).then(r=>r.json()).then(d=>{if(d.ok)location.reload();else alert(d.error||'Failed');});}
 function submitReview(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);

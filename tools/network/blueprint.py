@@ -3735,6 +3735,235 @@ def create_network_blueprint():
         return render_template("network/global.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Phase C: Impact Analysis + Enterprise Summary
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/projects/<pid>/impact", methods=["GET"])
+    @nc_login_required
+    def nc_api_impact_analysis(pid):
+        """Analyze which projects are affected if this project changes,
+        via interconnect graph traversal."""
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT id, name, status FROM nc_projects WHERE id=?",
+            (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        proj = _row_to_dict(proj)
+
+        # Build interconnect graph (adjacency list)
+        all_ics = conn.execute(
+            "SELECT ic.*, "
+            "sp.name AS src_name, dp.name AS dst_name "
+            "FROM nc_interconnects ic "
+            "LEFT JOIN nc_projects sp ON sp.id=ic.src_project_id "
+            "LEFT JOIN nc_projects dp ON dp.id=ic.dst_project_id"
+        ).fetchall()
+
+        adj = {}  # project_id -> [{peer_id, circuit, protocol, bw}]
+        for ic in all_ics:
+            ic = _row_to_dict(ic)
+            src = ic.get("src_project_id")
+            dst = ic.get("dst_project_id")
+            if src and dst:
+                adj.setdefault(src, []).append({
+                    "peer_id": dst,
+                    "peer_name": ic.get("dst_name", ""),
+                    "circuit_id": ic.get("circuit_id", ""),
+                    "protocol": ic.get("protocol", ""),
+                    "bandwidth": ic.get("bandwidth", ""),
+                    "direction": "outbound",
+                })
+                adj.setdefault(dst, []).append({
+                    "peer_id": src,
+                    "peer_name": ic.get("src_name", ""),
+                    "circuit_id": ic.get("circuit_id", ""),
+                    "protocol": ic.get("protocol", ""),
+                    "bandwidth": ic.get("bandwidth", ""),
+                    "direction": "inbound",
+                })
+
+        # BFS from this project to find all affected
+        visited = {pid}
+        queue = [pid]
+        affected = []
+        depth_map = {pid: 0}
+        while queue:
+            current = queue.pop(0)
+            for link in adj.get(current, []):
+                peer = link["peer_id"]
+                if peer not in visited:
+                    visited.add(peer)
+                    queue.append(peer)
+                    depth_map[peer] = depth_map[current] + 1
+                    affected.append({
+                        "project_id": peer,
+                        "project_name": link["peer_name"],
+                        "via_circuit": link["circuit_id"],
+                        "protocol": link["protocol"],
+                        "bandwidth": link["bandwidth"],
+                        "hop_distance": depth_map[peer],
+                        "impact": "direct" if depth_map[peer] == 1
+                                  else "indirect",
+                    })
+
+        # Shared resources (IPAM/circuits that overlap)
+        topo_ids = [r[0] for r in conn.execute(
+            "SELECT topology_id FROM nc_project_topologies "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()]
+        shared = []
+        if topo_ids:
+            placeholders = ",".join("?" for _ in topo_ids)
+            # IPAM blocks used by this project
+            my_nets = [r[0] for r in conn.execute(
+                f"SELECT DISTINCT network FROM nc_ipam_blocks "  # nosec B608
+                f"WHERE topology_id IN ({placeholders})",
+                topo_ids
+            ).fetchall()]
+            for net in my_nets:
+                others = conn.execute(
+                    "SELECT DISTINCT p.id, p.name "
+                    "FROM nc_ipam_blocks ib "
+                    "JOIN nc_project_topologies pt "
+                    "  ON pt.topology_id=ib.topology_id "
+                    "JOIN nc_projects p ON p.id=pt.project_id "
+                    "WHERE ib.network=? AND p.id!=?",
+                    (net, pid)
+                ).fetchall()
+                for o in others:
+                    shared.append({
+                        "type": "ipam",
+                        "resource": net,
+                        "project_id": o[0],
+                        "project_name": o[1],
+                    })
+
+        conn.close()
+        return jsonify({
+            "project": proj,
+            "affected_projects": affected,
+            "total_affected": len(affected),
+            "direct": sum(1 for a in affected if a["impact"] == "direct"),
+            "indirect": sum(
+                1 for a in affected if a["impact"] == "indirect"
+            ),
+            "shared_resources": shared,
+            "interconnect_count": len(adj.get(pid, [])),
+        })
+
+    @bp.route("/api/enterprise-summary", methods=["GET"])
+    @nc_login_required
+    def nc_api_enterprise_summary():
+        """Aggregate metrics across all projects for executive view."""
+        conn = get_connection()
+        projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name, status, owner, updated_at "
+            "FROM nc_projects ORDER BY updated_at DESC"
+        ).fetchall()]
+
+        total_topos = 0
+        total_devices = 0
+        total_capex = 0
+        total_circuit_cost = 0
+        total_findings = 0
+        total_cat1 = 0
+        comp_passed = comp_failed = 0
+        status_counts = {}
+        board_counts = {"pending": 0, "approved": 0, "rejected": 0}
+
+        for p in projects:
+            pid = p["id"]
+            s = p.get("status", "draft")
+            status_counts[s] = status_counts.get(s, 0) + 1
+
+            topo_ids = [r[0] for r in conn.execute(
+                "SELECT topology_id FROM nc_project_topologies "
+                "WHERE project_id=?", (pid,)
+            ).fetchall()]
+            total_topos += len(topo_ids)
+
+            for tid in topo_ids:
+                row = conn.execute(
+                    "SELECT passed, failed FROM nc_compliance_checks "
+                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,)
+                ).fetchone()
+                if row:
+                    comp_passed += row[0] or 0
+                    comp_failed += row[1] or 0
+                c1 = conn.execute(
+                    "SELECT COUNT(*) FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND status='open' "
+                    "AND severity='CAT1'", (tid,)
+                ).fetchone()
+                total_cat1 += c1[0] if c1 else 0
+                of = conn.execute(
+                    "SELECT COUNT(*) FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND status='open'", (tid,)
+                ).fetchone()
+                total_findings += of[0] if of else 0
+                trow = conn.execute(
+                    "SELECT graph_json FROM topologies WHERE id=?",
+                    (tid,)
+                ).fetchone()
+                if trow:
+                    try:
+                        g = json.loads(trow["graph_json"])
+                    except Exception:
+                        g = {"nodes": []}
+                    for n in g.get("nodes", []):
+                        total_capex += BOM_COSTS.get(
+                            n.get("type", ""), 0)
+                        total_devices += 1
+
+            cost_row = conn.execute(
+                "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
+                "FROM nc_circuits WHERE topology_id IN "
+                "(SELECT topology_id FROM nc_project_topologies "
+                " WHERE project_id=?)", (pid,)
+            ).fetchone()
+            total_circuit_cost += cost_row[0] if cost_row else 0
+
+        # Board review stats
+        for r in conn.execute(
+            "SELECT status, COUNT(*) FROM nc_board_reviews "
+            "GROUP BY status"
+        ).fetchall():
+            board_counts[r[0]] = r[1]
+
+        ic_count = conn.execute(
+            "SELECT COUNT(*) FROM nc_interconnects"
+        ).fetchone()[0]
+
+        comp_total = comp_passed + comp_failed
+        comp_pct = round(
+            comp_passed * 100 / comp_total
+        ) if comp_total else None
+
+        conn.close()
+        return jsonify({
+            "total_projects": len(projects),
+            "status_counts": status_counts,
+            "total_topologies": total_topos,
+            "total_devices": total_devices,
+            "total_capex": total_capex,
+            "total_circuit_cost_monthly": total_circuit_cost,
+            "compliance_pct": comp_pct,
+            "total_open_findings": total_findings,
+            "total_cat1": total_cat1,
+            "board_reviews": board_counts,
+            "total_interconnects": ic_count,
+        })
+
+    @bp.route("/enterprise")
+    @nc_login_required
+    def nc_enterprise_dashboard():
+        return render_template("network/enterprise.html")
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: CSP Groups
     # ══════════════════════════════════════════════════════════════════════
 

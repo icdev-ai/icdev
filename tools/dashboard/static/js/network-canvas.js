@@ -12,6 +12,15 @@ let redoStack = [];
 let saveTimer = null;
 let isDirty = false;
 
+/* ── CR Markup Mode State ─────────────────────────────────────────────────── */
+let _crModeActive = false;
+let _crActiveId = null;       // current CR id
+let _crActiveStatus = null;   // current CR status
+let _crAction = null;         // 'add' | 'remove' | 'modify' | null
+let _crItems = [];            // loaded markup items
+let _crOverlays = {};         // entity_id -> action_type (for visual overlay)
+let _crJustTarget = null;     // {cell, entityId, entityType, entityLabel, data}
+
 /* ── Node type → display config ─────────────────────────────────────────────── */
 const NODE_STYLES = {
   // Physical
@@ -553,9 +562,15 @@ function initCanvas() {
     }
   });
 
-  // Selection
-  paper.on('element:pointerclick', (view) => selectCell(view.model));
-  paper.on('link:pointerclick', (view) => selectCell(view.model));
+  // Selection (CR markup mode intercepts clicks when active)
+  paper.on('element:pointerclick', (view) => {
+    if (_crHandleElementClick(view.model)) return;
+    selectCell(view.model);
+  });
+  paper.on('link:pointerclick', (view) => {
+    if (_crHandleLinkClick(view.model)) return;
+    selectCell(view.model);
+  });
   paper.on('blank:pointerclick', () => { if (!_isPanning) { deselectAll(); hideBlastContextMenu(); } });
 
   // Right-click on device → blast radius context menu
@@ -600,6 +615,10 @@ function initCanvas() {
     if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveTopology(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undoAction(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redoAction(); }
+    if (e.key === 'Escape' && !document.getElementById('cr-just-dialog').classList.contains('hidden')) {
+      crJustCancel();
+      return;
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (selectedCell && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
         deleteSelected();
@@ -2561,4 +2580,416 @@ function clearStigOverlay() {
   graph.getElements().forEach(cell => _restoreNodeColor(cell));
   _stigOverlayApplied = false;
   setStatus('STIG overlay cleared.');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CR Markup Mode — Visual overlay on canvas for Change Request markup
+   Engineers mark elements as add (green), remove (red), modify (yellow).
+   Integrates with the CR API in blueprint.py.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const NC_BASE = '/network';
+const CR_COLORS = { add: '#27ae60', remove: '#e74c3c', modify: '#f39c12' };
+
+/** Toggle the CR Markup Mode panel and mode. */
+function toggleCrMarkupMode() {
+  const panel = document.getElementById('nc-cr-panel');
+  const btn = document.getElementById('tb-cr-btn');
+  _crModeActive = !_crModeActive;
+  if (_crModeActive) {
+    panel.classList.remove('hidden');
+    btn.classList.add('tb-btn-cr-active');
+    // Close other slide panels to avoid overlap
+    document.getElementById('nc-chat-panel').classList.add('hidden');
+    if (document.getElementById('netbox-panel')) document.getElementById('netbox-panel').classList.add('hidden');
+    if (document.getElementById('ai-review-panel')) document.getElementById('ai-review-panel').classList.add('hidden');
+    // Set full-page link
+    const link = document.getElementById('cr-full-page-link');
+    if (link && currentTopoId) link.href = NC_BASE + '/change-request/' + currentTopoId;
+    // Load CRs for this topology
+    _crLoadList();
+    setStatus('CR Markup Mode active — select a CR and click elements to mark changes.');
+  } else {
+    panel.classList.add('hidden');
+    btn.classList.remove('tb-btn-cr-active');
+    _crAction = null;
+    _crClearAllOverlays();
+    _crUpdateActionButtons();
+    setStatus('CR Markup Mode deactivated.');
+  }
+}
+
+/** Load list of CRs for this topology into the dropdown. */
+async function _crLoadList() {
+  if (!currentTopoId || currentTopoId === 'new') return;
+  try {
+    const resp = await fetch(NC_BASE + '/api/change-request/' + currentTopoId + '/list');
+    const data = await resp.json();
+    const sel = document.getElementById('cr-select');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— Select Change Request —</option>';
+    (data.change_requests || []).forEach(cr => {
+      const opt = document.createElement('option');
+      opt.value = cr.id;
+      opt.textContent = cr.title + ' (' + cr.status + ')';
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+  } catch (e) {
+    console.error('Failed to load CRs:', e);
+  }
+}
+
+/** When CR dropdown changes. */
+function crSelectChanged() {
+  const crId = document.getElementById('cr-select').value;
+  if (!crId) {
+    _crActiveId = null;
+    _crActiveStatus = null;
+    _crItems = [];
+    _crOverlays = {};
+    document.getElementById('cr-active-info').classList.add('hidden');
+    document.getElementById('cr-action-section').classList.add('hidden');
+    document.getElementById('cr-items-section').classList.add('hidden');
+    document.getElementById('cr-doc-preview').classList.add('hidden');
+    _crClearAllOverlays();
+    document.getElementById('cr-footer-status').textContent = 'Select or create a Change Request to begin markup.';
+    return;
+  }
+  _crActiveId = crId;
+  _crLoadCrDetails(crId);
+}
+
+/** Load CR details and items. */
+async function _crLoadCrDetails(crId) {
+  try {
+    // Load items
+    const resp = await fetch(NC_BASE + '/api/change-request/' + crId + '/items');
+    const data = await resp.json();
+    _crItems = data.items || [];
+
+    // Extract status from the select label
+    const sel = document.getElementById('cr-select');
+    const opt = sel.querySelector('option[value="' + crId + '"]');
+    const statusMatch = opt ? opt.textContent.match(/\((\w+)\)/) : null;
+    _crActiveStatus = statusMatch ? statusMatch[1] : 'draft';
+
+    // Show active CR info
+    const title = opt ? opt.textContent.replace(/\s*\(\w+\)$/, '') : crId;
+    document.getElementById('cr-active-title').textContent = title;
+    const statusBadge = document.getElementById('cr-active-status');
+    statusBadge.textContent = _crActiveStatus;
+    statusBadge.className = 'cr-status-badge cr-status-' + _crActiveStatus;
+    document.getElementById('cr-active-info').classList.remove('hidden');
+
+    // Show action section only for draft CRs
+    if (_crActiveStatus === 'draft') {
+      document.getElementById('cr-action-section').classList.remove('hidden');
+    } else {
+      document.getElementById('cr-action-section').classList.add('hidden');
+      _crAction = null;
+      _crUpdateActionButtons();
+    }
+
+    // Show items
+    document.getElementById('cr-items-section').classList.remove('hidden');
+    _crRenderItems();
+    _crApplyAllOverlays();
+
+    document.getElementById('cr-footer-status').textContent =
+      _crActiveStatus === 'draft'
+        ? 'Pick an action, then click elements on the canvas.'
+        : 'CR is ' + _crActiveStatus + ' — read-only view.';
+  } catch (e) {
+    console.error('Failed to load CR details:', e);
+  }
+}
+
+/** Create a new CR via prompt. */
+async function crCreateNew() {
+  if (!currentTopoId || currentTopoId === 'new') {
+    alert('Save the topology first before creating a Change Request.');
+    return;
+  }
+  const title = prompt('Change Request title:', '');
+  if (!title) return;
+  const desc = prompt('Description (optional):', '');
+  try {
+    const resp = await fetch(NC_BASE + '/api/change-request/' + currentTopoId + '/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description: desc || '' }),
+    });
+    const data = await resp.json();
+    if (data.id) {
+      await _crLoadList();
+      document.getElementById('cr-select').value = data.id;
+      crSelectChanged();
+      setStatus('Change Request created: ' + title);
+    } else {
+      alert('Failed to create CR: ' + (data.error || 'unknown'));
+    }
+  } catch (e) {
+    console.error('Failed to create CR:', e);
+    alert('Failed to create CR: ' + e.message);
+  }
+}
+
+/** Set the active markup action (add/remove/modify/null). */
+function crSetAction(action) {
+  _crAction = action;
+  _crUpdateActionButtons();
+  if (action) {
+    setStatus('CR Markup: click a ' + (action === 'add' ? 'canvas element' : 'canvas element') + ' to mark as ' + action.toUpperCase() + '.');
+  } else {
+    setStatus('CR Markup Mode — no action selected.');
+  }
+}
+
+/** Update active state of action buttons. */
+function _crUpdateActionButtons() {
+  ['add', 'remove', 'modify'].forEach(a => {
+    const btn = document.getElementById('cr-btn-' + a);
+    if (btn) btn.classList.toggle('active', _crAction === a);
+  });
+}
+
+/** Handle element click in CR Markup Mode. Called from the pointerclick handler. */
+function _crHandleElementClick(cell) {
+  if (!_crModeActive || !_crActiveId || !_crAction || _crActiveStatus !== 'draft') return false;
+
+  const entityId = cell.id;
+  const entityType = cell.isElement() ? 'node' : 'edge';
+  const entityLabel = cell.isElement()
+    ? (cell.attr('label/text') || cell.get('nodeType') || entityId)
+    : ('Link ' + entityId.substring(0, 8));
+
+  // Gather element data for before_json
+  const data = {};
+  if (cell.isElement()) {
+    data.type = cell.get('nodeType') || '';
+    data.label = cell.attr('label/text') || '';
+    const config = cell.get('configData') || {};
+    Object.assign(data, config);
+  } else {
+    // Edge
+    const src = cell.get('source');
+    const tgt = cell.get('target');
+    if (src && src.id) data.source_id = src.id;
+    if (tgt && tgt.id) data.target_id = tgt.id;
+    const labels = cell.labels();
+    if (labels && labels.length) data.label = labels[0]?.attrs?.text?.text || '';
+  }
+
+  _crJustTarget = { cell, entityId, entityType, entityLabel, data };
+
+  // Show justification dialog
+  const dlg = document.getElementById('cr-just-dialog');
+  const actionLabel = { add: 'Add', remove: 'Remove', modify: 'Modify' }[_crAction];
+  const color = CR_COLORS[_crAction];
+  document.getElementById('cr-just-title').innerHTML =
+    '<span style="color:' + color + '">' + actionLabel + '</span> — ' + _escHtml(entityLabel);
+  document.getElementById('cr-just-entity').textContent =
+    entityType + ' | ' + entityId.substring(0, 12);
+  document.getElementById('cr-just-text').value = '';
+
+  // Show after-state field for modify
+  const modFields = document.getElementById('cr-just-modify-fields');
+  if (_crAction === 'modify') {
+    modFields.classList.remove('hidden');
+    document.getElementById('cr-just-after').value = '';
+  } else {
+    modFields.classList.add('hidden');
+  }
+
+  dlg.classList.remove('hidden');
+  document.getElementById('cr-just-text').focus();
+  return true; // consumed the click
+}
+
+/** Handle link click in CR Markup Mode. */
+function _crHandleLinkClick(cell) {
+  return _crHandleElementClick(cell);
+}
+
+/** Cancel justification dialog. */
+function crJustCancel() {
+  document.getElementById('cr-just-dialog').classList.add('hidden');
+  _crJustTarget = null;
+}
+
+/** Confirm justification and save markup item. */
+async function crJustConfirm() {
+  if (!_crJustTarget || !_crActiveId) return;
+  const { entityId, entityType, entityLabel, data } = _crJustTarget;
+  const justification = document.getElementById('cr-just-text').value.trim();
+
+  const payload = {
+    action_type: _crAction,
+    entity_id: entityId,
+    entity_type: entityType,
+    entity_label: entityLabel,
+    justification,
+    before_json: JSON.stringify(data),
+  };
+
+  if (_crAction === 'modify') {
+    const afterRaw = document.getElementById('cr-just-after').value.trim();
+    if (afterRaw) {
+      try {
+        JSON.parse(afterRaw); // validate
+        payload.after_json = afterRaw;
+      } catch {
+        alert('After-state JSON is invalid. Please enter valid JSON.');
+        return;
+      }
+    } else {
+      // Merge before as the basis for after
+      payload.after_json = JSON.stringify(data);
+    }
+  } else if (_crAction === 'add') {
+    payload.after_json = JSON.stringify(data);
+    payload.before_json = '{}';
+  }
+
+  document.getElementById('cr-just-dialog').classList.add('hidden');
+
+  try {
+    const resp = await fetch(NC_BASE + '/api/change-request/' + _crActiveId + '/markup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await resp.json();
+    if (result.id) {
+      // Refresh items
+      await _crLoadCrDetails(_crActiveId);
+      setStatus('Marked ' + entityLabel + ' as ' + _crAction.toUpperCase() + '.');
+    } else {
+      alert('Failed to save markup: ' + (result.error || 'unknown'));
+    }
+  } catch (e) {
+    console.error('Failed to save markup item:', e);
+    alert('Failed to save markup: ' + e.message);
+  }
+  _crJustTarget = null;
+}
+
+/** Render the markup items list in the panel. */
+function _crRenderItems() {
+  const container = document.getElementById('cr-items-list');
+  document.getElementById('cr-items-count').textContent = _crItems.length;
+
+  if (_crItems.length === 0) {
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px;">No changes marked yet.</div>';
+    return;
+  }
+
+  container.innerHTML = _crItems.map(item => {
+    const action = item.action_type || 'modify';
+    const label = _escHtml(item.entity_label || item.entity_id || '');
+    const just = item.justification ? '<div class="mc-just">' + _escHtml(item.justification) + '</div>' : '';
+    const canDelete = _crActiveStatus === 'draft';
+    const delBtn = canDelete
+      ? '<button class="mc-delete" onclick="crDeleteItem(\'' + item.id + '\')" title="Remove markup">&#x2715;</button>'
+      : '';
+    return '<div class="cr-markup-card mc-' + action + '">'
+      + delBtn
+      + '<span class="mc-label">' + label + '</span>'
+      + '<span class="mc-badge mc-badge-' + action + '">' + action + '</span>'
+      + just
+      + '</div>';
+  }).join('');
+}
+
+/** Delete a markup item. */
+async function crDeleteItem(itemId) {
+  if (!confirm('Remove this markup item?')) return;
+  try {
+    await fetch(NC_BASE + '/api/change-request/item/' + itemId, { method: 'DELETE' });
+    await _crLoadCrDetails(_crActiveId);
+    setStatus('Markup item removed.');
+  } catch (e) {
+    console.error('Failed to delete markup item:', e);
+  }
+}
+
+/** Generate the CAB review document. */
+async function crGenerateDocument() {
+  if (!_crActiveId) return;
+  const btn = document.getElementById('cr-gen-btn');
+  btn.disabled = true;
+  btn.textContent = 'Generating...';
+  try {
+    const resp = await fetch(NC_BASE + '/api/change-request/' + _crActiveId + '/generate', {
+      method: 'POST',
+    });
+    const doc = await resp.json();
+    if (doc.markdown) {
+      document.getElementById('cr-doc-body').textContent = doc.markdown;
+      document.getElementById('cr-doc-preview').classList.remove('hidden');
+      setStatus('CAB document generated — ' + (doc.summary?.total || 0) + ' change(s).');
+    } else {
+      alert('Failed to generate document: ' + (doc.error || 'unknown'));
+    }
+  } catch (e) {
+    console.error('Failed to generate document:', e);
+    alert('Failed to generate document: ' + e.message);
+  }
+  btn.disabled = false;
+  btn.textContent = 'Generate CAB Document';
+}
+
+/** Copy generated document markdown to clipboard. */
+function crCopyDocument() {
+  const body = document.getElementById('cr-doc-body').textContent;
+  navigator.clipboard.writeText(body).then(() => {
+    setStatus('CAB document copied to clipboard.');
+  }).catch(() => {
+    // Fallback
+    const ta = document.createElement('textarea');
+    ta.value = body;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    setStatus('CAB document copied to clipboard.');
+  });
+}
+
+/** Apply visual overlays (colored glow) to all marked elements on the canvas. */
+function _crApplyAllOverlays() {
+  _crClearAllOverlays();
+  _crOverlays = {};
+  _crItems.forEach(item => {
+    _crOverlays[item.entity_id] = item.action_type;
+  });
+  // Apply glow to matching cells
+  graph.getCells().forEach(cell => {
+    const action = _crOverlays[cell.id];
+    if (action) {
+      const view = paper.findViewByModel(cell);
+      if (view) {
+        view.el.classList.add('cr-overlay-' + action);
+      }
+    }
+  });
+}
+
+/** Clear all CR visual overlays from the canvas. */
+function _crClearAllOverlays() {
+  graph.getCells().forEach(cell => {
+    const view = paper.findViewByModel(cell);
+    if (view) {
+      view.el.classList.remove('cr-overlay-add', 'cr-overlay-remove', 'cr-overlay-modify');
+    }
+  });
+  _crOverlays = {};
+}
+
+/** Escape HTML entities. */
+function _escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
