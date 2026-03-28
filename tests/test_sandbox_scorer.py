@@ -6,10 +6,25 @@ import json
 import sqlite3
 import subprocess
 import sys
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from tools.registry.sandbox_scorer import score_sandbox, RUBRIC, GATE_THRESHOLD
+
+
+@pytest.fixture(autouse=True)
+def mock_sandbox_executor():
+    """Mock SandboxExecutor to avoid Docker calls in unit tests.
+
+    sandbox_scorer._check_runtime_isolation calls SandboxExecutor().health_check()
+    which probes Docker. This mock prevents slow/hanging Docker operations.
+    """
+    mock_executor = MagicMock()
+    mock_executor._available = True
+    mock_executor.health_check.return_value = {"docker_available": True}
+    with patch("tools.registry.sandbox_scorer.SandboxExecutor", return_value=mock_executor):
+        yield
 
 
 @pytest.fixture
