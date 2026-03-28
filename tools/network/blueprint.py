@@ -1230,11 +1230,18 @@ def create_network_blueprint():
         conn = get_connection()
         # Delete child tables first (FK constraints require this order)
         child_tables = [
-            "simulation_results", "nc_objects", "nc_circuits", "nc_cables",
-            "nc_cross_connects", "nc_versions", "nc_compliance_findings",
-            "nc_compliance_checks", "nc_compliance_profiles",
-            "nc_ipam_blocks", "nc_project_topologies", "nc_groups",
+            "nc_intent_validations", "nc_intent_policies",
+            "nc_change_request_items", "nc_change_requests",
+            "nc_stig_imports", "nc_ato_packages",
+            "nc_boundaries", "nc_netbox_objects", "nc_netbox_sync_log",
+            "nc_discovery_diffs", "nc_discovery_scans",
             "nc_mc_runs", "nc_mc_scenarios",
+            "simulation_results", "nc_objects",
+            "nc_circuits", "nc_cables", "nc_cross_connects",
+            "nc_versions", "nc_compliance_findings",
+            "nc_compliance_checks", "nc_compliance_profiles",
+            "nc_ipam_blocks", "nc_project_topologies",
+            "nc_groups", "nc_interconnects",
         ]
         for tbl in child_tables:
             conn.execute(f"DELETE FROM {tbl}")  # nosec B608 -- table/column names are internal constants, not user input
