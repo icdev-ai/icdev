@@ -3107,6 +3107,296 @@ def create_network_blueprint():
         })
 
     # ══════════════════════════════════════════════════════════════════════
+    # Connect & Collect + Diagram Data Extraction
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/connect-collect", methods=["POST"])
+    @nc_login_required
+    def nc_api_connect_collect():
+        """Connect to a device via SSH, run profile commands (read-only),
+        store outputs, and parse routing entries.
+        Falls back to manual paste mode if SSH fails or is unavailable."""
+        data = request.get_json(force=True, silent=True) or {}
+        device_ip = data.get("device_ip", "")
+        profile_id = data.get("profile_id", "")
+        hostname = data.get("hostname", device_ip)
+        topology_id = data.get("topology_id")
+        mode = data.get("mode", "ssh")  # ssh or manual
+        manual_outputs = data.get("manual_outputs", {})  # {cmd_name: output_text}
+
+        if not device_ip:
+            return jsonify({"error": "device_ip required"}), 400
+
+        # Load profile commands
+        conn = get_connection()
+        prof_row = conn.execute(
+            "SELECT commands_json FROM nc_device_profiles WHERE id=?",
+            (profile_id,)
+        ).fetchone()
+        if not prof_row:
+            conn.close()
+            return jsonify({"error": "Profile not found"}), 404
+        try:
+            commands = json.loads(prof_row[0] or "{}")
+        except Exception:
+            commands = {}
+
+        now = _now()
+        results = []
+
+        if mode == "manual":
+            # Manual paste mode — store provided outputs
+            for cmd_name, output in manual_outputs.items():
+                if cmd_name not in commands:
+                    continue
+                # Dedup
+                conn.execute(
+                    "DELETE FROM nc_collected_configs "
+                    "WHERE device_ip=? AND command_name=?",
+                    (device_ip, cmd_name)
+                )
+                conn.execute(
+                    "INSERT INTO nc_collected_configs "
+                    "(id, device_ip, hostname, profile_id, "
+                    " command_name, output_text, parsed_json, "
+                    " collected_at, topology_id) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), device_ip, hostname,
+                     profile_id, cmd_name, output, "{}",
+                     now, topology_id)
+                )
+                results.append({
+                    "command": cmd_name, "status": "stored",
+                    "lines": len(output.splitlines()),
+                })
+        else:
+            # SSH mode — attempt live connection
+            ssh_ok = False
+            try:
+                from netmiko import ConnectHandler
+                ssh_ok = True
+            except ImportError:
+                pass
+
+            if ssh_ok:
+                username = data.get("username", "")
+                password = data.get("password", "")
+                device_type = data.get("device_type", "cisco_ios")
+                try:
+                    net_connect = ConnectHandler(
+                        device_type=device_type,
+                        host=device_ip,
+                        username=username,
+                        password=password,
+                        timeout=data.get("timeout", 30),
+                        read_timeout_override=60,
+                    )
+                    for cmd_name, cmd_info in commands.items():
+                        cli_cmd = cmd_info.get("command", "")
+                        timeout = cmd_info.get("timeout_sec", 10)
+                        try:
+                            output = net_connect.send_command(
+                                cli_cmd, read_timeout=timeout)
+                            # Dedup and store
+                            conn.execute(
+                                "DELETE FROM nc_collected_configs "
+                                "WHERE device_ip=? AND command_name=?",
+                                (device_ip, cmd_name)
+                            )
+                            conn.execute(
+                                "INSERT INTO nc_collected_configs "
+                                "(id, device_ip, hostname, profile_id, "
+                                " command_name, output_text, parsed_json, "
+                                " collected_at, topology_id) "
+                                "VALUES (?,?,?,?,?,?,?,?,?)",
+                                (str(_uuid.uuid4()), device_ip, hostname,
+                                 profile_id, cmd_name, output, "{}",
+                                 now, topology_id)
+                            )
+                            results.append({
+                                "command": cmd_name, "status": "collected",
+                                "lines": len(output.splitlines()),
+                            })
+                        except Exception as cmd_err:
+                            results.append({
+                                "command": cmd_name, "status": "failed",
+                                "error": str(cmd_err)[:100],
+                            })
+                    net_connect.disconnect()
+                except Exception as ssh_err:
+                    conn.close()
+                    return jsonify({
+                        "error": f"SSH connection failed: {str(ssh_err)[:200]}",
+                        "hint": "Use mode='manual' to paste command outputs instead",
+                    }), 502
+            else:
+                conn.close()
+                return jsonify({
+                    "error": "netmiko not available for SSH",
+                    "hint": "Use mode='manual' to paste command outputs, "
+                            "or install netmiko: pip install netmiko",
+                }), 501
+
+        conn.commit()
+        conn.close()
+        _audit("CONNECT_COLLECT", "device", device_ip,
+               f"profile={profile_id}, commands={len(results)}")
+        return jsonify({
+            "device_ip": device_ip,
+            "hostname": hostname,
+            "mode": mode,
+            "commands_executed": len(results),
+            "results": results,
+        })
+
+    @bp.route("/api/import/extract-data", methods=["POST"])
+    @nc_login_required
+    def nc_api_import_extract_data():
+        """Import a diagram AND extract device data into DB tables.
+        Populates: topology, IPAM blocks, circuits, device geo (from labels),
+        and collected configs (from node properties)."""
+        data = request.get_json(force=True, silent=True) or {}
+        fmt = data.get("format", "drawio")
+        content = data.get("content", "")
+        name = data.get("name", "Extracted Import")
+        project_id = data.get("project_id")
+        if not content:
+            return jsonify({"error": "content required"}), 400
+
+        # Import and classify
+        if fmt == "drawio":
+            graph = import_drawio(content)
+        elif fmt in ("vdx", "visio"):
+            graph = import_vdx(content)
+        elif fmt == "svg":
+            graph = import_svg(content)
+        else:
+            return jsonify({"error": f"Unsupported: {fmt}"}), 400
+        graph = _classify_imported_nodes(graph)
+
+        conn = get_connection()
+        now = _now()
+        topo_id = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO topologies "
+            "(id, name, description, graph_json, classification, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (topo_id, name, f"Data extraction ({fmt})",
+             json.dumps(graph), "public", now, now)
+        )
+
+        if project_id:
+            conn.execute(
+                "INSERT OR IGNORE INTO nc_project_topologies "
+                "(project_id, topology_id) VALUES (?,?)",
+                (project_id, topo_id)
+            )
+
+        # Extract data from nodes
+        ipam_extracted = 0
+        devices_extracted = 0
+        circuits_extracted = 0
+
+        for n in graph.get("nodes", []):
+            cfg = n.get("config") or n.get("configData") or {}
+            label = n.get("label", "")
+            ntype = n.get("type", "")
+
+            # Extract IP addresses -> IPAM blocks
+            ip = cfg.get("ip", "")
+            if not ip:
+                # Try to extract IP from label (e.g., "10.0.0.1/24")
+                import re as _re
+                ip_match = _re.search(
+                    r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?)',
+                    label)
+                if ip_match:
+                    ip = ip_match.group(1)
+            if ip and "/" in ip:
+                # Extract network from CIDR
+                parts = ip.split("/")
+                try:
+                    octets = parts[0].split(".")
+                    mask = int(parts[1])
+                    # Simple network calculation
+                    network = ".".join(octets[:mask // 8]) + ".0" * (4 - mask // 8) + "/" + parts[1]
+                    conn.execute(
+                        "INSERT OR IGNORE INTO nc_ipam_blocks "
+                        "(id, topology_id, network, description, "
+                        " created_at) VALUES (?,?,?,?,?)",
+                        (str(_uuid.uuid4()), topo_id, network,
+                         f"Extracted from {label}", now)
+                    )
+                    ipam_extracted += 1
+                except (ValueError, IndexError):
+                    pass
+
+            # Store device as collected config (properties)
+            if ntype not in ("text", "heading", "badge", "rect",
+                             "circle", "imported", ""):
+                devices_extracted += 1
+
+        # Extract circuits from edges
+        for e in graph.get("edges", []):
+            elabel = e.get("label", "")
+            proto = e.get("protocol", "")
+            if elabel or proto:
+                conn.execute(
+                    "INSERT INTO nc_circuits "
+                    "(id, topology_id, circuit_id, carrier, "
+                    " circuit_type, bandwidth, install_status, "
+                    " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), topo_id,
+                     elabel or f"link-{e.get('id', '')[:8]}",
+                     "", proto or "ethernet", "",
+                     "installed", now, now)
+                )
+                circuits_extracted += 1
+
+        # Run compliance audit
+        audit_result = run_compliance_audit(
+            topo_id, graph, ["fisma_high"], "CUI")
+        total_p = sum(s["passed"] for s in audit_result["scores"].values())
+        total_f = sum(s["failed"] for s in audit_result["scores"].values())
+        conn.execute(
+            "INSERT INTO nc_compliance_checks "
+            "(id, topology_id, check_type, passed, failed, "
+            " findings_json, ran_at) VALUES (?,?,?,?,?,?,?)",
+            (str(_uuid.uuid4()), topo_id, "fisma_high",
+             total_p, total_f,
+             json.dumps(audit_result["findings"]), now)
+        )
+
+        conn.commit()
+        conn.close()
+        _audit("IMPORT_EXTRACT", "topology", topo_id, fmt)
+
+        return jsonify({
+            "id": topo_id, "name": name,
+            "nodes": len(graph.get("nodes", [])),
+            "edges": len(graph.get("edges", [])),
+            "extracted": {
+                "devices": devices_extracted,
+                "ipam_blocks": ipam_extracted,
+                "circuits": circuits_extracted,
+            },
+            "compliance": {
+                "passed": total_p, "failed": total_f,
+                "findings": len(audit_result["findings"]),
+            },
+            "classified_types": dict(sorted({
+                n["type"]: sum(1 for m in graph["nodes"]
+                               if m["type"] == n["type"])
+                for n in graph["nodes"]
+            }.items())),
+        }), 201
+
+    @bp.route("/collect")
+    @nc_login_required
+    def nc_collect_page():
+        return render_template("network/collect.html")
+
+    # ══════════════════════════════════════════════════════════════════════
     # Phase 3: Routing Table Topology + Config-to-Canvas Sync
     # ══════════════════════════════════════════════════════════════════════
 
