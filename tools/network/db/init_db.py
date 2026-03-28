@@ -597,6 +597,22 @@ CREATE TABLE IF NOT EXISTS nc_project_phases (
     completed_at TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Phase B: Global Connectivity (Interconnects) ──────────────────────────
+CREATE TABLE IF NOT EXISTS nc_interconnects (
+    id              TEXT PRIMARY KEY,
+    src_project_id  TEXT REFERENCES nc_projects(id),
+    src_topology_id TEXT REFERENCES topologies(id),
+    src_node_id     TEXT,
+    dst_project_id  TEXT REFERENCES nc_projects(id),
+    dst_topology_id TEXT REFERENCES topologies(id),
+    dst_node_id     TEXT,
+    circuit_id      TEXT,
+    protocol        TEXT,
+    bandwidth       TEXT,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

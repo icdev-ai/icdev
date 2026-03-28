@@ -3468,6 +3468,273 @@ def create_network_blueprint():
         return jsonify({"ok": True, "phases": 4}), 201
 
     # ══════════════════════════════════════════════════════════════════════
+    # Phase B: Presentation Generator + Global Connectivity + Conflicts
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/projects/<pid>/presentation", methods=["GET"])
+    @nc_login_required
+    def nc_api_presentation(pid):
+        """Auto-generate a structured business case / review presentation."""
+        conn = get_connection()
+        package = _build_review_package(conn, pid)
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        proj = _row_to_dict(proj) if proj else {}
+        # Topology details
+        topo_rows = conn.execute(
+            "SELECT t.id, t.name, t.classification, "
+            "json_array_length(json_extract(t.graph_json,'$.nodes')) "
+            "  AS node_count, "
+            "json_array_length(json_extract(t.graph_json,'$.edges')) "
+            "  AS edge_count "
+            "FROM topologies t "
+            "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+            "WHERE pt.project_id=?", (pid,)
+        ).fetchall()
+        topos = [_row_to_dict(r) for r in topo_rows]
+        # Milestones
+        milestones = [_row_to_dict(r) for r in conn.execute(
+            "SELECT title, due_date, status "
+            "FROM nc_project_milestones WHERE project_id=? "
+            "ORDER BY due_date", (pid,)
+        ).fetchall()]
+        # Review history
+        reviews = [_row_to_dict(r) for r in conn.execute(
+            "SELECT br.phase, br.status, br.decision, "
+            "br.decision_notes, rb.short_name AS board "
+            "FROM nc_board_reviews br "
+            "JOIN nc_review_boards rb ON rb.id=br.board_id "
+            "WHERE br.project_id=? ORDER BY rb.sort_order", (pid,)
+        ).fetchall()]
+        # Circuit details
+        circuits = [_row_to_dict(r) for r in conn.execute(
+            "SELECT circuit_id, carrier, circuit_type, bandwidth, "
+            "monthly_cost_usd, install_status "
+            "FROM nc_circuits WHERE topology_id IN "
+            "(SELECT topology_id FROM nc_project_topologies "
+            " WHERE project_id=?) ORDER BY circuit_id", (pid,)
+        ).fetchall()]
+        conn.close()
+        presentation = {
+            "title": proj.get("name", ""),
+            "owner": proj.get("owner", ""),
+            "status": proj.get("status", ""),
+            "description": proj.get("description", ""),
+            "executive_summary": package,
+            "topologies": topos,
+            "circuits": circuits,
+            "milestones": milestones,
+            "review_history": reviews,
+            "generated_at": _now(),
+        }
+        return jsonify(presentation)
+
+    @bp.route("/projects/<pid>/presentation")
+    @nc_login_required
+    def nc_project_presentation(pid):
+        """Render presentation view page."""
+        conn = get_connection()
+        proj = conn.execute(
+            "SELECT * FROM nc_projects WHERE id=?", (pid,)
+        ).fetchone()
+        if not proj:
+            conn.close()
+            abort(404)
+        conn.close()
+        return render_template("network/presentation.html",
+                               project=_row_to_dict(proj))
+
+    # ── Global Connectivity (Interconnects) ───────────────────────────────
+    @bp.route("/api/interconnects", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_interconnects():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT ic.*, "
+            "sp.name AS src_project_name, "
+            "dp.name AS dst_project_name, "
+            "st.name AS src_topology_name, "
+            "dt.name AS dst_topology_name "
+            "FROM nc_interconnects ic "
+            "LEFT JOIN nc_projects sp ON sp.id=ic.src_project_id "
+            "LEFT JOIN nc_projects dp ON dp.id=ic.dst_project_id "
+            "LEFT JOIN topologies st ON st.id=ic.src_topology_id "
+            "LEFT JOIN topologies dt ON dt.id=ic.dst_topology_id "
+            "ORDER BY ic.created_at"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/interconnects", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_interconnect():
+        data = request.get_json(force=True, silent=True) or {}
+        iid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_interconnects "
+            "(id, src_project_id, src_topology_id, src_node_id, "
+            " dst_project_id, dst_topology_id, dst_node_id, "
+            " circuit_id, protocol, bandwidth, notes, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (iid, data.get("src_project_id"),
+             data.get("src_topology_id"), data.get("src_node_id"),
+             data.get("dst_project_id"),
+             data.get("dst_topology_id"), data.get("dst_node_id"),
+             data.get("circuit_id"), data.get("protocol"),
+             data.get("bandwidth"), data.get("notes"), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "interconnect", iid)
+        return jsonify({"id": iid}), 201
+
+    @bp.route("/api/interconnects/<iid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_interconnect(iid):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_interconnects WHERE id=?", (iid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/global-topology", methods=["GET"])
+    @nc_login_required
+    def nc_api_global_topology():
+        """Composite topology: all deployed/approved project topologies
+        + interconnect links."""
+        conn = get_connection()
+        # Get all approved/deployed project topologies
+        rows = conn.execute(
+            "SELECT t.id, t.name, t.graph_json, p.id AS project_id, "
+            "p.name AS project_name, p.status AS project_status "
+            "FROM topologies t "
+            "JOIN nc_project_topologies pt ON pt.topology_id=t.id "
+            "JOIN nc_projects p ON p.id=pt.project_id "
+            "WHERE p.status IN ('approved','deployed') "
+            "ORDER BY p.name, t.name"
+        ).fetchall()
+        projects = {}
+        for r in rows:
+            r = _row_to_dict(r)
+            pid = r["project_id"]
+            if pid not in projects:
+                projects[pid] = {
+                    "id": pid,
+                    "name": r["project_name"],
+                    "status": r["project_status"],
+                    "topologies": [],
+                }
+            try:
+                graph = json.loads(r.get("graph_json") or "{}")
+            except Exception:
+                graph = {"nodes": [], "edges": []}
+            projects[pid]["topologies"].append({
+                "id": r["id"], "name": r["name"],
+                "node_count": len(graph.get("nodes", [])),
+                "edge_count": len(graph.get("edges", [])),
+            })
+        # Interconnects
+        interconnects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT ic.*, "
+            "sp.name AS src_project_name, "
+            "dp.name AS dst_project_name "
+            "FROM nc_interconnects ic "
+            "LEFT JOIN nc_projects sp ON sp.id=ic.src_project_id "
+            "LEFT JOIN nc_projects dp ON dp.id=ic.dst_project_id"
+        ).fetchall()]
+        conn.close()
+        return jsonify({
+            "projects": list(projects.values()),
+            "interconnects": interconnects,
+            "total_projects": len(projects),
+            "total_interconnects": len(interconnects),
+        })
+
+    # ── Conflict Detection ────────────────────────────────────────────────
+    @bp.route("/api/conflicts", methods=["GET"])
+    @nc_login_required
+    def nc_api_detect_conflicts():
+        """Detect IPAM overlaps, duplicate circuits, and protocol
+        mismatches across all projects."""
+        conn = get_connection()
+        conflicts = []
+        # 1. Duplicate IPAM blocks across projects
+        ipam_rows = conn.execute(
+            "SELECT ib.network, ib.vrf, ib.topology_id, "
+            "p.id AS project_id, p.name AS project_name "
+            "FROM nc_ipam_blocks ib "
+            "JOIN nc_project_topologies pt "
+            "  ON pt.topology_id=ib.topology_id "
+            "JOIN nc_projects p ON p.id=pt.project_id "
+            "ORDER BY ib.network"
+        ).fetchall()
+        seen_nets = {}
+        for r in ipam_rows:
+            key = f"{r[0]}|{r[1]}"  # network|vrf
+            if key in seen_nets:
+                prev = seen_nets[key]
+                if prev["project_id"] != r[3]:
+                    conflicts.append({
+                        "type": "ipam_overlap",
+                        "severity": "high",
+                        "detail": f"Network {r[0]} (VRF: {r[1]}) "
+                                  f"used in both '{prev['project_name']}' "
+                                  f"and '{r[4]}'",
+                        "entity_a": prev["project_name"],
+                        "entity_b": r[4],
+                    })
+            else:
+                seen_nets[key] = {
+                    "project_id": r[3], "project_name": r[4]
+                }
+        # 2. Duplicate circuit IDs across projects
+        circ_rows = conn.execute(
+            "SELECT c.circuit_id, c.topology_id, "
+            "p.id AS project_id, p.name AS project_name "
+            "FROM nc_circuits c "
+            "JOIN nc_project_topologies pt "
+            "  ON pt.topology_id=c.topology_id "
+            "JOIN nc_projects p ON p.id=pt.project_id "
+            "ORDER BY c.circuit_id"
+        ).fetchall()
+        seen_circs = {}
+        for r in circ_rows:
+            cid = r[0]
+            if cid in seen_circs:
+                prev = seen_circs[cid]
+                if prev["project_id"] != r[2]:
+                    conflicts.append({
+                        "type": "circuit_duplicate",
+                        "severity": "medium",
+                        "detail": f"Circuit '{cid}' appears in both "
+                                  f"'{prev['project_name']}' and '{r[3]}'",
+                        "entity_a": prev["project_name"],
+                        "entity_b": r[3],
+                    })
+            else:
+                seen_circs[cid] = {
+                    "project_id": r[2], "project_name": r[3]
+                }
+        conn.close()
+        return jsonify({
+            "conflicts": conflicts,
+            "total": len(conflicts),
+            "checked": {
+                "ipam_blocks": len(ipam_rows),
+                "circuits": len(circ_rows),
+            },
+        })
+
+    # ── Global Connectivity Page ──────────────────────────────────────────
+    @bp.route("/global")
+    @nc_login_required
+    def nc_global_connectivity():
+        return render_template("network/global.html")
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: CSP Groups
     # ══════════════════════════════════════════════════════════════════════
 
