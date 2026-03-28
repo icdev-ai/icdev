@@ -203,8 +203,10 @@ class TestSummarization:
         assert result == ""
 
     def test_summarize_short_content(self, compressor):
+        # Mock LLM router to avoid live API calls — test verifies fallback works.
         messages = [_msg(1, "Hello"), _msg(2, "World")]
-        result = compressor._summarize_topic(messages, max_tokens=100)
+        with patch("tools.memory.history_compressor.LLMRouter", side_effect=ImportError):
+            result = compressor._summarize_topic(messages, max_tokens=100)
         assert len(result) > 0
 
     def test_merge_summaries(self, compressor):
