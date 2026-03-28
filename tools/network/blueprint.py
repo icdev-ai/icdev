@@ -11098,6 +11098,181 @@ Output ONLY the JSON object."""
             },
         })
 
+    # ── ACAS / Nessus vulnerability overlay ───────────────────────────────
+
+    from tools.network.vuln_overlay import (  # noqa: E402
+        parse_nessus_file,
+        save_scan_to_db,
+        match_hosts_to_nodes,
+        get_scan_summary,
+        get_overlay_data,
+        get_host_findings,
+        SEVERITY_COLORS,
+    )
+
+    @bp.route("/api/vuln/scans", methods=["GET"])
+    @nc_login_required
+    def nc_api_vuln_scans():
+        """List all vulnerability scans, optionally filtered by topology."""
+        topology_id = request.args.get("topology_id", "")
+        conn = get_connection()
+        if topology_id:
+            rows = conn.execute(
+                "SELECT id, topology_id, scan_name, policy, scan_start, "
+                "scan_end, file_name, host_count, created_at "
+                "FROM nc_vuln_scans WHERE topology_id=? ORDER BY created_at DESC",
+                (topology_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, topology_id, scan_name, policy, scan_start, "
+                "scan_end, file_name, host_count, created_at "
+                "FROM nc_vuln_scans ORDER BY created_at DESC"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/vuln/upload", methods=["POST"])
+    @nc_login_required
+    def nc_api_vuln_upload():
+        """Upload and parse a .nessus file. Associates with topology_id."""
+        import tempfile
+        topology_id = request.form.get("topology_id", "")
+        if not topology_id:
+            return jsonify({"error": "topology_id required"}), 400
+
+        if "file" not in request.files:
+            return jsonify({"error": "file required"}), 400
+
+        f = request.files["file"]
+        fname = f.filename or "scan.nessus"
+        if not fname.endswith(".nessus"):
+            return jsonify({"error": "Only .nessus files accepted"}), 400
+
+        # Save to temp file for parsing
+        with tempfile.NamedTemporaryFile(
+            suffix=".nessus", delete=False
+        ) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+
+        import xml.etree.ElementTree as _ET
+        try:
+            parsed = parse_nessus_file(tmp_path)
+        except _ET.ParseError as exc:
+            return jsonify({"error": f"XML parse error: {exc}"}), 400
+        except Exception as exc:
+            logger.exception("Nessus parse failed")
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
+        conn = get_connection()
+        try:
+            scan_id = save_scan_to_db(conn, topology_id, fname, parsed)
+            # Auto-match hosts to canvas nodes
+            matches = match_hosts_to_nodes(conn, scan_id, topology_id)
+            summary = get_scan_summary(conn, scan_id)
+        finally:
+            conn.close()
+
+        _audit("VULN_UPLOAD", "scan", scan_id,
+               f"file={fname} hosts={len(parsed['hosts'])}")
+        return jsonify({
+            "scan_id": scan_id,
+            "summary": summary,
+            "matches": matches,
+        })
+
+    @bp.route("/api/vuln/scans/<scan_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_vuln_scan_detail(scan_id):
+        """Return summary + per-host counts for a scan."""
+        conn = get_connection()
+        summary = get_scan_summary(conn, scan_id)
+        conn.close()
+        if not summary:
+            return jsonify({"error": "scan not found"}), 404
+        return jsonify(summary)
+
+    @bp.route("/api/vuln/scans/<scan_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_vuln_scan_delete(scan_id):
+        """Delete a scan and all associated hosts/findings."""
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_vuln_scans WHERE id=?", (scan_id,))
+        conn.commit()
+        conn.close()
+        _audit("VULN_DELETE", "scan", scan_id, "")
+        return jsonify({"deleted": scan_id})
+
+    @bp.route("/api/vuln/overlay/<scan_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_vuln_overlay(scan_id):
+        """Return per-node overlay data for the canvas (matched hosts only)."""
+        topology_id = request.args.get("topology_id", "")
+        conn = get_connection()
+        # If topology_id provided, re-run matching in case canvas changed
+        if topology_id:
+            match_hosts_to_nodes(conn, scan_id, topology_id)
+        data = get_overlay_data(conn, scan_id)
+        conn.close()
+        return jsonify({
+            "scan_id": scan_id,
+            "nodes": data,
+            "severity_colors": SEVERITY_COLORS,
+        })
+
+    @bp.route("/api/vuln/hosts/<scan_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_vuln_hosts(scan_id):
+        """Return all hosts for a scan with vuln counts and match status."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT ip, fqdn, netbios, os, node_id, "
+            "cnt_critical, cnt_high, cnt_medium, cnt_low, cnt_info "
+            "FROM nc_vuln_hosts WHERE scan_id=? ORDER BY cnt_critical DESC, cnt_high DESC",
+            (scan_id,),
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/vuln/findings/<scan_id>/<path:host_ip>", methods=["GET"])
+    @nc_login_required
+    def nc_api_vuln_findings(scan_id, host_ip):
+        """Return top findings for a specific host in a scan."""
+        limit = min(int(request.args.get("limit", 20)), 100)
+        conn = get_connection()
+        findings = get_host_findings(conn, scan_id, host_ip, limit=limit)
+        conn.close()
+        return jsonify({"scan_id": scan_id, "host_ip": host_ip, "findings": findings})
+
+    @bp.route("/api/vuln/rematch/<scan_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_vuln_rematch(scan_id):
+        """Re-run host-to-node matching for a scan (useful after editing topology)."""
+        data = request.get_json(force=True) or {}
+        topology_id = data.get("topology_id", "")
+        if not topology_id:
+            # Infer from scan record
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT topology_id FROM nc_vuln_scans WHERE id=?", (scan_id,)
+            ).fetchone()
+            topology_id = row["topology_id"] if row else ""
+            conn.close()
+        if not topology_id:
+            return jsonify({"error": "topology_id required"}), 400
+
+        conn = get_connection()
+        matches = match_hosts_to_nodes(conn, scan_id, topology_id)
+        conn.close()
+        return jsonify({"scan_id": scan_id, "matches": matches,
+                        "matched": sum(1 for m in matches if m["matched"])})
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",
                 len(bp.deferred_functions))

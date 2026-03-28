@@ -939,6 +939,61 @@ CREATE TABLE IF NOT EXISTS nc_notifications (
     is_read     INTEGER DEFAULT 0,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── ACAS / Nessus vulnerability overlay ──────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS nc_vuln_scans (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id) ON DELETE CASCADE,
+    scan_name   TEXT NOT NULL DEFAULT '',
+    policy      TEXT DEFAULT '',
+    scan_start  TEXT DEFAULT '',
+    scan_end    TEXT DEFAULT '',
+    file_name   TEXT DEFAULT '',
+    host_count  INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_vuln_hosts (
+    id           TEXT PRIMARY KEY,
+    scan_id      TEXT REFERENCES nc_vuln_scans(id) ON DELETE CASCADE,
+    ip           TEXT NOT NULL,
+    fqdn         TEXT DEFAULT '',
+    netbios      TEXT DEFAULT '',
+    os           TEXT DEFAULT '',
+    cnt_critical INTEGER DEFAULT 0,
+    cnt_high     INTEGER DEFAULT 0,
+    cnt_medium   INTEGER DEFAULT 0,
+    cnt_low      INTEGER DEFAULT 0,
+    cnt_info     INTEGER DEFAULT 0,
+    node_id      TEXT,                -- matched canvas node id (nullable)
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_vuln_findings (
+    id              TEXT PRIMARY KEY,
+    host_id         TEXT REFERENCES nc_vuln_hosts(id) ON DELETE CASCADE,
+    scan_id         TEXT REFERENCES nc_vuln_scans(id) ON DELETE CASCADE,
+    plugin_id       TEXT DEFAULT '',
+    plugin_name     TEXT DEFAULT '',
+    severity        INTEGER DEFAULT 0,   -- 0=info 1=low 2=medium 3=high 4=critical
+    severity_label  TEXT DEFAULT 'info',
+    risk_factor     TEXT DEFAULT 'none',
+    cve             TEXT DEFAULT '',
+    cvss_base_score TEXT DEFAULT '',
+    port            TEXT DEFAULT '',
+    protocol        TEXT DEFAULT '',
+    synopsis        TEXT DEFAULT '',
+    description     TEXT DEFAULT '',
+    solution        TEXT DEFAULT '',
+    plugin_output   TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_vuln_hosts_scan ON nc_vuln_hosts(scan_id);
+CREATE INDEX IF NOT EXISTS idx_vuln_hosts_ip ON nc_vuln_hosts(ip);
+CREATE INDEX IF NOT EXISTS idx_vuln_hosts_node ON nc_vuln_hosts(node_id);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON nc_vuln_findings(host_id);
+CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON nc_vuln_findings(severity);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
