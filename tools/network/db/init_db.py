@@ -546,6 +546,57 @@ CREATE TABLE IF NOT EXISTS nc_project_templates (
     created_by  TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ── Phase A: Review Board Pipeline ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_review_boards (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    short_name  TEXT NOT NULL,
+    description TEXT,
+    required_for_status TEXT,
+    sort_order  INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_board_reviews (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    board_id        TEXT REFERENCES nc_review_boards(id),
+    phase           INTEGER DEFAULT 1,
+    status          TEXT DEFAULT 'pending',
+    scheduled_date  TEXT,
+    presented_date  TEXT,
+    decision        TEXT,
+    decision_notes  TEXT,
+    conditions      TEXT DEFAULT '[]',
+    reviewer_names  TEXT DEFAULT '[]',
+    package_json    TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_safe_bridge (
+    id              TEXT PRIMARY KEY,
+    project_id      TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    session_id      TEXT,
+    safe_feature_id TEXT,
+    roi_json        TEXT DEFAULT '{}',
+    justification   TEXT,
+    alternatives    TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_project_phases (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    phase_num   INTEGER NOT NULL,
+    phase_name  TEXT NOT NULL,
+    status      TEXT DEFAULT 'pending',
+    entered_at  TEXT,
+    completed_at TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -2506,6 +2557,29 @@ def init_db():
             )
             conn.commit()
             print("[init_db] Default admin user created (username: admin, password: admin).")
+
+        # Seed review boards (ARB, ERB, CCB)
+        board_count = conn.execute("SELECT COUNT(*) FROM nc_review_boards").fetchone()[0]
+        if board_count == 0:
+            for b in [
+                ("board-arb", "Architecture Review Board", "ARB",
+                 "Reviews design decisions, protocol choices, enclave alignment",
+                 "in_review", 1),
+                ("board-erb", "Engineering Review Board", "ERB",
+                 "Reviews feasibility, BOM, capacity, timeline",
+                 "approved", 2),
+                ("board-ccb", "Change Control Board", "CCB",
+                 "Reviews blast radius, risk to production, rollback plan",
+                 "deployed", 3),
+            ]:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_review_boards "
+                    "(id, name, short_name, description, "
+                    " required_for_status, sort_order) "
+                    "VALUES (?,?,?,?,?,?)", b
+                )
+            conn.commit()
+            print("[init_db] Seeded 3 review boards (ARB, ERB, CCB).")
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
