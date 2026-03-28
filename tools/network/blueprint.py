@@ -4049,6 +4049,112 @@ def create_network_blueprint():
         return render_template("network/enterprise.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Network Design Rulebook (Phase 1)
+    # ══════════════════════════════════════════════════════════════════════
+
+    _design_rules = {}
+    try:
+        import yaml as _yaml
+        _rules_path = _ICDEV_ROOT / "args" / "network_design_rules.yaml"
+        if _rules_path.exists():
+            with open(_rules_path, encoding="utf-8") as _rf:
+                _design_rules = _yaml.safe_load(_rf) or {}
+    except Exception:
+        pass
+
+    @bp.route("/api/design-rules", methods=["GET"])
+    @nc_login_required
+    def nc_api_design_rules():
+        return jsonify(_design_rules)
+
+    @bp.route("/api/design-rules/node/<node_type>", methods=["GET"])
+    @nc_login_required
+    def nc_api_design_rules_for_type(node_type):
+        rules = _design_rules.get("on_node_add", {}).get(node_type)
+        if not rules:
+            return jsonify({"type": node_type, "found": False})
+        return jsonify({"type": node_type, "found": True, **rules})
+
+    @bp.route("/api/design-suggest", methods=["POST"])
+    @nc_login_required
+    def nc_api_design_suggest():
+        """Context-aware suggestions for a dropped node type."""
+        data = request.get_json(force=True, silent=True) or {}
+        node_type = data.get("node_type", "")
+        existing_nodes = data.get("existing_nodes", [])
+        node_x = data.get("x", 0)
+        node_y = data.get("y", 0)
+
+        rules = _design_rules.get("on_node_add", {}).get(node_type, {})
+        if not rules:
+            return jsonify({
+                "type": node_type, "suggestions": [],
+                "checklist": {}, "connection_suggestions": [],
+                "warnings": [],
+            })
+
+        suggestions = rules.get("suggestions", [])
+        checklist = rules.get("checklist", {})
+
+        connection_suggestions = []
+        for rule in rules.get("auto_suggest_connections", []):
+            match_type = rule.get("match_type", "")
+            max_dist = rule.get("max_distance", 500)
+            for en in existing_nodes:
+                if en.get("type") == match_type:
+                    dx = abs((en.get("x") or 0) - node_x)
+                    dy = abs((en.get("y") or 0) - node_y)
+                    dist = (dx ** 2 + dy ** 2) ** 0.5
+                    if dist <= max_dist:
+                        connection_suggestions.append({
+                            "target_id": en.get("id"),
+                            "target_label": en.get("label", ""),
+                            "target_type": en.get("type", ""),
+                            "distance": round(dist),
+                            "message": rule.get("message", ""),
+                        })
+
+        warnings = []
+        for w in rules.get("warnings", []):
+            cond = w.get("condition", "")
+            if cond == "single_uplink":
+                warnings.append({
+                    "severity": w.get("severity", "medium"),
+                    "message": w.get("message", ""),
+                })
+            elif cond == "no_ha_peer":
+                has_peer = any(
+                    n.get("type") == node_type for n in existing_nodes
+                )
+                if not has_peer:
+                    warnings.append({
+                        "severity": w.get("severity", "medium"),
+                        "message": w.get("message", ""),
+                    })
+            elif cond == "no_router_connection":
+                has_router = any(
+                    n.get("type") in ("router", "switch-l3")
+                    for n in existing_nodes
+                )
+                if not has_router:
+                    warnings.append({
+                        "severity": w.get("severity", "medium"),
+                        "message": w.get("message", ""),
+                    })
+
+        return jsonify({
+            "type": node_type, "suggestions": suggestions,
+            "checklist": checklist,
+            "connection_suggestions": connection_suggestions,
+            "warnings": warnings,
+        })
+
+    @bp.route("/api/design-rules/best-practices", methods=["GET"])
+    @nc_login_required
+    def nc_api_best_practices():
+        return jsonify(_design_rules.get("best_practices", {}))
+
+    # ══════════════════════════════════════════════════════════════════════
     # Extended: Notifications, Topology Diff, Auto-Decompose, Global Canvas
     # ══════════════════════════════════════════════════════════════════════
 

@@ -953,6 +953,102 @@ function onDrop(event) {
   selectCell(node);
   markDirty();
   updateStatusBar();
+
+  // Design Rulebook: fetch context-aware suggestions for this node type
+  _fetchDesignSuggestions(type, x, y);
+}
+
+/** Fetch design suggestions from rulebook API and show guidance toast. */
+async function _fetchDesignSuggestions(nodeType, x, y) {
+  try {
+    // Gather existing nodes on canvas for context
+    const existingNodes = [];
+    graph.getElements().forEach(el => {
+      const t = el.get('nodeType');
+      if (t) {
+        const pos = el.position();
+        existingNodes.push({
+          id: el.id, type: t,
+          label: el.attr('label/text') || '',
+          x: pos.x, y: pos.y,
+        });
+      }
+    });
+    const resp = await fetch(NC_BASE + '/api/design-suggest', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        node_type: nodeType, x: x, y: y,
+        existing_nodes: existingNodes,
+      }),
+    });
+    const data = await resp.json();
+    if (!data.suggestions || data.suggestions.length === 0) return;
+    _showDesignGuidance(data);
+  } catch (e) {
+    // Guidance is best-effort — don't break canvas on failure
+  }
+}
+
+/** Display design guidance toast on canvas. */
+function _showDesignGuidance(data) {
+  // Remove any existing guidance toast
+  const old = document.getElementById('design-guidance-toast');
+  if (old) old.remove();
+
+  let html = '<div id="design-guidance-toast" class="design-toast">';
+  html += '<div class="dt-header"><span class="dt-title">Design Guidance</span>';
+  html += '<button class="dt-close" onclick="this.closest(\'.design-toast\').remove()">&times;</button></div>';
+
+  // Suggestions
+  if (data.suggestions && data.suggestions.length) {
+    html += '<div class="dt-section"><div class="dt-label">Suggestions</div>';
+    data.suggestions.forEach(s => {
+      html += '<div class="dt-item dt-suggest">' + s + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Connection suggestions
+  if (data.connection_suggestions && data.connection_suggestions.length) {
+    html += '<div class="dt-section"><div class="dt-label">Nearby Connections</div>';
+    data.connection_suggestions.forEach(c => {
+      html += '<div class="dt-item dt-connect">' + c.message +
+              ' <span class="dt-meta">(' + c.target_label + ', ' + c.distance + 'px)</span></div>';
+    });
+    html += '</div>';
+  }
+
+  // Warnings
+  if (data.warnings && data.warnings.length) {
+    html += '<div class="dt-section"><div class="dt-label">Warnings</div>';
+    data.warnings.forEach(w => {
+      html += '<div class="dt-item dt-warn">' + w.message + '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Checklist summary
+  if (data.checklist && Object.keys(data.checklist).length) {
+    const required = Object.entries(data.checklist).filter(([k, v]) => v.required);
+    if (required.length) {
+      html += '<div class="dt-section"><div class="dt-label">Required Config</div>';
+      required.forEach(([k, v]) => {
+        html += '<div class="dt-item dt-check">' + k.replace(/_/g, ' ') +
+                (v.hint ? ' <span class="dt-meta">' + v.hint + '</span>' : '') + '</div>';
+      });
+      html += '</div>';
+    }
+  }
+
+  html += '</div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Auto-dismiss after 15 seconds
+  setTimeout(() => {
+    const el = document.getElementById('design-guidance-toast');
+    if (el) el.remove();
+  }, 15000);
 }
 
 /* ── Selection & Config Panel ───────────────────────────────────────────────── */
@@ -990,6 +1086,8 @@ function selectCell(cell) {
     document.getElementById('cfg-rotation-val').textContent = rot + '\u00B0';
     // Device Info
     document.getElementById('cfg-hostname').value = config.hostname || '';
+    const cfgOs = document.getElementById('cfg-os');
+    if (cfgOs) cfgOs.value = config.os || '';
     document.getElementById('cfg-model').value = config.model || '';
     document.getElementById('cfg-serial').value = config.serial || '';
     document.getElementById('cfg-asset-tag').value = config.asset_tag || '';
@@ -1021,16 +1119,42 @@ function selectCell(cell) {
     // Update rack view if open
     if (typeof renderRackView === 'function') renderRackView();
   } else {
-    // Link selected
-    document.getElementById('config-empty').classList.remove('hidden');
+    // Link selected — show link config panel
+    document.getElementById('config-empty').classList.add('hidden');
     document.getElementById('config-form').classList.add('hidden');
+    const linkPanel = document.getElementById('link-config-form');
+    if (linkPanel) {
+      linkPanel.classList.remove('hidden');
+      const lc = cell.get('linkConfig') || {};
+      document.getElementById('lcfg-ip').value = lc.ip || '';
+      document.getElementById('lcfg-vlan').value = lc.vlan || '';
+      document.getElementById('lcfg-vrf').value = lc.vrf || '';
+      document.getElementById('lcfg-mtu').value = lc.mtu || '';
+      document.getElementById('lcfg-trunk').checked = lc.trunk || false;
+      document.getElementById('lcfg-protocol').value = cell.get('protocol') || lc.protocol || '';
+    }
   }
+}
+
+function updateLinkConfig(key, val) {
+  if (!selectedCell || !selectedCell.isLink()) return;
+  const lc = selectedCell.get('linkConfig') || {};
+  if (key === 'trunk') {
+    lc[key] = val;
+  } else {
+    lc[key] = val;
+  }
+  selectedCell.set('linkConfig', lc);
+  if (key === 'protocol') selectedCell.set('protocol', val);
+  markDirty();
 }
 
 function deselectAll() {
   selectedCell = null;
   document.getElementById('config-empty').classList.remove('hidden');
   document.getElementById('config-form').classList.add('hidden');
+  const linkPanel = document.getElementById('link-config-form');
+  if (linkPanel) linkPanel.classList.add('hidden');
 }
 
 function updateSelectedLabel(val) {
@@ -1284,6 +1408,10 @@ function graphToJSON() {
       if (cableData && Object.keys(cableData).length) {
         edgeObj.cableData = cableData;
       }
+      const linkConfig = cell.get('linkConfig');
+      if (linkConfig && Object.keys(linkConfig).length) {
+        edgeObj.config = linkConfig;
+      }
       edges.push(edgeObj);
     }
   });
@@ -1302,8 +1430,9 @@ function loadGraphJSON(data) {
   edges.forEach(e => {
     if (e.source && e.target) {
       const link = createLink(e.source, e.target, e.label, e.protocol, e.id);
-      if (e.cableData && link) {
-        link.set('cableData', e.cableData);
+      if (link) {
+        if (e.cableData) link.set('cableData', e.cableData);
+        if (e.config) link.set('linkConfig', e.config);
       }
     }
   });

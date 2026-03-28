@@ -555,6 +555,16 @@
           <input type="text" id="cfg-hostname" class="form-control" placeholder="e.g. rtr-core-01" oninput="updateConfig('hostname', this.value)"/>
         </div>
         <div class="form-group">
+          <label>OS / Config Template</label>
+          <select id="cfg-os" class="form-control" onchange="updateConfig('os', this.value)">
+            <option value="">— Auto (by device type) —</option>
+            <option value="ios_router">Cisco IOS (Router / Firewall)</option>
+            <option value="ios_switch">Cisco IOS (Switch)</option>
+            <option value="eos">Arista EOS</option>
+            <option value="junos">Juniper JunOS</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Vendor / Model</label>
           <input type="text" id="cfg-model" class="form-control" placeholder="e.g. Cisco C9300-48T" oninput="updateConfig('model', this.value)"/>
         </div>
@@ -704,6 +714,50 @@
         </div>
         <div class="form-actions">
           <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Object</button>
+        </div>
+      </div>
+      <!-- Link Config Panel (shown when a link/edge is selected) -->
+      <div id="link-config-form" class="hidden">
+        <div class="config-header">Link Properties</div>
+        <div class="form-group cfg-section-header">Routing</div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select id="lcfg-protocol" class="form-control" onchange="updateLinkConfig('protocol', this.value)">
+            <option value="">— None —</option>
+            <option value="OSPF">OSPF</option>
+            <option value="BGP">BGP</option>
+            <option value="EIGRP">EIGRP</option>
+            <option value="IS-IS">IS-IS</option>
+            <option value="RIP">RIP</option>
+            <option value="HSRP">HSRP</option>
+            <option value="VRRP">VRRP</option>
+            <option value="GLBP">GLBP</option>
+            <option value="static">Static</option>
+          </select>
+        </div>
+        <div class="form-group cfg-section-header">Interface</div>
+        <div class="form-group">
+          <label>Link IP (CIDR)</label>
+          <input type="text" id="lcfg-ip" class="form-control" placeholder="e.g. 10.0.0.0/30" oninput="updateLinkConfig('ip', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VLAN ID</label>
+          <input type="number" id="lcfg-vlan" class="form-control" placeholder="e.g. 100" oninput="updateLinkConfig('vlan', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>VRF</label>
+          <input type="text" id="lcfg-vrf" class="form-control" placeholder="e.g. MGMT" oninput="updateLinkConfig('vrf', this.value)"/>
+        </div>
+        <div class="form-group">
+          <label>MTU</label>
+          <input type="number" id="lcfg-mtu" class="form-control" placeholder="1500" oninput="updateLinkConfig('mtu', this.value)"/>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="lcfg-trunk" onchange="updateLinkConfig('trunk', this.checked)" style="width:16px;height:16px;"/>
+          <label for="lcfg-trunk" style="margin:0;cursor:pointer;">Trunk (802.1Q)</label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-danger-sm" onclick="deleteSelected()">Delete Link</button>
         </div>
       </div>
       <!-- Security Boundaries panel -->

@@ -456,6 +456,35 @@ def _ospf_networks_from_interfaces(interfaces: list[dict], area: str) -> list[di
 # Context builder
 # ---------------------------------------------------------------------------
 
+def _node_cfg(node: dict) -> dict:
+    """Return the merged config dict for a node.
+
+    graphToJSON() serializes configData under the key "config".
+    Legacy or hand-crafted graphs may store it flat at the top level.
+    This helper merges both so downstream code always reads from one place.
+    """
+    nested = node.get("config") or {}
+    # Start with nested configData; overlay any top-level keys that are not
+    # graph structure fields (id, label, type, x, y, config, group_id).
+    _GRAPH_KEYS = frozenset({"id", "label", "type", "x", "y", "config", "group_id", "nodeType"})
+    flat = {k: v for k, v in node.items() if k not in _GRAPH_KEYS}
+    merged = {**flat, **nested}  # nested (configData) wins over flat
+    return merged
+
+
+def _edge_cfg(edge: dict) -> dict:
+    """Return the merged config dict for an edge (link).
+
+    graphToJSON() serializes edge configData under key "config" (added in this
+    patch).  Legacy edges store everything at the top level.
+    """
+    nested = edge.get("config") or {}
+    _EDGE_GRAPH_KEYS = frozenset({"id", "source", "target", "label", "protocol", "config", "cableData"})
+    flat = {k: v for k, v in edge.items() if k not in _EDGE_GRAPH_KEYS}
+    merged = {**flat, **nested}
+    return merged
+
+
 def _build_device_context(
     node: dict,
     all_edges: list[dict],
@@ -471,7 +500,8 @@ def _build_device_context(
         using the edge label/ip if available.
     """
     nid = node["id"]
-    hostname = _safe_hostname(node.get("label") or nid)
+    cfg = _node_cfg(node)
+    hostname = _safe_hostname(cfg.get("hostname") or node.get("label") or nid)
     iface_gen = _IFACE_GEN.get(os_type, _ios_iface)
 
     # Collect connected edges
@@ -484,7 +514,7 @@ def _build_device_context(
     vlan_set: set[int] = set()
 
     # ── Management loopback (from node.ip) ────────────────────────────────
-    mgmt_ip_info = _parse_ip_safe(node.get("ip") or node.get("ip_address") or "")
+    mgmt_ip_info = _parse_ip_safe(cfg.get("ip") or cfg.get("ip_address") or "")
     if mgmt_ip_info["ip_addr"]:
         lo_name = iface_gen(0, is_loopback=True)
         junos_lo = "lo0"
@@ -497,7 +527,7 @@ def _build_device_context(
             "trunk":       False,
             "allowed_vlans": "",
             "vlan":        None,
-            "vrf":         node.get("vrf") or "",
+            "vrf":         cfg.get("vrf") or "",
             "mtu":         None,
             **mgmt_ip_info,
         })
@@ -515,20 +545,21 @@ def _build_device_context(
         iface_name = iface_gen(iface_idx, is_loopback=False)
         junos_name = f"ge-0/0/{iface_idx}"
 
-        edge_ip = edge.get("ip") or edge.get("ip_address") or ""
+        ecfg = _edge_cfg(edge)
+        edge_ip = ecfg.get("ip") or ecfg.get("ip_address") or ""
         ip_info = _parse_ip_safe(edge_ip)
 
-        edge_vlan_raw = edge.get("vlan")
+        edge_vlan_raw = ecfg.get("vlan")
         edge_vlan = int(edge_vlan_raw) if edge_vlan_raw else None
         if edge_vlan:
             vlan_set.add(edge_vlan)
 
-        edge_label = edge.get("label") or edge.get("protocol") or ""
+        edge_label = edge.get("label") or edge.get("protocol") or ecfg.get("protocol") or ""
         description = f"Link to {peer_label}"
         if edge_label:
             description = f"{edge_label} — {description}"
 
-        is_trunk = bool(edge.get("trunk") or (not edge_vlan and not ip_info["ip_addr"]))
+        is_trunk = bool(ecfg.get("trunk") or (not edge_vlan and not ip_info["ip_addr"]))
         is_routed = bool(ip_info["ip_addr"] and not edge_vlan)
 
         interfaces.append({
@@ -540,13 +571,13 @@ def _build_device_context(
             "trunk":         is_trunk and not ip_info["ip_addr"],
             "allowed_vlans": "",
             "vlan":          edge_vlan,
-            "vrf":           edge.get("vrf") or "",
-            "mtu":           int(edge.get("mtu")) if edge.get("mtu") else None,
+            "vrf":           ecfg.get("vrf") or "",
+            "mtu":           int(ecfg.get("mtu")) if ecfg.get("mtu") else None,
             **ip_info,
         })
 
     # ── VLAN from node-level property ─────────────────────────────────────
-    node_vlan = node.get("vlan")
+    node_vlan = cfg.get("vlan")
     if node_vlan:
         try:
             vlan_set.add(int(node_vlan))
@@ -556,7 +587,7 @@ def _build_device_context(
     sorted_vlans = sorted(vlan_set)
 
     # ── OSPF context ──────────────────────────────────────────────────────
-    ospf_area_raw = node.get("ospf_area")
+    ospf_area_raw = cfg.get("ospf_area")
     ospf_ctx: dict | None = None
     if ospf_area_raw is not None and ospf_area_raw != "":
         area = str(ospf_area_raw)
@@ -570,7 +601,7 @@ def _build_device_context(
 
     # ── BGP context ───────────────────────────────────────────────────────
     bgp_ctx: dict | None = None
-    asn_raw = node.get("asn")
+    asn_raw = cfg.get("asn")
     if asn_raw:
         try:
             asn = int(asn_raw)
@@ -583,8 +614,10 @@ def _build_device_context(
                 is_src = edge.get("source") == nid
                 peer_id = edge.get("target") if is_src else edge.get("source")
                 peer = node_map.get(peer_id, {})
-                peer_asn_raw = peer.get("asn")
-                edge_ip = edge.get("ip") or edge.get("ip_address") or ""
+                peer_cfg = _node_cfg(peer)
+                peer_asn_raw = peer_cfg.get("asn")
+                ecfg2 = _edge_cfg(edge)
+                edge_ip = ecfg2.get("ip") or ecfg2.get("ip_address") or ""
                 ip_info = _parse_ip_safe(edge_ip)
                 if peer_asn_raw and ip_info["ip_addr"]:
                     try:
@@ -597,13 +630,13 @@ def _build_device_context(
                         "description": _safe_hostname(peer.get("label") or peer_id),
                     })
 
-            local_pref_raw = node.get("local_pref")
+            local_pref_raw = cfg.get("local_pref")
             bgp_ctx = {
                 "asn":        asn,
                 "router_id":  router_id or "0.0.0.0",  # nosec B104
                 "local_pref": int(local_pref_raw) if local_pref_raw else None,
-                "community":  node.get("community") or "",
-                "med":        int(node.get("med")) if node.get("med") else None,
+                "community":  cfg.get("community") or "",
+                "med":        int(cfg.get("med")) if cfg.get("med") else None,
                 "neighbors":  neighbors,
             }
 
@@ -685,12 +718,13 @@ def generate_device_configs(graph: dict, topo_name: str) -> dict[str, str]:
     name_counts: dict[str, int] = {}  # deduplicate filenames
 
     for node in nodes:
-        ntype = node.get("type", "")
+        ntype = node.get("type", "") or node.get("nodeType", "")
         if ntype not in _CONFIGURABLE_TYPES:
             continue
 
-        # Determine OS type
-        os_type = node.get("os") or _DEFAULT_OS.get(ntype, "ios_router")
+        # Determine OS type: check configData first, then default by device type
+        cfg = _node_cfg(node)
+        os_type = cfg.get("os") or _DEFAULT_OS.get(ntype, "ios_router")
         if os_type not in _TEMPLATES:
             os_type = "ios_router"
 
@@ -743,15 +777,16 @@ def list_configurable_nodes(graph: dict) -> list[dict]:
     nodes = graph.get("nodes", [])
     result = []
     for node in nodes:
-        ntype = node.get("type", "")
+        ntype = node.get("type", "") or node.get("nodeType", "")
         if ntype not in _CONFIGURABLE_TYPES:
             continue
-        os_type = node.get("os") or _DEFAULT_OS.get(ntype, "ios_router")
+        cfg = _node_cfg(node)
+        os_type = cfg.get("os") or _DEFAULT_OS.get(ntype, "ios_router")
         result.append({
             "id":       node["id"],
             "label":    node.get("label", node["id"]),
             "type":     ntype,
             "os_type":  os_type,
-            "hostname": _safe_hostname(node.get("label") or node["id"]),
+            "hostname": _safe_hostname(cfg.get("hostname") or node.get("label") or node["id"]),
         })
     return result

@@ -840,6 +840,57 @@ a:hover { text-decoration: underline; }
 .empty-state p { color: var(--text-dim); }
 .empty-text { color: var(--text-dim); font-size: 13px; padding: 16px; }
 
+/* ── Design Guidance Toast ─────────────────────────────────────────────────── */
+.design-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 360px;
+  max-height: 450px;
+  overflow-y: auto;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--red);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  z-index: 9999;
+  animation: slideInRight .3s ease;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.dt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.dt-title { font-size: 13px; font-weight: 700; color: var(--red); }
+.dt-close {
+  background: none; border: none; color: var(--text-dim);
+  font-size: 18px; cursor: pointer; padding: 0; line-height: 1;
+}
+.dt-close:hover { color: var(--red); }
+.dt-section { padding: 6px 14px; }
+.dt-label {
+  font-size: 10px; font-weight: 700; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: .05em;
+  margin-bottom: 4px;
+}
+.dt-item {
+  font-size: 11px; color: var(--text);
+  padding: 3px 0 3px 12px;
+  border-left: 2px solid transparent;
+  line-height: 1.4;
+}
+.dt-suggest { border-left-color: #3498db; }
+.dt-connect { border-left-color: #27ae60; }
+.dt-warn    { border-left-color: #e74c3c; color: #e74c3c; }
+.dt-check   { border-left-color: #f39c12; }
+.dt-meta { color: var(--text-dim); font-size: 10px; }
+
 /* ── Modal ──────────────────────────────────────────────────────────────────── */
 .modal {
   position: fixed; inset: 0; background: rgba(0,0,0,.65);
