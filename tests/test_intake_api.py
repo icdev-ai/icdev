@@ -144,7 +144,8 @@ def chat_app(tmp_path):
          patch("tools.dashboard.api.projects._get_db", side_effect=lambda: _make_conn()), \
          patch("tools.dashboard.api.intake._get_db", side_effect=lambda: _make_conn()), \
          patch("tools.dashboard.api.intake.DB_PATH", db_path), \
-         patch("tools.requirements.intake_engine.DB_PATH", db_path):
+         patch("tools.requirements.intake_engine.DB_PATH", db_path), \
+         patch("tools.requirements.intake_engine._HAS_LLM", False):
         from tools.dashboard.app import create_app
         app = create_app()
         app.config["TESTING"] = True

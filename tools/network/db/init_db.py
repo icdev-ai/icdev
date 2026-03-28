@@ -665,6 +665,77 @@ CREATE TABLE IF NOT EXISTS nc_collected_configs (
     topology_id TEXT REFERENCES topologies(id)
 );
 
+-- ── Innovation Flywheel (Phase 7 Network Intelligence) ───────────────────
+CREATE TABLE IF NOT EXISTS nc_innovation_ideas (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    description TEXT,
+    category    TEXT DEFAULT 'improvement', -- improvement, cost_reduction, security, automation, new_capability
+    submitted_by TEXT,
+    impact_score INTEGER DEFAULT 0,         -- 1-10
+    feasibility_score INTEGER DEFAULT 0,    -- 1-10
+    cost_score  INTEGER DEFAULT 0,          -- 1-10 (10 = cheapest)
+    total_score REAL DEFAULT 0,             -- auto-computed weighted
+    status      TEXT DEFAULT 'submitted',   -- submitted, under_review, approved, in_progress, completed, rejected
+    project_id  TEXT REFERENCES nc_projects(id),
+    votes       INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_tech_radar (
+    id          TEXT PRIMARY KEY,
+    technology  TEXT NOT NULL,
+    ring        TEXT DEFAULT 'assess',      -- adopt, trial, assess, hold
+    category    TEXT DEFAULT 'networking',   -- networking, security, cloud, automation, observability
+    description TEXT,
+    moved_from  TEXT,                        -- previous ring (for tracking movement)
+    updated_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_lessons_learned (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id),
+    title       TEXT NOT NULL,
+    category    TEXT DEFAULT 'technical',    -- technical, process, communication, tooling
+    what_happened TEXT,
+    root_cause  TEXT,
+    lesson      TEXT,
+    recommendation TEXT,
+    submitted_by TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Tech Refresh (Phase 6 Network Intelligence) ──────────────────────────
+CREATE TABLE IF NOT EXISTS nc_replacement_map (
+    id          TEXT PRIMARY KEY,
+    old_vendor  TEXT NOT NULL,
+    old_model   TEXT NOT NULL,
+    new_vendor  TEXT NOT NULL,
+    new_model   TEXT NOT NULL,
+    new_cost    REAL DEFAULT 0,
+    migration_effort TEXT DEFAULT 'medium', -- low, medium, high
+    notes       TEXT,
+    is_builtin  INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_refresh_plans (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    device_label TEXT NOT NULL,
+    old_model   TEXT,
+    eol_date    TEXT,
+    priority    TEXT DEFAULT 'medium',    -- critical, high, medium, low
+    replacement_model TEXT,
+    replacement_cost REAL DEFAULT 0,
+    target_year INTEGER,                  -- fiscal year for budget
+    status      TEXT DEFAULT 'planned',   -- planned, budgeted, ordered, completed
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Device Geolocation (Phase 4 Network Intelligence) ────────────────────
 CREATE TABLE IF NOT EXISTS nc_device_geo (
     id          TEXT PRIMARY KEY,

@@ -2492,6 +2492,432 @@ def create_network_blueprint():
         return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Phase 7: Innovation Flywheel
+    # ══════════════════════════════════════════════════════════════════════
+
+    # ── Ideas ─────────────────────────────────────────────────────────────
+    @bp.route("/api/innovation-ideas", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_ideas():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_innovation_ideas "
+            "ORDER BY total_score DESC, created_at DESC"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/innovation-ideas", methods=["POST"])
+    @nc_login_required
+    def nc_api_submit_idea():
+        data = request.get_json(force=True, silent=True) or {}
+        iid = str(_uuid.uuid4())
+        imp = int(data.get("impact_score", 5) or 5)
+        feas = int(data.get("feasibility_score", 5) or 5)
+        cost = int(data.get("cost_score", 5) or 5)
+        total = round((imp * 0.4 + feas * 0.35 + cost * 0.25), 2)
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_innovation_ideas "
+            "(id, title, description, category, submitted_by, "
+            " impact_score, feasibility_score, cost_score, "
+            " total_score, status, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (iid, data.get("title", ""),
+             data.get("description", ""),
+             data.get("category", "improvement"),
+             data.get("submitted_by", ""),
+             imp, feas, cost, total, "submitted", _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("SUBMIT_IDEA", "innovation", iid,
+               data.get("title", ""))
+        return jsonify({"id": iid, "total_score": total}), 201
+
+    @bp.route("/api/innovation-ideas/<iid>/vote", methods=["POST"])
+    @nc_login_required
+    def nc_api_vote_idea(iid):
+        conn = get_connection()
+        conn.execute(
+            "UPDATE nc_innovation_ideas SET votes=votes+1 WHERE id=?",
+            (iid,)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/innovation-ideas/<iid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_idea(iid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        allowed = ["status", "project_id"]
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if fields:
+            values.append(iid)
+            conn.execute(
+                f"UPDATE nc_innovation_ideas "  # nosec B608
+                f"SET {', '.join(fields)} WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/innovation-ideas/<iid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_idea(iid):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_innovation_ideas WHERE id=?", (iid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Tech Radar ────────────────────────────────────────────────────────
+    @bp.route("/api/tech-radar", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_tech_radar():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_tech_radar ORDER BY ring, technology"
+        ).fetchall()
+        conn.close()
+        items = [_row_to_dict(r) for r in rows]
+        by_ring = {"adopt": [], "trial": [], "assess": [], "hold": []}
+        for it in items:
+            ring = it.get("ring", "assess")
+            by_ring.setdefault(ring, []).append(it)
+        return jsonify({"items": items, "by_ring": by_ring})
+
+    @bp.route("/api/tech-radar", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_tech_radar():
+        data = request.get_json(force=True, silent=True) or {}
+        tid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_tech_radar "
+            "(id, technology, ring, category, description, "
+            " updated_by, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (tid, data.get("technology", ""),
+             data.get("ring", "assess"),
+             data.get("category", "networking"),
+             data.get("description", ""),
+             data.get("updated_by", ""), _now(), _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": tid}), 201
+
+    @bp.route("/api/tech-radar/<tid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_tech_radar(tid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        old = conn.execute(
+            "SELECT ring FROM nc_tech_radar WHERE id=?", (tid,)
+        ).fetchone()
+        new_ring = data.get("ring", "")
+        fields, values = [], []
+        for k in ["technology", "ring", "category", "description",
+                   "updated_by"]:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if new_ring and old and new_ring != old[0]:
+            fields.append("moved_from=?")
+            values.append(old[0])
+        if fields:
+            fields.append("updated_at=?")
+            values.append(_now())
+            values.append(tid)
+            conn.execute(
+                f"UPDATE nc_tech_radar "  # nosec B608
+                f"SET {', '.join(fields)} WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/tech-radar/<tid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_tech_radar(tid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_tech_radar WHERE id=?", (tid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Lessons Learned ───────────────────────────────────────────────────
+    @bp.route("/api/lessons-learned", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_lessons():
+        pid = request.args.get("project_id", "")
+        conn = get_connection()
+        if pid:
+            rows = conn.execute(
+                "SELECT ll.*, p.name AS project_name "
+                "FROM nc_lessons_learned ll "
+                "LEFT JOIN nc_projects p ON p.id=ll.project_id "
+                "WHERE ll.project_id=? ORDER BY ll.created_at DESC",
+                (pid,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT ll.*, p.name AS project_name "
+                "FROM nc_lessons_learned ll "
+                "LEFT JOIN nc_projects p ON p.id=ll.project_id "
+                "ORDER BY ll.created_at DESC"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/lessons-learned", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_lesson():
+        data = request.get_json(force=True, silent=True) or {}
+        lid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_lessons_learned "
+            "(id, project_id, title, category, what_happened, "
+            " root_cause, lesson, recommendation, submitted_by, "
+            " created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (lid, data.get("project_id"),
+             data.get("title", ""),
+             data.get("category", "technical"),
+             data.get("what_happened", ""),
+             data.get("root_cause", ""),
+             data.get("lesson", ""),
+             data.get("recommendation", ""),
+             data.get("submitted_by", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": lid}), 201
+
+    @bp.route("/api/lessons-learned/<lid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_lesson(lid):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_lessons_learned WHERE id=?", (lid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Phase 6: Tech Refresh Planner + Replacement Mapper + Budget Forecast
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/replacement-map", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_replacement_map():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_replacement_map ORDER BY old_vendor, old_model"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/replacement-map", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_replacement():
+        data = request.get_json(force=True, silent=True) or {}
+        rid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_replacement_map "
+            "(id, old_vendor, old_model, new_vendor, new_model, "
+            " new_cost, migration_effort, notes, is_builtin, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,0,?)",
+            (rid, data.get("old_vendor", ""),
+             data.get("old_model", ""),
+             data.get("new_vendor", ""),
+             data.get("new_model", ""),
+             data.get("new_cost", 0),
+             data.get("migration_effort", "medium"),
+             data.get("notes", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": rid}), 201
+
+    @bp.route("/api/replacement-map/<rid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_replacement(rid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_replacement_map WHERE id=?", (rid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/projects/<pid>/refresh-plan", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_refresh_plan(pid):
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_refresh_plans WHERE project_id=? "
+            "ORDER BY target_year, priority DESC", (pid,)
+        ).fetchall()
+        items = [_row_to_dict(r) for r in rows]
+        # Budget summary by year
+        by_year = {}
+        for it in items:
+            yr = it.get("target_year", 0)
+            by_year.setdefault(yr, 0)
+            by_year[yr] += it.get("replacement_cost", 0) or 0
+        conn.close()
+        return jsonify({
+            "items": items,
+            "budget_by_year": by_year,
+            "total_cost": sum(by_year.values()),
+        })
+
+    @bp.route("/api/projects/<pid>/refresh-plan", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_refresh_item(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        rid = str(_uuid.uuid4())
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_refresh_plans "
+            "(id, project_id, device_label, old_model, eol_date, "
+            " priority, replacement_model, replacement_cost, "
+            " target_year, status, notes, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (rid, pid, data.get("device_label", ""),
+             data.get("old_model", ""),
+             data.get("eol_date", ""),
+             data.get("priority", "medium"),
+             data.get("replacement_model", ""),
+             data.get("replacement_cost", 0),
+             data.get("target_year", 2026),
+             data.get("status", "planned"),
+             data.get("notes", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": rid}), 201
+
+    @bp.route("/api/refresh-plan/<rid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_refresh_item(rid):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_refresh_plans WHERE id=?", (rid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/projects/<pid>/auto-refresh-plan", methods=["POST"])
+    @nc_login_required
+    def nc_api_auto_refresh_plan(pid):
+        """Auto-generate refresh plan from tech debt analysis.
+        Scans all project topologies for EOL/EOS devices and creates
+        refresh items with replacement suggestions from the map."""
+        conn = get_connection()
+        topo_ids = [r[0] for r in conn.execute(
+            "SELECT topology_id FROM nc_project_topologies "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()]
+
+        # Load replacement map
+        rep_map = {}
+        for r in conn.execute(
+            "SELECT old_model, new_model, new_cost, migration_effort "
+            "FROM nc_replacement_map"
+        ).fetchall():
+            rep_map[r[0].lower()] = _row_to_dict(r)
+
+        now = datetime.now(timezone.utc)
+        items_created = 0
+        for tid in topo_ids:
+            row = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (tid,)
+            ).fetchone()
+            if not row:
+                continue
+            try:
+                graph = json.loads(row["graph_json"])
+            except Exception:
+                continue
+            for n in graph.get("nodes", []):
+                cfg = n.get("config") or n.get("configData") or {}
+                eol = cfg.get("eol_date", "")
+                model = cfg.get("model", "")
+                if not eol and not model:
+                    continue
+                # Determine priority from EOL date
+                priority = "low"
+                if eol:
+                    try:
+                        eol_dt = datetime.fromisoformat(
+                            eol + "T00:00:00+00:00")
+                        months = (eol_dt - now).days / 30.44
+                        if months <= 0:
+                            priority = "critical"
+                        elif months <= 12:
+                            priority = "high"
+                        elif months <= 24:
+                            priority = "medium"
+                    except (ValueError, TypeError):
+                        pass
+                # Look up replacement
+                rep = rep_map.get(model.lower(), {})
+                target_yr = now.year
+                if priority == "medium":
+                    target_yr = now.year + 1
+                elif priority == "low":
+                    target_yr = now.year + 2
+
+                conn.execute(
+                    "INSERT INTO nc_refresh_plans "
+                    "(id, project_id, device_label, old_model, "
+                    " eol_date, priority, replacement_model, "
+                    " replacement_cost, target_year, status, "
+                    " created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), pid,
+                     n.get("label", ""),
+                     model, eol, priority,
+                     rep.get("new_model", ""),
+                     rep.get("new_cost", 0),
+                     target_yr, "planned", _now())
+                )
+                items_created += 1
+
+        conn.commit()
+        conn.close()
+        _audit("AUTO_REFRESH", "project", pid,
+               f"{items_created} items")
+        return jsonify({"items_created": items_created}), 201
+
+    @bp.route("/api/budget-forecast", methods=["GET"])
+    @nc_login_required
+    def nc_api_budget_forecast():
+        """Enterprise-wide budget forecast from all refresh plans."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT target_year, "
+            "SUM(replacement_cost) AS total_cost, "
+            "COUNT(*) AS item_count "
+            "FROM nc_refresh_plans "
+            "GROUP BY target_year ORDER BY target_year"
+        ).fetchall()
+        conn.close()
+        forecast = [_row_to_dict(r) for r in rows]
+        grand_total = sum(f.get("total_cost", 0) or 0 for f in forecast)
+        return jsonify({
+            "forecast": forecast,
+            "grand_total": grand_total,
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
     # Phase 5: Discovered Data -> Simulation/Impact/What-If Bridge
     # ══════════════════════════════════════════════════════════════════════
 
