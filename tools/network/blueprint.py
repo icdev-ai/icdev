@@ -2078,6 +2078,269 @@ def create_network_blueprint():
                          "total_nodes": len(graph.get("nodes", []))})
 
     # ══════════════════════════════════════════════════════════════════════
+    # Phase 2: Device Command Profiles + Non-Intrusive Discovery
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/device-profiles", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_device_profiles():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, vendor, platform, description, is_builtin, "
+            "created_by, created_at FROM nc_device_profiles "
+            "ORDER BY vendor, platform"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/device-profiles/<pid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_device_profile(pid):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_device_profiles WHERE id=?", (pid,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        p = _row_to_dict(row)
+        try:
+            p["commands"] = json.loads(p.get("commands_json") or "{}")
+        except Exception:
+            p["commands"] = {}
+        return jsonify(p)
+
+    @bp.route("/api/device-profiles", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_device_profile():
+        """Create a user-defined device command profile."""
+        data = request.get_json(force=True, silent=True) or {}
+        pid = str(_uuid.uuid4())
+        commands = data.get("commands", {})
+        if isinstance(commands, dict):
+            commands = json.dumps(commands)
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_device_profiles "
+            "(id, vendor, platform, description, commands_json, "
+            " is_builtin, created_by, created_at) "
+            "VALUES (?,?,?,?,?,0,?,?)",
+            (pid, data.get("vendor", "Custom"),
+             data.get("platform", "Custom"),
+             data.get("description", ""),
+             commands,
+             data.get("created_by", ""), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "device_profile", pid,
+               f"{data.get('vendor')} {data.get('platform')}")
+        return jsonify({"id": pid}), 201
+
+    @bp.route("/api/device-profiles/<pid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_device_profile(pid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT is_builtin FROM nc_device_profiles WHERE id=?",
+            (pid,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        fields, values = [], []
+        allowed = ["vendor", "platform", "description"]
+        if not row[0]:  # user-created can update commands
+            allowed.append("commands_json")
+        for k in allowed:
+            if k in data:
+                v = data[k]
+                if k == "commands_json" and isinstance(v, dict):
+                    v = json.dumps(v)
+                fields.append(f"{k}=?")
+                values.append(v)
+        # Allow adding commands to built-in profiles
+        if row[0] and "commands" in data:
+            existing = conn.execute(
+                "SELECT commands_json FROM nc_device_profiles "
+                "WHERE id=?", (pid,)
+            ).fetchone()
+            try:
+                cmds = json.loads(existing[0] or "{}")
+            except Exception:
+                cmds = {}
+            cmds.update(data["commands"])
+            fields.append("commands_json=?")
+            values.append(json.dumps(cmds))
+        if fields:
+            values.append(pid)
+            conn.execute(
+                f"UPDATE nc_device_profiles "  # nosec B608
+                f"SET {', '.join(fields)} WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/device-profiles/<pid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_device_profile(pid):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT is_builtin FROM nc_device_profiles WHERE id=?",
+            (pid,)
+        ).fetchone()
+        if row and row[0]:
+            conn.close()
+            return jsonify(
+                {"error": "Cannot delete built-in profile"}), 403
+        conn.execute(
+            "DELETE FROM nc_device_profiles WHERE id=?", (pid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Discovery Configs ─────────────────────────────────────────────────
+    @bp.route("/api/discovery-configs", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_discovery_configs():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT dc.*, dp.vendor, dp.platform "
+            "FROM nc_discovery_configs dc "
+            "LEFT JOIN nc_device_profiles dp ON dp.id=dc.profile_id "
+            "ORDER BY dc.name"
+        ).fetchall()
+        conn.close()
+        configs = []
+        for r in rows:
+            c = _row_to_dict(r)
+            try:
+                c["targets"] = json.loads(c.get("targets") or "[]")
+            except Exception:
+                c["targets"] = []
+            configs.append(c)
+        return jsonify(configs)
+
+    @bp.route("/api/discovery-configs", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_discovery_config():
+        data = request.get_json(force=True, silent=True) or {}
+        cid = str(_uuid.uuid4())
+        targets = data.get("targets", [])
+        if isinstance(targets, list):
+            targets = json.dumps(targets)
+        wl = data.get("whitelist_subnets", [])
+        if isinstance(wl, list):
+            wl = json.dumps(wl)
+        bl = data.get("blacklist_subnets", [])
+        if isinstance(bl, list):
+            bl = json.dumps(bl)
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_discovery_configs "
+            "(id, name, profile_id, targets, credential_ref, "
+            " method, read_only, rate_limit_per_sec, "
+            " max_concurrent, timeout_per_cmd, timeout_per_device, "
+            " hop_limit, max_devices, whitelist_subnets, "
+            " blacklist_subnets, created_at) "
+            "VALUES (?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
+            (cid, data.get("name", "Discovery Scan"),
+             data.get("profile_id"),
+             targets,
+             data.get("credential_ref", ""),
+             data.get("method", "ssh"),
+             data.get("rate_limit_per_sec", 1.0),
+             data.get("max_concurrent", 5),
+             data.get("timeout_per_cmd", 10),
+             data.get("timeout_per_device", 60),
+             data.get("hop_limit", 2),
+             data.get("max_devices", 100),
+             wl, bl, _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "discovery_config", cid)
+        return jsonify({"id": cid}), 201
+
+    @bp.route("/api/discovery-configs/<cid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_discovery_config(cid):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_discovery_configs WHERE id=?", (cid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # ── Collected Configs ─────────────────────────────────────────────────
+    @bp.route("/api/collected-configs", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_collected_configs():
+        device_ip = request.args.get("device_ip", "")
+        conn = get_connection()
+        if device_ip:
+            rows = conn.execute(
+                "SELECT id, device_ip, hostname, command_name, "
+                "collected_at FROM nc_collected_configs "
+                "WHERE device_ip=? ORDER BY collected_at DESC",
+                (device_ip,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, device_ip, hostname, command_name, "
+                "collected_at FROM nc_collected_configs "
+                "ORDER BY collected_at DESC LIMIT 100"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/collected-configs/<cid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_collected_config(cid):
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_collected_configs WHERE id=?", (cid,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        c = _row_to_dict(row)
+        try:
+            c["parsed"] = json.loads(c.get("parsed_json") or "{}")
+        except Exception:
+            c["parsed"] = {}
+        return jsonify(c)
+
+    @bp.route("/api/collected-configs", methods=["POST"])
+    @nc_login_required
+    def nc_api_store_collected_config():
+        """Store a manually captured config output."""
+        data = request.get_json(force=True, silent=True) or {}
+        cid = str(_uuid.uuid4())
+        parsed = data.get("parsed_json", {})
+        if isinstance(parsed, dict):
+            parsed = json.dumps(parsed)
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_collected_configs "
+            "(id, device_ip, hostname, profile_id, command_name, "
+            " output_text, parsed_json, collected_at, topology_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (cid, data.get("device_ip", ""),
+             data.get("hostname", ""),
+             data.get("profile_id"),
+             data.get("command_name", "manual"),
+             data.get("output_text", ""),
+             parsed, _now(),
+             data.get("topology_id"))
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": cid}), 201
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Circuits CRUD
     # ══════════════════════════════════════════════════════════════════════
 

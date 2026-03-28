@@ -622,6 +622,49 @@ CREATE TABLE IF NOT EXISTS nc_case_history (
     changed_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Device Command Profiles (Phase 2 Network Intelligence) ───────────────
+CREATE TABLE IF NOT EXISTS nc_device_profiles (
+    id          TEXT PRIMARY KEY,
+    vendor      TEXT NOT NULL,
+    platform    TEXT NOT NULL,           -- IOS, IOS-XE, NX-OS, EOS, JunOS, PAN-OS, FortiOS, etc.
+    description TEXT,
+    commands_json TEXT NOT NULL DEFAULT '{}',  -- {command_name: {command, parser, timeout_sec}}
+    is_builtin  INTEGER DEFAULT 0,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_discovery_configs (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    profile_id      TEXT REFERENCES nc_device_profiles(id),
+    targets         TEXT NOT NULL DEFAULT '[]',  -- JSON array of IPs/CIDRs
+    credential_ref  TEXT,                        -- reference to credential store (never plaintext)
+    method          TEXT DEFAULT 'ssh',           -- ssh, snmp, ping
+    read_only       INTEGER DEFAULT 1,            -- MUST be 1 for non-intrusive
+    rate_limit_per_sec REAL DEFAULT 1.0,
+    max_concurrent  INTEGER DEFAULT 5,
+    timeout_per_cmd INTEGER DEFAULT 10,
+    timeout_per_device INTEGER DEFAULT 60,
+    hop_limit       INTEGER DEFAULT 2,
+    max_devices     INTEGER DEFAULT 100,
+    whitelist_subnets TEXT DEFAULT '[]',
+    blacklist_subnets TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_collected_configs (
+    id          TEXT PRIMARY KEY,
+    device_ip   TEXT NOT NULL,
+    hostname    TEXT,
+    profile_id  TEXT REFERENCES nc_device_profiles(id),
+    command_name TEXT NOT NULL,
+    output_text TEXT NOT NULL,
+    parsed_json TEXT DEFAULT '{}',
+    collected_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    topology_id TEXT REFERENCES topologies(id)
+);
+
 -- ── ARB/ERB Documentation (Architect Workbench) ──────────────────────────
 -- Alternatives Analysis Matrix
 CREATE TABLE IF NOT EXISTS nc_alternatives (
@@ -2881,6 +2924,92 @@ def init_db():
                 )
             conn.commit()
             print(f"[init_db] Seeded {len(_patterns)} design patterns.")
+
+        # Seed device profiles
+        prof_count = conn.execute("SELECT COUNT(*) FROM nc_device_profiles").fetchone()[0]
+        if prof_count == 0:
+            _profiles = [
+                ("prof-cisco-ios", "Cisco", "IOS / IOS-XE",
+                 "Cisco IOS and IOS-XE routers and switches", json.dumps({
+                     "running_config": {"command": "show running-config", "parser": "ios_running_config", "timeout_sec": 30},
+                     "routing_table_v4": {"command": "show ip route", "parser": "ios_ip_route", "timeout_sec": 15},
+                     "routing_table_v6": {"command": "show ipv6 route", "parser": "ios_ipv6_route", "timeout_sec": 15},
+                     "interfaces": {"command": "show ip interface brief", "parser": "ios_interface_brief", "timeout_sec": 10},
+                     "version": {"command": "show version", "parser": "ios_version", "timeout_sec": 10},
+                     "bgp_summary": {"command": "show ip bgp summary", "parser": "ios_bgp_summary", "timeout_sec": 10},
+                     "ospf_neighbors": {"command": "show ip ospf neighbor", "parser": "ios_ospf_neighbor", "timeout_sec": 10},
+                     "cdp_neighbors": {"command": "show cdp neighbors detail", "parser": "ios_cdp_detail", "timeout_sec": 10},
+                     "lldp_neighbors": {"command": "show lldp neighbors detail", "parser": "ios_lldp_detail", "timeout_sec": 10},
+                     "arp_table": {"command": "show arp", "parser": "ios_arp", "timeout_sec": 10},
+                     "inventory": {"command": "show inventory", "parser": "ios_inventory", "timeout_sec": 10},
+                 }), 1),
+                ("prof-cisco-nxos", "Cisco", "NX-OS",
+                 "Cisco Nexus switches (NX-OS)", json.dumps({
+                     "running_config": {"command": "show running-config", "parser": "nxos_running_config", "timeout_sec": 30},
+                     "routing_table_v4": {"command": "show ip route", "parser": "nxos_ip_route", "timeout_sec": 15},
+                     "interfaces": {"command": "show ip interface brief", "parser": "nxos_interface_brief", "timeout_sec": 10},
+                     "version": {"command": "show version", "parser": "nxos_version", "timeout_sec": 10},
+                     "bgp_summary": {"command": "show ip bgp summary", "parser": "nxos_bgp_summary", "timeout_sec": 10},
+                     "lldp_neighbors": {"command": "show lldp neighbors detail", "parser": "nxos_lldp_detail", "timeout_sec": 10},
+                     "vpc_status": {"command": "show vpc brief", "parser": "nxos_vpc", "timeout_sec": 10},
+                 }), 1),
+                ("prof-arista-eos", "Arista", "EOS",
+                 "Arista switches (EOS)", json.dumps({
+                     "running_config": {"command": "show running-config", "parser": "eos_running_config", "timeout_sec": 30},
+                     "routing_table_v4": {"command": "show ip route", "parser": "eos_ip_route", "timeout_sec": 15},
+                     "interfaces": {"command": "show ip interface brief", "parser": "eos_interface_brief", "timeout_sec": 10},
+                     "version": {"command": "show version", "parser": "eos_version", "timeout_sec": 10},
+                     "bgp_summary": {"command": "show ip bgp summary", "parser": "eos_bgp_summary", "timeout_sec": 10},
+                     "lldp_neighbors": {"command": "show lldp neighbors detail", "parser": "eos_lldp_detail", "timeout_sec": 10},
+                     "mlag_status": {"command": "show mlag detail", "parser": "eos_mlag", "timeout_sec": 10},
+                 }), 1),
+                ("prof-juniper-junos", "Juniper", "JunOS",
+                 "Juniper routers and switches (JunOS)", json.dumps({
+                     "running_config": {"command": "show configuration | display set", "parser": "junos_config_set", "timeout_sec": 30},
+                     "routing_table_v4": {"command": "show route table inet.0", "parser": "junos_route", "timeout_sec": 15},
+                     "routing_table_v6": {"command": "show route table inet6.0", "parser": "junos_route_v6", "timeout_sec": 15},
+                     "interfaces": {"command": "show interfaces terse", "parser": "junos_interface_terse", "timeout_sec": 10},
+                     "version": {"command": "show version", "parser": "junos_version", "timeout_sec": 10},
+                     "bgp_summary": {"command": "show bgp summary", "parser": "junos_bgp_summary", "timeout_sec": 10},
+                     "ospf_neighbors": {"command": "show ospf neighbor", "parser": "junos_ospf_neighbor", "timeout_sec": 10},
+                     "lldp_neighbors": {"command": "show lldp neighbors", "parser": "junos_lldp", "timeout_sec": 10},
+                 }), 1),
+                ("prof-paloalto-panos", "Palo Alto", "PAN-OS",
+                 "Palo Alto firewalls (PAN-OS)", json.dumps({
+                     "running_config": {"command": "show config running", "parser": "panos_config", "timeout_sec": 30},
+                     "interfaces": {"command": "show interface all", "parser": "panos_interface", "timeout_sec": 10},
+                     "version": {"command": "show system info", "parser": "panos_system_info", "timeout_sec": 10},
+                     "routing_table_v4": {"command": "show routing route", "parser": "panos_route", "timeout_sec": 15},
+                     "security_rules": {"command": "show running security-policy", "parser": "panos_security_policy", "timeout_sec": 15},
+                     "arp_table": {"command": "show arp all", "parser": "panos_arp", "timeout_sec": 10},
+                 }), 1),
+                ("prof-fortinet-fortios", "Fortinet", "FortiOS",
+                 "Fortinet FortiGate firewalls (FortiOS)", json.dumps({
+                     "running_config": {"command": "show full-configuration", "parser": "fortios_config", "timeout_sec": 30},
+                     "interfaces": {"command": "get system interface", "parser": "fortios_interface", "timeout_sec": 10},
+                     "version": {"command": "get system status", "parser": "fortios_status", "timeout_sec": 10},
+                     "routing_table_v4": {"command": "get router info routing-table all", "parser": "fortios_route", "timeout_sec": 15},
+                     "security_rules": {"command": "show firewall policy", "parser": "fortios_policy", "timeout_sec": 15},
+                     "arp_table": {"command": "get system arp", "parser": "fortios_arp", "timeout_sec": 10},
+                 }), 1),
+                ("prof-nokia-sros", "Nokia", "SR-OS",
+                 "Nokia service routers (SR-OS / TiMOS)", json.dumps({
+                     "running_config": {"command": "admin display-config", "parser": "sros_config", "timeout_sec": 30},
+                     "routing_table_v4": {"command": "show router route-table", "parser": "sros_route", "timeout_sec": 15},
+                     "interfaces": {"command": "show port", "parser": "sros_port", "timeout_sec": 10},
+                     "version": {"command": "show system information", "parser": "sros_system_info", "timeout_sec": 10},
+                     "bgp_summary": {"command": "show router bgp summary", "parser": "sros_bgp_summary", "timeout_sec": 10},
+                     "ospf_neighbors": {"command": "show router ospf neighbor", "parser": "sros_ospf_neighbor", "timeout_sec": 10},
+                 }), 1),
+            ]
+            for p in _profiles:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_device_profiles "
+                    "(id, vendor, platform, description, commands_json, "
+                    " is_builtin) VALUES (?,?,?,?,?,?)", p
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(_profiles)} device profiles.")
 
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
