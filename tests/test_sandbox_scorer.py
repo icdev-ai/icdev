@@ -21,9 +21,9 @@ def mock_sandbox_executor():
     which probes Docker. This mock prevents slow/hanging Docker operations.
     """
     mock_executor = MagicMock()
-    mock_executor._available = True
-    mock_executor.health_check.return_value = {"docker_available": True}
-    with patch("tools.registry.sandbox_scorer.SandboxExecutor", return_value=mock_executor):
+    mock_executor._available = False
+    mock_executor.health_check.return_value = {"docker_available": False}
+    with patch("tools.security.sandbox_executor.SandboxExecutor", return_value=mock_executor):
         yield
 
 
