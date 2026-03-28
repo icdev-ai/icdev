@@ -2,10 +2,26 @@
 # CUI // SP-CTI
 """Tests for Bayesian Autoresearch Engine (Phase 67, D-AR-1 through D-AR-10)."""
 
+import socket
 import sqlite3
 from datetime import datetime, timezone
 
 import pytest
+
+
+def _ollama_reachable() -> bool:
+    """Return True if Ollama is listening on localhost:11434."""
+    try:
+        with socket.create_connection(("localhost", 11434), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+requires_ollama = pytest.mark.skipif(
+    not _ollama_reachable(),
+    reason="Ollama not running on localhost:11434 — skipping live LLM test",
+)
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -478,6 +494,7 @@ class TestCLI:
 
 
 class TestGenesisReflex:
+    @requires_ollama
     def test_reflex_interface(self):
         """Verify experiment reflex has correct run() signature."""
         from tools.genesis.reflexes.experiment import run

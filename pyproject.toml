@@ -201,3 +201,4 @@ exclude = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+timeout = 30
