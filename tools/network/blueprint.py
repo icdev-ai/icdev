@@ -2960,7 +2960,7 @@ def create_network_blueprint():
                     alt for alt in fwd.get(r["device_ip"], [])
                     if alt["prefix"] == r["prefix"]
                     and alt["next_hop"] != failed_link_dst
-                    and alt["next_hop"] != "0.0.0.0"
+                    and alt["next_hop"] != "0.0.0.0"  # nosec B104 — route filter, not socket bind
                 ]
                 entry = {
                     "prefix": r["prefix"],
