@@ -2,19 +2,24 @@
 
 ## Variables
 
-DASHBOARD_PORT: 5000
 PORTAL_PORT: 8443
 
 ## Workflow
 
+0. Read the dashboard port from `.env` (uses `ICDEV_DASHBOARD_PORT`, defaults to 5050):
+   ```bash
+   DASHBOARD_PORT=$(python -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ICDEV_DASHBOARD_PORT', '5050'))")
+   ```
+   Use `$DASHBOARD_PORT` for all subsequent dashboard URL references.
+
 1. Check if the dashboard is already running on port `DASHBOARD_PORT`:
    ```bash
-   python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
+   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import urllib.request; urllib.request.urlopen(f'http://localhost:{p}/health', timeout=2); print('RUNNING')" 2>/dev/null || echo "NOT_RUNNING"
    ```
 
 2. If **RUNNING**: Open it in the browser and report status.
    ```bash
-   python -m webbrowser "http://localhost:5000"
+   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
 
 3. If **NOT_RUNNING**: Initialize the database if needed, start the dashboard, and open the browser:
@@ -28,7 +33,7 @@ PORTAL_PORT: 8443
    sleep 2
    ```
    ```bash
-   python -m webbrowser "http://localhost:5000"
+   python -c "import os; from dotenv import load_dotenv; load_dotenv(); p=os.getenv('ICDEV_DASHBOARD_PORT','5050'); import webbrowser; webbrowser.open(f'http://localhost:{p}')"
    ```
 
 4. Check if the SaaS API Gateway / Portal is already running on port `PORTAL_PORT`:
@@ -66,7 +71,7 @@ PORTAL_PORT: 8443
      - Health: `http://localhost:PORTAL_PORT/health`
      - Log: `.tmp/api_gateway.log`
    - **Poll Trigger**: `.tmp/poll_trigger.log`
-   - To stop dashboard: `kill $(lsof -ti:5000)` or `pkill -f "tools/dashboard/app.py"`
+   - To stop dashboard: `kill $(lsof -ti:$DASHBOARD_PORT)` or `pkill -f "tools/dashboard/app.py"`
 
    - To stop portal: `kill $(lsof -ti:8443)` or `pkill -f "tools/saas/api_gateway.py"`
    - To stop poll trigger: `pkill -f "tools/ci/triggers/poll_trigger.py"`
