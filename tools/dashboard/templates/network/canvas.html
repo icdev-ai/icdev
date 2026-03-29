@@ -48,6 +48,7 @@
     </div>
     <div class="tb-group">
       <button class="tb-btn" onclick="openTemplatesPanel()" title="Templates">⊡ Templates</button>
+      <button class="tb-btn tb-btn-snippets" onclick="openSnippetsPanel()" title="Enclave-in-a-Box — drop pre-built compliance-validated sub-topologies onto canvas" style="color:#a29bfe;">&#x229e; Snippets</button>
       <button class="tb-btn" onclick="openSimPanel()" title="Simulate">▶ Simulate</button>
       <button class="tb-btn tb-btn-danger" onclick="runOutageSimulation()" title="Simulate link outage">✕ Cut Link</button>
     </div>
@@ -943,6 +944,24 @@
     <div id="tpl-list" class="tpl-list-panel"></div>
   </div>
 </div>
+<!-- Enclave-in-a-Box Snippets Overlay -->
+<div id="snippets-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x229e; Enclave-in-a-Box Snippets</h3>
+      <button class="close-btn" onclick="closeSnippetsPanel()">&#x2715;</button>
+    </div>
+    <p style="font-size:11px;color:var(--text-dim);margin:0 0 10px 0;padding:0 4px;">
+      Pre-built compliance-validated sub-topologies. All STIG baselines, FIPS mode, and
+      NIST controls are pre-populated. Click <strong>Insert onto Canvas</strong> to place
+      at the current canvas center.
+    </p>
+    <div id="snippets-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px;padding:4px;">
+      <div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px;">Loading snippets…</div>
+    </div>
+  </div>
+</div>
+
 <!-- Custom Device Dialog -->
 <div id="custom-device-overlay" class="sim-overlay hidden">
   <div class="sim-panel" style="max-width:380px;">

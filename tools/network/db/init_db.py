@@ -994,6 +994,23 @@ CREATE INDEX IF NOT EXISTS idx_vuln_hosts_ip ON nc_vuln_hosts(ip);
 CREATE INDEX IF NOT EXISTS idx_vuln_hosts_node ON nc_vuln_hosts(node_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON nc_vuln_findings(host_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON nc_vuln_findings(severity);
+
+-- ── Enclave-in-a-Box Snippets ─────────────────────────────────────────────
+-- Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge)
+-- Drag onto canvas; all STIG properties pre-populated.
+
+CREATE TABLE IF NOT EXISTS nc_enclave_snippets (
+    id                  TEXT PRIMARY KEY,
+    name                TEXT NOT NULL,
+    category            TEXT NOT NULL DEFAULT 'Enclave',
+    description         TEXT,
+    classification_level TEXT DEFAULT 'CUI',   -- CUI, SECRET, TS
+    impact_level        TEXT DEFAULT 'IL4',    -- IL2, IL4, IL5, IL6
+    graph_json          TEXT NOT NULL DEFAULT '{"nodes":[],"edges":[]}',
+    stig_controls       TEXT DEFAULT '[]',     -- JSON array of NIST/STIG control IDs
+    tags                TEXT DEFAULT '[]',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -2899,6 +2916,306 @@ TEMPLATES = [
 ]
 
 
+# ── Enclave-in-a-Box snippet seeds ────────────────────────────────────────────
+
+ENCLAVE_SNIPPETS = [
+    # 1 ─ SIPR Enclave Starter
+    {
+        "id": "snip-sipr-enclave",
+        "name": "SIPR Enclave Starter",
+        "category": "Enclave",
+        "description": (
+            "Minimal SECRET-network enclave: perimeter firewall, cross-domain solution (CDS), "
+            "IDS/IPS sensor, syslog collector, and admin workstation. "
+            "All STIG CAT I controls pre-populated (FIPS 140-2, HBSS, audit logging)."
+        ),
+        "classification_level": "SECRET",
+        "impact_level": "IL6",
+        "stig_controls": json.dumps([
+            "SC-8", "SC-8(1)", "AU-2", "AU-9", "SC-28", "CA-3", "SI-3",
+            "IA-2", "AC-17", "CM-7",
+        ]),
+        "tags": json.dumps(["sipr", "secret", "il6", "cds", "hbss", "fips"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("s-fw", "SIPR Perimeter FW", "firewall", 300, 100, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Network STIG V3R9",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "hbss_enabled": "yes",
+                        "audit_logging": "yes",
+                        "stig_cat1_open": "0",
+                        "notes": "SIPR perimeter firewall — DISA-approved platform. FIPS 140-2 enforced.",
+                    }
+                }),
+                _node("s-cds", "Cross-Domain Solution", "fips-140-l3", 500, 100, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA CDS STIG V2R4",
+                        "fips_mode": "FIPS 140-3 Level 3",
+                        "approval_authority": "DISA CDS PMO",
+                        "data_flow_direction": "high-to-low",
+                        "filter_policy": "allowlist",
+                        "notes": "NSA-evaluated CDS. Data-flow direction enforced by hardware guard.",
+                    }
+                }),
+                _node("s-ids", "IDS/IPS Sensor", "siem", 300, 250, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA HBSS STIG V2R2",
+                        "sensor_type": "inline IPS",
+                        "hbss_component": "HIPS + DLPe",
+                        "alert_destination": "SIPR SIEM",
+                        "notes": "Host-Based Security System (HBSS) IDS/IPS — mandatory for DoD IL6.",
+                    }
+                }),
+                _node("s-log", "Syslog / SIEM Collector", "server", 500, 250, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Log Server STIG V1R1",
+                        "fips_mode": "FIPS 140-2 Level 1",
+                        "log_retention_days": "365",
+                        "protocols": "syslog-TLS, SNMP-v3",
+                        "notes": "Centralized audit log collection per NIST AU-2/AU-9. Immutable storage.",
+                    }
+                }),
+                _node("s-aws", "Admin Workstation", "endpoint-pc", 700, 175, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Windows 11 STIG V2R2",
+                        "fips_mode": "FIPS 140-2 Level 1",
+                        "hbss_enabled": "yes",
+                        "cac_required": "yes",
+                        "notes": "Admin workstation — CAC authentication mandatory. No removable media.",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("s-fw", "s-cds", "Encrypted", "Type 1 / HAIPE"),
+                _edge("s-fw", "s-ids", "Mirror Port", "SPAN"),
+                _edge("s-ids", "s-log", "syslog-TLS/514", "TLS"),
+                _edge("s-fw", "s-log", "syslog-TLS/514", "TLS"),
+                _edge("s-cds", "s-aws", "1GbE", ""),
+                _edge("s-aws", "s-log", "syslog-TLS/514", "TLS"),
+            ],
+        }),
+    },
+    # 2 ─ IL5 DMZ Pattern
+    {
+        "id": "snip-il5-dmz",
+        "name": "IL5 DMZ Pattern",
+        "category": "Enclave",
+        "description": (
+            "Dual-firewall DMZ for IL5 (CUI/Dedicated). "
+            "Outer firewall faces untrusted networks, DMZ hosts reside between firewalls, "
+            "inner firewall guards the internal CUI enclave. "
+            "STIG baselines and FIPS 140-2 enforcement pre-populated per DISA Cloud SRG IL5."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL5",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-7(3)", "SC-8", "AC-4", "CA-3", "SI-4",
+            "AU-2", "AU-12", "RA-5", "CM-6",
+        ]),
+        "tags": json.dumps(["il5", "cui", "dmz", "dual-firewall", "fisma-high"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("d-outer-fw", "Outer Firewall (Untrusted)", "firewall", 100, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Firewall SRG V2R1",
+                        "impact_level": "IL5",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "zone": "untrusted",
+                        "rule_review_cycle": "90 days",
+                        "notes": "Outer perimeter firewall — default-deny, allow-list only. Faces Internet/NIPRNet.",
+                    }
+                }),
+                _node("d-web", "DMZ Web Server", "server", 350, 120, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Apache Server STIG V3R2",
+                        "impact_level": "IL5",
+                        "zone": "dmz",
+                        "tls_version": "TLS 1.3",
+                        "fips_mode": "FIPS 140-2 Level 1",
+                        "notes": "DMZ web tier — only 443/TCP inbound. No direct DB access.",
+                    }
+                }),
+                _node("d-proxy", "Reverse Proxy / WAF", "load-balancer", 350, 280, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Web Server SRG V3R1",
+                        "impact_level": "IL5",
+                        "zone": "dmz",
+                        "waf_enabled": "yes",
+                        "tls_termination": "yes",
+                        "notes": "WAF in front of web tier. OWASP top-10 ruleset enabled.",
+                    }
+                }),
+                _node("d-ids", "DMZ IDS Sensor", "siem", 350, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA IDS SRG V1R2",
+                        "impact_level": "IL5",
+                        "zone": "dmz",
+                        "sensor_mode": "passive tap",
+                        "notes": "Passive IDS monitoring DMZ segment. Alerts to SIEM.",
+                    }
+                }),
+                _node("d-inner-fw", "Inner Firewall (CUI Enclave)", "firewall", 600, 200, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Firewall SRG V2R1",
+                        "impact_level": "IL5",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "zone": "trusted",
+                        "micro_segmentation": "yes",
+                        "notes": "Inner firewall — enforces east-west micro-segmentation within CUI enclave.",
+                    }
+                }),
+                _node("d-siem", "SIEM / Log Aggregator", "server", 800, 120, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Log Server STIG V1R1",
+                        "impact_level": "IL5",
+                        "fips_mode": "FIPS 140-2 Level 1",
+                        "log_retention_days": "365",
+                        "notes": "Central SIEM. Receives logs from all zones per NIST AU-2/AU-12.",
+                    }
+                }),
+                _node("d-app", "Internal App Server", "server", 800, 280, {
+                    "config": {
+                        "classification": "CUI",
+                        "stig_baseline": "DISA Application Server SRG V3R3",
+                        "impact_level": "IL5",
+                        "zone": "trusted",
+                        "fips_mode": "FIPS 140-2 Level 1",
+                        "notes": "Internal application tier. Communicates only via inner firewall ACL.",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("d-outer-fw", "d-web", "HTTPS/443", "TLS 1.3"),
+                _edge("d-outer-fw", "d-proxy", "HTTPS/443", "TLS 1.3"),
+                _edge("d-outer-fw", "d-ids", "SPAN", ""),
+                _edge("d-web", "d-inner-fw", "HTTPS/8443", "TLS 1.3"),
+                _edge("d-proxy", "d-inner-fw", "HTTPS/8443", "TLS 1.3"),
+                _edge("d-ids", "d-siem", "syslog-TLS", "TLS"),
+                _edge("d-inner-fw", "d-app", "TCP/8080", ""),
+                _edge("d-inner-fw", "d-siem", "syslog-TLS", "TLS"),
+                _edge("d-app", "d-siem", "syslog-TLS", "TLS"),
+            ],
+        }),
+    },
+    # 3 ─ Tactical Edge Kit
+    {
+        "id": "snip-tactical-edge",
+        "name": "Tactical Edge Kit",
+        "category": "Enclave",
+        "description": (
+            "Deployable/expeditionary network kit: tactical router, NSA Type 1 encryptor, "
+            "PACE radio, edge firewall, and managed switch. "
+            "Supports SIPR/NIPR transport over satellite or tactical comms. "
+            "DoD PACE plan, NSA Type 1 crypto, and STIG controls pre-populated."
+        ),
+        "classification_level": "SECRET",
+        "impact_level": "IL6",
+        "stig_controls": json.dumps([
+            "SC-8", "SC-8(1)", "IA-3", "CM-7", "AC-17", "SC-28",
+            "CP-8", "CP-9", "AU-2", "SI-4",
+        ]),
+        "tags": json.dumps(["tactical", "expeditionary", "pace", "il6", "type1", "haipe", "satcom"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("t-sat", "SATCOM Terminal", "endpoint-iot", 100, 200, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Satellite Terminal STIG V1R1",
+                        "pace_priority": "P (Primary)",
+                        "frequency_band": "Ka/X-band",
+                        "notes": "Primary SATCOM terminal. PACE Priority 1 — Primary transport.",
+                    }
+                }),
+                _node("t-radio", "Tactical Radio (PACE-2)", "endpoint-iot", 100, 320, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA WLAN STIG V7R1",
+                        "pace_priority": "A (Alternate)",
+                        "waveform": "SINCGARS / SRW",
+                        "encryption": "NSA Type 1",
+                        "notes": "Alternate transport — tactical VHF/UHF radio. PACE Priority 2.",
+                    }
+                }),
+                _node("t-enc", "KG-175D (TACLANE)", "kg-175d", 300, 260, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "NSA TACLANE STIG V3R1",
+                        "fips_mode": "FIPS 140-2 Level 3",
+                        "key_management": "KMI / EKMS",
+                        "throughput": "Up to 2 Gbps",
+                        "notes": "NSA Type 1 HAIPE encryptor. Protects all RED traffic over BLACK network.",
+                    }
+                }),
+                _node("t-rtr", "Tactical Router", "router", 500, 200, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Cisco Router STIG V3R3",
+                        "impact_level": "IL6",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "protocol": "OSPF",
+                        "vrf": "SIPR",
+                        "notes": "Core tactical router. RED side only — all traffic exits via KG-175D.",
+                    }
+                }),
+                _node("t-fw", "Edge Firewall", "firewall", 500, 350, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Firewall SRG V2R1",
+                        "impact_level": "IL6",
+                        "fips_mode": "FIPS 140-2 Level 2",
+                        "stig_cat1_open": "0",
+                        "notes": "Edge stateful firewall. Default-deny. Only DoD-approved traffic permitted.",
+                    }
+                }),
+                _node("t-sw", "Managed Switch", "switch-l2", 700, 270, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA L2 Switch STIG V3R3",
+                        "impact_level": "IL6",
+                        "port_security": "yes",
+                        "storm_control": "yes",
+                        "stp_bpduguard": "yes",
+                        "notes": "Access layer switch. Port security enabled; unused ports shut.",
+                    }
+                }),
+                _node("t-ws", "Commander Workstation", "endpoint-pc", 900, 270, {
+                    "config": {
+                        "classification": "SECRET",
+                        "stig_baseline": "DISA Windows 11 STIG V2R2",
+                        "impact_level": "IL6",
+                        "fips_mode": "FIPS 140-2 Level 1",
+                        "hbss_enabled": "yes",
+                        "cac_required": "yes",
+                        "notes": "Commander workstation — CAC + PIN required. HBSS enforced.",
+                    }
+                }),
+            ],
+            "edges": [
+                _edge("t-sat", "t-enc", "BLACK / WAN", "HAIPE"),
+                _edge("t-radio", "t-enc", "BLACK / Radio", "HAIPE"),
+                _edge("t-enc", "t-rtr", "RED / 1GbE", "OSPF"),
+                _edge("t-rtr", "t-fw", "1GbE", ""),
+                _edge("t-rtr", "t-sw", "1GbE", ""),
+                _edge("t-fw", "t-sw", "1GbE", ""),
+                _edge("t-sw", "t-ws", "1GbE", ""),
+            ],
+        }),
+    },
+]
+
+
 def init_db():
     conn = get_connection()
     try:
@@ -2946,6 +3263,24 @@ def init_db():
             print(f"[init_db] Seeded {len(TEMPLATES)} templates.")
         else:
             print(f"[init_db] Templates already seeded ({count} rows).")
+
+        # Seed enclave snippets
+        snip_count = conn.execute("SELECT COUNT(*) FROM nc_enclave_snippets").fetchone()[0]
+        if snip_count == 0:
+            for s in ENCLAVE_SNIPPETS:
+                conn.execute(
+                    "INSERT OR IGNORE INTO nc_enclave_snippets "
+                    "(id, name, category, description, classification_level, impact_level, "
+                    " graph_json, stig_controls, tags) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (s["id"], s["name"], s["category"], s["description"],
+                     s["classification_level"], s["impact_level"],
+                     s["graph_json"], s["stig_controls"], s["tags"])
+                )
+            conn.commit()
+            print(f"[init_db] Seeded {len(ENCLAVE_SNIPPETS)} enclave snippets.")
+        else:
+            print(f"[init_db] Enclave snippets already seeded ({snip_count} rows).")
 
         # Seed default admin user (password: admin — MUST change on first login)
         import hashlib

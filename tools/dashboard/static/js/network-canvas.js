@@ -1591,6 +1591,126 @@ async function loadTemplateIntoCanvas(tplId) {
   setStatus('Template loaded: ' + tpl.name);
 }
 
+/* ── Enclave-in-a-Box Snippets ────────────────────────────────────────────────── */
+
+const SNIPPET_CLASSIFICATION_COLORS = {
+  'SECRET': '#e74c3c',
+  'TOP SECRET': '#8e44ad',
+  'CUI': '#f39c12',
+  'PUBLIC': '#27ae60',
+};
+
+async function openSnippetsPanel() {
+  const overlay = document.getElementById('snippets-overlay');
+  overlay.classList.remove('hidden');
+  const list = document.getElementById('snippets-list');
+  list.innerHTML = '<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px;">Loading snippets…</div>';
+
+  try {
+    const r = await fetch(NC_BASE + '/api/snippets');
+    const snippets = await r.json();
+    list.innerHTML = '';
+    if (!snippets.length) {
+      list.innerHTML = '<div style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px;">No snippets found.</div>';
+      return;
+    }
+    snippets.forEach(s => {
+      const clColor = SNIPPET_CLASSIFICATION_COLORS[s.classification_level] || '#7a8cb0';
+      const stigBadges = (s.stig_controls || []).slice(0, 6).map(c =>
+        `<span style="display:inline-block;background:rgba(127,140,176,0.15);border:1px solid rgba(127,140,176,0.3);border-radius:3px;padding:1px 5px;font-size:10px;margin:1px;">${c}</span>`
+      ).join('');
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--card-bg,#16213e);border:1px solid var(--border,#2a3a5e);border-radius:6px;padding:12px;';
+      card.innerHTML = `
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text,#eaeaea);">&#x229e; ${s.name}</div>
+            <div style="font-size:10px;color:var(--text-dim,#7a8cb0);margin-top:2px;">${s.category} &bull; Impact Level: ${s.impact_level}</div>
+          </div>
+          <span style="flex-shrink:0;font-size:10px;font-weight:700;color:${clColor};border:1px solid ${clColor};border-radius:3px;padding:2px 6px;white-space:nowrap;">${s.classification_level}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim,#7a8cb0);margin-bottom:8px;line-height:1.5;">${s.description || ''}</div>
+        <div style="margin-bottom:8px;">${stigBadges}</div>
+        <button class="btn btn-sm btn-primary" style="width:100%;background:#5c42d9;border-color:#5c42d9;"
+          onclick="insertSnippetOntoCanvas('${s.id}', this)">&#x229e; Insert onto Canvas</button>
+      `;
+      list.appendChild(card);
+    });
+  } catch (err) {
+    list.innerHTML = `<div style="color:#e74c3c;font-size:12px;text-align:center;padding:20px;">Error loading snippets: ${err.message}</div>`;
+  }
+}
+
+function closeSnippetsPanel() {
+  document.getElementById('snippets-overlay').classList.add('hidden');
+}
+
+async function insertSnippetOntoCanvas(snippetId, btn) {
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Inserting…'; }
+
+  try {
+    const r = await fetch(NC_BASE + `/api/snippets/${snippetId}`);
+    if (!r.ok) throw new Error('Snippet not found');
+    const snippet = await r.json();
+    const gj = snippet.graph_json || { nodes: [], edges: [] };
+    if (!gj.nodes.length) throw new Error('Snippet has no nodes');
+
+    pushUndo();
+
+    // Compute canvas center offset so snippet doesn't land at 0,0
+    const tx = paper.translate().tx || 0;
+    const ty = paper.translate().ty || 0;
+    const sx = paper.scale().sx || 1;
+    const el = document.getElementById('canvas-container') || document.getElementById('paper-container') || paper.el;
+    const cw = el ? el.clientWidth : 800;
+    const ch = el ? el.clientHeight : 600;
+    const cx = Math.round((cw / 2 - tx) / sx);
+    const cy = Math.round((ch / 2 - ty) / sx);
+
+    // Compute bounding box of snippet nodes for centering
+    const xs = gj.nodes.map(n => n.x || 0);
+    const ys = gj.nodes.map(n => n.y || 0);
+    const snipCx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const snipCy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const offsetX = cx - snipCx;
+    const offsetY = cy - snipCy;
+
+    // Re-map node IDs to avoid collisions with existing nodes
+    const suffix = '-' + Math.random().toString(36).slice(2, 7);
+    const idMap = {};
+    gj.nodes.forEach(n => { idMap[n.id] = n.id + suffix; });
+
+    // Insert nodes
+    gj.nodes.forEach(n => {
+      const cfg = n.config || {};
+      // Mark node as snippet-origin for STIG overlay awareness
+      cfg._snippet_id = snippetId;
+      cfg._snippet_name = snippet.name;
+      cfg._classification = snippet.classification_level;
+      cfg._impact_level = snippet.impact_level;
+      createNode(n.type, (n.x || 0) + offsetX, (n.y || 0) + offsetY, n.label, idMap[n.id], cfg);
+    });
+
+    // Insert edges with remapped IDs
+    gj.edges.forEach(e => {
+      const src = idMap[e.source] || e.source;
+      const dst = idMap[e.target] || e.target;
+      if (src && dst) {
+        createLink(src, dst, e.label || '', e.protocol || '');
+      }
+    });
+
+    markDirty();
+    updateStatusBar();
+    setStatus(`Snippet inserted: ${snippet.name} (${gj.nodes.length} nodes, ${gj.edges.length} links)`);
+    closeSnippetsPanel();
+  } catch (err) {
+    setStatus('Insert failed: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
 /* ── New canvas ───────────────────────────────────────────────────────────────── */
 function newCanvas() {
   if (isDirty && !confirm('You have unsaved changes. Start a new canvas?')) return;

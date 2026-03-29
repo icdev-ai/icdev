@@ -1445,6 +1445,58 @@ def create_network_blueprint():
         return jsonify(CLOUD_OBJECTS)
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: Enclave-in-a-Box Snippets
+    # Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge).
+    # Inserted onto an existing canvas at a user-specified offset.
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/snippets", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_snippets():
+        """List all enclave snippets (metadata only, no graph_json)."""
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, name, category, description, classification_level, "
+            "impact_level, stig_controls, tags "
+            "FROM nc_enclave_snippets ORDER BY category, name"
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = _row_to_dict(r)
+            for field in ("stig_controls", "tags"):
+                try:
+                    d[field] = json.loads(d.get(field) or "[]")
+                except Exception:
+                    d[field] = []
+            result.append(d)
+        return jsonify(result)
+
+    @bp.route("/api/snippets/<snippet_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_snippet(snippet_id):
+        """Return full snippet including graph_json for insertion onto canvas."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT * FROM nc_enclave_snippets WHERE id=?", (snippet_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Snippet not found"}), 404
+        d = _row_to_dict(row)
+        try:
+            d["graph_json"] = json.loads(d["graph_json"])
+        except Exception:
+            d["graph_json"] = {"nodes": [], "edges": []}
+        for field in ("stig_controls", "tags"):
+            try:
+                d[field] = json.loads(d.get(field) or "[]")
+            except Exception:
+                d[field] = []
+        _audit("LOAD_SNIPPET", "snippet", snippet_id, d.get("name", ""))
+        return jsonify(d)
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Export / Import
     # ══════════════════════════════════════════════════════════════════════
 
