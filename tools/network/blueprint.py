@@ -81,20 +81,20 @@ from tools.network.cloud_architecture import (  # noqa: E402
     get_csp_equivalent,
     get_all_equivalents,
     get_equivalence_matrix,
-    estimate_data_transfer_cost,
     compare_egress_costs,
     estimate_interconnect_monthly_cost,
 )
 from tools.network.constants import (  # noqa: E402  # extended objects
     CLOUD_OBJECTS_EXTENDED,
-    CSP_EQUIVALENCE,
     RESILIENCY_TIERS,
     HYBRID_CONNECTIVITY_PATTERNS,
     CLOUD_EGRESS_PRICING,
-    INTERCONNECT_PORT_PRICING,
     BGP_CONSTANTS,
     FAILOVER_TIMERS,
     CLOUD_NETWORKING_ANTIPATTERNS,
+    VPN_BANDWIDTH_SPECS,
+    CLOUD_ARCHITECTURE_PATTERNS,
+    WA_HYBRID_RISK_LEVELS,
 )
 
 
@@ -12755,6 +12755,24 @@ Output ONLY the JSON object."""
     def api_egress_pricing():
         """Return cloud egress pricing model across all CSPs."""
         return jsonify(CLOUD_EGRESS_PRICING)
+
+    @bp.route("/api/cloud/vpn-specs", methods=["GET"])
+    @nc_login_required
+    def api_vpn_specs():
+        """Return VPN bandwidth specifications across all CSPs."""
+        return jsonify(VPN_BANDWIDTH_SPECS)
+
+    @bp.route("/api/cloud/architecture-patterns", methods=["GET"])
+    @nc_login_required
+    def api_architecture_patterns():
+        """Return cloud architecture patterns (VGW, TGW hub, Cloud WAN, Landing Zone, etc.)."""
+        return jsonify(CLOUD_ARCHITECTURE_PATTERNS)
+
+    @bp.route("/api/cloud/wa-risk-levels", methods=["GET"])
+    @nc_login_required
+    def api_wa_risk_levels():
+        """Return Well-Architected Hybrid Networking Lens risk level mappings."""
+        return jsonify(WA_HYBRID_RISK_LEVELS)
 
     @bp.route("/api/cloud/egress-compare", methods=["POST"])
     @nc_login_required

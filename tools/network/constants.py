@@ -465,6 +465,110 @@ FAILOVER_TIMERS = {
     "lacp": {"detect_sec": 3, "description": "LACP short timeout (3 × 1s)"},
 }
 
+# ── VPN Bandwidth Specifications (from Well-Architected Hybrid Networking Lens) ──
+VPN_BANDWIDTH_SPECS = {
+    "aws_vpn_tunnel": {"max_gbps": 4.9, "note": "Per tunnel; 2 tunnels per connection"},
+    "aws_vpn_tgw_ecmp": {"max_gbps": 9.8, "note": "2 tunnels with ECMP on TGW/Cloud WAN"},
+    "aws_vpn_concentrator": {"per_site_mbps": 100, "min_sites": 25,
+                              "note": "Managed VPN concentrator for 25+ remote sites"},
+    "aws_ec2_vpn_small": {"max_gbps": 5, "note": "EC2 <32 vCPU software VPN limit"},
+    "aws_ec2_vpn_large": {"pct_bandwidth": 50, "note": "EC2 32+ vCPU: 50% of instance bandwidth"},
+    "azure_vpn_gw5": {"max_gbps": 10, "note": "VpnGw5/VpnGw5AZ SKU"},
+    "gcp_ha_vpn": {"max_gbps": 3, "note": "Per tunnel on HA VPN"},
+    "oci_ipsec": {"per_tunnel_mbps": 250, "note": "Multiple tunnels for aggregation"},
+    "ibm_vpn": {"max_mbps": 650, "note": "Static routes only, no BGP"},
+}
+
+# ── Architecture Patterns (Well-Architected Hybrid Networking Lens §2-3) ─────
+CLOUD_ARCHITECTURE_PATTERNS = {
+    "single_vpc_vgw": {
+        "label": "Single VPC with Virtual Private Gateway",
+        "description": "VPN/DX to VGW provides access to one VPC only. "
+                       "Cost-effective for large data transfers to single VPC.",
+        "use_when": "Single VPC, high bandwidth to one destination",
+        "limitations": "One VPC per VGW, only 1 of 2 VPN tunnels active",
+    },
+    "transit_gateway_hub": {
+        "label": "Transit Gateway Hub-and-Spoke",
+        "description": "VPN/DX attached to TGW enables multi-VPC access in same region. "
+                       "Supports ECMP for bandwidth aggregation.",
+        "use_when": "Multi-VPC in same region, need ECMP or route segmentation",
+        "aws_max_bandwidth": "9.8 Gbps (2 VPN tunnels ECMP)",
+    },
+    "cloud_wan_global": {
+        "label": "Cloud WAN Multi-Region Mesh",
+        "description": "Core network edge for multi-VPC in same or different regions. "
+                       "Uses segments for traffic isolation with global management plane.",
+        "use_when": "Multi-region, need segment-based isolation and global policy",
+    },
+    "dx_gateway_global": {
+        "label": "DX Gateway Global Hub",
+        "description": "Global resource connecting DX to resources in multiple Regions. "
+                       "Associate up to 20 VGWs or 6 TGWs across regions.",
+        "use_when": "Multi-region DX access from single/dual DX locations",
+        "limits": {"max_vgws": 20, "max_tgws": 6, "max_cloudwan": 1},
+    },
+    "landing_zone": {
+        "label": "Landing Zone (Central Networking Account)",
+        "description": "Standardized multi-account architecture via Control Tower. "
+                       "Central networking account hosts all hybrid resources "
+                       "(DX, VPN, TGW) shared via RAM to spoke accounts.",
+        "use_when": "Enterprise multi-account, need centralized network governance",
+        "components": ["Control Tower", "Organizations", "RAM", "Transit Gateway", "Central Networking Account"],
+    },
+    "vpn_concentrator": {
+        "label": "VPN Concentrator (25+ Sites)",
+        "description": "Managed VPN concentrator attachment to TGW for many remote sites "
+                       "at 50-100 Mbps each.",
+        "use_when": "25+ remote sites, low per-site bandwidth (branch offices)",
+    },
+    "accelerated_vpn": {
+        "label": "Accelerated Site-to-Site VPN",
+        "description": "Uses AWS Global Accelerator to route VPN traffic via AWS edge "
+                       "locations instead of public internet — reduces jitter and latency.",
+        "use_when": "VPN performance issues due to internet routing variability",
+    },
+}
+
+# ── Well-Architected Pillar Risk Mappings ────────────────────────────────────
+# Risk level assigned to each best practice from the Hybrid Networking Lens.
+# Used for compliance prioritization and audit weighting.
+WA_HYBRID_RISK_LEVELS = {
+    "high": [
+        "Network segmentation and least privilege (HNSEC01-BP01)",
+        "Encryption in transit (HNSEC01-BP02)",
+        "Continuous logging (HNSEC01-BP03)",
+        "Landing zone deployment (HNSEC02-BP01)",
+        "Least privilege API access (HNSEC02-BP04)",
+        "Routing controls (HNSEC04-BP02)",
+        "Traffic inspection via GWLB/Network Firewall (HNSEC04-BP03)",
+        "Physical location redundancy (HNREL04-BP01/HNREL06-BP01)",
+        "Redundant hardware and diverse providers (HNREL04-BP02/HNREL06-BP02)",
+        "Dynamic routing with BFD (HNREL04-BP03)",
+        "Sufficient capacity provisioning (HNREL04-BP04)",
+        "Failover testing (HNREL05-BP01)",
+        "Bandwidth monitoring and scaling (HNREL03-BP01)",
+        "Define performance requirements (HNPERF01-BP01)",
+        "Application-aware network design (HNPERF01-BP02)",
+    ],
+    "medium": [
+        "VPC/TGW Flow Logs (HNOPS03-BP02)",
+        "Resource tagging (HNCOST01-BP01)",
+        "DNS security via Route 53 Firewall (HNSEC04-BP04)",
+        "KPI tracking dashboards (HNOPS05-BP01)",
+        "Cost threshold alerts (HNCOST02-BP02)",
+        "Tiered connectivity (HNCOST03-BP01)",
+        "Region/AZ cost selection (HNCOST04-BP02)",
+        "QoS policies (HNCOST06-BP01)",
+    ],
+    "low": [
+        "Data transfer optimization (HNCOST04-BP01)",
+        "Compression and caching (HNCOST04-BP03)",
+        "Traffic class separation (HNCOST06-BP02)",
+        "Regular cost analysis (HNCOST08-BP01)",
+    ],
+}
+
 # ── Anti-Patterns (from AWS re:Invent ARC322) ───────────────────────────────
 CLOUD_NETWORKING_ANTIPATTERNS = [
     {"id": "AP-001", "title": "DX locations not in Associated Region",
