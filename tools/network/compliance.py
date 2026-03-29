@@ -230,9 +230,11 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
                        "hsm", "type1-encryptor", "kg-175d", "kg-175g", "kg-250",
                        "kg-340", "kg-245x", "kg-255", "macsec"}
     TYPE1_TYPES = {"type1-encryptor", "kg-175d", "kg-175g", "kg-250", "kg-340", "kg-245x", "kg-255"}
-    FIREWALL_TYPES = {"firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf"}
-    WAN_TYPES = {"cloud", "aws-dx", "az-er", "gcp-ic", "oci-fc", "ibm-dl", "aws-vpn",
-                 "az-vpn-gw", "gcp-vpn", "ibm-vpn", "sdwan-overlay", "internet-exchange",
+    FIREWALL_TYPES = {"firewall", "aws-nfw", "az-fw", "gcp-armor", "oci-waf", "aws-waf",
+                       "az-nsg", "oci-nsg"}
+    WAN_TYPES = {"cloud", "aws-dx", "aws-dx-gw", "az-er", "az-er-global", "gcp-ic",
+                 "oci-fc", "ibm-dl", "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn",
+                 "oci-vpn", "sdwan-overlay", "internet-exchange",
                  "aws-direct-connect", "azure-expressroute", "gcp-interconnect", "oci-fastconnect"}
     CORE_TYPES = {"router", "switch-l3", "mpls-pe", "mpls-p", "route-reflector"}
     DIST_TYPES = {"switch-l3", "switch-l2"}
@@ -402,9 +404,12 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
                             "node",
                             {"action": "add_firewall_inline", "wan_node": wn["id"]})
 
-    # NET-BND-002: Micro-segmentation
-    if len(nodes) > 5 and not any(node_types.get(n["id"]) in FIREWALL_TYPES for n in nodes):
-        add_finding(rule_map["NET-BND-002"], "topology", "topology")
+    # NET-BND-002: Micro-segmentation (ZTA requires multiple zones with FW between)
+    fw_count = sum(1 for n in nodes if node_types.get(n["id"]) in FIREWALL_TYPES)
+    if len(nodes) > 5 and fw_count < 2:
+        add_finding(rule_map["NET-BND-002"], "topology", "topology",
+                    {"action": "add_node", "node_type": "firewall",
+                     "label": "Internal Segmentation FW"})
 
     # NET-BND-003: Cloud isolation
     cloud_nodes = [n for n in nodes if node_types.get(n["id"]) in CLOUD_TYPES]
