@@ -2545,67 +2545,92 @@ TEMPLATES = [
     # ── Azure Multi-Home ExpressRoute to MAN ──────────────────────────────
     {
         "id": "tpl-azure-er-man",
-        "name": "Azure Multi-Home ExpressRoute to Metro (MAN)",
+        "name": "Azure Well-Architected ExpressRoute to Metro (MAN)",
         "category": "Hybrid Cloud",
-        "description": "Azure Virtual WAN hub with dual ExpressRoute circuits from two peering locations, connecting to a metro area network with MPLS PE routers and multi-site distribution.",
-        "tags": json.dumps(["azure", "expressroute", "hybrid", "metro", "man", "multi-home"]),
+        "description": "Azure Virtual WAN hub (natively global) with dual zone-redundant ExpressRoute, Global Reach for on-prem site connectivity, VPN Gateway backup, Private Link, DDoS Protection, VNet Flow Logs. Based on AWS/Azure Well-Architected equivalence.",
+        "tags": json.dumps(["azure", "expressroute", "hybrid", "metro", "man", "multi-home", "well-architected", "global-reach", "private-link", "ddos", "vpn-backup"]),
         "graph_json": json.dumps({
             "nodes": [
-                # Azure Cloud
-                _node("az-vwan", "Virtual WAN Hub", "az-vwan", 500, 60),
-                _node("az-vnet1", "Prod VNet", "az-vnet", 300, 200),
-                _node("az-vnet2", "DMZ VNet", "az-vnet", 700, 200),
-                _node("az-fw", "Azure Firewall", "az-fw", 500, 200),
-                _node("az-sub1", "App Subnet", "az-subnet", 300, 340),
-                _node("az-sub2", "DMZ Subnet", "az-subnet", 700, 340),
-                _node("az-fd", "Front Door", "az-front", 700, 60),
-                _node("az-dns", "Azure DNS", "az-dns", 300, 60),
-                # ExpressRoute (dual from different peering locs)
-                _node("er-a", "ER Circuit A (Equinix)", "az-er", 250, 480),
-                _node("er-b", "ER Circuit B (Megaport)", "az-er", 750, 480),
+                # Azure Cloud — Well-Architected
+                _node("az-vwan", "Virtual WAN Hub", "az-vwan", 500, 40),
+                _node("az-vnet1", "Prod VNet", "az-vnet", 300, 180,
+                      {"config": {"flow_logs_enabled": True, "address_space": "10.1.0.0/16"}}),
+                _node("az-vnet2", "DMZ VNet", "az-vnet", 700, 180,
+                      {"config": {"flow_logs_enabled": True, "address_space": "10.2.0.0/16"}}),
+                _node("az-fw", "Azure Firewall Premium", "az-fw", 500, 180),
+                _node("az-sub1", "App Subnet", "az-subnet", 300, 320),
+                _node("az-sub2", "DMZ Subnet", "az-subnet", 700, 320),
+                _node("az-fd", "Front Door (L7+CDN+WAF)", "az-front", 800, 40),
+                _node("az-dns", "Azure DNS", "az-dns", 200, 40),
+                _node("az-ddos", "DDoS Protection", "az-ddos", 900, 180),
+                _node("az-pl", "Private Link", "az-privatelink", 500, 320),
+                _node("az-nsg", "NSG (default deny)", "az-nsg", 200, 320),
+                # Global Reach — connect on-prem sites via Microsoft backbone
+                _node("az-gr", "ER Global Reach", "az-er-global", 500, 420),
+                # VPN Gateway backup
+                _node("az-vpn", "VPN Gateway Backup", "az-vpn-gw", 500, 520,
+                      {"config": {"sku": "VpnGw2AZ", "active_active": True}}),
+                # ExpressRoute (dual zone-redundant from diverse peering locs)
+                _node("er-a", "ER Circuit A (Equinix)", "az-er", 250, 520,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G", "peering_type": "private"}}),
+                _node("er-b", "ER Circuit B (Megaport)", "az-er", 750, 520,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G", "peering_type": "private"}}),
                 # Meet-Me Rooms
-                _node("mmr-a", "MMR Equinix CH1", "meet-me-room", 250, 560),
-                _node("mmr-b", "MMR Megaport SYD", "meet-me-room", 750, 560),
+                _node("mmr-a", "MMR Equinix CH1", "meet-me-room", 250, 640),
+                _node("mmr-b", "MMR Megaport SYD", "meet-me-room", 750, 640),
                 # Cross-connects
-                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 640),
-                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 640),
+                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 720),
+                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 720),
                 # Metro PE routers
-                _node("pe1", "MPLS-PE-1", "mpls-pe", 200, 740),
-                _node("pe2", "MPLS-PE-2", "mpls-pe", 800, 740),
+                _node("pe1", "MPLS-PE-1", "mpls-pe", 200, 820,
+                      {"config": {"bfd_enabled": True}}),
+                _node("pe2", "MPLS-PE-2", "mpls-pe", 800, 820,
+                      {"config": {"bfd_enabled": True}}),
                 # Metro core
-                _node("p1", "MPLS-P-Core", "mpls-p", 500, 740),
+                _node("p1", "MPLS-P-Core", "mpls-p", 500, 820),
                 # Metro sites
-                _node("site-fw1", "Site-A FW", "firewall", 200, 900),
-                _node("site-fw2", "Site-B FW", "firewall", 500, 900),
-                _node("site-fw3", "Site-C FW", "firewall", 800, 900),
-                _node("sw-a", "Site-A Core", "switch-l3", 200, 1050),
-                _node("sw-b", "Site-B Core", "switch-l3", 500, 1050),
-                _node("sw-c", "Site-C Core", "switch-l3", 800, 1050),
+                _node("site-fw1", "Site-A FW", "firewall", 200, 980),
+                _node("site-fw2", "Site-B FW", "firewall", 500, 980),
+                _node("site-fw3", "Site-C FW", "firewall", 800, 980),
+                _node("sw-a", "Site-A Core", "switch-l3", 200, 1120),
+                _node("sw-b", "Site-B Core", "switch-l3", 500, 1120),
+                _node("sw-c", "Site-C Core", "switch-l3", 800, 1120),
             ],
             "edges": [
-                # Azure internal
+                # Azure internal — Well-Architected
                 _edge("az-vwan", "az-vnet1", "VNet Peering", ""),
                 _edge("az-vwan", "az-vnet2", "VNet Peering", ""),
-                _edge("az-vnet1", "az-fw", "", ""),
-                _edge("az-vnet2", "az-fw", "", ""),
+                _edge("az-vnet1", "az-fw", "Routing Intent", ""),
+                _edge("az-vnet2", "az-fw", "Routing Intent", ""),
                 _edge("az-vnet1", "az-sub1", "", ""),
                 _edge("az-vnet2", "az-sub2", "", ""),
-                _edge("az-vwan", "az-fd", "CDN/WAF", ""),
+                _edge("az-vwan", "az-fd", "Global L7+CDN+WAF", ""),
                 _edge("az-vwan", "az-dns", "DNS", ""),
-                # ExpressRoute to VWAN
-                _edge("az-vwan", "er-a", "ER 10G Primary", "BGP"),
-                _edge("az-vwan", "er-b", "ER 10G Secondary", "BGP"),
+                _edge("az-fd", "az-ddos", "DDoS Protect", ""),
+                _edge("az-sub1", "az-pl", "Private Link", ""),
+                _edge("az-sub1", "az-nsg", "NSG", ""),
+                # Global Reach (connect on-prem sites via MS backbone)
+                _edge("er-a", "az-gr", "Global Reach", "BGP"),
+                _edge("er-b", "az-gr", "Global Reach", "BGP"),
+                # ExpressRoute to VWAN (zone-redundant)
+                _edge("az-vwan", "er-a", "ER 10G Primary + BFD", "BGP"),
+                _edge("az-vwan", "er-b", "ER 10G Secondary + BFD", "BGP"),
+                # VPN backup
+                _edge("az-vwan", "az-vpn", "VPN Backup (active-active)", "IPSec"),
                 # ER to Meet-Me Rooms
                 _edge("er-a", "mmr-a", "ER Handoff", ""),
                 _edge("er-b", "mmr-b", "ER Handoff", ""),
                 # Cross-connects in MMR
                 _edge("mmr-a", "xx-a", "SMF XConn", ""),
                 _edge("mmr-b", "xx-b", "SMF XConn", ""),
-                # Cross-connect to PE (wired through)
-                _edge("xx-a", "pe1", "10GbE", "BGP"),
-                _edge("xx-b", "pe2", "10GbE", "BGP"),
+                # Cross-connect to PE
+                _edge("xx-a", "pe1", "10GbE + BFD", "BGP"),
+                _edge("xx-b", "pe2", "10GbE + BFD", "BGP"),
                 _edge("xx-a", "pe2", "10GbE Backup", "BGP"),
                 _edge("xx-b", "pe1", "10GbE Backup", "BGP"),
+                # VPN also lands on PE routers
+                _edge("az-vpn", "pe1", "IPSec Tunnel", "IPSec"),
+                _edge("az-vpn", "pe2", "IPSec Tunnel", "IPSec"),
                 # MPLS core
                 _edge("pe1", "p1", "100GbE", "MPLS"),
                 _edge("pe2", "p1", "100GbE", "MPLS"),
