@@ -1559,3 +1559,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Vuln Overlay | tools\network\vuln_overlay.py | Auto-registered: network/vuln_overlay.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Bandwidth Sim | tools\network\bandwidth_sim.py | Auto-registered: network/bandwidth_sim.py | --json | JSON |
+| Nl Query | tools\network\nl_query.py | Auto-registered: network/nl_query.py | --json | JSON |
