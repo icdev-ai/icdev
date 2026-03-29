@@ -107,6 +107,15 @@ if _NETWORK_ENABLED:
         _HAS_NETWORK = True
     except ImportError:
         _HAS_NETWORK = False
+# Pipeline Design Canvas: feature-flagged, air-gap compatible
+_PIPELINE_ENABLED = os.environ.get("ICDEV_PIPELINE_ENABLED", "true").lower() == "true"
+_HAS_PIPELINE = False
+if _PIPELINE_ENABLED:
+    try:
+        from tools.pipeline.blueprint import create_pipeline_blueprint
+        _HAS_PIPELINE = True
+    except ImportError:
+        _HAS_PIPELINE = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded
 _GOVCON_ENABLED = os.environ.get("ICDEV_GOVCON_ENABLED", "true").lower() == "true"
 _HAS_GOVCON = False
@@ -797,6 +806,7 @@ def create_app() -> Flask:
             "byok_enabled": BYOK_ENABLED,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
             "network_enabled": _HAS_NETWORK,
+            "pipeline_enabled": _HAS_PIPELINE,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -891,6 +901,16 @@ def create_app() -> Flask:
                 app.logger.info("Network Design Canvas registered at /network/")
         except Exception as exc:
             app.logger.warning("Network Design Canvas failed to register: %s", exc)
+
+    # ---- Pipeline Design Canvas Blueprint ----
+    if _HAS_PIPELINE:
+        try:
+            pc_bp = create_pipeline_blueprint()
+            if pc_bp:
+                app.register_blueprint(pc_bp, url_prefix="/pipeline")
+                app.logger.info("Pipeline Design Canvas registered at /pipeline/")
+        except Exception as exc:
+            app.logger.warning("Pipeline Design Canvas failed to register: %s", exc)
 
     # ---- Convenience JSON routes that match the spec ----
 

@@ -137,6 +137,17 @@
             </li>
             {% endif %}
 
+            {% if pipeline_enabled %}
+            <!-- Pipeline Design Canvas -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/pipeline' in request.path %}active{% endif %}">Pipeline</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/pipeline/">Dashboard</a></li>
+                    <li><a href="/pipeline/canvas/new">New Pipeline</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Studio (Phase 72) -->
             <li class="nav-dropdown">
                 <a href="#" class="{% if '/studio' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Studio</a>
