@@ -70,6 +70,9 @@ from tools.network.discovery import (  # noqa: E402
     run_discovery, diff_topologies, ping_sweep,
     _HAS_PYSNMP, _HAS_NETMIKO,
 )
+from tools.network.bandwidth_sim import (  # noqa: E402
+    run_bandwidth_sim, generate_report_html,
+)
 
 
 def create_network_blueprint():
@@ -11372,6 +11375,135 @@ Output ONLY the JSON object."""
             rows = []
         finally:
             conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Bandwidth Capacity Planning Simulation
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/bandwidth-sim")
+    @nc_login_required
+    def nc_bandwidth_sim_page():
+        """Bandwidth capacity planning simulation dashboard."""
+        conn = get_connection()
+        topos = conn.execute(
+            "SELECT id, name FROM topologies ORDER BY updated_at DESC LIMIT 50"
+        ).fetchall()
+        recent = conn.execute(
+            "SELECT s.id, s.topology_name, s.overall_health, s.bottleneck_count, "
+            "s.warning_count, s.total_links, s.avg_util_pct, s.ran_at "
+            "FROM nc_bw_simulations s ORDER BY s.ran_at DESC LIMIT 10"
+        ).fetchall()
+        conn.close()
+        return render_template(
+            "network/bandwidth_sim.html",
+            topologies=[_row_to_dict(t) for t in topos],
+            recent_sims=[_row_to_dict(r) for r in recent],
+        )
+
+    @bp.route("/api/topologies/<topo_id>/bandwidth-sim", methods=["POST"])
+    @nc_login_required
+    def nc_api_run_bandwidth_sim(topo_id):
+        """Run bandwidth capacity planning simulation on a topology."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+        try:
+            graph = json.loads(row["graph_json"])
+        except Exception:
+            return jsonify({"error": "Invalid topology graph"}), 500
+
+        params = request.get_json(force=True, silent=True) or {}
+        result = run_bandwidth_sim(graph, params)
+
+        # Persist simulation result
+        sim_id = result["sim_id"]
+        summary = result.get("summary", {})
+        try:
+            with get_connection() as c:
+                c.execute(
+                    "INSERT INTO nc_bw_simulations "
+                    "(id, topology_id, topology_name, params_json, result_json, "
+                    " overall_health, bottleneck_count, warning_count, "
+                    " total_links, avg_util_pct, ran_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        sim_id, topo_id, row["name"],
+                        json.dumps(params), json.dumps(result),
+                        summary.get("overall_health", "ok"),
+                        summary.get("bottleneck_count", 0),
+                        summary.get("warning_count", 0),
+                        summary.get("total_links", 0),
+                        summary.get("avg_utilization_pct", 0),
+                        result["ran_at"],
+                    ),
+                )
+        except Exception as exc:
+            logger.warning("Failed to persist bw sim: %s", exc)
+
+        _audit("bw_sim_run", "topology", topo_id,
+               f"health={summary.get('overall_health')} bottlenecks={summary.get('bottleneck_count')}")
+        return jsonify(result)
+
+    @bp.route("/api/bandwidth-sim/<sim_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_bandwidth_sim(sim_id):
+        """Return a stored bandwidth simulation result."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT result_json FROM nc_bw_simulations WHERE id=?", (sim_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Simulation not found"}), 404
+        try:
+            return jsonify(json.loads(row["result_json"]))
+        except Exception:
+            return jsonify({"error": "Corrupt simulation data"}), 500
+
+    @bp.route("/api/bandwidth-sim/<sim_id>/report", methods=["GET"])
+    @nc_login_required
+    def nc_api_bandwidth_sim_report(sim_id):
+        """Return an exportable HTML capacity planning report."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT result_json, topology_name FROM nc_bw_simulations WHERE id=?",
+            (sim_id,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Simulation not found"}), 404
+        try:
+            result = json.loads(row["result_json"])
+        except Exception:
+            return jsonify({"error": "Corrupt simulation data"}), 500
+        html = generate_report_html(result, topology_name=row["topology_name"] or "Topology")
+        from flask import Response
+        return Response(
+            html,
+            mimetype="text/html",
+            headers={
+                "Content-Disposition": f"attachment; filename=bw_capacity_report_{sim_id[:8]}.html"
+            },
+        )
+
+    @bp.route("/api/topologies/<topo_id>/bandwidth-sim/history", methods=["GET"])
+    @nc_login_required
+    def nc_api_bandwidth_sim_history(topo_id):
+        """Return simulation history for a topology."""
+        limit = min(int(request.args.get("limit", 20)), 100)
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, overall_health, bottleneck_count, warning_count, "
+            "total_links, avg_util_pct, ran_at "
+            "FROM nc_bw_simulations WHERE topology_id=? ORDER BY ran_at DESC LIMIT ?",
+            (topo_id, limit),
+        ).fetchall()
+        conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
 
     # ── Done ───────────────────────────────────────────────────────────────

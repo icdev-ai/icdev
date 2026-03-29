@@ -19,11 +19,9 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/network/db -> ICDev root
 DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 
-# Backend detection — NC_STORAGE_BACKEND or falls back to ICDEV_STORAGE_BACKEND
-_NC_BACKEND = os.environ.get(
-    "NC_STORAGE_BACKEND",
-    os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite")
-).lower()
+# Backend detection — NC_STORAGE_BACKEND only (NOT inherited from ICDEV_STORAGE_BACKEND)
+# NDC has its own DB (network_canvas.db). Set NC_STORAGE_BACKEND=postgresql to use PG.
+_NC_BACKEND = os.environ.get("NC_STORAGE_BACKEND", "sqlite").lower()
 
 
 def get_connection():
@@ -896,6 +894,21 @@ CREATE TABLE IF NOT EXISTS nc_capacity_projections (
     threshold_pct REAL DEFAULT 80,        -- upgrade trigger
     notes       TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Bandwidth Capacity Planning Simulations
+CREATE TABLE IF NOT EXISTS nc_bw_simulations (
+    id              TEXT PRIMARY KEY,
+    topology_id     TEXT REFERENCES topologies(id) ON DELETE CASCADE,
+    topology_name   TEXT,
+    params_json     TEXT DEFAULT '{}',
+    result_json     TEXT DEFAULT '{}',
+    overall_health  TEXT DEFAULT 'ok',
+    bottleneck_count INTEGER DEFAULT 0,
+    warning_count    INTEGER DEFAULT 0,
+    total_links      INTEGER DEFAULT 0,
+    avg_util_pct     REAL DEFAULT 0,
+    ran_at          TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Standards Alignment Checklist
