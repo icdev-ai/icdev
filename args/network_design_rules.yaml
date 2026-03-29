@@ -472,6 +472,10 @@ on_node_add:
       default_route_table_association:
         required: false
         hint: "Disable for explicit routing control"
+    warnings:
+      - condition: backup_tgw
+        severity: medium
+        message: "TGW uses Hyperplane (99.99% SLA) — backup TGW adds NO data-plane resilience (ARC322 AP-003)"
 
   az-vwan:
     suggestions:
@@ -719,3 +723,117 @@ best_practices:
     - "Plan NAT64/DNS64 only for legacy IPv4-only services, not as primary strategy"
     - "Monitor IPv6 traffic ratios to track migration progress"
     - "Document IPv6 capability per device (ipv6_capable field in device properties)"
+
+# ── On Edge Add Rules (Cloud Hybrid Networking) ──────────────────────────────
+# Fires when a link is created between two node types.
+# Source and target are unordered — rules fire for either direction.
+
+on_edge_add:
+  # ── Cloud Interconnect to Transit Hub ─────────────────────────────────
+  aws-dx__aws-tgw:
+    suggestions:
+      - "Use Transit VIF for multi-VPC access via TGW"
+      - "Enable BFD (300ms interval, 3x multiplier) for sub-second failover"
+      - "Configure VPN as automatic backup for this DX circuit"
+      - "Set BGP AS 7224 on AWS side, your private ASN on customer side"
+
+  aws-dx__aws-dx-gw:
+    suggestions:
+      - "DX Gateway is a global config overlay — associate up to 6 TGWs or 20 VGWs"
+      - "DO NOT add a backup DX Gateway — it adds NO resilience (ARC322 AP-002)"
+      - "Enable BFD on the Transit/Private VIF"
+
+  aws-vpc__aws-tgw:
+    suggestions:
+      - "Create TGW attachment in the VPC's subnets"
+      - "Use a separate TGW route table for this VPC's traffic isolation"
+      - "Enable Flow Logs on the VPC for NIST AU-3 compliance"
+
+  az-er__az-vwan:
+    suggestions:
+      - "Connect ExpressRoute to Virtual WAN hub — zone-redundant by default"
+      - "Enable BFD for fast failover detection"
+      - "Add VPN Gateway as automatic backup for ExpressRoute"
+      - "Consider Global Reach to connect on-prem sites via Microsoft backbone"
+
+  az-vnet__az-vwan:
+    suggestions:
+      - "Connect VNet to Virtual WAN hub as spoke"
+      - "Enable Routing Intent for centralized security via Azure Firewall"
+      - "Enable VNet Flow Logs for traffic visibility"
+
+  gcp-ic__gcp-router:
+    suggestions:
+      - "Attach VLAN attachment to Cloud Router"
+      - "Enable BFD on Cloud Router for sub-second failover"
+      - "Configure HA VPN as automatic backup for Interconnect"
+
+  gcp-vpc__gcp-ncc:
+    suggestions:
+      - "Add VPC as spoke to Network Connectivity Center"
+      - "GCP VPCs are global — subnets span regions automatically"
+
+  oci-fc__oci-drg:
+    suggestions:
+      - "Connect FastConnect to DRG v2 — FREE egress over FastConnect"
+      - "Enable BFD on the BGP session"
+      - "Use per-attachment route tables for policy control"
+
+  oci-vcn__oci-drg:
+    suggestions:
+      - "Attach VCN to DRG v2 (free transitive routing)"
+      - "Use separate route tables per attachment type"
+      - "Enable VCN Flow Logs for audit compliance"
+
+  ibm-dl__ibm-tg:
+    suggestions:
+      - "Connect Direct Link to Transit Gateway"
+      - "IBM VPN does not support BGP — plan for static routing"
+
+  ibm-vpc__ibm-tg:
+    suggestions:
+      - "Attach VPC to Transit Gateway for multi-VPC routing"
+
+  # ── On-Prem to Cloud Interconnect ────────────────────────────────────
+  router__aws-dx:
+    suggestions:
+      - "Configure eBGP peering (AWS AS 7224 or 64512 for private VIF)"
+      - "ALWAYS enable BFD — default BGP hold timer is 90s, BFD detects in <1s"
+      - "Plan VPN backup path for automatic DX failover"
+      - "Set BGP timers: 10s keepalive, 30s hold (DX recommended)"
+
+  router__az-er:
+    suggestions:
+      - "Configure eBGP private peering with Microsoft ASN 12076"
+      - "Enable BFD for sub-second failover detection"
+      - "Add VPN Gateway backup for ExpressRoute"
+
+  router__gcp-ic:
+    suggestions:
+      - "Configure eBGP with Cloud Router (Google ASN 16550)"
+      - "Enable BFD on the Cloud Router session"
+
+  router__oci-fc:
+    suggestions:
+      - "Configure eBGP with OCI DRG"
+      - "Enable BFD for fast failover"
+      - "OCI FastConnect egress is FREE — optimize data flow direction"
+
+  # ── Firewall Placement ───────────────────────────────────────────────
+  router__firewall:
+    suggestions:
+      - "Configure outside interface toward router, inside toward campus"
+      - "Set default deny policy — permit by exception only"
+      - "Enable logging for all deny rules (NIST AU-3)"
+
+  firewall__switch-l3:
+    suggestions:
+      - "Configure inside interface — route to distribution layer"
+      - "Enable OSPF/BGP between firewall and L3 switch"
+      - "Configure LACP trunk if multiple links"
+
+  switch-l3__switch-l2:
+    suggestions:
+      - "Configure as trunk with allowed VLANs"
+      - "Enable LACP (802.3ad) for link aggregation"
+      - "Consider dual uplinks for redundancy"

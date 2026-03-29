@@ -101,6 +101,11 @@ _CLOUD_NODE_ROLES: dict[str, str] = {
     "oci-lb":        "load_balancer",
     "oci-waf":       "waf_policy",
     "oci-nsg":       "core_network_security_group",
+    "oci-ddos":      "waf_web_app_firewall",
+    "oci-pathanalyzer": "vn_monitoring_path_analyzer_test",
+    "oci-flowlogs":  "core_vcn",
+    "oci-dedicated": "core_dedicated_vm_host",
+    "oci-fd":        "core_instance",
     # IBM
     "ibm-vpc":       "is_vpc",
     "ibm-subnet":    "is_subnet",
@@ -108,6 +113,9 @@ _CLOUD_NODE_ROLES: dict[str, str] = {
     "ibm-vpn":       "is_vpn_gateway",
     "ibm-lb":        "is_lb",
     "ibm-tg":        "tg_gateway",
+    "ibm-satellite": "satellite_location",
+    "ibm-cis":       "cis_domain",
+    "ibm-flowlogs":  "is_flow_log_collector",
 }
 
 _CLOUD_PREFIXES: tuple[str, ...] = ("aws-", "az-", "gcp-", "oci-", "ibm-")
@@ -509,6 +517,32 @@ _RESOURCE_TEMPLATES: dict[str, str] = {
           tags      = {{ Name = "{node_label}" }}
         }}
     """),
+    "aws-dx-gw": textwrap.dedent("""\
+        resource "aws_dx_gateway" "{label}" {{
+          name            = "{node_label}"
+          amazon_side_asn = "64512"  # TODO: adjust ASN
+        }}
+    """),
+    "aws-privatelink": textwrap.dedent("""\
+        resource "aws_vpc_endpoint" "{label}" {{
+          vpc_id             = aws_vpc.<vpc_id>.id  # TODO: reference correct VPC
+          service_name       = "com.amazonaws.${{var.aws_region}}.s3"  # TODO: adjust service
+          vpc_endpoint_type  = "Interface"
+          private_dns_enabled = true
+          tags = {{
+            Name = "{node_label}"
+          }}
+        }}
+    """),
+    "aws-shield": textwrap.dedent("""\
+        resource "aws_shield_protection" "{label}" {{
+          name         = "{node_label}"
+          resource_arn = ""  # TODO: set ARN of resource to protect
+          tags = {{
+            Name = "{node_label}"
+          }}
+        }}
+    """),
     # ── Azure ──────────────────────────────────────────────────────────────
     "az-vnet": textwrap.dedent("""\
         resource "azurerm_virtual_network" "{label}" {{
@@ -575,6 +609,23 @@ _RESOURCE_TEMPLATES: dict[str, str] = {
           tags = {{ Name = "{node_label}" }}
         }}
     """),
+    "az-privatelink": textwrap.dedent("""\
+        resource "azurerm_private_endpoint" "{label}" {{
+          name                = "{node_label}"
+          resource_group_name = var.azure_resource_group
+          location            = var.azure_location
+          subnet_id           = azurerm_subnet.<subnet_name>.id  # TODO
+
+          private_service_connection {{
+            name                           = "{label}-psc"
+            private_connection_resource_id = ""  # TODO: set target resource ID
+            is_manual_connection           = false
+            subresource_names              = []  # TODO: e.g. ["blob"]
+          }}
+
+          tags = {{ Name = "{node_label}" }}
+        }}
+    """),
     # ── GCP ────────────────────────────────────────────────────────────────
     "gcp-vpc": textwrap.dedent("""\
         resource "google_compute_network" "{label}" {{
@@ -618,6 +669,16 @@ _RESOURCE_TEMPLATES: dict[str, str] = {
           region                             = var.gcp_region
           nat_ip_allocate_option             = "AUTO_ONLY"
           source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+        }}
+    """),
+    "gcp-psc": textwrap.dedent("""\
+        resource "google_compute_service_attachment" "{label}" {{
+          name                  = "{node_label}"
+          region                = var.gcp_region
+          enable_proxy_protocol = false
+          nat_subnets           = []  # TODO: list PSC NAT subnet self_links
+          target_service        = ""  # TODO: set forwarding rule self_link
+          connection_preference = "ACCEPT_AUTOMATIC"
         }}
     """),
     # ── OCI ────────────────────────────────────────────────────────────────

@@ -49,6 +49,15 @@ _WAN_TYPES = frozenset({
 
 _CLOUD_PREFIXES = ("aws-", "az-", "gcp-", "oci-", "ibm-")
 
+_DX_TYPES = frozenset({
+    "aws-dx", "aws-dx-gw", "az-er", "az-er-global",
+    "gcp-ic", "oci-fc", "ibm-dl",
+})
+
+_VPN_TYPES = frozenset({
+    "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn",
+})
+
 # Map node type -> human-readable category for boundary diagram zones
 _ZONE_MAP: dict[str, str] = {
     "firewall": "Perimeter / DMZ",
@@ -69,6 +78,23 @@ _ZONE_MAP: dict[str, str] = {
     "endpoint-phone": "User Enclave",
     "endpoint-iot": "IoT Segment",
     "endpoint-camera": "IoT Segment",
+    # Cloud extended types
+    "aws-dx-gw": "Cloud Interconnect",
+    "aws-privatelink": "Private Service Endpoint",
+    "aws-tgw": "Core Network",
+    "aws-shield": "Edge Protection",
+    "az-er-global": "Cloud Interconnect",
+    "az-privatelink": "Private Service Endpoint",
+    "az-vwan": "Core Network",
+    "az-frontdoor": "Edge Protection",
+    "gcp-ic": "Cloud Interconnect",
+    "gcp-psc": "Private Service Endpoint",
+    "gcp-ncc": "Core Network",
+    "gcp-cloud-armor": "Edge Protection",
+    "oci-fc": "Cloud Interconnect",
+    "oci-spe": "Private Service Endpoint",
+    "oci-drg": "Core Network",
+    "oci-waas": "Edge Protection",
 }
 
 # Protocol -> well-known port/service mapping
@@ -671,6 +697,18 @@ _STIG_CHECKLIST_ITEMS: list[dict[str, Any]] = [
      "title": "Encryptor throughput must match or exceed link bandwidth",
      "check": "encryptor_speed",
      "fix": "Upgrade encryptor to model rated for link bandwidth."},
+    {"check_id": "NET-HYB-BFD", "title": "BFD enabled on dedicated interconnect VIFs",
+     "severity": "CAT1",
+     "check": lambda nodes, edges, types: any(
+         n.get("config", {}).get("bfd_enabled") for n in nodes
+         if types.get(n["id"]) in _DX_TYPES),
+     "fix": "Enable BFD on all DX/ER/IC/FC virtual interfaces for sub-second failover"},
+    {"check_id": "NET-HYB-VPN-BACKUP", "title": "VPN backup for dedicated interconnect",
+     "severity": "CAT2",
+     "check": lambda nodes, edges, types: any(
+         types.get(n["id"]) in _VPN_TYPES for n in nodes) if any(
+         types.get(n["id"]) in _DX_TYPES for n in nodes) else True,
+     "fix": "Configure Site-to-Site VPN as automatic backup for DX/ER failure"},
 ]
 
 

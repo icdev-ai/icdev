@@ -200,6 +200,17 @@ _INVENTORY_PATTERNS = [
 _COMPLIANCE_PATTERNS = [
     r"\b(cat1|cat2|cat3|stig|fips|finding|complian|audit|nist|cmmc|fisma)\b",
 ]
+_CLOUD_PROP_PATTERNS = [
+    r"\b(bfd|resilien|tier|sla|bandwidth|vif|macsec|encrypt|egress|"
+    r"ingress|flow.?log|failover.?time|detection.?time)\b",
+]
+_CSP_EQUIV_PATTERNS = [
+    r"\b(equivalent|equival|same.?as|analog|counterpart|"
+    r"what.?is.?the.?(aws|azure|gcp|oci|ibm))\b",
+]
+_COST_PATTERNS = [
+    r"\b(cost|price|pricing|expensive|cheap|egress.?cost|data.?transfer.?cost)\b",
+]
 
 
 def classify_query(question: str) -> str:
@@ -208,6 +219,12 @@ def classify_query(question: str) -> str:
         return "path"
     if any(re.search(p, q) for p in _FAILURE_PATTERNS):
         return "failure"
+    if any(re.search(p, q) for p in _CSP_EQUIV_PATTERNS):
+        return "csp_equivalence"
+    if any(re.search(p, q) for p in _CLOUD_PROP_PATTERNS):
+        return "cloud_properties"
+    if any(re.search(p, q) for p in _COST_PATTERNS):
+        return "cost"
     if any(re.search(p, q) for p in _NEIGHBOR_PATTERNS):
         return "neighbor"
     if any(re.search(p, q) for p in _INVENTORY_PATTERNS):
@@ -339,15 +356,40 @@ def _failure_query(question: str, graph: TopologyGraphAdapter) -> dict[str, Any]
     # Articulation points check
     is_articulation = failed_id in set(nx.articulation_points(graph.G))
 
+    # Cloud-managed HA services that are NOT realistic failure scenarios
+    _CLOUD_HA_NOTES = {
+        "aws-tgw": "TGW runs on Hyperplane (distributed, 99.99% SLA) — data-plane failure is extremely unlikely",
+        "aws-dx-gw": "DX Gateway is a global config overlay, not a data-plane device — cannot fail independently",
+        "aws-cloudwan": "Cloud WAN uses distributed infrastructure — 99.99% SLA",
+        "az-vwan": "Virtual WAN hub is zone-redundant and Microsoft-managed — failure is rare",
+        "gcp-ncc": "Network Connectivity Center is Google-managed — inherently HA",
+        "oci-drg": "DRG v2 is Oracle-managed and HA by default",
+        "ibm-tg": "IBM Transit Gateway is managed infrastructure",
+    }
+    failed_type = graph.G.nodes[failed_id].get("type", "") if failed_id in graph.G else ""
+    cloud_ha_note = _CLOUD_HA_NOTES.get(failed_type)
+
     answer_parts = [
         f"**Failure analysis for: {failed_lbl}**",
         "",
     ]
+
+    if cloud_ha_note:
+        answer_parts.append(
+            f"ℹ **Cloud-managed HA:** {cloud_ha_note}"
+        )
+        answer_parts.append("")
+
     if is_articulation:
         answer_parts.append(
             f"⚠ **Critical node** — removing **{failed_lbl}** will partition "
             f"the network (segments: {components_before} → {components_after})."
         )
+        if cloud_ha_note:
+            answer_parts.append(
+                "  → However, this is a cloud-managed service with "
+                "provider HA — actual risk is very low."
+            )
     else:
         answer_parts.append(
             f"✓ **{failed_lbl}** is NOT a critical bridge — the rest of the "
@@ -433,6 +475,29 @@ def _inventory_query(question: str, graph: TopologyGraphAdapter) -> dict[str, An
         "camera": "camera",
         "phone": "phone",
         "iot": "iot",
+        # Cloud networking types
+        "vpc": "vpc",
+        "vnet": "vnet",
+        "vcn": "vcn",
+        "transit gateway": "tgw",
+        "tgw": "tgw",
+        "direct connect": "dx",
+        "expressroute": "er",
+        "interconnect": "ic",
+        "fastconnect": "fc",
+        "dx gateway": "dx-gw",
+        "privatelink": "privatelink",
+        "private link": "privatelink",
+        "private endpoint": "privatelink",
+        "drg": "drg",
+        "vwan": "vwan",
+        "virtual wan": "vwan",
+        "shield": "shield",
+        "waf": "waf",
+        "flow log": "flowlog",
+        "nsg": "nsg",
+        "cloud armor": "armor",
+        "global accelerator": "ga",
     }
 
     matched_type: str | None = None
@@ -609,6 +674,207 @@ def _llm_query(question: str, graph: TopologyGraphAdapter,
 
 
 # ---------------------------------------------------------------------------
+# 4b. Cloud-Aware Query Engines
+# ---------------------------------------------------------------------------
+
+def _cloud_properties_query(question: str,
+                            graph: TopologyGraphAdapter) -> dict[str, Any]:
+    """Answer questions about cloud properties (BFD, resiliency, flow logs)."""
+    q = question.lower()
+    answer_parts = ["**Cloud Properties Analysis**", ""]
+
+    # BFD check
+    if "bfd" in q:
+        bfd_nodes = []
+        no_bfd_nodes = []
+        dx_types = {"aws-dx", "aws-dx-gw", "az-er", "az-er-global",
+                    "gcp-ic", "oci-fc", "ibm-dl"}
+        for nid, data in graph.G.nodes(data=True):
+            ntype = data.get("type", "")
+            if ntype in dx_types:
+                raw = data.get("raw", {})
+                cfg = raw.get("config", {})
+                if cfg.get("bfd") or cfg.get("bfd_enabled"):
+                    bfd_nodes.append(graph.label_of(nid))
+                else:
+                    no_bfd_nodes.append(graph.label_of(nid))
+        if bfd_nodes:
+            answer_parts.append(
+                f"**BFD enabled** on: {', '.join(bfd_nodes)}")
+        if no_bfd_nodes:
+            answer_parts.append(
+                f"**BFD NOT enabled** on: {', '.join(no_bfd_nodes)} "
+                "(failover ~90s vs <1s with BFD)")
+        if not bfd_nodes and not no_bfd_nodes:
+            answer_parts.append(
+                "No dedicated interconnect (DX/ER/IC/FC) nodes found.")
+        return {"answer": "\n".join(answer_parts), "data": {
+            "bfd_enabled": bfd_nodes, "bfd_missing": no_bfd_nodes,
+        }, "engine": "cloud_properties"}
+
+    # Flow logs
+    if "flow" in q and "log" in q:
+        vpc_types = {"aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"}
+        with_logs = []
+        without_logs = []
+        for nid, data in graph.G.nodes(data=True):
+            ntype = data.get("type", "")
+            if ntype in vpc_types:
+                raw = data.get("raw", {})
+                cfg = raw.get("config", {})
+                if cfg.get("flow_logs") or cfg.get("flow_logs_enabled"):
+                    with_logs.append(graph.label_of(nid))
+                else:
+                    without_logs.append(graph.label_of(nid))
+        answer_parts.append(
+            f"Flow logs enabled: {len(with_logs)}, "
+            f"missing: {len(without_logs)}")
+        if without_logs:
+            answer_parts.append(
+                f"Missing on: {', '.join(without_logs)}")
+        return {"answer": "\n".join(answer_parts), "data": {
+            "with_logs": with_logs, "without_logs": without_logs,
+        }, "engine": "cloud_properties"}
+
+    # Resiliency tier
+    if "resilien" in q or "tier" in q or "sla" in q:
+        try:
+            from tools.network.cloud_architecture import (
+                score_hybrid_resiliency,
+            )
+            raw_nodes = [graph.G.nodes[n].get("raw", {})
+                         for n in graph.G.nodes()]
+            raw_edges = []
+            for u, v, data in graph.G.edges(data=True):
+                raw_edges.append(data.get("raw", {"source": u, "target": v}))
+            res = score_hybrid_resiliency(raw_nodes, raw_edges)
+            answer_parts.append(
+                f"**Resiliency Tier:** {res['tier_label']} "
+                f"(SLA: {res['sla']})")
+            answer_parts.append(
+                f"DX connections: {res['dedicated_connections']}, "
+                f"locations: {res['unique_locations']}")
+            answer_parts.append(
+                f"VPN backup: {'Yes' if res['has_vpn_backup'] else 'No'}, "
+                f"BFD: {'Yes' if res['bfd_enabled'] else 'No'}")
+            answer_parts.append(
+                f"Est. failover: {res['estimated_failover_sec']}s")
+            for r in res.get("recommendations", []):
+                answer_parts.append(f"  - {r}")
+        except Exception:
+            answer_parts.append(
+                "Could not compute resiliency tier.")
+        return {"answer": "\n".join(answer_parts), "data": {},
+                "engine": "cloud_properties"}
+
+    answer_parts.append("Supported queries: BFD status, flow logs, "
+                        "resiliency tier, SLA")
+    return {"answer": "\n".join(answer_parts), "data": {},
+            "engine": "cloud_properties"}
+
+
+def _csp_equivalence_query(question: str) -> dict[str, Any]:
+    """Answer CSP equivalence questions using constants data."""
+    try:
+        from tools.network.constants import CSP_EQUIVALENCE
+    except ImportError:
+        return {"answer": "CSP equivalence data not available.",
+                "data": {}, "engine": "csp_equivalence"}
+
+    q = question.lower()
+    # Try to match a service name
+    _SVC_KEYWORDS = {
+        "direct connect": "dedicated_interconnect",
+        "dx": "dedicated_interconnect",
+        "expressroute": "dedicated_interconnect",
+        "interconnect": "dedicated_interconnect",
+        "fastconnect": "dedicated_interconnect",
+        "vpn": "site_to_site_vpn",
+        "transit gateway": "transit_hub",
+        "tgw": "transit_hub",
+        "vwan": "transit_hub",
+        "virtual wan": "transit_hub",
+        "privatelink": "private_endpoint",
+        "private link": "private_endpoint",
+        "private service connect": "private_endpoint",
+        "cloud wan": "global_wan",
+        "vpc": "virtual_network",
+        "vnet": "virtual_network",
+        "vcn": "virtual_network",
+        "firewall": "network_firewall",
+        "ddos": "ddos_protection",
+        "shield": "ddos_protection",
+        "flow log": "flow_logs",
+        "load balanc": "global_load_balancing",
+        "global accelerator": "global_load_balancing",
+        "outpost": "hybrid_edge",
+        "satellite": "hybrid_edge",
+    }
+    matched_key = None
+    for kw, key in _SVC_KEYWORDS.items():
+        if kw in q:
+            matched_key = key
+            break
+
+    if not matched_key:
+        # List all available services
+        services = [f"- {k}: {v.get('description', '')}"
+                    for k, v in CSP_EQUIVALENCE.items()]
+        return {"answer": ("**Available CSP equivalence mappings:**\n"
+                           + "\n".join(services)),
+                "data": {"services": list(CSP_EQUIVALENCE.keys())},
+                "engine": "csp_equivalence"}
+
+    mapping = CSP_EQUIVALENCE.get(matched_key, {})
+    parts = [f"**{mapping.get('description', matched_key)}**", ""]
+    for csp in ("aws", "azure", "gcp", "oci", "ibm"):
+        info = mapping.get(csp, {})
+        svc = info.get("service", "—")
+        parity = info.get("parity", "baseline" if csp == "aws" else "?")
+        note = info.get("note", "")
+        line = f"- **{csp.upper()}:** {svc} (parity: {parity})"
+        if note:
+            line += f" — {note}"
+        parts.append(line)
+
+    return {"answer": "\n".join(parts),
+            "data": {"service_key": matched_key, "mapping": mapping},
+            "engine": "csp_equivalence"}
+
+
+def _cost_query(question: str) -> dict[str, Any]:
+    """Answer egress cost comparison questions."""
+    try:
+        from tools.network.cloud_architecture import compare_egress_costs
+    except ImportError:
+        return {"answer": "Cost comparison not available.",
+                "data": {}, "engine": "cost"}
+
+    # Extract GB amount if mentioned
+    import re as _re
+    gb_match = _re.search(r"(\d+)\s*(gb|tb|terabyte|gigabyte)", question.lower())
+    gb = 1000.0
+    if gb_match:
+        val = float(gb_match.group(1))
+        unit = gb_match.group(2)
+        if unit in ("tb", "terabyte"):
+            val *= 1000
+        gb = val
+
+    results = compare_egress_costs(gb, "internet")
+    parts = [f"**Egress cost comparison ({gb:.0f} GB/month, internet):**", ""]
+    for r in results:
+        parts.append(
+            f"- **{r['source_csp'].upper()}:** "
+            f"${r['monthly_cost_usd']:.2f}/mo "
+            f"(${r['rate_per_gb']}/GB)"
+            + (f" — {r['note']}" if r.get("note") else "")
+        )
+    return {"answer": "\n".join(parts), "data": {"results": results},
+            "engine": "cost"}
+
+
+# ---------------------------------------------------------------------------
 # 5. Public API
 # ---------------------------------------------------------------------------
 
@@ -673,6 +939,12 @@ def answer_query(topology_id: str, question: str,
         result = _inventory_query(question, graph)
     elif intent == "compliance":
         result = _compliance_query(question, graph, conn, topology_id)
+    elif intent == "cloud_properties":
+        result = _cloud_properties_query(question, graph)
+    elif intent == "csp_equivalence":
+        result = _csp_equivalence_query(question)
+    elif intent == "cost":
+        result = _cost_query(question)
     else:
         result = _llm_query(question, graph, topo_name)
 
