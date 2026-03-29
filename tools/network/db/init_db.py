@@ -1,8 +1,14 @@
 """
 Network Design Canvas — DB initializer
 Creates schema and seeds 12 canonical network templates.
+
+Dual-backend: SQLite (default) or PostgreSQL.
+Set NC_STORAGE_BACKEND=postgresql + NC_PG_* env vars to use PostgreSQL.
+SQLite is the default for dev, air-gap, and single-user deployments.
+PostgreSQL is recommended for production multi-user/global deployments.
 """
 import json
+import os
 import sqlite3
 import sys
 import uuid
@@ -13,8 +19,36 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/network/db -> ICDev root
 DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 
+# Backend detection — NC_STORAGE_BACKEND or falls back to ICDEV_STORAGE_BACKEND
+_NC_BACKEND = os.environ.get(
+    "NC_STORAGE_BACKEND",
+    os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite")
+).lower()
 
-def get_connection() -> sqlite3.Connection:
+
+def get_connection():
+    """Get a database connection — SQLite or PostgreSQL.
+
+    Returns a connection that supports:
+        conn.execute(sql, params) — with ? placeholders (auto-translated for PG)
+        conn.commit()
+        conn.close()
+        row["column_name"] — dict-like row access
+
+    For PostgreSQL, uses ICDEV's StorageConnection wrapper which
+    auto-translates SQLite SQL to PostgreSQL (? → %s, PRAGMA → no-op, etc.)
+    """
+    if _NC_BACKEND == "postgresql":
+        try:
+            from tools.db.storage import get_connection as _icdev_conn
+            # Use ICDEV's storage layer which handles PG translation
+            conn = _icdev_conn(
+                db_path=os.environ.get("NC_PG_DATABASE", "network_canvas")
+            )
+            return conn
+        except ImportError:
+            pass  # Fall through to SQLite
+    # SQLite (default)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -427,17 +461,8 @@ CREATE TABLE IF NOT EXISTS nc_change_request_items (
 -- (classification column added inline above)
 
 -- NC-GAP-013: Audit trail immutability triggers
-CREATE TRIGGER IF NOT EXISTS nc_audit_no_update
-BEFORE UPDATE ON nc_audit
-BEGIN
-    SELECT RAISE(ABORT, 'Audit records are immutable — NIST AU-6');
-END;
-
-CREATE TRIGGER IF NOT EXISTS nc_audit_no_delete
-BEFORE DELETE ON nc_audit
-BEGIN
-    SELECT RAISE(ABORT, 'Audit records cannot be deleted — NIST AU-6');
-END;
+-- NOTE: These triggers use SQLite-specific syntax (SELECT RAISE).
+-- For PostgreSQL, equivalent triggers are created in init_db() via PL/pgSQL.
 
 -- ── NetBox IPAM Integration ────────────────────────────────────────────────
 
@@ -994,6 +1019,19 @@ CREATE INDEX IF NOT EXISTS idx_vuln_hosts_ip ON nc_vuln_hosts(ip);
 CREATE INDEX IF NOT EXISTS idx_vuln_hosts_node ON nc_vuln_hosts(node_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_host ON nc_vuln_findings(host_id);
 CREATE INDEX IF NOT EXISTS idx_vuln_findings_severity ON nc_vuln_findings(severity);
+
+-- Natural Language Query log (append-only: NL questions and answers over topologies)
+CREATE TABLE IF NOT EXISTS nc_query_log (
+    id          TEXT PRIMARY KEY,
+    topology_id TEXT REFERENCES topologies(id),
+    question    TEXT NOT NULL,
+    intent      TEXT DEFAULT 'general',  -- path, failure, neighbor, inventory, compliance, general
+    answer      TEXT DEFAULT '',
+    engine      TEXT DEFAULT '',         -- path, failure, neighbor, inventory, compliance, llm
+    ts          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_query_log_topo ON nc_query_log(topology_id);
+CREATE INDEX IF NOT EXISTS idx_query_log_ts   ON nc_query_log(ts);
 
 -- ── Enclave-in-a-Box Snippets ─────────────────────────────────────────────
 -- Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge)
@@ -3219,9 +3257,68 @@ ENCLAVE_SNIPPETS = [
 def init_db():
     conn = get_connection()
     try:
-        conn.executescript(SCHEMA)
-        conn.commit()
-        print(f"[init_db] Schema created at {DB_PATH}")
+        if _NC_BACKEND == "postgresql":
+            # PostgreSQL: execute each statement individually
+            # ICDEV's StorageConnection translates SQL automatically
+            for stmt in SCHEMA.split(";"):
+                stmt = stmt.strip()
+                if stmt and not stmt.startswith("--"):
+                    try:
+                        conn.execute(stmt)
+                    except Exception:
+                        pass  # table/index already exists
+            conn.commit()
+            # PG audit immutability triggers (PL/pgSQL syntax)
+            try:
+                conn.execute("""
+                    CREATE OR REPLACE FUNCTION nc_audit_immutable()
+                    RETURNS TRIGGER AS $$
+                    BEGIN
+                        RAISE EXCEPTION 'Audit records are immutable — NIST AU-6';
+                    END;
+                    $$ LANGUAGE plpgsql
+                """)
+                conn.execute("""
+                    DROP TRIGGER IF EXISTS nc_audit_no_update ON nc_audit
+                """)
+                conn.execute("""
+                    CREATE TRIGGER nc_audit_no_update
+                    BEFORE UPDATE ON nc_audit
+                    FOR EACH ROW EXECUTE FUNCTION nc_audit_immutable()
+                """)
+                conn.execute("""
+                    DROP TRIGGER IF EXISTS nc_audit_no_delete ON nc_audit
+                """)
+                conn.execute("""
+                    CREATE TRIGGER nc_audit_no_delete
+                    BEFORE DELETE ON nc_audit
+                    FOR EACH ROW EXECUTE FUNCTION nc_audit_immutable()
+                """)
+                conn.commit()
+            except Exception:
+                pass  # triggers may already exist
+            print("[init_db] Schema created (PostgreSQL)")
+        else:
+            # SQLite: executescript for all-at-once
+            conn.executescript(SCHEMA)
+            # SQLite audit immutability triggers
+            try:
+                conn.executescript("""
+                    CREATE TRIGGER IF NOT EXISTS nc_audit_no_update
+                    BEFORE UPDATE ON nc_audit
+                    BEGIN
+                        SELECT RAISE(ABORT, 'Audit records are immutable');
+                    END;
+                    CREATE TRIGGER IF NOT EXISTS nc_audit_no_delete
+                    BEFORE DELETE ON nc_audit
+                    BEGIN
+                        SELECT RAISE(ABORT, 'Audit records cannot be deleted');
+                    END;
+                """)
+            except Exception:
+                pass
+            conn.commit()
+            print(f"[init_db] Schema created at {DB_PATH}")
 
         # Migration: add columns to existing tables if missing
         _migrations = [

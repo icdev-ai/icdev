@@ -11325,6 +11325,55 @@ Output ONLY the JSON object."""
         return jsonify({"scan_id": scan_id, "matches": matches,
                         "matched": sum(1 for m in matches if m["matched"])})
 
+    # ── Natural Language Query ─────────────────────────────────────────────
+
+    @bp.route("/api/nl-query/<topology_id>", methods=["POST"])
+    @nc_login_required
+    def nc_api_nl_query(topology_id):
+        """Answer a natural language question about a topology.
+
+        Request JSON: {"question": "Show all paths between Router-A and Server-B"}
+
+        Response JSON:
+            answer       — markdown-formatted answer
+            intent       — detected query type (path/failure/neighbor/inventory/…)
+            engine       — processing engine used
+            data         — structured result data (depends on engine)
+            topology_name, node_count, edge_count, query_id
+        """
+        from tools.network.nl_query import answer_query  # lazy import
+
+        data = request.get_json(force=True, silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        conn = get_connection()
+        try:
+            result = answer_query(topology_id, question, conn)
+        finally:
+            conn.close()
+
+        return jsonify(result)
+
+    @bp.route("/api/nl-query/<topology_id>/history", methods=["GET"])
+    @nc_login_required
+    def nc_api_nl_query_history(topology_id):
+        """Return recent NL query history for a topology."""
+        limit = min(int(request.args.get("limit", 20)), 100)
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, question, intent, engine, ts FROM nc_query_log "
+                "WHERE topology_id=? ORDER BY ts DESC LIMIT ?",
+                (topology_id, limit),
+            ).fetchall()
+        except Exception:
+            rows = []
+        finally:
+            conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",
                 len(bp.deferred_functions))
