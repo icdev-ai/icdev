@@ -1645,200 +1645,353 @@ function closeSnippetsPanel() {
   document.getElementById('snippets-overlay').classList.add('hidden');
 }
 
-/* ── Integration Guide — post-snippet-insertion connection suggestions ───── */
-// Maps snippet node roles to existing canvas node types they should connect to
-const INTEGRATION_RULES = [
-  // Perimeter / outer firewalls connect upstream to routers, WAN, ISP handoffs
-  {
-    snippetMatch: n => /firewall|fw/i.test(n.type) && /outer|perimeter|edge/i.test(n.label),
-    existingMatch: c => /^(router|mpls-pe|sdwan-edge|pop)$/.test(c.type),
-    reason: 'Perimeter firewall needs an upstream WAN/Internet connection',
-    protocol: 'GbE',
-    direction: 'upstream',
-    priority: 1,
-  },
-  // Inner firewalls connect downstream to core/distribution switches
-  {
-    snippetMatch: n => /firewall|fw/i.test(n.type) && /inner|internal|enclave/i.test(n.label),
-    existingMatch: c => /^(switch-l3|switch-l2|router)$/.test(c.type) && /core|distrib|internal/i.test(c.label),
-    reason: 'Inner firewall guards the trusted enclave — connect to your core/distribution layer',
-    protocol: 'GbE',
-    direction: 'downstream',
-    priority: 2,
-  },
-  // Generic firewalls — connect to nearest router or L3 switch
-  {
-    snippetMatch: n => /firewall|fw/i.test(n.type),
-    existingMatch: c => /^(router|switch-l3)$/.test(c.type),
-    reason: 'Firewall should connect to your routing/L3 layer',
-    protocol: 'GbE',
-    direction: 'upstream',
-    priority: 3,
-  },
-  // Servers connect to switches
-  {
-    snippetMatch: n => /^(server)$/.test(n.type),
-    existingMatch: c => /^(switch-l2|switch-l3)$/.test(c.type),
-    reason: 'Server should connect to an access or distribution switch',
-    protocol: '1GbE',
-    direction: 'downstream',
-    priority: 4,
-  },
-  // SIEM/log collectors — connect to anything that generates logs
-  {
-    snippetMatch: n => /siem|log/i.test(n.type) || /siem|log|collector/i.test(n.label),
-    existingMatch: c => /^(firewall|router|switch-l3|server|load-balancer)$/.test(c.type),
-    reason: 'SIEM/log collector needs syslog feeds from infrastructure devices',
-    protocol: 'syslog-TLS',
-    direction: 'monitoring',
-    priority: 5,
-  },
-  // IDS/IPS sensors — connect to switches (SPAN/mirror ports)
-  {
-    snippetMatch: n => /ids|ips|sensor/i.test(n.label) || n.type === 'network-tap',
-    existingMatch: c => /^(switch-l2|switch-l3|firewall)$/.test(c.type),
-    reason: 'IDS/IPS sensors need SPAN/mirror port connections for traffic inspection',
-    protocol: 'SPAN',
-    direction: 'monitoring',
-    priority: 5,
-  },
-  // CDS / cross-domain — connects between security domains
-  {
-    snippetMatch: n => /cds|cross.domain/i.test(n.label) || n.type === 'fips-140-l3',
-    existingMatch: c => /^(firewall|router)$/.test(c.type),
-    reason: 'Cross-Domain Solution bridges between classification levels',
-    protocol: 'Type 1 / HAIPE',
-    direction: 'boundary',
-    priority: 2,
-  },
-  // Load balancers — connect to servers and upstream firewalls
-  {
-    snippetMatch: n => /load.balancer|lb|alb|nlb/i.test(n.type),
-    existingMatch: c => /^(server|firewall|switch-l3)$/.test(c.type),
-    reason: 'Load balancer distributes traffic between application servers',
-    protocol: 'HTTPS',
-    direction: 'downstream',
-    priority: 3,
-  },
-  // Encryptors connect to WAN transport
-  {
-    snippetMatch: n => /type1|kg-|haipe|encryptor/i.test(n.type) || /type.1|kg-|haipe|encryptor/i.test(n.label),
-    existingMatch: c => /^(router|mpls-pe|sdwan-edge)$/.test(c.type),
-    reason: 'NSA Type 1 encryptor secures WAN transport',
-    protocol: 'Type 1 / HAIPE',
-    direction: 'upstream',
-    priority: 2,
-  },
-  // Workstations connect to access switches
-  {
-    snippetMatch: n => /endpoint|workstation|pc/i.test(n.type),
-    existingMatch: c => /^(switch-l2|switch-l3|wap)$/.test(c.type) && /access|floor|user|building/i.test(c.label),
-    reason: 'Workstations connect to access-layer switches',
-    protocol: '1GbE',
-    direction: 'downstream',
-    priority: 6,
-  },
-];
+/* ── Integration Guide — classification-aware connection suggestions ─────── */
+// Security classification hierarchy (higher number = more restrictive)
+const CLASSIFICATION_RANK = {
+  'PUBLIC': 0, 'UNCLASSIFIED': 0, 'public': 0, 'unclassified': 0,
+  'CUI': 1, 'cui': 1, 'internal': 1,
+  'SECRET': 2, 'secret': 2,
+  'TOP SECRET': 3, 'top secret': 3, 'TS': 3, 'ts': 3,
+};
+
+// Node types by security role
+const TYPE_SETS = {
+  WAN_UNTRUSTED: new Set([
+    'cloud', 'aws-dx', 'aws-dx-gw', 'az-er', 'az-er-global', 'gcp-ic',
+    'oci-fc', 'ibm-dl', 'aws-vpn', 'az-vpn-gw', 'gcp-vpn', 'ibm-vpn',
+    'pop', 'mpls-pe', 'mpls-p', 'sdwan-edge',
+  ]),
+  FIREWALL: new Set([
+    'firewall', 'aws-nfw', 'az-fw', 'gcp-armor', 'oci-waf', 'aws-waf',
+    'az-nsg', 'oci-nsg',
+  ]),
+  TYPE1_ENCRYPTOR: new Set([
+    'type1-encryptor', 'kg-175d', 'kg-175g', 'kg-250', 'kg-340', 'kg-245x', 'kg-255',
+  ]),
+  FIPS_ENCRYPTOR: new Set([
+    'fips-140-l1', 'fips-140-l2', 'fips-140-l3', 'fips-140-l4',
+    'hsm', 'macsec', 'tls-terminator',
+  ]),
+  ROUTING: new Set(['router', 'switch-l3', 'route-reflector']),
+  SWITCHING: new Set(['switch-l2', 'switch-l3']),
+  SERVER: new Set(['server']),
+  MONITORING: new Set(['siem', 'network-tap']),
+};
+
+// Infer classification of an existing canvas node from its configData and label
+function _nodeClassification(cell) {
+  const cfg = cell.get ? cell.get('configData') || {} : (cell.config || {});
+  // Check configData.classification, _classification, or label hints
+  const explicit = cfg.classification || cfg._classification || '';
+  if (explicit && CLASSIFICATION_RANK[explicit] !== undefined) return explicit.toUpperCase();
+  const label = (cell.attr ? cell.attr('label/text') : cell.label) || '';
+  if (/SIPR|SECRET/i.test(label)) return 'SECRET';
+  if (/NIPR|CUI/i.test(label)) return 'CUI';
+  if (/untrusted|internet|WAN|ISP|public/i.test(label)) return 'PUBLIC';
+  // Zone hints from configData
+  if (cfg.zone === 'untrusted') return 'PUBLIC';
+  if (cfg.zone === 'dmz') return 'CUI';
+  if (cfg.zone === 'trusted' || cfg.zone === 'management') return 'CUI';
+  return null; // unknown — treat as same-level by default
+}
+
+function _classRank(cls) {
+  return CLASSIFICATION_RANK[(cls || '').toUpperCase()] ?? -1;
+}
+
+// Would connecting these two classification levels violate security policy?
+function _crossDomainViolation(snippetCls, existingCls) {
+  const sRank = _classRank(snippetCls);
+  const eRank = _classRank(existingCls);
+  if (sRank < 0 || eRank < 0) return false; // unknown — allow (user decides)
+  // SECRET/TS snippet cannot connect directly to PUBLIC/untrusted
+  // (requires CDS or Type 1 encryptor in between — CNSS Policy 15, SC-7, CA-3)
+  if (sRank >= 2 && eRank === 0) return true;
+  // CUI snippet should not connect to PUBLIC without firewall
+  // (NET-BND-001: firewall at boundary — SC-7)
+  // We flag but don't hard-block — user may have a firewall in between
+  return false;
+}
 
 const DIRECTION_ICONS = {
   upstream: '⬆',
   downstream: '⬇',
   monitoring: '👁',
   boundary: '🔒',
+  warning: '⚠',
 };
 
 function buildIntegrationSuggestions(snippetNodes, idMap, snippet) {
-  // Gather existing (non-snippet) nodes from the graph
+  const snippetCls = (snippet.classification_level || 'CUI').toUpperCase();
+  const snippetRank = _classRank(snippetCls);
+
+  // ── Gather existing (non-snippet) nodes with classification ──
   const existingNodes = [];
   graph.getCells().forEach(cell => {
     if (!cell.isElement()) return;
     const cfg = cell.get('configData') || {};
-    if (cfg._snippet_id) return; // skip other snippet nodes
+    if (cfg._snippet_id) return; // skip other snippet-origin nodes
+    const nodeType = cell.get('nodeType') || 'unknown';
+    // Skip drawing shapes, text labels, headings, badges
+    if (/^(draw-|text-|group-)/.test(nodeType)) return;
     existingNodes.push({
       id: cell.id,
-      type: cell.get('nodeType') || 'unknown',
+      type: nodeType,
       label: cell.attr('label/text') || '',
+      classification: _nodeClassification(cell),
+      config: cfg,
       pos: cell.position(),
     });
   });
 
-  if (!existingNodes.length) return [];
+  if (!existingNodes.length) return { suggestions: [], warnings: [] };
 
   const suggestions = [];
-  const seen = new Set(); // avoid duplicate suggestions
+  const warnings = [];
+  const seen = new Set();
 
-  for (const rule of INTEGRATION_RULES) {
-    for (const sn of snippetNodes) {
-      if (!rule.snippetMatch(sn)) continue;
-      const mappedId = idMap[sn.id];
-      for (const en of existingNodes) {
-        if (!rule.existingMatch(en)) continue;
-        const key = `${mappedId}-${en.id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        suggestions.push({
-          snippetNode: { id: mappedId, label: sn.label, type: sn.type },
-          existingNode: { id: en.id, label: en.label, type: en.type },
-          reason: rule.reason,
-          protocol: rule.protocol,
-          direction: rule.direction,
-          priority: rule.priority,
-        });
+  // Helper: add a suggestion if classification rules allow it
+  function suggest(sn, en, reason, protocol, direction, priority, controlRef) {
+    const mappedId = idMap[sn.id];
+    const key = `${mappedId}-${en.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const enCls = en.classification;
+    const snCls = sn.config?.classification || snippetCls;
+
+    // ── Hard block: cross-domain violation ──
+    if (_crossDomainViolation(snCls, enCls)) {
+      warnings.push({
+        snippetNode: { id: mappedId, label: sn.label, type: sn.type },
+        existingNode: { id: en.id, label: en.label, type: en.type },
+        message: `BLOCKED: ${snCls} node "${sn.label}" cannot connect directly to ${enCls || 'untrusted'} node "${en.label}". ` +
+                 `A Cross-Domain Solution (CDS) or NSA Type 1 encryptor is required between classification levels ` +
+                 `(CNSS Policy 15, NIST SC-7, CA-3).`,
+        controlRef: 'CA-3, SC-7, CNSS-15',
+      });
+      return; // do NOT add as a suggestion
+    }
+
+    // ── Warn: classification mismatch that needs encryption ──
+    let warning = null;
+    const snRank = _classRank(snCls);
+    const enRank = _classRank(enCls);
+    if (snRank >= 2 && enRank >= 0 && enRank < snRank) {
+      // SECRET connecting to CUI — needs Type 1 or CDS
+      warning = `Requires NSA Type 1 encryption or CDS between ${snCls} and ${enCls} domains (NET-ENC-002, CNSS Policy 15)`;
+      protocol = 'Type 1 / HAIPE';
+    } else if (snRank >= 1 && enRank >= 0 && enRank < snRank) {
+      // CUI connecting to lower — needs FIPS 140 encryption
+      warning = `FIPS 140-2 validated encryption required on this link (NET-ENC-004, SC-8)`;
+    }
+
+    suggestions.push({
+      snippetNode: { id: mappedId, label: sn.label, type: sn.type },
+      existingNode: { id: en.id, label: en.label, type: en.type },
+      reason, protocol, direction, priority, controlRef,
+      warning,
+    });
+  }
+
+  // ── Apply rules ──
+  for (const sn of snippetNodes) {
+    const snCfg = sn.config || {};
+    const snCls = snCfg.classification || snippetCls;
+    const snRank = _classRank(snCls);
+    const isOuterFW = /firewall|fw/i.test(sn.type) && /outer|perimeter|edge|untrusted/i.test(sn.label);
+    const isInnerFW = /firewall|fw/i.test(sn.type) && /inner|internal|enclave|cui|trusted/i.test(sn.label);
+    const isFW = TYPE_SETS.FIREWALL.has(sn.type);
+    const isServer = TYPE_SETS.SERVER.has(sn.type);
+    const isSIEM = TYPE_SETS.MONITORING.has(sn.type) || /siem|log|collector/i.test(sn.label);
+    const isIDS = /ids|ips|sensor/i.test(sn.label);
+    const isCDS = /cds|cross.domain|guard/i.test(sn.label) || sn.type === 'fips-140-l3';
+    const isEncryptor = TYPE_SETS.TYPE1_ENCRYPTOR.has(sn.type) || TYPE_SETS.FIPS_ENCRYPTOR.has(sn.type);
+    const isLB = /load.balancer|lb|proxy|waf/i.test(sn.type) || /load.balancer|proxy|waf/i.test(sn.label);
+    const isWorkstation = /endpoint|workstation|pc/i.test(sn.type);
+    const isTacticalRadio = /radio|pace|satcom/i.test(sn.label);
+
+    for (const en of existingNodes) {
+      const enRank = _classRank(en.classification);
+      const sameOrHigherCls = enRank < 0 || enRank >= snRank; // unknown or same/higher = OK
+      const sameCls = enRank < 0 || enRank === snRank;
+
+      // ── RULE 1: Outer/perimeter firewall → same-classification router (NOT untrusted WAN) ──
+      if (isOuterFW && TYPE_SETS.ROUTING.has(en.type) && sameOrHigherCls) {
+        // Only connect to routers at the SAME or higher classification
+        // Never connect SECRET FW directly to an untrusted/PUBLIC router
+        suggest(sn, en,
+          `Perimeter firewall connects to ${en.classification || 'internal'} routing layer (SC-7: boundary protection)`,
+          snRank >= 2 ? 'Type 1 / HAIPE' : 'GbE', 'upstream', 1, 'SC-7, AC-4');
+      }
+
+      // ── RULE 2: Inner firewall → same-classification core/distribution switch ──
+      if (isInnerFW && TYPE_SETS.SWITCHING.has(en.type) && sameOrHigherCls
+          && /core|distrib|internal|enclave/i.test(en.label)) {
+        suggest(sn, en,
+          `Inner firewall guards the trusted enclave — connect to ${en.classification || ''} core/distribution layer (SC-7(3): boundary isolation)`,
+          'GbE', 'downstream', 2, 'SC-7(3), AC-4');
+      }
+
+      // ── RULE 3: CDS connects ONLY across classification boundaries ──
+      if (isCDS) {
+        // CDS should connect to a LOWER classification node (that's its purpose)
+        if (TYPE_SETS.FIREWALL.has(en.type) && enRank >= 0 && enRank < snRank) {
+          suggest(sn, en,
+            `CDS bridges ${snCls} → ${en.classification} boundary. NSA-evaluated guard required (CA-3, data-flow: ${snCfg.data_flow_direction || 'controlled'})`,
+            'Type 1 / HAIPE', 'boundary', 1, 'CA-3, SC-7(21), CNSS-15');
+        }
+        // CDS should NOT connect to same-classification devices (pointless)
+        continue;
+      }
+
+      // ── RULE 4: Type 1 / FIPS encryptor → WAN transport at boundary ──
+      if (isEncryptor && TYPE_SETS.WAN_UNTRUSTED.has(en.type)) {
+        // Encryptors DO connect to lower-classification transport — that's their job
+        suggest(sn, en,
+          `Encryptor secures ${snCls} data over ${en.classification || 'untrusted'} transport (NET-ENC-002: Type 1 for SECRET+)`,
+          TYPE_SETS.TYPE1_ENCRYPTOR.has(sn.type) ? 'Type 1 / HAIPE' : 'FIPS 140',
+          'boundary', 1, 'SC-8, SC-8(1), SC-13');
+      }
+      if (isEncryptor && TYPE_SETS.ROUTING.has(en.type) && sameOrHigherCls) {
+        suggest(sn, en,
+          `Encryptor inline with ${en.classification || 'internal'} router for encrypted WAN handoff`,
+          'GbE', 'upstream', 2, 'SC-8, SC-13');
+      }
+
+      // ── RULE 5: SIEM/log collector — same classification only (AU-2, AU-9) ──
+      if (isSIEM && sameCls && (TYPE_SETS.FIREWALL.has(en.type) || TYPE_SETS.ROUTING.has(en.type) || TYPE_SETS.SERVER.has(en.type))) {
+        suggest(sn, en,
+          `SIEM collects audit logs from ${en.label} via encrypted syslog (AU-2: audit events, AU-9: audit protection). Same ${snCls} domain only.`,
+          'syslog-TLS', 'monitoring', 4, 'AU-2, AU-9, AU-12');
+      }
+
+      // ── RULE 6: IDS/IPS sensor — same-classification SPAN/mirror ──
+      if (isIDS && sameCls && (TYPE_SETS.SWITCHING.has(en.type) || TYPE_SETS.FIREWALL.has(en.type))) {
+        suggest(sn, en,
+          `IDS/IPS receives mirrored traffic from ${en.label} via SPAN port for threat detection (SI-4: system monitoring). Must remain within ${snCls} domain.`,
+          'SPAN', 'monitoring', 4, 'SI-4, SI-3');
+      }
+
+      // ── RULE 7: Servers → same-classification switches only ──
+      if (isServer && TYPE_SETS.SWITCHING.has(en.type) && sameOrHigherCls) {
+        suggest(sn, en,
+          `Server connects to ${en.classification || ''} access/distribution switch (SC-7(3): micro-segmentation)`,
+          'GbE', 'downstream', 5, 'SC-7(3), AC-4');
+      }
+
+      // ── RULE 8: Load balancer / reverse proxy → same-classification servers and firewalls ──
+      if (isLB && (TYPE_SETS.SERVER.has(en.type) || TYPE_SETS.FIREWALL.has(en.type)) && sameOrHigherCls) {
+        suggest(sn, en,
+          `${sn.label} distributes traffic within ${snCls} domain — connect to ${en.label}`,
+          'HTTPS', 'downstream', 5, 'SC-7, AC-4');
+      }
+
+      // ── RULE 9: Workstations → same-classification access switches ──
+      if (isWorkstation && TYPE_SETS.SWITCHING.has(en.type) && sameOrHigherCls
+          && /access|floor|user|building/i.test(en.label)) {
+        suggest(sn, en,
+          `${snCls} workstation connects to same-classification access switch (IA-2: CAC/MFA required)`,
+          '1GbE', 'downstream', 6, 'IA-2, AC-17');
+      }
+
+      // ── RULE 10: Tactical radio/SATCOM → same-classification router ──
+      if (isTacticalRadio && TYPE_SETS.ROUTING.has(en.type) && sameOrHigherCls) {
+        suggest(sn, en,
+          `Tactical comms connect to ${snCls} router for PACE transport (CP-8: telecom services)`,
+          'Type 1 / HAIPE', 'upstream', 3, 'CP-8, SC-8');
       }
     }
   }
 
-  // Sort by priority, then limit to most relevant
+  // Sort by priority
   suggestions.sort((a, b) => a.priority - b.priority);
-  return suggestions.slice(0, 12);
+  return { suggestions: suggestions.slice(0, 12), warnings };
 }
 
-function showIntegrationGuide(suggestions, snippet) {
+function showIntegrationGuide(result, snippet) {
+  const { suggestions, warnings } = result;
   const overlay = document.getElementById('integration-guide-overlay');
   const content = document.getElementById('integration-guide-content');
 
-  // Build header
+  // Build header with classification badge
+  const clColor = SNIPPET_CLASSIFICATION_COLORS[snippet.classification_level] || '#7a8cb0';
   let html = `
     <div style="background:rgba(92,66,217,0.12);border:1px solid rgba(92,66,217,0.3);border-radius:6px;padding:10px 12px;">
-      <div style="font-size:13px;font-weight:600;color:#a29bfe;margin-bottom:4px;">⊞ ${snippet.name}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:13px;font-weight:600;color:#a29bfe;">&#x229e; ${snippet.name}</span>
+        <span style="font-size:10px;font-weight:700;color:${clColor};border:1px solid ${clColor};border-radius:3px;padding:1px 5px;">${snippet.classification_level}</span>
+      </div>
       <div style="font-size:11px;color:var(--text-dim,#7a8cb0);line-height:1.5;">${snippet.description || ''}</div>
       <div style="font-size:10px;color:var(--text-dim,#7a8cb0);margin-top:6px;">
-        <span style="color:#f39c12;">⬢</span> ${snippet.classification_level} &bull; Impact Level: ${snippet.impact_level}
+        Impact Level: ${snippet.impact_level} &bull;
+        Suggestions are filtered by classification compatibility
       </div>
     </div>`;
 
-  if (!suggestions.length) {
+  // ── Security warnings (cross-domain violations) ──
+  if (warnings && warnings.length) {
+    html += `
+      <div style="background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.4);border-radius:6px;padding:10px 12px;">
+        <div style="font-size:12px;font-weight:600;color:#e74c3c;margin-bottom:6px;">
+          &#x26A0; Security Boundary Violations Blocked
+        </div>`;
+    for (const w of warnings) {
+      const snStyle = getStyle(w.snippetNode.type);
+      const exStyle = getStyle(w.existingNode.type);
+      html += `
+        <div style="margin-bottom:8px;padding:6px 8px;background:rgba(231,76,60,0.06);border-radius:4px;">
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+            <span style="font-size:11px;font-weight:600;color:${snStyle.stroke};">${w.snippetNode.label}</span>
+            <span style="font-size:10px;color:#e74c3c;">&#x26D4;</span>
+            <span style="font-size:11px;font-weight:600;color:${exStyle.stroke};">${w.existingNode.label}</span>
+          </div>
+          <div style="font-size:10px;color:#e07070;line-height:1.4;">${w.message}</div>
+          <div style="font-size:9px;color:#7a8cb0;margin-top:3px;">Controls: ${w.controlRef}</div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // ── Suggestions ──
+  if (!suggestions.length && (!warnings || !warnings.length)) {
     html += `
       <div style="color:var(--text-dim,#7a8cb0);font-size:12px;text-align:center;padding:20px;">
         No matching integration points found on the current canvas.<br>
         <span style="font-size:11px;">Add routers, switches, or firewalls to the canvas first, then insert a snippet to see connection suggestions.</span>
       </div>`;
-  } else {
+  } else if (suggestions.length) {
     html += `
       <div style="font-size:11px;color:var(--text-dim,#7a8cb0);padding:0 2px;">
-        <strong style="color:var(--text,#eaeaea);">${suggestions.length} suggested connection${suggestions.length > 1 ? 's' : ''}</strong>
-        — click to auto-connect, or connect manually later.
+        <strong style="color:var(--text,#eaeaea);">${suggestions.length} compliant connection${suggestions.length > 1 ? 's' : ''}</strong>
+        — classification-validated per NIST 800-53 / CNSS Policy 15.
       </div>`;
 
     for (const s of suggestions) {
-      const icon = DIRECTION_ICONS[s.direction] || '↔';
+      const icon = DIRECTION_ICONS[s.direction] || '&#x2194;';
       const snStyle = getStyle(s.snippetNode.type);
       const exStyle = getStyle(s.existingNode.type);
+      // Warning badge for connections that need encryption
+      const warnHtml = s.warning
+        ? `<div style="font-size:10px;color:#f39c12;margin:4px 0 6px;padding:4px 6px;background:rgba(243,156,18,0.08);border-radius:3px;line-height:1.3;">&#x26A0; ${s.warning}</div>`
+        : '';
       html += `
         <div style="background:var(--card-bg,#16213e);border:1px solid var(--border,#2a3a5e);border-radius:6px;padding:10px 12px;">
-          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
             <span style="font-size:16px;">${icon}</span>
             <span style="font-size:12px;font-weight:600;color:${snStyle.stroke};">${s.snippetNode.label}</span>
-            <span style="font-size:10px;color:var(--text-dim);">→</span>
+            <span style="font-size:10px;color:var(--text-dim);">&#x2192;</span>
             <span style="font-size:12px;font-weight:600;color:${exStyle.stroke};">${s.existingNode.label}</span>
           </div>
-          <div style="font-size:11px;color:var(--text-dim,#7a8cb0);margin-bottom:8px;line-height:1.4;">${s.reason}</div>
-          <div style="display:flex;gap:6px;">
+          <div style="font-size:11px;color:var(--text-dim,#7a8cb0);line-height:1.4;">${s.reason}</div>
+          ${warnHtml}
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;">
             <button class="btn btn-sm btn-primary" style="flex:1;background:#5c42d9;border-color:#5c42d9;font-size:11px;"
               onclick="applyIntegrationLink('${s.snippetNode.id}','${s.existingNode.id}','${s.protocol}',this)">
               &#x1f517; Connect (${s.protocol})</button>
             <button class="btn btn-sm" style="background:transparent;border:1px solid var(--border,#2a3a5e);color:var(--text-dim,#7a8cb0);font-size:11px;"
               onclick="this.closest('div[style*=card-bg]').remove()">Skip</button>
+            <span style="font-size:9px;color:#636e72;" title="${s.controlRef || ''}">${s.controlRef || ''}</span>
           </div>
         </div>`;
     }
