@@ -625,6 +625,187 @@ CREATE TABLE IF NOT EXISTS nc_project_phases (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Peering Agreements ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_peering_agreements (
+    id              TEXT PRIMARY KEY,
+    peer_name       TEXT NOT NULL,
+    peer_asn        TEXT,
+    our_asn         TEXT,
+    peering_type    TEXT DEFAULT 'settlement_free',  -- settlement_free, paid, transit, partial_transit
+    routing_method  TEXT DEFAULT 'bgp',              -- bgp, static, ospf, isis, pbr, l2, none
+    status          TEXT DEFAULT 'evaluation',       -- evaluation, negotiation, agreement_signed, technical_design, implemented, operational, decommissioned
+    purpose         TEXT,                            -- business reason
+    purpose_category TEXT DEFAULT 'connectivity',    -- connectivity, cost_optimization, redundancy, cloud_onramp, customer, partner, regulatory, content_delivery
+    business_justification TEXT,
+    locations       TEXT DEFAULT '[]',               -- JSON: IXPs/facilities
+    port_speed      TEXT,                            -- 1G, 10G, 100G
+    contract_start  TEXT,
+    contract_end    TEXT,
+    monthly_cost    REAL DEFAULT 0,
+    traffic_commit  TEXT,                            -- e.g., "10Gbps commit"
+    ratio_limit     TEXT,                            -- e.g., "2:1 max"
+    sla_latency_ms  REAL,
+    sla_packet_loss REAL,
+    sla_uptime_pct  REAL DEFAULT 99.9,
+    noc_contact     TEXT,
+    noc_email       TEXT,
+    noc_phone       TEXT,
+    legal_entity    TEXT,
+    notes           TEXT,
+    project_id      TEXT REFERENCES nc_projects(id),
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_peering_sessions (
+    id              TEXT PRIMARY KEY,
+    agreement_id    TEXT REFERENCES nc_peering_agreements(id) ON DELETE CASCADE,
+    location        TEXT NOT NULL,                   -- IXP name or facility
+    routing_method  TEXT DEFAULT 'bgp',              -- bgp, static, ospf, isis, l2
+    our_ip          TEXT,
+    peer_ip         TEXT,
+    our_ipv6        TEXT,
+    peer_ipv6       TEXT,
+    our_asn         TEXT,
+    peer_asn        TEXT,
+    prefix_limit    INTEGER,
+    md5_enabled     INTEGER DEFAULT 0,
+    local_pref      INTEGER,
+    med             INTEGER,
+    communities     TEXT DEFAULT '[]',               -- JSON
+    static_routes   TEXT DEFAULT '[]',               -- JSON: [{prefix, next_hop}] for static routing
+    status          TEXT DEFAULT 'planned',           -- planned, configured, up, down, decommissioned
+    port_speed      TEXT,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_peering_traffic (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT REFERENCES nc_peering_sessions(id) ON DELETE CASCADE,
+    inbound_mbps    REAL DEFAULT 0,
+    outbound_mbps   REAL DEFAULT 0,
+    ratio           REAL DEFAULT 1.0,                -- inbound/outbound
+    measurement     TEXT DEFAULT 'peak',              -- peak, average, 95th
+    measured_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_peering_evaluations (
+    id              TEXT PRIMARY KEY,
+    peer_name       TEXT NOT NULL,
+    peer_asn        TEXT,
+    traffic_volume  REAL DEFAULT 0,                  -- Mbps exchanged via transit today
+    geographic_overlap TEXT DEFAULT 'medium',          -- low, medium, high
+    noc_quality     TEXT DEFAULT 'unknown',            -- poor, fair, good, excellent, unknown
+    network_capacity TEXT DEFAULT 'unknown',
+    prefix_count    INTEGER DEFAULT 0,
+    peering_policy  TEXT,                             -- open, selective, restrictive
+    score           REAL DEFAULT 0,                   -- auto-computed
+    recommendation  TEXT DEFAULT 'evaluate',           -- peer, defer, decline
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Capacity Planning (Port/Slot/Fiber/Circuit) ──────────────────────────
+CREATE TABLE IF NOT EXISTS nc_port_inventory (
+    id              TEXT PRIMARY KEY,
+    device_label    TEXT NOT NULL,
+    topology_id     TEXT REFERENCES topologies(id),
+    total_ports     INTEGER DEFAULT 0,
+    used_ports      INTEGER DEFAULT 0,
+    port_breakdown  TEXT DEFAULT '{}',               -- JSON: {"1G": {total:24, used:18}, "10G": {total:4, used:2}}
+    last_updated    TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_module_inventory (
+    id              TEXT PRIMARY KEY,
+    device_label    TEXT NOT NULL,
+    topology_id     TEXT REFERENCES topologies(id),
+    slot_number     TEXT NOT NULL,
+    module_type     TEXT,                            -- empty, 4x10G, 2x100G, 48x1G, etc.
+    is_empty        INTEGER DEFAULT 1,
+    compatible_modules TEXT DEFAULT '[]',             -- JSON: what can go in this slot
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_fiber_inventory (
+    id              TEXT PRIMARY KEY,
+    path_name       TEXT NOT NULL,                   -- e.g., "DC-East to DC-West"
+    path_a          TEXT,                            -- site/facility A
+    path_z          TEXT,                            -- site/facility Z
+    fiber_type      TEXT DEFAULT 'SMF',              -- SMF, MMF
+    total_strands   INTEGER DEFAULT 0,
+    lit_strands     INTEGER DEFAULT 0,
+    available_strands INTEGER DEFAULT 0,
+    total_lambdas   INTEGER DEFAULT 0,               -- DWDM wavelengths
+    active_lambdas  INTEGER DEFAULT 0,
+    available_lambdas INTEGER DEFAULT 0,
+    per_lambda_gbps REAL DEFAULT 100,                -- capacity per wavelength
+    conduit_ducts   INTEGER DEFAULT 0,
+    conduit_used    INTEGER DEFAULT 0,
+    diverse_path    INTEGER DEFAULT 0,               -- 1 = confirmed physically diverse
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_carrier_availability (
+    id              TEXT PRIMARY KEY,
+    carrier         TEXT NOT NULL,
+    path_name       TEXT,                            -- same path reference as fiber_inventory
+    service_type    TEXT,                            -- DIA, MPLS, wavelength, dark_fiber, Ethernet
+    available_bandwidth TEXT,                         -- e.g., "up to 100G"
+    lead_time_days  INTEGER DEFAULT 30,
+    monthly_cost_est REAL DEFAULT 0,
+    contract_term   TEXT,                            -- e.g., "12 months"
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Facilities / DCIM ────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_facilities (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    facility_type   TEXT DEFAULT 'datacenter',        -- datacenter, colo, office, pop, hub
+    address         TEXT,
+    city            TEXT,
+    state           TEXT,
+    country         TEXT DEFAULT 'US',
+    operator        TEXT,                            -- Equinix, QTS, CyrusOne, self-operated
+    total_racks     INTEGER DEFAULT 0,
+    used_racks      INTEGER DEFAULT 0,
+    total_power_kw  REAL DEFAULT 0,
+    used_power_kw   REAL DEFAULT 0,
+    total_cooling_tons REAL DEFAULT 0,
+    used_cooling_tons REAL DEFAULT 0,
+    ups_capacity_kva REAL DEFAULT 0,
+    ups_load_kva    REAL DEFAULT 0,
+    ups_runtime_min REAL DEFAULT 15,
+    generator_kw    REAL DEFAULT 0,
+    generator_load_kw REAL DEFAULT 0,
+    generator_fuel_hours REAL DEFAULT 0,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_racks (
+    id              TEXT PRIMARY KEY,
+    facility_id     TEXT REFERENCES nc_facilities(id) ON DELETE CASCADE,
+    rack_name       TEXT NOT NULL,                   -- e.g., "Row-A Rack-12"
+    total_ru        INTEGER DEFAULT 42,
+    used_ru         INTEGER DEFAULT 0,
+    reserved_ru     INTEGER DEFAULT 0,
+    power_circuit_a TEXT,                            -- PDU A feed
+    power_circuit_b TEXT,                            -- PDU B feed
+    max_power_kw    REAL DEFAULT 5.0,
+    current_power_kw REAL DEFAULT 0,
+    weight_capacity_lbs REAL DEFAULT 2500,
+    current_weight_lbs REAL DEFAULT 0,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── NDC Case Workflow (Phase 4) ────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nc_case_workflows (
     id          TEXT PRIMARY KEY,

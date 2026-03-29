@@ -2547,6 +2547,525 @@ def create_network_blueprint():
         return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Peering Agreements
+    # ══════════════════════════════════════════════════════════════════════
+
+    _PEERING_LIFECYCLE = [
+        "evaluation", "negotiation", "agreement_signed",
+        "technical_design", "implemented", "operational",
+        "decommissioned",
+    ]
+
+    @bp.route("/api/peering-agreements", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_peering():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_peering_agreements "
+            "ORDER BY status, peer_name"
+        ).fetchall()
+        conn.close()
+        items = [_row_to_dict(r) for r in rows]
+        for it in items:
+            try:
+                it["locations"] = json.loads(it.get("locations") or "[]")
+            except Exception:
+                it["locations"] = []
+        return jsonify(items)
+
+    @bp.route("/api/peering-agreements", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_peering():
+        data = request.get_json(force=True, silent=True) or {}
+        pid = str(_uuid.uuid4())
+        locs = data.get("locations", [])
+        if isinstance(locs, list):
+            locs = json.dumps(locs)
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_peering_agreements "
+            "(id, peer_name, peer_asn, our_asn, peering_type, "
+            " routing_method, status, purpose, purpose_category, "
+            " business_justification, locations, port_speed, "
+            " contract_start, contract_end, monthly_cost, "
+            " traffic_commit, ratio_limit, sla_uptime_pct, "
+            " noc_contact, noc_email, noc_phone, legal_entity, "
+            " notes, project_id, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (pid, data.get("peer_name", ""),
+             data.get("peer_asn"), data.get("our_asn"),
+             data.get("peering_type", "settlement_free"),
+             data.get("routing_method", "bgp"),
+             data.get("status", "evaluation"),
+             data.get("purpose", ""),
+             data.get("purpose_category", "connectivity"),
+             data.get("business_justification", ""),
+             locs, data.get("port_speed"),
+             data.get("contract_start"), data.get("contract_end"),
+             data.get("monthly_cost", 0),
+             data.get("traffic_commit"),
+             data.get("ratio_limit"),
+             data.get("sla_uptime_pct", 99.9),
+             data.get("noc_contact"), data.get("noc_email"),
+             data.get("noc_phone"), data.get("legal_entity"),
+             data.get("notes"), data.get("project_id"),
+             _now(), _now())
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "peering_agreement", pid,
+               data.get("peer_name", ""))
+        return jsonify({"id": pid}), 201
+
+    @bp.route("/api/peering-agreements/<aid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_peering(aid):
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        allowed = [
+            "peer_name", "peer_asn", "our_asn", "peering_type",
+            "routing_method", "status", "purpose", "purpose_category",
+            "business_justification", "port_speed",
+            "contract_start", "contract_end", "monthly_cost",
+            "traffic_commit", "ratio_limit", "sla_uptime_pct",
+            "noc_contact", "noc_email", "noc_phone",
+            "legal_entity", "notes", "project_id",
+        ]
+        fields, values = [], []
+        for k in allowed:
+            if k in data:
+                fields.append(f"{k}=?")
+                values.append(data[k])
+        if "locations" in data:
+            locs = data["locations"]
+            if isinstance(locs, list):
+                locs = json.dumps(locs)
+            fields.append("locations=?")
+            values.append(locs)
+        if fields:
+            fields.append("updated_at=?")
+            values.append(_now())
+            values.append(aid)
+            conn.execute(
+                f"UPDATE nc_peering_agreements "  # nosec B608
+                f"SET {', '.join(fields)} WHERE id=?", values
+            )
+            conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    @bp.route("/api/peering-agreements/<aid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_peering(aid):
+        conn = get_connection()
+        conn.execute(
+            "DELETE FROM nc_peering_sessions WHERE agreement_id=?",
+            (aid,))
+        conn.execute(
+            "DELETE FROM nc_peering_agreements WHERE id=?", (aid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+
+    # Peering sessions
+    @bp.route("/api/peering-sessions/<aid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_peering_sessions(aid):
+        return _crud_list("nc_peering_sessions", aid, "location")
+
+    @bp.route("/api/peering-sessions/<aid>", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_peering_session(aid):
+        data = request.get_json(force=True, silent=True) or {}
+        sr = data.get("static_routes", [])
+        if isinstance(sr, list):
+            data["static_routes"] = json.dumps(sr)
+        comms = data.get("communities", [])
+        if isinstance(comms, list):
+            data["communities"] = json.dumps(comms)
+        data["md5_enabled"] = str(
+            1 if data.get("md5_enabled") else 0)
+        return _crud_create("nc_peering_sessions", aid, data,
+                            ["location", "routing_method", "our_ip",
+                             "peer_ip", "our_ipv6", "peer_ipv6",
+                             "our_asn", "peer_asn", "prefix_limit",
+                             "md5_enabled", "local_pref", "med",
+                             "communities", "static_routes", "status",
+                             "port_speed", "notes"])
+
+    # Peering evaluations
+    @bp.route("/api/peering-evaluations", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_peering_evals():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_peering_evaluations "
+            "ORDER BY score DESC"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/peering-evaluations", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_peering_eval():
+        data = request.get_json(force=True, silent=True) or {}
+        # Auto-score
+        geo = {"low": 1, "medium": 2, "high": 3}
+        noc = {"poor": 1, "fair": 2, "good": 3, "excellent": 4, "unknown": 0}
+        traffic = min(data.get("traffic_volume", 0) / 1000, 5)  # 0-5 pts
+        geo_pts = geo.get(data.get("geographic_overlap", "medium"), 2)
+        noc_pts = noc.get(data.get("noc_quality", "unknown"), 0)
+        prefix_pts = min(data.get("prefix_count", 0) / 100, 3)
+        score = round(traffic + geo_pts + noc_pts + prefix_pts, 2)
+        rec = "peer" if score >= 7 else "evaluate" if score >= 4 else "decline"
+        data["score"] = str(score)
+        data["recommendation"] = rec
+        data["prefix_count"] = str(data.get("prefix_count", 0))
+        data["traffic_volume"] = str(data.get("traffic_volume", 0))
+        return _crud_create("nc_peering_evaluations", "", data,
+                            ["peer_name", "peer_asn", "traffic_volume",
+                             "geographic_overlap", "noc_quality",
+                             "network_capacity", "prefix_count",
+                             "peering_policy", "score", "recommendation",
+                             "notes"])
+
+    # Peering cost-benefit
+    @bp.route("/api/peering-cost-benefit/<aid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_peering_cost_benefit(aid):
+        conn = get_connection()
+        agr = conn.execute(
+            "SELECT * FROM nc_peering_agreements WHERE id=?", (aid,)
+        ).fetchone()
+        if not agr:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        agr = _row_to_dict(agr)
+        # Get traffic data
+        sessions = conn.execute(
+            "SELECT id FROM nc_peering_sessions WHERE agreement_id=?",
+            (aid,)
+        ).fetchall()
+        total_in = total_out = 0
+        for s in sessions:
+            t = conn.execute(
+                "SELECT inbound_mbps, outbound_mbps "
+                "FROM nc_peering_traffic WHERE session_id=? "
+                "ORDER BY measured_at DESC LIMIT 1", (s[0],)
+            ).fetchone()
+            if t:
+                total_in += t[0] or 0
+                total_out += t[1] or 0
+        conn.close()
+        peer_cost = agr.get("monthly_cost", 0) or 0
+        # Estimate transit cost for same traffic (industry avg ~$0.50/Mbps)
+        transit_rate = 0.50  # $/Mbps/month
+        total_traffic = total_in + total_out
+        transit_cost = total_traffic * transit_rate
+        savings = transit_cost - peer_cost
+        return jsonify({
+            "peer_name": agr.get("peer_name"),
+            "peering_cost_monthly": peer_cost,
+            "transit_equivalent_monthly": round(transit_cost, 2),
+            "monthly_savings": round(savings, 2),
+            "annual_savings": round(savings * 12, 2),
+            "traffic_mbps": {"inbound": total_in, "outbound": total_out},
+            "transit_rate_per_mbps": transit_rate,
+        })
+
+    @bp.route("/peering")
+    @nc_login_required
+    def nc_peering_page():
+        return render_template("network/peering.html")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Capacity Planning (Port/Slot/Fiber/Circuit)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/port-inventory", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_port_inventory():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_port_inventory ORDER BY device_label"
+        ).fetchall()
+        conn.close()
+        items = [_row_to_dict(r) for r in rows]
+        for it in items:
+            try:
+                it["port_breakdown"] = json.loads(
+                    it.get("port_breakdown") or "{}")
+            except Exception:
+                it["port_breakdown"] = {}
+        return jsonify(items)
+
+    @bp.route("/api/port-inventory", methods=["POST"])
+    @nc_login_required
+    def nc_api_set_port_inventory():
+        data = request.get_json(force=True, silent=True) or {}
+        pb = data.get("port_breakdown", {})
+        if isinstance(pb, dict):
+            pb = json.dumps(pb)
+        conn = get_connection()
+        # Dedup by device_label + topology
+        conn.execute(
+            "DELETE FROM nc_port_inventory "
+            "WHERE device_label=? AND topology_id=?",
+            (data.get("device_label"), data.get("topology_id")))
+        rid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_port_inventory "
+            "(id, device_label, topology_id, total_ports, used_ports, "
+            " port_breakdown, last_updated) VALUES (?,?,?,?,?,?,?)",
+            (rid, data.get("device_label", ""),
+             data.get("topology_id"),
+             data.get("total_ports", 0),
+             data.get("used_ports", 0), pb, _now())
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": rid}), 201
+
+    @bp.route("/api/fiber-inventory", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_fiber():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_fiber_inventory ORDER BY path_name"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/fiber-inventory", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_fiber():
+        data = request.get_json(force=True, silent=True) or {}
+        data["available_strands"] = str(
+            int(data.get("total_strands", 0) or 0) -
+            int(data.get("lit_strands", 0) or 0))
+        data["available_lambdas"] = str(
+            int(data.get("total_lambdas", 0) or 0) -
+            int(data.get("active_lambdas", 0) or 0))
+        return _crud_create("nc_fiber_inventory", "", data,
+                            ["path_name", "path_a", "path_z",
+                             "fiber_type", "total_strands", "lit_strands",
+                             "available_strands", "total_lambdas",
+                             "active_lambdas", "available_lambdas",
+                             "per_lambda_gbps", "conduit_ducts",
+                             "conduit_used", "diverse_path", "notes"])
+
+    @bp.route("/api/carrier-availability", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_carrier_avail():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_carrier_availability "
+            "ORDER BY carrier, path_name"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/carrier-availability", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_carrier_avail():
+        data = request.get_json(force=True, silent=True) or {}
+        return _crud_create("nc_carrier_availability", "", data,
+                            ["carrier", "path_name", "service_type",
+                             "available_bandwidth", "lead_time_days",
+                             "monthly_cost_est", "contract_term", "notes"])
+
+    @bp.route("/capacity")
+    @nc_login_required
+    def nc_capacity_page():
+        return render_template("network/capacity.html")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Facilities / DCIM
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/facilities", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_facilities():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_facilities ORDER BY name"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/facilities", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_facility():
+        data = request.get_json(force=True, silent=True) or {}
+        return _crud_create("nc_facilities", "", data,
+                            ["name", "facility_type", "address", "city",
+                             "state", "country", "operator",
+                             "total_racks", "used_racks",
+                             "total_power_kw", "used_power_kw",
+                             "total_cooling_tons", "used_cooling_tons",
+                             "ups_capacity_kva", "ups_load_kva",
+                             "ups_runtime_min",
+                             "generator_kw", "generator_load_kw",
+                             "generator_fuel_hours", "notes"])
+
+    @bp.route("/api/facilities/<fid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_facility(fid):
+        return _crud_delete("nc_facilities", fid)
+
+    @bp.route("/api/racks", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_racks():
+        fid = request.args.get("facility_id", "")
+        conn = get_connection()
+        if fid:
+            rows = conn.execute(
+                "SELECT r.*, f.name AS facility_name "
+                "FROM nc_racks r "
+                "LEFT JOIN nc_facilities f ON f.id=r.facility_id "
+                "WHERE r.facility_id=? ORDER BY r.rack_name", (fid,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT r.*, f.name AS facility_name "
+                "FROM nc_racks r "
+                "LEFT JOIN nc_facilities f ON f.id=r.facility_id "
+                "ORDER BY f.name, r.rack_name"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/racks", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_rack():
+        data = request.get_json(force=True, silent=True) or {}
+        return _crud_create("nc_racks", "", data,
+                            ["facility_id", "rack_name", "total_ru",
+                             "used_ru", "reserved_ru",
+                             "power_circuit_a", "power_circuit_b",
+                             "max_power_kw", "current_power_kw",
+                             "weight_capacity_lbs",
+                             "current_weight_lbs", "notes"])
+
+    @bp.route("/api/racks/<rid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_rack(rid):
+        return _crud_delete("nc_racks", rid)
+
+    @bp.route("/facilities")
+    @nc_login_required
+    def nc_facilities_page():
+        return render_template("network/facilities.html")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Unified Readiness Checker
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/readiness-check/<pid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_readiness_check(pid):
+        """Cross-layer feasibility check for a project.
+        Checks: peering, ports, fiber, facilities (rack/power/cooling)."""
+        conn = get_connection()
+        checks = []
+
+        # Peering
+        peer_count = conn.execute(
+            "SELECT COUNT(*) FROM nc_peering_agreements "
+            "WHERE project_id=? AND status IN "
+            "('agreement_signed','technical_design','implemented','operational')",
+            (pid,)
+        ).fetchone()[0]
+        checks.append({
+            "layer": "peering",
+            "check": "Active peering agreements",
+            "passed": peer_count > 0,
+            "detail": f"{peer_count} active agreements",
+        })
+
+        # Ports
+        port_rows = conn.execute(
+            "SELECT * FROM nc_port_inventory "
+            "WHERE topology_id IN "
+            "(SELECT topology_id FROM nc_project_topologies "
+            " WHERE project_id=?)", (pid,)
+        ).fetchall()
+        ports_avail = sum(
+            (r["total_ports"] or 0) - (r["used_ports"] or 0)
+            for r in port_rows
+        )
+        checks.append({
+            "layer": "ports",
+            "check": "Available device ports",
+            "passed": ports_avail > 0 or len(port_rows) == 0,
+            "detail": f"{ports_avail} ports available"
+            if port_rows else "No port inventory data",
+        })
+
+        # Fiber
+        fiber_rows = conn.execute(
+            "SELECT * FROM nc_fiber_inventory"
+        ).fetchall()
+        fiber_avail = sum(
+            (r["available_strands"] or 0) for r in fiber_rows)
+        checks.append({
+            "layer": "fiber",
+            "check": "Available fiber strands",
+            "passed": fiber_avail > 0 or len(fiber_rows) == 0,
+            "detail": f"{fiber_avail} strands available"
+            if fiber_rows else "No fiber inventory data",
+        })
+
+        # Facilities
+        fac_rows = conn.execute(
+            "SELECT * FROM nc_facilities"
+        ).fetchall()
+        for f in fac_rows:
+            f = _row_to_dict(f)
+            avail_ru = (f.get("total_racks", 0) or 0) * 42 - \
+                sum(r["used_ru"] or 0 for r in conn.execute(
+                    "SELECT used_ru FROM nc_racks "
+                    "WHERE facility_id=?", (f["id"],)).fetchall())
+            avail_power = (f.get("total_power_kw", 0) or 0) - \
+                (f.get("used_power_kw", 0) or 0)
+            avail_cooling = (f.get("total_cooling_tons", 0) or 0) - \
+                (f.get("used_cooling_tons", 0) or 0)
+            power_pct = round(
+                (f.get("used_power_kw", 0) or 0) * 100 /
+                max(f.get("total_power_kw", 1) or 1, 1))
+            checks.append({
+                "layer": "facility",
+                "check": f"Rack space at {f['name']}",
+                "passed": avail_ru > 4,
+                "detail": f"{avail_ru} RU available",
+            })
+            checks.append({
+                "layer": "power",
+                "check": f"Power at {f['name']}",
+                "passed": power_pct < 80,
+                "detail": f"{avail_power:.1f} kW available ({power_pct}% used)",
+            })
+            checks.append({
+                "layer": "cooling",
+                "check": f"Cooling at {f['name']}",
+                "passed": avail_cooling > 0,
+                "detail": f"{avail_cooling:.1f} tons available",
+            })
+
+        conn.close()
+        passed = sum(1 for c in checks if c["passed"])
+        total = len(checks)
+        return jsonify({
+            "project_id": pid,
+            "checks": checks,
+            "passed": passed,
+            "total": total,
+            "ready": passed == total,
+            "readiness_pct": round(
+                passed * 100 / max(total, 1)),
+        })
+
+    # ══════════════════════════════════════════════════════════════════════
     # Phase 7: Innovation Flywheel
     # ══════════════════════════════════════════════════════════════════════
 
@@ -6173,8 +6692,12 @@ def create_network_blueprint():
     def _crud_create(table, pid, data, fields):
         rid = str(_uuid.uuid4())
         conn = get_connection()
-        cols = ["id", "project_id"] + fields
-        vals = [rid, pid] + [data.get(f, "") for f in fields]
+        if pid:
+            cols = ["id", "project_id"] + fields
+            vals = [rid, pid] + [data.get(f, "") for f in fields]
+        else:
+            cols = ["id"] + fields
+            vals = [rid] + [data.get(f, "") for f in fields]
         placeholders = ",".join("?" for _ in cols)
         conn.execute(
             f"INSERT INTO {table} ({','.join(cols)}) "  # nosec B608
