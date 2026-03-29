@@ -3240,6 +3240,256 @@ TEMPLATES = [
             ]
         }),
     },
+    # 30 ─ GCP Cloud Interconnect Hybrid (Well-Architected)
+    {
+        "id": "tpl-gcp-ic-hybrid",
+        "name": "GCP Cloud Interconnect Hybrid (Well-Architected)",
+        "category": "Hybrid Cloud",
+        "description": "GCP global VPC with redundant Dedicated Cloud Interconnect via Cloud Routers, HA VPN backup, Network Connectivity Center hub, Private Service Connect, Cloud Armor, Flow Logs. Leverages GCP's global VPC (subnets span regions) and single-anycast global LB.",
+        "tags": json.dumps(["gcp", "cloud-interconnect", "hybrid", "well-architected", "global-vpc", "ha-vpn", "psc", "cloud-armor", "ncc"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # GCP Cloud — Well-Architected (global VPC)
+                _node("gcp-ncc", "Network Connectivity Center", "gcp-ncc", 500, 40),
+                _node("gcp-vpc", "Global VPC", "gcp-vpc", 500, 140,
+                      {"config": {"flow_logs_enabled": True, "scope": "global"}}),
+                _node("gcp-sub-us", "US Subnet (us-east1)", "gcp-subnet", 300, 260),
+                _node("gcp-sub-eu", "EU Subnet (europe-west1)", "gcp-subnet", 700, 260),
+                _node("gcp-router-us", "Cloud Router US", "gcp-router", 200, 380,
+                      {"config": {"bfd_enabled": True, "asn": "16550"}}),
+                _node("gcp-router-eu", "Cloud Router EU", "gcp-router", 800, 380,
+                      {"config": {"bfd_enabled": True, "asn": "16550"}}),
+                _node("gcp-glb", "Global External LB (anycast)", "gcp-gfe", 500, 260),
+                _node("gcp-armor", "Cloud Armor (DDoS+WAF)", "gcp-armor", 700, 140),
+                _node("gcp-psc", "Private Service Connect", "gcp-psc", 300, 380),
+                _node("gcp-dns", "Cloud DNS", "gcp-dns", 300, 140),
+                # HA VPN backup
+                _node("gcp-vpn", "HA VPN Backup", "gcp-vpn", 500, 480,
+                      {"config": {"tunnels": 4, "sla": "99.99%"}}),
+                # Dedicated Interconnect (dual diverse locations)
+                _node("ic-us", "Interconnect US (10G)", "gcp-ic", 200, 520,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "type": "dedicated", "location": "Equinix DC5"}}),
+                _node("ic-eu", "Interconnect EU (10G)", "gcp-ic", 800, 520,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "type": "dedicated", "location": "Equinix FR5"}}),
+                # Colocation
+                _node("mmr-us", "MMR Equinix DC5", "meet-me-room", 200, 640),
+                _node("mmr-eu", "MMR Equinix FR5", "meet-me-room", 800, 640),
+                _node("xx-us", "XConn US SMF", "cross-connect", 200, 720),
+                _node("xx-eu", "XConn EU SMF", "cross-connect", 800, 720),
+                # On-prem (US + EU)
+                _node("rtr-us", "US Border Router", "router", 200, 840,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("rtr-eu", "EU Border Router", "router", 800, 840,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("fw-us", "US Site Firewall", "firewall", 200, 960),
+                _node("fw-eu", "EU Site Firewall", "firewall", 800, 960),
+                _node("sw-us", "US Core Switch", "switch-l3", 200, 1080),
+                _node("sw-eu", "EU Core Switch", "switch-l3", 800, 1080),
+            ],
+            "edges": [
+                # GCP internal
+                _edge("gcp-ncc", "gcp-vpc", "NCC Hub", ""),
+                _edge("gcp-vpc", "gcp-sub-us", "US Region", ""),
+                _edge("gcp-vpc", "gcp-sub-eu", "EU Region", ""),
+                _edge("gcp-sub-us", "gcp-router-us", "Cloud Router", "BGP"),
+                _edge("gcp-sub-eu", "gcp-router-eu", "Cloud Router", "BGP"),
+                _edge("gcp-vpc", "gcp-glb", "Global Anycast LB", ""),
+                _edge("gcp-glb", "gcp-armor", "DDoS+WAF", ""),
+                _edge("gcp-sub-us", "gcp-psc", "Private Svc Connect", ""),
+                _edge("gcp-vpc", "gcp-dns", "Cloud DNS", ""),
+                # Interconnect via Cloud Routers
+                _edge("gcp-router-us", "ic-us", "VLAN Attach + BFD", "BGP"),
+                _edge("gcp-router-eu", "ic-eu", "VLAN Attach + BFD", "BGP"),
+                # HA VPN backup
+                _edge("gcp-ncc", "gcp-vpn", "HA VPN Backup (4 tunnels)", "IPSec"),
+                # Interconnect to colocation
+                _edge("ic-us", "mmr-us", "IC Handoff", ""),
+                _edge("ic-eu", "mmr-eu", "IC Handoff", ""),
+                _edge("mmr-us", "xx-us", "SMF XConn", ""),
+                _edge("mmr-eu", "xx-eu", "SMF XConn", ""),
+                # Cross-connects to on-prem routers
+                _edge("xx-us", "rtr-us", "10GbE + BFD", "BGP"),
+                _edge("xx-eu", "rtr-eu", "10GbE + BFD", "BGP"),
+                # VPN also lands on-prem
+                _edge("gcp-vpn", "rtr-us", "IPSec Tunnel", "IPSec"),
+                _edge("gcp-vpn", "rtr-eu", "IPSec Tunnel", "IPSec"),
+                # On-prem internal
+                _edge("rtr-us", "fw-us", "10GbE", "OSPF"),
+                _edge("rtr-eu", "fw-eu", "10GbE", "OSPF"),
+                _edge("fw-us", "sw-us", "10GbE", "OSPF"),
+                _edge("fw-eu", "sw-eu", "10GbE", "OSPF"),
+            ]
+        }),
+    },
+    # 31 ─ OCI FastConnect Hybrid (Well-Architected)
+    {
+        "id": "tpl-oci-fc-hybrid",
+        "name": "OCI FastConnect Hybrid (Well-Architected)",
+        "category": "Hybrid Cloud",
+        "description": "OCI with redundant FastConnect via DRG v2 (free transitive routing), VCN Flow Logs, free DDoS protection, free egress over FastConnect. OCI is ~10x cheaper on egress than AWS/Azure/GCP. Three-tier isolation: Region > AD > Fault Domain.",
+        "tags": json.dumps(["oci", "fastconnect", "hybrid", "well-architected", "drg-v2", "free-egress", "free-ddos", "fault-domain"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # OCI Cloud — Well-Architected
+                _node("oci-drg", "DRG v2 (free transit)", "oci-drg", 500, 40),
+                _node("oci-vcn1", "Prod VCN", "oci-vcn", 300, 180,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.1.0.0/16"}}),
+                _node("oci-vcn2", "Shared Svcs VCN", "oci-vcn", 700, 180,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.2.0.0/16"}}),
+                _node("oci-sub1", "App Subnet (AD1)", "oci-subnet", 200, 320),
+                _node("oci-sub2", "DB Subnet (AD2)", "oci-subnet", 400, 320),
+                _node("oci-sub3", "Shared Subnet", "oci-subnet", 700, 320),
+                _node("oci-lb", "Load Balancer", "oci-lb", 300, 180),
+                _node("oci-waf", "WAF", "oci-waf", 800, 40),
+                _node("oci-ddos", "DDoS (FREE)", "oci-ddos", 200, 40),
+                _node("oci-nsg", "NSG", "oci-nsg", 700, 320),
+                _node("oci-fd1", "Fault Domain 1", "oci-fd", 200, 420),
+                _node("oci-fd2", "Fault Domain 2", "oci-fd", 400, 420),
+                _node("oci-fd3", "Fault Domain 3", "oci-fd", 600, 420),
+                # FastConnect (dual redundant — FREE egress)
+                _node("fc-a", "FastConnect A (10G)", "oci-fc", 250, 540,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "location": "Equinix DC5", "egress_cost": "FREE"}}),
+                _node("fc-b", "FastConnect B (10G)", "oci-fc", 750, 540,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "location": "CoreSite VA1", "egress_cost": "FREE"}}),
+                # Colocation
+                _node("mmr-a", "MMR Equinix DC5", "meet-me-room", 250, 660),
+                _node("mmr-b", "MMR CoreSite VA1", "meet-me-room", 750, 660),
+                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 740),
+                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 740),
+                # On-prem
+                _node("rtr1", "Border Router 1", "router", 250, 860,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("rtr2", "Border Router 2", "router", 750, 860,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("fw1", "Site Firewall HA", "firewall", 500, 960,
+                      {"config": {"ha_mode": "active-standby"}}),
+                _node("core1", "Core Switch", "switch-l3", 500, 1080),
+            ],
+            "edges": [
+                # OCI internal — DRG v2 provides free transitive routing
+                _edge("oci-drg", "oci-vcn1", "VCN Attach (free)", ""),
+                _edge("oci-drg", "oci-vcn2", "VCN Attach (free)", ""),
+                _edge("oci-vcn1", "oci-sub1", "AD1", ""),
+                _edge("oci-vcn1", "oci-sub2", "AD2", ""),
+                _edge("oci-vcn2", "oci-sub3", "", ""),
+                _edge("oci-vcn1", "oci-lb", "L7 LB", ""),
+                _edge("oci-lb", "oci-waf", "WAF", ""),
+                _edge("oci-lb", "oci-ddos", "DDoS (FREE)", ""),
+                _edge("oci-sub3", "oci-nsg", "NSG", ""),
+                # Fault Domains (3-tier isolation)
+                _edge("oci-sub1", "oci-fd1", "FD1", ""),
+                _edge("oci-sub1", "oci-fd2", "FD2", ""),
+                _edge("oci-sub2", "oci-fd3", "FD3", ""),
+                # FastConnect via DRG (FREE egress)
+                _edge("oci-drg", "fc-a", "FC 10G + BFD", "BGP"),
+                _edge("oci-drg", "fc-b", "FC 10G + BFD", "BGP"),
+                # FastConnect to colocation
+                _edge("fc-a", "mmr-a", "FC Handoff", ""),
+                _edge("fc-b", "mmr-b", "FC Handoff", ""),
+                _edge("mmr-a", "xx-a", "SMF XConn", ""),
+                _edge("mmr-b", "xx-b", "SMF XConn", ""),
+                # Cross-connects to on-prem
+                _edge("xx-a", "rtr1", "10GbE + BFD", "BGP"),
+                _edge("xx-b", "rtr2", "10GbE + BFD", "BGP"),
+                _edge("xx-a", "rtr2", "10GbE Backup", "BGP"),
+                _edge("xx-b", "rtr1", "10GbE Backup", "BGP"),
+                # On-prem
+                _edge("rtr1", "fw1", "10GbE", "OSPF"),
+                _edge("rtr2", "fw1", "10GbE", "OSPF"),
+                _edge("fw1", "core1", "10GbE", "OSPF"),
+            ]
+        }),
+    },
+    # 32 ─ AWS Well-Architected Landing Zone (Central Networking)
+    {
+        "id": "tpl-aws-landing-zone",
+        "name": "AWS Well-Architected Landing Zone (Central Networking)",
+        "category": "Hybrid Cloud",
+        "description": "AWS Landing Zone pattern from Well-Architected Hybrid Networking Lens: central networking account with Transit Gateway shared via RAM, DX Gateway, VPN backup, multiple spoke VPCs (Prod, Dev, Shared Services), Network Firewall inspection, and Guard Duty. Based on Control Tower + Organizations.",
+        "tags": json.dumps(["aws", "landing-zone", "well-architected", "control-tower", "ram", "central-networking", "multi-account", "transit-gateway"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                # Central Networking Account
+                _node("tgw", "Transit Gateway (shared via RAM)", "aws-tgw", 500, 60),
+                _node("dxgw", "DX Gateway (global)", "aws-dx-gw", 500, 160),
+                _node("nfw", "Central Network FW", "aws-nfw", 500, 260),
+                _node("r53", "Route 53 Resolver", "aws-r53", 800, 60),
+                _node("shield", "Shield Advanced", "aws-shield", 800, 160),
+                _node("netmgr", "Network Manager", "aws-netmgr", 200, 60),
+                # Spoke VPCs (different accounts via RAM)
+                _node("vpc-prod", "Prod VPC (Acct 1)", "aws-vpc", 200, 360,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.1.0.0/16"}}),
+                _node("vpc-dev", "Dev VPC (Acct 2)", "aws-vpc", 500, 360,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.2.0.0/16"}}),
+                _node("vpc-shared", "Shared Svcs VPC (Acct 3)", "aws-vpc", 800, 360,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.3.0.0/16"}}),
+                # Subnets
+                _node("sub-prod", "Prod Private", "aws-subnet", 200, 460),
+                _node("sub-dev", "Dev Private", "aws-subnet", 500, 460),
+                _node("sub-shared", "Shared Private", "aws-subnet", 800, 460),
+                # PrivateLink
+                _node("pl", "PrivateLink Endpoints", "aws-privatelink", 800, 260),
+                # Connectivity (DX + VPN backup)
+                _node("dx-a", "DX Primary (10G)", "aws-dx", 300, 560,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "vif_type": "transit", "location": "Equinix DC5"}}),
+                _node("dx-b", "DX Secondary (10G)", "aws-dx", 700, 560,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "vif_type": "transit", "location": "CoreSite VA1"}}),
+                _node("vpn", "VPN Backup", "aws-vpn", 500, 560,
+                      {"config": {"tunnels": 2, "ecmp": True}}),
+                # Colocation
+                _node("mmr-a", "MMR Equinix DC5", "meet-me-room", 300, 680),
+                _node("mmr-b", "MMR CoreSite VA1", "meet-me-room", 700, 680),
+                _node("xx-a", "XConn-A", "cross-connect", 300, 760),
+                _node("xx-b", "XConn-B", "cross-connect", 700, 760),
+                # On-prem
+                _node("br1", "Border RTR 1", "router", 300, 860,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("br2", "Border RTR 2", "router", 700, 860,
+                      {"config": {"asn": "65001", "bfd_enabled": True}}),
+                _node("fw-onprem", "On-Prem Firewall", "firewall", 500, 960),
+            ],
+            "edges": [
+                # TGW hub — central networking
+                _edge("tgw", "dxgw", "DX GW Assoc", ""),
+                _edge("tgw", "nfw", "Inspection Route", ""),
+                _edge("tgw", "r53", "DNS", ""),
+                _edge("tgw", "netmgr", "Monitoring", ""),
+                # TGW to spoke VPCs (shared via RAM)
+                _edge("tgw", "vpc-prod", "RAM Shared Attach", ""),
+                _edge("tgw", "vpc-dev", "RAM Shared Attach", ""),
+                _edge("tgw", "vpc-shared", "RAM Shared Attach", ""),
+                # VPC internals
+                _edge("vpc-prod", "sub-prod", "", ""),
+                _edge("vpc-dev", "sub-dev", "", ""),
+                _edge("vpc-shared", "sub-shared", "", ""),
+                _edge("vpc-shared", "pl", "PrivateLink", ""),
+                _edge("vpc-prod", "shield", "DDoS", ""),
+                # DX via DX Gateway
+                _edge("dxgw", "dx-a", "Transit VIF + BFD", "BGP"),
+                _edge("dxgw", "dx-b", "Transit VIF + BFD", "BGP"),
+                _edge("tgw", "vpn", "VPN Backup", "IPSec"),
+                # Colocation
+                _edge("dx-a", "mmr-a", "DX Handoff", ""),
+                _edge("dx-b", "mmr-b", "DX Handoff", ""),
+                _edge("mmr-a", "xx-a", "SMF XConn", ""),
+                _edge("mmr-b", "xx-b", "SMF XConn", ""),
+                # To on-prem
+                _edge("xx-a", "br1", "10GbE + BFD", "BGP"),
+                _edge("xx-b", "br2", "10GbE + BFD", "BGP"),
+                _edge("vpn", "br1", "IPSec", "IPSec"),
+                _edge("vpn", "br2", "IPSec", "IPSec"),
+                # On-prem
+                _edge("br1", "fw-onprem", "10GbE", "OSPF"),
+                _edge("br2", "fw-onprem", "10GbE", "OSPF"),
+            ]
+        }),
+    },
 ]
 
 

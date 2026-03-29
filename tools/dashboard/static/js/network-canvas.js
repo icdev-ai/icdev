@@ -1658,37 +1658,103 @@ async function insertSnippetOntoCanvas(snippetId, btn) {
 
     pushUndo();
 
-    // Compute canvas center offset so snippet doesn't land at 0,0
-    // Use .canvas-body (visible viewport), NOT canvas-container (5000x5000 paper)
+    // ── 1. Collect bounding boxes of all existing nodes ──
+    const PAD = 40; // padding between snippet group and existing nodes
+    const existingBoxes = [];
+    graph.getCells().forEach(cell => {
+      if (!cell.isElement()) return;
+      const pos = cell.position();
+      const sz = cell.size();
+      existingBoxes.push({
+        x: pos.x - PAD, y: pos.y - PAD,
+        w: sz.width + PAD * 2, h: sz.height + PAD * 2,
+      });
+    });
+
+    // ── 2. Compute snippet bounding box (relative coords) ──
+    const NODE_W = 110, NODE_H = 70;
+    const snipXs = gj.nodes.map(n => n.x || 0);
+    const snipYs = gj.nodes.map(n => n.y || 0);
+    const snipMinX = Math.min(...snipXs);
+    const snipMinY = Math.min(...snipYs);
+    const snipW = Math.max(...snipXs) - snipMinX + NODE_W;
+    const snipH = Math.max(...snipYs) - snipMinY + NODE_H;
+    const snipCx = snipMinX + snipW / 2;
+    const snipCy = snipMinY + snipH / 2;
+
+    // ── 3. Compute ideal placement at visible viewport center ──
     const tx = paper.translate().tx || 0;
     const ty = paper.translate().ty || 0;
     const sx = paper.scale().sx || 1;
-    const el = document.querySelector('.canvas-body') || document.getElementById('canvas-container') || paper.el;
-    const cw = el ? el.clientWidth : 800;
-    const ch = el ? el.clientHeight : 600;
-    // Account for scroll position within the viewport
-    const scrollX = el ? el.scrollLeft : 0;
-    const scrollY = el ? el.scrollTop : 0;
-    const cx = Math.round((scrollX + cw / 2 - tx) / sx);
-    const cy = Math.round((scrollY + ch / 2 - ty) / sx);
+    const vpEl = document.querySelector('.canvas-body') || document.getElementById('canvas-container') || paper.el;
+    const cw = vpEl ? vpEl.clientWidth : 800;
+    const ch = vpEl ? vpEl.clientHeight : 600;
+    const scrollX = vpEl ? vpEl.scrollLeft : 0;
+    const scrollY = vpEl ? vpEl.scrollTop : 0;
+    const vpCx = Math.round((scrollX + cw / 2 - tx) / sx);
+    const vpCy = Math.round((scrollY + ch / 2 - ty) / sx);
 
-    // Compute bounding box of snippet nodes for centering
-    const xs = gj.nodes.map(n => n.x || 0);
-    const ys = gj.nodes.map(n => n.y || 0);
-    const snipCx = (Math.min(...xs) + Math.max(...xs)) / 2;
-    const snipCy = (Math.min(...ys) + Math.max(...ys)) / 2;
-    const offsetX = cx - snipCx;
-    const offsetY = cy - snipCy;
+    // ── 4. Find a clear position (no overlap with existing nodes) ──
+    function snippetBoxAt(ox, oy) {
+      // Bounding box of the entire snippet group when placed with this offset
+      return {
+        x: snipMinX + ox, y: snipMinY + oy,
+        w: snipW, h: snipH,
+      };
+    }
+    function overlaps(box) {
+      return existingBoxes.some(eb =>
+        box.x < eb.x + eb.w && box.x + box.w > eb.x &&
+        box.y < eb.y + eb.h && box.y + box.h > eb.y
+      );
+    }
 
-    // Re-map node IDs to avoid collisions with existing nodes
+    // Start with viewport-center offset
+    let offsetX = vpCx - snipCx;
+    let offsetY = vpCy - snipCy;
+
+    if (existingBoxes.length && overlaps(snippetBoxAt(offsetX, offsetY))) {
+      // Spiral outward from viewport center to find a clear spot
+      let found = false;
+      const step = Math.max(snipW, snipH) + PAD;
+      for (let ring = 1; ring <= 10 && !found; ring++) {
+        const candidates = [
+          { dx: ring * step, dy: 0 },          // right
+          { dx: 0, dy: ring * step },           // below
+          { dx: -ring * step, dy: 0 },          // left
+          { dx: 0, dy: -ring * step },          // above
+          { dx: ring * step, dy: ring * step },  // bottom-right
+          { dx: -ring * step, dy: ring * step }, // bottom-left
+          { dx: ring * step, dy: -ring * step }, // top-right
+          { dx: -ring * step, dy: -ring * step },// top-left
+        ];
+        for (const c of candidates) {
+          const tryOx = vpCx - snipCx + c.dx;
+          const tryOy = vpCy - snipCy + c.dy;
+          if (!overlaps(snippetBoxAt(tryOx, tryOy))) {
+            offsetX = tryOx;
+            offsetY = tryOy;
+            found = true;
+            break;
+          }
+        }
+      }
+      // If no clear spot found after 10 rings, place to the right of all content
+      if (!found) {
+        const maxX = existingBoxes.reduce((m, b) => Math.max(m, b.x + b.w), 0);
+        offsetX = maxX + PAD - snipMinX;
+        offsetY = vpCy - snipCy;
+      }
+    }
+
+    // ── 5. Re-map node IDs to avoid collisions with existing nodes ──
     const suffix = '-' + Math.random().toString(36).slice(2, 7);
     const idMap = {};
     gj.nodes.forEach(n => { idMap[n.id] = n.id + suffix; });
 
-    // Insert nodes
+    // ── 6. Insert nodes at computed position ──
     gj.nodes.forEach(n => {
       const cfg = n.config || {};
-      // Mark node as snippet-origin for STIG overlay awareness
       cfg._snippet_id = snippetId;
       cfg._snippet_name = snippet.name;
       cfg._classification = snippet.classification_level;
@@ -1696,7 +1762,7 @@ async function insertSnippetOntoCanvas(snippetId, btn) {
       createNode(n.type, (n.x || 0) + offsetX, (n.y || 0) + offsetY, n.label, idMap[n.id], cfg);
     });
 
-    // Insert edges with remapped IDs
+    // ── 7. Insert edges with remapped IDs ──
     gj.edges.forEach(e => {
       const src = idMap[e.source] || e.source;
       const dst = idMap[e.target] || e.target;
@@ -1704,6 +1770,14 @@ async function insertSnippetOntoCanvas(snippetId, btn) {
         createLink(src, dst, e.label || '', e.protocol || '');
       }
     });
+
+    // ── 8. Scroll viewport to show the inserted snippet ──
+    const finalBox = snippetBoxAt(offsetX, offsetY);
+    const targetScrollX = (finalBox.x + finalBox.w / 2) * sx + tx - cw / 2;
+    const targetScrollY = (finalBox.y + finalBox.h / 2) * sx + ty - ch / 2;
+    if (vpEl) {
+      vpEl.scrollTo({ left: Math.max(0, targetScrollX), top: Math.max(0, targetScrollY), behavior: 'smooth' });
+    }
 
     markDirty();
     updateStatusBar();
