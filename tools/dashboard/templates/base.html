@@ -138,12 +138,12 @@
             {% endif %}
 
             {% if pipeline_enabled %}
-            <!-- Pipeline Design Canvas -->
+            <!-- DevOps Pipeline Design Canvas -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if '/pipeline' in request.path %}active{% endif %}">Pipeline</a>
+                <a href="#" class="{% if '/devops' in request.path %}active{% endif %}">DevOps</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/pipeline/">Dashboard</a></li>
-                    <li><a href="/pipeline/canvas/new">New Pipeline</a></li>
+                    <li><a href="/devops/">Dashboard</a></li>
+                    <li><a href="/devops/canvas/new">New Pipeline</a></li>
                 </ul>
             </li>
             {% endif %}

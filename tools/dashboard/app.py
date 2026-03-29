@@ -907,8 +907,8 @@ def create_app() -> Flask:
         try:
             pc_bp = create_pipeline_blueprint()
             if pc_bp:
-                app.register_blueprint(pc_bp, url_prefix="/pipeline")
-                app.logger.info("Pipeline Design Canvas registered at /pipeline/")
+                app.register_blueprint(pc_bp, url_prefix="/devops")
+                app.logger.info("Pipeline Design Canvas registered at /devops/")
         except Exception as exc:
             app.logger.warning("Pipeline Design Canvas failed to register: %s", exc)
 
