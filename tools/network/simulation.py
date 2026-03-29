@@ -24,6 +24,8 @@ def _get_node_config(node: dict) -> dict:
 def _infer_ospf_cost(edge: dict, ref_bw: int) -> int:
     """Infer OSPF cost from link label (bandwidth hints)."""
     label = (edge.get("label") or "").upper()
+    if "400G" in label:
+        return max(1, ref_bw // 400000)
     if "100G" in label:
         return max(1, ref_bw // 100000)
     if "40G" in label:
@@ -83,14 +85,28 @@ def _bfs_path(nodes, edges, src_id, dst_id):
     return []
 
 
+CLOUD_HA_TYPES = {
+    "aws-tgw", "aws-dx-gw", "aws-nlb", "aws-gwlb", "aws-cloudwan",
+    "az-vwan", "az-crosslb",
+    "gcp-ncc", "gcp-gfe",
+    "oci-drg",
+    "ibm-tg",
+}
+
+
 def _find_spof(nodes, edges):
     """Identify articulation points (bridges) using simple degree heuristic."""
     degree: dict[str, int] = {}
     label_map = {n["id"]: n.get("label", n["id"]) for n in nodes}
+    type_map = {n["id"]: n.get("type", "") for n in nodes}
     for e in edges:
         degree[e["source"]] = degree.get(e["source"], 0) + 1
         degree[e["target"]] = degree.get(e["target"], 0) + 1
-    spof = [label_map.get(nid, nid) for nid, deg in degree.items() if deg == 1]
+    spof = [
+        label_map.get(nid, nid)
+        for nid, deg in degree.items()
+        if deg == 1 and type_map.get(nid, "") not in CLOUD_HA_TYPES
+    ]
     return spof
 
 
@@ -900,10 +916,24 @@ def _run_simulation(graph: dict, sim_type: str, params: dict) -> dict:
     if sim_type == "failover":
         spof_nodes = _find_spof(nodes, edges)
         risks = [{"node": n, "impact": "High", "recommendation": "Add redundant path"} for n in spof_nodes]
+        # Estimate failover time based on protocol / BFD hints
+        edge_labels = " ".join((e.get("label") or "") + " " + (e.get("protocol") or "") for e in edges).upper()
+        bfd_cfg = any(_get_node_config(n).get("bfd_enabled") for n in nodes)
+        bfd_detected = bfd_cfg or "BFD" in edge_labels
+        if bfd_detected:
+            failover_est = "<1s (BFD sub-second detection)"
+        elif "BGP" in edge_labels:
+            failover_est = "~90s (BGP hold-timer expiry, no BFD)"
+        elif "OSPF" in edge_labels:
+            failover_est = "~40s (OSPF dead-interval expiry, no BFD)"
+        else:
+            failover_est = "unknown (no routing protocol hints on edges)"
         return {
             "sim_type": "failover",
             "risks": risks,
             "resilience_score": max(0, 100 - len(spof_nodes) * 15),
+            "bfd_detected": bfd_detected,
+            "failover_estimate": failover_est,
             "summary": f"Resilience score: {max(0, 100 - len(spof_nodes)*15)}%",
         }
 
@@ -977,17 +1007,26 @@ def _add_narrative(result: dict) -> dict:
             lines.append(f"WARNING: {len(spofs)} single point(s) of failure detected: {', '.join(spofs[:5])}.")
             lines.append("If any of these nodes fail, part of the network becomes unreachable.")
             lines.append("Recommendation: Add redundant links or a standby device for each SPOF.")
+            lines.append("Note: Cloud-managed HA services (TGW, DXGW, NLB, VWAN, NCC, DRG) are excluded — their distributed backends (Hyperplane) provide built-in redundancy.")
         else:
             lines.append("No single points of failure detected. The topology has good redundancy.")
 
     elif st == "failover":
         score = result.get("resilience_score", 0)
         risks = result.get("risks", [])
+        bfd = result.get("bfd_detected", False)
+        fo_est = result.get("failover_estimate", "unknown")
         lines.append(f"Resilience score: {score}% \u2014 {'Excellent' if score >= 90 else 'Good' if score >= 70 else 'Needs improvement' if score >= 50 else 'Critical risk'}.")
+        lines.append(f"Estimated failover time: {fo_est}.")
+        if bfd:
+            lines.append("BFD (Bidirectional Forwarding Detection) is active, enabling sub-second failure detection.")
+        else:
+            lines.append("BFD is NOT detected on any path \u2014 consider enabling it to reduce failover time to <1s.")
         if risks:
             lines.append(f"{len(risks)} high-impact risk(s) identified.")
             for r in risks[:3]:
                 lines.append(f"  - {r.get('node', '?')}: {r.get('recommendation', '')}")
+        lines.append("Note: Cloud-managed HA services (TGW, DXGW, NLB, VWAN, NCC, DRG) are not flagged as SPOFs due to distributed backend redundancy.")
 
     elif st == "load":
         avg = result.get("avg_utilization_pct", 0)

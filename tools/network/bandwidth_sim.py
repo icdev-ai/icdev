@@ -14,6 +14,14 @@ from typing import Any
 
 # ── Bandwidth lookup table (label fragment → Mbps) ─────────────────────────
 _BW_MAP: list[tuple[str, int]] = [
+    # Cloud interconnect circuit types (match before generic speeds)
+    ("DX-400G", 400_000), ("DX-100G", 100_000), ("DX-10G", 10_000), ("DX-1G", 1_000),
+    ("ER-100G", 100_000), ("ER-10G", 10_000),
+    ("IC-100G", 100_000), ("IC-10G", 10_000),
+    ("FC-100G", 100_000), ("FC-10G", 10_000), ("FC-1G", 1_000),
+    ("VPN ECMP", 9_800),
+    ("VPN-TUNNEL", 4_900), ("VPN TUNNEL", 4_900), ("IPSEC TUNNEL", 4_900),
+    # Generic speeds
     ("400G", 400_000),
     ("100G", 100_000),
     ("40G",  40_000),
@@ -164,10 +172,16 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
         else:
             status = "ok"
 
+        # VPN / cloud interconnect detection
+        upper_label = (label or "").upper()
+        is_vpn = any(kw in upper_label for kw in ("VPN", "IPSEC", "TUNNEL"))
+        is_cloud_dx = any(kw in upper_label for kw in ("DX-", "DX "))
+
         # Recommendation logic
         recommendation = "none"
         upgrade_to_mbps: int | None = None
         lag_links: int | None = None
+        notes: list[str] = []
 
         if status in ("critical", "saturated"):
             upgrade_to_mbps = _next_upgrade(link_bw)
@@ -177,14 +191,43 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
                 lag_needed += 1
                 if lag_needed > 4:
                     break
-            if lag_needed <= 4:
+
+            if is_vpn:
+                # VPN tunnels cannot be upgraded in-place
+                recommendation = "add_tunnels_or_migrate"
+                notes.append(
+                    "Cannot upgrade VPN tunnel in-place — add parallel tunnels "
+                    "for ECMP (2x = 9.8G) or migrate to DX/ER"
+                )
+                lag_links = None
+            elif lag_needed <= 4:
                 lag_links = lag_needed
+                # Cloud DX LAG limits
+                if is_cloud_dx:
+                    max_lag = 2 if link_bw >= 100_000 else 4
+                    if lag_links > max_lag:
+                        lag_links = max_lag
+                    notes.append(
+                        f"AWS Direct Connect LAG max {max_lag} links for "
+                        f"{_mbps_label(link_bw)} circuits"
+                    )
+                    notes.append(
+                        "LAG provides bandwidth only — NOT location/device "
+                        "redundancy (single AWS device)"
+                    )
                 recommendation = "lag_or_upgrade"
             else:
                 recommendation = "upgrade"
         elif status == "warning":
             upgrade_to_mbps = _next_upgrade(link_bw)
-            recommendation = "plan_upgrade"
+            if is_vpn:
+                recommendation = "plan_tunnel_expansion"
+                notes.append(
+                    "VPN tunnel approaching 4.9 Gbps hard limit — add ECMP "
+                    "tunnels or migrate to dedicated circuit"
+                )
+            else:
+                recommendation = "plan_upgrade"
 
         link_results.append({
             "edge_id":           eid,
@@ -204,6 +247,7 @@ def run_bandwidth_sim(graph: dict[str, Any], params: dict[str, Any]) -> dict[str
             "upgrade_to_mbps":   upgrade_to_mbps,
             "upgrade_to_label":  _mbps_label(upgrade_to_mbps) if upgrade_to_mbps else None,
             "lag_links":         lag_links,
+            "notes":             notes if notes else None,
         })
 
     # Aggregate stats

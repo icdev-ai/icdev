@@ -44,7 +44,7 @@ _FIREWALL_TYPES = frozenset({
 _WAN_TYPES = frozenset({
     "cloud", "aws-dx", "az-er", "gcp-ic", "oci-fc", "ibm-dl",
     "aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn", "sdwan-overlay",
-    "internet-exchange",
+    "internet-exchange", "aws-dx-gw", "az-er-global",
 })
 
 _CLOUD_PREFIXES = ("aws-", "az-", "gcp-", "oci-", "ibm-")
@@ -96,6 +96,10 @@ _PROTOCOL_PPS: dict[str, dict[str, str]] = {
     "radius": {"port": "1812-1813/UDP", "service": "RADIUS Auth", "direction": "Internal"},
     "tacacs": {"port": "49/TCP", "service": "TACACS+ Auth", "direction": "Internal"},
     "rdma": {"port": "4791/UDP", "service": "RoCEv2 RDMA", "direction": "Internal"},
+    "bfd": {"port": "3784/UDP", "service": "BFD (single-hop)", "direction": "bidirectional"},
+    "bfd-multi": {"port": "4784/UDP", "service": "BFD (multi-hop)", "direction": "bidirectional"},
+    "vrrp": {"port": "112/IP", "service": "VRRP", "direction": "bidirectional"},
+    "hsrp": {"port": "1985/UDP", "service": "HSRP", "direction": "bidirectional"},
 }
 
 

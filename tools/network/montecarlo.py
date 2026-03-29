@@ -51,6 +51,20 @@ def run_monte_carlo(graph: dict, scenario_name: str, scenario_type: str,
     edge_fail_prob = config.get("edge_failure_prob", 0.05)
     named_failures = config.get("named_failures", [])  # specific nodes/edges to force-fail
 
+    # Cloud-managed services with provider-guaranteed HA (Hyperplane, distributed backends)
+    # These have published SLAs of 99.99%+ and should NOT be modeled as typical hardware
+    CLOUD_HA_TYPES = {
+        "aws-tgw", "aws-dx-gw", "aws-nlb", "aws-gwlb", "aws-cloudwan",
+        "az-vwan", "az-crosslb",
+        "gcp-ncc", "gcp-gfe",
+        "oci-drg",
+        "ibm-tg",
+    }
+    CLOUD_HA_FAIL_PROB = 0.001  # 99.9% per iteration (vs 0.02 default)
+
+    # Build node type lookup
+    node_types = {n["id"]: n.get("type", "") for n in nodes}
+
     # Run iterations
     reachability_scores = []
     cascade_counts = []

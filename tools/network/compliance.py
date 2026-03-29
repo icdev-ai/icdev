@@ -474,7 +474,7 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
     # ── Hybrid Cloud Networking Checks (Well-Architected Hybrid Networking Lens) ──
     DX_TYPES = {"aws-dx", "aws-dx-gw", "az-er", "az-er-global",
                 "gcp-ic", "oci-fc", "ibm-dl"}
-    VPN_BACKUP_TYPES = {"aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn"}
+    VPN_BACKUP_TYPES = {"aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn", "oci-vpn"}
     TRANSIT_HUB_TYPES = {"aws-tgw", "aws-cloudwan", "az-vwan", "gcp-ncc", "oci-drg", "ibm-tg"}
     VPC_TYPES = {"aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"}
     FLOWLOG_TYPES = {"aws-flowlogs", "az-flowlogs", "gcp-flowlogs", "oci-flowlogs", "ibm-flowlogs"}
@@ -501,21 +501,23 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
         for dn in dx_nodes_hyb[:1]:
             csp_prefix = node_types.get(dn["id"], "")[:3]
             vpn_type_map = {"aws": "aws-vpn", "az-": "az-vpn-gw", "gcp": "gcp-vpn",
-                            "oci": "aws-vpn", "ibm": "ibm-vpn"}
+                            "oci": "oci-vpn", "ibm": "ibm-vpn"}
             suggested_vpn = vpn_type_map.get(csp_prefix, "aws-vpn")
             add_finding(rule_map.get("NET-HYB-002", {}), label_map.get(dn["id"], dn["id"]), "node",
                         {"action": "add_node", "node_type": suggested_vpn, "label": "VPN Backup"})
 
-    # NET-HYB-003: DX at 2+ diverse locations
+    # NET-HYB-003: DX at 2+ diverse locations (only count real locations, not labels)
     if dx_nodes_hyb:
         locations = set()
         for dn in dx_nodes_hyb:
             config = dn.get("config", {})
-            loc = config.get("location", "") or config.get("site", "") or dn.get("label", "")
-            locations.add(loc.lower().strip())
+            loc = config.get("location", "") or config.get("site", "")
+            if loc:
+                locations.add(loc.lower().strip())
         if len(locations) < 2:
             add_finding(rule_map.get("NET-HYB-003", {}),
-                        f"{len(dx_nodes_hyb)} DX at {len(locations)} location(s)", "topology")
+                        f"{len(dx_nodes_hyb)} DX at {len(locations)} known location(s)"
+                        " — need 2+ diverse sites", "topology")
 
     # NET-HYB-004: Transit hub for multi-VPC
     if len(vpc_nodes_hyb) >= 2 and not hub_nodes_hyb:
@@ -697,6 +699,20 @@ def apply_compliance_fix(graph: dict, fix_action: dict) -> tuple:
             })
             applied = True
             detail = f"Added diverse path between {source} and {target}"
+
+    elif action == "set_config":
+        target = fix_action.get("target_node", "")
+        key = fix_action.get("key", "")
+        value = fix_action.get("value")
+        target_node = next(
+            (n for n in graph["nodes"] if n["id"] == target), None
+        )
+        if target_node and key:
+            config = target_node.setdefault("config", {})
+            config[key] = value
+            applied = True
+            detail = (f"Set {key}={value} on "
+                      f"{target_node.get('label', target)}")
 
     return applied, detail
 

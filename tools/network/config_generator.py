@@ -117,6 +117,9 @@ router ospf {{ ospf.process_id }}
 {% endfor %}
 !
 {% endif %}
+{% if bgp and bgp.bfd %}
+bfd interval 300 min_rx 300 multiplier 3
+{% endif %}
 {% if bgp %}
 router bgp {{ bgp.asn }}
  bgp router-id {{ bgp.router_id }}
@@ -128,8 +131,13 @@ router bgp {{ bgp.asn }}
  neighbor {{ neighbor.ip }} description {{ neighbor.description }}
 {% if bgp.community %} neighbor {{ neighbor.ip }} send-community
 {% endif %}
+{% if bgp.bfd %} neighbor {{ neighbor.ip }} fall-over bfd{% endif %}
 {% endfor %}
 !
+{% endif %}
+{% if bgp and bgp.community %}
+route-map DX-COMMUNITY permit 10
+ set community {{ bgp.community }}
 {% endif %}
 ip ssh version 2
 !
@@ -270,6 +278,7 @@ router bgp {{ bgp.asn }}
 {% for neighbor in bgp.neighbors %}
    neighbor {{ neighbor.ip }} remote-as {{ neighbor.asn }}
    neighbor {{ neighbor.ip }} description {{ neighbor.description }}
+{% if bgp.bfd %}   neighbor {{ neighbor.ip }} bfd{% endif %}
 {% endfor %}
 !
 {% endif %}
@@ -365,6 +374,10 @@ protocols {
 {% if bgp.local_pref %}
                 import LOCAL-PREF-{{ bgp.local_pref }};
 {% endif %}
+{% if bgp.bfd %}            bfd-liveness-detection {
+                minimum-interval 300;
+                multiplier 3;
+            }{% endif %}
             }
 {% endfor %}
         }
@@ -637,6 +650,7 @@ def _build_device_context(
                 "local_pref": int(local_pref_raw) if local_pref_raw else None,
                 "community":  cfg.get("community") or "",
                 "med":        int(cfg.get("med")) if cfg.get("med") else None,
+                "bfd":        bool(cfg.get("bfd") or cfg.get("bfd_enabled")),
                 "neighbors":  neighbors,
             }
 
