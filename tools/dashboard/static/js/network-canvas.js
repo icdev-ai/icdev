@@ -1645,6 +1645,227 @@ function closeSnippetsPanel() {
   document.getElementById('snippets-overlay').classList.add('hidden');
 }
 
+/* ── Integration Guide — post-snippet-insertion connection suggestions ───── */
+// Maps snippet node roles to existing canvas node types they should connect to
+const INTEGRATION_RULES = [
+  // Perimeter / outer firewalls connect upstream to routers, WAN, ISP handoffs
+  {
+    snippetMatch: n => /firewall|fw/i.test(n.type) && /outer|perimeter|edge/i.test(n.label),
+    existingMatch: c => /^(router|mpls-pe|sdwan-edge|pop)$/.test(c.type),
+    reason: 'Perimeter firewall needs an upstream WAN/Internet connection',
+    protocol: 'GbE',
+    direction: 'upstream',
+    priority: 1,
+  },
+  // Inner firewalls connect downstream to core/distribution switches
+  {
+    snippetMatch: n => /firewall|fw/i.test(n.type) && /inner|internal|enclave/i.test(n.label),
+    existingMatch: c => /^(switch-l3|switch-l2|router)$/.test(c.type) && /core|distrib|internal/i.test(c.label),
+    reason: 'Inner firewall guards the trusted enclave — connect to your core/distribution layer',
+    protocol: 'GbE',
+    direction: 'downstream',
+    priority: 2,
+  },
+  // Generic firewalls — connect to nearest router or L3 switch
+  {
+    snippetMatch: n => /firewall|fw/i.test(n.type),
+    existingMatch: c => /^(router|switch-l3)$/.test(c.type),
+    reason: 'Firewall should connect to your routing/L3 layer',
+    protocol: 'GbE',
+    direction: 'upstream',
+    priority: 3,
+  },
+  // Servers connect to switches
+  {
+    snippetMatch: n => /^(server)$/.test(n.type),
+    existingMatch: c => /^(switch-l2|switch-l3)$/.test(c.type),
+    reason: 'Server should connect to an access or distribution switch',
+    protocol: '1GbE',
+    direction: 'downstream',
+    priority: 4,
+  },
+  // SIEM/log collectors — connect to anything that generates logs
+  {
+    snippetMatch: n => /siem|log/i.test(n.type) || /siem|log|collector/i.test(n.label),
+    existingMatch: c => /^(firewall|router|switch-l3|server|load-balancer)$/.test(c.type),
+    reason: 'SIEM/log collector needs syslog feeds from infrastructure devices',
+    protocol: 'syslog-TLS',
+    direction: 'monitoring',
+    priority: 5,
+  },
+  // IDS/IPS sensors — connect to switches (SPAN/mirror ports)
+  {
+    snippetMatch: n => /ids|ips|sensor/i.test(n.label) || n.type === 'network-tap',
+    existingMatch: c => /^(switch-l2|switch-l3|firewall)$/.test(c.type),
+    reason: 'IDS/IPS sensors need SPAN/mirror port connections for traffic inspection',
+    protocol: 'SPAN',
+    direction: 'monitoring',
+    priority: 5,
+  },
+  // CDS / cross-domain — connects between security domains
+  {
+    snippetMatch: n => /cds|cross.domain/i.test(n.label) || n.type === 'fips-140-l3',
+    existingMatch: c => /^(firewall|router)$/.test(c.type),
+    reason: 'Cross-Domain Solution bridges between classification levels',
+    protocol: 'Type 1 / HAIPE',
+    direction: 'boundary',
+    priority: 2,
+  },
+  // Load balancers — connect to servers and upstream firewalls
+  {
+    snippetMatch: n => /load.balancer|lb|alb|nlb/i.test(n.type),
+    existingMatch: c => /^(server|firewall|switch-l3)$/.test(c.type),
+    reason: 'Load balancer distributes traffic between application servers',
+    protocol: 'HTTPS',
+    direction: 'downstream',
+    priority: 3,
+  },
+  // Encryptors connect to WAN transport
+  {
+    snippetMatch: n => /type1|kg-|haipe|encryptor/i.test(n.type) || /type.1|kg-|haipe|encryptor/i.test(n.label),
+    existingMatch: c => /^(router|mpls-pe|sdwan-edge)$/.test(c.type),
+    reason: 'NSA Type 1 encryptor secures WAN transport',
+    protocol: 'Type 1 / HAIPE',
+    direction: 'upstream',
+    priority: 2,
+  },
+  // Workstations connect to access switches
+  {
+    snippetMatch: n => /endpoint|workstation|pc/i.test(n.type),
+    existingMatch: c => /^(switch-l2|switch-l3|wap)$/.test(c.type) && /access|floor|user|building/i.test(c.label),
+    reason: 'Workstations connect to access-layer switches',
+    protocol: '1GbE',
+    direction: 'downstream',
+    priority: 6,
+  },
+];
+
+const DIRECTION_ICONS = {
+  upstream: '⬆',
+  downstream: '⬇',
+  monitoring: '👁',
+  boundary: '🔒',
+};
+
+function buildIntegrationSuggestions(snippetNodes, idMap, snippet) {
+  // Gather existing (non-snippet) nodes from the graph
+  const existingNodes = [];
+  graph.getCells().forEach(cell => {
+    if (!cell.isElement()) return;
+    const cfg = cell.get('configData') || {};
+    if (cfg._snippet_id) return; // skip other snippet nodes
+    existingNodes.push({
+      id: cell.id,
+      type: cell.get('nodeType') || 'unknown',
+      label: cell.attr('label/text') || '',
+      pos: cell.position(),
+    });
+  });
+
+  if (!existingNodes.length) return [];
+
+  const suggestions = [];
+  const seen = new Set(); // avoid duplicate suggestions
+
+  for (const rule of INTEGRATION_RULES) {
+    for (const sn of snippetNodes) {
+      if (!rule.snippetMatch(sn)) continue;
+      const mappedId = idMap[sn.id];
+      for (const en of existingNodes) {
+        if (!rule.existingMatch(en)) continue;
+        const key = `${mappedId}-${en.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        suggestions.push({
+          snippetNode: { id: mappedId, label: sn.label, type: sn.type },
+          existingNode: { id: en.id, label: en.label, type: en.type },
+          reason: rule.reason,
+          protocol: rule.protocol,
+          direction: rule.direction,
+          priority: rule.priority,
+        });
+      }
+    }
+  }
+
+  // Sort by priority, then limit to most relevant
+  suggestions.sort((a, b) => a.priority - b.priority);
+  return suggestions.slice(0, 12);
+}
+
+function showIntegrationGuide(suggestions, snippet) {
+  const overlay = document.getElementById('integration-guide-overlay');
+  const content = document.getElementById('integration-guide-content');
+
+  // Build header
+  let html = `
+    <div style="background:rgba(92,66,217,0.12);border:1px solid rgba(92,66,217,0.3);border-radius:6px;padding:10px 12px;">
+      <div style="font-size:13px;font-weight:600;color:#a29bfe;margin-bottom:4px;">⊞ ${snippet.name}</div>
+      <div style="font-size:11px;color:var(--text-dim,#7a8cb0);line-height:1.5;">${snippet.description || ''}</div>
+      <div style="font-size:10px;color:var(--text-dim,#7a8cb0);margin-top:6px;">
+        <span style="color:#f39c12;">⬢</span> ${snippet.classification_level} &bull; Impact Level: ${snippet.impact_level}
+      </div>
+    </div>`;
+
+  if (!suggestions.length) {
+    html += `
+      <div style="color:var(--text-dim,#7a8cb0);font-size:12px;text-align:center;padding:20px;">
+        No matching integration points found on the current canvas.<br>
+        <span style="font-size:11px;">Add routers, switches, or firewalls to the canvas first, then insert a snippet to see connection suggestions.</span>
+      </div>`;
+  } else {
+    html += `
+      <div style="font-size:11px;color:var(--text-dim,#7a8cb0);padding:0 2px;">
+        <strong style="color:var(--text,#eaeaea);">${suggestions.length} suggested connection${suggestions.length > 1 ? 's' : ''}</strong>
+        — click to auto-connect, or connect manually later.
+      </div>`;
+
+    for (const s of suggestions) {
+      const icon = DIRECTION_ICONS[s.direction] || '↔';
+      const snStyle = getStyle(s.snippetNode.type);
+      const exStyle = getStyle(s.existingNode.type);
+      html += `
+        <div style="background:var(--card-bg,#16213e);border:1px solid var(--border,#2a3a5e);border-radius:6px;padding:10px 12px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <span style="font-size:16px;">${icon}</span>
+            <span style="font-size:12px;font-weight:600;color:${snStyle.stroke};">${s.snippetNode.label}</span>
+            <span style="font-size:10px;color:var(--text-dim);">→</span>
+            <span style="font-size:12px;font-weight:600;color:${exStyle.stroke};">${s.existingNode.label}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim,#7a8cb0);margin-bottom:8px;line-height:1.4;">${s.reason}</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-sm btn-primary" style="flex:1;background:#5c42d9;border-color:#5c42d9;font-size:11px;"
+              onclick="applyIntegrationLink('${s.snippetNode.id}','${s.existingNode.id}','${s.protocol}',this)">
+              &#x1f517; Connect (${s.protocol})</button>
+            <button class="btn btn-sm" style="background:transparent;border:1px solid var(--border,#2a3a5e);color:var(--text-dim,#7a8cb0);font-size:11px;"
+              onclick="this.closest('div[style*=card-bg]').remove()">Skip</button>
+          </div>
+        </div>`;
+    }
+  }
+
+  content.innerHTML = html;
+  overlay.classList.remove('hidden');
+}
+
+function applyIntegrationLink(srcId, tgtId, protocol, btn) {
+  pushUndo();
+  createLink(srcId, tgtId, protocol, protocol);
+  markDirty();
+  updateStatusBar();
+  // Visual feedback
+  const card = btn.closest('div[style*="card-bg"]');
+  if (card) {
+    card.style.borderColor = '#27ae60';
+    card.style.opacity = '0.6';
+    card.innerHTML = '<div style="color:#27ae60;font-size:11px;padding:6px;text-align:center;">✓ Connected</div>';
+  }
+}
+
+function closeIntegrationGuide() {
+  document.getElementById('integration-guide-overlay').classList.add('hidden');
+}
+
 async function insertSnippetOntoCanvas(snippetId, btn) {
   const origText = btn ? btn.textContent : '';
   if (btn) { btn.disabled = true; btn.textContent = 'Inserting…'; }
@@ -1783,6 +2004,10 @@ async function insertSnippetOntoCanvas(snippetId, btn) {
     updateStatusBar();
     setStatus(`Snippet inserted: ${snippet.name} (${gj.nodes.length} nodes, ${gj.edges.length} links)`);
     closeSnippetsPanel();
+
+    // ── 9. Show Integration Guide with connection suggestions ──
+    const suggestions = buildIntegrationSuggestions(gj.nodes, idMap, snippet);
+    showIntegrationGuide(suggestions, snippet);
   } catch (err) {
     console.error('[Snippet Insert]', err);
     setStatus('Insert failed: ' + err.message);

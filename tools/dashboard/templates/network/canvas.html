@@ -978,6 +978,22 @@
   </div>
 </div>
 
+<!-- Snippet Integration Guide Overlay -->
+<div id="integration-guide-overlay" class="sim-overlay hidden">
+  <div class="sim-panel" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column;">
+    <div class="sim-panel-header">
+      <h3>&#x1f517; Integration Guide</h3>
+      <button class="close-btn" onclick="closeIntegrationGuide()">&#x2715;</button>
+    </div>
+    <div id="integration-guide-content" style="overflow-y:auto;flex:1;padding:4px;display:flex;flex-direction:column;gap:10px;">
+    </div>
+    <div style="padding:8px 4px 0;border-top:1px solid var(--border,#2a3a5e);margin-top:8px;">
+      <button class="btn btn-sm" style="width:100%;background:transparent;border:1px solid var(--border,#2a3a5e);color:var(--text-dim,#7a8cb0);"
+        onclick="closeIntegrationGuide()">Done — I'll connect manually</button>
+    </div>
+  </div>
+</div>
+
 <!-- Custom Device Dialog -->
 <div id="custom-device-overlay" class="sim-overlay hidden">
   <div class="sim-panel" style="max-width:380px;">
