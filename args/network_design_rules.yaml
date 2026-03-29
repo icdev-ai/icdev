@@ -223,6 +223,8 @@ on_node_add:
       - "Use /16 CIDR for VPC (e.g., 10.x.0.0/16)"
       - "Create public and private subnets across 2+ AZs"
       - "Attach Internet Gateway only if public-facing required"
+      - "Enable VPC Flow Logs to S3/CloudWatch for NIST AU-3 compliance"
+      - "Add PrivateLink endpoints for S3, DynamoDB, and other AWS service access"
     checklist:
       cidr_block:
         required: true
@@ -232,12 +234,23 @@ on_node_add:
       flow_logs:
         required: true
         hint: "Enable VPC Flow Logs to S3/CloudWatch (NIST AU-3)"
+      availability_zones:
+        required: true
+        hint: "Deploy across 2+ AZs for high availability"
+    auto_suggest_connections:
+      - match_type: aws-tgw
+        max_distance: 500
+        message: "Attach VPC to Transit Gateway for centralized routing"
+      - match_type: aws-nfw
+        max_distance: 400
+        message: "Route traffic through Network Firewall for inspection"
 
   az-vnet:
     suggestions:
       - "Use address space that doesn't overlap with on-prem or other VNets"
       - "Create NSG per subnet — default deny inbound"
       - "Enable Azure Bastion for secure management access"
+      - "Enable VNet Flow Logs for traffic visibility (NIST AU-3)"
     checklist:
       address_space:
         required: true
@@ -245,6 +258,244 @@ on_node_add:
       nsg_default:
         required: true
         hint: "Default deny inbound on all subnets"
+      flow_logs:
+        required: true
+        hint: "Enable VNet Flow Logs with traffic analytics"
+    auto_suggest_connections:
+      - match_type: az-vwan
+        max_distance: 500
+        message: "Connect VNet to Virtual WAN hub for centralized routing"
+      - match_type: az-fw
+        max_distance: 400
+        message: "Route traffic through Azure Firewall"
+
+  gcp-vpc:
+    suggestions:
+      - "GCP VPCs are global — subnets span regions, no cross-region peering needed"
+      - "Use /20 per subnet (regional), plan for expansion"
+      - "Enable VPC Flow Logs with sampling rate tuned for cost vs visibility"
+      - "Enable Private Google Access on all subnets for private service access"
+    checklist:
+      subnet_cidr:
+        required: true
+        hint: "Regional subnets — plan /20 per region"
+      flow_logs:
+        required: true
+        hint: "Enable with configurable sampling (0.5 default, 1.0 for compliance)"
+    auto_suggest_connections:
+      - match_type: gcp-router
+        max_distance: 400
+        message: "Attach Cloud Router for BGP dynamic routing"
+
+  oci-vcn:
+    suggestions:
+      - "Use /16 CIDR for VCN, /24 per subnet"
+      - "Leverage OCI Fault Domains (3 per AD) for three-tier isolation"
+      - "Enable VCN Flow Logs for audit compliance"
+      - "OCI egress is ~10x cheaper than AWS/Azure/GCP — factor into cost optimization"
+    checklist:
+      cidr_block:
+        required: true
+        hint: "Non-overlapping CIDR (e.g., 10.z.0.0/16)"
+      flow_logs:
+        required: true
+    auto_suggest_connections:
+      - match_type: oci-drg
+        max_distance: 500
+        message: "Attach VCN to DRG for inter-VCN and hybrid connectivity"
+
+  ibm-vpc:
+    suggestions:
+      - "IBM VPCs are regional — deploy across 3 zones per MZR"
+      - "Enable Flow Logs for VPC for traffic capture"
+      - "Use IBM Cloud Satellite for extending services to on-prem"
+    checklist:
+      address_prefix:
+        required: true
+      flow_logs:
+        required: true
+    auto_suggest_connections:
+      - match_type: ibm-tg
+        max_distance: 500
+        message: "Connect VPC to Transit Gateway for multi-VPC connectivity"
+
+  # ── Dedicated Interconnect (AWS Well-Architected Hybrid Networking Lens) ──
+  aws-dx:
+    suggestions:
+      - "Deploy at 2+ diverse colocation facilities for 99.99% SLA (Maximum Resiliency)"
+      - "ALWAYS enable BFD for sub-second failover (<1s vs 90s BGP default)"
+      - "Configure Site-to-Site VPN as automatic backup for DX failure"
+      - "Use Transit VIF for multi-VPC access; Private VIF only for high-bandwidth single VPC"
+      - "DO NOT use LAG for HA — LAG terminates on single AWS device (SPOF)"
+    checklist:
+      bfd_enabled:
+        required: true
+        hint: "BFD every 300ms, 3x multiplier = <1s detection (vs 90s BGP)"
+      location:
+        required: true
+        hint: "Colocation facility name (needed for diverse-path validation)"
+      bandwidth:
+        required: true
+        options: [1G, 10G, 100G, 400G]
+      vif_type:
+        required: true
+        options: [private, public, transit]
+        hint: "Transit VIF for multi-VPC, Private VIF for single high-bandwidth VPC"
+      vpn_backup:
+        required: true
+        hint: "IPSec VPN backup path configured"
+    auto_suggest_connections:
+      - match_type: aws-tgw
+        max_distance: 500
+        message: "Connect via Transit VIF for multi-VPC access"
+      - match_type: aws-vpn
+        max_distance: 600
+        message: "Add VPN as automatic failover backup"
+    warnings:
+      - condition: single_connection
+        severity: high
+        message: "Single DX is a critical SPOF — no SLA guarantee without redundancy"
+      - condition: no_bfd
+        severity: high
+        message: "Without BFD, failover takes ~90 seconds (3x BGP hold timer)"
+
+  aws-dx-gw:
+    suggestions:
+      - "DX Gateway is a global config overlay — NOT a separate device, NOT a SPOF"
+      - "DO NOT add a backup DX Gateway — it does NOT improve resilience (ARC322)"
+      - "Associate up to 20 VGWs or 6 TGWs across Regions"
+      - "Use DX Gateway to reach multiple Regions from a single DX location"
+    checklist:
+      associated_gateways:
+        required: true
+        hint: "List VGWs or TGWs to associate (max 20 VGWs or 6 TGWs)"
+
+  az-er:
+    suggestions:
+      - "Deploy zone-redundant ExpressRoute for maximum availability"
+      - "Enable BFD for sub-second failover detection"
+      - "Configure VPN Gateway as backup for ExpressRoute"
+      - "Use ExpressRoute Global Reach to connect on-prem sites via Microsoft backbone"
+      - "ExpressRoute supports MACsec on ExpressRoute Direct (10/100 Gbps)"
+    checklist:
+      bfd_enabled:
+        required: true
+        hint: "BFD for fast failover detection"
+      bandwidth:
+        required: true
+        options: [1G, 2G, 5G, 10G, 50G, 100G]
+      peering_type:
+        required: true
+        options: [private, microsoft]
+        hint: "Private peering for VNet access, Microsoft peering for M365/Azure PaaS"
+      vpn_backup:
+        required: true
+        hint: "VPN Gateway as automatic backup"
+    auto_suggest_connections:
+      - match_type: az-vwan
+        max_distance: 500
+        message: "Connect ExpressRoute to Virtual WAN hub"
+      - match_type: az-vpn-gw
+        max_distance: 600
+        message: "Add VPN Gateway as automatic failover backup"
+
+  gcp-ic:
+    suggestions:
+      - "Deploy redundant VLAN attachments across 2+ metro areas for 99.99% SLA"
+      - "Enable BFD on Cloud Router for sub-second failover"
+      - "Configure HA VPN as backup for Interconnect"
+      - "GCP supports MACsec on 100 Gbps Dedicated Interconnect"
+      - "Use Partner Interconnect (50 Mbps–50 Gbps) if not near a colocation facility"
+    checklist:
+      bfd_enabled:
+        required: true
+      bandwidth:
+        required: true
+        options: [10G, 100G]
+      interconnect_type:
+        required: true
+        options: [dedicated, partner]
+    auto_suggest_connections:
+      - match_type: gcp-router
+        max_distance: 400
+        message: "Attach to Cloud Router for BGP peering"
+      - match_type: gcp-vpn
+        max_distance: 600
+        message: "Add HA VPN as automatic failover backup"
+
+  oci-fc:
+    suggestions:
+      - "OCI FastConnect egress is FREE — no data transfer charges"
+      - "Deploy redundant virtual circuits across diverse paths"
+      - "Enable BFD on DRG for fast failover"
+      - "OCI port costs are ~75% cheaper than AWS/Azure/GCP"
+      - "VPN over FastConnect available for encrypted dedicated connectivity"
+    checklist:
+      bfd_enabled:
+        required: true
+      bandwidth:
+        required: true
+        options: [1G, 10G, 100G]
+      redundant_circuit:
+        required: true
+        hint: "Second circuit on diverse path for resiliency"
+    auto_suggest_connections:
+      - match_type: oci-drg
+        max_distance: 500
+        message: "Connect FastConnect to DRG for multi-VCN routing"
+
+  ibm-dl:
+    suggestions:
+      - "Deploy with diverse-path redundancy for high availability"
+      - "IBM Direct Link does not support BGP on VPN — plan for static routing limitations"
+      - "Use IBM Cloud Satellite to extend services beyond direct link reach"
+    checklist:
+      bandwidth:
+        required: true
+        options: [1G, 2G, 5G, 10G]
+      diverse_path:
+        required: true
+        hint: "Deploy second Direct Link on diverse path"
+
+  # ── Transit Hubs ──────────────────────────────────────────────────────────
+  aws-tgw:
+    suggestions:
+      - "TGW uses Hyperplane distributed nodes — 99.99% SLA built-in"
+      - "DO NOT add backup TGW for data plane resilience — already HA via Hyperplane"
+      - "Consider Dev TGW for management plane safety (test config changes via CI/CD)"
+      - "Use separate route tables for traffic isolation (e.g., per-VPC or per-tenant)"
+      - "Transit VIF + GRE tunnels for hard noisy-neighbor isolation on DX"
+    checklist:
+      route_tables:
+        required: true
+        hint: "Separate tables for production, dev, shared services"
+      default_route_table_association:
+        required: false
+        hint: "Disable for explicit routing control"
+
+  az-vwan:
+    suggestions:
+      - "Azure Virtual WAN is natively global — no need for cross-region peering"
+      - "Supports integrated SD-WAN partner NVAs (Cisco, Palo Alto, etc.)"
+      - "Use Routing Intent for simplified hub security policy"
+      - "vWAN hub mesh provides automatic any-to-any routing"
+    checklist:
+      hub_regions:
+        required: true
+        hint: "Deploy hub in each region with workloads"
+      routing_intent:
+        required: false
+        hint: "Enable for centralized security via Azure Firewall"
+
+  oci-drg:
+    suggestions:
+      - "OCI DRG v2 supports transitive routing natively — unique among CSPs"
+      - "DRG is FREE — no additional charges for transit routing"
+      - "Use separate route tables per attachment type (VCN, IPSec, FastConnect)"
+    checklist:
+      route_tables:
+        required: true
+        hint: "Per-attachment-type tables for policy control"
 
   # ── Carrier/SP ──────────────────────────────────────────────────────────
   mpls-pe:
@@ -422,6 +673,39 @@ best_practices:
     - "UPS runtime minimum 15 minutes for graceful shutdown"
     - "Cable management: structured cabling with clear labeling"
     - "Environmental monitoring: temperature, humidity in all closets"
+
+  cloud_hybrid:
+    - "ALWAYS enable BFD on DX/ER/IC/FC VIFs — 90s BGP failover is unacceptable for production"
+    - "Deploy dedicated circuits at 2+ diverse colocations for 99.99% SLA"
+    - "Configure VPN as automatic backup for every dedicated interconnect"
+    - "Use transit hubs (TGW/vWAN/NCC/DRG) for multi-VPC — avoid full-mesh peering"
+    - "DO NOT use LAG for DX HA — LAG terminates on single AWS device (SPOF)"
+    - "DX Gateway and TGW are NOT SPOFs — backup instances add no resilience (ARC322)"
+    - "Enable Flow Logs on all VPCs/VNets/VCNs for NIST AU-3 audit compliance"
+    - "Use private endpoints (PrivateLink/PSC) — avoid public internet for service access"
+    - "Enable DDoS protection on all internet-facing endpoints (NIST SC-5)"
+    - "For traffic isolation on shared DX, use Transit VIF + GRE tunnels (not customer policing)"
+    - "Disable cross-zone LB on NLB for clean AZ failure isolation (ARC322 counter-intuitive)"
+    - "Use Private IP VPN over Transit VIF for encrypted multi-VPC access without public IPs"
+    - "MACsec provides point-to-point L2 encryption only — use IPSec for end-to-end"
+    - "Test failover scenarios regularly — DX Resiliency Toolkit includes failover test"
+    - "Deploy bidirectional probes (EC2 ↔ on-prem) with CloudWatch for end-to-end DX monitoring"
+
+  cloud_cost:
+    - "OCI egress is ~10x cheaper ($0.0085/GB vs $0.09/GB) — factor into multi-cloud design"
+    - "OCI FastConnect and cross-region transfers are FREE"
+    - "GCP offers Premium vs Standard network tier — Standard uses public internet at lower cost"
+    - "Azure cross-AZ transfer is FREE (unlike AWS $0.01/GB each direction)"
+    - "Use Private VIF for high-volume single-VPC to avoid TGW data processing charges"
+    - "Use Transit VIF for multi-VPC to avoid multiple private VIF port costs"
+    - "Plan DX port costs: ~$1,638/mo (10G AWS) vs ~$438/mo (10G OCI)"
+
+  cloud_security:
+    - "OCI includes enterprise DDoS protection at NO COST — unique among CSPs"
+    - "Azure Private Link has deepest PaaS integration — nearly every Azure service supported"
+    - "GCP Firewall Rules use hierarchical policy inheritance (Org > Folder > VPC)"
+    - "Use Network Access Analyzer / Reachability Analyzer to validate security group rules"
+    - "GCP Distributed Cloud provides air-gapped sovereign deployment for IL6/SECRET"
 
   ipv6:
     - "Design IPv6-first for new greenfield deployments"

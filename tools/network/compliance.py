@@ -141,6 +141,49 @@ COMPLIANCE_RULES = [
      "regimes": ["fisma_high", "stig", "icd503"],
      "description": "Topology diagram should have a saved version labeled 'as-built' for ATO documentation.",
      "check": "as_built_version"},
+
+    # ── Hybrid Cloud Networking (AWS Well-Architected Hybrid Networking Lens) ──
+    {"id": "NET-HYB-001", "title": "BFD required on dedicated interconnect VIFs",
+     "severity": "CAT1", "category": "hybrid",
+     "regimes": ["fisma_high", "stig", "cnss1253"],
+     "description": "BFD (Bidirectional Forwarding Detection) must be enabled on all DX/ER/IC/FC VIFs for sub-second (<1s) failover. Default BGP hold timer is 90 seconds — unacceptable for production (ARC322).",
+     "check": "bfd_on_dx"},
+
+    {"id": "NET-HYB-002", "title": "Dedicated circuit requires VPN backup",
+     "severity": "CAT2", "category": "hybrid",
+     "regimes": ["fisma_high", "stig", "cjis", "cnss1253"],
+     "description": "Each dedicated interconnect (DX/ER/IC/FC) must have an IPSec VPN backup path for automatic failover if the circuit fails (NIST CP-8 alternate telecom services).",
+     "check": "dx_vpn_backup"},
+
+    {"id": "NET-HYB-003", "title": "DX/ER at 2+ diverse locations for 99.99% SLA",
+     "severity": "CAT2", "category": "hybrid",
+     "regimes": ["fisma_high", "stig", "cnss1253"],
+     "description": "Maximum resiliency (99.99% SLA) requires connections at 2+ geographically diverse colocation facilities, with at least one co-located with the workload Region (AWS DX Resiliency Toolkit).",
+     "check": "dx_diverse_locations"},
+
+    {"id": "NET-HYB-004", "title": "Transit hub for multi-VPC connectivity",
+     "severity": "CAT2", "category": "hybrid",
+     "regimes": ["fisma_high", "stig", "zta"],
+     "description": "Multiple VPCs/VNets should connect via a transit hub (TGW/vWAN/NCC/DRG) rather than full-mesh peering — reduces complexity and enforces centralized security policy.",
+     "check": "transit_hub_for_multi_vpc"},
+
+    {"id": "NET-HYB-005", "title": "Flow logs enabled on all cloud virtual networks",
+     "severity": "CAT2", "category": "hybrid",
+     "regimes": ["fisma_high", "stig", "zta", "cjis", "icd503"],
+     "description": "VPC/VNet/VCN Flow Logs must be enabled for traffic visibility and audit trail per NIST AU-3 (content of audit records) and SI-4 (information system monitoring).",
+     "check": "cloud_flow_logs"},
+
+    {"id": "NET-HYB-006", "title": "Private endpoints for cloud service access",
+     "severity": "CAT2", "category": "hybrid",
+     "regimes": ["fisma_high", "zta", "icd503"],
+     "description": "Cloud services should be accessed via private endpoints (PrivateLink/PSC/Service Gateway) — avoid routing through public internet (NIST SC-7 boundary protection, ZTA principle of least exposure).",
+     "check": "private_endpoints"},
+
+    {"id": "NET-HYB-007", "title": "DDoS protection on internet-facing endpoints",
+     "severity": "CAT2", "category": "hybrid",
+     "regimes": ["fisma_high", "stig", "cjis", "cnss1253"],
+     "description": "Internet-facing cloud resources must have DDoS protection enabled (Shield/DDoS Protection/Cloud Armor) per NIST SC-5 (denial of service protection).",
+     "check": "ddos_protection"},
 ]
 
 # Encryptor speed ratings (Mbps) for NET-ENC-003
@@ -422,6 +465,85 @@ def run_compliance_audit(topology_id: str, graph: dict, regimes: list,
     if not has_as_built_version:
         add_finding(rule_map["NET-BP-002"], "topology", "topology",
                     {"action": "create_version", "label": "As-Built", "phase": "as-is"})
+
+    # ── Hybrid Cloud Networking Checks (Well-Architected Hybrid Networking Lens) ──
+    DX_TYPES = {"aws-dx", "aws-dx-gw", "az-er", "az-er-global",
+                "gcp-ic", "oci-fc", "ibm-dl"}
+    VPN_BACKUP_TYPES = {"aws-vpn", "az-vpn-gw", "gcp-vpn", "ibm-vpn"}
+    TRANSIT_HUB_TYPES = {"aws-tgw", "aws-cloudwan", "az-vwan", "gcp-ncc", "oci-drg", "ibm-tg"}
+    VPC_TYPES = {"aws-vpc", "az-vnet", "gcp-vpc", "oci-vcn", "ibm-vpc"}
+    FLOWLOG_TYPES = {"aws-flowlogs", "az-flowlogs", "gcp-flowlogs", "oci-flowlogs", "ibm-flowlogs"}
+    PRIVATELINK_TYPES = {"aws-privatelink", "az-privatelink", "gcp-psc", "aws-gw-ep"}
+    DDOS_TYPES = {"aws-shield", "az-ddos", "oci-ddos", "gcp-armor", "ibm-cis"}
+    LB_TYPES = {"aws-alb", "aws-nlb", "aws-gwlb", "aws-ga", "az-appgw",
+                "az-front", "az-crosslb", "gcp-lb", "gcp-gfe", "oci-lb", "ibm-lb"}
+    INTERNET_FACING_TYPES = LB_TYPES | {"aws-cloudfront", "az-front", "gcp-cdn", "aws-waf"}
+
+    dx_nodes_hyb = [n for n in nodes if node_types.get(n["id"]) in DX_TYPES]
+    vpn_nodes_hyb = [n for n in nodes if node_types.get(n["id"]) in VPN_BACKUP_TYPES]
+    vpc_nodes_hyb = [n for n in nodes if node_types.get(n["id"]) in VPC_TYPES]
+    hub_nodes_hyb = [n for n in nodes if node_types.get(n["id"]) in TRANSIT_HUB_TYPES]
+
+    # NET-HYB-001: BFD on DX VIFs
+    for dn in dx_nodes_hyb:
+        config = dn.get("config", {})
+        if not config.get("bfd") and not config.get("bfd_enabled"):
+            add_finding(rule_map.get("NET-HYB-001", {}), label_map.get(dn["id"], dn["id"]), "node",
+                        {"action": "set_config", "target_node": dn["id"], "key": "bfd_enabled", "value": True})
+
+    # NET-HYB-002: DX requires VPN backup
+    if dx_nodes_hyb and not vpn_nodes_hyb:
+        for dn in dx_nodes_hyb[:1]:
+            csp_prefix = node_types.get(dn["id"], "")[:3]
+            vpn_type_map = {"aws": "aws-vpn", "az-": "az-vpn-gw", "gcp": "gcp-vpn",
+                            "oci": "aws-vpn", "ibm": "ibm-vpn"}
+            suggested_vpn = vpn_type_map.get(csp_prefix, "aws-vpn")
+            add_finding(rule_map.get("NET-HYB-002", {}), label_map.get(dn["id"], dn["id"]), "node",
+                        {"action": "add_node", "node_type": suggested_vpn, "label": "VPN Backup"})
+
+    # NET-HYB-003: DX at 2+ diverse locations
+    if dx_nodes_hyb:
+        locations = set()
+        for dn in dx_nodes_hyb:
+            config = dn.get("config", {})
+            loc = config.get("location", "") or config.get("site", "") or dn.get("label", "")
+            locations.add(loc.lower().strip())
+        if len(locations) < 2:
+            add_finding(rule_map.get("NET-HYB-003", {}),
+                        f"{len(dx_nodes_hyb)} DX at {len(locations)} location(s)", "topology")
+
+    # NET-HYB-004: Transit hub for multi-VPC
+    if len(vpc_nodes_hyb) >= 2 and not hub_nodes_hyb:
+        add_finding(rule_map.get("NET-HYB-004", {}),
+                    f"{len(vpc_nodes_hyb)} VPCs without transit hub", "topology",
+                    {"action": "add_node", "node_type": "aws-tgw", "label": "Transit Gateway"})
+
+    # NET-HYB-005: Flow logs on cloud VPCs
+    flowlog_present = any(node_types.get(n["id"]) in FLOWLOG_TYPES for n in nodes)
+    if vpc_nodes_hyb and not flowlog_present:
+        vpc_labels = [label_map.get(v["id"], v["id"]) for v in vpc_nodes_hyb[:3]]
+        for vl in vpc_labels:
+            config = {}
+            vpc_node = next((n for n in vpc_nodes_hyb if label_map.get(n["id"]) == vl), None)
+            if vpc_node:
+                config = vpc_node.get("config", {})
+            if not config.get("flow_logs") and not config.get("flow_logs_enabled"):
+                add_finding(rule_map.get("NET-HYB-005", {}), vl, "node",
+                            {"action": "set_config", "target_node": vl, "key": "flow_logs_enabled", "value": True})
+                break  # One finding is enough
+
+    # NET-HYB-006: Private endpoints
+    has_privatelink = any(node_types.get(n["id"]) in PRIVATELINK_TYPES for n in nodes)
+    if vpc_nodes_hyb and not has_privatelink:
+        add_finding(rule_map.get("NET-HYB-006", {}), "topology", "topology")
+
+    # NET-HYB-007: DDoS protection
+    has_ddos = any(node_types.get(n["id"]) in DDOS_TYPES for n in nodes)
+    internet_facing = [n for n in nodes if node_types.get(n["id"]) in INTERNET_FACING_TYPES]
+    if internet_facing and not has_ddos:
+        affected = label_map.get(internet_facing[0]["id"], internet_facing[0]["id"])
+        add_finding(rule_map.get("NET-HYB-007", {}), affected, "node",
+                    {"action": "add_node", "node_type": "aws-shield", "label": "DDoS Protection"})
 
     # ── Score per regime ──────────────────────────────────────────────────
     total_rules_per_regime = {}

@@ -81,6 +81,418 @@ CLOUD_OBJECTS = {
     ],
 }
 
+# ── Extended Cloud Networking Objects (Well-Architected Hybrid Networking) ────
+# Adds missing services identified from AWS Well-Architected Hybrid Networking
+# Lens and multi-CSP equivalence research.
+CLOUD_OBJECTS_EXTENDED = {
+    "aws": [
+        {"type": "aws-dx-gw", "label": "DX Gateway", "icon": "DGW", "desc": "AWS Direct Connect Gateway — global resource for multi-Region DX access (up to 20 VGWs, 6 TGWs)"},
+        {"type": "aws-privatelink", "label": "PrivateLink", "icon": "PL", "desc": "AWS PrivateLink — private endpoint for AWS/custom services via ENI in VPC"},
+        {"type": "aws-cloudwan", "label": "Cloud WAN", "icon": "CWN", "desc": "AWS Cloud WAN — global network with policy-based segmentation"},
+        {"type": "aws-ga", "label": "Global Accelerator", "icon": "GA", "desc": "AWS Global Accelerator — anycast IPs for TCP/UDP optimization via AWS backbone"},
+        {"type": "aws-shield", "label": "Shield", "icon": "SHD", "desc": "AWS Shield — DDoS protection (Standard=free, Advanced=$3k/mo)"},
+        {"type": "aws-netmgr", "label": "Network Manager", "icon": "NMG", "desc": "AWS Network Manager — centralized network monitoring and route analysis"},
+        {"type": "aws-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "VPC Flow Logs — capture IP traffic metadata to S3/CloudWatch Logs"},
+        {"type": "aws-reach", "label": "Reachability Analyzer", "icon": "RCH", "desc": "VPC Reachability Analyzer — automated network path analysis"},
+        {"type": "aws-gwlb", "label": "Gateway LB", "icon": "GLB", "desc": "AWS Gateway Load Balancer — transparent inline inspection (L3 bump-in-wire)"},
+        {"type": "aws-localzone", "label": "Local Zone", "icon": "LZ", "desc": "AWS Local Zone — edge compute for ultra-low latency (<10ms)"},
+        {"type": "aws-outpost", "label": "Outposts", "icon": "OP", "desc": "AWS Outposts — AWS infrastructure on-premises (hybrid cloud)"},
+    ],
+    "azure": [
+        {"type": "az-er-global", "label": "ER Global Reach", "icon": "EGR", "desc": "Azure ExpressRoute Global Reach — connect on-prem sites via Microsoft backbone"},
+        {"type": "az-privatelink", "label": "Private Link", "icon": "PL", "desc": "Azure Private Link — private endpoint for Azure/custom services"},
+        {"type": "az-ddos", "label": "DDoS Protection", "icon": "DDP", "desc": "Azure DDoS Protection Standard (~$2.9k/mo)"},
+        {"type": "az-netwatcher", "label": "Network Watcher", "icon": "NW", "desc": "Azure Network Watcher — topology, connectivity checks, NSG diagnostics"},
+        {"type": "az-flowlogs", "label": "VNet Flow Logs", "icon": "FLG", "desc": "Azure VNet Flow Logs — VNet-level traffic capture with analytics"},
+        {"type": "az-stack", "label": "Stack HCI", "icon": "HCI", "desc": "Azure Stack HCI — hyperconverged Azure on-premises"},
+        {"type": "az-crosslb", "label": "Cross-region LB", "icon": "XLB", "desc": "Azure Cross-region Load Balancer — global L4 load balancing"},
+    ],
+    "gcp": [
+        {"type": "gcp-psc", "label": "Private Svc Connect", "icon": "PSC", "desc": "GCP Private Service Connect — private access to Google/custom services"},
+        {"type": "gcp-ncc", "label": "Network CC", "icon": "NCC", "desc": "GCP Network Connectivity Center — global hub for hybrid/multi-cloud spokes"},
+        {"type": "gcp-nic", "label": "Network Intel", "icon": "NIC", "desc": "GCP Network Intelligence Center — topology, performance, firewall insights"},
+        {"type": "gcp-gfe", "label": "Global LB", "icon": "GFE", "desc": "GCP Global External Application LB — single anycast IP across all regions"},
+        {"type": "gcp-gdc", "label": "Distributed Cloud", "icon": "GDC", "desc": "Google Distributed Cloud — sovereign/air-gapped deployment (IL6/SECRET)"},
+        {"type": "gcp-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "GCP VPC Flow Logs — configurable sampling rate, direct BigQuery export"},
+    ],
+    "oci": [
+        {"type": "oci-ddos", "label": "DDoS Protection", "icon": "DDP", "desc": "OCI DDoS Protection — always-on, FREE for all customers (unique among CSPs)"},
+        {"type": "oci-pathanalyzer", "label": "Path Analyzer", "icon": "PA", "desc": "OCI Network Path Analyzer — automated reachability analysis"},
+        {"type": "oci-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "OCI VCN Flow Logs — subnet or VNIC level capture"},
+        {"type": "oci-dedicated", "label": "Dedicated Region", "icon": "DR", "desc": "OCI Dedicated Region Cloud@Customer — full OCI on-premises"},
+        {"type": "oci-fd", "label": "Fault Domain", "icon": "FD", "desc": "OCI Fault Domain — three-tier isolation (Region > AD > FD)"},
+    ],
+    "ibm": [
+        {"type": "ibm-satellite", "label": "Satellite", "icon": "SAT", "desc": "IBM Cloud Satellite — extend IBM services to any infrastructure"},
+        {"type": "ibm-cis", "label": "CIS", "icon": "CIS", "desc": "IBM Cloud Internet Services — Cloudflare-powered CDN/WAF/DDoS/DNS"},
+        {"type": "ibm-flowlogs", "label": "Flow Logs", "icon": "FLG", "desc": "IBM Cloud Flow Logs for VPC — instance NIC or subnet capture"},
+    ],
+}
+
+# ── CSP Service Equivalence Map ──────────────────────────────────────────────
+# Cross-cloud mapping from AWS Well-Architected Hybrid Networking Lens.
+# Used for multi-cloud design guidance, migration planning, and cost comparison.
+# parity: "full" | "full+" (exceeds AWS) | "partial" | "none"
+CSP_EQUIVALENCE = {
+    "dedicated_interconnect": {
+        "category": "Connectivity",
+        "description": "Dedicated physical circuit to cloud provider",
+        "aws": {"service": "Direct Connect", "type": "aws-dx", "speeds": "1/10/100/400 Gbps"},
+        "azure": {"service": "ExpressRoute", "type": "az-er", "speeds": "1/2/5/10/50/100 Gbps", "parity": "full"},
+        "gcp": {"service": "Cloud Interconnect (Dedicated)", "type": "gcp-ic", "speeds": "10/100 Gbps", "parity": "full"},
+        "oci": {"service": "FastConnect", "type": "oci-fc", "speeds": "1/10/100 Gbps", "parity": "full",
+                "note": "FREE egress over FastConnect — unique among CSPs"},
+        "ibm": {"service": "Direct Link", "type": "ibm-dl", "speeds": "1/2/5/10 Gbps", "parity": "partial"},
+    },
+    "site_to_site_vpn": {
+        "category": "Connectivity",
+        "description": "IPSec VPN tunnel over internet",
+        "aws": {"service": "Site-to-Site VPN", "type": "aws-vpn", "throughput": "1.25 Gbps/tunnel"},
+        "azure": {"service": "VPN Gateway", "type": "az-vpn-gw", "throughput": "Up to 10 Gbps", "parity": "full"},
+        "gcp": {"service": "Cloud VPN (HA VPN)", "type": "gcp-vpn", "throughput": "3 Gbps/tunnel", "parity": "full"},
+        "oci": {"service": "Site-to-Site VPN", "throughput": "250 Mbps/tunnel", "parity": "partial"},
+        "ibm": {"service": "VPN for VPC", "type": "ibm-vpn", "throughput": "650 Mbps", "parity": "partial",
+                "note": "No BGP — static routes only"},
+    },
+    "transit_hub": {
+        "category": "Connectivity",
+        "description": "Hub-and-spoke network transit for multi-VPC connectivity",
+        "aws": {"service": "Transit Gateway", "type": "aws-tgw", "scope": "Regional"},
+        "azure": {"service": "Virtual WAN", "type": "az-vwan", "scope": "Global", "parity": "full+",
+                  "note": "Natively global with integrated SD-WAN partner NVAs"},
+        "gcp": {"service": "Network Connectivity Center", "type": "gcp-ncc", "scope": "Global", "parity": "full"},
+        "oci": {"service": "DRG v2", "type": "oci-drg", "scope": "Regional", "parity": "full",
+                "note": "Free, supports transitive peering natively"},
+        "ibm": {"service": "Transit Gateway", "type": "ibm-tg", "scope": "Regional", "parity": "partial"},
+    },
+    "private_endpoint": {
+        "category": "Connectivity",
+        "description": "Private access to cloud services without internet exposure",
+        "aws": {"service": "PrivateLink", "type": "aws-privatelink"},
+        "azure": {"service": "Private Link", "type": "az-privatelink", "parity": "full",
+                  "note": "Deepest PaaS integration — nearly every Azure service supported"},
+        "gcp": {"service": "Private Service Connect", "type": "gcp-psc", "parity": "full"},
+        "oci": {"service": "Service Gateway / Private Endpoint", "parity": "partial",
+                "note": "Primarily Oracle services only"},
+        "ibm": {"service": "Virtual Private Endpoints", "parity": "partial"},
+    },
+    "global_wan": {
+        "category": "Connectivity",
+        "description": "Global WAN orchestration with policy-based routing",
+        "aws": {"service": "Cloud WAN", "type": "aws-cloudwan"},
+        "azure": {"service": "Virtual WAN", "type": "az-vwan", "parity": "full+",
+                  "note": "Built-in SD-WAN partner NVA integration"},
+        "gcp": {"service": "Network Connectivity Center", "type": "gcp-ncc", "parity": "full"},
+        "oci": {"parity": "none"},
+        "ibm": {"parity": "none"},
+    },
+    "virtual_network": {
+        "category": "Architecture",
+        "description": "Isolated virtual network",
+        "aws": {"service": "VPC", "type": "aws-vpc", "scope": "Regional"},
+        "azure": {"service": "VNet", "type": "az-vnet", "scope": "Regional", "parity": "full"},
+        "gcp": {"service": "VPC", "type": "gcp-vpc", "scope": "Global", "parity": "full+",
+                "note": "Global VPCs — subnets span regions, eliminates cross-region peering"},
+        "oci": {"service": "VCN", "type": "oci-vcn", "scope": "Regional", "parity": "full"},
+        "ibm": {"service": "VPC", "type": "ibm-vpc", "scope": "Regional", "parity": "full"},
+    },
+    "network_firewall": {
+        "category": "Security",
+        "description": "Cloud-native L3-L7 stateful firewall",
+        "aws": {"service": "Network Firewall", "type": "aws-nfw"},
+        "azure": {"service": "Azure Firewall Premium", "type": "az-fw", "parity": "full"},
+        "gcp": {"service": "Cloud NGFW (Palo Alto)", "type": "gcp-armor", "parity": "full"},
+        "oci": {"service": "Network Firewall", "parity": "full"},
+        "ibm": {"parity": "none", "note": "Use NVA — no native L7 firewall"},
+    },
+    "ddos_protection": {
+        "category": "Security",
+        "description": "DDoS mitigation service",
+        "aws": {"service": "Shield Standard/Advanced", "type": "aws-shield", "cost": "$3,000/mo (Advanced)"},
+        "azure": {"service": "DDoS Protection Standard", "type": "az-ddos", "cost": "$2,944/mo", "parity": "full"},
+        "gcp": {"service": "Cloud Armor", "type": "gcp-armor", "parity": "full"},
+        "oci": {"service": "DDoS Protection", "type": "oci-ddos", "cost": "FREE", "parity": "full+",
+                "note": "Enterprise-grade DDoS included at no cost for all customers"},
+        "ibm": {"service": "CIS (Cloudflare)", "type": "ibm-cis", "parity": "full"},
+    },
+    "flow_logs": {
+        "category": "Monitoring",
+        "description": "Network traffic flow metadata capture",
+        "aws": {"service": "VPC Flow Logs", "type": "aws-flowlogs"},
+        "azure": {"service": "VNet Flow Logs", "type": "az-flowlogs", "parity": "full"},
+        "gcp": {"service": "VPC Flow Logs", "type": "gcp-flowlogs", "parity": "full",
+                "note": "Configurable sampling rate + direct BigQuery export"},
+        "oci": {"service": "VCN Flow Logs", "type": "oci-flowlogs", "parity": "full"},
+        "ibm": {"service": "Flow Logs for VPC", "type": "ibm-flowlogs", "parity": "full"},
+    },
+    "network_analysis": {
+        "category": "Monitoring",
+        "description": "Automated network path and reachability analysis",
+        "aws": {"service": "Reachability Analyzer", "type": "aws-reach"},
+        "azure": {"service": "Network Watcher", "type": "az-netwatcher", "parity": "full"},
+        "gcp": {"service": "Connectivity Tests (NIC)", "type": "gcp-nic", "parity": "full"},
+        "oci": {"service": "Network Path Analyzer", "type": "oci-pathanalyzer", "parity": "full"},
+        "ibm": {"parity": "none"},
+    },
+    "global_load_balancing": {
+        "category": "Load Balancing",
+        "description": "Global L7 load balancing with CDN/WAF integration",
+        "aws": {"service": "CloudFront + ALB / Global Accelerator", "type": "aws-ga"},
+        "azure": {"service": "Front Door", "type": "az-front", "parity": "full+",
+                  "note": "Unified global L7 LB + CDN + WAF"},
+        "gcp": {"service": "Global External Application LB", "type": "gcp-gfe", "parity": "full+",
+                "note": "Single anycast IP across all regions — no DNS-based failover needed"},
+        "oci": {"parity": "none", "note": "DNS-based only"},
+        "ibm": {"service": "CIS GLB (Cloudflare)", "type": "ibm-cis", "parity": "partial"},
+    },
+    "hybrid_edge": {
+        "category": "Architecture",
+        "description": "Cloud infrastructure deployed on-premises (hybrid edge)",
+        "aws": {"service": "Outposts / Local Zones", "type": "aws-outpost"},
+        "azure": {"service": "Stack HCI / Arc", "type": "az-stack", "parity": "full"},
+        "gcp": {"service": "Distributed Cloud (GDC)", "type": "gcp-gdc", "parity": "full",
+                "note": "Air-gapped sovereign deployment for IL6/SECRET"},
+        "oci": {"service": "Dedicated Region Cloud@Customer", "type": "oci-dedicated", "parity": "full"},
+        "ibm": {"service": "Satellite", "type": "ibm-satellite", "parity": "full",
+                "note": "Most flexible — extends IBM services to any infrastructure"},
+    },
+}
+
+# ── Resiliency Tiers (AWS Well-Architected Hybrid Networking Lens) ───────────
+# Based on AWS Direct Connect Resiliency Toolkit + re:Invent ARC322.
+# Applied to all CSPs via equivalence mapping.
+RESILIENCY_TIERS = {
+    "maximum": {
+        "label": "Maximum Resiliency",
+        "sla": "99.99%",
+        "description": "Separate connections on separate devices in 2+ DX/ER locations, at least one co-located with workload Region",
+        "requirements": {
+            "min_connections": 4,
+            "min_locations": 2,
+            "location_colocated_with_region": True,
+            "unique_aws_devices": True,
+        },
+        "aws_requirements": "4+ dedicated connections, 2+ DX locations, ≥1 in associated Region, Enterprise Support + Well-Architected Review",
+        "azure_requirements": "Zone-redundant ExpressRoute with Global Reach for multi-site",
+        "gcp_requirements": "Redundant VLAN attachments across 2+ metro areas",
+        "oci_requirements": "Redundant FastConnect virtual circuits across diverse paths",
+    },
+    "high": {
+        "label": "High Resiliency",
+        "sla": "99.9%",
+        "description": "Two single connections to multiple locations — resiliency against connectivity + location failure",
+        "requirements": {
+            "min_connections": 2,
+            "min_locations": 2,
+        },
+    },
+    "development": {
+        "label": "Development / Test",
+        "sla": "None",
+        "description": "Separate connections on separate devices in one location — device failure only",
+        "requirements": {
+            "min_connections": 2,
+            "min_locations": 1,
+        },
+    },
+    "single": {
+        "label": "No Resiliency",
+        "sla": "None",
+        "description": "Single connection — single point of failure, no SLA guarantee",
+        "requirements": {
+            "min_connections": 1,
+            "min_locations": 1,
+        },
+    },
+}
+
+# ── Hybrid Connectivity Patterns ─────────────────────────────────────────────
+# Architecture patterns from AWS Well-Architected Hybrid Networking Lens.
+HYBRID_CONNECTIVITY_PATTERNS = {
+    "dx_primary_vpn_backup": {
+        "label": "DX Primary + VPN Backup",
+        "description": "Dedicated circuit as primary with IPSec VPN over internet as automatic failover",
+        "resiliency": "high",
+        "cost": "medium",
+        "failover_time_sec": {"with_bfd": 1, "without_bfd": 90},
+        "applicable_csps": ["aws", "azure", "gcp", "oci"],
+        "aws": {"primary": "aws-dx", "backup": "aws-vpn", "hub": "aws-tgw"},
+        "azure": {"primary": "az-er", "backup": "az-vpn-gw", "hub": "az-vwan"},
+        "gcp": {"primary": "gcp-ic", "backup": "gcp-vpn", "hub": "gcp-ncc"},
+        "oci": {"primary": "oci-fc", "backup": "oci-vpn", "hub": "oci-drg"},
+    },
+    "dual_dx_diverse_locations": {
+        "label": "Dual DX at Diverse Locations",
+        "description": "Two dedicated circuits at geographically diverse colocation facilities for maximum resiliency",
+        "resiliency": "maximum",
+        "cost": "high",
+        "failover_time_sec": {"with_bfd": 1, "without_bfd": 90},
+        "applicable_csps": ["aws", "azure", "gcp", "oci", "ibm"],
+    },
+    "transit_hub_multi_vpc": {
+        "label": "Transit Hub (Multi-VPC)",
+        "description": "Central hub (TGW/vWAN/NCC/DRG) connecting multiple VPCs with on-prem via single DX",
+        "resiliency": "high",
+        "cost": "medium",
+        "aws": {"hub": "aws-tgw", "vif_type": "transit"},
+        "azure": {"hub": "az-vwan"},
+        "gcp": {"hub": "gcp-ncc"},
+        "oci": {"hub": "oci-drg"},
+    },
+    "ipsec_over_dx": {
+        "label": "IPSec VPN over Dedicated Circuit",
+        "description": "End-to-end encryption via IPSec tunnel running on top of DX/ER for compliance (not just point-to-point MACsec)",
+        "resiliency": "high",
+        "cost": "medium",
+        "encryption": "end-to-end",
+        "variants": {
+            "public_vif": "IPSec over DX public VIF — requires public IPs",
+            "private_ip_vpn": "Private IP VPN over transit VIF (RECOMMENDED) — no public IPs needed",
+            "software_vpn": "Self-managed VPN on EC2 over private VIF — full control of both endpoints",
+        },
+    },
+    "macsec_dx": {
+        "label": "MACsec on Dedicated Circuit",
+        "description": "Layer 2 point-to-point encryption between DX edge and customer edge device",
+        "resiliency": "high",
+        "cost": "medium",
+        "encryption": "point-to-point",
+        "supported_speeds": ["10 Gbps", "100 Gbps", "400 Gbps"],
+        "limitation": "Point-to-point only — does NOT provide end-to-end encryption",
+    },
+    "multi_cloud_peering": {
+        "label": "Multi-Cloud Interconnect",
+        "description": "Direct peering between CSPs (e.g., AWS ↔ Azure via Megaport/Equinix Fabric)",
+        "resiliency": "high",
+        "cost": "high",
+        "applicable_csps": ["aws", "azure", "gcp", "oci"],
+    },
+    "sdwan_overlay": {
+        "label": "SD-WAN Overlay",
+        "description": "Application-aware overlay across multiple transports (MPLS, DIA, LTE) with centralized orchestration",
+        "resiliency": "high",
+        "cost": "medium",
+        "vendors": ["Cisco Viptela", "VMware VeloCloud", "Fortinet SD-WAN", "Palo Alto Prisma SD-WAN"],
+    },
+}
+
+# ── Cloud Egress Pricing (USD/GB, 2026 approximate) ─────────────────────────
+# Used for multi-cloud cost estimation in NDC.
+CLOUD_EGRESS_PRICING = {
+    "aws": {
+        "internet_per_gb": 0.09,
+        "cross_region_per_gb": 0.02,
+        "cross_az_per_gb": 0.01,
+        "dx_per_gb": 0.02,
+        "ingress": 0.0,
+    },
+    "azure": {
+        "internet_per_gb": 0.087,
+        "cross_region_per_gb": 0.02,
+        "cross_az_per_gb": 0.0,
+        "er_per_gb": 0.02,
+        "ingress": 0.0,
+    },
+    "gcp": {
+        "internet_per_gb_premium": 0.12,
+        "internet_per_gb_standard": 0.085,
+        "cross_region_per_gb": 0.01,
+        "cross_az_per_gb": 0.0,
+        "interconnect_per_gb": 0.02,
+        "ingress": 0.0,
+        "note": "Premium vs Standard network tier — choose latency vs cost",
+    },
+    "oci": {
+        "internet_per_gb": 0.0085,
+        "cross_region_per_gb": 0.0,
+        "cross_az_per_gb": 0.0,
+        "fastconnect_per_gb": 0.0,
+        "ingress": 0.0,
+        "note": "~10x cheaper egress than AWS/Azure/GCP; cross-region and FastConnect FREE",
+    },
+    "ibm": {
+        "internet_per_gb": 0.09,
+        "cross_region_per_gb": 0.02,
+        "cross_az_per_gb": 0.0,
+        "direct_link_per_gb": 0.02,
+        "ingress": 0.0,
+    },
+}
+
+# ── Dedicated Interconnect Port Pricing (monthly, approximate) ───────────────
+INTERCONNECT_PORT_PRICING = {
+    "aws":   {"10g": 1638, "100g": 16380},
+    "azure": {"10g": 1700, "100g": 17000},
+    "gcp":   {"10g": 1700, "100g": 17000},
+    "oci":   {"10g": 438,  "100g": 4380, "note": "~75% cheaper than AWS/Azure/GCP"},
+    "ibm":   {"10g": 1800},
+}
+
+# ── BGP Configuration Constants (from AWS Direct Connect docs) ───────────────
+BGP_CONSTANTS = {
+    "aws_asn": 7224,
+    "private_asn_2byte": {"min": 64512, "max": 65534},
+    "private_asn_4byte": {"min": 4200000000, "max": 4294967294},
+    "dx_community_tags": {
+        "local_region": "7224:9100",
+        "continent": "7224:9200",
+        "global": "7224:9300",
+        "origin_same_region": "7224:8100",
+        "origin_same_continent": "7224:8200",
+        "medium_local_pref": "7224:7200",
+    },
+    "reserved_range": "7224:1 – 7224:65535",
+    "default_hold_time_sec": 90,
+    "bfd_interval_ms": 300,
+    "bfd_detect_time_ms": 900,
+    "routing_evaluation_order": [
+        "1. Longest prefix match",
+        "2. Local preference (recommended for active/passive)",
+        "3. AS_PATH length",
+        "4. MED (NOT recommended by AWS)",
+        "5. ECMP across equal paths",
+    ],
+}
+
+# ── Failover Detection Timers ────────────────────────────────────────────────
+FAILOVER_TIMERS = {
+    "bgp_default": {"detect_sec": 90, "description": "Standard BGP keepalive/hold (3 × 30s)"},
+    "bfd": {"detect_sec": 0.9, "description": "BFD keepalive (3 × 300ms) — sub-second detection"},
+    "ospf": {"detect_sec": 40, "description": "OSPF dead interval (4 × 10s hello)"},
+    "ospf_fast": {"detect_sec": 1, "description": "OSPF fast-hello (3 × 333ms)"},
+    "vrrp": {"detect_sec": 3, "description": "VRRP master-down (3 × advert interval)"},
+    "hsrp": {"detect_sec": 10, "description": "HSRP default hold time"},
+    "lacp": {"detect_sec": 3, "description": "LACP short timeout (3 × 1s)"},
+}
+
+# ── Anti-Patterns (from AWS re:Invent ARC322) ───────────────────────────────
+CLOUD_NETWORKING_ANTIPATTERNS = [
+    {"id": "AP-001", "title": "DX locations not in Associated Region",
+     "description": "Using DX locations that are not co-located with the workload AWS Region — will NOT qualify for 99.99% SLA even with redundant connections",
+     "severity": "high", "recommendation": "Ensure at least one DX location is in the Associated Region"},
+    {"id": "AP-002", "title": "Backup DX Gateway for resilience",
+     "description": "DXGW is a configuration overlay, not infrastructure — adding a backup DXGW does NOT improve availability",
+     "severity": "medium", "recommendation": "Focus on diverse DX locations instead of backup DXGW"},
+    {"id": "AP-003", "title": "Backup Transit Gateway for data plane",
+     "description": "TGW uses Hyperplane distributed nodes with 99.99% SLA — a backup TGW does NOT improve data plane resilience",
+     "severity": "medium", "recommendation": "Use Dev TGW only for management plane safety (config testing via CI/CD)"},
+    {"id": "AP-004", "title": "BGP-only failover without BFD",
+     "description": "Default BGP hold timer is 90 seconds — unacceptable for production. BFD detects failure in <1 second",
+     "severity": "high", "recommendation": "Always enable BFD on all DX/ER virtual interfaces"},
+    {"id": "AP-005", "title": "Cross-zone LB enabled on NLB for resilience",
+     "description": "Counter-intuitively, enabling cross-zone LB on NLB REDUCES resilience — a failed AZ drags down healthy AZs instead of being cleanly removed",
+     "severity": "medium", "recommendation": "Disable cross-zone LB; use Route 53 health checks to remove failed AZ endpoints"},
+    {"id": "AP-006", "title": "LAG for high availability",
+     "description": "LAG terminates on a SINGLE AWS device — NOT suitable for HA. All connections share one device SPOF",
+     "severity": "high", "recommendation": "Use separate connections at diverse locations instead of LAG for HA"},
+    {"id": "AP-007", "title": "Customer-side policing only for noisy neighbor",
+     "description": "Policing on customer router only works on ingress — does NOT protect from UDP floods originating from AWS side",
+     "severity": "medium", "recommendation": "Use Transit VIF + GRE tunnels with separate TGW route tables for hard traffic isolation"},
+    {"id": "AP-008", "title": "Single-VIF DX without VPN backup",
+     "description": "A single DX VIF with no VPN backup has no failover path — internet VPN should always be configured as backup",
+     "severity": "high", "recommendation": "Configure Site-to-Site VPN as automatic DX backup"},
+]
+
 # Default auto-populated components per CSP group (used when group_type="full")
 CSP_GROUP_DEFAULTS = {
     "aws": [

@@ -73,6 +73,29 @@ from tools.network.discovery import (  # noqa: E402
 from tools.network.bandwidth_sim import (  # noqa: E402
     run_bandwidth_sim, generate_report_html,
 )
+from tools.network.cloud_architecture import (  # noqa: E402
+    analyze_cloud_topology,
+    score_hybrid_resiliency,
+    detect_connectivity_pattern,
+    detect_antipatterns,
+    get_csp_equivalent,
+    get_all_equivalents,
+    get_equivalence_matrix,
+    estimate_data_transfer_cost,
+    compare_egress_costs,
+    estimate_interconnect_monthly_cost,
+)
+from tools.network.constants import (  # noqa: E402  # extended objects
+    CLOUD_OBJECTS_EXTENDED,
+    CSP_EQUIVALENCE,
+    RESILIENCY_TIERS,
+    HYBRID_CONNECTIVITY_PATTERNS,
+    CLOUD_EGRESS_PRICING,
+    INTERCONNECT_PORT_PRICING,
+    BGP_CONSTANTS,
+    FAILOVER_TIMERS,
+    CLOUD_NETWORKING_ANTIPATTERNS,
+)
 
 
 def create_network_blueprint():
@@ -12670,6 +12693,153 @@ Output ONLY the JSON object."""
         ).fetchall()
         conn.close()
         return jsonify([_row_to_dict(r) for r in rows])
+
+    # ── Cloud Architecture API ────────────────────────────────────────────
+
+    @bp.route("/api/cloud/objects-extended", methods=["GET"])
+    @nc_login_required
+    def api_cloud_objects_extended():
+        """Return extended cloud networking objects (DX Gateway, PrivateLink, etc.)."""
+        return jsonify(CLOUD_OBJECTS_EXTENDED)
+
+    @bp.route("/api/cloud/equivalence", methods=["GET"])
+    @nc_login_required
+    def api_csp_equivalence_matrix():
+        """Return full CSP service equivalence matrix."""
+        return jsonify(get_equivalence_matrix())
+
+    @bp.route("/api/cloud/equivalence/<service_key>", methods=["GET"])
+    @nc_login_required
+    def api_csp_equivalence_service(service_key):
+        """Return equivalents for a specific service across all CSPs."""
+        return jsonify(get_all_equivalents(service_key))
+
+    @bp.route("/api/cloud/equivalence/<service_key>/<target_csp>", methods=["GET"])
+    @nc_login_required
+    def api_csp_equivalence_lookup(service_key, target_csp):
+        """Look up equivalent service on a specific CSP."""
+        return jsonify(get_csp_equivalent(service_key, target_csp))
+
+    @bp.route("/api/cloud/resiliency-tiers", methods=["GET"])
+    @nc_login_required
+    def api_resiliency_tiers():
+        """Return resiliency tier definitions."""
+        return jsonify(RESILIENCY_TIERS)
+
+    @bp.route("/api/cloud/connectivity-patterns", methods=["GET"])
+    @nc_login_required
+    def api_connectivity_patterns():
+        """Return hybrid connectivity patterns catalog."""
+        return jsonify(HYBRID_CONNECTIVITY_PATTERNS)
+
+    @bp.route("/api/cloud/antipatterns", methods=["GET"])
+    @nc_login_required
+    def api_antipatterns_catalog():
+        """Return cloud networking anti-patterns catalog."""
+        return jsonify(CLOUD_NETWORKING_ANTIPATTERNS)
+
+    @bp.route("/api/cloud/bgp-constants", methods=["GET"])
+    @nc_login_required
+    def api_bgp_constants():
+        """Return BGP configuration constants (ASN, communities, timers)."""
+        return jsonify(BGP_CONSTANTS)
+
+    @bp.route("/api/cloud/failover-timers", methods=["GET"])
+    @nc_login_required
+    def api_failover_timers():
+        """Return failover detection timer reference."""
+        return jsonify(FAILOVER_TIMERS)
+
+    @bp.route("/api/cloud/egress-pricing", methods=["GET"])
+    @nc_login_required
+    def api_egress_pricing():
+        """Return cloud egress pricing model across all CSPs."""
+        return jsonify(CLOUD_EGRESS_PRICING)
+
+    @bp.route("/api/cloud/egress-compare", methods=["POST"])
+    @nc_login_required
+    def api_egress_compare():
+        """Compare egress costs across CSPs for a given volume."""
+        data = request.get_json(silent=True) or {}
+        monthly_gb = data.get("monthly_gb", 1000)
+        destination = data.get("destination", "internet")
+        return jsonify(compare_egress_costs(monthly_gb, destination))
+
+    @bp.route("/api/cloud/interconnect-cost", methods=["POST"])
+    @nc_login_required
+    def api_interconnect_cost():
+        """Estimate monthly cost for dedicated interconnect."""
+        data = request.get_json(silent=True) or {}
+        csp = data.get("csp", "aws")
+        speed = data.get("speed_gbps", 10)
+        egress_gb = data.get("monthly_egress_gb", 0)
+        return jsonify(estimate_interconnect_monthly_cost(csp, speed, egress_gb))
+
+    @bp.route("/api/topologies/<topo_id>/cloud-analysis", methods=["POST"])
+    @nc_login_required
+    def api_cloud_analysis(topo_id):
+        """Run comprehensive cloud architecture analysis on a topology."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+        graph = json.loads(row[0] or "{}")
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        result = analyze_cloud_topology(nodes, edges)
+        result["topology_id"] = topo_id
+        _audit("cloud_analysis", "topology", topo_id, json.dumps({
+            "score": result["cloud_health_score"],
+            "rating": result["cloud_health_rating"],
+        }))
+        return jsonify(result)
+
+    @bp.route("/api/topologies/<topo_id>/resiliency", methods=["POST"])
+    @nc_login_required
+    def api_resiliency_score(topo_id):
+        """Score hybrid resiliency tier for a topology."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+        graph = json.loads(row[0] or "{}")
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        return jsonify(score_hybrid_resiliency(nodes, edges))
+
+    @bp.route("/api/topologies/<topo_id>/connectivity-patterns", methods=["POST"])
+    @nc_login_required
+    def api_detect_patterns(topo_id):
+        """Detect hybrid connectivity patterns in a topology."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+        graph = json.loads(row[0] or "{}")
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        return jsonify(detect_connectivity_pattern(nodes, edges))
+
+    @bp.route("/api/topologies/<topo_id>/antipatterns", methods=["POST"])
+    @nc_login_required
+    def api_detect_antipatterns(topo_id):
+        """Detect cloud networking anti-patterns in a topology."""
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Topology not found"}), 404
+        graph = json.loads(row[0] or "{}")
+        nodes = graph.get("nodes", [])
+        edges = graph.get("edges", [])
+        return jsonify(detect_antipatterns(nodes, edges))
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)",

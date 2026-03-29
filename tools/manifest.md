@@ -1566,3 +1566,9 @@
 |------|------|-------------|-------|--------|
 | Bandwidth Sim | tools\network\bandwidth_sim.py | Auto-registered: network/bandwidth_sim.py | --json | JSON |
 | Nl Query | tools\network\nl_query.py | Auto-registered: network/nl_query.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cloud Architecture | tools\network\cloud_architecture.py | Auto-registered: network/cloud_architecture.py | --json | JSON |
