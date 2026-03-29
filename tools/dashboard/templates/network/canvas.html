@@ -2378,5 +2378,11 @@ async function cfgDownloadAll() {
     });
   }
 })();
+
+// ── Close export dropdown on outside click ──────────────────────────────
+document.addEventListener('click', function(e) {
+  var wrap = document.getElementById('export-dropdown-wrap');
+  if (wrap && !wrap.contains(e.target)) wrap.classList.remove('open');
+});
 </script>
 {% endblock %}

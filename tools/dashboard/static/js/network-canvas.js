@@ -1812,7 +1812,7 @@ function _checkLocalRecovery() {
     // Show recovery banner
     const banner = document.createElement('div');
     banner.id = 'recovery-banner';
-    banner.style.cssText = 'position:fixed;top:90px;left:50%;transform:translateX(-50%);z-index:300;background:#2b1a0f;border:1px solid #f39c12;border-radius:8px;padding:12px 20px;color:#eaeaea;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,0.4);';
+    banner.style.cssText = 'position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:300;background:#2b1a0f;border:1px solid #f39c12;border-radius:8px;padding:12px 20px;color:#eaeaea;font-size:13px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 20px rgba(0,0,0,0.4);';
     banner.innerHTML = `
       <span style="color:#f39c12;font-size:16px;">&#9888;</span>
       <span>Local backup found (${entry.nodeCount} nodes, ${new Date(entry.timestamp).toLocaleString()})</span>

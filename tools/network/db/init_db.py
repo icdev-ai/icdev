@@ -2429,71 +2429,96 @@ TEMPLATES = [
     # ── AWS Multi-Home DX to CAN ──────────────────────────────────────────
     {
         "id": "tpl-aws-dx-can",
-        "name": "AWS Multi-Home Direct Connect to Campus (CAN)",
+        "name": "AWS Well-Architected Hybrid DX to Campus (CAN)",
         "category": "Hybrid Cloud",
-        "description": "AWS VPC with dual Direct Connect circuits (diverse paths) through meet-me rooms at colocation facilities, terminating at a campus area network with redundant border routers, Transit Gateway hub, and on-prem firewall pair.",
-        "tags": json.dumps(["aws", "direct-connect", "hybrid", "campus", "multi-home", "dx", "meet-me-room", "cross-connect"]),
+        "description": "AWS Well-Architected hybrid networking: dual DX with BFD, DX Gateway, VPN backup, Transit Gateway hub, PrivateLink, Shield, Flow Logs. Maximum resiliency (99.99% SLA) through diverse colocation facilities. Based on AWS Hybrid Networking Lens.",
+        "tags": json.dumps(["aws", "direct-connect", "hybrid", "campus", "multi-home", "dx", "well-architected", "bfd", "vpn-backup", "privatelink", "shield", "99.99-sla"]),
         "graph_json": json.dumps({
             "nodes": [
-                # AWS Cloud
-                _node("aws-tgw", "Transit Gateway", "aws-tgw", 500, 60),
-                _node("aws-vpc1", "Prod VPC", "aws-vpc", 350, 180),
-                _node("aws-vpc2", "Shared VPC", "aws-vpc", 650, 180),
-                _node("aws-sub1", "Prod Subnet", "aws-subnet", 350, 300),
-                _node("aws-sub2", "Shared Subnet", "aws-subnet", 650, 300),
-                _node("aws-nfw", "Network Firewall", "aws-nfw", 500, 300),
-                _node("aws-r53", "Route 53", "aws-r53", 800, 60),
-                # Direct Connect (dual)
-                _node("dx-a", "DX Circuit A", "aws-dx", 250, 450),
-                _node("dx-b", "DX Circuit B", "aws-dx", 750, 450),
-                # Meet-Me Rooms at colocation facilities
-                _node("mmr-a", "MMR Equinix DC5", "meet-me-room", 250, 570),
-                _node("mmr-b", "MMR CoreSite VA1", "meet-me-room", 750, 570),
-                # Cross-connects (physical fiber in MMR)
-                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 660),
-                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 660),
-                # Campus border
-                _node("br1", "Border-RTR-1", "router", 250, 780,
-                      {"config": {"asn": "65001", "protocol": "BGP"}}),
-                _node("br2", "Border-RTR-2", "router", 750, 780,
-                      {"config": {"asn": "65001", "protocol": "BGP"}}),
-                _node("fw1", "Campus-FW-1", "firewall", 350, 930),
-                _node("fw2", "Campus-FW-2", "firewall", 650, 930),
+                # AWS Cloud — Well-Architected Hybrid Networking
+                _node("aws-tgw", "Transit Gateway", "aws-tgw", 500, 40),
+                _node("aws-dxgw", "DX Gateway", "aws-dx-gw", 500, 140),
+                _node("aws-vpc1", "Prod VPC", "aws-vpc", 300, 180,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.1.0.0/16"}}),
+                _node("aws-vpc2", "Shared Svcs VPC", "aws-vpc", 700, 180,
+                      {"config": {"flow_logs_enabled": True, "cidr": "10.2.0.0/16"}}),
+                _node("aws-sub1", "Prod Private Subnet", "aws-subnet", 200, 300),
+                _node("aws-sub2", "Prod Public Subnet", "aws-subnet", 400, 300),
+                _node("aws-sub3", "Shared Subnet", "aws-subnet", 700, 300),
+                _node("aws-nfw", "Network Firewall", "aws-nfw", 300, 400),
+                _node("aws-r53", "Route 53", "aws-r53", 900, 40),
+                _node("aws-shield", "Shield Advanced", "aws-shield", 900, 140),
+                _node("aws-pl", "PrivateLink (S3/DDB)", "aws-privatelink", 700, 400),
+                _node("aws-alb", "ALB", "aws-alb", 100, 400),
+                # VPN Backup (Well-Architected: always have VPN backup for DX)
+                _node("aws-vpn", "VPN Backup", "aws-vpn", 500, 520,
+                      {"config": {"tunnels": 2, "ecmp": True}}),
+                # Direct Connect (dual diverse locations — 99.99% Maximum Resiliency)
+                _node("dx-a", "DX Circuit A (10G)", "aws-dx", 250, 520,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "vif_type": "transit", "location": "Equinix DC5"}}),
+                _node("dx-b", "DX Circuit B (10G)", "aws-dx", 750, 520,
+                      {"config": {"bfd_enabled": True, "bandwidth": "10G",
+                                  "vif_type": "transit", "location": "CoreSite VA1"}}),
+                # Meet-Me Rooms at diverse colocation facilities
+                _node("mmr-a", "MMR Equinix DC5", "meet-me-room", 250, 640),
+                _node("mmr-b", "MMR CoreSite VA1", "meet-me-room", 750, 640),
+                # Cross-connects
+                _node("xx-a", "XConn-A SMF", "cross-connect", 250, 720),
+                _node("xx-b", "XConn-B SMF", "cross-connect", 750, 720),
+                # Campus border (dual routers with BFD)
+                _node("br1", "Border-RTR-1", "router", 250, 840,
+                      {"config": {"asn": "65001", "protocol": "BGP", "bfd_enabled": True}}),
+                _node("br2", "Border-RTR-2", "router", 750, 840,
+                      {"config": {"asn": "65001", "protocol": "BGP", "bfd_enabled": True}}),
+                _node("fw1", "Campus-FW-1 (HA)", "firewall", 350, 980,
+                      {"config": {"ha_mode": "active-standby", "default_policy": "deny-all"}}),
+                _node("fw2", "Campus-FW-2 (HA)", "firewall", 650, 980,
+                      {"config": {"ha_mode": "active-standby", "default_policy": "deny-all"}}),
                 # Campus core
-                _node("core1", "Core-SW-1", "switch-l3", 400, 1080),
-                _node("core2", "Core-SW-2", "switch-l3", 600, 1080),
+                _node("core1", "Core-SW-1", "switch-l3", 400, 1120),
+                _node("core2", "Core-SW-2", "switch-l3", 600, 1120),
                 # Distribution
-                _node("dist1", "Dist-A", "switch-l3", 300, 1230),
-                _node("dist2", "Dist-B", "switch-l3", 700, 1230),
+                _node("dist1", "Dist-A", "switch-l3", 300, 1260),
+                _node("dist2", "Dist-B", "switch-l3", 700, 1260),
                 # Access
-                _node("acc1", "Access-1", "switch-l2", 200, 1380),
-                _node("acc2", "Access-2", "switch-l2", 500, 1380),
-                _node("acc3", "Access-3", "switch-l2", 800, 1380),
+                _node("acc1", "Access-1", "switch-l2", 200, 1400),
+                _node("acc2", "Access-2", "switch-l2", 500, 1400),
+                _node("acc3", "Access-3", "switch-l2", 800, 1400),
             ],
             "edges": [
-                # AWS internal
+                # AWS internal — Well-Architected
+                _edge("aws-tgw", "aws-dxgw", "DX GW Assoc", ""),
                 _edge("aws-tgw", "aws-vpc1", "TGW Attach", ""),
                 _edge("aws-tgw", "aws-vpc2", "TGW Attach", ""),
                 _edge("aws-vpc1", "aws-sub1", "", ""),
-                _edge("aws-vpc2", "aws-sub2", "", ""),
-                _edge("aws-sub1", "aws-nfw", "", ""),
-                _edge("aws-sub2", "aws-nfw", "", ""),
+                _edge("aws-vpc1", "aws-sub2", "", ""),
+                _edge("aws-vpc2", "aws-sub3", "", ""),
+                _edge("aws-sub1", "aws-nfw", "Inspection", ""),
+                _edge("aws-sub2", "aws-nfw", "Inspection", ""),
                 _edge("aws-tgw", "aws-r53", "DNS", ""),
-                # DX connections (diverse paths)
-                _edge("aws-tgw", "dx-a", "DX 10G Primary", "BGP"),
-                _edge("aws-tgw", "dx-b", "DX 10G Secondary", "BGP"),
+                _edge("aws-vpc1", "aws-pl", "PrivateLink", ""),
+                _edge("aws-sub2", "aws-alb", "L7 LB", ""),
+                _edge("aws-alb", "aws-shield", "DDoS", ""),
+                # DX via DX Gateway (global resource — NOT a SPOF per ARC322)
+                _edge("aws-dxgw", "dx-a", "Transit VIF + BFD", "BGP"),
+                _edge("aws-dxgw", "dx-b", "Transit VIF + BFD", "BGP"),
+                # VPN backup (automatic failover when DX fails)
+                _edge("aws-tgw", "aws-vpn", "VPN Backup (2 tunnels)", "IPSec"),
                 # DX to Meet-Me Rooms
                 _edge("dx-a", "mmr-a", "DX Handoff", ""),
                 _edge("dx-b", "mmr-b", "DX Handoff", ""),
-                # Cross-connects in MMR (physical fiber)
+                # Cross-connects in MMR
                 _edge("mmr-a", "xx-a", "SMF XConn", ""),
                 _edge("mmr-b", "xx-b", "SMF XConn", ""),
-                # Cross-connects to border routers
-                _edge("xx-a", "br1", "10GbE", "BGP"),
-                _edge("xx-b", "br2", "10GbE", "BGP"),
-                # Cross-connect failover (diverse MMR paths)
+                # Cross-connects to border routers (diverse paths)
+                _edge("xx-a", "br1", "10GbE + BFD", "BGP"),
+                _edge("xx-b", "br2", "10GbE + BFD", "BGP"),
                 _edge("xx-a", "br2", "10GbE Backup", "BGP"),
                 _edge("xx-b", "br1", "10GbE Backup", "BGP"),
+                # VPN lands on border routers too
+                _edge("aws-vpn", "br1", "IPSec Tunnel", "IPSec"),
+                _edge("aws-vpn", "br2", "IPSec Tunnel", "IPSec"),
                 # Border to firewalls
                 _edge("br1", "fw1", "10GbE", "OSPF"),
                 _edge("br2", "fw2", "10GbE", "OSPF"),
