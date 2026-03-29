@@ -625,6 +625,41 @@ CREATE TABLE IF NOT EXISTS nc_project_phases (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Alert Thresholds (P1) ─────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_alert_rules (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    metric      TEXT NOT NULL,            -- peering_utilization, compliance_pct, eol_months, port_utilization, power_pct, rack_utilization
+    operator    TEXT DEFAULT 'gt',        -- gt, lt, eq, gte, lte
+    threshold   REAL NOT NULL,
+    severity    TEXT DEFAULT 'warning',   -- info, warning, critical
+    enabled     INTEGER DEFAULT 1,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_alert_events (
+    id          TEXT PRIMARY KEY,
+    rule_id     TEXT REFERENCES nc_alert_rules(id),
+    rule_name   TEXT,
+    severity    TEXT,
+    message     TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id   TEXT,
+    acknowledged INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ── Favorites/Pinned Views (P2) ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_favorites (
+    id          TEXT PRIMARY KEY,
+    entity_type TEXT NOT NULL,            -- project, topology, peering
+    entity_id   TEXT NOT NULL,
+    label       TEXT,
+    user_id     TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(entity_type, entity_id, user_id)
+);
+
 -- ── Peering Agreements ────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nc_peering_agreements (
     id              TEXT PRIMARY KEY,

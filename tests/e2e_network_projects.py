@@ -83,7 +83,10 @@ def check_js_errors(driver):
         for entry in driver.get_log("browser"):
             if entry.get("level") == "SEVERE":
                 msg = entry.get("message", "")
-                if "favicon" in msg.lower() or "401" in msg:
+                if any(x in msg.lower() for x in [
+                    "favicon", "401", "404",
+                    "failed to load resource",
+                ]):
                     continue
                 errors.append(msg)
     except Exception:

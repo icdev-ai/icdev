@@ -13,6 +13,9 @@
   </div>
 </div>
 
+<!-- Morning Dashboard -->
+<div id="morning-dashboard" style="margin-bottom:20px;"></div>
+
 <!-- Project Filter Bar -->
 {% if all_projects %}
 <div class="project-filter-bar">
@@ -284,5 +287,63 @@ function filterByProject(pid) {
   if (pid) window.location.href = NC_BASE + '/?project=' + pid;
   else window.location.href = NC_BASE + '/';
 }
+
+// Morning Dashboard
+async function loadMorningDashboard() {
+  try {
+    const r = await fetch(NC_BASE + '/api/morning-dashboard');
+    const d = await r.json();
+    const s = d.stats || {};
+    const el = document.getElementById('morning-dashboard');
+
+    let html = '<div class="stats-bar" style="margin-bottom:12px;">';
+    html += `<div class="stat-card"><div class="stat-value">${s.total_projects}</div><div class="stat-label">Projects</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value">${s.total_topologies}</div><div class="stat-label">Topologies</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value">${s.active_peering}</div><div class="stat-label">Active Peering</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value ${s.pending_reviews > 0 ? 'text-warning' : ''}">${s.pending_reviews}</div><div class="stat-label">Pending Reviews</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value ${s.compliance_alerts > 0 ? 'text-danger' : 'text-success'}">${s.compliance_alerts}</div><div class="stat-label">Compliance Alerts</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value ${s.eol_alerts > 0 ? 'text-warning' : ''}">${s.eol_alerts}</div><div class="stat-label">EOL Alerts</div></div>`;
+    html += '</div>';
+
+    // Alerts row
+    const hasAlerts = d.pending_reviews.length || d.compliance_alerts.length || d.eol_alerts.length;
+    if (hasAlerts) {
+      html += '<div class="dashboard-grid" style="margin-bottom:16px;">';
+
+      // Pending reviews
+      if (d.pending_reviews.length) {
+        html += '<section class="panel"><div class="panel-header"><h2 class="panel-title" style="color:var(--warning);">Pending Reviews</h2></div><div style="padding:8px;">';
+        d.pending_reviews.forEach(r => {
+          html += `<div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:12px;"><span class="health-pill pill-yellow">${r.board}</span> <a href="${NC_BASE}/projects">${r.project_name}</a> <span style="color:var(--text-dim);">Phase ${r.phase}${r.scheduled_date ? ' — ' + r.scheduled_date : ''}</span></div>`;
+        });
+        html += '</div></section>';
+      }
+
+      // Compliance + EOL alerts combined
+      html += '<div class="panel-stack">';
+      if (d.compliance_alerts.length) {
+        html += '<section class="panel"><div class="panel-header"><h2 class="panel-title" style="color:var(--danger);">Compliance Below 80%</h2></div><div style="padding:8px;">';
+        d.compliance_alerts.forEach(a => {
+          html += `<div style="padding:3px 0;font-size:12px;"><a href="${NC_BASE}/projects/${a.project_id}">${a.project}</a> — <span class="health-pill pill-red">${a.compliance_pct}%</span></div>`;
+        });
+        html += '</div></section>';
+      }
+      if (d.eol_alerts.length) {
+        html += '<section class="panel"><div class="panel-header"><h2 class="panel-title" style="color:var(--warning);">Approaching EOL</h2></div><div style="padding:8px;">';
+        d.eol_alerts.slice(0, 5).forEach(a => {
+          const color = a.past_eol ? 'pill-red' : a.months_remaining <= 6 ? 'pill-yellow' : 'pill-blue';
+          html += `<div style="padding:3px 0;font-size:12px;"><strong>${a.device}</strong> (${a.model || a.topology}) — <span class="health-pill ${color}">${a.past_eol ? 'PAST EOL' : a.months_remaining + ' mo'}</span> ${a.eol_date}</div>`;
+        });
+        html += '</div></section>';
+      }
+      html += '</div></div>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    // Morning dashboard is best-effort
+  }
+}
+loadMorningDashboard();
 </script>
 {% endblock %}

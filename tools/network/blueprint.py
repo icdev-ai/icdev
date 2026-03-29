@@ -304,6 +304,133 @@ def create_network_blueprint():
                                       "simulations": total_sims,
                                       "templates": len(templates)})
 
+    @bp.route("/api/morning-dashboard", methods=["GET"])
+    @nc_login_required
+    def nc_api_morning_dashboard():
+        """Architect's personalized morning dashboard data."""
+        conn = get_connection()
+        now = datetime.now(timezone.utc)
+
+        # My projects (recent activity)
+        projects = [_row_to_dict(r) for r in conn.execute(
+            "SELECT id, name, status, owner, updated_at "
+            "FROM nc_projects ORDER BY updated_at DESC LIMIT 10"
+        ).fetchall()]
+
+        # Pending reviews
+        pending_reviews = [_row_to_dict(r) for r in conn.execute(
+            "SELECT br.id, br.phase, br.scheduled_date, "
+            "rb.short_name AS board, rb.name AS board_name, "
+            "p.name AS project_name "
+            "FROM nc_board_reviews br "
+            "JOIN nc_review_boards rb ON rb.id=br.board_id "
+            "JOIN nc_projects p ON p.id=br.project_id "
+            "WHERE br.status='pending' "
+            "ORDER BY br.scheduled_date"
+        ).fetchall()]
+
+        # Compliance alerts (projects below 80%)
+        compliance_alerts = []
+        for p in projects:
+            topo_ids = [r[0] for r in conn.execute(
+                "SELECT topology_id FROM nc_project_topologies "
+                "WHERE project_id=?", (p["id"],)
+            ).fetchall()]
+            tp = tf = 0
+            for tid in topo_ids:
+                row = conn.execute(
+                    "SELECT passed, failed FROM nc_compliance_checks "
+                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,)
+                ).fetchone()
+                if row:
+                    tp += row[0] or 0
+                    tf += row[1] or 0
+            total = tp + tf
+            if total > 0:
+                pct = round(tp * 100 / total)
+                if pct < 80:
+                    compliance_alerts.append({
+                        "project": p["name"],
+                        "project_id": p["id"],
+                        "compliance_pct": pct,
+                    })
+
+        # Upcoming EOL (devices across all topologies)
+        eol_alerts = []
+        for r in conn.execute(
+            "SELECT t.name AS topo_name, t.graph_json "
+            "FROM topologies t LIMIT 20"
+        ).fetchall():
+            try:
+                graph = json.loads(r["graph_json"])
+            except Exception:
+                continue
+            for n in graph.get("nodes", []):
+                cfg = n.get("config") or n.get("configData") or {}
+                eol = cfg.get("eol_date") or cfg.get("eosup_date")
+                if eol:
+                    try:
+                        dt = datetime.fromisoformat(
+                            eol + "T00:00:00+00:00"
+                            if "T" not in eol else
+                            eol.replace("Z", "+00:00"))
+                        months = (dt - now).days / 30.44
+                        if months <= 12:
+                            eol_alerts.append({
+                                "device": n.get("label", ""),
+                                "model": cfg.get("model", ""),
+                                "eol_date": eol,
+                                "months_remaining": round(months, 1),
+                                "topology": r["name"],
+                                "past_eol": months <= 0,
+                            })
+                    except (ValueError, TypeError):
+                        pass
+
+        # Recent activity
+        activity = [_row_to_dict(r) for r in conn.execute(
+            "SELECT action, entity_type, details, ts "
+            "FROM nc_audit ORDER BY ts DESC LIMIT 15"
+        ).fetchall()]
+
+        # Unread notifications
+        unread = conn.execute(
+            "SELECT COUNT(*) FROM nc_notifications WHERE is_read=0"
+        ).fetchone()[0]
+
+        # Quick stats
+        total_projects = conn.execute(
+            "SELECT COUNT(*) FROM nc_projects"
+        ).fetchone()[0]
+        total_topos = conn.execute(
+            "SELECT COUNT(*) FROM topologies"
+        ).fetchone()[0]
+        total_peers = conn.execute(
+            "SELECT COUNT(*) FROM nc_peering_agreements "
+            "WHERE status='operational'"
+        ).fetchone()[0]
+
+        conn.close()
+        return jsonify({
+            "projects": projects,
+            "pending_reviews": pending_reviews,
+            "compliance_alerts": compliance_alerts,
+            "eol_alerts": sorted(
+                eol_alerts, key=lambda x: x["months_remaining"]
+            )[:10],
+            "activity": activity,
+            "unread_notifications": unread,
+            "stats": {
+                "total_projects": total_projects,
+                "total_topologies": total_topos,
+                "active_peering": total_peers,
+                "pending_reviews": len(pending_reviews),
+                "compliance_alerts": len(compliance_alerts),
+                "eol_alerts": len(eol_alerts),
+            },
+        })
+
     @bp.route("/canvas/new")
     @nc_login_required
     def nc_canvas_new():
@@ -2545,6 +2672,340 @@ def create_network_blueprint():
     @nc_login_required
     def nc_map_view():
         return render_template("network/map.html")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # P1: New Build Wizard + Alert Engine + Cross-Module Validation
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/wizard/new-build", methods=["POST"])
+    @nc_login_required
+    def nc_api_wizard_new_build():
+        """Create a new network build: project + topology + phases + workflow in one call."""
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        now = _now()
+
+        # Step 1: Create project
+        pid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_projects "
+            "(id, name, customer_id, description, status, owner, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            (pid, data.get("name", "New Network Build"),
+             data.get("customer_id"),
+             data.get("description", ""),
+             "draft", data.get("owner", ""), now, now)
+        )
+
+        # Step 2: Create topology (optional template)
+        topo_id = str(_uuid.uuid4())
+        graph = data.get("graph_json", {"nodes": [], "edges": []})
+        if isinstance(graph, dict):
+            graph = json.dumps(graph)
+        conn.execute(
+            "INSERT INTO topologies "
+            "(id, name, description, graph_json, classification, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            (topo_id, data.get("topology_name",
+                               data.get("name", "New Topology")),
+             "", graph, data.get("classification", "public"),
+             now, now)
+        )
+        conn.execute(
+            "INSERT INTO nc_project_topologies "
+            "(project_id, topology_id) VALUES (?,?)",
+            (pid, topo_id)
+        )
+
+        # Step 3: Initialize phases
+        for num, name in [(1, "Concept"), (2, "Design"),
+                          (3, "Approval"), (4, "Post-Deploy")]:
+            conn.execute(
+                "INSERT INTO nc_project_phases "
+                "(id, project_id, phase_num, phase_name, status, "
+                " entered_at, created_at) VALUES (?,?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), pid, num, name,
+                 "active" if num == 1 else "pending",
+                 now if num == 1 else None, now)
+            )
+
+        # Step 4: Initialize case workflow
+        wid = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO nc_case_workflows "
+            "(id, project_id, current_state, lifecycle_json, "
+            " created_at, updated_at) VALUES (?,?,?,?,?,?)",
+            (wid, pid, "concept",
+             json.dumps(_NDC_LIFECYCLE), now, now)
+        )
+        conn.execute(
+            "INSERT INTO nc_case_history "
+            "(workflow_id, from_state, to_state, comment, changed_at) "
+            "VALUES (?,?,?,?,?)",
+            (wid, "", "concept", "Created via New Build Wizard", now)
+        )
+
+        conn.commit()
+        conn.close()
+        _audit("WIZARD_NEW_BUILD", "project", pid,
+               data.get("name", ""))
+        return jsonify({
+            "project_id": pid,
+            "topology_id": topo_id,
+            "workflow_id": wid,
+            "phases": 4,
+            "next_step": f"/network/canvas/{topo_id}",
+        }), 201
+
+    @bp.route("/wizard")
+    @nc_login_required
+    def nc_wizard_page():
+        return render_template("network/wizard.html")
+
+    # ── Alert/Threshold Engine ────────────────────────────────────────────
+    @bp.route("/api/alert-rules", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_alert_rules():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_alert_rules ORDER BY metric, name"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/alert-rules", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_alert_rule():
+        data = request.get_json(force=True, silent=True) or {}
+        return _crud_create("nc_alert_rules", "", data,
+                            ["name", "metric", "operator", "threshold",
+                             "severity", "enabled"])
+
+    @bp.route("/api/alert-rules/<rid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_alert_rule(rid):
+        return _crud_delete("nc_alert_rules", rid)
+
+    @bp.route("/api/alert-events", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_alert_events():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_alert_events "
+            "ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
+        unack = conn.execute(
+            "SELECT COUNT(*) FROM nc_alert_events WHERE acknowledged=0"
+        ).fetchone()[0]
+        conn.close()
+        return jsonify({
+            "events": [_row_to_dict(r) for r in rows],
+            "unacknowledged": unack,
+        })
+
+    @bp.route("/api/alert-events/run-check", methods=["POST"])
+    @nc_login_required
+    def nc_api_run_alert_check():
+        """Evaluate all enabled alert rules against current data."""
+        conn = get_connection()
+        rules = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_alert_rules WHERE enabled=1"
+        ).fetchall()]
+        now = _now()
+        new_events = 0
+
+        for rule in rules:
+            metric = rule.get("metric", "")
+            op = rule.get("operator", "gt")
+            threshold = float(rule.get("threshold", 0))
+
+            def _check(val, entity_type="", entity_id="", msg=""):
+                nonlocal new_events
+                triggered = False
+                if op == "gt" and val > threshold:
+                    triggered = True
+                elif op == "lt" and val < threshold:
+                    triggered = True
+                elif op == "gte" and val >= threshold:
+                    triggered = True
+                elif op == "lte" and val <= threshold:
+                    triggered = True
+                if triggered:
+                    conn.execute(
+                        "INSERT INTO nc_alert_events "
+                        "(id, rule_id, rule_name, severity, message, "
+                        " entity_type, entity_id, created_at) "
+                        "VALUES (?,?,?,?,?,?,?,?)",
+                        (str(_uuid.uuid4()), rule["id"],
+                         rule["name"], rule.get("severity", "warning"),
+                         msg, entity_type, entity_id, now)
+                    )
+                    new_events += 1
+
+            if metric == "compliance_pct":
+                for p in conn.execute(
+                    "SELECT id, name FROM nc_projects"
+                ).fetchall():
+                    tids = [r[0] for r in conn.execute(
+                        "SELECT topology_id FROM nc_project_topologies "
+                        "WHERE project_id=?", (p[0],)
+                    ).fetchall()]
+                    tp = tf = 0
+                    for tid in tids:
+                        row = conn.execute(
+                            "SELECT passed, failed "
+                            "FROM nc_compliance_checks "
+                            "WHERE topology_id=? "
+                            "ORDER BY ran_at DESC LIMIT 1", (tid,)
+                        ).fetchone()
+                        if row:
+                            tp += row[0] or 0
+                            tf += row[1] or 0
+                    total = tp + tf
+                    if total:
+                        pct = round(tp * 100 / total)
+                        _check(pct, "project", p[0],
+                               f"{p[1]}: compliance {pct}%")
+
+            elif metric == "port_utilization":
+                for pi in conn.execute(
+                    "SELECT * FROM nc_port_inventory"
+                ).fetchall():
+                    pi = _row_to_dict(pi)
+                    total = pi.get("total_ports", 0) or 1
+                    used = pi.get("used_ports", 0)
+                    pct = round(used * 100 / total)
+                    _check(pct, "device", pi.get("device_label", ""),
+                           f"{pi['device_label']}: port util {pct}%")
+
+            elif metric == "power_pct":
+                for f in conn.execute(
+                    "SELECT * FROM nc_facilities"
+                ).fetchall():
+                    f = _row_to_dict(f)
+                    total = f.get("total_power_kw", 0) or 1
+                    used = f.get("used_power_kw", 0)
+                    pct = round(used * 100 / max(total, 1))
+                    _check(pct, "facility", f.get("name", ""),
+                           f"{f['name']}: power {pct}%")
+
+        conn.commit()
+        conn.close()
+        return jsonify({"rules_checked": len(rules),
+                        "events_created": new_events})
+
+    # ── Cross-Module Auto-Validation ──────────────────────────────────────
+    @bp.route("/api/cross-validate/<pid>", methods=["POST"])
+    @nc_login_required
+    def nc_api_cross_validate(pid):
+        """Run cross-module validation for a project.
+        Checks peering↔capacity, compliance→findings, discovery→drift."""
+        conn = get_connection()
+        findings = []
+
+        # 1. Peering ↔ Capacity: check if peering ports fit device inventory
+        peers = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_peering_agreements WHERE project_id=?",
+            (pid,)
+        ).fetchall()]
+        ports = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_port_inventory WHERE topology_id IN "
+            "(SELECT topology_id FROM nc_project_topologies "
+            " WHERE project_id=?)", (pid,)
+        ).fetchall()]
+        total_avail = sum(
+            (p.get("total_ports", 0) or 0) - (p.get("used_ports", 0) or 0)
+            for p in ports)
+        if peers and total_avail < len(peers):
+            findings.append({
+                "module": "peering↔capacity",
+                "severity": "high",
+                "message": f"{len(peers)} peering agreements but only "
+                           f"{total_avail} available ports",
+            })
+
+        # 2. Compliance → auto-flag if CAT1 findings exist
+        topo_ids = [r[0] for r in conn.execute(
+            "SELECT topology_id FROM nc_project_topologies "
+            "WHERE project_id=?", (pid,)
+        ).fetchall()]
+        cat1_count = 0
+        for tid in topo_ids:
+            c1 = conn.execute(
+                "SELECT COUNT(*) FROM nc_compliance_findings "
+                "WHERE topology_id=? AND status='open' "
+                "AND severity='CAT1'", (tid,)
+            ).fetchone()
+            cat1_count += c1[0] if c1 else 0
+        if cat1_count > 0:
+            findings.append({
+                "module": "compliance",
+                "severity": "critical",
+                "message": f"{cat1_count} open CAT1 findings — "
+                           f"blocks deployment",
+            })
+
+        # 3. Facilities → check rack/power for project
+        facs = [_row_to_dict(r) for r in conn.execute(
+            "SELECT * FROM nc_facilities"
+        ).fetchall()]
+        for f in facs:
+            power_pct = round(
+                (f.get("used_power_kw", 0) or 0) * 100 /
+                max(f.get("total_power_kw", 1) or 1, 1))
+            if power_pct > 80:
+                findings.append({
+                    "module": "facilities",
+                    "severity": "warning",
+                    "message": f"{f['name']}: power at {power_pct}% — "
+                               f"augment before adding equipment",
+                })
+
+        conn.close()
+        return jsonify({
+            "project_id": pid,
+            "findings": findings,
+            "total_findings": len(findings),
+            "has_blockers": any(
+                f["severity"] == "critical" for f in findings),
+        })
+
+    # ── Favorites / Pinned Views ──────────────────────────────────────────
+    @bp.route("/api/favorites", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_favorites():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT * FROM nc_favorites ORDER BY created_at DESC"
+        ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/favorites", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_favorite():
+        data = request.get_json(force=True, silent=True) or {}
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO nc_favorites "
+                "(id, entity_type, entity_id, label, user_id, "
+                " created_at) VALUES (?,?,?,?,?,?)",
+                (str(_uuid.uuid4()), data.get("entity_type", ""),
+                 data.get("entity_id", ""),
+                 data.get("label", ""),
+                 data.get("user_id", ""), _now())
+            )
+            conn.commit()
+        except Exception:
+            pass
+        conn.close()
+        return jsonify({"ok": True}), 201
+
+    @bp.route("/api/favorites/<fid>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_favorite(fid):
+        return _crud_delete("nc_favorites", fid)
 
     # ══════════════════════════════════════════════════════════════════════
     # Peering Agreements

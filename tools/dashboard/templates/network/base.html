@@ -21,27 +21,78 @@
       <span class="nav-badge">ICDEV™</span>
     </div>
     <div class="nav-links">
-      <a href="/network/" class="nav-link {% if request.path == '/network/' %}active{% endif %}">Dashboard</a>
-      <a href="/network/templates" class="nav-link {% if '/network/templates' in request.path %}active{% endif %}">Templates</a>
-      <a href="/network/projects" class="nav-link {% if request.path == '/network/projects' %}active{% endif %}">Projects</a>
-      <a href="/network/projects/compare" class="nav-link {% if '/network/projects/compare' in request.path %}active{% endif %}">Compare</a>
-      <a href="/network/global" class="nav-link {% if '/network/global' in request.path %}active{% endif %}">Global</a>
-      <a href="/network/enterprise" class="nav-link {% if '/network/enterprise' in request.path %}active{% endif %}">Enterprise</a>
-      <a href="/network/map" class="nav-link {% if '/network/map' in request.path %}active{% endif %}">Map</a>
-      <a href="/network/collect" class="nav-link {% if '/network/collect' in request.path %}active{% endif %}">Collect</a>
-      <a href="/network/peering" class="nav-link {% if '/network/peering' in request.path %}active{% endif %}">Peering</a>
-      <a href="/network/capacity" class="nav-link {% if '/network/capacity' in request.path %}active{% endif %}">Capacity</a>
-      <a href="/network/facilities" class="nav-link {% if '/network/facilities' in request.path %}active{% endif %}">Facilities</a>
-      <a href="/network/innovation" class="nav-link {% if '/network/innovation' in request.path %}active{% endif %}">Innovation</a>
-      <a href="/network/bandwidth-sim" class="nav-link {% if '/network/bandwidth-sim' in request.path %}active{% endif %}">BW Capacity</a>
-      <a href="/network/circuits" class="nav-link {% if '/network/circuits' in request.path %}active{% endif %}">Circuits</a>
-      <a href="/network/customers" class="nav-link {% if '/network/customers' in request.path %}active{% endif %}">Customers</a>
-      <a href="/network/ipam" class="nav-link {% if '/network/ipam' in request.path and '/network/netbox' not in request.path %}active{% endif %}">IPAM</a>
-      <a href="/network/netbox" class="nav-link {% if '/network/netbox' in request.path %}active{% endif %}" style="{% if '/network/netbox' not in request.path %}color:#9b59b6;{% endif %}">&#x2B21; NetBox</a>
-      <a href="/network/cables" class="nav-link {% if '/network/cables' in request.path %}active{% endif %}">Cables</a>
-      <a href="/network/cross-connects" class="nav-link {% if '/network/cross-connects' in request.path %}active{% endif %}">Cross-Connects</a>
-      <a href="/network/projects/diff" class="nav-link {% if '/network/projects/diff' in request.path %}active{% endif %}">Diff</a>
-      <a href="/network/canvas/new" class="nav-link btn-primary-sm">+ New Topology</a>
+      <a href="/network/" class="nav-link {% if request.path == '/network/' %}active{% endif %}">Home</a>
+
+      <!-- Design -->
+      <div class="nav-mega">
+        <button class="nav-link nav-mega-btn">Design &#x25BE;</button>
+        <div class="nav-mega-panel">
+          <div class="mega-group">
+            <div class="mega-label">Topology</div>
+            <a href="/network/canvas/new" class="mega-item">+ New Topology</a>
+            <a href="/network/templates" class="mega-item">Templates</a>
+            <a href="/network/design-patterns" class="mega-item">Design Patterns</a>
+            <a href="/network/design-rules" class="mega-item">Design Rules</a>
+          </div>
+          <div class="mega-group">
+            <div class="mega-label">Projects</div>
+            <a href="/network/projects" class="mega-item">All Projects</a>
+            <a href="/network/projects/compare" class="mega-item">Compare</a>
+            <a href="/network/projects/diff" class="mega-item">Diff</a>
+          </div>
+          <div class="mega-group">
+            <div class="mega-label">Planning</div>
+            <a href="/network/what-if" class="mega-item">What-If Simulator</a>
+            <a href="/network/replacements" class="mega-item">Replacement Map</a>
+            <a href="/network/budget" class="mega-item">Budget Forecast</a>
+            <a href="/network/innovation" class="mega-item">Innovation Hub</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Operate -->
+      <div class="nav-mega">
+        <button class="nav-link nav-mega-btn">Operate &#x25BE;</button>
+        <div class="nav-mega-panel">
+          <div class="mega-group">
+            <div class="mega-label">Connectivity</div>
+            <a href="/network/peering" class="mega-item">Peering Agreements</a>
+            <a href="/network/circuits" class="mega-item">Circuits</a>
+            <a href="/network/cables" class="mega-item">Cables</a>
+            <a href="/network/cross-connects" class="mega-item">Cross-Connects</a>
+          </div>
+          <div class="mega-group">
+            <div class="mega-label">Infrastructure</div>
+            <a href="/network/capacity" class="mega-item">Capacity Planning</a>
+            <a href="/network/facilities" class="mega-item">Facilities / DCIM</a>
+            <a href="/network/ipam" class="mega-item">IPAM</a>
+            <a href="/network/customers" class="mega-item">Customers / Sites</a>
+          </div>
+          <div class="mega-group">
+            <div class="mega-label">Integration</div>
+            <a href="/network/collect" class="mega-item">Collect</a>
+            <a href="/network/device-profiles" class="mega-item">Device Profiles</a>
+            <a href="/network/discovery" class="mega-item">Discovery</a>
+            <a href="/network/netbox" class="mega-item">NetBox IPAM</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Monitor -->
+      <div class="nav-mega">
+        <button class="nav-link nav-mega-btn">Monitor &#x25BE;</button>
+        <div class="nav-mega-panel">
+          <div class="mega-group">
+            <div class="mega-label">Enterprise View</div>
+            <a href="/network/enterprise" class="mega-item">Enterprise</a>
+            <a href="/network/global" class="mega-item">Global</a>
+            <a href="/network/global/canvas" class="mega-item">Global Canvas</a>
+            <a href="/network/map" class="mega-item">Map</a>
+          </div>
+        </div>
+      </div>
+
+      <a href="/network/canvas/new" class="nav-link btn-primary-sm">+ New</a>
       <div class="notif-bell" id="notif-bell" onclick="toggleNotifs()">
         &#x1F514;<span class="notif-badge" id="notif-count" style="display:none;">0</span>
         <div class="notif-dropdown" id="notif-dropdown"></div>
