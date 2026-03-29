@@ -1,0 +1,266 @@
+{% extends "network/base.html" %}
+{% block title %}Bandwidth Capacity Planning — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Bandwidth Capacity Planning</h1>
+    <p class="page-subtitle">Assign traffic volumes, identify bottlenecks, and plan upgrade paths</p>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <!-- Left: Config panel -->
+  <div>
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Simulation Setup</h2></div>
+      <div style="padding:14px;">
+        <div class="form-grid">
+          <label>Topology
+            <select id="topo-select" style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);padding:5px 8px;border-radius:4px;">
+              <option value="">— select topology —</option>
+              {% for t in topologies %}
+              <option value="{{ t.id }}">{{ t.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Base Utilisation (%)
+            <input id="base-util" type="number" value="30" min="1" max="95">
+          </label>
+          <label>Annual Growth (%)
+            <input id="growth-rate" type="number" value="20" min="1" max="300">
+          </label>
+          <label>Projection (years)
+            <input id="years" type="number" value="3" min="1" max="10">
+          </label>
+          <label>Peak Multiplier
+            <input id="peak-mult" type="number" value="1.5" step="0.1" min="1" max="5">
+          </label>
+        </div>
+
+        <details style="margin-top:12px;">
+          <summary style="cursor:pointer;font-size:12px;color:var(--text-dim);">Traffic Profile Overrides (optional)</summary>
+          <div style="margin-top:8px;">
+            <textarea id="traffic-overrides" rows="4"
+              style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);padding:6px;border-radius:4px;font-size:12px;font-family:monospace;"
+              placeholder='[{"edge_id": "e1", "traffic_mbps": 500}, ...]'></textarea>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">JSON array of {edge_id, traffic_mbps} objects to override per-link traffic.</div>
+          </div>
+        </details>
+
+        <button class="btn btn-primary" style="margin-top:14px;width:100%;" onclick="runSim()">
+          Run Simulation
+        </button>
+      </div>
+    </section>
+
+    <!-- Recent simulations -->
+    {% if recent_sims %}
+    <section class="panel panel-wide" style="margin-top:16px;">
+      <div class="panel-header"><h2 class="panel-title">Recent Simulations</h2></div>
+      <div style="overflow-x:auto;">
+        <table class="data-table" style="font-size:12px;">
+          <thead><tr>
+            <th>Topology</th><th>Health</th><th>Bottlenecks</th><th>Warnings</th>
+            <th>Links</th><th>Avg Util</th><th>Ran</th><th></th>
+          </tr></thead>
+          <tbody>
+          {% for s in recent_sims %}
+          <tr>
+            <td>{{ s.topology_name or '—' }}</td>
+            <td><span class="health-pill pill-{{ 'red' if s.overall_health == 'critical' else ('yellow' if s.overall_health == 'warning' else 'green') }}">
+              {{ s.overall_health|upper }}</span></td>
+            <td>{{ s.bottleneck_count }}</td>
+            <td>{{ s.warning_count }}</td>
+            <td>{{ s.total_links }}</td>
+            <td>{{ s.avg_util_pct }}%</td>
+            <td style="font-size:11px;color:var(--text-dim);">{{ (s.ran_at or '')[:16] }}</td>
+            <td>
+              <a href="{{ url_for('network_canvas.nc_api_bandwidth_sim_report', sim_id=s.id) }}"
+                 class="btn" style="font-size:11px;padding:2px 8px;" target="_blank">Export</a>
+              <button class="btn" style="font-size:11px;padding:2px 8px;"
+                onclick="loadSimResult('{{ s.id }}')">View</button>
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+
+  <!-- Right: Results -->
+  <div id="results-col">
+    <section class="panel" id="results-panel" style="display:none;">
+      <div class="panel-header">
+        <h2 class="panel-title">Results</h2>
+        <div id="export-btn-wrap"></div>
+      </div>
+      <div id="results-body" style="padding:14px;"></div>
+    </section>
+
+    <section class="panel" style="margin-top:16px;">
+      <div class="panel-header"><h2 class="panel-title">How It Works</h2></div>
+      <div style="padding:12px;font-size:12px;color:var(--text-dim);line-height:1.6;">
+        <p><strong>Base Utilisation</strong> — average current load across links (±jitter per link).</p>
+        <p><strong>Traffic Overrides</strong> — assign exact traffic values to specific links by edge ID.</p>
+        <p><strong>Peak Multiplier</strong> — ratio of peak to average traffic (e.g. 1.5 = 50% burst).</p>
+        <p><strong>Bottleneck</strong> — peak utilisation ≥ 80% now, or average ≥ 80% by end of projection.</p>
+        <p><strong>Warning</strong> — utilisation 60–80%.</p>
+        <p><strong>LAG</strong> — Link Aggregation Group; bundle 2–4 existing links instead of replacing.</p>
+        <p>Export generates a self-contained HTML report suitable for inclusion in a capacity planning package.</p>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _lastSimId = null;
+
+async function runSim() {
+  const topoId = document.getElementById('topo-select').value;
+  if (!topoId) { alert('Select a topology first.'); return; }
+
+  const params = {
+    base_utilization_pct: parseFloat(document.getElementById('base-util').value) || 30,
+    growth_rate_pct:      parseFloat(document.getElementById('growth-rate').value) || 20,
+    years:                parseInt(document.getElementById('years').value) || 3,
+    peak_multiplier:      parseFloat(document.getElementById('peak-mult').value) || 1.5,
+  };
+
+  const overrideTxt = (document.getElementById('traffic-overrides').value || '').trim();
+  if (overrideTxt) {
+    try { params.traffic_profiles = JSON.parse(overrideTxt); }
+    catch(e) { alert('Traffic overrides must be valid JSON.'); return; }
+  }
+
+  showPanel('<div style="padding:24px;text-align:center;color:var(--text-dim);">Running simulation…</div>');
+
+  try {
+    const resp = await fetch(NC_BASE + '/api/topologies/' + topoId + '/bandwidth-sim', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(params),
+    });
+    const d = await resp.json();
+    if (d.error) { showPanel('<div style="color:var(--danger);">' + d.error + '</div>'); return; }
+    _lastSimId = d.sim_id;
+    renderResults(d);
+  } catch(e) {
+    showPanel('<div style="color:var(--danger);">Request failed: ' + e.message + '</div>');
+  }
+}
+
+async function loadSimResult(simId) {
+  showPanel('<div style="padding:24px;text-align:center;color:var(--text-dim);">Loading…</div>');
+  const resp = await fetch(NC_BASE + '/api/bandwidth-sim/' + simId);
+  const d = await resp.json();
+  if (d.error) { showPanel('<div style="color:var(--danger);">' + d.error + '</div>'); return; }
+  _lastSimId = d.sim_id;
+  renderResults(d);
+}
+
+function showPanel(html) {
+  document.getElementById('results-panel').style.display = '';
+  document.getElementById('results-body').innerHTML = html;
+}
+
+function renderResults(d) {
+  const s = d.summary || {};
+  const hc = {ok:'var(--success)', warning:'var(--warning)', critical:'var(--danger)', saturated:'#8e44ad'};
+  const hcol = hc[s.overall_health] || '#888';
+
+  // Export button
+  document.getElementById('export-btn-wrap').innerHTML = _lastSimId
+    ? `<a href="${NC_BASE}/api/bandwidth-sim/${_lastSimId}/report" target="_blank"
+         class="btn btn-primary" style="font-size:12px;padding:4px 10px;">Export Report</a>` : '';
+
+  // KPI bar
+  let html = `
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+    <div class="kpi-card"><div class="kpi-val">${s.total_links||0}</div><div class="kpi-lbl">Links</div></div>
+    <div class="kpi-card" style="border-color:var(--danger);"><div class="kpi-val" style="color:var(--danger);">${s.bottleneck_count||0}</div><div class="kpi-lbl">Bottlenecks</div></div>
+    <div class="kpi-card" style="border-color:var(--warning);"><div class="kpi-val" style="color:var(--warning);">${s.warning_count||0}</div><div class="kpi-lbl">Warnings</div></div>
+    <div class="kpi-card"><div class="kpi-val">${s.avg_utilization_pct||0}%</div><div class="kpi-lbl">Avg Util</div></div>
+  </div>
+  <div style="padding:10px 14px;border-left:4px solid ${hcol};background:var(--bg2);border-radius:4px;margin-bottom:16px;font-size:13px;line-height:1.6;">
+    <strong style="color:${hcol};">${(s.overall_health||'ok').toUpperCase()}</strong> — ${d.narrative||''}
+  </div>`;
+
+  // Per-link table
+  const links = d.links || [];
+  if (links.length) {
+    html += `<h3 style="font-size:13px;margin:0 0 6px;">Per-Link Analysis</h3>
+    <div style="overflow-x:auto;"><table class="data-table" style="font-size:12px;">
+      <thead><tr>
+        <th>Link</th><th>Path</th><th>Capacity</th>
+        <th>Avg Util</th><th>Peak Util</th><th>Status</th><th>Upgrade To</th>
+      </tr></thead><tbody>`;
+    const sc = {ok:'pill-green', warning:'pill-yellow', critical:'pill-red', saturated:'pill-red'};
+    for (const r of links) {
+      const lbl = r.label || (r.source_label + ' → ' + r.target_label);
+      const path = r.source_label + ' → ' + r.target_label;
+      html += `<tr>
+        <td>${lbl}</td><td style="font-size:11px;color:var(--text-dim);">${path}</td>
+        <td>${r.link_bw_label}</td>
+        <td>${utilBar(r.current_util_pct)}</td>
+        <td>${utilBar(r.peak_util_pct)}</td>
+        <td><span class="health-pill ${sc[r.status]||'pill-green'}">${r.status.toUpperCase()}</span></td>
+        <td style="font-size:11px;">${r.upgrade_to_label||'—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+
+  // Upgrade recommendations
+  const upgrades = d.upgrades_needed || [];
+  if (upgrades.length) {
+    html += `<h3 style="font-size:13px;margin:16px 0 6px;">Upgrade Recommendations</h3>
+    <div style="overflow-x:auto;"><table class="data-table" style="font-size:12px;">
+      <thead><tr><th>Link</th><th>Current</th><th>Upgrade To</th><th>LAG Alternative</th></tr></thead><tbody>`;
+    for (const u of upgrades) {
+      html += `<tr>
+        <td>${u.link}</td><td>${u.current}</td>
+        <td style="color:var(--warning);font-weight:600;">${u.upgrade_to||'—'}</td>
+        <td style="color:var(--success);">${u.lag_alternative||'—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+  }
+
+  // Year-by-year projection for top loaded links
+  const top = d.top_loaded_links || [];
+  if (top.length && top[0].projections) {
+    html += `<h3 style="font-size:13px;margin:16px 0 6px;">Growth Projection — Top Loaded Links</h3>
+    <div style="overflow-x:auto;"><table class="data-table" style="font-size:12px;">
+      <thead><tr><th>Link</th>${top[0].projections.map(p => '<th>Yr '+p.year+'</th>').join('')}</tr></thead>
+      <tbody>`;
+    for (const r of top) {
+      const lbl = r.label || (r.source_label + ' → ' + r.target_label);
+      html += `<tr><td>${lbl}</td>` +
+        r.projections.map(p => `<td>${utilBar(p.avg_util_pct)}</td>`).join('') + '</tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+
+  showPanel(html);
+}
+
+function utilBar(pct) {
+  const col = pct >= 80 ? 'var(--danger)' : pct >= 60 ? 'var(--warning)' : 'var(--success)';
+  return `<div style="display:flex;align-items:center;gap:6px;">
+    <div style="width:60px;height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;">
+      <div style="width:${Math.min(pct,100)}%;height:100%;background:${col};"></div>
+    </div>
+    <span style="color:${col};font-weight:600;">${pct}%</span>
+  </div>`;
+}
+</script>
+<style>
+.kpi-card { background:var(--bg2); border:1px solid var(--border); border-radius:6px; padding:10px; text-align:center; }
+.kpi-val  { font-size:24px; font-weight:700; color:var(--text); }
+.kpi-lbl  { font-size:11px; color:var(--text-dim); margin-top:2px; }
+</style>
+{% endblock %}
