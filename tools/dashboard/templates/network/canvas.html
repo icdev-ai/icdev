@@ -59,14 +59,19 @@
       <button class="tb-btn" onclick="zoomReset()" title="Reset Zoom">1:1</button>
     </div>
     <div class="tb-group">
-      <button class="tb-btn" onclick="exportAs('drawio')" title="Export draw.io">⬇ draw.io</button>
-      <button class="tb-btn" onclick="exportAs('svg')" title="Export SVG">⬇ SVG</button>
-      <button class="tb-btn" onclick="exportInventory('ansible')" title="Export Ansible Inventory (hosts grouped by role/enclave)" style="color:#ff6b35;">⬇ Ansible</button>
-      <button class="tb-btn" onclick="exportInventory('terraform')" title="Export Terraform HCL skeleton (VPC, subnet, security group)" style="color:#7b42bc;">⬇ Terraform</button>
-      <button class="tb-btn" onclick="showDeviceConfigModal()" title="Preview &amp; export per-device configs (Cisco IOS / Arista EOS / Juniper JunOS)" style="color:#00c896;">⬇ Dev Configs</button>
-      <button class="tb-btn" onclick="exportCablePlantReport()" title="Export cable plant report (CSV) — all annotated cable runs with specs" style="color:#a29bfe;">⬇ Cable Plant</button>
-      <button class="tb-btn" onclick="exportAs('vsdx')" title="Export Visio (.vsdx)">⬇ Visio</button>
-      <button class="tb-btn" onclick="exportAs('csv')" title="Export Ops CSVs (device inventory, circuits, cables)">⬇ Ops CSV</button>
+      <div class="tb-export-wrap" id="export-dropdown-wrap">
+        <button class="tb-btn" onclick="this.parentElement.classList.toggle('open')" title="Export topology in various formats">⬇ Export ▾</button>
+        <div class="tb-export-menu">
+          <button onclick="exportAs('drawio');this.closest('.tb-export-wrap').classList.remove('open')" title="Export draw.io XML">📐 draw.io</button>
+          <button onclick="exportAs('svg');this.closest('.tb-export-wrap').classList.remove('open')" title="Export SVG">🖼 SVG</button>
+          <button onclick="exportAs('vsdx');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Visio (.vsdx)">📊 Visio</button>
+          <button onclick="exportAs('csv');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Ops CSVs">📋 Ops CSV</button>
+          <button onclick="exportInventory('ansible');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Ansible Inventory" style="color:#ff6b35;">⚙ Ansible</button>
+          <button onclick="exportInventory('terraform');this.closest('.tb-export-wrap').classList.remove('open')" title="Export Terraform HCL" style="color:#7b42bc;">⚙ Terraform</button>
+          <button onclick="showDeviceConfigModal();this.closest('.tb-export-wrap').classList.remove('open')" title="Device configs (IOS/EOS/JunOS)" style="color:#00c896;">⚙ Dev Configs</button>
+          <button onclick="exportCablePlantReport();this.closest('.tb-export-wrap').classList.remove('open')" title="Cable plant report CSV" style="color:#a29bfe;">🔌 Cable Plant</button>
+        </div>
+      </div>
     </div>
     <div class="tb-group">
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
@@ -80,20 +85,19 @@
       <button class="tb-btn" onclick="openIpv6Readiness()" title="IPv6 Readiness — device capability + migration plan" style="color:#3498db;">v6 IPv6</button>
     </div>
     <div class="tb-group">
-      <button class="tb-btn" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — draw selection around devices to create enclave boundary" style="color:#f39c12;">⬡ Fence</button>
+      <button class="tb-btn tb-btn-fence" id="tb-fence-btn" onclick="toggleFenceMode()" title="Security Boundary Auto-Fencing — click to toggle, then click-drag a rectangle around devices to create enclave boundary">⬡ Fence <span id="fence-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <div class="tb-dropdown-wrap">
-        <button class="tb-btn tb-btn-heatmap" id="tb-heatmap-btn" onclick="document.getElementById('heatmap-dropdown').classList.toggle('hidden')" title="Heatmap Overlay — color by metric">🌡 Heatmap</button>
+        <button class="tb-btn tb-btn-heatmap" id="tb-heatmap-btn" onclick="document.getElementById('heatmap-dropdown').classList.toggle('hidden')" title="Heatmap Overlay — click to select metric, colors nodes/links by value">🌡 Heatmap ▾</button>
         <div class="tb-dropdown hidden" id="heatmap-dropdown">
           <button class="tb-dropdown-item" id="hm-opt-bandwidth" onclick="toggleHeatmap('bandwidth');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x1f4ca; Bandwidth Utilization</button>
           <button class="tb-dropdown-item" id="hm-opt-vuln" onclick="toggleHeatmap('vuln');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x26a0; Vulnerability Severity</button>
           <button class="tb-dropdown-item" id="hm-opt-stig" onclick="toggleHeatmap('stig');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x1f6e1; STIG Compliance %</button>
           <button class="tb-dropdown-item" id="hm-opt-age" onclick="toggleHeatmap('age');document.getElementById('heatmap-dropdown').classList.add('hidden')">&#x23f3; Equipment Age</button>
+          <button class="tb-dropdown-item" id="hm-opt-clear" onclick="clearHeatmap();document.getElementById('heatmap-dropdown').classList.add('hidden')" style="color:#e74c3c;">✕ Clear Heatmap</button>
         </div>
       </div>
-      <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — highlight protected vs unprotected links">🔒 FIPS</button>
+      <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
-      <button class="tb-btn" onclick="autoLayout('TB')" title="Auto-layout: top to bottom (dagre)">⊞ Layout</button>
-      <button class="tb-btn" onclick="autoLayout('LR')" title="Auto-layout: left to right">⊞ Layout LR</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
       <button class="tb-btn" onclick="toggleRackView()" title="Rack Elevation View — shows rack layout for selected device">&#x229e; Rack</button>
       <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
@@ -435,6 +439,18 @@
           </div>
           <div class="palette-item" draggable="true" data-type="mpls-lsp" ondragstart="onDragStart(event)">
             <div class="pi-icon mpls-icon">LSP</div><span>MPLS LSP</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="palette-section">
+        <div class="palette-cat">Layout Tools</div>
+        <div class="palette-items">
+          <div class="palette-item layout-item" draggable="false" onclick="autoLayout('TB')" style="cursor:pointer;" title="Auto-layout: top-to-bottom (dagre) — click to rearrange all nodes vertically">
+            <div class="pi-icon" style="background:var(--accent);color:#f39c12;">⇩</div><span>Layout TB</span>
+          </div>
+          <div class="palette-item layout-item" draggable="false" onclick="autoLayout('LR')" style="cursor:pointer;" title="Auto-layout: left-to-right (dagre) — click to rearrange all nodes horizontally">
+            <div class="pi-icon" style="background:var(--accent);color:#f39c12;">⇨</div><span>Layout LR</span>
           </div>
         </div>
       </div>

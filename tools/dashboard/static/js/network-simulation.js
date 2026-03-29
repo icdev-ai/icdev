@@ -1593,6 +1593,8 @@ function showFipsOverlay() {
   const pct = total ? Math.round(protectedCount / total * 100) : 100;
   const btn = document.getElementById('tb-fips-btn');
   if (btn) { btn.classList.add('active'); btn.title = `${pct}% encrypted`; }
+  const fipsInd = document.getElementById('fips-indicator');
+  if (fipsInd) { fipsInd.textContent = `${pct}%`; fipsInd.style.opacity = '1'; }
   setStatus(`FIPS Coverage: ${protectedCount}/${total} links protected (${pct}%) — ${unprotectedCount} unprotected`);
 }
 
@@ -1625,6 +1627,8 @@ function clearFipsOverlay() {
   _fipsOriginalStyles.clear();
   const btn = document.getElementById('tb-fips-btn');
   if (btn) btn.classList.remove('active');
+  const fipsInd = document.getElementById('fips-indicator');
+  if (fipsInd) { fipsInd.textContent = 'OFF'; fipsInd.style.opacity = '0.6'; }
   setStatus('FIPS overlay cleared');
 }
 

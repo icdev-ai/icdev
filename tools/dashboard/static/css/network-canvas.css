@@ -1052,9 +1052,45 @@ textarea.form-control { resize: vertical; font-family: var(--mono); }
 .tb-btn:hover { border-color: var(--red); color: var(--text); background: var(--accent); }
 .tb-btn-danger { border-color: #8a1a1a; color: #e74c3c; }
 .tb-btn-danger:hover { background: #2a0f0f; border-color: #e74c3c; }
-.tb-center { flex: 1; text-align: center; }
+.tb-center { text-align: center; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 .topology-name-display { font-size: 13px; font-weight: 600; color: var(--text-dim); }
-.tb-status { font-size: 11px; color: var(--text-dim); margin-left: auto; }
+.tb-status { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+/* ── Export Dropdown ───────────────────────────────────────────────────────── */
+.tb-export-wrap { position: relative; display: inline-block; }
+.tb-export-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 180px;
+  z-index: 200;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.tb-export-wrap:hover .tb-export-menu,
+.tb-export-wrap.open .tb-export-menu { display: block; }
+.tb-export-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  padding: 6px 14px;
+  font-size: 12px;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tb-export-menu button:hover { background: var(--accent); color: var(--text); }
+
+/* ── Layout palette item ──────────────────────────────────────────────────── */
+.palette-item.layout-item { border: 1px dashed var(--border); }
+.palette-item.layout-item .pi-icon { background: var(--accent); color: var(--warning); }
 
 /* ── Canvas Body ────────────────────────────────────────────────────────────── */
 .canvas-body { display: flex; flex: 1; overflow: hidden; min-height: 0; }

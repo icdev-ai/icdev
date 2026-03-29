@@ -1659,14 +1659,18 @@ async function insertSnippetOntoCanvas(snippetId, btn) {
     pushUndo();
 
     // Compute canvas center offset so snippet doesn't land at 0,0
+    // Use .canvas-body (visible viewport), NOT canvas-container (5000x5000 paper)
     const tx = paper.translate().tx || 0;
     const ty = paper.translate().ty || 0;
     const sx = paper.scale().sx || 1;
-    const el = document.getElementById('canvas-container') || document.getElementById('paper-container') || paper.el;
+    const el = document.querySelector('.canvas-body') || document.getElementById('canvas-container') || paper.el;
     const cw = el ? el.clientWidth : 800;
     const ch = el ? el.clientHeight : 600;
-    const cx = Math.round((cw / 2 - tx) / sx);
-    const cy = Math.round((ch / 2 - ty) / sx);
+    // Account for scroll position within the viewport
+    const scrollX = el ? el.scrollLeft : 0;
+    const scrollY = el ? el.scrollTop : 0;
+    const cx = Math.round((scrollX + cw / 2 - tx) / sx);
+    const cy = Math.round((scrollY + ch / 2 - ty) / sx);
 
     // Compute bounding box of snippet nodes for centering
     const xs = gj.nodes.map(n => n.x || 0);
@@ -1706,7 +1710,14 @@ async function insertSnippetOntoCanvas(snippetId, btn) {
     setStatus(`Snippet inserted: ${snippet.name} (${gj.nodes.length} nodes, ${gj.edges.length} links)`);
     closeSnippetsPanel();
   } catch (err) {
+    console.error('[Snippet Insert]', err);
     setStatus('Insert failed: ' + err.message);
+    // Show error visually inside the snippets panel (status bar may be hidden behind overlay)
+    const errDiv = document.createElement('div');
+    errDiv.style.cssText = 'background:#3b1010;border:1px solid #e74c3c;border-radius:4px;padding:8px 12px;margin:8px 4px 0;font-size:11px;color:#e74c3c;';
+    errDiv.textContent = 'Insert failed: ' + err.message;
+    const list = document.getElementById('snippets-list');
+    if (list) list.prepend(errDiv);
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
 }
@@ -1975,9 +1986,11 @@ const FENCE_CLS_COLORS = {
 function toggleFenceMode() {
   fenceMode = !fenceMode;
   const btn = document.getElementById('tb-fence-btn');
+  const indicator = document.getElementById('fence-indicator');
   if (btn) btn.classList.toggle('tb-btn-active', fenceMode);
+  if (indicator) { indicator.textContent = fenceMode ? 'ON' : 'OFF'; indicator.style.opacity = fenceMode ? '1' : '0.6'; }
   if (fenceMode) {
-    setStatus('Fence mode ON — click and drag to select devices, then choose classification');
+    setStatus('Fence mode ON — click and drag a rectangle around devices to create security boundary');
     document.getElementById('canvas-container').style.cursor = 'crosshair';
   } else {
     setStatus('Fence mode OFF');
