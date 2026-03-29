@@ -2674,6 +2674,187 @@ def create_network_blueprint():
         return render_template("network/map.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # P2: Charts / Visualization
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/charts/compliance-trend", methods=["GET"])
+    @nc_login_required
+    def nc_api_chart_compliance_trend():
+        """Compliance score trend over time (from history + current)."""
+        conn = get_connection()
+        # Get history
+        rows = conn.execute(
+            "SELECT project_id, compliance_pct, recorded_at "
+            "FROM nc_compliance_history "
+            "ORDER BY recorded_at"
+        ).fetchall()
+        # Group by project
+        by_project = {}
+        for r in rows:
+            r = _row_to_dict(r)
+            pid = r.get("project_id", "")
+            by_project.setdefault(pid, []).append({
+                "pct": r.get("compliance_pct", 0),
+                "date": (r.get("recorded_at") or "")[:10],
+            })
+        # Add project names
+        projects = {}
+        for pid in by_project:
+            name_row = conn.execute(
+                "SELECT name FROM nc_projects WHERE id=?", (pid,)
+            ).fetchone()
+            projects[pid] = {
+                "name": name_row[0] if name_row else pid[:8],
+                "data": by_project[pid],
+            }
+        conn.close()
+        return jsonify({"projects": projects})
+
+    @bp.route("/api/charts/compliance-snapshot", methods=["POST"])
+    @nc_login_required
+    def nc_api_chart_compliance_snapshot():
+        """Record current compliance scores for all projects (for trending)."""
+        conn = get_connection()
+        now = _now()
+        recorded = 0
+        for p in conn.execute("SELECT id FROM nc_projects").fetchall():
+            pid = p[0]
+            tids = [r[0] for r in conn.execute(
+                "SELECT topology_id FROM nc_project_topologies "
+                "WHERE project_id=?", (pid,)
+            ).fetchall()]
+            tp = tf = cat1 = findings = 0
+            for tid in tids:
+                row = conn.execute(
+                    "SELECT passed, failed FROM nc_compliance_checks "
+                    "WHERE topology_id=? ORDER BY ran_at DESC LIMIT 1",
+                    (tid,)
+                ).fetchone()
+                if row:
+                    tp += row[0] or 0
+                    tf += row[1] or 0
+                of = conn.execute(
+                    "SELECT COUNT(*) FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND status='open'", (tid,)
+                ).fetchone()
+                findings += of[0] if of else 0
+                c1 = conn.execute(
+                    "SELECT COUNT(*) FROM nc_compliance_findings "
+                    "WHERE topology_id=? AND status='open' "
+                    "AND severity='CAT1'", (tid,)
+                ).fetchone()
+                cat1 += c1[0] if c1 else 0
+            total = tp + tf
+            if total:
+                pct = round(tp * 100 / total)
+                conn.execute(
+                    "INSERT INTO nc_compliance_history "
+                    "(id, project_id, compliance_pct, open_findings, "
+                    " cat1_count, recorded_at) VALUES (?,?,?,?,?,?)",
+                    (str(_uuid.uuid4()), pid, pct, findings, cat1, now)
+                )
+                recorded += 1
+        conn.commit()
+        conn.close()
+        return jsonify({"recorded": recorded})
+
+    @bp.route("/api/charts/capacity-overview", methods=["GET"])
+    @nc_login_required
+    def nc_api_chart_capacity_overview():
+        """Capacity utilization across facilities + ports."""
+        conn = get_connection()
+        facilities = []
+        for f in conn.execute(
+            "SELECT name, total_power_kw, used_power_kw, "
+            "total_cooling_tons, used_cooling_tons, "
+            "total_racks, used_racks "
+            "FROM nc_facilities ORDER BY name"
+        ).fetchall():
+            f = _row_to_dict(f)
+            facilities.append({
+                "name": f["name"],
+                "power_pct": round(
+                    (f.get("used_power_kw") or 0) * 100 /
+                    max(f.get("total_power_kw") or 1, 1)),
+                "cooling_pct": round(
+                    (f.get("used_cooling_tons") or 0) * 100 /
+                    max(f.get("total_cooling_tons") or 1, 1)),
+                "rack_pct": round(
+                    (f.get("used_racks") or 0) * 100 /
+                    max(f.get("total_racks") or 1, 1)),
+            })
+        ports = []
+        for p in conn.execute(
+            "SELECT device_label, total_ports, used_ports "
+            "FROM nc_port_inventory ORDER BY device_label"
+        ).fetchall():
+            p = _row_to_dict(p)
+            ports.append({
+                "device": p["device_label"],
+                "pct": round(
+                    (p.get("used_ports") or 0) * 100 /
+                    max(p.get("total_ports") or 1, 1)),
+            })
+        conn.close()
+        return jsonify({"facilities": facilities, "ports": ports})
+
+    @bp.route("/api/charts/cost-breakdown", methods=["GET"])
+    @nc_login_required
+    def nc_api_chart_cost_breakdown():
+        """CapEx vs OpEx breakdown across all projects."""
+        conn = get_connection()
+        # BOM CapEx
+        bom_total = conn.execute(
+            "SELECT COALESCE(SUM(extended_cost), 0) "
+            "FROM nc_bom_items"
+        ).fetchone()[0]
+        maint_total = conn.execute(
+            "SELECT COALESCE(SUM(annual_maint), 0) "
+            "FROM nc_bom_items"
+        ).fetchone()[0]
+        license_total = conn.execute(
+            "SELECT COALESCE(SUM(license_cost), 0) "
+            "FROM nc_bom_items"
+        ).fetchone()[0]
+        # Circuit OpEx
+        circuit_monthly = conn.execute(
+            "SELECT COALESCE(SUM(monthly_cost_usd), 0) "
+            "FROM nc_circuits"
+        ).fetchone()[0]
+        # Peering cost
+        peering_monthly = conn.execute(
+            "SELECT COALESCE(SUM(monthly_cost), 0) "
+            "FROM nc_peering_agreements"
+        ).fetchone()[0]
+        # Labor
+        labor = conn.execute(
+            "SELECT COALESCE(SUM(hours * rate_per_hour), 0) "
+            "FROM nc_resource_plan"
+        ).fetchone()[0]
+        conn.close()
+        return jsonify({
+            "capex": {
+                "hardware": round(bom_total, 2),
+                "labor": round(labor, 2),
+            },
+            "opex_annual": {
+                "circuits": round(circuit_monthly * 12, 2),
+                "peering": round(peering_monthly * 12, 2),
+                "maintenance": round(maint_total, 2),
+                "licensing": round(license_total, 2),
+            },
+            "total_capex": round(bom_total + labor, 2),
+            "total_opex_annual": round(
+                circuit_monthly * 12 + peering_monthly * 12 +
+                maint_total + license_total, 2),
+        })
+
+    @bp.route("/charts")
+    @nc_login_required
+    def nc_charts_page():
+        return render_template("network/charts.html")
+
+    # ══════════════════════════════════════════════════════════════════════
     # P1: New Build Wizard + Alert Engine + Cross-Module Validation
     # ══════════════════════════════════════════════════════════════════════
 

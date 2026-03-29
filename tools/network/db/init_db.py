@@ -625,6 +625,16 @@ CREATE TABLE IF NOT EXISTS nc_project_phases (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Charts Data (P2) ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_compliance_history (
+    id          TEXT PRIMARY KEY,
+    project_id  TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    compliance_pct INTEGER,
+    open_findings INTEGER DEFAULT 0,
+    cat1_count  INTEGER DEFAULT 0,
+    recorded_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- ── Alert Thresholds (P1) ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS nc_alert_rules (
     id          TEXT PRIMARY KEY,
