@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "icdev"
-version = "1.2.6"
+version = "1.2.7"
 description = "ICDEV™ — Intelligent Certified Development Platform. AI-powered SDLC with NIST 800-53 RMF compliance, multi-agent orchestration, FORGE framework, and ANVIL build workflow."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -140,7 +140,10 @@ image-gen = [
 ]
 # Network Design Canvas — topology design, circuit tracking, compliance audit
 # Air-gap safe (all JS vendored locally, no CDN). Zero extra Python deps.
-network = []  # No extra deps — Flask/Jinja2/SQLite already in core
+network = [
+    "defusedxml>=0.7",   # Safe XML parsing for STIG import
+    "networkx>=3.2",     # Graph analysis for NL topology queries
+]
 # Everything (includes Google — NOT air-gap safe)
 full = [
     "icdev[llm-all,search,testing,security,network]",
