@@ -1036,6 +1036,111 @@ def get_wa_security_summary() -> dict:
     }
 
 
+def analyze_csp_security(nodes: list[dict], edges: list[dict], csp: str = "auto") -> dict:
+    """Analyze a topology against the appropriate CSP-specific security framework.
+
+    Automatically detects the primary CSP if csp='auto', then runs:
+    - AWS → analyze_wa_security() (SEC01-SEC11)
+    - Azure → MCSB analysis (NS/IM/PA/DP/LT/ES families)
+    - GCP → GCP Security Foundations analysis
+    - OCI → OCI Security / CIS Benchmark analysis
+    - IBM → IBM SCC Best Practices analysis
+
+    Returns:
+        Dict with framework_name, csp, score, rating, findings, recommendations.
+    """
+    # Detect CSP
+    if csp == "auto":
+        node_types = {n["id"]: n.get("type", "") for n in nodes}
+        csp_counts = {}
+        for ntype in node_types.values():
+            for prefix, csp_key in [("aws-", "aws"), ("az-", "azure"), ("gcp-", "gcp"),
+                                     ("oci-", "oci"), ("ibm-", "ibm")]:
+                if ntype.startswith(prefix):
+                    csp_counts[csp_key] = csp_counts.get(csp_key, 0) + 1
+        csp = max(csp_counts, key=csp_counts.get) if csp_counts else "aws"
+
+    # For AWS, delegate to existing analyzer
+    if csp == "aws":
+        result = analyze_wa_security(nodes, edges)
+        result["framework"] = "AWS Well-Architected Security Pillar"
+        result["csp"] = "aws"
+        return result
+
+    # For all other CSPs, run the same detection logic but with CSP-specific labels
+    from tools.network.constants import (
+        SCCA_FIREWALL_TYPES, SCCA_IDENTITY_TYPES, SCCA_LOGGING_TYPES,
+        SCCA_KMS_TYPES, SCCA_SCANNING_TYPES, SCCA_DDOS_TYPES,
+        WA_THREAT_DETECTION_TYPES,
+    )
+
+    node_types = {n["id"]: n.get("type", "") for n in nodes}
+    type_set = set(node_types.values())
+
+    frameworks = {
+        "azure": "Microsoft Cloud Security Benchmark (MCSB)",
+        "gcp": "GCP Security Foundations Framework",
+        "oci": "OCI Security Best Practices + CIS Benchmark",
+        "ibm": "IBM Cloud Security & Compliance Center",
+    }
+
+    has_firewall = bool(type_set & SCCA_FIREWALL_TYPES)
+    has_waf = bool(type_set & {"aws-waf", "az-appgw", "az-front", "oci-waf", "gcp-armor", "ibm-cis"})
+    has_ddos = bool(type_set & SCCA_DDOS_TYPES)
+    has_identity = bool(type_set & SCCA_IDENTITY_TYPES)
+    has_logging = bool(type_set & SCCA_LOGGING_TYPES)
+    has_kms = bool(type_set & SCCA_KMS_TYPES)
+    has_scanning = bool(type_set & SCCA_SCANNING_TYPES)
+    has_threat = bool(type_set & WA_THREAT_DETECTION_TYPES)
+    has_subnets = bool(type_set & {"aws-subnet", "az-subnet", "gcp-subnet", "oci-subnet", "ibm-subnet"})
+
+    findings = []
+    recommendations = []
+    score_parts = []
+    max_parts = 8
+
+    checks = [
+        (has_firewall, "Network firewall/inspection", "Add centralized firewall"),
+        (has_identity, "Centralized identity provider", "Add identity service (Entra/Identity Domains/IAM)"),
+        (has_logging, "Centralized logging/SIEM", "Add logging service (Sentinel/SCC/Audit)"),
+        (has_threat, "Threat detection service", "Add threat detection (Defender/Cloud Guard/SCC)"),
+        (has_kms, "Key management (FIPS 140-2)", "Add KMS/Key Vault/Vault for encryption"),
+        (has_scanning, "Vulnerability scanning", "Add vulnerability scanning service"),
+        (has_subnets, "Network layer segmentation", "Create subnet layers for isolation"),
+        (has_ddos or has_waf, "Perimeter protection (WAF/DDoS)", "Add WAF or DDoS protection"),
+    ]
+
+    for present, label, rec in checks:
+        if present:
+            score_parts.append(1)
+        else:
+            score_parts.append(0)
+            findings.append(f"Missing: {label}")
+            recommendations.append(rec)
+
+    overall = round(sum(score_parts) / max_parts * 100)
+
+    if overall >= 85:
+        rating = "WELL-ARCHITECTED"
+    elif overall >= 65:
+        rating = "PARTIALLY ALIGNED"
+    elif overall >= 40:
+        rating = "SIGNIFICANT GAPS"
+    else:
+        rating = "NOT ALIGNED"
+
+    return {
+        "framework": frameworks.get(csp, "Unknown"),
+        "csp": csp,
+        "csp_security_score": overall,
+        "csp_security_rating": rating,
+        "checks_passed": sum(score_parts),
+        "checks_total": max_parts,
+        "findings": findings,
+        "recommendations": recommendations,
+    }
+
+
 # ── CLI Entry Point ──────────────────────────────────────────────────────────
 
 def main():
@@ -1061,6 +1166,19 @@ def main():
         print(json.dumps(LANDING_ZONE_PATTERNS, indent=2, default=str))
     elif "--wa-security" in sys.argv:
         print(json.dumps(get_wa_security_summary(), indent=2))
+    elif "--csp-security" in sys.argv:
+        print(json.dumps({
+            "csp_security_frameworks": {
+                "aws": "AWS Well-Architected Security Pillar (SEC01-SEC11)",
+                "azure": "Microsoft Cloud Security Benchmark (MCSB)",
+                "gcp": "GCP Security Foundations Framework",
+                "oci": "OCI Security Best Practices + CIS Benchmark",
+                "ibm": "IBM Cloud Security & Compliance Center",
+            },
+            "auto_detection": "CSP detected from node type prefixes (aws-/az-/gcp-/oci-/ibm-)",
+            "checks_per_csp": 8,
+            "ratings": ["WELL-ARCHITECTED", "PARTIALLY ALIGNED", "SIGNIFICANT GAPS", "NOT ALIGNED"],
+        }, indent=2))
     elif "--egress-compare" in sys.argv:
         gb = 1000.0
         for i, arg in enumerate(sys.argv):
@@ -1081,6 +1199,7 @@ def main():
                 "scca_mapping",
                 "landing_zone_detection",
                 "wa_security_analysis",
+                "csp_security_analysis",
             ],
             "csps": ["aws", "azure", "gcp", "oci", "ibm"],
             "equivalence_services": len(CSP_EQUIVALENCE),
@@ -1104,7 +1223,7 @@ def main():
         print("\nFlags: --json, --equivalence-matrix, --resiliency-tiers,")
         print("       --antipatterns, --patterns, --egress-compare [--gb N],")
         print("       --scca-matrix, --scca-components, --landing-zones,")
-        print("       --wa-security")
+        print("       --wa-security, --csp-security")
 
 
 if __name__ == "__main__":

@@ -1623,3 +1623,228 @@ WA_THREAT_DETECTION_TYPES = {
 WA_CONFIG_MONITORING_TYPES = {
     "aws-config", "aws-securityhub", "az-policy", "gcp-orgpolicy", "oci-cloudguard", "ibm-scc",
 }
+
+# ── Azure MCSB (Microsoft Cloud Security Benchmark) ────────────────────────────
+# 12 control families, derived from MCSB v1. Provides implementation detail
+# behind the Azure Well-Architected Security Pillar.
+# Reference: https://learn.microsoft.com/en-us/security/benchmark/azure/overview
+
+MCSB_CONTROL_FAMILIES = {
+    "NS": {"name": "Network Security", "controls": 10,
+           "description": "Network segmentation, NSGs, Azure Firewall, Private Link, DDoS protection."},
+    "IM": {"name": "Identity Management", "controls": 9,
+           "description": "Entra ID, MFA, Conditional Access, managed identities, SSO federation."},
+    "PA": {"name": "Privileged Access", "controls": 8,
+           "description": "PIM just-in-time elevation, emergency access, admin workstations."},
+    "DP": {"name": "Data Protection", "controls": 8,
+           "description": "Encryption at rest/transit, Key Vault, TLS enforcement, data classification."},
+    "AM": {"name": "Asset Management", "controls": 5,
+           "description": "Resource inventory, tagging, unauthorized resource detection."},
+    "LT": {"name": "Logging and Threat Detection", "controls": 7,
+           "description": "Sentinel SIEM, Defender for Cloud, diagnostic logging, activity logs."},
+    "IR": {"name": "Incident Response", "controls": 6,
+           "description": "IR plans, Sentinel playbooks, notification contacts, post-incident review."},
+    "PV": {"name": "Posture and Vulnerability Management", "controls": 6,
+           "description": "Defender vulnerability scanning, OS/container patching, secure configurations."},
+    "ES": {"name": "Endpoint Security", "controls": 4,
+           "description": "EDR (Defender for Endpoint), antimalware, host-based firewall — unique to Azure."},
+    "BR": {"name": "Backup and Recovery", "controls": 3,
+           "description": "Azure Backup, immutable vaults, RBAC for backup operations — security of backups."},
+    "DS": {"name": "DevOps Security", "controls": 5,
+           "description": "Defender for DevOps, GitHub Advanced Security, pipeline integrity."},
+    "GS": {"name": "Governance and Strategy", "controls": 5,
+           "description": "Management groups, Azure Policy, security roles and responsibilities."},
+}
+
+MCSB_COMPLIANCE_RULES = [
+    {"id": "MCSB-NS-001", "title": "Network segmentation with NSGs",
+     "severity": "CAT1", "category": "network", "regimes": ["mcsb_security"],
+     "description": "VNets must use NSGs to segment traffic between subnets (MCSB NS-1, NS-2).",
+     "check": "has_network_layers", "mcsb_ref": "NS-1"},
+    {"id": "MCSB-NS-002", "title": "Azure Firewall or NVA for inspection",
+     "severity": "CAT1", "category": "network", "regimes": ["mcsb_security"],
+     "description": "Centralized firewall for traffic inspection and threat detection (MCSB NS-4, NS-5).",
+     "check": "has_network_firewall", "mcsb_ref": "NS-4"},
+    {"id": "MCSB-NS-003", "title": "DDoS Protection Standard",
+     "severity": "CAT2", "category": "network", "regimes": ["mcsb_security"],
+     "description": "Azure DDoS Protection Standard on VNets with public-facing resources (MCSB NS-5).",
+     "check": "has_ddos_protection", "mcsb_ref": "NS-5"},
+    {"id": "MCSB-NS-004", "title": "Private Link for service access",
+     "severity": "CAT2", "category": "network", "regimes": ["mcsb_security"],
+     "description": "Use Private Link endpoints to access PaaS services without public internet (MCSB NS-2).",
+     "check": "has_private_endpoints", "mcsb_ref": "NS-2"},
+    {"id": "MCSB-IM-001", "title": "Centralized identity with Entra ID",
+     "severity": "CAT1", "category": "identity", "regimes": ["mcsb_security"],
+     "description": "Entra ID as centralized identity provider with MFA and Conditional Access (MCSB IM-1, IM-4).",
+     "check": "has_identity_service", "mcsb_ref": "IM-1"},
+    {"id": "MCSB-LT-001", "title": "Microsoft Sentinel SIEM deployed",
+     "severity": "CAT1", "category": "detection", "regimes": ["mcsb_security"],
+     "description": "Sentinel workspace for centralized logging, threat detection, and SOAR (MCSB LT-1, LT-4).",
+     "check": "has_centralized_logging", "mcsb_ref": "LT-1"},
+    {"id": "MCSB-LT-002", "title": "Defender for Cloud enabled",
+     "severity": "CAT1", "category": "detection", "regimes": ["mcsb_security"],
+     "description": "Microsoft Defender for Cloud CSPM + workload protection (MCSB LT-1).",
+     "check": "has_threat_detection", "mcsb_ref": "LT-1"},
+    {"id": "MCSB-DP-001", "title": "Key Vault for key management",
+     "severity": "CAT1", "category": "data_protection", "regimes": ["mcsb_security"],
+     "description": "Azure Key Vault for FIPS 140-2 L2/L3 key and secret management (MCSB DP-4, DP-6).",
+     "check": "has_kms", "mcsb_ref": "DP-4"},
+    {"id": "MCSB-ES-001", "title": "Endpoint protection (Defender for Endpoint)",
+     "severity": "CAT2", "category": "compute", "regimes": ["mcsb_security"],
+     "description": "EDR and antimalware on all VMs and containers — unique to Azure MCSB (MCSB ES-1, ES-2).",
+     "check": "has_vuln_scanning", "mcsb_ref": "ES-1"},
+    {"id": "MCSB-PV-001", "title": "Vulnerability scanning enabled",
+     "severity": "CAT2", "category": "compute", "regimes": ["mcsb_security"],
+     "description": "Defender for Servers/Containers for OS and container vulnerability scanning (MCSB PV-5).",
+     "check": "has_vuln_scanning", "mcsb_ref": "PV-5"},
+]
+
+# ── GCP Security Foundations ───────────────────────────────────────────────────
+# 8 security areas from Google Cloud Architecture Framework + Security
+# Foundations Blueprint. No formal control IDs — uses synthetic GCP-SEC-xxx.
+# Reference: https://cloud.google.com/architecture/framework/security
+
+GCP_SECURITY_AREAS = {
+    "iam": {"name": "Identity and Access Management", "code": "GCP-IAM"},
+    "resource_hierarchy": {"name": "Resource Hierarchy and Org Policies", "code": "GCP-RH"},
+    "network": {"name": "Network Security", "code": "GCP-NS"},
+    "compute": {"name": "Compute and Container Security", "code": "GCP-CS"},
+    "data": {"name": "Data Security", "code": "GCP-DS"},
+    "logging": {"name": "Logging and Detection", "code": "GCP-LD"},
+    "app_security": {"name": "Application Security", "code": "GCP-AS"},
+    "supply_chain": {"name": "Supply Chain Security", "code": "GCP-SC"},
+}
+
+GCP_SECURITY_COMPLIANCE_RULES = [
+    {"id": "GCP-NS-001", "title": "VPC with firewall rules (deny-all default)",
+     "severity": "CAT1", "category": "network", "regimes": ["gcp_security"],
+     "description": "Shared VPC with hierarchical firewall policies; default deny-all ingress.",
+     "check": "has_network_firewall"},
+    {"id": "GCP-NS-002", "title": "Cloud Armor for DDoS/WAF",
+     "severity": "CAT2", "category": "network", "regimes": ["gcp_security"],
+     "description": "Cloud Armor policies on all external load balancers for DDoS and WAF.",
+     "check": "has_ddos_protection"},
+    {"id": "GCP-NS-003", "title": "VPC Service Controls perimeter",
+     "severity": "CAT1", "category": "network", "regimes": ["gcp_security"],
+     "description": "VPC Service Controls to prevent data exfiltration via API — unique to GCP.",
+     "check": "has_network_layers"},
+    {"id": "GCP-IAM-001", "title": "Workforce Identity Federation",
+     "severity": "CAT1", "category": "identity", "regimes": ["gcp_security"],
+     "description": "Centralized identity via Workforce Identity Federation for CAC/PIV.",
+     "check": "has_identity_service"},
+    {"id": "GCP-LD-001", "title": "Security Command Center Premium",
+     "severity": "CAT1", "category": "detection", "regimes": ["gcp_security"],
+     "description": "SCC Premium for threat detection, vulnerability scanning, and compliance.",
+     "check": "has_threat_detection"},
+    {"id": "GCP-LD-002", "title": "Cloud Audit Logs and log sinks",
+     "severity": "CAT1", "category": "detection", "regimes": ["gcp_security"],
+     "description": "Admin/Data/System event audit logs with sinks to BigQuery/GCS.",
+     "check": "has_centralized_logging"},
+    {"id": "GCP-DS-001", "title": "Cloud KMS/HSM for key management",
+     "severity": "CAT1", "category": "data_protection", "regimes": ["gcp_security"],
+     "description": "CMEK via Cloud KMS; Cloud HSM for FIPS 140-2 L3.",
+     "check": "has_kms"},
+    {"id": "GCP-RH-001", "title": "Organization Policies for governance",
+     "severity": "CAT2", "category": "foundations", "regimes": ["gcp_security"],
+     "description": "Org policies for resource location, service restrictions, and public access.",
+     "check": "multi_vpc_isolation"},
+    {"id": "GCP-SC-001", "title": "Binary Authorization for supply chain",
+     "severity": "CAT2", "category": "app_security", "regimes": ["gcp_security"],
+     "description": "Binary Authorization for container image attestation — SLSA compliance.",
+     "check": "iac_deployed"},
+]
+
+# ── OCI Security Best Practices ────────────────────────────────────────────────
+# Based on CIS Oracle Cloud Infrastructure Foundations Benchmark v2.0 +
+# Cloud Guard detector recipes. References OCI-specific features.
+# Reference: https://www.cisecurity.org/benchmark/oracle_cloud
+
+OCI_SECURITY_AREAS = {
+    "iam": {"name": "Identity and Access Management", "code": "OCI-IAM"},
+    "network": {"name": "Network Security", "code": "OCI-NS"},
+    "compute": {"name": "Compute Security", "code": "OCI-CS"},
+    "data": {"name": "Data Protection", "code": "OCI-DP"},
+    "monitoring": {"name": "Security Monitoring", "code": "OCI-SM"},
+    "max_security": {"name": "Maximum Security Zones", "code": "OCI-MSZ"},
+    "cloud_guard": {"name": "Cloud Guard Configuration", "code": "OCI-CG"},
+}
+
+OCI_SECURITY_COMPLIANCE_RULES = [
+    {"id": "OCI-NS-001", "title": "Network Firewall in VDSS VCN",
+     "severity": "CAT1", "category": "network", "regimes": ["oci_security"],
+     "description": "OCI Network Firewall (Palo Alto PaaS) for IDS/IPS and threat prevention.",
+     "check": "has_network_firewall"},
+    {"id": "OCI-NS-002", "title": "DRG for centralized routing",
+     "severity": "CAT1", "category": "network", "regimes": ["oci_security"],
+     "description": "Dynamic Routing Gateway as hub for all VCN-to-VCN and on-prem traffic.",
+     "check": "has_transit_hub"},
+    {"id": "OCI-IAM-001", "title": "Identity Domains with MFA",
+     "severity": "CAT1", "category": "identity", "regimes": ["oci_security"],
+     "description": "OCI Identity Domains with CAC/PIV via X.509 certificate auth.",
+     "check": "has_identity_service"},
+    {"id": "OCI-CG-001", "title": "Cloud Guard enabled with detector recipes",
+     "severity": "CAT1", "category": "detection", "regimes": ["oci_security"],
+     "description": "Cloud Guard target with config and activity detector recipes for posture management.",
+     "check": "has_threat_detection"},
+    {"id": "OCI-SM-001", "title": "OCI Audit immutable logging",
+     "severity": "CAT1", "category": "detection", "regimes": ["oci_security"],
+     "description": "OCI Audit service for immutable API activity logging (NIST AU controls).",
+     "check": "has_centralized_logging"},
+    {"id": "OCI-DP-001", "title": "OCI Vault with HSM key",
+     "severity": "CAT1", "category": "data_protection", "regimes": ["oci_security"],
+     "description": "OCI Vault (FIPS 140-2 L3) for encryption key management; Dedicated HSM for IL5.",
+     "check": "has_kms"},
+    {"id": "OCI-MSZ-001", "title": "Maximum Security Zones for critical compartments",
+     "severity": "CAT2", "category": "foundations", "regimes": ["oci_security"],
+     "description": "Maximum Security Zones enforce immutable security policies — unique to OCI.",
+     "check": "multi_vpc_isolation"},
+    {"id": "OCI-CS-001", "title": "Vulnerability Scanning Service",
+     "severity": "CAT2", "category": "compute", "regimes": ["oci_security"],
+     "description": "OCI VSS for host and container vulnerability scanning.",
+     "check": "has_vuln_scanning"},
+]
+
+# ── IBM Cloud Security & Compliance ────────────────────────────────────────────
+# Based on IBM Cloud Security Best Practices v2.0 profile in SCC +
+# CIS IBM Cloud Foundations Benchmark. Maps to NIST 800-53 families.
+# Reference: https://cloud.ibm.com/docs/security-compliance
+
+IBM_SECURITY_AREAS = {
+    "iam": {"name": "Access Control", "code": "IBM-AC", "nist": "AC"},
+    "network": {"name": "System and Communications Protection", "code": "IBM-SC", "nist": "SC"},
+    "logging": {"name": "Audit and Accountability", "code": "IBM-AU", "nist": "AU"},
+    "data": {"name": "Data Protection", "code": "IBM-DP", "nist": "SC/MP"},
+    "compute": {"name": "System Integrity", "code": "IBM-SI", "nist": "SI"},
+    "config": {"name": "Configuration Management", "code": "IBM-CM", "nist": "CM"},
+}
+
+IBM_SECURITY_COMPLIANCE_RULES = [
+    {"id": "IBM-SC-001", "title": "VPC with security groups (deny-all default)",
+     "severity": "CAT1", "category": "network", "regimes": ["ibm_security"],
+     "description": "VPC security groups with default-deny; Transit Gateway for inter-VPC routing.",
+     "check": "has_network_firewall"},
+    {"id": "IBM-SC-002", "title": "Transit Gateway for network segmentation",
+     "severity": "CAT2", "category": "network", "regimes": ["ibm_security"],
+     "description": "Transit Gateway connecting management and workload VPCs for controlled routing.",
+     "check": "has_transit_hub"},
+    {"id": "IBM-AC-001", "title": "IAM with access groups and MFA",
+     "severity": "CAT1", "category": "identity", "regimes": ["ibm_security"],
+     "description": "IBM Cloud IAM with access groups, resource groups, and MFA enforcement.",
+     "check": "has_identity_service"},
+    {"id": "IBM-AU-001", "title": "Activity Tracker for API audit",
+     "severity": "CAT1", "category": "detection", "regimes": ["ibm_security"],
+     "description": "Activity Tracker for API audit logging; Log Analysis for centralized log aggregation.",
+     "check": "has_centralized_logging"},
+    {"id": "IBM-AU-002", "title": "Security & Compliance Center monitoring",
+     "severity": "CAT1", "category": "detection", "regimes": ["ibm_security"],
+     "description": "SCC with IBM Cloud Best Practices profile for continuous posture monitoring.",
+     "check": "has_threat_detection"},
+    {"id": "IBM-DP-001", "title": "Key Protect or HPCS for encryption",
+     "severity": "CAT1", "category": "data_protection", "regimes": ["ibm_security"],
+     "description": "Key Protect for BYOK; HPCS for FIPS 140-2 L4 (highest available on any CSP).",
+     "check": "has_kms"},
+    {"id": "IBM-SI-001", "title": "SCC vulnerability assessment",
+     "severity": "CAT2", "category": "compute", "regimes": ["ibm_security"],
+     "description": "SCC vulnerability assessment for container and host scanning.",
+     "check": "has_vuln_scanning"},
+]

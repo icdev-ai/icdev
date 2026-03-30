@@ -3860,7 +3860,190 @@ TEMPLATES = [
             ]
         }),
     },
-    # 38 ─ AWS Well-Architected Security Baseline
+    # 38 ─ Azure Security Baseline — Hub-Spoke
+    {
+        "id": "tpl-az-security-baseline",
+        "name": "Azure Security Baseline — Hub-Spoke",
+        "category": "Well-Architected",
+        "description": "Defense-in-depth hub-spoke architecture aligned to the Microsoft Cloud Security Benchmark (MCSB). Hub VNet with Azure Firewall, Bastion, and NSG for perimeter. Microsoft Defender for Cloud and Sentinel for detection. Azure Monitor, Key Vault, and Entra ID for operations. Azure Policy for governance. Spoke VNet with App/Data subnets. ExpressRoute for hybrid connectivity and DDoS Protection at the edge.",
+        "tags": json.dumps(["azure", "mcsb", "security-baseline", "hub-spoke", "well-architected"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("hub-vnet", "Hub VNet", "azure-vnet", 400, 80,
+                      {"config": {"cidr": "10.0.0.0/16", "role": "hub"}}),
+                _node("az-fw", "Azure Firewall", "firewall", 400, 180),
+                _node("bastion", "Azure Bastion", "azure-bastion", 200, 180),
+                _node("nsg", "Network Security Group", "azure-nsg", 600, 180),
+                _node("defender", "Defender for Cloud", "azure-defender", 800, 80),
+                _node("sentinel", "Microsoft Sentinel", "azure-sentinel", 800, 180),
+                _node("monitor", "Azure Monitor", "azure-monitor", 800, 280),
+                _node("keyvault", "Key Vault (FIPS 140-2)", "azure-keyvault", 600, 380,
+                      {"config": {"fips_validated": True}}),
+                _node("entra", "Entra ID", "azure-entra", 200, 380),
+                _node("policy", "Azure Policy (CIS)", "azure-policy", 200, 80),
+                _node("spoke-vnet", "Spoke VNet", "azure-vnet", 400, 280,
+                      {"config": {"cidr": "10.1.0.0/16", "role": "spoke"}}),
+                _node("app-sub", "App Subnet", "azure-subnet", 300, 380,
+                      {"config": {"cidr": "10.1.1.0/24", "tier": "app"}}),
+                _node("data-sub", "Data Subnet", "azure-subnet", 500, 380,
+                      {"config": {"cidr": "10.1.2.0/24", "tier": "data"}}),
+                _node("expressroute", "ExpressRoute", "azure-expressroute", 100, 180),
+                _node("ddos", "DDoS Protection", "azure-ddos", 100, 80),
+                _node("monitor-diag", "Diagnostic Settings", "azure-diagnostics", 600, 80),
+            ],
+            "edges": [
+                _edge("hub-vnet", "az-fw", "Inspection", ""),
+                _edge("hub-vnet", "bastion", "Mgmt Access", "SSH/RDP"),
+                _edge("hub-vnet", "nsg", "Segmentation", ""),
+                _edge("hub-vnet", "spoke-vnet", "VNet Peering", ""),
+                _edge("az-fw", "spoke-vnet", "Filtered Traffic", ""),
+                _edge("spoke-vnet", "app-sub", "", ""),
+                _edge("spoke-vnet", "data-sub", "", ""),
+                _edge("defender", "sentinel", "Alerts", ""),
+                _edge("sentinel", "monitor", "Log Analytics", ""),
+                _edge("keyvault", "data-sub", "Encryption Keys", ""),
+                _edge("entra", "hub-vnet", "IAM Auth", "SAML/OIDC"),
+                _edge("policy", "hub-vnet", "Governance", ""),
+                _edge("expressroute", "hub-vnet", "Hybrid Link", ""),
+                _edge("ddos", "hub-vnet", "DDoS Protect", ""),
+                _edge("monitor-diag", "sentinel", "Activity Logs", ""),
+            ]
+        }),
+    },
+    # 39 ─ GCP Security Foundations Baseline
+    {
+        "id": "tpl-gcp-security-baseline",
+        "name": "GCP Security Foundations Baseline",
+        "category": "Well-Architected",
+        "description": "GCP security foundations architecture based on Google Cloud Security Foundations Guide. Shared VPC with Cloud Router and Cloud NAT for network egress. Cloud Armor for L7 DDoS/WAF, Security Command Center for threat detection, Cloud KMS for encryption, Org Policies for governance guardrails, Assured Workloads for compliance boundary. Service project with App/Data subnets, Log Sink for audit, and Cloud Interconnect for hybrid connectivity.",
+        "tags": json.dumps(["gcp", "security-foundations", "shared-vpc", "well-architected"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("shared-vpc", "Shared VPC (Host)", "gcp-vpc", 400, 80,
+                      {"config": {"cidr": "10.0.0.0/16", "role": "host"}}),
+                _node("cloud-router", "Cloud Router", "gcp-router", 200, 180),
+                _node("cloud-nat", "Cloud NAT", "gcp-nat", 200, 280),
+                _node("cloud-armor", "Cloud Armor (WAF)", "gcp-armor", 600, 80),
+                _node("scc", "Security Command Center", "gcp-scc", 800, 80),
+                _node("cloud-kms", "Cloud KMS (HSM)", "gcp-kms", 800, 180,
+                      {"config": {"protection_level": "HSM"}}),
+                _node("org-policy", "Org Policy Service", "gcp-orgpolicy", 200, 80),
+                _node("assured", "Assured Workloads", "gcp-assured", 600, 180),
+                _node("svc-project", "Service Project", "gcp-project", 400, 280),
+                _node("app-sub", "App Subnet", "gcp-subnet", 300, 380,
+                      {"config": {"cidr": "10.0.1.0/24", "tier": "app"}}),
+                _node("data-sub", "Data Subnet", "gcp-subnet", 500, 380,
+                      {"config": {"cidr": "10.0.2.0/24", "tier": "data"}}),
+                _node("log-sink", "Log Sink (GCS)", "gcp-logsink", 800, 280),
+                _node("interconnect", "Cloud Interconnect", "gcp-interconnect", 100, 180),
+                _node("iap", "Identity-Aware Proxy", "gcp-iap", 600, 280),
+            ],
+            "edges": [
+                _edge("shared-vpc", "cloud-router", "Routing", "BGP"),
+                _edge("cloud-router", "cloud-nat", "NAT Gateway", ""),
+                _edge("cloud-armor", "shared-vpc", "L7 Protect", ""),
+                _edge("scc", "shared-vpc", "Threat Detection", ""),
+                _edge("cloud-kms", "data-sub", "Encryption Keys", ""),
+                _edge("org-policy", "shared-vpc", "Governance", ""),
+                _edge("assured", "svc-project", "Compliance Boundary", ""),
+                _edge("shared-vpc", "svc-project", "Shared VPC", ""),
+                _edge("svc-project", "app-sub", "", ""),
+                _edge("svc-project", "data-sub", "", ""),
+                _edge("log-sink", "scc", "Audit Logs", ""),
+                _edge("interconnect", "shared-vpc", "Hybrid Link", ""),
+                _edge("iap", "app-sub", "Zero Trust Access", ""),
+            ]
+        }),
+    },
+    # 40 ─ OCI Security Posture Baseline
+    {
+        "id": "tpl-oci-security-baseline",
+        "name": "OCI Security Posture Baseline",
+        "category": "Well-Architected",
+        "description": "OCI security posture architecture aligned to CIS Oracle Cloud Infrastructure Benchmark. VCN with DRG and Network Firewall for perimeter. Cloud Guard for threat detection, OCI Vault (HSM-backed) for key management, VSS for vulnerability scanning, Identity Domains for IAM. Audit service for compliance logging, workload/app/data subnets for segmentation, and FastConnect for hybrid connectivity.",
+        "tags": json.dumps(["oci", "cis-benchmark", "cloud-guard", "well-architected"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("vcn", "Production VCN", "oci-vcn", 400, 80,
+                      {"config": {"cidr": "10.0.0.0/16"}}),
+                _node("drg", "Dynamic Routing GW", "oci-drg", 200, 80),
+                _node("nfw", "Network Firewall", "oci-nfw", 400, 180),
+                _node("nsg", "Network Security Group", "oci-nsg", 600, 180),
+                _node("cloud-guard", "Cloud Guard", "oci-cloudguard", 800, 80),
+                _node("vault", "OCI Vault (HSM)", "oci-vault", 800, 180,
+                      {"config": {"vault_type": "VIRTUAL_PRIVATE"}}),
+                _node("vss", "Vulnerability Scanning", "oci-vss", 800, 280),
+                _node("identity", "Identity Domains", "oci-identity", 200, 380),
+                _node("audit", "Audit Service", "oci-audit", 600, 380),
+                _node("workload-sub", "Workload Subnet", "oci-subnet", 300, 280,
+                      {"config": {"cidr": "10.0.1.0/24", "tier": "workload"}}),
+                _node("app-sub", "App Subnet", "oci-subnet", 400, 380,
+                      {"config": {"cidr": "10.0.2.0/24", "tier": "app"}}),
+                _node("data-sub", "Data Subnet", "oci-subnet", 600, 280,
+                      {"config": {"cidr": "10.0.3.0/24", "tier": "data"}}),
+                _node("fastconnect", "FastConnect", "oci-fastconnect", 100, 80),
+                _node("events", "Events Service", "oci-events", 600, 80),
+            ],
+            "edges": [
+                _edge("drg", "vcn", "Hub Routing", ""),
+                _edge("vcn", "nfw", "Inspection", ""),
+                _edge("nfw", "workload-sub", "Filtered", ""),
+                _edge("vcn", "nsg", "Segmentation", ""),
+                _edge("cloud-guard", "vcn", "Threat Detection", ""),
+                _edge("vault", "data-sub", "Encryption Keys", ""),
+                _edge("vss", "workload-sub", "Vuln Scan", ""),
+                _edge("identity", "vcn", "IAM Auth", ""),
+                _edge("audit", "events", "Audit Trail", ""),
+                _edge("vcn", "app-sub", "", ""),
+                _edge("vcn", "data-sub", "", ""),
+                _edge("fastconnect", "drg", "Hybrid Link", ""),
+                _edge("events", "cloud-guard", "Notifications", ""),
+            ]
+        }),
+    },
+    # 41 ─ IBM Cloud Security Baseline
+    {
+        "id": "tpl-ibm-security-baseline",
+        "name": "IBM Cloud Security Baseline",
+        "category": "Well-Architected",
+        "description": "IBM Cloud security baseline architecture aligned to FedRAMP High and IBM Cloud Framework for Financial Services. Management VPC and Workload VPC connected via Transit Gateway. Security Groups for micro-segmentation, SCC for compliance posture, Key Protect and HPCS for key management, App ID for identity, Activity Tracker for audit. Direct Link for hybrid connectivity with App/Data subnets in workload VPC.",
+        "tags": json.dumps(["ibm", "scc", "fedramp-high", "well-architected"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("mgmt-vpc", "Management VPC", "ibm-vpc", 200, 80,
+                      {"config": {"role": "management"}}),
+                _node("workload-vpc", "Workload VPC", "ibm-vpc", 600, 80,
+                      {"config": {"role": "workload"}}),
+                _node("transit-gw", "Transit Gateway", "ibm-tgw", 400, 80),
+                _node("sg", "Security Groups", "ibm-sg", 400, 180),
+                _node("scc", "Security & Compliance Center", "ibm-scc", 800, 80),
+                _node("key-protect", "Key Protect", "ibm-kp", 800, 180),
+                _node("hpcs", "Hyper Protect Crypto", "ibm-hpcs", 800, 280),
+                _node("appid", "App ID", "ibm-appid", 200, 280),
+                _node("at", "Activity Tracker", "ibm-at", 600, 280),
+                _node("direct-link", "Direct Link", "ibm-dl", 100, 80),
+                _node("app-sub", "App Subnet", "ibm-subnet", 500, 380,
+                      {"config": {"zone": "1", "tier": "app"}}),
+                _node("data-sub", "Data Subnet", "ibm-subnet", 700, 380,
+                      {"config": {"zone": "2", "tier": "data"}}),
+            ],
+            "edges": [
+                _edge("mgmt-vpc", "transit-gw", "Peering", ""),
+                _edge("workload-vpc", "transit-gw", "Peering", ""),
+                _edge("sg", "workload-vpc", "Micro-Seg", ""),
+                _edge("sg", "mgmt-vpc", "Micro-Seg", ""),
+                _edge("scc", "workload-vpc", "Compliance Scan", ""),
+                _edge("key-protect", "data-sub", "Encryption Keys", ""),
+                _edge("hpcs", "key-protect", "BYOK / HSM", ""),
+                _edge("appid", "mgmt-vpc", "IAM Auth", "OIDC"),
+                _edge("at", "scc", "Audit Trail", ""),
+                _edge("direct-link", "mgmt-vpc", "Hybrid Link", ""),
+                _edge("workload-vpc", "app-sub", "", ""),
+                _edge("workload-vpc", "data-sub", "", ""),
+            ]
+        }),
+    },
+    # 42 ─ AWS Well-Architected Security Baseline
     {
         "id": "tpl-wa-security-baseline",
         "name": "AWS Well-Architected Security Baseline",
@@ -4230,6 +4413,119 @@ ENCLAVE_SNIPPETS = [
                 _edge("t-rtr", "t-sw", "1GbE", ""),
                 _edge("t-fw", "t-sw", "1GbE", ""),
                 _edge("t-sw", "t-ws", "1GbE", ""),
+            ],
+        }),
+    },
+    # 5 ─ Defense-in-Depth Security Stack
+    {
+        "id": "snip-defense-in-depth",
+        "name": "Defense-in-Depth Security Stack",
+        "category": "Security",
+        "description": (
+            "Multi-layer security stack showing edge-to-perimeter-to-app-to-data "
+            "protection with encryption and logging at each layer. "
+            "WAF at the edge, Shield for DDoS, Firewall for network inspection, "
+            "ALB for application distribution, App and Data tiers, "
+            "KMS for encryption at rest, and centralized logging."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "SC-7", "SC-8", "SC-28", "AU-2", "AU-12", "SI-4", "AC-4", "SC-13",
+        ]),
+        "tags": json.dumps(["defense-in-depth", "security-stack", "multi-layer", "waf", "kms"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("did-waf", "WAF (Edge)", "aws-waf", 100, 200),
+                _node("did-shield", "Shield / DDoS", "aws-shield", 250, 200),
+                _node("did-fw", "Firewall", "firewall", 400, 200),
+                _node("did-alb", "Application LB", "aws-alb", 550, 200),
+                _node("did-app", "Application Tier", "server", 700, 200),
+                _node("did-data", "Data Tier", "database", 850, 200),
+                _node("did-kms", "KMS / Encryption", "aws-kms", 850, 340),
+                _node("did-logs", "Centralized Logs", "siem", 100, 340),
+            ],
+            "edges": [
+                _edge("did-waf", "did-shield", "L7 Filter", "HTTPS"),
+                _edge("did-shield", "did-fw", "DDoS Scrubbed", ""),
+                _edge("did-fw", "did-alb", "Inspected", ""),
+                _edge("did-alb", "did-app", "Forward", "HTTPS"),
+                _edge("did-app", "did-data", "Query", "TLS"),
+                _edge("did-data", "did-kms", "Encryption Keys", ""),
+                _edge("did-app", "did-logs", "App Logs", "TLS"),
+                _edge("did-fw", "did-logs", "FW Logs", "TLS"),
+            ],
+        }),
+    },
+    # 6 ─ Zero Trust Network Segment
+    {
+        "id": "snip-zero-trust-network",
+        "name": "Zero Trust Network Segment",
+        "category": "Security",
+        "description": (
+            "Zero Trust Architecture micro-segment with explicit verify at every hop. "
+            "Identity provider authenticates, policy engine authorizes, micro-segmentation "
+            "firewall enforces, application processes, data store persists, "
+            "and audit trail captures all decisions."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "AC-4", "AC-17", "IA-2", "IA-8", "SC-7", "AU-2",
+        ]),
+        "tags": json.dumps(["zero-trust", "zta", "micro-segmentation", "identity", "policy"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("zt-idp", "Identity Provider", "azure-entra", 100, 200),
+                _node("zt-policy", "Policy Engine", "server", 280, 200),
+                _node("zt-msfw", "MicroSeg Firewall", "firewall", 460, 200),
+                _node("zt-app", "Application", "server", 640, 200),
+                _node("zt-data", "Data Store", "database", 820, 200),
+                _node("zt-audit", "Audit Trail", "siem", 460, 340),
+            ],
+            "edges": [
+                _edge("zt-idp", "zt-policy", "Authenticate", "SAML/OIDC"),
+                _edge("zt-policy", "zt-msfw", "Authorize", ""),
+                _edge("zt-msfw", "zt-app", "Allow/Deny", "mTLS"),
+                _edge("zt-app", "zt-data", "Query", "TLS"),
+                _edge("zt-policy", "zt-audit", "Decision Log", ""),
+                _edge("zt-msfw", "zt-audit", "Access Log", ""),
+            ],
+        }),
+    },
+    # 7 ─ SIEM & Centralized Logging
+    {
+        "id": "snip-siem-logging-stack",
+        "name": "SIEM & Centralized Logging",
+        "category": "Security",
+        "description": (
+            "Centralized security monitoring pipeline from source to SIEM to alerting. "
+            "Cloud audit trails and flow logs feed into a security hub or SCC, "
+            "which forwards to SIEM for correlation and analysis. "
+            "SIEM triggers alerts and archives raw logs to object storage."
+        ),
+        "classification_level": "CUI",
+        "impact_level": "IL4",
+        "stig_controls": json.dumps([
+            "AU-2", "AU-6", "AU-9", "AU-12", "SI-4", "IR-4",
+        ]),
+        "tags": json.dumps(["siem", "logging", "audit", "securityhub", "alerting"]),
+        "graph_json": json.dumps({
+            "nodes": [
+                _node("sl-trail", "CloudTrail / Audit", "aws-ct", 100, 200),
+                _node("sl-flow", "Flow Logs", "aws-flowlogs", 100, 340),
+                _node("sl-hub", "SecurityHub / SCC", "aws-securityhub", 350, 270),
+                _node("sl-siem", "SIEM Platform", "siem", 550, 270),
+                _node("sl-alerts", "Alerts & Notifications", "server", 750, 200),
+                _node("sl-archive", "S3 / GCS Archive", "cloud", 750, 340),
+            ],
+            "edges": [
+                _edge("sl-trail", "sl-hub", "Audit Events", ""),
+                _edge("sl-flow", "sl-hub", "Network Flows", ""),
+                _edge("sl-hub", "sl-siem", "Findings", ""),
+                _edge("sl-siem", "sl-alerts", "Triggered Alerts", ""),
+                _edge("sl-siem", "sl-archive", "Raw Log Archive", ""),
+                _edge("sl-trail", "sl-archive", "Trail Backup", ""),
             ],
         }),
     },

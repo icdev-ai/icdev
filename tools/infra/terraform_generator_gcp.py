@@ -1222,6 +1222,213 @@ output "cloud_armor_policy_id" {
 """
 
 
+# ---------------------------------------------------------------------------
+# Security Baseline module — GCP
+# ---------------------------------------------------------------------------
+SECURITY_BASELINE_GCP_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# GCP Security Baseline — SCC, Cloud Armor, Org Policies, Log Sinks
+# -------------------------------------------------------
+
+# --- Security Command Center (SCC) ---
+
+resource "google_scc_organization_scc_big_query_export" "default" {
+  name         = "security-baseline-export"
+  org_id       = var.org_id
+  dataset      = ""
+  description  = "SCC findings export for security baseline"
+  filter       = ""
+}
+
+resource "google_scc_notification_config" "baseline" {
+  config_id    = "$${var.project_id}-scc-notify"
+  organization = var.org_id
+  description  = "SCC notification config for security baseline"
+
+  streaming_config {
+    filter = "severity = \\"HIGH\\" OR severity = \\"CRITICAL\\""
+  }
+}
+
+# --- Cloud Armor Security Policy ---
+
+resource "google_compute_security_policy" "baseline" {
+  name    = "$${var.project_id}-security-policy"
+  project = var.project_id
+
+  # Default deny rule
+  rule {
+    action   = "deny(403)"
+    priority = 2147483647
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
+    description = "Default deny rule"
+  }
+
+  # Allow US-only traffic
+  rule {
+    action   = "allow"
+    priority = 1000
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["0.0.0.0/0"]
+      }
+    }
+    description = "Allow traffic (restrict via WAF rules)"
+  }
+
+  adaptive_protection_config {
+    layer_7_ddos_defense_config {
+      enable = true
+    }
+  }
+}
+
+# --- Organization Policy Constraints ---
+
+resource "google_org_policy_policy" "require_shielded_vm" {
+  name   = "organizations/$${var.org_id}/policies/compute.requireShieldedVm"
+  parent = "organizations/$${var.org_id}"
+
+  spec {
+    rules {
+      enforce = "TRUE"
+    }
+  }
+}
+
+resource "google_org_policy_policy" "disable_sa_key_creation" {
+  name   = "organizations/$${var.org_id}/policies/iam.disableServiceAccountKeyCreation"
+  parent = "organizations/$${var.org_id}"
+
+  spec {
+    rules {
+      enforce = "TRUE"
+    }
+  }
+}
+
+resource "google_org_policy_policy" "uniform_bucket_access" {
+  name   = "organizations/$${var.org_id}/policies/storage.uniformBucketLevelAccess"
+  parent = "organizations/$${var.org_id}"
+
+  spec {
+    rules {
+      enforce = "TRUE"
+    }
+  }
+}
+
+# --- Log Sink to GCS ---
+
+resource "google_storage_bucket" "security_logs" {
+  name          = "$${var.project_id}-security-audit-logs"
+  project       = var.project_id
+  location      = var.region
+  force_destroy = false
+  storage_class = "STANDARD"
+
+  uniform_bucket_level_access = true
+
+  retention_policy {
+    retention_period = 31536000  # 365 days
+  }
+
+  labels = {
+    classification = "cui"
+    managed_by     = "terraform"
+  }
+}
+
+resource "google_logging_project_sink" "security_sink" {
+  name        = "$${var.project_id}-security-log-sink"
+  project     = var.project_id
+  destination = "storage.googleapis.com/$${google_storage_bucket.security_logs.name}"
+  filter      = "logName:\\"logs/cloudaudit.googleapis.com\\""
+
+  unique_writer_identity = true
+}
+
+resource "google_storage_bucket_iam_member" "sink_writer" {
+  bucket = google_storage_bucket.security_logs.name
+  role   = "roles/storage.objectCreator"
+  member = google_logging_project_sink.security_sink.writer_identity
+}
+"""
+
+SECURITY_BASELINE_GCP_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# GCP Security Baseline — Variables
+# -------------------------------------------------------
+variable "project_id" {
+  description = "GCP project ID"
+  type        = string
+}
+
+variable "org_id" {
+  description = "GCP organization ID"
+  type        = string
+}
+
+variable "region" {
+  description = "GCP region for security baseline resources"
+  type        = string
+  default     = "us-east4"
+}
+"""
+
+SECURITY_BASELINE_GCP_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# GCP Security Baseline — Outputs
+# -------------------------------------------------------
+output "scc_notification_config_id" {
+  description = "SCC notification config ID"
+  value       = google_scc_notification_config.baseline.name
+}
+
+output "armor_policy_id" {
+  description = "Cloud Armor security policy ID"
+  value       = google_compute_security_policy.baseline.id
+}
+"""
+
+
+def generate_security_baseline_gcp(project_path: str, project_config: dict = None) -> list:
+    """Generate GCP Security Baseline Terraform module.
+
+    Produces terraform-gcp/modules/gcp-security-baseline/ with main.tf (SCC org
+    settings, Cloud Armor, Org Policy constraints, log sinks to GCS),
+    variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform-gcp" / "modules" / "gcp-security-baseline"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SECURITY_BASELINE_GCP_MAIN),
+        ("variables.tf", SECURITY_BASELINE_GCP_VARIABLES),
+        ("outputs.tf", SECURITY_BASELINE_GCP_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
 def generate_scca_gcp(project_path: str, project_config: dict = None) -> list:
     """Generate SCCA (Secure Cloud Computing Architecture) Terraform module for GCP.
 
@@ -1287,6 +1494,7 @@ def generate(project_path: str, project_config: dict = None) -> list:
         "artifact_registry": lambda: generate_artifact_registry(project_path),
         "secret_manager": lambda: generate_secret_manager(project_path),
         "scca_gcp": lambda: generate_scca_gcp(project_path, config),
+        "security_baseline_gcp": lambda: generate_security_baseline_gcp(project_path, config),
     }
 
     all_files = []
@@ -1311,7 +1519,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,vpc,cloud_sql,artifact_registry,secret_manager",
-        help="Comma-separated components: base,vpc,cloud_sql,artifact_registry,secret_manager,scca_gcp",
+        help="Comma-separated components: base,vpc,cloud_sql,artifact_registry,secret_manager,scca_gcp,security_baseline_gcp",
     )
     parser.add_argument(
         "--project-name",
@@ -1354,6 +1562,7 @@ def main():
         "artifact_registry": lambda: generate_artifact_registry(args.project_path),
         "secret_manager": lambda: generate_secret_manager(args.project_path),
         "scca_gcp": lambda: generate_scca_gcp(args.project_path, config),
+        "security_baseline_gcp": lambda: generate_security_baseline_gcp(args.project_path, config),
     }
 
     for comp in components:

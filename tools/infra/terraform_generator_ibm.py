@@ -623,6 +623,197 @@ def generate_scca_ibm(project_path: str, project_config: dict = None) -> list:
     return files
 
 
+# ---------------------------------------------------------------------------
+# Security Baseline module — IBM Cloud
+# ---------------------------------------------------------------------------
+SECURITY_BASELINE_IBM_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# IBM Cloud Security Baseline — SCC, Key Protect, Activity Tracker, Flow Logs
+# -------------------------------------------------------
+
+data "ibm_resource_group" "security_baseline" {
+  name = var.resource_group
+}
+
+# --- Security & Compliance Center (SCC) ---
+
+resource "ibm_scc_instance_settings" "baseline" {
+  event_notifications {
+    instance_crn = ""
+  }
+  object_storage {
+    bucket            = "$${var.project_name}-scc-baseline-results"
+    bucket_location   = var.region
+    instance_crn      = ibm_resource_instance.cos_baseline.crn
+  }
+}
+
+resource "ibm_scc_profile_attachment" "nist_800_53" {
+  profile_id = "nist-800-53-rev5"
+  name       = "$${var.project_name}-nist-800-53-attachment"
+
+  scope {
+    environment = "ibm-cloud"
+
+    properties {
+      name  = "scope_id"
+      value = data.ibm_resource_group.security_baseline.id
+    }
+    properties {
+      name  = "scope_type"
+      value = "account.resource_group"
+    }
+  }
+
+  schedule = "daily"
+  status   = "enabled"
+}
+
+# --- COS for SCC results ---
+
+resource "ibm_resource_instance" "cos_baseline" {
+  name              = "$${var.project_name}-scc-baseline-cos"
+  service           = "cloud-object-storage"
+  plan              = "standard"
+  location          = "global"
+  resource_group_id = data.ibm_resource_group.security_baseline.id
+}
+
+# --- Key Protect + Root Key ---
+
+resource "ibm_resource_instance" "key_protect_baseline" {
+  name              = "$${var.project_name}-baseline-kp"
+  service           = "kms"
+  plan              = "tiered-pricing"
+  location          = var.region
+  resource_group_id = data.ibm_resource_group.security_baseline.id
+}
+
+resource "ibm_kms_key" "baseline_root" {
+  instance_id  = ibm_resource_instance.key_protect_baseline.guid
+  key_name     = "$${var.project_name}-baseline-root-key"
+  standard_key = false
+}
+
+# --- Activity Tracker ---
+
+resource "ibm_resource_instance" "activity_tracker_baseline" {
+  name              = "$${var.project_name}-baseline-at"
+  service           = "logdnaat"
+  plan              = "30-day"
+  location          = var.region
+  resource_group_id = data.ibm_resource_group.security_baseline.id
+
+  parameters = {
+    service_supertenant    = "activity-tracker"
+    associated_logging_crn = ""
+  }
+}
+
+# --- Flow Logs Collector ---
+
+resource "ibm_is_flow_log" "baseline" {
+  name           = "$${var.project_name}-baseline-flow-log"
+  target         = ""
+  active         = true
+  storage_bucket = ibm_cos_bucket.flow_logs.s3_endpoint_direct
+}
+
+resource "ibm_cos_bucket" "flow_logs" {
+  bucket_name          = "$${var.project_name}-baseline-flow-logs"
+  resource_instance_id = ibm_resource_instance.cos_baseline.id
+  region_location      = var.region
+  storage_class        = "smart"
+
+  activity_tracking {
+    read_data_events  = true
+    write_data_events = true
+  }
+
+  metrics_monitoring {
+    usage_metrics_enabled   = true
+    request_metrics_enabled = true
+  }
+}
+"""
+
+SECURITY_BASELINE_IBM_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# IBM Cloud Security Baseline — Variables
+# -------------------------------------------------------
+variable "ibmcloud_api_key" {
+  description = "IBM Cloud API key"
+  type        = string
+  sensitive   = true
+}
+
+variable "region" {
+  description = "IBM Cloud region"
+  type        = string
+  default     = "us-south"
+}
+
+variable "resource_group" {
+  description = "IBM Cloud resource group name"
+  type        = string
+  default     = "Default"
+}
+
+variable "project_name" {
+  description = "Project identifier"
+  type        = string
+}
+"""
+
+SECURITY_BASELINE_IBM_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# IBM Cloud Security Baseline — Outputs
+# -------------------------------------------------------
+output "scc_instance_id" {
+  description = "Security & Compliance Center instance ID"
+  value       = ibm_scc_profile_attachment.nist_800_53.id
+}
+
+output "key_protect_id" {
+  description = "Key Protect instance ID"
+  value       = ibm_resource_instance.key_protect_baseline.id
+}
+"""
+
+
+def generate_security_baseline_ibm(project_path: str, project_config: dict = None) -> list:
+    """Generate IBM Cloud Security Baseline Terraform module.
+
+    Produces terraform/ibm/modules/ibm-security-baseline/ with main.tf (SCC
+    instance + NIST 800-53 profile attachment, Key Protect + root key, Activity
+    Tracker, Flow Logs collector), variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    config = project_config or {}
+    project_name = config.get("project_name", "icdev")
+    tf_dir = Path(project_path) / "terraform" / "ibm" / "modules" / "ibm-security-baseline"
+    ctx = {"cui_header": _cui_header(), "project_name": project_name}
+
+    files = []
+    for name, template in [
+        ("main.tf", SECURITY_BASELINE_IBM_MAIN),
+        ("variables.tf", SECURITY_BASELINE_IBM_VARIABLES),
+        ("outputs.tf", SECURITY_BASELINE_IBM_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
 def run_cli():
     """CLI entry point."""
     parser = argparse.ArgumentParser(

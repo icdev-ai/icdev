@@ -1298,6 +1298,189 @@ output "workload_vcn_id" {
 """
 
 
+# ---------------------------------------------------------------------------
+# Security Baseline module — OCI
+# ---------------------------------------------------------------------------
+SECURITY_BASELINE_OCI_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# OCI Security Baseline — Cloud Guard, Vault, VSS, Service Connector
+# -------------------------------------------------------
+
+# --- Cloud Guard ---
+
+resource "oci_cloud_guard_cloud_guard_configuration" "baseline" {
+  compartment_id   = var.tenancy_ocid
+  reporting_region = var.region
+  status           = "ENABLED"
+}
+
+resource "oci_cloud_guard_detector_recipe" "config_detector" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-config-detector"
+
+  source_detector_recipe_id = "OCI-CONFIGURATION-DETECTOR-RECIPE"
+}
+
+resource "oci_cloud_guard_target" "baseline" {
+  compartment_id       = var.compartment_ocid
+  display_name         = "security-baseline-target"
+  target_resource_id   = var.compartment_ocid
+  target_resource_type = "COMPARTMENT"
+
+  target_detector_recipes {
+    detector_recipe_id = oci_cloud_guard_detector_recipe.config_detector.id
+  }
+}
+
+# --- Vault + HSM Key ---
+
+resource "oci_kms_vault" "baseline" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-vault"
+  vault_type     = "VIRTUAL_PRIVATE"
+}
+
+resource "oci_kms_key" "hsm_master" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-hsm-master-key"
+  management_endpoint = oci_kms_vault.baseline.management_endpoint
+
+  key_shape {
+    algorithm = "AES"
+    length    = 32
+  }
+
+  protection_mode = "HSM"
+}
+
+# --- Vulnerability Scanning Service (VSS) ---
+
+resource "oci_vulnerability_scanning_host_scan_recipe" "baseline" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-vss-recipe"
+
+  port_settings {
+    scan_level = "STANDARD"
+  }
+
+  schedule {
+    type        = "WEEKLY"
+    day_of_week = "SUNDAY"
+  }
+
+  agent_settings {
+    scan_level = "STANDARD"
+
+    agent_configuration {
+      vendor = "OCI"
+
+      cis_benchmark_settings {
+        scan_level = "STRICT"
+      }
+    }
+  }
+}
+
+# --- Service Connector (Events → Notifications) ---
+
+resource "oci_ons_notification_topic" "security_events" {
+  compartment_id = var.compartment_ocid
+  name           = "security-baseline-events"
+  description    = "Security baseline event notifications"
+}
+
+resource "oci_sch_service_connector" "security_events" {
+  compartment_id = var.compartment_ocid
+  display_name   = "security-baseline-event-connector"
+
+  source {
+    kind = "streaming"
+
+    cursor {
+      kind = "LATEST"
+    }
+  }
+
+  target {
+    kind     = "notifications"
+    topic_id = oci_ons_notification_topic.security_events.id
+  }
+}
+"""
+
+SECURITY_BASELINE_OCI_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# OCI Security Baseline — Variables
+# -------------------------------------------------------
+variable "tenancy_ocid" {
+  description = "OCI tenancy OCID"
+  type        = string
+}
+
+variable "compartment_ocid" {
+  description = "OCI compartment OCID for security baseline resources"
+  type        = string
+}
+
+variable "region" {
+  description = "OCI region"
+  type        = string
+  default     = "us-langley-1"
+}
+"""
+
+SECURITY_BASELINE_OCI_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# OCI Security Baseline — Outputs
+# -------------------------------------------------------
+output "cloud_guard_target_id" {
+  description = "Cloud Guard target ID"
+  value       = oci_cloud_guard_target.baseline.id
+}
+
+output "vault_id" {
+  description = "OCI Vault ID"
+  value       = oci_kms_vault.baseline.id
+}
+
+output "vss_recipe_id" {
+  description = "Vulnerability Scanning Service recipe ID"
+  value       = oci_vulnerability_scanning_host_scan_recipe.baseline.id
+}
+"""
+
+
+def generate_security_baseline_oci(project_path: str, project_config: dict = None) -> list:
+    """Generate OCI Security Baseline Terraform module.
+
+    Produces terraform/modules/oci-security-baseline/ with main.tf (Cloud Guard
+    target + config detector recipe, Vault + HSM key, VSS host recipe, service
+    connector for events to notifications), variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform" / "modules" / "oci-security-baseline"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SECURITY_BASELINE_OCI_MAIN),
+        ("variables.tf", SECURITY_BASELINE_OCI_VARIABLES),
+        ("outputs.tf", SECURITY_BASELINE_OCI_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
 def generate_scca_oci(project_path: str, project_config: dict = None) -> list:
     """Generate SCCA (Secure Cloud Computing Architecture) Terraform module for OCI.
 
@@ -1356,6 +1539,7 @@ def generate(project_path: str, project_config: dict = None) -> list:
         "ocir": lambda: generate_ocir(project_path),
         "vault": lambda: generate_vault(project_path),
         "scca_oci": lambda: generate_scca_oci(project_path, config),
+        "security_baseline_oci": lambda: generate_security_baseline_oci(project_path, config),
     }
 
     all_files = []
@@ -1378,7 +1562,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,vcn,autonomous_db,ocir,vault",
-        help="Comma-separated components: base,vcn,autonomous_db,ocir,vault,scca_oci",
+        help="Comma-separated components: base,vcn,autonomous_db,ocir,vault,scca_oci,security_baseline_oci",
     )
     parser.add_argument(
         "--project-name", default="icdev-project", help="Project name for resource naming"
@@ -1420,6 +1604,7 @@ def main():
         "ocir": lambda: generate_ocir(args.project_path),
         "vault": lambda: generate_vault(args.project_path),
         "scca_oci": lambda: generate_scca_oci(args.project_path, config),
+        "security_baseline_oci": lambda: generate_security_baseline_oci(args.project_path, config),
     }
 
     for comp in components:

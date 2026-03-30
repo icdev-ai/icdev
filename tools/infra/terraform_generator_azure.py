@@ -1653,6 +1653,185 @@ output "log_analytics_workspace_id" {
 """
 
 
+# ---------------------------------------------------------------------------
+# Security Baseline module — Azure
+# ---------------------------------------------------------------------------
+SECURITY_BASELINE_AZURE_MAIN = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# Azure Security Baseline — Defender, Sentinel, Policy, Diagnostics
+# -------------------------------------------------------
+
+resource "azurerm_resource_group" "security_baseline" {
+  name     = "$${var.project_name}-security-baseline-rg"
+  location = var.location
+
+  tags = var.common_tags
+}
+
+# --- Microsoft Defender for Cloud ---
+
+resource "azurerm_security_center_subscription_pricing" "servers" {
+  tier          = "Standard"
+  resource_type = "VirtualMachines"
+}
+
+resource "azurerm_security_center_subscription_pricing" "storage" {
+  tier          = "Standard"
+  resource_type = "StorageAccounts"
+}
+
+resource "azurerm_security_center_subscription_pricing" "keyvault" {
+  tier          = "Standard"
+  resource_type = "KeyVaults"
+}
+
+resource "azurerm_security_center_subscription_pricing" "arm" {
+  tier          = "Standard"
+  resource_type = "Arm"
+}
+
+resource "azurerm_security_center_subscription_pricing" "dns" {
+  tier          = "Standard"
+  resource_type = "Dns"
+}
+
+# --- Microsoft Sentinel (Log Analytics Workspace) ---
+
+resource "azurerm_log_analytics_workspace" "sentinel" {
+  name                = "$${var.project_name}-sentinel-law"
+  location            = azurerm_resource_group.security_baseline.location
+  resource_group_name = azurerm_resource_group.security_baseline.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 90
+
+  tags = var.common_tags
+}
+
+resource "azurerm_sentinel_log_analytics_workspace_onboarding" "sentinel" {
+  workspace_id                 = azurerm_log_analytics_workspace.sentinel.id
+  customer_managed_key_enabled = false
+}
+
+# --- Azure Policy Assignment (CIS Benchmark) ---
+
+data "azurerm_subscription" "current" {}
+
+resource "azurerm_subscription_policy_assignment" "cis_benchmark" {
+  name                 = "$${var.project_name}-cis-benchmark"
+  subscription_id      = data.azurerm_subscription.current.id
+  policy_definition_id = "/providers/Microsoft.Authorization/policySetDefinitions/612b5213-9160-4969-8578-1518bd2a000c"
+  display_name         = "CIS Microsoft Azure Foundations Benchmark"
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  location = var.location
+}
+
+# --- Diagnostic Settings for Activity Log ---
+
+resource "azurerm_monitor_diagnostic_setting" "activity_log" {
+  name                       = "$${var.project_name}-activity-log-diag"
+  target_resource_id         = data.azurerm_subscription.current.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.sentinel.id
+
+  enabled_log {
+    category = "Administrative"
+  }
+
+  enabled_log {
+    category = "Security"
+  }
+
+  enabled_log {
+    category = "Alert"
+  }
+
+  enabled_log {
+    category = "Policy"
+  }
+}
+"""
+
+SECURITY_BASELINE_AZURE_VARIABLES = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# Azure Security Baseline — Variables
+# -------------------------------------------------------
+variable "project_name" {
+  description = "Project identifier used for resource naming"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment"
+  type        = string
+  default     = "production"
+}
+
+variable "location" {
+  description = "Azure region for security baseline resources"
+  type        = string
+  default     = "usgovvirginia"
+}
+
+variable "common_tags" {
+  description = "Common tags applied to all resources"
+  type        = map(string)
+  default = {
+    Classification = "CUI"
+    ManagedBy      = "terraform"
+  }
+}
+"""
+
+SECURITY_BASELINE_AZURE_OUTPUTS = """\
+{{ cui_header }}
+# -------------------------------------------------------
+# Azure Security Baseline — Outputs
+# -------------------------------------------------------
+output "sentinel_workspace_id" {
+  description = "Microsoft Sentinel Log Analytics Workspace ID"
+  value       = azurerm_log_analytics_workspace.sentinel.id
+}
+
+output "defender_subscription_id" {
+  description = "Subscription ID with Defender for Cloud enabled"
+  value       = data.azurerm_subscription.current.subscription_id
+}
+"""
+
+
+def generate_security_baseline_azure(project_path: str, project_config: dict = None) -> list:
+    """Generate Azure Security Baseline Terraform module.
+
+    Produces terraform/modules/az-security-baseline/ with main.tf (Defender for
+    Cloud, Sentinel, Azure Policy CIS benchmark, diagnostic settings),
+    variables.tf, and outputs.tf.
+
+    Args:
+        project_path: Target project directory.
+        project_config: Optional configuration dict.
+
+    Returns:
+        List of absolute file paths generated.
+    """
+    tf_dir = Path(project_path) / "terraform" / "modules" / "az-security-baseline"
+    ctx = {"cui_header": _cui_header()}
+
+    files = []
+    for name, template in [
+        ("main.tf", SECURITY_BASELINE_AZURE_MAIN),
+        ("variables.tf", SECURITY_BASELINE_AZURE_VARIABLES),
+        ("outputs.tf", SECURITY_BASELINE_AZURE_OUTPUTS),
+    ]:
+        p = _write(tf_dir / name, _render(template, ctx))
+        files.append(str(p))
+    return files
+
+
 def generate_scca_azure(project_path: str, project_config: dict = None) -> list:
     """Generate SCCA (Secure Cloud Computing Architecture) Terraform module for Azure.
 
@@ -1714,6 +1893,7 @@ def generate(project_path: str, project_config: dict = None) -> list:
         "acr": lambda: generate_acr(project_path),
         "key_vault": lambda: generate_key_vault(project_path),
         "scca_azure": lambda: generate_scca_azure(project_path, config),
+        "security_baseline_azure": lambda: generate_security_baseline_azure(project_path, config),
     }
 
     all_files = []
@@ -1741,7 +1921,7 @@ def main():
     parser.add_argument(
         "--components",
         default="base,vnet,postgres,acr,key_vault",
-        help="Comma-separated components: base,vnet,postgres,acr,key_vault,scca_azure",
+        help="Comma-separated components: base,vnet,postgres,acr,key_vault,scca_azure,security_baseline_azure",
     )
     parser.add_argument(
         "--project-name",
@@ -1773,6 +1953,7 @@ def main():
         "acr": lambda: generate_acr(args.project_path),
         "key_vault": lambda: generate_key_vault(args.project_path),
         "scca_azure": lambda: generate_scca_azure(args.project_path, config),
+        "security_baseline_azure": lambda: generate_security_baseline_azure(args.project_path, config),
     }
 
     for comp in components:

@@ -9,7 +9,13 @@ No Flask dependency — takes graph data and returns results.
 """
 from collections import deque
 
-from tools.network.constants import WA_SECURITY_COMPLIANCE_RULES
+from tools.network.constants import (
+    WA_SECURITY_COMPLIANCE_RULES,
+    MCSB_COMPLIANCE_RULES,
+    GCP_SECURITY_COMPLIANCE_RULES,
+    OCI_SECURITY_COMPLIANCE_RULES,
+    IBM_SECURITY_COMPLIANCE_RULES,
+)
 
 
 # ── Compliance Regimes & Rule Definitions ─────────────────────────────────────
@@ -24,6 +30,10 @@ COMPLIANCE_REGIMES = {
     "icd503": {"name": "ICD 503 (IC)", "framework": "ODNI ICD 503", "baseline": "Full"},
     "cnss1253": {"name": "CNSS 1253 (NSS)", "framework": "CNSS", "baseline": "High"},
     "wa_security": {"name": "Well-Architected Security Pillar", "framework": "AWS Well-Architected", "baseline": "SEC01-SEC11"},
+    "mcsb_security": {"name": "Microsoft Cloud Security Benchmark", "source": "MCSB v1", "scope": "Azure"},
+    "gcp_security": {"name": "GCP Security Foundations", "source": "Architecture Framework", "scope": "GCP"},
+    "oci_security": {"name": "OCI Security Best Practices", "source": "CIS OCI v2.0", "scope": "OCI"},
+    "ibm_security": {"name": "IBM Cloud Security & Compliance", "source": "SCC Best Practices v2.0", "scope": "IBM"},
 }
 
 # Crosswalk: rule_id -> list of regimes it applies to
@@ -187,7 +197,7 @@ COMPLIANCE_RULES = [
      "regimes": ["fisma_high", "stig", "cjis", "cnss1253"],
      "description": "Internet-facing cloud resources must have DDoS protection enabled (Shield/DDoS Protection/Cloud Armor) per NIST SC-5 (denial of service protection).",
      "check": "ddos_protection"},
-] + WA_SECURITY_COMPLIANCE_RULES
+] + WA_SECURITY_COMPLIANCE_RULES + MCSB_COMPLIANCE_RULES + GCP_SECURITY_COMPLIANCE_RULES + OCI_SECURITY_COMPLIANCE_RULES + IBM_SECURITY_COMPLIANCE_RULES
 
 # Encryptor speed ratings (Mbps) for NET-ENC-003
 ENCRYPTOR_RATINGS = {
